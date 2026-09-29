@@ -320,7 +320,7 @@ const GIT_LOOKING_ACTION: Record<string, ReadonlySet<string>> = {
   stash: new Set(["list", "show"]),
   remote: new Set(["", "show", "get-url"]),
   worktree: new Set(["list"]),
-  notes: new Set(["list", "show"]),
+  notes: new Set(["list"]),
 };
 /** git options that come before the subcommand and take a value. */
 const GIT_GLOBAL_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"]);
@@ -360,7 +360,7 @@ function readOnlyProgram(program: readonly string[]): boolean {
   if (name === "ak") {
     const action = args.slice(0, 3).join(" ");
     if (action === "learn review report") return args.length === 3;
-    return action === "learn memory show" && (args.length === 3 || (args.length === 5 && args[3] === "--repo"));
+    return action === "learn memory show" && args.length === 3;
   }
   if (name === "bun") return args[0] === "run" && args[1] === "ak" && ["validate", "status"].includes(args[2] ?? "");
   return false;
@@ -406,8 +406,8 @@ function readOnlyGit(args: readonly string[]): boolean {
   if (sub === undefined) return true;
   if (GIT_LOOKING.has(sub)) return true;
   if (sub === "reflog") {
-    const action = rest.find((w) => ["show", "exists", "expire", "delete", "drop", "write"].includes(w));
-    return action === undefined || action === "show" || action === "exists";
+    const action = rest.find((w) => ["show", "expire", "delete"].includes(w));
+    return action === undefined || action === "show";
   }
   const actions = GIT_LOOKING_ACTION[sub];
   if (actions !== undefined) return actions.has(rest.find((w) => !w.startsWith("-")) ?? "");

@@ -526,9 +526,8 @@ describe("readOnlyShell: looking commands the a2 transcripts ran", () => {
 
   test("ak learn memory show reads while other ak commands still count as writes", () => {
     expect(readOnlyShell("ak learn memory show")).toBe(true);
-    expect(readOnlyShell("ak learn memory show --repo .")).toBe(true);
     expect(readOnlyShell("ak learn review report")).toBe(true);
-    for (const cmd of ["ak -h", "ak record --help x", "ak learn memory mute", "ak learn memory show; ak learn memory mute"]) {
+    for (const cmd of ["ak -h", "ak record --help x", "ak learn memory mute", "ak learn memory show --repo .", "ak learn memory show; ak learn memory mute"]) {
       expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, false]);
     }
   });
