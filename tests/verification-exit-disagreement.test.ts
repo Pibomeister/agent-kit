@@ -82,9 +82,9 @@ describe("verification exit disagreement", () => {
   });
 
   test("rejects exit_disagreement outside its one truthful shape", () => {
-    expectVerdict(withDisagreement({ ...truthful, status: "passed" }), false);
-    expectVerdict(withDisagreement({ ...truthful, exit_status: 1 }), false);
-    expectVerdict(withDisagreement(truthful, "   "), false);
+    expect(akValidateAccepts(withDisagreement({ ...truthful, status: "passed" }))).toBe(false);
+    expect(akValidateAccepts(withDisagreement({ ...truthful, exit_status: 1 }))).toBe(false);
+    expect(akValidateAccepts(withDisagreement(truthful, "   "))).toBe(false);
   });
 
   test("still rejects a failed command receipt that omits the observed exit", () => {

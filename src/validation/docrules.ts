@@ -1024,21 +1024,6 @@ function verificationRules(rc: RuleContext): void {
     }
   }
 
-  if ("exit_disagreement" in doc) {
-    const disagreement = obj(doc["exit_disagreement"]);
-    const outputReports = disagreement === null ? null : str(disagreement["output_reports"]);
-    if (kind !== "command" || status !== "failed" || num(doc["exit_status"]) !== 0) {
-      fail(rc, RULE_PROSE, "exit_disagreement is only permitted on a failed command receipt with exit_status 0");
-    } else if (
-      disagreement === null ||
-      str(disagreement["verdict_from"]) !== "output" ||
-      outputReports === null ||
-      outputReports.trim().length === 0
-    ) {
-      fail(rc, RULE_PROSE, "exit_disagreement must name output as the verdict source and quote the failure reported by that output");
-    }
-  }
-
   const RULE_WEAK = "verification.weakened-check-requires-its-own-decision";
   const weakened = arr(doc["weakened_checks"]).map(obj);
   // The schema already requires `decision` on every entry, so a check for its
