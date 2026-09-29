@@ -349,15 +349,15 @@ function receiptPaths(path: string, receipt: Receipt["receipt"]): { runId: strin
   const dumpArg = argOf(receipt.argv, "--dump-transcripts");
   let root: string | undefined;
   for (let dir = dirname(path); jsonArg !== undefined; dir = dirname(dir)) {
-    if (existsSync(join(dir, jsonArg))) {
+    if (existsSync(resolve(dir, jsonArg))) {
       root = dir;
       break;
     }
     if (dirname(dir) === dir) break;
   }
   return {
-    runId: root !== undefined && jsonArg !== undefined ? join(root, jsonArg) : path,
-    ...(root !== undefined && dumpArg !== undefined && existsSync(join(root, dumpArg)) ? { dumpDir: join(root, dumpArg) } : {}),
+    runId: root !== undefined && jsonArg !== undefined ? resolve(root, jsonArg) : path,
+    ...(root !== undefined && dumpArg !== undefined && existsSync(resolve(root, dumpArg)) ? { dumpDir: resolve(root, dumpArg) } : {}),
   };
 }
 
@@ -413,13 +413,13 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
     const arm = data.receipt.arm === "nudged" ? "nudged" : "natural";
     for (const subject of data.subjects) {
       for (const result of subject.results) {
-        const source = `${runId}#${subject.subject}/${result.id}`;
+        const dumpFile = dumpDir === undefined ? undefined : join(dumpDir, subject.subject, `${result.id}.json`);
+        const source = dumpFile !== undefined && existsSync(dumpFile) ? dumpFile : `${runId}#${subject.subject}/${result.id}`;
         if (problem !== null) {
-          skip(source, problem);
+          if (!skippedBy.has(source)) skip(source, problem);
           continue;
         }
-        const dumpFile = dumpDir === undefined ? undefined : join(dumpDir, subject.subject, `${result.id}.json`);
-        if (dumpFile !== undefined && existsSync(dumpFile)) {
+        if (source === dumpFile) {
           fromDump(subject.subject, subject.host, dumpFile, arm);
           continue;
         }
@@ -446,7 +446,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
     }
   }
   const skipped: Record<string, number> = {};
-  for (const why of skippedBy.values()) skipped[why] = (skipped[why] ?? 0) + 1;
+  for (const [source, why] of skippedBy) if (!seen.has(source)) skipped[why] = (skipped[why] ?? 0) + 1;
   return { candidates: [...seen.values()], skipped };
 }
 

@@ -175,7 +175,22 @@ describe("loading stored runs and the label file", () => {
     const incomplete = loadRuns([incompleteBundle], scoring);
     expect(incomplete.candidates).toEqual([]);
     expect(incomplete.skipped).toEqual({ [`bundle completeness does not cover the prompt set (${bundledSkills[0]})`]: 5 });
-    expect(loadRuns([legacyBundleOn, incompleteBundle, run.receipt], scoring).candidates).toHaveLength(3);
+    for (const inputs of [[legacyBundleOn, incompleteBundle, run.receipt], [run.receipt, incompleteBundle, legacyBundleOn]]) {
+      const mixed = loadRuns(inputs, scoring);
+      expect(mixed.candidates).toHaveLength(3);
+      expect(mixed.skipped).toEqual({ "not decided by the heuristic graders": 1, "invalid session (exit 1)": 1 });
+    }
+  });
+
+  test("a receipt that recorded absolute run paths still owns its dump", () => {
+    const run = storedRun();
+    const absolute = receiptVariant(run.receipt, "absolute-paths", (receipt) => ({
+      ...receipt,
+      argv: ["bun", "trigger-eval.ts", "--json", run.receipt, "--dump-transcripts", run.dumpDir],
+    }));
+    const loaded = loadRuns([run.dumpDir, absolute], scoring);
+    expect(loaded.candidates).toHaveLength(3);
+    expect(loaded.candidates.find((c) => c.case.id === run.loadedCase.id)!.events).toHaveLength(2);
   });
 
   test("a transcript dump without its eligible owning receipt is refused", () => {
