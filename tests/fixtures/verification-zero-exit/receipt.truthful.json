@@ -1,0 +1,23 @@
+{
+  "schema": "verification",
+  "schema_version": 1,
+  "id": "issue-b-zero-exit-failure",
+  "project": { "id": "agent-kit-evidence-baseline", "repo": "Pibomeister/agent-kit" },
+  "run_id": "agent-kit-evidence-baseline",
+  "created_by": { "role": "code-review/testing", "skill": "super-verify", "operation": "verify.run" },
+  "inputs": [],
+  "source_revision": { "repo": "Pibomeister/agent-kit", "revision": "bc600d4518ca0d04e424251ee5ae29f366651752" },
+  "created_at": "2026-09-29T16:11:00Z",
+  "status": "failed",
+  "kind": "command",
+  "command": { "argv": ["sh", "./check.sh"], "cwd": ".work/issue-b/project" },
+  "exit_status": 0,
+  "output_digest": "sha256:12cdbf61b57d7638b5064de7ca4284f4c5b7205fe2968bf1cffa47ca67a0c008",
+  "output_excerpt": " 1 pass\n 2 fail\n 3 expect() calls\nRan 3 tests across 1 file.",
+  "environment": {
+    "id": "local-macos-lab", "isolated": false, "secrets_policy": "none",
+    "toolchain": [ { "name": "bun", "version": "1.3.14" } ]
+  },
+  "supports": ["AC-1"],
+  "notes": "The wrapper exited 0 and its output reports 2 of 3 tests failing. The outcome is set from the output, as super-verify step 5 directs; the exit status is recorded as observed."
+}

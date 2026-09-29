@@ -56,6 +56,16 @@
       "description": "The process exit status. This is the receipt for a command check; nothing narrative substitutes for it (plan 5.6, release scenario 10).",
       "type": "integer"
     },
+    "exit_disagreement": {
+      "description": "Records the one case where the process exit and the behavioral verdict disagree: a command exited 0 while its digested output conclusively reports failure. The verdict comes from that output, whose relevant quote is retained here; exit_status remains the raw observation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict_from", "output_reports"],
+      "properties": {
+        "verdict_from": { "const": "output" },
+        "output_reports": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+      }
+    },
     "output_digest": {
       "description": "Digest of the relevant output or produced artifact. Required for every outcome that actually ran, so a result can be re-checked rather than believed.",
       "$ref": "common.schema.json#/$defs/hash"
@@ -194,7 +204,7 @@
       "then": { "required": ["output_digest"] }
     },
     {
-      "description": "A passing command receipt carries exit status 0. A failing one does not. This is the structural form of 'a classifier cannot turn missing proof into passed' (plan 5.6, release scenario 10).",
+      "description": "A passing command receipt carries exit status 0. This is the structural form of 'a classifier cannot turn missing proof into passed' (plan 5.6, release scenario 10).",
       "if": {
         "properties": { "kind": { "const": "command" }, "status": { "const": "passed" } },
         "required": ["kind", "status"]
@@ -205,14 +215,19 @@
       }
     },
     {
-      "description": "A failing command receipt carries the non-zero status it actually exited with.",
+      "description": "A failing command receipt carries the status it actually exited with. When that status is zero, the receipt also records that its behavioral verdict comes from output that reports failure.",
       "if": {
         "properties": { "kind": { "const": "command" }, "status": { "const": "failed" } },
         "required": ["kind", "status"]
       },
       "then": {
         "required": ["exit_status"],
-        "properties": { "exit_status": { "not": { "const": 0 } } }
+        "allOf": [
+          {
+            "if": { "properties": { "exit_status": { "const": 0 } }, "required": ["exit_status"] },
+            "then": { "required": ["exit_disagreement"] }
+          }
+        ]
       }
     },
     {
@@ -232,6 +247,18 @@
       "description": "An inconclusive check ran and settled nothing. It says so, and it is never counted toward acceptance (plan 5.6).",
       "if": { "properties": { "status": { "const": "inconclusive" } }, "required": ["status"] },
       "then": { "required": ["reason"] }
+    },
+    {
+      "description": "An exit disagreement is only meaningful for a failed command whose raw exit status was zero.",
+      "if": { "required": ["exit_disagreement"] },
+      "then": {
+        "required": ["kind", "status", "exit_status"],
+        "properties": {
+          "kind": { "const": "command" },
+          "status": { "const": "failed" },
+          "exit_status": { "const": 0 }
+        }
+      }
     }
   ]
 }

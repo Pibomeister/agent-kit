@@ -269,6 +269,14 @@ tests:
       The run completes, publishes three failing receipts with their exit statuses and digests, and
       reports the failures as the result. It does not withhold the matrix, soften the outcome, or
       attempt a repair.
+  - id: zero-exit-output-failure
+    kind: adversarial
+    given: >-
+      The project's own check wrapper exits zero because it pipes a test suite through tee, while
+      the captured output conclusively reports two failing tests for AC-1.
+    expect: >-
+      The receipt reports status failed and the observed exit_status 0, and carries an
+      exit_disagreement whose verdict_from is output and whose output_reports quotes the failure.
   - id: does-not-fix-what-it-verifies
     kind: negative
     given: >-

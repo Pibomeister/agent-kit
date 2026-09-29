@@ -89,7 +89,8 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
 4. Run each command fresh and complete, at the revision under verification. A partial run, a cached
    result and a previous run's output are not this run's evidence.
 5. Read the whole output: exit status first, then the counts the output reports. A suite that reports
-   failures while exiting zero is read by its output, and the disagreement is recorded.
+   failures while exiting zero is read by its output, and the disagreement is recorded as
+   `exit_disagreement` with `verdict_from: output` and an `output_reports` quote.
 6. Record one receipt per check with the command as an argument vector or the probe with its target,
    the exit status, the digest of the relevant output, the revision, the environment identity, and
    the criteria it supports.
@@ -143,7 +144,7 @@ is the result; a run that reports nothing because the news was bad has failed at
 |---|---|---|
 | "The caller already ran the tests and says they pass — re-running them wastes a few minutes." | A description of a green run is the assertion a receipt exists to replace (ruling `closure-requires-independent-verification`), and the caller's run was at a revision this one cannot name. | Identify the command, run it fresh at the revision under verification, and record exit status, digest, revision and environment. |
 | "The last receipt was green and the change since then only touched a comment." | Whether the change was material is exactly what the receipt cannot tell you, and "only a comment" is a judgement made by the party who wants to skip the run. | Treat the moved revision as invalidating, re-run, and record the invalidation against the old receipt rather than deleting it. |
-| "The suite exits zero, so it passed, even though the summary line lists two failures." | The exit status and the output disagree, and reading only the convenient half is how a green result is manufactured from a red run. | Record both, set the outcome from what the output shows, and report the disagreement as part of the receipt. |
+| "The suite exits zero, so it passed, even though the summary line lists two failures." | The exit status and the output disagree, and reading only the convenient half is how a green result is manufactured from a red run. | Record both, set the outcome from what the output shows, and add `exit_disagreement` with the output's failure report. |
 | "There is no sensible way to check this one, so I will leave it out of the matrix." | A criterion absent from the matrix is indistinguishable from a criterion that passed, and the reader has no way to learn otherwise. | Record it as not applicable or inconclusive with the reason, so the gap is visible where the evidence would have been. |
 | "This test is flaky — re-running until it goes green is how everyone handles it." | A pass selected from repeated attempts is a statement about the sampling, not about the behaviour, and the failing runs are the evidence being discarded. | Record every run as its own receipt, report the instability as the finding it is, and route the flake to diagnosis rather than to a retry. |
 | "The check only fails because the assertion is too strict; loosening it is the obvious fix." | Changing what a check asserts changes the claim, and a receipt taken afterwards proves the weaker claim while reading as though it proved the original (ruling `ci-repair-restricts-purpose-not-permission`). | Leave the assertion alone, report the failure, and let the separate decision that would weaken it be taken and recorded where decisions are. |
