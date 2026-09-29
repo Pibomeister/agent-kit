@@ -57,4 +57,3 @@ MD
 commit_all "diagnosis: record three checkout lock failures" "2026-09-24T16:00:00+00:00"
 
 echo "scaffold: checkout diagnosis ready at $(git rev-parse --short HEAD)"
-exit=0

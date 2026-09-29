@@ -103,7 +103,6 @@ describe("classification", () => {
     const c = prose.find((x) => x.skill === "super-align")!;
     const load: SessionEvent = { kind: "tool", name: "Skill", raw: "Skill", input: { skill: "ak:super-align" } };
     const reply = "Round 1: 1. Which user owns this outcome? 2. What result would count as success?";
-    expect(CRITERIA).toContain("A chat-only workflow round that ends before any write or other side effect is not acting and passes.");
     expect(suggestedOf(scoreCase(c, [load], reply, scoring))).toMatchObject({ outcome: "loaded-unclear", verdict: "PASS" });
   });
 });

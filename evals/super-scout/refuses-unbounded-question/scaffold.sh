@@ -12,4 +12,3 @@ source "$SCRIPT_DIR/../../super-build/_fixtures/scaffold-lib.sh"
 service_repo_baseline
 
 echo "scaffold: tiny-service ready at $(git rev-parse --short HEAD)"
-exit=0
