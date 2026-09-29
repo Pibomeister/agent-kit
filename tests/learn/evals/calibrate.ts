@@ -334,9 +334,10 @@ function dumpFiles(dir: string): { subject: string; file: string }[] {
     .flatMap((subject) => dumpFiles(join(dir, subject)).map((x) => ({ ...x, subject })));
 }
 
-function bundleProblem(receipt: Receipt["receipt"], cases: ReadonlyMap<string, Case>): string | null {
+function bundleProblem(receipt: Receipt["receipt"], cases: ReadonlyMap<string, Case> | null): string | null {
   if (receipt.bundle !== "on") return "bundle was not on";
   if (!Array.isArray(receipt.bundle_complete)) return "bundle completeness was not recorded";
+  if (cases === null) return "bundle completeness cannot be matched to the recorded prompt set";
   const drafts = new Set([...cases.values()].flatMap((c) => (c.draft === undefined ? [] : [c.draft.name])));
   const checked = new Set(receipt.bundle_complete);
   const missing = bundleTargets([...cases.values()], drafts).filter((skill) => !checked.has(skill));
@@ -394,16 +395,8 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
     if (!existsSync(path) || statSync(path).isDirectory()) continue;
     const data = JSON.parse(readFileSync(path, "utf8")) as Receipt;
     if (data.receipt === undefined || !Array.isArray(data.subjects)) throw new Error(`calibrate: ${raw} is neither a transcript dump directory nor a trigger-eval receipt`);
-    const hasEvidence = data.receipt.bundle === "on" && Array.isArray(data.receipt.bundle_complete);
-    const cases = hasEvidence ? promptSetOf(data.receipt) : null;
-    const problem = data.receipt.bundle !== "on"
-      ? "bundle was not on"
-      : !Array.isArray(data.receipt.bundle_complete)
-        ? "bundle completeness was not recorded"
-        : cases === null
-          ? "bundle completeness cannot be matched to the recorded prompt set"
-          : bundleProblem(data.receipt, cases);
-    receipts.set(path, { data, cases, problem, ...receiptPaths(path, data.receipt) });
+    const cases = promptSetOf(data.receipt);
+    receipts.set(path, { data, cases, problem: bundleProblem(data.receipt, cases), ...receiptPaths(path, data.receipt) });
   }
   const ownedDumps = [...receipts.values()].filter((receipt) => receipt.problem === null).flatMap((receipt) => (receipt.dumpDir === undefined ? [] : [receipt.dumpDir]));
   for (const raw of paths) {
@@ -416,21 +409,20 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
       for (const { subject, file } of dumpFiles(path)) fromDump(subject, null, file, scoring.arm);
       continue;
     }
-    const receipt = receipts.get(path)!;
-    if (receipt.problem !== null) {
-      skip(path, receipt.problem);
-      continue;
-    }
-    const { data, cases, runId, dumpDir } = receipt;
+    const { data, cases, problem, runId, dumpDir } = receipts.get(path)!;
     const arm = data.receipt.arm === "nudged" ? "nudged" : "natural";
     for (const subject of data.subjects) {
       for (const result of subject.results) {
+        const source = `${runId}#${subject.subject}/${result.id}`;
+        if (problem !== null) {
+          skip(source, problem);
+          continue;
+        }
         const dumpFile = dumpDir === undefined ? undefined : join(dumpDir, subject.subject, `${result.id}.json`);
         if (dumpFile !== undefined && existsSync(dumpFile)) {
           fromDump(subject.subject, subject.host, dumpFile, arm);
           continue;
         }
-        const source = `${runId}#${subject.subject}/${result.id}`;
         const c = cases!.get(result.id);
         if (c === undefined) {
           skip(source, "case not in the prompt set the receipt recorded");

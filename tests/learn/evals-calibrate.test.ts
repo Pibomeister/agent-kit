@@ -160,15 +160,21 @@ describe("loading stored runs and the label file", () => {
   test("a bundle-off receipt produces no candidates", () => {
     const run = storedRun();
     const bundleOff = receiptVariant(run.receipt, "bundle-off", ({ bundle_complete: _, ...receipt }) => ({ ...receipt, bundle: "off" }));
-    expect(loadRuns([bundleOff], scoring).candidates).toEqual([]);
+    const loaded = loadRuns([bundleOff], scoring);
+    expect(loaded.candidates).toEqual([]);
+    expect(loaded.skipped).toEqual({ "bundle was not on": 5 });
   });
 
   test("a legacy or incomplete bundle-on receipt produces no candidates", () => {
     const run = storedRun();
     const legacyBundleOn = receiptVariant(run.receipt, "legacy-bundle-on", ({ bundle_complete: _, ...receipt }) => ({ ...receipt, bundle: "on" }));
     const incompleteBundle = receiptVariant(run.receipt, "incomplete-bundle", (receipt) => ({ ...receipt, bundle_complete: bundledSkills.slice(1) }));
-    expect(loadRuns([legacyBundleOn], scoring).candidates).toEqual([]);
-    expect(loadRuns([incompleteBundle], scoring).candidates).toEqual([]);
+    const legacy = loadRuns([legacyBundleOn], scoring);
+    expect(legacy.candidates).toEqual([]);
+    expect(legacy.skipped).toEqual({ "bundle completeness was not recorded": 5 });
+    const incomplete = loadRuns([incompleteBundle], scoring);
+    expect(incomplete.candidates).toEqual([]);
+    expect(incomplete.skipped).toEqual({ [`bundle completeness does not cover the prompt set (${bundledSkills[0]})`]: 5 });
     expect(loadRuns([legacyBundleOn, incompleteBundle, run.receipt], scoring).candidates).toHaveLength(3);
   });
 
