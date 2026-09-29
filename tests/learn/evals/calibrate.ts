@@ -53,8 +53,10 @@
  *          out of their rows. Without human labels the figures measure agreement, not correctness.
  * rescore  Re-applies the current scorer to each item's stored session, read again from the
  *          file's `sources`, and replaces `suggested`; labels, votes and transcripts are left as
- *          they are. It prints each item whose verdict or outcome changed and each item whose
- *          session is no longer in its sources (left untouched). Writes in place unless `--out`.
+ *          they are. Sessions are read through the same gate as `sample`. It prints each item
+ *          whose verdict or outcome changed, each item whose session is stored but left out, with
+ *          the reason, and each item whose session is no longer in its sources (both left
+ *          untouched). Writes in place unless `--out`.
  *
  * The scorer's verdict is `suggested`, mapped onto `CRITERIA`: recommended, redirected,
  * loaded-and-stopped and a held negative pass; violated, missed and a fired negative fail;
@@ -372,7 +374,8 @@ export interface Loaded {
 }
 
 /**
- * Every stored session under `paths`, rescored with `scoring`. A receipt's run is identified by
+ * Every eligible stored session under `paths`, rescored with `scoring`; the rest are in
+ * `ineligible` with the reason. A receipt's run is identified by
  * the `--json` path in its argv, resolved against the nearest ancestor where it exists, so a
  * rescored copy of a receipt names the same sessions as the original.
  */
@@ -485,7 +488,7 @@ export interface Rescored {
   labels: LabelFile;
   /** Items whose suggested verdict or outcome changed. */
   changed: { id: string; from: Suggested; to: Suggested }[];
-  /** Items whose session `loaded` does not hold; their suggestion is left as it was. */
+  /** Items whose session `loaded` neither holds nor left out; their suggestion is left as it was. */
   missing: string[];
   /** Items whose session is stored but was left out of `loaded`, with the reason; their suggestion is left as it was. */
   ineligible: { id: string; why: string }[];

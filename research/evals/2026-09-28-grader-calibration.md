@@ -212,10 +212,6 @@ with its own scorer turns 10 rows that passed at run time, on the full reply, in
   current scorer, and replaces `suggested`. Labels, votes and transcripts stay. It prints each
   change, each item whose session is stored but ineligible, with the reason, and each item whose
   session is gone. This replaces the one-off rescore script.
-- **`calibrate.ts loadRuns`**: rejects bundle-off receipts, legacy receipts without completeness
-  evidence, attestations that do not cover the recorded prompt set, and transcript dumps supplied
-  without their eligible owning receipt. Installation eligibility remains separate from the other
-  row filters below.
 
 ## Shell-classifier follow-up rescore, 2026-09-29
 
