@@ -49,11 +49,11 @@ graders:
     input_match: '"skill"\s*:\s*"(?:[^"]*:)?diagnose"'
     arm: with-only
     weight: 1
-  - name: skill-before-first-write
+  - name: skill-before-first-edit
     type: tool_order
     before:
       tool: Skill
       input_match: '"skill"\s*:\s*"(?:[^"]*:)?diagnose"'
-    after: Write
+    after: Edit
     arm: with-only
     weight: 1

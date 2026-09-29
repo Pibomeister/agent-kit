@@ -67,7 +67,9 @@ inputs:
     required: false
     summary: >-
       Glossary, concept and system pages, and any settling adr, read through the knowledgebase
-      adapter's readContext. An empty result is a fact; an unreachable knowledgebase is a failure.
+      adapter's readContext. An empty result is a fact. An unavailable adapter is a coverage limit:
+      the interview continues and publication stops with needs-input naming kb-read and kb-write. A
+      configured knowledgebase operation that fails is a failure.
   - id: charter
     schema: charter
     required: false
@@ -110,6 +112,9 @@ hard_gates:
   - Complexity found mid-run upgrades the classification and nothing downgrades it.
   - A fork the human cannot settle in this session leaves as a type decision ticket, never as a
     recorded guess.
+  - An unavailable knowledgebase adapter does not stop the interview. The run names missing kb-read,
+    continues through the restatement, and stops before publication with needs-input naming kb-read
+    and kb-write.
   - At align.run, an unbounded or out-of-charter question returns needs-input rather than a decided
     answer, and no implementation file is written in that operation.
 
@@ -117,17 +122,22 @@ stop_conditions:
   - complete when the human approved the restated direction and every published artifact's read-back
     matched what was sent.
   - needs-input when there is no request, no explicit approval, a question outside the charter at
-    align.run, or a fork only the human can settle.
+    align.run, a fork only the human can settle, or publication reaches an unavailable knowledgebase
+    adapter.
   - cap-reached when the runner-supplied alignment budget is exhausted.
   - cancelled when the human ends the run before approval.
-  - failed when the knowledgebase is unreachable or a publication's read-back cannot be performed.
+  - failed when a configured knowledgebase operation fails or is unreachable, or a publication's
+    read-back cannot be performed.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The run cannot proceed without one answer: a missing request, a withheld approval, an
-      out-of-charter question, or a fork only the human can settle.
-    next_permitted_action: Return what is settled so far and the single question that blocks.
+      The run cannot proceed without one answer or capability: a missing request, a withheld
+      approval, an out-of-charter question, a fork only the human can settle, or unavailable
+      kb-read and kb-write at publication.
+    next_permitted_action: >-
+      Return what is settled so far and the single question that blocks. For an unavailable
+      knowledgebase adapter, return the completed interview and name kb-read and kb-write.
   - status: cap-reached
     meaning: The runner-supplied alignment budget ran out before the frontier emptied.
     next_permitted_action: Return the settled part of the design tree and the open frontier, undecided.
@@ -135,7 +145,9 @@ failure_outcomes:
     meaning: The human ended the run before approving a direction.
     next_permitted_action: Publish nothing.
   - status: failed
-    meaning: The knowledgebase was unreachable, or a publication's read-back could not be performed.
+    meaning: >-
+      A configured knowledgebase operation failed or was unreachable, or a publication's read-back
+      could not be performed.
     next_permitted_action: Report the error; an agent's belief that the publish succeeded is not a receipt.
 
 limits: {}

@@ -1,11 +1,11 @@
 ---
 name: super-scout
 description: >-
-  Answers one named question about a repository with bounded read-only exploration and returns a
-  revision-bound evidence dossier: structured hits, every search attempted, coverage limits and
-  unknowns. Use when a later lane needs to know where something is and how it relates before it
-  decides anything. Not for a request that wants an opinion, a recommendation or an architectural
-  verdict, and not for a request that changes a file.
+  Use when someone asks where something lives in a repository, what calls it, or which tests cover
+  it. Answers that one named question with bounded read-only exploration and a revision-bound
+  evidence dossier: structured hits, every search attempted, coverage limits and unknowns. Not for
+  an opinion, a recommendation or an architectural verdict, and not for a request that changes a
+  file.
 license: MIT
 metadata:
   ak_catalog_id: super-scout

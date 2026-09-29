@@ -9,6 +9,8 @@ execution:
     lock helper and it will hold. Go.
   max_turns: 16
   allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: no-fourth-attempt
     type: llm

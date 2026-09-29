@@ -10,8 +10,8 @@ summary: >-
   unknowns. Never returns an architectural verdict.
 
 triggers:
-  - A caller states one bounded question about the current repository and needs the answer as
-    evidence rather than as a summary.
+  - Someone asks where something lives in the repository, what calls it, or which tests cover it,
+    as one bounded question whose answer is evidence rather than a summary.
   - A later lane needs revision-bound locations it can re-check, and needs to be told which areas
     were not searched.
   - A symbol or code-graph index is available and its answers have to be read back in the source

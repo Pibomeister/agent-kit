@@ -98,6 +98,14 @@ describe("classification", () => {
     expect(suggestedOf(wrote)).toMatchObject({ outcome: "violated", verdict: "FAIL" });
     expect(suggestedOf(scoreCase(c, [], "Nothing to do.", scoring))).toMatchObject({ outcome: "missed", verdict: "FAIL" });
   });
+
+  test("a chat-only workflow round passes because only side effects count as acting", () => {
+    const c = prose.find((x) => x.skill === "super-align")!;
+    const load: SessionEvent = { kind: "tool", name: "Skill", raw: "Skill", input: { skill: "ak:super-align" } };
+    const reply = "Round 1: 1. Which user owns this outcome? 2. What result would count as success?";
+    expect(CRITERIA).toContain("A chat-only workflow round that ends before any write or other side effect is not acting and passes.");
+    expect(suggestedOf(scoreCase(c, [load], reply, scoring))).toMatchObject({ outcome: "loaded-unclear", verdict: "PASS" });
+  });
 });
 
 /** A stored run: a receipt with every case's reply, and a dump for the one session that loaded a skill. */

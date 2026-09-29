@@ -113,13 +113,17 @@ hard_gates:
     out-of-scope work never graduates back.
   - A human-in-the-loop ticket resolves only through the live exchange; an agent never answers the
     human's side of it.
+  - Charting requires a system of record other sessions can read. A human waiver does not make a
+    session-only map durable; without either backend the run stops before charting with needs-input
+    naming tracker-access and kb-write.
 
 stop_conditions:
   - complete when the frontier is empty, nothing remains in Not yet specified, and the way to the
     destination is clear with nothing left to decide.
   - complete when charting surfaced no fog; the map is not drawn and the reason is reported.
   - needs-input when there is no effort statement, no system of record, no grant at wayfind.map, or
-    a ticket whose resolution belongs to a human-started run.
+    a ticket whose resolution belongs to a human-started run. With no system of record it names
+    tracker-access and kb-write; a human waiver does not change that result.
   - cap-reached when one ticket has been resolved this session.
   - failed when the system of record is unreachable or a write's read-back cannot be performed.
 
@@ -128,7 +132,9 @@ failure_outcomes:
     meaning: >-
       A prerequisite the run cannot supply itself, or a ticket the invocation law puts outside this
       skill's reach.
-    next_permitted_action: Return the blocking item and the ticket text; do not resolve it here.
+    next_permitted_action: >-
+      Return the blocking item and the ticket text; do not resolve it here. For no system of record,
+      name tracker-access and kb-write and do not accept a session-only waiver.
   - status: cap-reached
     meaning: One ticket has been resolved this session and the per-session cap is spent.
     next_permitted_action: Return the updated map and the frontier; take nothing further.

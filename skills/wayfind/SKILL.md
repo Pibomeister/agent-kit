@@ -123,6 +123,11 @@ effort.
 Gate: a human-in-the-loop ticket resolves only through the live exchange. An agent that answers the
 human's side of a `grilling` or `prototype` ticket has broken the ticket, not resolved it.
 
+Gate: charting requires a system of record other sessions can read. A human waiver does not create
+one, and permission to copy a session-only map later does not make that session shared. When neither
+the external tracker nor the knowledgebase can hold the map, stop before charting with `needs-input`
+naming `tracker-access` and `kb-write`.
+
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "This decision is obvious — I'll hand the ticket straight to an implementer." | An open decision ticket carries no approval. Obvious to the mapper is not decided by the human who owns the destination. | Leave it on the frontier and route the question to a human-started alignment run. |
@@ -130,6 +135,7 @@ human's side of a `grilling` or `prototype` ticket has broken the ticket, not re
 | "The first ticket went quickly — I'll take one more before the session ends." | The second decision is made with the first one's context still weighing on it, which is the bias the one-per-session rule exists to break. | Stop after the one. Research tickets are the only exception. |
 | "This question is inconvenient and off the critical path — I'll mark it out of scope." | Scope, not convenience, puts work out of scope, and an unjustified closure hides an open decision behind a section that never graduates. | Either write the gist and the real reason it sits past the destination, or leave it on the frontier. |
 | "I can see roughly four things coming — I'll pre-slice the fog into four tickets now." | The test is whether the question can be stated precisely now, not whether it can be answered. A fog patch may graduate into several tickets or none. | Leave it in Not yet specified until the frontier reaches it. |
+| "The human said they will copy this map out of the chat later, so the session can be the record for now." | A promise to copy is not a record another session can read, claim or update, and a human waiver cannot supply either adapter capability. | Stop before charting with `needs-input` naming `tracker-access` and `kb-write`. |
 
 ## Outputs
 
@@ -164,7 +170,8 @@ is `failed`, never complete.
   destination is clear with nothing left to decide.
 - `complete` — charting surfaced no fog. The map is not drawn and the reason is reported.
 - `needs-input` — no effort statement, no system of record, a missing grant at `wayfind.map`, or a
-  ticket whose resolution belongs to a human-started run.
+  ticket whose resolution belongs to a human-started run. With no system of record it names both
+  `tracker-access` and `kb-write`; a human waiver does not change that result.
 - `cap-reached` — one ticket has been resolved this session. Returns the updated map and the
   frontier, and takes nothing further.
 - `failed` — the system of record is unreachable, or a write's read-back cannot be performed.

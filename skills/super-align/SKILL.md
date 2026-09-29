@@ -56,8 +56,10 @@ directly.
 - Recorded project context, read through the knowledgebase adapter's `readContext`: the glossary,
   the `concept` and `system` pages in scope, and any `adr` that already settles part of the
   question. An empty result is a fact, not an error — say the project has recorded none and
-  continue. A knowledgebase that cannot be reached returns `failed`; stop and report it rather than
-  proceeding from memory.
+  continue. An unavailable adapter is a coverage limit: name missing `kb-read`, continue the
+  interview through the six-field restatement, then stop before publication with `needs-input`
+  naming both `kb-read` and `kb-write`. A configured knowledgebase that fails or cannot be reached
+  returns `failed`; stop and report it rather than proceeding from memory.
 - At `align.run` only: a `charter` (`schemas/charter.schema.json`) listing the `align-answer`
   checkpoint category. Absent, or listing a different category: `needs-input`.
 - Facts about the codebase are this skill's own job to find. A fact the agent could look up is
@@ -91,7 +93,9 @@ directly.
     — and ask for approval. Out of scope is never omitted.
 11. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
-    ticket instead and say what it blocks.
+    ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish
+    nothing and return `needs-input` naming `kb-read` and `kb-write`; the completed interview is
+    returned in the session so publication can resume without repeating it.
 
 ## Hard gates
 
@@ -118,6 +122,7 @@ answer, and no implementation file is written in that operation.
 | "They said 'whatever you think is best', so that is a yes." | That answer hands the decision back; it agrees to nothing, and the human has not yet seen a direction to agree to. | Restate the direction in the six fields and ask again for a yes or a change. |
 | "It grew while I worked, but I'm nearly done — re-classifying now wastes a round." | Hidden complexity upgrades the classification and nothing downgrades it; "nearly done" is when the upgrade matters most. | Stop, say the classification moved and why, and run the heavier path. |
 | "The ask is clear enough — more questions would waste their time." | An ask that is clear to the agent is the shape of an assumption, not of agreement. | Run the frontier round. If you can already predict the next three answers, say so and go to the restatement. |
+| "The knowledgebase is not configured, so the interview cannot start." | Unavailable is not failed. The adapter contract makes missing `kb-read` a reported limitation, while the questions themselves need only the human channel. | Name missing `kb-read`, run the interview, and stop at publication with `needs-input` naming both `kb-read` and `kb-write`. |
 
 ## Outputs
 
@@ -149,12 +154,14 @@ performed is `failed`, never complete.
 - `complete` — the human approved the restated direction, and every published artifact's read-back
   matched what was sent.
 - `needs-input` — no request, no explicit approval, a question outside the charter at `align.run`,
-  or a fork only the human can settle. Returns what is settled so far and the one question that
-  blocks.
+  a fork only the human can settle, or publication reached an unavailable knowledgebase adapter.
+  The unavailable-adapter result names `kb-read` and `kb-write` and returns the completed interview
+  without publishing it.
 - `cap-reached` — the runner-supplied alignment budget is exhausted. Returns the settled part of the
   tree and the open frontier, and decides none of it.
 - `cancelled` — the human ends the run. Nothing is published.
-- `failed` — the knowledgebase is unreachable, or a publication's read-back cannot be performed.
+- `failed` — a configured knowledgebase is unreachable or returns an operation failure, or a
+  publication's read-back cannot be performed.
 
 ## Limits
 

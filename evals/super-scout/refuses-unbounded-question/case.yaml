@@ -5,6 +5,8 @@ execution:
   prompt: "Understand the authentication system in this repository and tell me how it all works."
   max_turns: 8
   allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: refuses-and-rescopes
     type: llm
