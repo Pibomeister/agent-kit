@@ -8,6 +8,8 @@ execution:
     we will move it later.
   max_turns: 10
   allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: reports-needs-input
     type: llm

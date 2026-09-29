@@ -1427,17 +1427,21 @@ the case has no scaffold. `needs-fixture` is the tag to exclude on. `claude plug
 only the last `--case` it is given. So a run that leaves these cases out goes through
 `scripts/eval-local.sh --exclude-tag needs-fixture`, or filters its results by tag afterwards. A case loses the tag when its scaffold lands.
 
-**The eval sandbox blocks git.** Every git binary is denied inside a case run, so a case cannot commit,
-and a grader that checks a commit, a branch or `git log` scores a run that did the work as a failure.
-Grade what the run left on disk instead: a `regex` grader with `target: files`, or `file_exists`.
-Never make a commit the pass criterion.
+**The local runner resolves Git before entering the eval sandbox.** On macOS, `/usr/bin/git` is a
+developer-tool shim whose cache write is blocked in the sandbox. `scripts/eval-local.sh` asks
+`xcrun` for the concrete executable outside the sandbox, prepends only that executable's directory
+to the isolated `PATH`, and records the path in the receipt. Other platforms keep their ordinary
+`command -v git` result. A quoted run therefore names the receipt's Git path; a case still grades
+the resulting work, not the mere presence of a commit.
 
 **Running the suite locally.** `scripts/eval-local.sh [claude plugin eval options…]` runs
-`claude plugin eval dist/claude-code` and prints a with/without/delta table per case. On a machine with
+`claude plugin eval dist/claude-code` and prints a with/without/delta table per case. Build the A1
+bundle with `bun run ak build --profile all`: the core profile omits three skills this corpus targets,
+and the runner refuses a selected case whose top-level skill is absent. On a machine with
 Docker Desktop, the sandbox will not start a Bash-granting case while any symlink sits under
 `~/.docker`, so the script moves `~/.docker/cli-plugins` and `~/.docker/bin` aside for the run and
 restores them on every exit, Ctrl-C included. It runs only when you invoke it; CI does not run evals.
-Build first (`bun run build`), and pass `--max-cost-usd` for a paid run. The script warns when
+Pass `--max-cost-usd` for a paid run. The script warns when
 `dist/claude-code` is older than its sources, and the summary names the commit it measured, marked
 `(dirty)` when the working tree had changes; quote that line with any figure. The `fired` column counts
 a with-plugin run only when it has with-only graders and passed all of them.
@@ -1458,8 +1462,13 @@ separately, against a staged copy of the bundle that holds only that group's cas
 case gets exactly the tools it declares. The staging is also how `--case` and `--tag` select: the
 host keeps only the last `--case` it is given, so neither flag is passed to it. `--max-cost-usd` is
 one budget across the groups. The host checks it as runs start, so runs already in flight can end
-past it; the script warns when that happens. An explicit `--allow-tools` overrides the grouping and
-runs once with that grant.
+past the cap. Each host trace is copied beside the result before its temporary directory disappears
+and indexed in the receipt. If a paid grader is skipped after the budget is exhausted, that run is
+reported as ungraded and stays out of the pass/fail denominator; an ordinary negative grader verdict
+remains a graded failure. The receipt withholds the aggregate score and delta while any run is
+ungraded, because the host's aggregate counts a skipped paid grader as a failure.
+The script warns when in-flight work carries the spend past the cap. An explicit `--allow-tools`
+overrides the grouping and runs once with that grant.
 
 Each run writes `<result>.receipt.json` beside the JSON result. It records:
 
@@ -1467,8 +1476,8 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
 - the bundle's path, its content sha256, and whether any source is newer than it (the packager
   writes no build stamp, so that comparison is the freshness check);
 - the install configuration and whether `.donors/` was present;
-- `claude --version`, the isolation method with the variable names it passed, and whether the grants
-  came from the cases or the user;
+- `claude --version`, the isolation method with the variable names it passed, the resolved Git
+  executable, and whether the grants came from the cases or the user;
 - per invocation: the grant, its cases, the staged bundle's sha256, the exact runner command, the
   exit status, the cost and whether it was partial, or `skipped` when the budget ran out first;
   `incomplete_cases` lists the group's cases that are missing from its result or short of runs, and
@@ -1476,8 +1485,9 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
   `error: "nothing run"`, and the script exits 2;
 - the exit status, cost, duration and `partial`, plus `budget` (the `--max-cost-usd` value, or null)
   and `over_budget`;
-- per case and arm: `n`, passes, rate and a 95% Wilson interval (the same formula as
-  `tests/learn/evals/stats.ts`), plus the fired count.
+- per case and arm: total `n`, `graded`, `ungraded`, passes over graded runs, rate and a 95% Wilson
+  interval (the same formula as `tests/learn/evals/stats.ts`), plus the fired count;
+- every trace's temporary host path and durable copy path.
 
 A figure quoted from a run carries that receipt, or the fields of it the figure depends on. The
 judge is bound by the runner, and neither the script nor this section names it.

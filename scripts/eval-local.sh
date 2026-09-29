@@ -24,7 +24,7 @@
 # The script moves those two directories aside for the run and puts them back on every exit path,
 # including Ctrl-C. Nothing else under ~/.docker is touched. Run it only by hand; CI never calls it.
 #
-# Reads: dist/claude-code (run `bun run build` first), or $AK_EVAL_BUNDLE. Writes: evals/results/
+# Reads: dist/claude-code (run `bun run ak build --profile all` first), or $AK_EVAL_BUNDLE. Writes: evals/results/
 # under the bundle, the JSON result to $AK_EVAL_JSON (default: a temp file whose path is printed),
 # and the receipt beside it as <result>.receipt.json. Each run's trace is copied under
 # <result>.traces/<case dir>/<arm>-<n>.jsonl, because the host leaves it in a temporary directory
@@ -33,8 +33,24 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 bundle="${AK_EVAL_BUNDLE:-$root/dist/claude-code}"
-[[ -d "$bundle" ]] || { echo "eval-local: no $bundle; run 'bun run build' first" >&2; exit 2; }
+[[ -d "$bundle" ]] || { echo "eval-local: no $bundle; run 'bun run ak build --profile all' first" >&2; exit 2; }
 command -v jq >/dev/null || { echo "eval-local: jq is required" >&2; exit 2; }
+
+# /usr/bin/git on macOS is a developer-tool shim. Inside the eval sandbox it cannot update the
+# cache it uses to locate the real executable, so every Git-backed case stops before the behavior
+# under test. Resolve the concrete executable while still outside the sandbox and put only its
+# directory first on the child's PATH. Other platforms keep the ordinary PATH resolution.
+host_git="$(command -v git 2>/dev/null || true)"
+host_git_source=path
+if command -v xcrun >/dev/null 2>&1; then
+  xcode_git="$(xcrun -f git 2>/dev/null || true)"
+  if [[ -n "$xcode_git" && -x "$xcode_git" ]]; then
+    host_git="$xcode_git"
+    host_git_source=xcrun
+  fi
+fi
+[[ -n "$host_git" && -x "$host_git" ]] || { echo "eval-local: git is required" >&2; exit 2; }
+host_path="$(dirname "$host_git"):$PATH"
 
 # The script reads four of the host's options itself: --case and --tag (to know which cases run),
 # --eval-dir (where they live) and --max-cost-usd (one budget across every invocation). --case and
@@ -129,8 +145,16 @@ passed=()
 if [[ "$isolation" == env-allowlist ]]; then
   runner=(env -i)
   for name in "${pass_env[@]}" "${extra[@]+"${extra[@]}"}"; do
-    if [[ -n "${!name+set}" ]]; then runner+=("$name=${!name}"); passed+=("$name"); fi
+    if [[ "$name" == PATH ]]; then
+      runner+=("PATH=$host_path")
+      passed+=(PATH)
+    elif [[ -n "${!name+set}" ]]; then
+      runner+=("$name=${!name}")
+      passed+=("$name")
+    fi
   done
+else
+  runner=(env "PATH=$host_path")
 fi
 
 aside="$(mktemp -d "${TMPDIR:-/tmp}/ak-docker-aside.XXXXXX")"
@@ -202,6 +226,13 @@ listing="$(cd "$root" && AK_EVALS_DIR="$bundle/$eval_dir" \
       }')" || { echo "eval-local: could not read the cases under $bundle/$eval_dir" >&2; exit 2; }
 if ! awk -F'\t' '$1 == "run" { found = 1 } END { exit !found }' <<<"$listing"; then
   echo "eval-local: no case under $bundle/$eval_dir matches the --case, --tag and --exclude-tag filters; nothing run" >&2
+  exit 2
+fi
+missing_skills="$(while IFS= read -r skill; do
+  [[ -f "$bundle/skills/$skill/SKILL.md" ]] || echo "$skill"
+done < <(awk -F'\t' '$1 == "run" { split($3, p, "/"); print p[1] }' <<<"$listing" | sort -u))"
+if [[ -n "$missing_skills" ]]; then
+  echo "eval-local: $bundle does not install $(paste -sd, - <<<"$missing_skills"); run 'bun run ak build --profile all' first" >&2
   exit 2
 fi
 exclusions="$(awk -F'\t' -v d="$eval_dir" '$1 == "exclude" { print d "/" $3 "\t" $4 }' <<<"$listing" \
@@ -347,6 +378,7 @@ fi
 jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
    --arg bundle_sha "$bundle_sha" --argjson fresh "$fresh" --arg install "$install" \
    --argjson donors "$donors" --arg host "$host_version" --arg isolation "$isolation" \
+   --arg host_git "$host_git" --arg host_git_source "$host_git_source" \
    --argjson status "$status" --arg json "$json" --arg grant_source "$grant_source" \
    --slurpfile invocations "$invocations" --slurpfile traces "$traces" --arg scaffold "$scaffold" \
    --argjson exclusions "$exclusions" --argjson budget "${budget:-null}" \
@@ -356,20 +388,33 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
       | (($p + $z2 / (2 * $n)) / (1 + $z2 / $n)) as $c
       | ((1.96 * ((($p * (1 - $p)) / $n + $z2 / (4 * $n * $n)) | sqrt)) / (1 + $z2 / $n)) as $h
       | {lo: ([0, $c - $h] | max), hi: ([1, $c + $h] | min)} end;
-  def pass: [.graders[]? | select(.withOnly | not) | .passed] | length > 0 and all;
-  def arm($runs): ($runs | length) as $n | ([$runs[] | select(pass)] | length) as $k
-      | {n: $n, passes: $k, rate: (if $n == 0 then null else $k / $n end), wilson95: wilson($k; $n)};
+  def graded($run; $expected): ($expected | length) > 0
+      and ([$expected[] as $name
+            | any($run.graders[]?; .name == $name and (.passed | type) == "boolean" and (.skipped // false) != true)] | all);
+  def passed($run; $expected): graded($run; $expected)
+      and ([$expected[] as $name
+            | any($run.graders[]?; .name == $name and .passed == true and (.skipped // false) != true)] | all);
+  def arm($runs; $expected): ($runs | length) as $n
+      | ([$runs[] | select(graded(.; $expected))] | length) as $g
+      | ([$runs[] | select(passed(.; $expected))] | length) as $k
+      | {n: $n, graded: $g, ungraded: ($n - $g), passes: $k,
+         rate: (if $g == 0 then null else $k / $g end), wilson95: wilson($k; $g)};
   def fired($runs; $skill): [$runs[] | [.graders[]? | select(.withOnly and (.name | IN($skill[]))) | .passed]]
       | if (map(length) | add // 0) == 0 then null
         else {n: length, fired: map(select(length > 0 and all)) | length} end;
   def skill_graders: [.graders[]? | select(.type == "tool_used" and .config.tool == "Skill") | .name];
+  def score_graders: [.graders[]? | select(.withOnly | not) | .name];
   (.costUsd | if type == "number" then . * 10000 | round / 10000 else . end) as $cost
+  | ([.cases[] | score_graders as $expected
+                  | ([.arms.with[]? | select(graded(.; $expected) | not)] | length)
+                    + ([.arms.without[]? | select(graded(.; $expected) | not)] | length)] | add // 0) as $ungraded
   | {
     measured: {revision: $revision, dirty: $dirty},
     bundle: {path: $bundle, sha256: $bundle_sha, freshAgainstSources: $fresh},
     install: $install,
     donorsPresent: $donors,
     host: $host,
+    tooling: {git: {path: $host_git, source: $host_git_source}},
     isolation: {method: ("host-sandbox+" + $isolation), envPassed: (if $isolation == "inherited-env" then "all" else $ARGS.positional end)},
     grants: {source: $grant_source, union: ([$invocations[].grant[]] | unique)},
     scaffold: $scaffold,
@@ -377,11 +422,13 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
     invocations: $invocations,
     exitStatus: $status,
     result: $json,
-    cases: [.cases[] | {name, dir, with: arm(.arms.with // []), without: arm(.arms.without // []),
+    cases: [.cases[] | score_graders as $expected
+                      | {name, dir, with: arm(.arms.with // []; $expected), without: arm(.arms.without // []; $expected),
                         fired: fired(.arms.with // []; skill_graders), score: .aggregates.score,
                         scoreWithout: .aggregates.scoreWithout, delta: .aggregates.delta}],
-    overall: {score: .aggregates.overallScore, meanDelta: .aggregates.meanDelta,
-              mergedFrom: (.merged // 1)},
+    overall: {score: (if $ungraded == 0 then .aggregates.overallScore else null end),
+              meanDelta: (if $ungraded == 0 then .aggregates.meanDelta else null end),
+              ungraded: $ungraded, mergedFrom: (.merged // 1)},
     traces: $traces,
     costUsd: $cost, durationSeconds: .durationSeconds,
     budget: $budget, over_budget: ($budget != null and $cost > $budget),
@@ -396,7 +443,7 @@ jq -r 'select(.over_budget) | "eval-local: spent $\(.costUsd) against a cap of $
 echo
 jq -r '
   def n: if type == "number" then (. * 1000 | round / 1000 | tostring) else "-" end;
-  def ci: "\(.passes)/\(.n) [\(.wilson95.lo | n),\(.wilson95.hi | n)]";
+  def ci: "\(.passes)/\(.graded) [\(.wilson95.lo | n),\(.wilson95.hi | n)]\(if .ungraded > 0 then " + \(.ungraded) ungraded" else "" end)";
   (["case", "with", "without", "delta", "fired"] | @tsv),
   (.cases[] | [.name[0:60], (.with | ci), (.without | ci), (.delta | n),
                (if .fired then "\(.fired.fired)/\(.fired.n)" else "-" end)] | @tsv),
@@ -407,7 +454,7 @@ jq -r '
 ' "$receipt" | column -t -s $'\t' || echo "eval-local: could not summarise $receipt" >&2
 jq -r '"eval-local: measured \(.bundle.path) (sha256 \(.bundle.sha256[0:12]), fresh=\(.bundle.freshAgainstSources))",
        "eval-local: tree \(.measured.revision)\(if .measured.dirty then " (dirty)" else "" end)  .donors=\(.donorsPresent)  install=\(.install)",
-       "eval-local: host \(.host)  isolation \(.isolation.method)"' "$receipt" 2>/dev/null || true
+       "eval-local: host \(.host)  isolation \(.isolation.method)  git=\(.tooling.git.path)"' "$receipt" 2>/dev/null || true
 echo "eval-local: full result in $json"
 echo "eval-local: receipt in $receipt"
 exit "$status"

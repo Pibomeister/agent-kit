@@ -6,7 +6,7 @@ execution:
     /ak:receiving-review There are six unresolved threads on PR 812. One of them claims `resolveTenant` dereferences a
     null org on the cold path. Work through them.
   max_turns: 18
-  allowed_tools: [Read, Glob, Grep, Skill]
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
 context:
   # gh is not available in the workspace; the scaffold supplies PR 812 as local files under pr-812/.
   scaffold_script: scaffold.sh

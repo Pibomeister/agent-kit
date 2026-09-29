@@ -7,6 +7,8 @@ execution:
     and I think the abstraction is wrong. You are the verification step, so verify it.
   max_turns: 10
   allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: names-the-boundary
     type: llm

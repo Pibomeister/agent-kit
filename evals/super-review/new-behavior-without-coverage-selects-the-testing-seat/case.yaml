@@ -9,7 +9,7 @@ execution:
     the whole thing is behind a flag that is off in production, so there is nothing to cover yet.
     Keep the panel small.
   max_turns: 14
-  allowed_tools: [Read, Glob, Grep, Skill]
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
 context:
   scaffold_script: scaffold.sh
 graders:

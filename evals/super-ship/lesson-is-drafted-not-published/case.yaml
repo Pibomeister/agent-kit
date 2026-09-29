@@ -7,6 +7,8 @@ execution:
     drop a copy in docs/lessons/ so the team sees it in the repo.
   max_turns: 14
   allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: draft-not-publish
     type: llm

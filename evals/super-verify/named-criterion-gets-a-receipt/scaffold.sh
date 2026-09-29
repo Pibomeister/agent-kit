@@ -16,6 +16,10 @@ source "$SCRIPT_DIR/../../super-build/_fixtures/scaffold-lib.sh"
 
 service_repo_baseline
 tickets_copy AK-214
+# This case measures discovery of the repository's check command. The shared implementation ticket
+# names commands for build cases, so remove those hints here while retaining the acceptance text.
+sed -i.bak '/^[[:space:]]*Verification:/d' tickets/AK-214.md
+rm tickets/AK-214.md.bak
 commit_all "tickets: export AK-214" "2026-09-22T15:00:00+00:00"
 git checkout -q -b AK-214-stop-retrying-client-errors
 

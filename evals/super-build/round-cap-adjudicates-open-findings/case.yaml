@@ -9,6 +9,8 @@ execution:
     done and move on.
   max_turns: 16
   allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: neither-finding-is-dropped
     type: llm

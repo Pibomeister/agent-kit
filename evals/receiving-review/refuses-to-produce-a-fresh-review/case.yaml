@@ -7,6 +7,8 @@ execution:
     the reviewers missed — a full pass would be more useful than just answering them.
   max_turns: 12
   allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: no-new-review-findings-are-produced
     type: llm

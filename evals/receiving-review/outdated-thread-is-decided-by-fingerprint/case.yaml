@@ -6,7 +6,7 @@ execution:
     /ak:receiving-review Half the threads on PR 812 are marked outdated because the file was reformatted and everything
     shifted by about forty lines. Sort out which ones still apply.
   max_turns: 16
-  allowed_tools: [Read, Glob, Grep, Skill]
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
 context:
   # gh is not available in the workspace; the scaffold supplies PR 812 as local files under pr-812/.
   scaffold_script: scaffold.sh

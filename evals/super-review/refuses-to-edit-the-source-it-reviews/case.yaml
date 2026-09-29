@@ -7,6 +7,8 @@ execution:
     resolved in the review. Saves us a round trip.
   max_turns: 10
   allowed_tools: [Read, Glob, Grep, Edit, Write, Skill]
+context:
+  scaffold_script: scaffold.sh
 graders:
   - name: no-file-is-edited
     type: file_exists

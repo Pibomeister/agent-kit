@@ -28,9 +28,10 @@ cat > runs/sandbox-self-serve/alignment.json <<JSON
   "scope": "tiny-service/billing",
   "topic": "sandbox-self-serve",
   "status": "approved",
-  "direction": "Sandbox provisioning moves behind a self-serve endpoint owned by the billing service. The existing tenant model is unchanged: a sandbox stays a child organisation of the paying account's organisation, created by provisionSandbox.",
+  "direction": "Self-serve sandbox provisioning moves behind an audited endpoint owned by the billing service. A paying-organisation admin may create that organisation's sandbox. The tenant model is unchanged: the sandbox stays a child organisation of the paying account's organisation, created by provisionSandbox.",
   "decisions": [
     "The endpoint lives in the billing service; no new service is introduced.",
+    "The endpoint authenticates a paying-organisation admin and records the parent organisation in its audit event.",
     "The tenant model is unchanged: parentOrgId and kind 'sandbox' as today.",
     "The operations script stays for support use."
   ],
@@ -100,8 +101,10 @@ scoped to the organisation resolved from the session (`resolveTenant`,
 reference back from the parent; the parent finds its sandbox by
 `findSandboxFor(parentOrgId)`.
 
-Consequence: nothing may read or write across organisations except
-through an explicit, audited operations path.
+Consequence: nothing may read or write across organisations except through an
+explicit, audited path. Operations staff may use the operations path. Self-serve
+sandbox provisioning may use the billing endpoint when it authenticates a
+paying-organisation admin and creates only that organisation's sandbox.
 MD
 cat > "$kb/concept/glossary.md" <<'MD'
 ---

@@ -19,7 +19,9 @@ const SCRIPT = join(REPO, "scripts", "eval-local.sh");
 
 // The stub host. It sees only the variables eval-local passes through, so its knobs are named in
 // AK_EVAL_PASS_ENV: FAKE_DIR (where argv is logged), FAKE_DROP (case names left out of the result)
-// and FAKE_COST (dollars spent per invocation, or a comma list of them taken in call order).
+// FAKE_COST (dollars spent per invocation, or a comma list of them taken in call order),
+// FAKE_TRACE (give every run a durable source trace) and FAKE_UNGRADED (the named arm's paid
+// grader was skipped for budget).
 const FAKE_HOST = `#!/usr/bin/env bun
 import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -40,10 +42,22 @@ const walk = (d: string): string[] => readdirSync(d).flatMap((e) => {
   return statSync(p).isDirectory() ? (e === "results" ? [] : walk(p)) : e === "case.yaml" ? [p] : [];
 });
 const found = walk(evals).map((f) => ({ name: /^name: (.*)$/m.exec(readFileSync(f, "utf8"))![1]!, dir: relative(evals, join(f, "..")) }));
-const run = { graders: [{ name: "g", passed: true, withOnly: false }] };
+const run = (name: string, arm: string, n: number) => {
+  const tracePath = join(process.env.FAKE_DIR!, \`trace-\${name}-\${arm}-\${n}.jsonl\`);
+  if (process.env.FAKE_TRACE === "1") writeFileSync(tracePath, JSON.stringify({ type: "assistant", name, arm, n }) + "\\n");
+  const skipped = process.env.FAKE_UNGRADED === arm;
+  return {
+    graders: skipped ? [{ name: "g", skipped: true, reason: "budget" }] : [{ name: "g", passed: true, withOnly: false }],
+    ...(process.env.FAKE_TRACE === "1" ? { tracePath } : {}),
+  };
+};
 const cases = found
   .filter((c) => (wanted === undefined || c.name === wanted) && !drop.includes(c.name))
-  .map((c) => ({ ...c, arms: { with: Array(runs).fill(run), without: Array(runs).fill(run) }, aggregates: { score: 1, scoreWithout: 1, delta: 0 } }));
+  .map((c) => ({ ...c, graders: [{ name: "g", type: "llm", withOnly: false }],
+    arms: {
+      with: Array.from({ length: runs }, (_, i) => run(c.name, "with", i + 1)),
+      without: Array.from({ length: runs }, (_, i) => run(c.name, "without", i + 1)),
+    }, aggregates: { score: 1, scoreWithout: 1, delta: 0 } }));
 const costs = (process.env.FAKE_COST ?? "0.5").split(",");
 const cost = cases.length === 0 ? 0 : Number(costs[Math.min(call, costs.length - 1)]);
 writeFileSync(out, JSON.stringify({ cases, costUsd: cost, durationSeconds: 1, partial: false, aggregates: { overallScore: cases.length ? 1 : null, meanDelta: 0 } }));
@@ -71,6 +85,12 @@ function run(args: string[], env: Record<string, string> = {}) {
   mkdirSync(bin);
   writeFileSync(join(bin, "claude"), FAKE_HOST);
   chmodSync(join(bin, "claude"), 0o755);
+  const developerGit = join(dir, "developer", "usr", "bin", "git");
+  mkdirSync(dirname(developerGit), { recursive: true });
+  writeFileSync(developerGit, "#!/bin/sh\\nexit 0\\n");
+  chmodSync(developerGit, 0o755);
+  writeFileSync(join(bin, "xcrun"), `#!/bin/sh\nprintf '%s\\n' '${developerGit}'\n`);
+  chmodSync(join(bin, "xcrun"), 0o755);
   const bundle = join(dir, "bundle");
   mkdirSync(join(bundle, ".claude-plugin"), { recursive: true });
   writeFileSync(join(bundle, ".claude-plugin", "plugin.json"), "{}");
@@ -78,6 +98,12 @@ function run(args: string[], env: Record<string, string> = {}) {
     const file = join(bundle, "evals", c.dir, "case.yaml");
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, `name: ${c.name}\ntags: [${(c.tags ?? []).join(", ")}]\nexecution:\n  prompt: p\n  allowed_tools: [${c.tools.join(", ")}]\n`);
+  }
+  for (const skill of ["alpha", "beta"]) {
+    if ((env.FAKE_MISSING_SKILLS ?? "").split(",").includes(skill)) continue;
+    const file = join(bundle, "skills", skill, "SKILL.md");
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, `---\nname: ${skill}\ndescription: fixture\n---\n`);
   }
   mkdirSync(join(dir, "home"));
   const json = join(dir, "out", "result.json");
@@ -90,7 +116,7 @@ function run(args: string[], env: Record<string, string> = {}) {
       TMPDIR: dir,
       AK_EVAL_BUNDLE: bundle,
       AK_EVAL_JSON: json,
-      AK_EVAL_PASS_ENV: "FAKE_DIR FAKE_DROP FAKE_COST",
+      AK_EVAL_PASS_ENV: "FAKE_DIR FAKE_DROP FAKE_COST FAKE_TRACE FAKE_UNGRADED",
       FAKE_DIR: dir,
       ...env,
     },
@@ -133,6 +159,23 @@ describe("eval-local: several --case flags across grant groups", () => {
   });
 });
 
+describe("eval-local: the selected corpus matches its instrument", () => {
+  test("a selected case whose skill is absent refuses to measure a partial bundle", () => {
+    const r = run(["--case", "case-three"], { FAKE_MISSING_SKILLS: "beta" });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("does not install beta");
+    expect(r.stderr).toContain("bun run ak build --profile all");
+    expect(r.calls).toHaveLength(0);
+  });
+
+  test("the receipt identifies the concrete git executable offered to the sandbox", () => {
+    const r = run(["--case", "case-three"]);
+    expect(r.status).toBe(0);
+    expect(r.receipt.tooling.git).toMatchObject({ source: "xcrun" });
+    expect(r.receipt.tooling.git.path).toEndWith("/developer/usr/bin/git");
+  });
+});
+
 describe("eval-local: the receipt checks what each group was meant to run", () => {
   test("a case missing from a group's result makes the run partial and is listed", () => {
     const r = run([], { FAKE_DROP: "case-two" });
@@ -155,6 +198,28 @@ describe("eval-local: the receipt checks what each group was meant to run", () =
     expect(r.status).toBe(0);
     expect(r.receipt.partial).toBe(false);
     for (const i of r.receipt.invocations) expect(i).toMatchObject({ partial: false, incomplete_cases: [] });
+  });
+});
+
+describe("eval-local: evidence retention and grading state", () => {
+  test("host traces are copied beside the receipt before the temporary source disappears", () => {
+    const r = run(["--case", "case-three"], { FAKE_TRACE: "1" });
+    expect(r.status).toBe(0);
+    expect(r.receipt.traces).toHaveLength(2);
+    for (const trace of r.receipt.traces) {
+      expect(trace.copy).not.toBeNull();
+      expect(existsSync(trace.copy)).toBe(true);
+      expect(readFileSync(trace.copy, "utf8")).toContain('"type":"assistant"');
+    }
+  });
+
+  test("a budget-skipped grader is ungraded rather than a failed verdict", () => {
+    const r = run(["--case", "case-three"], { FAKE_UNGRADED: "with" });
+    expect(r.status).toBe(0);
+    expect(r.receipt.cases[0].with).toMatchObject({ n: 1, graded: 0, ungraded: 1, passes: 0, rate: null });
+    expect(r.receipt.cases[0].without).toMatchObject({ n: 1, graded: 1, ungraded: 0, passes: 1, rate: 1 });
+    expect(r.receipt.overall).toMatchObject({ score: null, meanDelta: null, ungraded: 1 });
+    expect(r.stdout).toContain("1 ungraded");
   });
 });
 
