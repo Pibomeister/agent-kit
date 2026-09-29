@@ -5,9 +5,10 @@
  * No host CLI runs here.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { skillLoads } from "./evals/trigger-eval.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
@@ -171,15 +172,20 @@ describe("grok", () => {
       "Bash(find *)",
       "Bash(head)",
       "Bash(head *)",
+      "Bash(tail)",
       "Bash(tail *)",
       "Bash(cat *)",
       "Bash(rg *)",
       "Bash(grep *)",
       "Bash(git status)",
+      "Bash(git status *)",
       "Bash(git log)",
+      "Bash(git log *)",
       "Bash(git diff)",
+      "Bash(git diff *)",
       "Bash(git show)",
-      "Bash(git rev-parse)",
+      "Bash(git show *)",
+      "Bash(git rev-parse *)",
     ]);
     expect(argv).not.toContain("--always-approve");
     expect(allow).not.toContain("Bash");
@@ -287,21 +293,29 @@ describe("runSubject", () => {
 });
 
 describe("eval receipt instrument", () => {
-  test("names the revision, donor availability, and default or explicit install configuration", () => {
+  test("names the revision, donor availability, and the install clause with the tracker's state", () => {
     const root = join(scratch, "instrument");
-    mkdirSync(root);
-    expect(evalInstrument(root, "abc123")).toEqual({
-      revision: "abc123",
-      donors_present: false,
-      install_config: "default (no ak.install.yaml)",
-    });
+    for (const rel of ["catalog.yaml", "adapters"]) cpSync(join(PACKAGE_ROOT, rel), join(root, rel), { recursive: true });
+    const bare = evalInstrument(root, "abc123");
+    expect(bare.revision).toBe("abc123");
+    expect(bare.donors_present).toBe(false);
+    expect(bare.install_config).toStartWith("no ak.install.yaml: default, all fail-closed adapters attached (");
+    expect(bare.install_config).toContain("tracker: no backend");
 
     mkdirSync(join(root, ".donors"));
-    writeFileSync(join(root, "ak.install.yaml"), "attached: []\n");
-    expect(evalInstrument(root, "def456")).toEqual({
-      revision: "def456",
-      donors_present: true,
-      install_config: "ak.install.yaml",
-    });
+    writeFileSync(join(root, "ak.install.yaml"), "attached: [tracker]\n");
+    const unconfigured = evalInstrument(root, "def456");
+    expect(unconfigured.revision).toBe("def456");
+    expect(unconfigured.donors_present).toBe(true);
+    expect(unconfigured.install_config).toStartWith("ak.install.yaml: attached tracker; tracker: no backend");
+
+    writeFileSync(join(root, "ak.install.yaml"), "attached: [tracker]\ntracker:\n  backend: some-tracker\n");
+    expect(evalInstrument(root, "def456").install_config).toBe("ak.install.yaml: attached tracker; tracker: backend some-tracker");
+  });
+
+  test("refuses to describe a root that has no catalog", () => {
+    const root = join(scratch, "no-catalog");
+    mkdirSync(root);
+    expect(() => evalInstrument(root, "abc123")).toThrow("catalog.yaml");
   });
 });

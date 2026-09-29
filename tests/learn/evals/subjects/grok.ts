@@ -61,15 +61,20 @@ const READ_ONLY_ALLOW = [
   "Bash(find *)",
   "Bash(head)",
   "Bash(head *)",
+  "Bash(tail)",
   "Bash(tail *)",
   "Bash(cat *)",
   "Bash(rg *)",
   "Bash(grep *)",
   "Bash(git status)",
+  "Bash(git status *)",
   "Bash(git log)",
+  "Bash(git log *)",
   "Bash(git diff)",
+  "Bash(git diff *)",
   "Bash(git show)",
-  "Bash(git rev-parse)",
+  "Bash(git show *)",
+  "Bash(git rev-parse *)",
 ] as const;
 
 export const grok: SubjectAdapter = {

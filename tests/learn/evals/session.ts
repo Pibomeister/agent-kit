@@ -5,7 +5,9 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadCatalog } from "../../../src/catalog/load.ts";
 import { run } from "../../../src/learn/core/proc.ts";
+import { describeInstall, loadInstallConfig } from "../../../src/packaging/install.ts";
 
 /** Variables that make a nested host CLI believe it runs inside the parent session. */
 const NESTED_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
@@ -26,10 +28,12 @@ export function cleanEnv(): Record<string, string> {
 
 /** Repository identity every manual-eval receipt needs to make its instrument reproducible. */
 export function evalInstrument(root: string, revision: string) {
+  const { catalog } = loadCatalog(root);
+  if (catalog === null) throw new Error(`${root} has no readable catalog.yaml, so the receipt cannot name its install configuration`);
   return {
     revision,
     donors_present: existsSync(join(root, ".donors")),
-    install_config: existsSync(join(root, "ak.install.yaml")) ? "ak.install.yaml" : "default (no ak.install.yaml)",
+    install_config: describeInstall(loadInstallConfig(root, catalog)),
   };
 }
 
