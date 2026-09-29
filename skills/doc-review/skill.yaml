@@ -92,11 +92,12 @@ outputs:
       spec_quality, difficulty, autofix_class, evidence and verification.
   - id: bucketed-presentation
     summary: >-
-      The fixed presented form: one verdict line carrying the review artifact's verdict, then
+      The fixed presented form, printed in the final reply after the edits are read back and the
+      review artifact is written: one verdict line matching the written artifact's verdict, then
       Applied, Proposed fixes, Decisions and FYI, in that order and each present even when empty.
-      Applied is annotated as settled in this session; Proposed fixes is one grouped confirmation;
-      Decisions asks one question per fork and contains every blocking finding; FYI asks nothing
-      of anyone.
+      Applied lists only edits whose read-back succeeded, annotated as settled in this session;
+      Proposed fixes is one grouped confirmation; Decisions asks one question per fork and
+      contains every blocking finding; FYI asks nothing of anyone.
   - id: disposition-record
     summary: >-
       What was rejected in this run and on what evidence, published so a later session can see it

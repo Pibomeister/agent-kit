@@ -112,9 +112,6 @@ hard_gates:
   - Complexity found mid-run upgrades the classification and nothing downgrades it.
   - A fork the human cannot settle in this session leaves as a type decision ticket, never as a
     recorded guess.
-  - An unavailable knowledgebase adapter does not stop the interview. The run names missing kb-read,
-    continues through the restatement, and stops before publication with needs-input naming kb-read
-    and kb-write.
   - At align.run, an unbounded or out-of-charter question returns needs-input rather than a decided
     answer, and no implementation file is written in that operation.
 

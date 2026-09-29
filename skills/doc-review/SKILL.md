@@ -98,8 +98,8 @@ authority to apply a correction rides on the caller's authorization, recorded on
    observation that never enters the walk-through, and 75 and 100 are actionable. A finding from
    `doc-review/security-lens` is never dropped by that gate — it stays visible and is adjudicated
    (ruling `low-confidence-security-adjudicated`).
-10. Assign the action class per seat, then present the result in exactly this order, with every
-    heading present even when its bucket is empty:
+10. Assign the action class per seat and sort every finding into its bucket. The result takes
+    exactly this form, in this order, with every heading present even when its bucket is empty:
 
     ```text
     Verdict: <approved, changes-requested, blocked or unavailable>
@@ -116,7 +116,10 @@ authority to apply a correction rides on the caller's authorization, recorded on
     Applied is what was routed automatic and actually applied; Proposed fixes is the one grouped
     confirmation; Decisions holds the forks the document does not resolve and every blocking
     finding; FYI holds the rest. The verdict line prints the `review` artifact's own verdict;
-    `blocked` is a verdict, never a fifth bucket.
+    `blocked` is a verdict, never a fifth bucket. This step assigns the buckets and fixes the
+    form; the form is printed in the final reply after steps 11 and 12, so Applied lists only
+    the edits whose read-back succeeded and the verdict line matches the written `review`
+    artifact.
 11. Apply the Applied bucket to the document, then read each edit back out of the document. An
     edit whose read-back does not show it is recorded as failed, never as applied.
 12. Write the `review` artifact and publish the durable disposition record, so a later session can
@@ -162,10 +165,12 @@ Gate: at most two fix rounds. The third does not run; the run returns the open f
 - `finding` (`schemas/finding.schema.json`) — one per retained observation, each carrying its lane,
   its fingerprint, severity, `confidence_anchor`, `spec_quality`, `difficulty`, `autofix_class`,
   evidence and verification.
-- The fixed presented form: one `Verdict:` line carrying the artifact's verdict, then `## Applied`, `## Proposed fixes`,
-  `## Decisions` and `## FYI`, in that order and each present even when empty. Applied is annotated
-  as settled in this session; Proposed fixes is one grouped confirmation; Decisions asks one
-  question per fork and contains every blocking finding; FYI asks nothing of anyone.
+- The fixed presented form, printed in the final reply after the edits are read back and the
+  `review` artifact is written: one `Verdict:` line matching the written artifact's verdict, then
+  `## Applied`, `## Proposed fixes`, `## Decisions` and `## FYI`, in that order and each present
+  even when empty. Applied lists only edits whose read-back succeeded, annotated as settled in
+  this session; Proposed fixes is one grouped confirmation; Decisions asks one question per fork
+  and contains every blocking finding; FYI asks nothing of anyone.
 - Durable disposition record — what was rejected here and on what evidence, published so a later
   session can see it. This skill authors no knowledgebase document of its own kind; it reviews the
   documents other skills author (`docs/decisions/0001-kb-document-vocabulary.md`).
