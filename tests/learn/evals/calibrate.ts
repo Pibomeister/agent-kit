@@ -16,7 +16,8 @@
  *          accompanied by its transcript dump directory (`--dump-transcripts` output:
  *          `<subject>/<case-id>.json`, or one subject directory). Calibration admits only a
  *          bundle-on receipt whose `bundle_complete` skills cover its recorded prompt set; old
- *          receipts without that evidence and dumps without an eligible owning receipt are refused.
+ *          receipts without that evidence and dumps without an eligible owning receipt are left
+ *          out, with the reason. A dump path must not be reused across runs.
  *          A receipt holds every case's reply; the run dumped events
  *          only for sessions that loaded a skill, and the receipt's own argv names that dump, so
  *          a case with a dump is rescored from its events and a case without one is rescored as a
@@ -364,6 +365,8 @@ function receiptPaths(path: string, receipt: Receipt["receipt"]): { runId: strin
 export interface Loaded {
   candidates: Candidate[];
   skipped: Record<string, number>;
+  /** Each stored session left out, by source, with the reason `skipped` counts it under. */
+  ineligible: Map<string, string>;
 }
 
 /**
@@ -403,10 +406,11 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
     const path = resolve(raw);
     if (!existsSync(path)) throw new Error(`calibrate: ${raw} does not exist`);
     if (statSync(path).isDirectory()) {
-      if (!ownedDumps.some((dumpDir) => path === dumpDir || path.startsWith(`${dumpDir}${sep}`))) {
-        throw new Error(`calibrate: ${raw} is a transcript dump without an eligible owning receipt`);
+      const owned = ownedDumps.some((dumpDir) => path === dumpDir || path.startsWith(`${dumpDir}${sep}`));
+      for (const { subject, file } of dumpFiles(path)) {
+        if (owned) fromDump(subject, null, file, scoring.arm);
+        else if (!skippedBy.has(file)) skip(file, "transcript dump without an eligible owning receipt");
       }
-      for (const { subject, file } of dumpFiles(path)) fromDump(subject, null, file, scoring.arm);
       continue;
     }
     const { data, cases, problem, runId, dumpDir } = receipts.get(path)!;
@@ -445,9 +449,10 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
       }
     }
   }
+  const ineligible = new Map([...skippedBy].filter(([source]) => !seen.has(source)));
   const skipped: Record<string, number> = {};
-  for (const [source, why] of skippedBy) if (!seen.has(source)) skipped[why] = (skipped[why] ?? 0) + 1;
-  return { candidates: [...seen.values()], skipped };
+  for (const why of ineligible.values()) skipped[why] = (skipped[why] ?? 0) + 1;
+  return { candidates: [...seen.values()], skipped, ineligible };
 }
 
 /** Build the label file from loaded sessions. */
@@ -480,6 +485,8 @@ export interface Rescored {
   changed: { id: string; from: Suggested; to: Suggested }[];
   /** Items whose session `loaded` does not hold; their suggestion is left as it was. */
   missing: string[];
+  /** Items whose session is stored but was left out of `loaded`, with the reason; their suggestion is left as it was. */
+  ineligible: { id: string; why: string }[];
 }
 
 /** The label file with each item's `suggested` taken from its session in `loaded`, rescored. Does not mutate `labels`. */
@@ -487,17 +494,20 @@ export function rescoreLabels(labels: LabelFile, loaded: Loaded): Rescored {
   const bySource = new Map(loaded.candidates.map((c) => [c.source, c]));
   const changed: Rescored["changed"] = [];
   const missing: string[] = [];
+  const ineligible: Rescored["ineligible"] = [];
   const items = labels.items.map((item) => {
     const cand = bySource.get(item.source);
     if (cand === undefined) {
-      missing.push(item.id);
+      const why = loaded.ineligible.get(item.source);
+      if (why === undefined) missing.push(item.id);
+      else ineligible.push({ id: item.id, why });
       return item;
     }
     const to = suggestedOf(cand.scored);
     if (to.verdict !== item.suggested.verdict || to.outcome !== item.suggested.outcome) changed.push({ id: item.id, from: item.suggested, to });
     return { ...item, suggested: to };
   });
-  return { labels: { ...labels, items }, changed, missing };
+  return { labels: { ...labels, items }, changed, missing, ineligible };
 }
 
 /** The scoring the sample rescores with: the catalog's user-invoked skills, ids and body fingerprints. */
@@ -776,9 +786,10 @@ export async function main(argv: string[], labelsFile = LABELS_FILE): Promise<nu
     const result = rescoreLabels(labels, loadRuns(labels.sources, catalogScoring()));
     const show = (x: Suggested) => `${x.verdict ?? "abstain"} (${x.outcome})`;
     for (const c of result.changed) console.log(`  ${c.id} ${labels.items.find((i) => i.id === c.id)!.stratum.padEnd(24)} ${show(c.from)} -> ${show(c.to)}`);
+    for (const { id, why } of result.ineligible) console.log(`  ${id} ineligible (${why}); left as it was`);
     for (const id of result.missing) console.log(`  ${id} not in the sources any more; left as it was`);
     writeLabels(out, result.labels);
-    console.log(`rescored ${labels.items.length - result.missing.length} of ${labels.items.length} item(s); ${result.changed.length} changed; wrote ${out}`);
+    console.log(`rescored ${labels.items.length - result.ineligible.length - result.missing.length} of ${labels.items.length} item(s); ${result.changed.length} changed; ${result.ineligible.length} ineligible; ${result.missing.length} missing; wrote ${out}`);
     return 0;
   }
 
