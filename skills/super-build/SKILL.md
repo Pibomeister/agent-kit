@@ -87,7 +87,11 @@ absence is recorded (`policies/limits.yaml`).
 
 1. Read the ticket and refuse what this lane does not execute — `decision` type, missing approval, or
    a source finding graded `smell` or carrying `difficulty: null`. Record the refusal with the field
-   that decided it. Do not re-grade the finding to make it executable.
+   that decided it. Do not re-grade the finding to make it executable. On the standalone path, open
+   the task-bound run before implementation with
+   `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. Later gate
+   commands resolve the branch pointer this writes. A Firstmate binding already supplies a unique
+   `--run` and `--dir`; keep that path unchanged and do not open another run.
 2. Decide parallelism by inspection, not by the absence of a dependency edge. For each pair of
    tickets with no edge between them, read the declared write ownership, generated artifacts,
    migration sequence and interfaces, and read the files themselves where a declaration is silent.
@@ -128,8 +132,9 @@ absence is recorded (`policies/limits.yaml`).
     ruling and every out-of-scope observation collected into the report.
 13. When both check seats pass, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate build-checks`
     (the bundle's `bin/`, two directories above this skill). super-ship refuses to ship without it.
-    Run it from the project checkout; the run defaults to the branch and the records to the
-    repository's git directory, and a binding's brief supplies `--run` and `--dir` when it has them.
+    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
+    branch-named v1 run when none was opened) and records default to the repository's git directory.
+    A binding's brief supplies `--run` and `--dir` when it has them.
 
 ## Hard gates
 

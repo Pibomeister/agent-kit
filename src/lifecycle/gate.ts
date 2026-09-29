@@ -2,10 +2,11 @@
  * Lifecycle fidelity: each phase leaves a gate record bound to the snapshot it judged, and super-ship
  * refuses to start until every phase before it has one for the head it would ship.
  *
- * Known limit: a standalone run is named after its branch, and its earlier records are bounded by the
- * fork point from the default branch (an explicit `--run` is not). After a squash or rebase merge, a branch reused by merging the default
- * branch back in keeps the old run's `build-checks` and `review-full` records in its history, and they
- * count. Use one branch per task, or pass `--run` for a fresh run id.
+ * The strengthened standalone path opens a task-bound run and keeps a pointer from the branch to it.
+ * The compatible v1 path still names a run after its branch. Its earlier records are bounded by the
+ * fork point from the default branch, but after a squash or rebase merge a reused branch can keep old
+ * `build-checks` and `review-full` records in its history. A successful check prints that known limit
+ * when the record predates the branch last taking the default branch.
  *
  * This is core. It needs no Firstmate: a standalone session keeps its records under the repository's
  * git common directory, and a Firstmate worker passes the binding's evidence store and run id instead.
@@ -15,7 +16,7 @@
  * same `main` in place.
  */
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -140,6 +141,15 @@ export interface GateRecord {
   recorded_at: string;
 }
 
+export interface RunRecord {
+  run_id: string;
+  ticket: { id: string; hash: string };
+  opened_at: string;
+  branch: string;
+  base: string;
+  closed_at?: string;
+}
+
 const isGate = (g: string): g is Gate => (GATES as readonly string[]).includes(g);
 const short = (s: Snapshot) => `${s.revision.slice(0, 12)}/${s.diff_hash.replace(/^sha256:/, "").slice(0, 12)}`;
 const same = (a: Snapshot, b: Snapshot) => a.revision === b.revision && a.diff_hash === b.diff_hash;
@@ -164,6 +174,106 @@ export function defaultRunId(project: string): string | undefined {
 
 export const safeRunId = (id: string): string => id.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
 
+const atomicJson = (path: string, value: unknown): void => {
+  mkdirSync(dirname(path), { recursive: true });
+  const staging = `${path}.partial-${process.pid}`;
+  writeFileSync(staging, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(staging, path);
+};
+
+const runRecordPath = (dir: string, run: string): string => join(dir, "runs", safeRunId(run), "run.json");
+const branchPointerPath = (dir: string, branch: string): string => join(dir, "branches", `${safeRunId(branch)}.json`);
+
+function readObject(path: string): Record<string, unknown> | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readRunRecord(dir: string, run: string): RunRecord | undefined {
+  const value = readObject(runRecordPath(dir, run));
+  if (
+    value === undefined ||
+    value.run_id !== run ||
+    typeof value.opened_at !== "string" ||
+    typeof value.branch !== "string" ||
+    typeof value.base !== "string" ||
+    value.ticket === null ||
+    typeof value.ticket !== "object"
+  ) {
+    return undefined;
+  }
+  const ticket = value.ticket as Record<string, unknown>;
+  if (typeof ticket.id !== "string" || typeof ticket.hash !== "string") return undefined;
+  if (value.closed_at !== undefined && typeof value.closed_at !== "string") return undefined;
+  return value as unknown as RunRecord;
+}
+
+export interface OpenArgs {
+  dir: string;
+  project: string;
+  ticket: string;
+  now?: () => Date;
+  random?: () => string;
+}
+
+export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false; reason: string } {
+  const branch = git(a.project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (branch.code !== 0 || branch.text === "") return { ok: false, reason: `${a.project} is on a detached head` };
+  const head = git(a.project, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || head.text === "") return { ok: false, reason: `${a.project} has no committed revision` };
+
+  let contents: string;
+  let ticket: unknown;
+  try {
+    contents = readFileSync(a.ticket, "utf8");
+    ticket = JSON.parse(contents);
+  } catch (e) {
+    return { ok: false, reason: `cannot read ticket ${a.ticket}: ${(e as Error).message}` };
+  }
+  const id = (ticket as { id?: unknown } | null)?.id;
+  if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
+
+  const openedAt = (a.now ?? (() => new Date()))().toISOString();
+  const ticketHash = `sha256:${createHash("sha256").update(contents).digest("hex")}`;
+  const nonce = (a.random ?? (() => randomBytes(16).toString("hex")))();
+  const suffix = createHash("sha256").update(JSON.stringify([id, ticketHash, head.text, openedAt, nonce])).digest("hex").slice(0, 12);
+  const branchId = safeRunId(branch.text).slice(0, 128 - suffix.length - 1);
+  const runId = `${branchId}-${suffix}`;
+  const run: RunRecord = {
+    run_id: runId,
+    ticket: { id, hash: ticketHash },
+    opened_at: openedAt,
+    branch: branch.text,
+    base: head.text,
+  };
+  atomicJson(runRecordPath(a.dir, runId), run);
+  atomicJson(branchPointerPath(a.dir, branch.text), { run_id: runId });
+  return { ok: true, run };
+}
+
+function closeRun(dir: string, run: string, closedAt: string): void {
+  const record = readRunRecord(dir, run);
+  if (record === undefined || record.closed_at !== undefined) return;
+  atomicJson(runRecordPath(dir, run), { ...record, closed_at: closedAt });
+}
+
+function pointerRun(dir: string, branch: string): { run?: string; error?: string } {
+  const path = branchPointerPath(dir, branch);
+  if (!existsSync(path)) return {};
+  const pointer = readObject(path);
+  if (pointer === undefined || typeof pointer.run_id !== "string" || pointer.run_id === "") {
+    return { error: `branch run pointer ${path} is not valid` };
+  }
+  const run = readRunRecord(dir, pointer.run_id);
+  if (run === undefined || run.branch !== branch) return { error: `branch run pointer ${path} does not name an opened run for ${branch}` };
+  return { run: pointer.run_id };
+}
+
 export interface RecordArgs {
   dir: string;
   run: string;
@@ -187,10 +297,7 @@ export function recordGate(a: RecordArgs): { ok: true; path: string; record: Gat
   // record rather than replacing the one before it.
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
   const path = join(a.dir, safeRunId(a.run), a.gate, name);
-  mkdirSync(dirname(path), { recursive: true });
-  const staging = `${path}.partial-${process.pid}`;
-  writeFileSync(staging, `${JSON.stringify(record, null, 2)}\n`);
-  renameSync(staging, path);
+  atomicJson(path, record);
   return { ok: true, path, record };
 }
 
@@ -247,6 +354,7 @@ export interface CheckResult {
   ok: boolean;
   head?: Snapshot;
   refusals: string[];
+  notes: string[];
 }
 
 const isAncestor = (project: string, older: string, newer: string): boolean =>
@@ -289,10 +397,11 @@ export function checkGates(a: CheckArgs): CheckResult {
   let head = a.head;
   if (head === undefined) {
     const live = takeSnapshot(a.project);
-    if (typeof live === "string") return { ok: false, refusals: [`refused: ${live}`] };
+    if (typeof live === "string") return { ok: false, refusals: [`refused: ${live}`], notes: [] };
     head = live;
   }
   const refusals: string[] = [];
+  const notes: string[] = [];
   const stale = (g: Gate, why: string) => refusals.push(`refused: gate ${g} has no current evidence (${why})`);
   const fork = a.forkBound === true && a.gates.some((g) => EARLIER.has(g)) ? forkPoint(a.project, head.revision) : undefined;
 
@@ -311,6 +420,16 @@ export function checkGates(a: CheckArgs): CheckResult {
         stale(gate, `every record is for a revision that is not an ancestor of ${short(head)}${since}`);
         continue;
       }
+      const counted = onLine[onLine.length - 1]!;
+      if (a.forkBound === true && fork !== undefined) {
+        const forkTime = git(a.project, ["show", "-s", "--format=%ct", fork.base]);
+        const recorded = Date.parse(counted.recorded_at);
+        if (forkTime.code === 0 && Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
+          notes.push(
+            `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch.replace(/^refs\/remotes\/origin\//, "")} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)`,
+          );
+        }
+      }
       if (gate === "build-checks") continue;
       // review-full on an earlier head stands once a delta review covers the fix on this one.
       if (readRecords(a.dir, a.run, "review-delta").some((r) => same(r.snapshot, head))) continue;
@@ -320,7 +439,7 @@ export function checkGates(a: CheckArgs): CheckResult {
     const latest = records[records.length - 1]!;
     stale(gate, `the latest record is for ${short(latest.snapshot)}, the head is ${short(head)}`);
   }
-  return { ok: refusals.length === 0, head, refusals };
+  return { ok: refusals.length === 0, head, refusals, notes: refusals.length === 0 ? notes : [] };
 }
 
 // ── the command ──────────────────────────────────────────────────────────────
@@ -333,18 +452,20 @@ export interface Io {
 export const LIFECYCLE_USAGE = [
   "ak lifecycle — the gate records each lifecycle phase leaves, and the check super-ship runs first",
   "",
+  "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
-  "  --project defaults to the working directory, --run to its branch, and --dir to",
+  "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
   "",
   "Exit 0 when the record was written or every gate is current, 1 when refused, 2 on bad usage.",
 ];
 
 const FLAGS: Record<string, readonly string[]> = {
+  open: ["ticket", "dir", "project"],
   record: ["gate", "run", "dir", "project"],
   check: ["gates", "run", "dir", "project", "json"],
 };
@@ -383,11 +504,6 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
   };
 
   const project = resolve(cwd, str("project") ?? ".");
-  const run = str("run") ?? defaultRunId(project);
-  if (run === undefined || run === "") {
-    io.err(`ak lifecycle ${sub}: ${project} is on a detached head, so there is no branch to name the run; pass --run <id>`);
-    return 2;
-  }
   let dir: string;
   try {
     dir = str("dir") !== undefined ? resolve(cwd, str("dir")!) : defaultEvidenceDir(project);
@@ -396,17 +512,60 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
     return 1;
   }
 
+  if (sub === "open") {
+    const ticket = str("ticket");
+    if (ticket === undefined) {
+      io.err("ak lifecycle open: --ticket needs a value");
+      return 2;
+    }
+    const opened = openRun({ dir, project, ticket: resolve(cwd, ticket) });
+    if (!opened.ok) {
+      io.err(`ak lifecycle open: ${opened.reason}`);
+      return 1;
+    }
+    io.out(`opened run ${opened.run.run_id}`);
+    return 0;
+  }
+
+  const explicitRun = str("run");
+  let run = explicitRun;
+  let forkBound = false;
+  if (run === undefined) {
+    const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+    if (branch.code !== 0 || branch.text === "") {
+      io.err(`ak lifecycle ${sub}: ${project} is on a detached head, so there is no branch to name the run; pass --run <id>`);
+      return 2;
+    }
+    const pointer = pointerRun(dir, branch.text);
+    if (pointer.error !== undefined) {
+      io.err(`ak lifecycle ${sub}: ${pointer.error}`);
+      return 1;
+    }
+    run = pointer.run ?? safeRunId(branch.text);
+    forkBound = pointer.run === undefined;
+  }
+  if (run === "") {
+    io.err(`ak lifecycle ${sub}: --run needs a value`);
+    return 2;
+  }
+
   if (sub === "record") {
     const gate = str("gate");
     if (gate === undefined || !isGate(gate)) {
       io.err(`ak lifecycle record: --gate must be one of ${GATES.join(", ")}`);
       return 2;
     }
+    const opened = readRunRecord(dir, run);
+    if (opened?.closed_at !== undefined) {
+      io.err("ak lifecycle record: run closed; open a new run");
+      return 1;
+    }
     const r = recordGate({ dir, run, gate, project });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);
       return 1;
     }
+    if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
     io.out(`recorded ${gate} for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
     return 0;
   }
@@ -417,7 +576,8 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
     io.err(`ak lifecycle check: --gates takes ${GATES.join(", ")}${unknown.length > 0 ? `, not ${unknown.join(", ")}` : ""}`);
     return 2;
   }
-  const result = checkGates({ dir, run, gates: names as Gate[], project, forkBound: str("run") === undefined });
+  const result = checkGates({ dir, run, gates: names as Gate[], project, forkBound });
+  if (result.ok) for (const note of result.notes) io.err(note);
   if (flags.get("json") === true) io.out(JSON.stringify({ run, dir, gates: names, ...result }, null, 2));
   else if (result.ok) io.out(`ok: run ${run} has current evidence for ${names.join(", ")} at ${short(result.head!)}`);
   else for (const r of result.refusals) io.err(r);

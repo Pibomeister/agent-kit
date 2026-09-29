@@ -92,8 +92,10 @@ The project's own release checks, discovered rather than assumed.
    and super-review readiness. A `refused: gate <g> has no current evidence` line stops the run with
    `needs-input` naming that phase; go back and run it. Once every precondition holds, record
    `node <this skill's directory>/../../bin/ak-gate.mjs record --gate ship-preflight`.
-   Run it from the project checkout; the run defaults to the branch and the records to the
-   repository's git directory, and a binding's brief supplies `--run` and `--dir` when it has them.
+   Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
+   branch-named v1 run when none was opened) and records default to the repository's git directory.
+   A binding's brief supplies `--run` and `--dir` when it has them. Recording `ship-preflight` closes
+   an opened run; later records require a new `open`.
 3. Run the sensitive-data scan over what would be committed. A candidate secret stops the run; where
    one was already committed, report it for rotation rather than only removing it from the payload.
 4. Run the dependency-audit triage and the project's own release checks, and record each outcome

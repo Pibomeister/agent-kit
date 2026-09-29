@@ -4,7 +4,8 @@
  * home, binding or ledger anywhere.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,6 +47,31 @@ function ak(cwd: string, ...argv: string[]) {
 const record = (cwd: string, ...gates: Gate[]) => {
   for (const g of gates) expect(ak(cwd, "record", "--gate", g).code).toBe(0);
 };
+
+function ticket(cwd: string, id: string): string {
+  const path = join(cwd, `${id}.json`);
+  writeFileSync(path, `${JSON.stringify({ schema: "ticket", schema_version: 1, id })}\n`);
+  return path;
+}
+
+function open(cwd: string, id: string): string {
+  const ticketPath = ticket(cwd, id);
+  const base = git(cwd, "rev-parse", "HEAD");
+  const r = ak(cwd, "open", "--ticket", ticketPath);
+  expect(r.code).toBe(0);
+  const match = r.out[0]?.match(/^opened run (.+)$/);
+  expect(match).not.toBeNull();
+  const run = match![1]!;
+  const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
+  expect(metadata).toEqual({
+    run_id: run,
+    ticket: { id, hash: `sha256:${createHash("sha256").update(readFileSync(ticketPath)).digest("hex")}` },
+    opened_at: expect.any(String),
+    branch: "feature",
+    base,
+  });
+  return run;
+}
 
 describe("ak lifecycle check, standalone", () => {
   test("a run with every phase's record for the head passes", () => {
@@ -126,15 +152,19 @@ describe("ak lifecycle check, standalone", () => {
     expect(r.err).toContain("refused: gate verify has no current evidence (no record for run feature");
   });
 
-  test("a fix cycle passes with verify again and a delta review, and fails without the delta", () => {
+  test("a full review at H1 plus a delta review after a fix at H2 passes without another full review", () => {
     const dir = repo();
+    const run = open(dir, "fix-cycle");
     record(dir, "build-checks", "verify", "review-full");
     git(dir, "commit", "-qam", "build");
     writeFileSync(join(dir, "src/a.js"), "export const a = 4;\n"); // the fix for a review finding
     record(dir, "verify", "review-readiness");
     expect(ak(dir, "check").err).toContain("refused: gate review-full has no current evidence (the full review is for");
     record(dir, "review-delta");
-    expect(ak(dir, "check").code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(0);
+    expect(checked.out[0]).toContain(`ok: run ${run}`);
+    expect(readdirSync(join(defaultEvidenceDir(dir), run, "review-full")).filter((name) => name.endsWith(".json"))).toHaveLength(1);
   });
 
   test("build-checks from another line of history does not count", () => {
@@ -168,7 +198,7 @@ describe("ak lifecycle check, standalone", () => {
     expect(r.err).toContain("refused: gate review-full has no current evidence");
   });
 
-  test("a branch reused after a squash merge inherits records until run identity changes", () => {
+  test("the v1 branch run warns when a squash reuse inherits records", () => {
     const dir = repo();
     record(dir, "build-checks");
     git(dir, "commit", "-qam", "task one");
@@ -183,13 +213,72 @@ describe("ak lifecycle check, standalone", () => {
     writeFileSync(join(dir, "src/a.js"), "export const a = 7;\n");
     record(dir, "verify", "review-delta", "review-readiness");
 
-    // Pin the known gate.ts:5-8 limitation so a later run-identity fix is a deliberate change.
-    expect(ak(dir, "check").code).toBe(0);
+    const inherited = ak(dir, "check");
+    expect(inherited.code).toBe(0);
+    expect(inherited.err).toContain(
+      "note: build-checks for run feature was recorded before this branch last took main (",
+    );
+    expect(inherited.err).toContain("if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)");
+  });
+
+  test("an explicit fresh run inherits no records", () => {
+    const dir = repo();
+    record(dir, ...PRE_SHIP_GATES);
     const freshRun = ak(dir, "check", "--run", "task-2");
     expect(freshRun.code).toBe(1);
     for (const gate of PRE_SHIP_GATES) {
       expect(freshRun.err).toContain(`refused: gate ${gate} has no current evidence (no record for run task-2`);
     }
+  });
+
+  test("a closed strengthened run rejects squash reuse and a newly opened run sees none of its records", () => {
+    const dir = repo();
+    const first = open(dir, "task-1");
+    record(dir, ...PRE_SHIP_GATES, "ship-preflight");
+    const closed = JSON.parse(readFileSync(join(defaultEvidenceDir(dir), "runs", first, "run.json"), "utf8"));
+    expect(closed.closed_at).toEqual(expect.any(String));
+    expect(ak(dir, "record", "--gate", "verify").err).toContain("run closed; open a new run");
+
+    git(dir, "add", "task-1.json");
+    git(dir, "commit", "-qm", "task one");
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--squash", "feature");
+    git(dir, "commit", "-qm", "squash task one");
+    git(dir, "checkout", "-q", "feature");
+    git(dir, "merge", "-q", "--no-edit", "main");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 8;\n");
+    expect(ak(dir, "record", "--gate", "verify").err).toContain("run closed; open a new run");
+
+    const second = open(dir, "task-2");
+    expect(second).not.toBe(first);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(`gate build-checks has no current evidence (no record for run ${second}`);
+    expect(checked.err).toContain(`gate review-full has no current evidence (no record for run ${second}`);
+  });
+
+  test("commits and a mid-task merge from main keep the opened run id and its earlier records", () => {
+    const dir = repo();
+    const run = open(dir, "continuation");
+    record(dir, "build-checks", "verify", "review-full");
+    git(dir, "add", "continuation.json");
+    git(dir, "commit", "-qam", "first task commit");
+
+    git(dir, "checkout", "-q", "main");
+    writeFileSync(join(dir, "main.txt"), "upstream\n");
+    git(dir, "add", "main.txt");
+    git(dir, "commit", "-qm", "main advances");
+    git(dir, "checkout", "-q", "feature");
+    git(dir, "merge", "-q", "--no-edit", "main");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 9;\n");
+    record(dir, "verify", "review-delta", "review-readiness");
+
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(0);
+    expect(checked.err).toBe("");
+    expect(checked.out[0]).toContain(`ok: run ${run}`);
+    const pointer = JSON.parse(readFileSync(join(defaultEvidenceDir(dir), "branches", "feature.json"), "utf8"));
+    expect(pointer.run_id).toBe(run);
   });
 
   test("work on the default branch itself keeps build-checks recorded before its commit", () => {
@@ -225,6 +314,8 @@ describe("ak lifecycle check, standalone", () => {
     const r = ak(dir, "check");
     expect(r.code).toBe(2);
     expect(r.err).toContain("pass --run <id>");
+    expect(existsSync(join(store, "runs", "ak-T-1", "run.json"))).toBe(false);
+    expect(existsSync(join(store, "branches"))).toBe(false);
   });
 
   test("bad usage exits 2 and names the gates", () => {
@@ -246,6 +337,10 @@ describe("the gate a bundle carries", () => {
       const script = join(mkdtempSync(join(tmpdir(), "ak-bin-")), "ak-gate.mjs");
       writeFileSync(script, file!.contents);
       const node = (...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd: dir });
+      const ticketPath = ticket(dir, `${host}-ticket`);
+      const opened = node("open", "--ticket", ticketPath);
+      expect(opened.exitCode).toBe(0);
+      expect(opened.stdout.toString()).toMatch(/^opened run feature-[0-9a-f]{12}\n$/);
       expect(node("record", "--gate", "verify", "--run", host).exitCode).toBe(0);
       const ok = node("check", "--gates", "verify", "--run", host);
       expect(ok.stdout.toString()).toContain(`ok: run ${host} has current evidence for verify`);
