@@ -254,6 +254,15 @@ Valid sessions only, pooled over both replicates:
 - Loads, negatives and typed-command results do not move. The classifier changes only the
   authority verdict after a load.
 
+The classifier changed again after `c96e84a`, in the review-fix commits this branch ships on top
+of `bdc5a06` (group-depth tracking for `( … )` and a `sort -o` guard). Those commits were not
+rescored with the probe above; instead `research/probes/shell-verdicts.ts` ran every shell
+command in the same stored input through both scorers, a `git archive` extract of `c96e84a`
+with `node_modules/` symlinked in and this branch's working tree at its shipped tip:
+1458 distinct commands, 0 verdicts differ. The scorer's authority verdict depends on the shell
+classifier only through those verdicts, so the figures in this section hold for the shipped tree.
+`.donors/` was absent from both trees and the install config was the default, as above.
+
 ## What changed in this branch
 
 - `trigger-eval.ts` takes `--cases <id,id,...>`. It runs only the named cases, in set order. An id the

@@ -545,20 +545,23 @@ export function readOnlyShell(command: string): boolean {
   let depth = 0;
   const commands: string[][] = [];
   for (const segment of segments) {
-    const opened = /^\(+/.exec(segment[0] ?? "")?.[0].length ?? 0;
-    if (opened > 0) {
-      depth += opened;
-      segment[0] = segment[0]!.slice(opened);
-      if (segment[0] === "") segment.shift();
-    }
-    const last = depth > 0 ? segment.findLastIndex((word) => word.endsWith(")")) : -1;
-    if (last >= 0) {
-      const closed = /\)+$/.exec(segment[last]!)![0].length;
-      depth = Math.max(0, depth - closed);
-      segment[last] = segment[last]!.slice(0, -closed);
-      if (segment[last] === "") segment.splice(last, 1);
-    }
-    if (segment.length > 0) commands.push(segment);
+    const command: string[] = [];
+    segment.forEach((raw, i) => {
+      let word = raw;
+      if (i === 0) {
+        const opened = /^\(+/.exec(word)?.[0].length ?? 0;
+        depth += opened;
+        word = word.slice(opened);
+      }
+      const opens = word.split("(").length - 1;
+      const closes = word.split(")").length - 1;
+      const trailing = /\)*$/.exec(word)![0].length;
+      const after = depth + opens - closes;
+      if (trailing > 0 && closes > opens && after <= 0) word = word.slice(0, -trailing);
+      depth = Math.max(0, after);
+      if (word !== "" || raw === "") command.push(word);
+    });
+    if (command.length > 0) commands.push(command);
   }
   const readOnlySegment = (segment: readonly string[]) => {
     const program: string[] = [];
