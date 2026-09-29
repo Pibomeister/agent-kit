@@ -165,13 +165,6 @@ export function defaultEvidenceDir(project: string): string {
   return join(dir, "agent-kit", "evidence");
 }
 
-/** A standalone run is named after its branch. A detached head has no name, and must be given one. */
-export function defaultRunId(project: string): string | undefined {
-  const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  if (branch.code !== 0 || branch.text === "") return undefined;
-  return safeRunId(branch.text);
-}
-
 export const safeRunId = (id: string): string => id.replace(/[^A-Za-z0-9._:-]/g, "-").slice(0, 128);
 
 const atomicJson = (path: string, value: unknown): void => {
