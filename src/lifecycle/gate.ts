@@ -369,13 +369,13 @@ const EMPTY_DIFF = `sha256:${createHash("sha256").digest("hex")}`;
  */
 function forkPoint(project: string, head: string): { branch: string; base: string } | undefined {
   const current = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]).text;
-  for (const branch of ["refs/remotes/origin/HEAD", "main", "master"]) {
-    const ref = git(project, ["rev-parse", "--verify", "--quiet", `${branch}^{commit}`]);
+  for (const key of ["refs/remotes/origin/HEAD", "main", "master"]) {
+    const ref = git(project, ["rev-parse", "--verify", "--quiet", `${key}^{commit}`]);
     if (ref.code !== 0) continue;
-    const name = branch === "main" || branch === "master" ? branch : git(project, ["symbolic-ref", "--quiet", "--short", branch]).text.replace(/^origin\//, "");
+    const name = key === "main" || key === "master" ? key : git(project, ["symbolic-ref", "--quiet", "--short", key]).text.replace(/^origin\//, "");
     if (current !== "" && current === name) return undefined;
     const base = git(project, ["merge-base", head, ref.text]);
-    return base.code === 0 ? { branch, base: base.text } : undefined;
+    return base.code === 0 ? { branch: name === "" ? "origin/HEAD" : name, base: base.text } : undefined;
   }
   return undefined;
 }
@@ -426,7 +426,7 @@ export function checkGates(a: CheckArgs): CheckResult {
         const recorded = Date.parse(counted.recorded_at);
         if (forkTime.code === 0 && Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
           notes.push(
-            `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch.replace(/^refs\/remotes\/origin\//, "")} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)`,
+            `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)`,
           );
         }
       }

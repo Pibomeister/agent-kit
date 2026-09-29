@@ -221,6 +221,43 @@ describe("ak lifecycle check, standalone", () => {
     expect(inherited.err).toContain("if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)");
   });
 
+  test("on a clone, the note and the refusal name the default branch, not the remote HEAD ref", () => {
+    const seed = makeTree({ "src/a.js": "export const a = 1;\n" });
+    git(seed, "init", "-q", "-b", "main");
+    git(seed, "add", "-A");
+    git(seed, "commit", "-q", "-m", "init");
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ak-gate-clone-")));
+    git(root, "clone", "-q", "--bare", seed, "origin.git");
+    git(root, "clone", "-q", "origin.git", "work");
+    const dir = join(root, "work");
+    git(dir, "checkout", "-q", "-b", "feature");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 2;\n");
+    record(dir, "build-checks");
+    git(dir, "commit", "-qam", "task one");
+    record(dir, ...PRE_SHIP_GATES);
+
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--squash", "feature");
+    git(dir, "commit", "-qm", "squash task one");
+    git(dir, "push", "-q", "origin", "main");
+    git(dir, "checkout", "-q", "feature");
+    git(dir, "merge", "-q", "--no-edit", "origin/main");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 7;\n");
+    record(dir, "verify", "review-delta", "review-readiness");
+
+    const inherited = ak(dir, "check");
+    expect(inherited.code).toBe(0);
+    expect(inherited.err).toContain("note: build-checks for run feature was recorded before this branch last took main (");
+
+    git(dir, "reset", "-q", "--hard", "origin/main");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 8;\n");
+    record(dir, "verify", "review-delta", "review-readiness");
+    const refused = ak(dir, "check");
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("since it left main at");
+    expect(refused.err).not.toContain("refs/remotes/origin/HEAD");
+  });
+
   test("an explicit fresh run inherits no records", () => {
     const dir = repo();
     record(dir, ...PRE_SHIP_GATES);
