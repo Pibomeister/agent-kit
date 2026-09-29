@@ -312,14 +312,13 @@ const MUTATING = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Delete"
 /** Tools that start other work; after a U skill loads they mean it went on, but a read-only helper is possible. */
 const DELEGATING = new Set(["Agent", "Task", "Skill"]);
 /** Programs that only look, whatever their arguments (subject to `WRITING_FLAGS`). `cd` moves, and changes nothing. */
-const LOOKING = new Set(["cd", "pushd", "popd", "ls", "cat", "bat", "nl", "less", "more", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "find", "pwd", "echo", "awk", "tree", "stat", "file", "which", "type", "true", "sort", "cut", "realpath", "lsof", "[", "test"]);
+const LOOKING = new Set(["cd", "pushd", "popd", "ls", "cat", "bat", "nl", "less", "more", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "find", "pwd", "echo", "awk", "tree", "stat", "file", "which", "type", "true", "cut", "realpath", "lsof", "[", "test"]);
 /** git subcommands that only look, whatever their flags. */
 const GIT_LOOKING = new Set(["status", "log", "diff", "show", "rev-parse", "ls-files", "ls-tree", "blame", "shortlog", "describe", "cat-file", "grep", "merge-base", "rev-list", "for-each-ref", "show-ref"]);
 /** git subcommands that look only with one of these first operands (or none, where `""` is listed). */
 const GIT_LOOKING_ACTION: Record<string, ReadonlySet<string>> = {
   stash: new Set(["list", "show"]),
   remote: new Set(["", "show", "get-url"]),
-  reflog: new Set(["", "show"]),
   worktree: new Set(["list"]),
   notes: new Set(["list", "show"]),
 };
@@ -335,11 +334,7 @@ const WRITING_FLAGS = new Set(["-delete", "-exec", "-execdir", "-ok", "-okdir", 
 
 /** Does one simple command (a program and its words, redirects removed) only look? */
 function readOnlyProgram(program: readonly string[]): boolean {
-  const normalized = [...program];
-  const grouped = normalized[0]?.startsWith("(") ?? false;
-  if (grouped) normalized[0] = normalized[0]!.replace(/^\(+/, "");
-  if (grouped && normalized.at(-1)?.endsWith(")")) normalized[normalized.length - 1] = normalized.at(-1)!.replace(/\)+$/, "");
-  const [head, ...args] = normalized;
+  const [head, ...args] = program;
   if (head === undefined) return true;
   const name = head.split("/").at(-1)!;
   if (name === "curl") return readOnlyCurl(args);
@@ -358,6 +353,7 @@ function readOnlyProgram(program: readonly string[]): boolean {
   if (args.length === 1 && (args[0] === "--help" || args[0] === "--version")) return true;
   if (name === "command") return args[0] === "-v" || args[0] === "-V";
   if (name === "sed") return !args.some((w) => /^-\w*i/.test(w) || w.startsWith("--in-place"));
+  if (name === "sort") return !args.some((w) => /^-[^-]*o/.test(w));
   if (LOOKING.has(name)) return true;
   if (name === "git") return readOnlyGit(args);
   if (name === "gh") return readOnlyGh(args);
@@ -546,7 +542,24 @@ export function readOnlyShell(command: string): boolean {
     if (SHELL_OPERATORS.has(word)) segments.push([]);
     else segments.at(-1)!.push(word);
   }
-  const commands = segments.filter((segment) => segment.length > 0);
+  let depth = 0;
+  const commands: string[][] = [];
+  for (const segment of segments) {
+    const opened = /^\(+/.exec(segment[0] ?? "")?.[0].length ?? 0;
+    if (opened > 0) {
+      depth += opened;
+      segment[0] = segment[0]!.slice(opened);
+      if (segment[0] === "") segment.shift();
+    }
+    const last = depth > 0 ? segment.findLastIndex((word) => word.endsWith(")")) : -1;
+    if (last >= 0) {
+      const closed = /\)+$/.exec(segment[last]!)![0].length;
+      depth = Math.max(0, depth - closed);
+      segment[last] = segment[last]!.slice(0, -closed);
+      if (segment[last] === "") segment.splice(last, 1);
+    }
+    if (segment.length > 0) commands.push(segment);
+  }
   const readOnlySegment = (segment: readonly string[]) => {
     const program: string[] = [];
     for (let i = 0; i < segment.length; i++) {

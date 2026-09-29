@@ -471,6 +471,12 @@ describe("readOnlyShell: looking commands the a2 transcripts ran", () => {
       "env | grep -iE '^(AK_|GH_)' | sed -E 's/=.*/=<set>/'",
       "env | cut -d= -f1 | rg '^(GH|GITHUB|AK_)' | sort",
       'git log --oneline -5 && git status --short && ls -la && (grep -rniE "timezone|\\bTZ\\b" --include=* . 2>/dev/null | grep -v "^./.git/" | head -30); command -v ak',
+      "(git status; git log)",
+      "( ls )",
+      "(cd /tmp/r && ls -la) 2>/dev/null",
+      "(for f in AGENTS.md; do cat \"$f\"; done)",
+      "sort in.txt",
+      "sort -u -k2 in.txt | head",
     ]) {
       expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, true]);
     }
@@ -480,6 +486,14 @@ describe("readOnlyShell: looking commands the a2 transcripts ran", () => {
     for (const cmd of [
       "env SAFE=1 git push",
       "(git status; git push)",
+      "(ls; find . -name '*.orig' -delete)",
+      "(git status && find . -delete)",
+      "(find . -delete) 2>/dev/null",
+      "(git status; git reflog expire)",
+      "(ls; sort -o x)",
+      "sort -o out.txt in.txt",
+      "sort -oout.txt in.txt",
+      "sort --output=out.txt in.txt",
       'for p in AGENTS.md; do if [ -f "$p" ]; then rm "$p"; fi; done',
       "git notes add -m changed",
       "git fsck --lost-found",

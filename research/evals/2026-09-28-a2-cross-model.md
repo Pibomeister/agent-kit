@@ -276,8 +276,10 @@ Valid sessions only, pooled over both replicates:
 - **The six-turn cap is not neutral across subjects.** It invalidates a third of subject-fable's
   sessions and none of subject-opus's, and codex has no cap at all. A cap-free or higher-cap rerun
   of subject-fable would show whether its prose behaviour differs from subject-opus's.
-- **The shell classifier's false writes** account for every violation in this run. PR #17 fixed
-  `command -v`, `which` and lone `--help`; `gh auth status`, `env | …`, `cd … && ls`, `for` loops over
-  `cat`, and `git -c … branch -vv` still count as writes.
+- **The 12 valid-session rows the shell classifier once marked as violations now sit at
+  `loaded-unclear`.** At `67e61e9` its false writes accounted for every violation in this run;
+  the rescore above at `c96e84a` scores `gh auth status`, `env | …`, `cd … && ls`, `for` loops
+  over `cat` and `git -c … branch -vv` as looks. `loaded-unclear` is unscored and flagged, never a
+  pass, so whether those sessions stopped on the law still needs a reading of their replies.
 - **Whether a prose request names the command** is still the invocation-law question from
   2026-09-26, and the codex and grok hosts answer it by loading far more often.
