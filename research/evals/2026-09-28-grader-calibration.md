@@ -201,6 +201,24 @@ with its own scorer turns 10 rows that passed at run time, on the full reply, in
   current scorer, and replaces `suggested`. Labels, votes and transcripts stay. It prints each
   change and each item whose session is gone. This replaces the one-off rescore script.
 
+## Shell-classifier follow-up rescore, 2026-09-29
+
+The 80 stored calibration items were rescored at both current-main parent
+`5100d5280be32b1f50318b16f231c3d919111de6` and the shell-classifier repair
+`c96e84a8fcd92a3cad8c4fdccc7e34b5e63f6a02`. The two output files are byte-identical:
+SHA-256 `6abc18891b1017b731358c38e7fffa75aacad37cc15d5e586d0dc9d3fa1f5a74`.
+This workstream therefore changes none of the agreement figures in this receipt.
+
+| Instrument item | Value |
+|---|---|
+| Label source | Copied read-only from `/Users/eduardopicazo/Documents/agent-kit/.work/archive/scorer-calibration/calibration/labels.codex.json`; SHA-256 `8b5af118cb39d97f426fb5c622df01f6e90c54c1d6512873c0a83921d0614669` |
+| Command | `bun <scorer extract>/tests/learn/evals/calibrate.ts rescore --file <label copy> --out <output>` |
+| Coverage | 80 of 80 sessions rescored; 14 changes from the original sampled scorer in both outputs |
+| Kappa check | scorer vs reviewer-astra 0.603; scorer vs reviewer-sol 0.671; reviewer pair 0.706; no human labels |
+| Donors | `.donors/` absent from the worktree and scorer extracts; rescore reads the stored sessions and current catalog/scorer only |
+| Install config | default; no `ak.install.yaml` |
+| Spend | none |
+
 ## Still open
 
 - **Human labels.** Until someone labels the 80, none of these figures says whether the scorer
