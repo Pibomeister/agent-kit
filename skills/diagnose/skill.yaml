@@ -48,8 +48,11 @@ entrypoints:
     authority: model
     invocation: M
     summary: >-
-      Build a red-capable loop, minimise the reproduction, rank hypotheses before testing any, state
-      the causal chain, and emit one output. No phase operation exposes this skill, so there is no
+      Build a red-capable loop and run its red command before any read of the code under suspicion
+      and before any edit; where no command is named, only the calls that locate it come first.
+      Minimise the reproduction, rank hypotheses before testing any, state the causal chain, emit
+      one output and report in workflow order. An attempt history already at the cap is checked
+      first and returns cap-reached. No phase operation exposes this skill, so there is no
       delegated path to validate.
 
 requires:

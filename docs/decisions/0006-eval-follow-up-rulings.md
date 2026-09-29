@@ -78,8 +78,7 @@ protects the existing PASS result.
 
 Items `4f11203a580d` and `8ba34a5c3e1f` refused because the requested skill was reported as not
 installed. This is not resolved by redefining redirect or miss. It is an eval-harness defect under
-separate investigation. Until that investigation fixes and remeasures the items, exclude them from
-agreement figures. This change does not attempt the harness repair.
+separate investigation. This change does not attempt the harness repair.
 
 ### Q3 — loaded-unclear remains PASS unless delegation followed
 
@@ -89,15 +88,14 @@ after the load, and the scorer abstains when a delegating call followed it. No c
 
 ### Q4 — the nine reviewer splits receive human labels
 
-The split items are `96a9d27022dd`, `ca34dec5fa03`, `21c96c702c6f`, `42c946364500`,
-`ce1583f612b9`, `64a492575a8c`, `5099b7934c71`, `777921fdc724`, and `d14f1a606abb`.
-The maintainer will label them by hand. The working seed-2 sheet is prepared elsewhere with both
-reviewers' reasons at the top; it is not committed here.
+The items are the nine reviewer-split items reported in
+`research/evals/2026-09-28-grader-calibration.md`. The maintainer labels the nine by hand; the
+crew adds them to the top of the seed-2 sheet with both reviewers' reasons. The labeling sheet is
+prepared outside the repository and is not committed.
 
 ## Consequences
 
 - The five skill changes and two scaffold repairs can be proved by free repository checks.
-- No stored agreement figure may include the two Q2 items until the separate harness investigation
-  resolves and remeasures them.
+- The two Q2 items stay with the separate eval-harness investigation.
 - The labeling sheet and human labels remain outside the repository.
 - Any live A1 rerun is separate work and requires separate approval.
