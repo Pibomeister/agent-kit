@@ -107,8 +107,10 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
 11. When every criterion is confirmed, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate verify`
     (the bundle's `bin/`, two directories above this skill). The record names this revision and diff
     hash, so any later edit makes it stale and super-ship sends you back here.
-    Run it from the project checkout; the run defaults to the branch and the records to the
-    repository's git directory, and a binding's brief supplies `--run` and `--dir` when it has them.
+    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
+    branch-named v1 run when none was opened) and records default to the repository's git directory.
+    A binding's brief supplies `--run` and `--dir` when it has them. A record on a run that
+    `ship-preflight` has closed is refused; the task needs a new `open`.
 
 ## Hard gates
 

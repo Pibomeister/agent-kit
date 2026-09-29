@@ -87,11 +87,7 @@ absence is recorded (`policies/limits.yaml`).
 
 1. Read the ticket and refuse what this lane does not execute — `decision` type, missing approval, or
    a source finding graded `smell` or carrying `difficulty: null`. Record the refusal with the field
-   that decided it. Do not re-grade the finding to make it executable. On the standalone path, open
-   the task-bound run before implementation with
-   `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. Later gate
-   commands resolve the branch pointer this writes. A Firstmate binding already supplies a unique
-   `--run` and `--dir`; keep that path unchanged and do not open another run.
+   that decided it. Do not re-grade the finding to make it executable.
 2. Decide parallelism by inspection, not by the absence of a dependency edge. For each pair of
    tickets with no edge between them, read the declared write ownership, generated artifacts,
    migration sequence and interfaces, and read the files themselves where a declaration is silent.
@@ -100,6 +96,12 @@ absence is recorded (`policies/limits.yaml`).
 3. Record the base commit, then open the worktree this ticket owns
    (`protocols/worktree-ownership/PROTOCOL.md`). The worktree handle is bound to this ticket and is
    retired when the ticket integrates, never retasked.
+   On the standalone path, open the task-bound run next, from inside that worktree with the
+   ticket's branch checked out and before implementation:
+   `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. The run binds
+   to the branch checked out where it runs, and later gate commands on that branch resolve the
+   pointer it writes. A Firstmate binding already supplies a unique `--run` and `--dir`; keep that
+   path unchanged and do not open another run.
 4. Dispatch one implementer (`roles/implementer/ROLE.md`) with the ticket as its single source of
    requirements. It spawns no implementers of its own, and no second implementer runs against this
    worktree.

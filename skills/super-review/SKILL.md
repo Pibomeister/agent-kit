@@ -133,8 +133,10 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 12. On `approved`, and only then, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record
     --gate review-full`, `review-delta` or `review-readiness` (the bundle's `bin/`, two directories
     above this skill). A delta record at the head is what lets a full review of an earlier head count.
-    Run it from the project checkout; the run defaults to the branch and the records to the
-    repository's git directory, and a binding's brief supplies `--run` and `--dir` when it has them.
+    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
+    branch-named v1 run when none was opened) and records default to the repository's git directory.
+    A binding's brief supplies `--run` and `--dir` when it has them. A record on a run that
+    `ship-preflight` has closed is refused; the task needs a new `open`.
 
 ## Hard gates
 
