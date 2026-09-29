@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { parse as parseYaml } from "yaml";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -33,15 +34,23 @@ afterAll(() => {
   for (const dir of made) rmSync(dir, { recursive: true, force: true });
 });
 
-function loadCase(dir: string) {
-  const text = readFileSync(join(ROOT, "evals", dir, "case.yaml"), "utf8");
-  const list = (key: string) => new RegExp(`^\\s*${key}: \\[([^\\]]*)\\]`, "m").exec(text)?.[1]
-    ?.split(",").map((item) => item.trim()).filter(Boolean) ?? [];
-  return {
-    tags: list("tags"),
-    execution: { allowed_tools: list("allowed_tools") },
-    context: { scaffold_script: /^\s+scaffold_script: (.+)$/m.exec(text)?.[1] },
-  };
+type CaseSpec = {
+  tags?: string[];
+  execution?: { allowed_tools?: string[] };
+  context?: { scaffold_script?: string };
+};
+
+function loadCase(dir: string): CaseSpec {
+  return parseYaml(readFileSync(join(ROOT, "evals", dir, "case.yaml"), "utf8")) ?? {};
+}
+
+function scaffold(dir: string, prefix: string): string {
+  const workspace = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  made.push(workspace);
+  const script = join(ROOT, "evals", dir, "scaffold.sh");
+  const result = spawnSync("bash", [script], { cwd: workspace, encoding: "utf8" });
+  expect(result.status, result.stderr).toBe(0);
+  return workspace;
 }
 
 describe("A1 state-dependent fixtures", () => {
@@ -50,12 +59,8 @@ describe("A1 state-dependent fixtures", () => {
     expect(spec.tags ?? []).not.toContain("needs-fixture");
     expect(spec.context?.scaffold_script).toBe("scaffold.sh");
 
-    const workspace = realpathSync(mkdtempSync(join(tmpdir(), "ak-a1-fixture-")));
-    made.push(workspace);
-    const script = join(ROOT, "evals", dir, "scaffold.sh");
-    expect(existsSync(script)).toBe(true);
-    const result = spawnSync("bash", [script], { cwd: workspace, encoding: "utf8" });
-    expect(result.status, result.stderr).toBe(0);
+    expect(existsSync(join(ROOT, "evals", dir, "scaffold.sh"))).toBe(true);
+    const workspace = scaffold(dir, "ak-a1-fixture-");
     expect(existsSync(join(workspace, marker))).toBe(true);
   });
 });
@@ -78,23 +83,25 @@ describe("A1 review fixtures expose their revisions", () => {
     "receiving-review/assesses-a-thread-against-the-code",
     "receiving-review/outdated-thread-is-decided-by-fingerprint",
   ])("%s grants Bash for diff and history reads", (dir) => {
-    expect(loadCase(dir).execution.allowed_tools).toContain("Bash");
+    expect(loadCase(dir).execution?.allowed_tools).toContain("Bash");
   });
 });
 
 describe("A1 scaffold content leaves the behavior observable", () => {
   test("the named-criterion case does not hand the verification command to the subject", () => {
-    const workspace = realpathSync(mkdtempSync(join(tmpdir(), "ak-a1-command-")));
-    made.push(workspace);
-    const script = join(ROOT, "evals/super-verify/named-criterion-gets-a-receipt/scaffold.sh");
-    const result = spawnSync("bash", [script], { cwd: workspace, encoding: "utf8" });
-    expect(result.status, result.stderr).toBe(0);
+    const workspace = scaffold("super-verify/named-criterion-gets-a-receipt", "ak-a1-command-");
     expect(readFileSync(join(workspace, "tickets/AK-214.md"), "utf8")).not.toContain("Verification:");
   });
 
   test("the approved sandbox direction has a compatible tenant-policy path", () => {
-    const scaffold = readFileSync(join(ROOT, "evals/super-bound/approved-direction-produces-spec-and-tickets/scaffold.sh"), "utf8").toLowerCase();
-    expect(scaffold).toContain("self-serve sandbox provisioning");
-    expect(scaffold).toContain("paying-organisation admin");
+    const workspace = scaffold("super-bound/approved-direction-produces-spec-and-tickets", "ak-a1-direction-");
+    const alignment = JSON.parse(readFileSync(join(workspace, "runs/sandbox-self-serve/alignment.json"), "utf8"));
+    expect(alignment.status).toBe("approved");
+    expect(alignment.direction).toMatch(/self-serve sandbox provisioning/i);
+    expect(alignment.decisions.join("\n")).toMatch(/authenticates a paying-organisation admin/i);
+    expect(alignment.context).toContain("kb://adr/0004-tenant-model");
+    const adr = readFileSync(join(workspace, "knowledge-base/adr/0004-tenant-model.md"), "utf8");
+    expect(adr).toMatch(/^status: accepted$/m);
+    expect(adr).toMatch(/self-serve\s+sandbox provisioning may use the billing endpoint when it authenticates a\s+paying-organisation admin/i);
   });
 });

@@ -115,7 +115,7 @@ if [[ "$bundle" == "$root/dist/claude-code" ]]; then
   fresh=true
   if [[ -n "$(cd "$root" && find catalog.yaml skills packs protocols roles references adapters schemas policies profiles provenance src evals -newer "$bundle" -print -quit 2>/dev/null)" ]]; then
     fresh=false
-    echo "eval-local: $bundle is older than its sources; run 'bun run build' to measure this tree" >&2
+    echo "eval-local: $bundle is older than its sources; run 'bun run ak build --profile all' to measure this tree" >&2
   fi
 fi
 bundle_sha="$(cd "$bundle" && find . -type f ! -path './evals/results/*' -print0 | LC_ALL=C sort -z \
@@ -388,12 +388,12 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
       | (($p + $z2 / (2 * $n)) / (1 + $z2 / $n)) as $c
       | ((1.96 * ((($p * (1 - $p)) / $n + $z2 / (4 * $n * $n)) | sqrt)) / (1 + $z2 / $n)) as $h
       | {lo: ([0, $c - $h] | max), hi: ([1, $c + $h] | min)} end;
+  def verdicts($run; $expected): [$expected[] as $name
+      | [$run.graders[]? | select(.name == $name and (.skipped // false) != true) | .passed] | first];
   def graded($run; $expected): ($expected | length) > 0
-      and ([$expected[] as $name
-            | any($run.graders[]?; .name == $name and (.passed | type) == "boolean" and (.skipped // false) != true)] | all);
-  def passed($run; $expected): graded($run; $expected)
-      and ([$expected[] as $name
-            | any($run.graders[]?; .name == $name and .passed == true and (.skipped // false) != true)] | all);
+      and (verdicts($run; $expected) | any(. == false) or all(type == "boolean"));
+  def passed($run; $expected): ($expected | length) > 0
+      and (verdicts($run; $expected) | all(. == true));
   def arm($runs; $expected): ($runs | length) as $n
       | ([$runs[] | select(graded(.; $expected))] | length) as $g
       | ([$runs[] | select(passed(.; $expected))] | length) as $k
@@ -423,9 +423,12 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
     exitStatus: $status,
     result: $json,
     cases: [.cases[] | score_graders as $expected
-                      | {name, dir, with: arm(.arms.with // []; $expected), without: arm(.arms.without // []; $expected),
-                        fired: fired(.arms.with // []; skill_graders), score: .aggregates.score,
-                        scoreWithout: .aggregates.scoreWithout, delta: .aggregates.delta}],
+                      | arm(.arms.with // []; $expected) as $with | arm(.arms.without // []; $expected) as $without
+                      | ($with.ungraded + $without.ungraded == 0) as $complete
+                      | {name, dir, with: $with, without: $without, fired: fired(.arms.with // []; skill_graders),
+                         score: (if $complete then .aggregates.score else null end),
+                         scoreWithout: (if $complete then .aggregates.scoreWithout else null end),
+                         delta: (if $complete then .aggregates.delta else null end)}],
     overall: {score: (if $ungraded == 0 then .aggregates.overallScore else null end),
               meanDelta: (if $ungraded == 0 then .aggregates.meanDelta else null end),
               ungraded: $ungraded, mergedFrom: (.merged // 1)},

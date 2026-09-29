@@ -20,8 +20,8 @@ const SCRIPT = join(REPO, "scripts", "eval-local.sh");
 // The stub host. It sees only the variables eval-local passes through, so its knobs are named in
 // AK_EVAL_PASS_ENV: FAKE_DIR (where argv is logged), FAKE_DROP (case names left out of the result)
 // FAKE_COST (dollars spent per invocation, or a comma list of them taken in call order),
-// FAKE_TRACE (give every run a durable source trace) and FAKE_UNGRADED (the named arm's paid
-// grader was skipped for budget).
+// FAKE_TRACE (give every run a durable source trace), FAKE_UNGRADED (the named arm's paid
+// grader was skipped for budget) and FAKE_FAILED (the named arm's cheap grader failed).
 const FAKE_HOST = `#!/usr/bin/env bun
 import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -46,14 +46,16 @@ const run = (name: string, arm: string, n: number) => {
   const tracePath = join(process.env.FAKE_DIR!, \`trace-\${name}-\${arm}-\${n}.jsonl\`);
   if (process.env.FAKE_TRACE === "1") writeFileSync(tracePath, JSON.stringify({ type: "assistant", name, arm, n }) + "\\n");
   const skipped = process.env.FAKE_UNGRADED === arm;
+  const failed = process.env.FAKE_FAILED === arm;
   return {
-    graders: skipped ? [{ name: "g", skipped: true, reason: "budget" }] : [{ name: "g", passed: true, withOnly: false }],
+    graders: [skipped ? { name: "g", skipped: true, reason: "budget" } : { name: "g", passed: true, withOnly: false },
+              { name: "h", passed: !failed, withOnly: false }],
     ...(process.env.FAKE_TRACE === "1" ? { tracePath } : {}),
   };
 };
 const cases = found
   .filter((c) => (wanted === undefined || c.name === wanted) && !drop.includes(c.name))
-  .map((c) => ({ ...c, graders: [{ name: "g", type: "llm", withOnly: false }],
+  .map((c) => ({ ...c, graders: [{ name: "g", type: "llm", withOnly: false }, { name: "h", type: "tool_used", withOnly: false }],
     arms: {
       with: Array.from({ length: runs }, (_, i) => run(c.name, "with", i + 1)),
       without: Array.from({ length: runs }, (_, i) => run(c.name, "without", i + 1)),
@@ -116,7 +118,7 @@ function run(args: string[], env: Record<string, string> = {}) {
       TMPDIR: dir,
       AK_EVAL_BUNDLE: bundle,
       AK_EVAL_JSON: json,
-      AK_EVAL_PASS_ENV: "FAKE_DIR FAKE_DROP FAKE_COST FAKE_TRACE FAKE_UNGRADED",
+      AK_EVAL_PASS_ENV: "FAKE_DIR FAKE_DROP FAKE_COST FAKE_TRACE FAKE_UNGRADED FAKE_FAILED",
       FAKE_DIR: dir,
       ...env,
     },
@@ -218,8 +220,26 @@ describe("eval-local: evidence retention and grading state", () => {
     expect(r.status).toBe(0);
     expect(r.receipt.cases[0].with).toMatchObject({ n: 1, graded: 0, ungraded: 1, passes: 0, rate: null });
     expect(r.receipt.cases[0].without).toMatchObject({ n: 1, graded: 1, ungraded: 0, passes: 1, rate: 1 });
+    expect(r.receipt.cases[0]).toMatchObject({ score: null, scoreWithout: null, delta: null });
     expect(r.receipt.overall).toMatchObject({ score: null, meanDelta: null, ungraded: 1 });
     expect(r.stdout).toContain("1 ungraded");
+    expect(r.stdout).toMatch(/^case-three\s+0\/0 \[0,1\] \+ 1 ungraded\s+1\/1 \[[\d.]+,1\]\s+-\s+-$/m);
+  });
+
+  test("a definite grader failure stays a graded failure when the paid grader is skipped", () => {
+    const r = run(["--case", "case-three"], { FAKE_UNGRADED: "with", FAKE_FAILED: "with" });
+    expect(r.status).toBe(0);
+    expect(r.receipt.cases[0].with).toMatchObject({ n: 1, graded: 1, ungraded: 0, passes: 0, rate: 0 });
+    expect(r.receipt.cases[0]).toMatchObject({ score: 1, scoreWithout: 1, delta: 0 });
+    expect(r.receipt.overall).toMatchObject({ score: 1, meanDelta: 0, ungraded: 0 });
+    expect(r.stdout).not.toContain("ungraded");
+  });
+
+  test("a definite grader failure without a skipped grader is a graded failure", () => {
+    const r = run(["--case", "case-three"], { FAKE_FAILED: "without" });
+    expect(r.status).toBe(0);
+    expect(r.receipt.cases[0].without).toMatchObject({ n: 1, graded: 1, ungraded: 0, passes: 0, rate: 0 });
+    expect(r.receipt.cases[0].with).toMatchObject({ n: 1, graded: 1, ungraded: 0, passes: 1, rate: 1 });
   });
 });
 
