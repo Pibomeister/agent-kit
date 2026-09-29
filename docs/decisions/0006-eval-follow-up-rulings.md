@@ -38,10 +38,10 @@ case receives a repository plus a record of all three failed attempts.
 
 ### F3 — super-align separates unavailable from failed context
 
-In `vague-request-opens-a-round`, one run treated an unconfigured knowledgebase as unreachable and
-stopped before asking a question. The knowledgebase adapter contract says an unconfigured
-`kb-read` is unavailable and the run continues, while a configured operation that cannot be reached
-is failed.
+`vague-request-opens-a-round` passed 1 of 3 plugin runs; the recorded failure is the skill stopping
+on the missing knowledgebase before asking the human anything. The knowledgebase adapter contract
+says an unconfigured `kb-read` is unavailable and the run continues, while a configured operation
+that cannot be reached is failed.
 
 An unavailable adapter is now a coverage limitation: the interview continues through restatement,
 then publication stops with `needs-input` naming `kb-read` and `kb-write`. A configured operation
