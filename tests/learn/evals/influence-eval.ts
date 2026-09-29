@@ -761,6 +761,7 @@ async function main(argv: string[]): Promise<number> {
   const leaks = new Set<string>();
   // Per subject, the models its host reported serving the sessions: runtime data, never a binding.
   const observed = new Map<string, Set<string>>();
+  const instrument = evalInstrument(PACKAGE_ROOT, revision());
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
     const maxTurns = effectiveMaxTurns(subject, DEFAULT_MAX_TURNS);
@@ -844,7 +845,7 @@ async function main(argv: string[]): Promise<number> {
     preregistered_kept: [...PREREGISTERED_KEPT],
     transcripts: transcriptsDir ?? null,
     leaks: [...leaks].sort(),
-    ...evalInstrument(PACKAGE_ROOT, revision()),
+    ...instrument,
   };
   const summary = analyse(records, { preregistered: PREREGISTERED_KEPT });
   if (out !== undefined) writeFileSync(out, JSON.stringify({ receipt, summary, records }, null, 1));

@@ -482,6 +482,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const config = loadConfig(process.env);
   const judge = commandJudge(config);
+  const instrument = evalInstrument(PACKAGE_ROOT, revision());
   const results: FixtureResult[] = [];
   for (const { spec, set: which } of tagged) {
     const fresh = () => {
@@ -529,7 +530,7 @@ async function main(argv: string[]): Promise<number> {
     runs,
     judge_cost_usd: null,
     judge_cost_note: "not recorded: commandJudge returns the parsed reply and drops the host envelope that carries the cost",
-    ...evalInstrument(PACKAGE_ROOT, revision()),
+    ...instrument,
   };
   const summary = {
     dev: summariseSet(results.filter((r) => r.set === "dev")),

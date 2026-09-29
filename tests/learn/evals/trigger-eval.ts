@@ -1133,6 +1133,7 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
 
+  const instrument = evalInstrument(PACKAGE_ROOT, revision());
   const report = [];
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
@@ -1223,7 +1224,7 @@ async function main(argv: string[]): Promise<number> {
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
     argv: ["bun", "tests/learn/evals/trigger-eval.ts", ...argv],
-    ...evalInstrument(PACKAGE_ROOT, revision()),
+    ...instrument,
     subjects: report.map((r) => ({ subject: r.subject, host: r.host, injection: r.injection, max_turns: r.max_turns, bundle: r.bundle, leaks: r.leaks, observed_models: r.observed_models })),
   };
   const out = option(argv, "--json");

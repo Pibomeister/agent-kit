@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { run } from "../../../src/learn/core/proc.ts";
 import { describeInstall, loadInstallConfig } from "../../../src/packaging/install.ts";
+import { hasErrors } from "../../../src/validation/types.ts";
 
 /** Variables that make a nested host CLI believe it runs inside the parent session. */
 const NESTED_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
@@ -30,10 +31,15 @@ export function cleanEnv(): Record<string, string> {
 export function evalInstrument(root: string, revision: string) {
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error(`${root} has no readable catalog.yaml, so the receipt cannot name its install configuration`);
+  const install = loadInstallConfig(root, catalog);
+  if (hasErrors(install.issues)) {
+    const why = install.issues.filter((i) => i.severity === "error").map((i) => `${i.file}: ${i.message}`);
+    throw new Error(`${root} has an install configuration the receipt cannot name: ${why.join("; ")}`);
+  }
   return {
     revision,
     donors_present: existsSync(join(root, ".donors")),
-    install_config: describeInstall(loadInstallConfig(root, catalog)),
+    install_config: describeInstall(install),
   };
 }
 

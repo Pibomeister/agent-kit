@@ -318,4 +318,13 @@ describe("eval receipt instrument", () => {
     mkdirSync(root);
     expect(() => evalInstrument(root, "abc123")).toThrow("catalog.yaml");
   });
+
+  test("refuses an install file it cannot read rather than recording the host alone", () => {
+    const root = join(scratch, "bad-install");
+    for (const rel of ["catalog.yaml", "adapters"]) cpSync(join(PACKAGE_ROOT, rel), join(root, rel), { recursive: true });
+    writeFileSync(join(root, "ak.install.yaml"), "attached: tracker\n");
+    expect(() => evalInstrument(root, "abc123")).toThrow("ak.install.yaml: Declares no 'attached:' list");
+    writeFileSync(join(root, "ak.install.yaml"), "attached: [\n");
+    expect(() => evalInstrument(root, "abc123")).toThrow("ak.install.yaml: Not valid YAML");
+  });
 });
