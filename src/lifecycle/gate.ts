@@ -217,8 +217,6 @@ export interface OpenArgs {
   dir: string;
   project: string;
   ticket: string;
-  now?: () => Date;
-  random?: () => string;
 }
 
 export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false; reason: string } {
@@ -238,9 +236,9 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const id = (ticket as { id?: unknown } | null)?.id;
   if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
 
-  const openedAt = (a.now ?? (() => new Date()))().toISOString();
+  const openedAt = new Date().toISOString();
   const ticketHash = `sha256:${createHash("sha256").update(contents).digest("hex")}`;
-  const nonce = (a.random ?? (() => randomBytes(16).toString("hex")))();
+  const nonce = randomBytes(16).toString("hex");
   const suffix = createHash("sha256").update(JSON.stringify([id, ticketHash, head.text, openedAt, nonce])).digest("hex").slice(0, 12);
   const branchId = safeRunId(branch.text).slice(0, 128 - suffix.length - 1);
   const runId = `${branchId}-${suffix}`;
@@ -270,8 +268,8 @@ function pointerRun(dir: string, branch: string): { run?: string; error?: string
     return { error: `branch run pointer ${path} is not valid` };
   }
   const run = readRunRecord(dir, pointer.run_id);
-  if (run === undefined || run.branch !== branch) return { error: `branch run pointer ${path} does not name an opened run for ${branch}` };
-  return { run: pointer.run_id };
+  if (run === undefined) return { error: `branch run pointer ${path} does not name an opened run` };
+  return run.branch === branch ? { run: pointer.run_id } : {};
 }
 
 export interface RecordArgs {
@@ -426,7 +424,7 @@ export function checkGates(a: CheckArgs): CheckResult {
         const recorded = Date.parse(counted.recorded_at);
         if (forkTime.code === 0 && Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
           notes.push(
-            `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)`,
+            `note: ${gate} for run ${a.run} was recorded before this branch last took ${fork.branch} (${fork.base.slice(0, 12)}); if this branch was reused for a new task, open a new run`,
           );
         }
       }
@@ -557,8 +555,13 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
     }
     const opened = readRunRecord(dir, run);
     if (opened?.closed_at !== undefined) {
-      io.err("ak lifecycle record: run closed; open a new run");
-      return 1;
+      const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
+      const closedHere =
+        live !== undefined && typeof live !== "string" && readRecords(dir, run, "ship-preflight").some((r) => same(r.snapshot, live));
+      if (!closedHere) {
+        io.err("ak lifecycle record: run closed; open a new run");
+        return 1;
+      }
     }
     const r = recordGate({ dir, run, gate, project });
     if (!r.ok) {

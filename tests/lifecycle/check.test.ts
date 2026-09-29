@@ -218,7 +218,7 @@ describe("ak lifecycle check, standalone", () => {
     expect(inherited.err).toContain(
       "note: build-checks for run feature was recorded before this branch last took main (",
     );
-    expect(inherited.err).toContain("if this branch was reused for a new task, open a new run (known limit, gate.ts:5-8)");
+    expect(inherited.err).toContain("if this branch was reused for a new task, open a new run");
   });
 
   test("on a clone, the note and the refusal name the default branch, not the remote HEAD ref", () => {
@@ -292,6 +292,52 @@ describe("ak lifecycle check, standalone", () => {
     expect(checked.code).toBe(1);
     expect(checked.err).toContain(`gate build-checks has no current evidence (no record for run ${second}`);
     expect(checked.err).toContain(`gate review-full has no current evidence (no record for run ${second}`);
+  });
+
+  test("a closed run accepts ship-preflight again at the head that closed it, and nothing at a new head", () => {
+    const dir = repo();
+    const run = open(dir, "dry-run-then-publish");
+    record(dir, ...PRE_SHIP_GATES, "ship-preflight");
+    expect(ak(dir, "check").code).toBe(0);
+
+    const again = ak(dir, "record", "--gate", "ship-preflight");
+    expect(again.err).toBe("");
+    expect(again.code).toBe(0);
+    expect(again.out[0]).toContain(`recorded ship-preflight for run ${run}`);
+    expect(ak(dir, "record", "--gate", "ship-preflight").code).toBe(0);
+    for (const gate of PRE_SHIP_GATES) {
+      const other = ak(dir, "record", "--gate", gate);
+      expect(other.code).toBe(1);
+      expect(other.err).toContain("run closed; open a new run");
+    }
+
+    writeFileSync(join(dir, "src/a.js"), "export const a = 9;\n");
+    for (const gate of ["ship-preflight", "verify"] as const) {
+      const moved = ak(dir, "record", "--gate", gate);
+      expect(moved.code).toBe(1);
+      expect(moved.err).toContain("run closed; open a new run");
+    }
+  });
+
+  test("a pointer whose run names another branch is absent, so the colliding branch stays on the v1 path", () => {
+    const dir = repo();
+    git(dir, "checkout", "-q", "-b", "feat/x");
+    const opened = ak(dir, "open", "--ticket", ticket(dir, "collide"));
+    expect(opened.code).toBe(0);
+    const run = opened.out[0]!.replace(/^opened run /, "");
+    record(dir, ...PRE_SHIP_GATES);
+
+    git(dir, "checkout", "-q", "-b", "feat-x");
+    const before = ak(dir, "check");
+    expect(before.code).toBe(1);
+    expect(before.err).toContain("no record for run feat-x ");
+    record(dir, ...PRE_SHIP_GATES);
+    const v1 = ak(dir, "check");
+    expect(v1.code).toBe(0);
+    expect(v1.out[0]).toContain("ok: run feat-x has current evidence");
+
+    git(dir, "checkout", "-q", "feat/x");
+    expect(ak(dir, "check").out[0]).toContain(`ok: run ${run} has current evidence`);
   });
 
   test("commits and a mid-task merge from main keep the opened run id and its earlier records", () => {
