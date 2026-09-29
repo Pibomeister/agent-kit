@@ -1250,6 +1250,9 @@ Five details decide whether a grader measures what its name says:
   nothing.
 - **`file_exists` sees only files created during the run.** `path` is a glob — `**` spans any depth,
   `*` stays inside one path segment, `?` is one character — matched against the created-file list.
+  What a scaffold wrote is not on that list: the host (`claude` 2.1.285, read from its binary)
+  lists the working directory after the scaffold returns and again after the run, and grades the
+  difference. No run has yet exercised a no-file grader on a scaffolded case.
   A file that existed before the run and was edited is not on that list, so "no file was written"
   is `file_exists` with `path: "**"` and `exists: false` together with `tool_used` on `Edit` with
   `max: 0`.
