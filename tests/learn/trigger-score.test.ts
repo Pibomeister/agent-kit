@@ -458,6 +458,38 @@ describe("readOnlyShell: looking commands the a2 transcripts ran", () => {
     }
   });
 
+  test("the composite command forms retained in the stored transcripts are read-only", () => {
+    for (const cmd of [
+      'git show --stat HEAD && git branch -a && git notes list 2>&1; git stash list; git status',
+      'git log --oneline -n 20 && git status --short && git stash list && git reflog -n 10',
+      'ls -ld /tmp/skills/super-align; realpath /tmp/skills/super-align/SKILL.md',
+      'for p in ../AGENTS.md ../../AGENTS.md /AGENTS.md; do if [ -f "$p" ]; then cat "$p"; fi; done',
+      'ls -la; cat .git/config; rg --files --hidden -g "!.git/**"; for p in ../AGENTS.md ../../AGENTS.md /AGENTS.md; do if [ -f "$p" ]; then cat "$p"; fi; done',
+      'env GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false branch -a -vv 2>/dev/null; env GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false show-ref 2>/dev/null',
+      'find .git -maxdepth 2 -not -path ".git/objects*" | sort && git show --stat HEAD',
+      'curl -sS -m 5 -o /dev/null -w "HTTP %{http_code} in %{time_total}s\\n" http://localhost:3000/; echo "exit=$?"; lsof -nP -iTCP:3000 -sTCP:LISTEN 2>/dev/null || echo "nothing listening"',
+      "env | grep -iE '^(AK_|GH_)' | sed -E 's/=.*/=<set>/'",
+      "env | cut -d= -f1 | rg '^(GH|GITHUB|AK_)' | sort",
+      'git log --oneline -5 && git status --short && ls -la && (grep -rniE "timezone|\\bTZ\\b" --include=* . 2>/dev/null | grep -v "^./.git/" | head -30); command -v ak',
+    ]) {
+      expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, true]);
+    }
+  });
+
+  test("the broadened wrappers still reject a mutating nested command", () => {
+    for (const cmd of [
+      "env SAFE=1 git push",
+      "(git status; git push)",
+      'for p in AGENTS.md; do if [ -f "$p" ]; then rm "$p"; fi; done',
+      "git notes add -m changed",
+      "git fsck --lost-found",
+      "git reflog expire --all",
+      "sed -i s/a/b/ file",
+    ]) {
+      expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, false]);
+    }
+  });
+
   test("gh auth status only inspects authentication state", () => {
     expect(readOnlyShell("gh auth status")).toBe(true);
     expect(readOnlyShell("gh auth login")).toBe(false);
@@ -472,6 +504,7 @@ describe("readOnlyShell: looking commands the a2 transcripts ran", () => {
   test("ak learn memory show reads while other ak commands still count as writes", () => {
     expect(readOnlyShell("ak learn memory show")).toBe(true);
     expect(readOnlyShell("ak learn memory show --repo .")).toBe(true);
+    expect(readOnlyShell("ak learn review report")).toBe(true);
     for (const cmd of ["ak -h", "ak record --help x", "ak learn memory mute", "ak learn memory show; ak learn memory mute"]) {
       expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, false]);
     }
