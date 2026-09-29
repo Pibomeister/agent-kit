@@ -209,7 +209,8 @@ The 80 stored calibration items were rescored at both current-main parent
 SHA-256 `6abc18891b1017b731358c38e7fffa75aacad37cc15d5e586d0dc9d3fa1f5a74`.
 This workstream therefore changes none of the agreement figures in this receipt. The same
 command run again from this branch's working tree at its shipped tip, which carries the review-fix
-commits after `c96e84a` (group-depth tracking for `( … )` and a `sort -o` guard), wrote a third
+commits after `c96e84a` (stripping the parens of `( … )` groups from the words they are glued to,
+and a `sort -o` guard), wrote a third
 output with the same SHA-256, so the figures hold for the shipped scorer.
 
 | Instrument item | Value |

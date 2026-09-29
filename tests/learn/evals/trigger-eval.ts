@@ -542,23 +542,14 @@ export function readOnlyShell(command: string): boolean {
     if (SHELL_OPERATORS.has(word)) segments.push([]);
     else segments.at(-1)!.push(word);
   }
-  let depth = 0;
   const commands: string[][] = [];
   for (const segment of segments) {
     const command: string[] = [];
     segment.forEach((raw, i) => {
-      let word = raw;
-      if (i === 0) {
-        const opened = /^\(+/.exec(word)?.[0].length ?? 0;
-        depth += opened;
-        word = word.slice(opened);
-      }
+      let word = i === 0 ? raw.replace(/^\(+/, "") : raw;
       const opens = word.split("(").length - 1;
       const closes = word.split(")").length - 1;
-      const trailing = /\)*$/.exec(word)![0].length;
-      const after = depth + opens - closes;
-      if (trailing > 0 && closes > opens && after <= 0) word = word.slice(0, -trailing);
-      depth = Math.max(0, after);
+      if (closes > opens) word = word.replace(/\)+$/, "");
       if (word !== "" || raw === "") command.push(word);
     });
     if (command.length > 0) commands.push(command);
