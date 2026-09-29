@@ -3,9 +3,10 @@
 #
 # tiny-service-repo with ticket AK-214 on main, then a task branch whose head
 # commit implements it: withRetry no longer retries a 4xx other than 429, and
-# test/http/retry.test.js gains the two tests the ticket's verification
-# commands select by name. AC-2 genuinely holds at the head. The project has
-# no `npm test` script -- its command is `npm run check` (package.json,
+# test/http/retry.test.js gains two tests named `AK-214 AC-1` and `AK-214 AC-2`
+# after the ticket's acceptance criteria. The ticket deliberately names no
+# verification command. AC-2 genuinely holds at the head. The project has no
+# `npm test` script -- its command is `npm run check` (package.json,
 # CONTRIBUTING.md) -- so a run that assumes the ecosystem default gets an
 # error instead of a receipt.
 set -euo pipefail

@@ -93,6 +93,15 @@ describe("A1 scaffold content leaves the behavior observable", () => {
     expect(readFileSync(join(workspace, "tickets/AK-214.md"), "utf8")).not.toContain("Verification:");
   });
 
+  test("the typo-fix premise keeps the baseline's template module and its test green", () => {
+    const workspace = scaffold("super-align/typo-fix-does-not-start-alignment", "ak-a1-typo-");
+    const check = spawnSync("node", ["--test", "test/email/templates.test.js"], { cwd: workspace, encoding: "utf8" });
+    expect(check.status, check.stdout + check.stderr).toBe(0);
+    const templates = require(join(workspace, "src/email/templates.js"));
+    expect(templates.invoiceFooter).toBe("Payement due on reciept");
+    expect(templates.render("Hi {{ name }}", { name: "Ada" })).toBe("Hi Ada");
+  });
+
   test("the approved sandbox direction has a compatible tenant-policy path", () => {
     const workspace = scaffold("super-bound/approved-direction-produces-spec-and-tickets", "ak-a1-direction-");
     const alignment = JSON.parse(readFileSync(join(workspace, "runs/sandbox-self-serve/alignment.json"), "utf8"));
