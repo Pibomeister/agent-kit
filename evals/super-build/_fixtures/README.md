@@ -94,6 +94,7 @@ Cases scaffolded on these fixtures:
 | Case | Fixture |
 |---|---|
 | `super-scout/named-question-returns-dossier` | tiny-service-repo |
+| `super-scout/refuses-unbounded-question` | tiny-service-repo |
 | `super-build/approved-ticket-executes-and-reports-receipts` | tiny-service-repo, AK-214 |
 | `super-build/independent-tickets-still-parallel` | tiny-service-repo, AK-420, AK-421 |
 | `super-build/graded-patch-finding-proceeds` | tiny-service-repo |
@@ -107,6 +108,7 @@ Cases scaffolded on these fixtures:
 | `super-bound/approved-direction-produces-spec-and-tickets` | tiny-service-repo, knowledgebase checkout |
 | `diagnose/no-grant-emits-a-packet-not-a-patch` | tiny-service-repo |
 | `diagnose/bug-with-repro-gets-a-cause` | tiny-service-repo |
+| `diagnose/third-failed-fix-stops-the-run` | tiny-service-repo |
 | `ultraqa/five-cycles-is-the-ceiling` | tiny-service-repo |
 | `compound-refresh/drifted-path-is-updated-in-place` | tiny-service-repo, knowledgebase checkout |
 | `receiving-review/assesses-a-thread-against-the-code` | tiny-service-repo, pr-812-org-cache |
