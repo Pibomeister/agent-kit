@@ -534,7 +534,9 @@ function newlinesAsSeparators(command: string): string {
  * True when every command in a list (split at `&&`, `||`, `;`, `|`, `&` and newlines) is a
  * read-only program and nothing is redirected to a file. Input (`<file`), a duplicated descriptor
  * (`2>&1`, `>&2`) and `/dev/null` are not files. A read-write open (`<>file`, `0<>file`) creates
- * its target, so it is a write.
+ * its target, so it is a write. A `( … )` group is read through its commands, and a
+ * `for x in <literal words>; do … done` loop through its body, where an `if … ; then … ; fi` may
+ * wrap one command; any other compound form is a write, because its effect is not read here.
  */
 export function readOnlyShell(command: string): boolean {
   const segments: string[][] = [[]];

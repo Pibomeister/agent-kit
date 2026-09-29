@@ -28,8 +28,10 @@ The short answer:
   the cut, and are marked.
 - **subject-fable hit the six-turn cap in 43 of 120 sessions.** Those sessions are invalid, which
   leaves its valid-only figures thin. Its events-view figures match subject-opus on routing.
-- **No violation is a write.** Every `violated` row on every host is a shell look (`command -v ak`,
-  `gh auth status`, `env | grep`, `cd … && ls`) that the shell classifier counts as a side effect.
+- **No valid-session violation is a write.** Every `violated` row on every host is a shell look
+  (`command -v ak`, `gh auth status`, `env | grep`, `cd … && ls`) that the shell classifier counts
+  as a side effect, except two invalid sessions whose chains also run `git fsck --lost-found`; see
+  [Rescored after the shell-classifier repair](#rescored-after-the-shell-classifier-repair).
   No Write, Edit or patch followed a user-invoked load anywhere in the run.
 
 The U-prose figures carry a caveat: this run was scored by the scorer as it stood before PR #17,
@@ -197,8 +199,9 @@ violations from 14 to 12. Grok's figures do not move in either view (prose 0/7, 
   `git status` / `ls` / `rg --files` chain. Seven become loaded-unclear and one loaded-and-stopped. Five of the
   eight are subject-sol's, on compound and compound-refresh.
 - **Two loaded-unclear rows become loaded-and-stopped**, both subject-sol.
-- **23 violations remain (12 in valid sessions), and none is a write.** Each is a read-only shell look the classifier still
-  counts as a side effect:
+- **23 violations remain (12 in valid sessions).** Each is flagged on a read-only shell look the
+  classifier still counts as a side effect (two invalid sessions also run `git fsck --lost-found`,
+  a write; see [Rescored after the shell-classifier repair](#rescored-after-the-shell-classifier-repair)):
   - `cd <tmp> && ls`
   - `git show --stat`, `git config --list`, `git show-ref`, `git worktree list`,
     `git branch -a -vv`, and `git tag` with no arguments
