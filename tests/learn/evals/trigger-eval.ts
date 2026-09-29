@@ -406,7 +406,7 @@ function readOnlyGit(args: readonly string[]): boolean {
   if (sub === undefined) return true;
   if (GIT_LOOKING.has(sub)) return true;
   if (sub === "reflog") {
-    const action = rest.find((w) => ["show", "expire", "delete"].includes(w));
+    const action = rest.find((w) => ["show", "exists", "expire", "delete"].includes(w));
     return action === undefined || action === "show";
   }
   const actions = GIT_LOOKING_ACTION[sub];

@@ -507,6 +507,8 @@ describe("readOnlyShell: looking commands the a2 transcripts ran", () => {
       "git notes add -m changed",
       "git fsck --lost-found",
       "git reflog expire --all",
+      "git reflog exists refs/heads/main",
+      "git notes show",
       "sed -i s/a/b/ file",
     ]) {
       expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, false]);
