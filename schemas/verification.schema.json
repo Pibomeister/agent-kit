@@ -222,12 +222,8 @@
       },
       "then": {
         "required": ["exit_status"],
-        "allOf": [
-          {
-            "if": { "properties": { "exit_status": { "const": 0 } }, "required": ["exit_status"] },
-            "then": { "required": ["exit_disagreement"] }
-          }
-        ]
+        "if": { "properties": { "exit_status": { "const": 0 } }, "required": ["exit_status"] },
+        "then": { "required": ["exit_disagreement"] }
       }
     },
     {
