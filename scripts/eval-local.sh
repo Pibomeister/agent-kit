@@ -26,9 +26,10 @@
 #
 # Reads: dist/claude-code (run `bun run ak build --profile all` first), or $AK_EVAL_BUNDLE. Writes: evals/results/
 # under the bundle, the JSON result to $AK_EVAL_JSON (default: a temp file whose path is printed),
-# and the receipt beside it as <result>.receipt.json. Each run's trace is copied under
-# <result>.traces/<case dir>/<arm>-<n>.jsonl, because the host leaves it in a temporary directory
-# that the system cleans.
+# and the receipt beside it as <result>.receipt.json. The host runs with --keep-temp, which keeps
+# each run's sandbox (workspace and trace.jsonl) under the system temporary directory after the
+# invocation returns; each trace is then copied under <result>.traces/<case dir>/<arm>-<n>.jsonl,
+# because the system cleans that directory on its own schedule.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -38,8 +39,10 @@ command -v jq >/dev/null || { echo "eval-local: jq is required" >&2; exit 2; }
 
 # /usr/bin/git on macOS is a developer-tool shim. Inside the eval sandbox it cannot update the
 # cache it uses to locate the real executable, so every Git-backed case stops before the behavior
-# under test. Resolve the concrete executable while still outside the sandbox and put only its
-# directory first on the child's PATH. Other platforms keep the ordinary PATH resolution.
+# under test. Resolve the concrete executable while still outside the sandbox and put a directory
+# holding only a symlink to it first on the child's PATH, so nothing else beside it is shadowed.
+# Other platforms keep the ordinary PATH resolution. Whether the sandbox runs the executable is
+# unverified until a paid run exercises it; the receipt's summary line says so.
 host_git="$(command -v git 2>/dev/null || true)"
 host_git_source=path
 if command -v xcrun >/dev/null 2>&1; then
@@ -50,7 +53,9 @@ if command -v xcrun >/dev/null 2>&1; then
   fi
 fi
 [[ -n "$host_git" && -x "$host_git" ]] || { echo "eval-local: git is required" >&2; exit 2; }
-host_path="$(dirname "$host_git"):$PATH"
+git_shim="$(mktemp -d "${TMPDIR:-/tmp}/ak-git-shim.XXXXXX")"
+ln -s "$host_git" "$git_shim/git"
+host_path="$git_shim:$PATH"
 
 # The script reads four of the host's options itself: --case and --tag (to know which cases run),
 # --eval-dir (where they live) and --max-cost-usd (one budget across every invocation). --case and
@@ -170,6 +175,7 @@ restore() {
     fi
   done
   rmdir "$aside" 2>/dev/null || true
+  rm -rf "$git_shim"
 }
 trap restore EXIT
 trap 'exit 130' INT TERM
@@ -295,7 +301,7 @@ for i in "${!groups[@]}"; do
     fi
     cap=(--max-cost-usd "$left")
   fi
-  command=(claude plugin eval "$target" --no-publish --json "$out" "${args[@]+"${args[@]}"}" "${grant[@]+"${grant[@]}"}" "${cap[@]+"${cap[@]}"}")
+  command=(claude plugin eval "$target" --no-publish --keep-temp --json "$out" "${args[@]+"${args[@]}"}" "${grant[@]+"${grant[@]}"}" "${cap[@]+"${cap[@]}"}")
   printf -v cmdline '%q ' "${command[@]}"
   echo "eval-local: group $((i + 1))/${#groups[@]}: grant [${key:-none}]" >&2
   set +e
@@ -370,7 +376,11 @@ fi
 
 # Per case and arm: n runs, passes (a run passes when every grader that counts toward the score
 # passed; with-only graders do not count toward the score), the rate with its 95% Wilson interval,
-# and the fired count on the with arm. A run fired when every with-only `tool_used` grader on the
+# and the fired count on the with arm. The graders that count are read from the runs, where the
+# host marks with-only ones; the case-level definitions carry no such mark. A run the host cut
+# short for budget carries skippedPaidGraders and each skipped grader as failed with the
+# explanation "skipped: cost ceiling" (research/evals/2026-09-28-a1-rerun/budget-skipped-run.json);
+# those verdicts are missing, not negative, so the run is ungraded unless a scored grader failed. A run fired when every with-only `tool_used` grader on the
 # Skill tool passed; the case's grader definitions in the result name them. Other with-only graders,
 # such as a negative's check that the workflow was not carried out, are not firing. A case with no
 # such grader has fired null.
@@ -389,7 +399,9 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
       | ((1.96 * ((($p * (1 - $p)) / $n + $z2 / (4 * $n * $n)) | sqrt)) / (1 + $z2 / $n)) as $h
       | {lo: ([0, $c - $h] | max), hi: ([1, $c + $h] | min)} end;
   def verdicts($run; $expected): [$expected[] as $name
-      | [$run.graders[]? | select(.name == $name and (.skipped // false) != true) | .passed] | first];
+      | [$run.graders[]? | select(.name == $name)
+         | if $run.skippedPaidGraders == true and ((.explanation // "") | startswith("skipped:")) then null else .passed end]
+        | first];
   def graded($run; $expected): ($expected | length) > 0
       and (verdicts($run; $expected) | any(. == false) or all(type == "boolean"));
   def passed($run; $expected): ($expected | length) > 0
@@ -403,7 +415,7 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
       | if (map(length) | add // 0) == 0 then null
         else {n: length, fired: map(select(length > 0 and all)) | length} end;
   def skill_graders: [.graders[]? | select(.type == "tool_used" and .config.tool == "Skill") | .name];
-  def score_graders: [.graders[]? | select(.withOnly | not) | .name];
+  def score_graders: [(.arms // {})[][]?.graders[]? | select(.withOnly | not) | .name] | unique;
   (.costUsd | if type == "number" then . * 10000 | round / 10000 else . end) as $cost
   | [.cases[] | score_graders as $expected
                 | arm(.arms.with // []; $expected) as $with | arm(.arms.without // []; $expected) as $without
@@ -456,7 +468,7 @@ jq -r '
 ' "$receipt" | column -t -s $'\t' || echo "eval-local: could not summarise $receipt" >&2
 jq -r '"eval-local: measured \(.bundle.path) (sha256 \(.bundle.sha256[0:12]), fresh=\(.bundle.freshAgainstSources))",
        "eval-local: tree \(.measured.revision)\(if .measured.dirty then " (dirty)" else "" end)  .donors=\(.donorsPresent)  install=\(.install)",
-       "eval-local: host \(.host)  isolation \(.isolation.method)  git=\(.tooling.git.path)"' "$receipt" 2>/dev/null || true
+       "eval-local: host \(.host)  isolation \(.isolation.method)  git=\(.tooling.git.path) (on the sandbox PATH; unverified in the live sandbox)"' "$receipt" 2>/dev/null || true
 echo "eval-local: full result in $json"
 echo "eval-local: receipt in $receipt"
 exit "$status"

@@ -1429,10 +1429,14 @@ only the last `--case` it is given. So a run that leaves these cases out goes th
 
 **The local runner resolves Git before entering the eval sandbox.** On macOS, `/usr/bin/git` is a
 developer-tool shim whose cache write is blocked in the sandbox. `scripts/eval-local.sh` asks
-`xcrun` for the concrete executable outside the sandbox, prepends only that executable's directory
-to the isolated `PATH`, and records the path in the receipt. Other platforms keep their ordinary
-`command -v git` result. A quoted run therefore names the receipt's Git path; a case still grades
-the resulting work, not the mere presence of a commit.
+`xcrun` for the concrete executable outside the sandbox, prepends a temporary directory holding
+only a `git` symlink to it to the isolated `PATH`, so nothing else on the host's `PATH` is shadowed,
+and records the executable's path in the receipt. Other platforms keep their ordinary
+`command -v git` result. The stub host in `tests/eval-local.test.ts` resolves `git` to that
+executable through the shim; whether the live sandbox runs it is unverified until the next paid
+run exercises a case that commits, and the receipt's summary line says so. A quoted run therefore
+names the receipt's Git path as offered, not as exercised; a case still grades the resulting work,
+not the mere presence of a commit.
 
 **Running the suite locally.** `scripts/eval-local.sh [claude plugin eval options…]` runs
 `claude plugin eval dist/claude-code` and prints a with/without/delta table per case. Build the A1
@@ -1462,11 +1466,19 @@ separately, against a staged copy of the bundle that holds only that group's cas
 case gets exactly the tools it declares. The staging is also how `--case` and `--tag` select: the
 host keeps only the last `--case` it is given, so neither flag is passed to it. `--max-cost-usd` is
 one budget across the groups. The host checks it as runs start, so runs already in flight can end
-past the cap. Each host trace is copied beside the result before its temporary directory disappears
-and indexed in the receipt. If a paid grader is skipped after the budget is exhausted, that run is
-reported as ungraded and stays out of the pass/fail denominator; an ordinary negative grader verdict
-remains a graded failure. The receipt withholds the aggregate score and delta while any run is
-ungraded, because the host's aggregate counts a skipped paid grader as a failure.
+past the cap. The host is run with `--keep-temp`, which keeps each run's sandbox, workspace and
+`trace.jsonl`, under the system temporary directory after the invocation returns; each trace is
+then copied beside the result and indexed in the receipt, because the system cleans that directory
+on its own schedule. The 2026-09-28 rerun predates this, which is why its report has no
+transcripts. The graders that count toward a score are read from the runs, where the host marks
+with-only graders; the case-level definitions carry no such mark. When the host stops paying
+after the budget is exhausted, it marks the run `skippedPaidGraders` and records each skipped
+grader as failed with the explanation `skipped: cost ceiling`, the shape excerpted in
+`research/evals/2026-09-28-a1-rerun/budget-skipped-run.json` from that rerun's archived result.
+Such a run is reported as ungraded and stays out of the pass/fail denominator unless a grader that
+was actually scored failed; an ordinary negative grader verdict remains a graded failure. The
+receipt withholds the aggregate score and delta while any run is ungraded, because the host's
+aggregate counts a skipped paid grader as a failure.
 The script warns when in-flight work carries the spend past the cap. An explicit `--allow-tools`
 overrides the grouping and runs once with that grant.
 
@@ -1477,7 +1489,8 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
   writes no build stamp, so that comparison is the freshness check);
 - the install configuration and whether `.donors/` was present;
 - `claude --version`, the isolation method with the variable names it passed, the resolved Git
-  executable, and whether the grants came from the cases or the user;
+  executable offered on the sandbox `PATH` (unverified in the live sandbox until a paid run
+  exercises it), and whether the grants came from the cases or the user;
 - per invocation: the grant, its cases, the staged bundle's sha256, the exact runner command, the
   exit status, the cost and whether it was partial, or `skipped` when the budget ran out first;
   `incomplete_cases` lists the group's cases that are missing from its result or short of runs, and
@@ -1487,7 +1500,7 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
   and `over_budget`;
 - per case and arm: total `n`, `graded`, `ungraded`, passes over graded runs, rate and a 95% Wilson
   interval (the same formula as `tests/learn/evals/stats.ts`), plus the fired count;
-- every trace's temporary host path and durable copy path.
+- every trace's host path in the kept sandbox and its durable copy path.
 
 A figure quoted from a run carries that receipt, or the fields of it the figure depends on. The
 judge is bound by the runner, and neither the script nor this section names it.

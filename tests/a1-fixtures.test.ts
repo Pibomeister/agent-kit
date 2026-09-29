@@ -68,6 +68,7 @@ describe("A1 state-dependent fixtures", () => {
 describe("A1 cases whose host capability is unavailable", () => {
   test.each([
     "compound/correction-becomes-one-candidate",
+    "super-bound/approved-direction-produces-spec-and-tickets",
     "wayfind/loose-effort-charts-a-map",
   ])("%s stays out of difference claims", (dir) => {
     expect(loadCase(dir).tags).toContain("needs-fixture");

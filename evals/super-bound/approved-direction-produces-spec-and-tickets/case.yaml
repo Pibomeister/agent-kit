@@ -1,6 +1,6 @@
 schema_version: "1.1"
 name: approved-direction-produces-spec-and-tickets
-tags: [positive]
+tags: [positive, needs-fixture]
 execution:
   prompt: >-
     /ak:super-bound We agreed yesterday and I said yes: sandbox provisioning moves behind a self-serve endpoint,

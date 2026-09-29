@@ -1,0 +1,86 @@
+{
+  "source": "operator archive .work/archive/a1-rerun/a1-2026-09-28/a1.group-3.json, the 2026-09-28 A1 rerun group whose cost ceiling was reached",
+  "partialReason": "cost_ceiling",
+  "case": {
+    "name": "reviewed-ticket-does-not-reopen-bounding",
+    "graders": [
+      {
+        "name": "no-bounding-pass",
+        "type": "llm"
+      },
+      {
+        "name": "workflow-not-carried-out",
+        "type": "llm"
+      }
+    ],
+    "arms": {
+      "with": [
+        {
+          "passed": false,
+          "score": 0,
+          "skippedPaidGraders": true,
+          "graders": [
+            {
+              "name": "no-bounding-pass",
+              "passed": false,
+              "scored": true,
+              "withOnly": false,
+              "explanation": "skipped: cost ceiling"
+            },
+            {
+              "name": "workflow-not-carried-out",
+              "passed": false,
+              "scored": false,
+              "withOnly": true,
+              "explanation": "skipped: cost ceiling"
+            }
+          ]
+        }
+      ],
+      "without": [
+        {
+          "passed": false,
+          "score": 0,
+          "skippedPaidGraders": true,
+          "graders": [
+            {
+              "name": "no-bounding-pass",
+              "passed": false,
+              "scored": true,
+              "withOnly": false,
+              "explanation": "skipped: cost ceiling"
+            }
+          ]
+        },
+        {
+          "passed": false,
+          "score": 0,
+          "skippedPaidGraders": true,
+          "graders": [
+            {
+              "name": "no-bounding-pass",
+              "passed": false,
+              "scored": true,
+              "withOnly": false,
+              "explanation": "skipped: cost ceiling"
+            }
+          ]
+        },
+        {
+          "passed": false,
+          "score": 0,
+          "skippedPaidGraders": true,
+          "graders": [
+            {
+              "name": "no-bounding-pass",
+              "passed": false,
+              "scored": true,
+              "withOnly": false,
+              "explanation": "skipped: cost ceiling"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

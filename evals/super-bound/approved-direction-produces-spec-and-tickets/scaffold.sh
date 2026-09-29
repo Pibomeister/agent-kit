@@ -11,7 +11,10 @@
 # The knowledgebase adapter has no implementation in the workspace, so the
 # project's recorded context is supplied as a read-only checkout under
 # knowledge-base/, untracked and outside the application's history: the prd
-# in scope, the accepted adr on the tenant model, and the glossary.
+# in scope, the accepted adr on the tenant model, and the glossary. That
+# checkout answers reads only; the skill's publish step needs the adapter to
+# write, which the host cannot supply, so the case stays tagged needs-fixture
+# and out of difference claims until the adapter is available in the sandbox.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
