@@ -351,6 +351,7 @@ function readOnlyProgram(program: readonly string[]): boolean {
   if (LOOKING.has(name)) return true;
   if (name === "git") return readOnlyGit(args);
   if (name === "gh") return readOnlyGh(args);
+  if (name === "ak") return args.slice(0, 3).join(" ") === "learn memory show" && (args.length === 3 || (args.length === 5 && args[3] === "--repo"));
   if (name === "bun") return args[0] === "run" && args[1] === "ak" && ["validate", "status"].includes(args[2] ?? "");
   return false;
 }
@@ -408,6 +409,7 @@ function readOnlyGit(args: readonly string[]): boolean {
 function readOnlyGh(args: readonly string[]): boolean {
   const [group, action] = args;
   if (group === "api") return !args.some((w) => /^(?:-X|--method|-f|-F|--field|--raw-field|--input)(?:=|$)/.test(w));
+  if (group === "auth") return action === "status";
   if (group === "repo") return action === "view";
   return ["pr", "issue", "run"].includes(group ?? "") && ["view", "list", "checks", "diff", "status"].includes(action ?? "");
 }
@@ -526,22 +528,35 @@ export function readOnlyShell(command: string): boolean {
     if (SHELL_OPERATORS.has(word)) segments.push([]);
     else segments.at(-1)!.push(word);
   }
-  return segments
-    .filter((segment) => segment.length > 0)
-    .every((segment) => {
-      const program: string[] = [];
-      for (let i = 0; i < segment.length; i++) {
-        const redirect = REDIRECT.exec(segment[i]!);
-        if (redirect === null) {
-          program.push(segment[i]!);
-          continue;
-        }
-        const target = redirect[4] !== "" ? redirect[4] : segment[++i];
-        const harmless = redirect[2] === "<" || (redirect[3] === "&" ? /^(?:\d+|-)$/.test(target ?? "") : target === "/dev/null");
-        if (!harmless) return false;
+  const commands = segments.filter((segment) => segment.length > 0);
+  const readOnlySegment = (segment: readonly string[]) => {
+    const program: string[] = [];
+    for (let i = 0; i < segment.length; i++) {
+      const redirect = REDIRECT.exec(segment[i]!);
+      if (redirect === null) {
+        program.push(segment[i]!);
+        continue;
       }
-      return readOnlyProgram(program);
-    });
+      const target = redirect[4] !== "" ? redirect[4] : segment[++i];
+      const harmless = redirect[2] === "<" || (redirect[3] === "&" ? /^(?:\d+|-)$/.test(target ?? "") : target === "/dev/null");
+      if (!harmless) return false;
+    }
+    return readOnlyProgram(program);
+  };
+  if (commands[0]?.[0] !== "for") return commands.every(readOnlySegment);
+
+  const [header, firstBody, ...tail] = commands;
+  const last = tail.at(-1);
+  if (
+    commands.length < 3 ||
+    header?.[2] !== "in" ||
+    !/^[A-Za-z_]\w*$/.test(header[1] ?? "") ||
+    header.slice(3).some((word) => /`|\$\(|<\(/.test(word)) ||
+    firstBody?.[0] !== "do" ||
+    last?.length !== 1 ||
+    last[0] !== "done"
+  ) return false;
+  return [firstBody.slice(1), ...tail.slice(0, -1)].filter((segment) => segment.length > 0).every(readOnlySegment);
 }
 
 export type AuthorityVerdict = "stopped" | "proceeded" | "borderline";
