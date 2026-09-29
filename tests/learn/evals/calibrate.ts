@@ -362,6 +362,8 @@ function receiptPaths(path: string, receipt: Receipt["receipt"]): { runId: strin
   };
 }
 
+const UNOWNED_DUMP = "transcript dump without an eligible owning receipt";
+
 export interface Loaded {
   candidates: Candidate[];
   skipped: Record<string, number>;
@@ -409,7 +411,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
       const owned = ownedDumps.some((dumpDir) => path === dumpDir || path.startsWith(`${dumpDir}${sep}`));
       for (const { subject, file } of dumpFiles(path)) {
         if (owned) fromDump(subject, null, file, scoring.arm);
-        else if (!skippedBy.has(file)) skip(file, "transcript dump without an eligible owning receipt");
+        else if (!skippedBy.has(file)) skip(file, UNOWNED_DUMP);
       }
       continue;
     }
@@ -420,7 +422,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
         const dumpFile = dumpDir === undefined ? undefined : join(dumpDir, subject.subject, `${result.id}.json`);
         const source = dumpFile !== undefined && existsSync(dumpFile) ? dumpFile : `${runId}#${subject.subject}/${result.id}`;
         if (problem !== null) {
-          if (!skippedBy.has(source)) skip(source, problem);
+          if ((skippedBy.get(source) ?? UNOWNED_DUMP) === UNOWNED_DUMP) skip(source, problem);
           continue;
         }
         if (source === dumpFile) {

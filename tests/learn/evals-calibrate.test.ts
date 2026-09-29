@@ -341,15 +341,15 @@ describe("rescoreLabels", () => {
     const sampled = buildLabels(loadRuns([run.receipt], scoring), { n: 80, seed: 1, sources: [run.receipt] });
     const legacy = receiptVariant(run.receipt, "rescore-legacy", ({ bundle_complete: _, ...receipt }) => ({ ...receipt, bundle: "on" }));
     const orphan = item("gone", { source: join(scratch, "runs", "gone.json#subject-a/x") });
-    const labels = { ...sampled, sources: [run.dumpDir, legacy], items: [...sampled.items, orphan] };
+    const labels = { ...sampled, sources: [run.dumpDir], items: [...sampled.items, orphan] };
     const dumped = labels.items.find((i) => i.events_recorded)!;
-    const result = rescoreLabels(labels, loadRuns(labels.sources, scoring));
-    expect(result.changed).toEqual([]);
-    expect(result.missing).toEqual(["gone"]);
-    expect(result.ineligible).toEqual(
-      sampled.items.map((i) => ({ id: i.id, why: i === dumped ? "transcript dump without an eligible owning receipt" : "bundle completeness was not recorded" })),
-    );
-    expect(result.labels.items).toEqual(labels.items);
+    for (const sources of [[run.dumpDir, legacy], [legacy, run.dumpDir]]) {
+      const result = rescoreLabels(labels, loadRuns(sources, scoring));
+      expect(result.changed).toEqual([]);
+      expect(result.missing).toEqual(["gone"]);
+      expect(result.ineligible).toEqual(sampled.items.map((i) => ({ id: i.id, why: "bundle completeness was not recorded" })));
+      expect(result.labels.items).toEqual(labels.items);
+    }
 
     const labelsFile = join(scratch, "rescore-ineligible", "labels.json");
     writeLabels(labelsFile, labels);
@@ -363,7 +363,7 @@ describe("rescoreLabels", () => {
     }
     expect(lines).toContain(`  ${dumped.id} ineligible (transcript dump without an eligible owning receipt); left as it was`);
     expect(lines).toContain("  gone not in the sources any more; left as it was");
-    expect(lines.at(-1)).toBe(`rescored 0 of 4 item(s); 0 changed; 3 ineligible; 1 missing; wrote ${labelsFile}`);
+    expect(lines.at(-1)).toBe(`rescored 0 of 4 item(s); 0 changed; 1 ineligible; 3 missing; wrote ${labelsFile}`);
   });
 
   test("the rescore command reads the default label file when given only --out, and writes nowhere else", async () => {
