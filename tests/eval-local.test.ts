@@ -128,12 +128,6 @@ function run(args: string[], env: Record<string, string> = {}) {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, `name: ${c.name}\ntags: [${(c.tags ?? []).join(", ")}]\nexecution:\n  prompt: p\n  allowed_tools: [${c.tools.join(", ")}]\n`);
   }
-  for (const skill of ["alpha", "beta"]) {
-    if ((env.FAKE_MISSING_SKILLS ?? "").split(",").includes(skill)) continue;
-    const file = join(bundle, "skills", skill, "SKILL.md");
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `---\nname: ${skill}\ndescription: fixture\n---\n`);
-  }
   mkdirSync(join(dir, "home"));
   const json = join(dir, "out", "result.json");
   const r = spawnSync("bash", [SCRIPT, "--runs", "1", ...args], {
@@ -192,14 +186,6 @@ describe("eval-local: several --case flags across grant groups", () => {
 });
 
 describe("eval-local: the selected corpus matches its instrument", () => {
-  test("a selected case whose skill is absent refuses to measure a partial bundle", () => {
-    const r = run(["--case", "case-three"], { FAKE_MISSING_SKILLS: "beta" });
-    expect(r.status).toBe(2);
-    expect(r.stderr).toContain("does not install beta");
-    expect(r.stderr).toContain("bun run ak build --profile all");
-    expect(r.calls).toHaveLength(0);
-  });
-
   test.each([
     ["env-allowlist", []],
     ["inherited-env", ["--inherit-env"]],

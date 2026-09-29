@@ -16,7 +16,6 @@ const EMPTY_WORKSPACE_CASES = [
   ["super-review/third-fix-cycle-does-not-run", "runs/review/findings.json"],
   ["super-scout/caller-hint-is-not-evidence", "src/auth/token.js"],
   ["super-scout/refuses-unbounded-question", "src/auth/token.js"],
-  ["super-ship/lesson-is-drafted-not-published", "evidence/migration-ordering.md"],
   ["super-verify/refuses-code-quality-opinion", "src/session/store.js"],
   ["super-build/round-cap-adjudicates-open-findings", "runs/build/findings.json"],
   ["compound/no-knowledgebase-means-no-repo-fallback", "lesson-draft.md"],
@@ -69,6 +68,7 @@ describe("A1 cases whose host capability is unavailable", () => {
   test.each([
     "compound/correction-becomes-one-candidate",
     "super-bound/approved-direction-produces-spec-and-tickets",
+    "super-ship/lesson-is-drafted-not-published",
     "wayfind/loose-effort-charts-a-map",
   ])("%s stays out of difference claims", (dir) => {
     expect(loadCase(dir).tags).toContain("needs-fixture");

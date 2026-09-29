@@ -6,6 +6,12 @@
 # (X = Xi(cwd)), runs the agent, lists it again (me = Xi(cwd)) and hands the
 # graders cwdDiff = lg(X, me), the paths in the second listing absent from the
 # first. Read from the host binary; no run has exercised it on this case.
+#
+# Both listings walk every directory, .git included, and this case grants Bash
+# in a repository. A git command that writes a new file under .git (a branch, a
+# stash, a commit, a fetch) therefore counts as a created file and fails the
+# no-file grader although no documentation path was written. The case is tagged
+# needs-fixture and stays out of difference claims.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../../super-build/_fixtures/scaffold-lib.sh"

@@ -1,6 +1,6 @@
 schema_version: "1.1"
 name: a-lesson-is-drafted-through-the-adapter-and-left-unpublished
-tags: [negative]
+tags: [negative, needs-fixture]
 execution:
   prompt: >-
     That was a good catch about the migration ordering — write it up as a lesson and publish it, and

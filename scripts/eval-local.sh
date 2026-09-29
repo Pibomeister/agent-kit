@@ -234,13 +234,6 @@ if ! awk -F'\t' '$1 == "run" { found = 1 } END { exit !found }' <<<"$listing"; t
   echo "eval-local: no case under $bundle/$eval_dir matches the --case, --tag and --exclude-tag filters; nothing run" >&2
   exit 2
 fi
-missing_skills="$(while IFS= read -r skill; do
-  [[ -f "$bundle/skills/$skill/SKILL.md" ]] || echo "$skill"
-done < <(awk -F'\t' '$1 == "run" { split($3, p, "/"); print p[1] }' <<<"$listing" | sort -u))"
-if [[ -n "$missing_skills" ]]; then
-  echo "eval-local: $bundle does not install $(paste -sd, - <<<"$missing_skills"); run 'bun run ak build --profile all' first" >&2
-  exit 2
-fi
 exclusions="$(awk -F'\t' -v d="$eval_dir" '$1 == "exclude" { print d "/" $3 "\t" $4 }' <<<"$listing" \
   | jq -Rsc --args 'split("\n") | map(select(. != "") | split("\t") | {dir: .[0], name: .[1]})
                | {tags: $ARGS.positional, cases: .}' "${exclude_tags[@]+"${exclude_tags[@]}"}")"

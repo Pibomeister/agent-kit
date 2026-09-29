@@ -1253,6 +1253,9 @@ Five details decide whether a grader measures what its name says:
   What a scaffold wrote is not on that list: the host (`claude` 2.1.285, read from its binary)
   lists the working directory after the scaffold returns and again after the run, and grades the
   difference. No run has yet exercised a no-file grader on a scaffolded case.
+  Both listings walk every directory, `.git` included, so a no-file grader in a repository case
+  that grants `Bash` also counts git writes: a new branch, stash, commit or fetch creates files
+  under `.git` and fails the grader although nothing was written to the working tree.
   A file that existed before the run and was edited is not on that list, so "no file was written"
   is `file_exists` with `path: "**"` and `exists: false` together with `tool_used` on `Edit` with
   `max: 0`.
@@ -1443,8 +1446,8 @@ not the mere presence of a commit.
 
 **Running the suite locally.** `scripts/eval-local.sh [claude plugin eval options…]` runs
 `claude plugin eval dist/claude-code` and prints a with/without/delta table per case. Build the A1
-bundle with `bun run ak build --profile all`: the core profile omits three skills this corpus targets,
-and the runner refuses a selected case whose top-level skill is absent. On a machine with
+bundle with `bun run ak build --profile all`: the core profile omits three skills this corpus
+targets. On a machine with
 Docker Desktop, the sandbox will not start a Bash-granting case while any symlink sits under
 `~/.docker`, so the script moves `~/.docker/cli-plugins` and `~/.docker/bin` aside for the run and
 restores them on every exit, Ctrl-C included. It runs only when you invoke it; CI does not run evals.
