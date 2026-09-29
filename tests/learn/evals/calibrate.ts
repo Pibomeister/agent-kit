@@ -12,9 +12,12 @@
  *
  * FILE defaults to `.work/calibration/labels.json`, the matrix to `.work/eval-matrix.yaml`.
  *
- * sample   Reads stored runs. A PATH is a trigger-eval receipt (its `--json` output) or a
- *          transcript dump directory (its `--dump-transcripts` output: `<subject>/<case-id>.json`,
- *          or one subject directory). A receipt holds every case's reply; the run dumped events
+ * sample   Reads stored runs. A PATH is a trigger-eval receipt (its `--json` output), optionally
+ *          accompanied by its transcript dump directory (`--dump-transcripts` output:
+ *          `<subject>/<case-id>.json`, or one subject directory). Calibration admits only a
+ *          bundle-on receipt whose `bundle_complete` skills cover its recorded prompt set; old
+ *          receipts without that evidence and dumps without an eligible owning receipt are refused.
+ *          A receipt holds every case's reply; the run dumped events
  *          only for sessions that loaded a skill, and the receipt's own argv names that dump, so
  *          a case with a dump is rescored from its events and a case without one is rescored as a
  *          session with no tool calls recorded. That is exact for everything the scorer reads when
@@ -60,7 +63,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { run } from "../../../src/learn/core/proc.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
@@ -68,7 +71,7 @@ import { loadMatrix, MATRIX_FILE, type Matrix, type Seat, type Subject } from ".
 import { buildPanel, grade, type Grade, type Judge, type Panel, type Vote } from "./panel.ts";
 import { type KappaRow, kappaTable, rng } from "./stats.ts";
 import type { HostKind, SessionEvent } from "./subjects/types.ts";
-import { bodyFingerprint, type Case, expectsOf, type Outcome, parsePromptSet, type ScoreOptions, type Scored, scoreCase } from "./trigger-eval.ts";
+import { bodyFingerprint, bundleTargets, type Case, expectsOf, type Outcome, parsePromptSet, type ScoreOptions, type Scored, scoreCase } from "./trigger-eval.ts";
 
 /** What the human and every reviewer judge each item against. */
 export const CRITERIA = [
@@ -287,7 +290,15 @@ interface Dump {
 }
 
 interface Receipt {
-  receipt: { prompt_set: string; prompt_set_sha256: string; arm?: string; argv?: string[]; revision?: string };
+  receipt: {
+    prompt_set: string;
+    prompt_set_sha256: string;
+    arm?: string;
+    argv?: string[];
+    revision?: string;
+    bundle?: string;
+    bundle_complete?: string[];
+  };
   subjects: { subject: string; host: HostKind; results: { id: string; loaded: string[]; reply: string; invalid?: string; timed_out?: boolean; exit_code?: number }[] }[];
 }
 
@@ -323,6 +334,32 @@ function dumpFiles(dir: string): { subject: string; file: string }[] {
     .flatMap((subject) => dumpFiles(join(dir, subject)).map((x) => ({ ...x, subject })));
 }
 
+function bundleProblem(receipt: Receipt["receipt"], cases: ReadonlyMap<string, Case>): string | null {
+  if (receipt.bundle !== "on") return "bundle was not on";
+  if (!Array.isArray(receipt.bundle_complete)) return "bundle completeness was not recorded";
+  const drafts = new Set([...cases.values()].flatMap((c) => (c.draft === undefined ? [] : [c.draft.name])));
+  const checked = new Set(receipt.bundle_complete);
+  const missing = bundleTargets([...cases.values()], drafts).filter((skill) => !checked.has(skill));
+  return missing.length === 0 ? null : `bundle completeness does not cover the prompt set (${missing.join(", ")})`;
+}
+
+function receiptPaths(path: string, receipt: Receipt["receipt"]): { runId: string; dumpDir?: string } {
+  const jsonArg = argOf(receipt.argv, "--json");
+  const dumpArg = argOf(receipt.argv, "--dump-transcripts");
+  let root: string | undefined;
+  for (let dir = dirname(path); jsonArg !== undefined; dir = dirname(dir)) {
+    if (existsSync(join(dir, jsonArg))) {
+      root = dir;
+      break;
+    }
+    if (dirname(dir) === dir) break;
+  }
+  return {
+    runId: root !== undefined && jsonArg !== undefined ? join(root, jsonArg) : path,
+    ...(root !== undefined && dumpArg !== undefined && existsSync(join(root, dumpArg)) ? { dumpDir: join(root, dumpArg) } : {}),
+  };
+}
+
 export interface Loaded {
   candidates: Candidate[];
   skipped: Record<string, number>;
@@ -341,7 +378,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
   const add = (cand: Candidate) => {
     const known = seen.get(cand.source);
     if (known === undefined) seen.set(cand.source, cand);
-    // A dump directory read on its own does not name its host; a receipt for the same session does.
+    // A dump input does not name its host; its eligible receipt for the same session does.
     else if (known.host === null) known.host = cand.host;
   };
   const fromDump = (subject: string, host: HostKind | null, file: string, arm: ScoreOptions["arm"]) => {
@@ -351,29 +388,41 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
     if (kindOf(dump.case) === null) return skip(file, "not decided by the heuristic graders");
     add({ source: file, subject, host, case: dump.case, events: dump.events, reply: dump.reply, scored: scoreCase(dump.case, dump.events, dump.reply, { ...scoring, arm }) });
   };
+  const receipts = new Map<string, { data: Receipt; cases: Map<string, Case> | null; problem: string | null; runId: string; dumpDir?: string }>();
+  for (const raw of paths) {
+    const path = resolve(raw);
+    if (!existsSync(path) || statSync(path).isDirectory()) continue;
+    const data = JSON.parse(readFileSync(path, "utf8")) as Receipt;
+    if (data.receipt === undefined || !Array.isArray(data.subjects)) throw new Error(`calibrate: ${raw} is neither a transcript dump directory nor a trigger-eval receipt`);
+    const hasEvidence = data.receipt.bundle === "on" && Array.isArray(data.receipt.bundle_complete);
+    const cases = hasEvidence ? promptSetOf(data.receipt) : null;
+    const problem = data.receipt.bundle !== "on"
+      ? "bundle was not on"
+      : !Array.isArray(data.receipt.bundle_complete)
+        ? "bundle completeness was not recorded"
+        : cases === null
+          ? "bundle completeness cannot be matched to the recorded prompt set"
+          : bundleProblem(data.receipt, cases);
+    receipts.set(path, { data, cases, problem, ...receiptPaths(path, data.receipt) });
+  }
+  const ownedDumps = [...receipts.values()].filter((receipt) => receipt.problem === null).flatMap((receipt) => (receipt.dumpDir === undefined ? [] : [receipt.dumpDir]));
   for (const raw of paths) {
     const path = resolve(raw);
     if (!existsSync(path)) throw new Error(`calibrate: ${raw} does not exist`);
     if (statSync(path).isDirectory()) {
+      if (!ownedDumps.some((dumpDir) => path === dumpDir || path.startsWith(`${dumpDir}${sep}`))) {
+        throw new Error(`calibrate: ${raw} is a transcript dump without an eligible owning receipt`);
+      }
       for (const { subject, file } of dumpFiles(path)) fromDump(subject, null, file, scoring.arm);
       continue;
     }
-    const data = JSON.parse(readFileSync(path, "utf8")) as Receipt;
-    if (data.receipt === undefined || !Array.isArray(data.subjects)) throw new Error(`calibrate: ${raw} is neither a transcript dump directory nor a trigger-eval receipt`);
-    const cases = promptSetOf(data.receipt);
-    const arm = data.receipt.arm === "nudged" ? "nudged" : "natural";
-    const jsonArg = argOf(data.receipt.argv, "--json");
-    const dumpArg = argOf(data.receipt.argv, "--dump-transcripts");
-    let root: string | undefined;
-    for (let dir = dirname(path); jsonArg !== undefined; dir = dirname(dir)) {
-      if (existsSync(join(dir, jsonArg))) {
-        root = dir;
-        break;
-      }
-      if (dirname(dir) === dir) break;
+    const receipt = receipts.get(path)!;
+    if (receipt.problem !== null) {
+      skip(path, receipt.problem);
+      continue;
     }
-    const runId = root !== undefined && jsonArg !== undefined ? join(root, jsonArg) : path;
-    const dumpDir = root !== undefined && dumpArg !== undefined && existsSync(join(root, dumpArg)) ? join(root, dumpArg) : undefined;
+    const { data, cases, runId, dumpDir } = receipt;
+    const arm = data.receipt.arm === "nudged" ? "nudged" : "natural";
     for (const subject of data.subjects) {
       for (const result of subject.results) {
         const dumpFile = dumpDir === undefined ? undefined : join(dumpDir, subject.subject, `${result.id}.json`);
@@ -382,7 +431,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
           continue;
         }
         const source = `${runId}#${subject.subject}/${result.id}`;
-        const c = cases?.get(result.id);
+        const c = cases!.get(result.id);
         if (c === undefined) {
           skip(source, "case not in the prompt set the receipt recorded");
           continue;

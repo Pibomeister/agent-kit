@@ -17,6 +17,7 @@ import {
   asksToType,
   authorityCheck,
   bodyFingerprint,
+  bundleEvidence,
   bundleMissing,
   type Case,
   confusion,
@@ -919,6 +920,13 @@ describe("bundleMissing", () => {
 
   test("a candidate draft is reached through the roster, never the bundle", () => {
     expect(bundleMissing(bundle(), [c("d", "rerun-bot-review", ["rerun-bot-review"])], new Set(["rerun-bot-review"]))).toEqual([]);
+  });
+
+  test("receipt evidence names the checked skills only when the bundle is on", () => {
+    const cases = [c("a", "super-align", ["super-align"]), c("b", "ultraqa", ["ultraqa"]), c("c", "rerun-bot-review", ["rerun-bot-review"])];
+    const drafts = new Set(["rerun-bot-review"]);
+    expect(bundleEvidence(true, cases, drafts)).toEqual({ bundle_complete: ["super-align", "ultraqa"] });
+    expect(bundleEvidence(false, cases, drafts)).toEqual({});
   });
 });
 

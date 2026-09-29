@@ -26,7 +26,8 @@
  * Bundle (`--bundle`, default on): whether the host gets the package's packaged skills
  * (`dist/<bundle>`, from `ak build --profile all`) for the session. The bundle must install every
  * skill the prompt set targets, or the run refuses to start (`bundleMissing`). With the bundle off nothing is installed,
- * so the roster names skills whose bodies the session cannot load through the host.
+ * so the roster names skills whose bodies the session cannot load through the host. A successful
+ * bundle-on preflight records the checked skill ids as `bundle_complete`; bundle-off receipts do not.
  *
  * The comparison that reproduces roster.ts's 5/14 to 12/14 is the roster alone, with the skills
  * installed both times:
@@ -1031,8 +1032,18 @@ export function noopBaseline(cases: readonly Case[], options: ScoreOptions) {
  * never in a bundle.
  */
 export function bundleMissing(bundleDir: string, cases: readonly Case[], drafts: ReadonlySet<string>): string[] {
+  return bundleTargets(cases, drafts).filter((name) => !existsSync(join(bundleDir, "skills", name, "SKILL.md")));
+}
+
+/** Skills whose installation the bundle preflight checks for a prompt set. */
+export function bundleTargets(cases: readonly Case[], drafts: ReadonlySet<string>): string[] {
   const wanted = new Set(cases.flatMap((c) => [c.skill, ...c.expected]).filter((name) => !drafts.has(name)));
-  return [...wanted].filter((name) => !existsSync(join(bundleDir, "skills", name, "SKILL.md"))).sort();
+  return [...wanted].sort();
+}
+
+/** Receipt evidence for the successful bundle preflight; bundle-off runs carry no attestation. */
+export function bundleEvidence(bundleOn: boolean, cases: readonly Case[], drafts: ReadonlySet<string>): { bundle_complete: string[] } | Record<string, never> {
+  return bundleOn ? { bundle_complete: bundleTargets(cases, drafts) } : {};
 }
 
 // ---------------------------------------------------------------------------
@@ -1283,6 +1294,7 @@ async function main(argv: string[]): Promise<number> {
     arm,
     roster: rosterOn ? "on" : "off",
     bundle: bundleOn ? "on" : "off",
+    ...bundleEvidence(bundleOn, promptSet.cases, new Set(drafts.values())),
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
     argv: ["bun", "tests/learn/evals/trigger-eval.ts", ...argv],
