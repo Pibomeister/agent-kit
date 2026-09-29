@@ -397,7 +397,7 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
   def arm($runs; $expected): ($runs | length) as $n
       | ([$runs[] | select(graded(.; $expected))] | length) as $g
       | ([$runs[] | select(passed(.; $expected))] | length) as $k
-      | {n: $n, graded: $g, ungraded: ($n - $g), passes: $k,
+      | {n: $n, graded: $g, ungraded: (if ($expected | length) == 0 then 0 else $n - $g end), passes: $k,
          rate: (if $g == 0 then null else $k / $g end), wilson95: wilson($k; $g)};
   def fired($runs; $skill): [$runs[] | [.graders[]? | select(.withOnly and (.name | IN($skill[]))) | .passed]]
       | if (map(length) | add // 0) == 0 then null
@@ -405,9 +405,14 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
   def skill_graders: [.graders[]? | select(.type == "tool_used" and .config.tool == "Skill") | .name];
   def score_graders: [.graders[]? | select(.withOnly | not) | .name];
   (.costUsd | if type == "number" then . * 10000 | round / 10000 else . end) as $cost
-  | ([.cases[] | score_graders as $expected
-                  | ([.arms.with[]? | select(graded(.; $expected) | not)] | length)
-                    + ([.arms.without[]? | select(graded(.; $expected) | not)] | length)] | add // 0) as $ungraded
+  | [.cases[] | score_graders as $expected
+                | arm(.arms.with // []; $expected) as $with | arm(.arms.without // []; $expected) as $without
+                | ($with.ungraded + $without.ungraded == 0) as $complete
+                | {name, dir, with: $with, without: $without, fired: fired(.arms.with // []; skill_graders),
+                   score: (if $complete then .aggregates.score else null end),
+                   scoreWithout: (if $complete then .aggregates.scoreWithout else null end),
+                   delta: (if $complete then .aggregates.delta else null end)}] as $cases
+  | ([$cases[] | .with.ungraded + .without.ungraded] | add // 0) as $ungraded
   | {
     measured: {revision: $revision, dirty: $dirty},
     bundle: {path: $bundle, sha256: $bundle_sha, freshAgainstSources: $fresh},
@@ -422,13 +427,7 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
     invocations: $invocations,
     exitStatus: $status,
     result: $json,
-    cases: [.cases[] | score_graders as $expected
-                      | arm(.arms.with // []; $expected) as $with | arm(.arms.without // []; $expected) as $without
-                      | ($with.ungraded + $without.ungraded == 0) as $complete
-                      | {name, dir, with: $with, without: $without, fired: fired(.arms.with // []; skill_graders),
-                         score: (if $complete then .aggregates.score else null end),
-                         scoreWithout: (if $complete then .aggregates.scoreWithout else null end),
-                         delta: (if $complete then .aggregates.delta else null end)}],
+    cases: $cases,
     overall: {score: (if $ungraded == 0 then .aggregates.overallScore else null end),
               meanDelta: (if $ungraded == 0 then .aggregates.meanDelta else null end),
               ungraded: $ungraded, mergedFrom: (.merged // 1)},
