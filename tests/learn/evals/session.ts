@@ -1,6 +1,7 @@
 /**
  * Shared plumbing for the manual learning-runtime evals: argument lookup, an
- * async spawn with a timeout, and scratch space. Not a test file.
+ * async spawn with a timeout, scratch space, and the instrument fields every
+ * receipt carries. Not a test file.
  */
 import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";

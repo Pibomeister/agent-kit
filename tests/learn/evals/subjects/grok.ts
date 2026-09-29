@@ -1,7 +1,7 @@
 /**
  * Grok in headless mode. Not a test file.
  *
- *   grok -p PROMPT --output-format streaming-json [-m M] [--max-turns N]
+ *   grok -p PROMPT --output-format streaming-json --allow RULE... [-m M] [--max-turns N]
  *     --permission-mode dontAsk [--rules TEXT]
  *
  * `--rules` appends to the system prompt. `dontAsk` refuses any call that would need approval
