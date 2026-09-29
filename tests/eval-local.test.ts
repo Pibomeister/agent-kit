@@ -254,8 +254,8 @@ describe("eval-local: evidence retention and grading state", () => {
     const r = run(["--case", "case-three"], { FAKE_UNGRADED: "with", FAKE_FAILED: "with" });
     expect(r.status).toBe(0);
     expect(r.receipt.cases[0].with).toMatchObject({ n: 1, graded: 1, ungraded: 0, passes: 0, rate: 0 });
-    expect(r.receipt.cases[0]).toMatchObject({ score: 1, scoreWithout: 1, delta: 0 });
-    expect(r.receipt.overall).toMatchObject({ score: 1, meanDelta: 0, ungraded: 0 });
+    expect(r.receipt.cases[0]).toMatchObject({ score: null, scoreWithout: null, delta: null });
+    expect(r.receipt.overall).toMatchObject({ score: null, meanDelta: null, ungraded: 0 });
     expect(r.stdout).not.toContain("ungraded");
   });
 

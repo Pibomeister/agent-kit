@@ -1431,7 +1431,13 @@ the missing fixture, not about the skill. `unscaffolded`, which older positives 
 the case has no scaffold. `needs-fixture` is the tag to exclude on. `claude plugin eval` has
 `--tag` to include cases and no option to exclude them (checked at `claude 2.1.282`), and it keeps
 only the last `--case` it is given. So a run that leaves these cases out goes through
-`scripts/eval-local.sh --exclude-tag needs-fixture`, or filters its results by tag afterwards. A case loses the tag when its scaffold lands.
+`scripts/eval-local.sh --exclude-tag needs-fixture`, or filters its results by tag afterwards. A
+case loses the tag when its scaffold lands, unless its graders still cannot measure the behavior
+in the sandbox: a scaffolded case keeps the tag for as long as that holds. Two such reasons are in
+use. The pass needs an adapter write the host cannot supply
+(`evals/super-bound/approved-direction-produces-spec-and-tickets`), or a no-file grader counts
+`.git` writes because the case grants `Bash` in a repository
+(`evals/super-ship/lesson-is-drafted-not-published`).
 
 **The local runner resolves Git before entering the eval sandbox.** On macOS, `/usr/bin/git` is a
 developer-tool shim whose cache write is blocked in the sandbox. `scripts/eval-local.sh` asks
@@ -1472,19 +1478,21 @@ separately, against a staged copy of the bundle that holds only that group's cas
 case gets exactly the tools it declares. The staging is also how `--case` and `--tag` select: the
 host keeps only the last `--case` it is given, so neither flag is passed to it. `--max-cost-usd` is
 one budget across the groups. The host checks it as runs start, so runs already in flight can end
-past the cap. The host is run with `--keep-temp`, which keeps each run's sandbox, workspace and
-`trace.jsonl`, under the system temporary directory after the invocation returns; each trace is
-then copied beside the result and indexed in the receipt, because the system cleans that directory
-on its own schedule. The 2026-09-28 rerun predates this, which is why its report has no
-transcripts. The graders that count toward a score are read from the runs, where the host marks
-with-only graders; the case-level definitions carry no such mark. When the host stops paying
+past the cap. The host is run with `--keep-temp`, which its help describes as "Preserve scaffold
+dirs for debugging"; each trace the host reports is then copied beside the result when it is
+still there, and indexed in the receipt. Whether a trace survives the invocation's return on the
+real host is unverified until the next paid run. The 2026-09-28 rerun ran without the flag, and
+its report has no transcripts. The graders that count toward a score are read from the runs, whose
+`withOnly` boolean is the mark the receipt reads; a case-level definition carries the same mark
+as `config.arm`. When the host stops paying
 after the budget is exhausted, it marks the run `skippedPaidGraders` and records each skipped
 grader as failed with the explanation `skipped: cost ceiling`, the shape excerpted in
 `research/evals/2026-09-28-a1-rerun/budget-skipped-run.json` from that rerun's archived result.
 Such a run is reported as ungraded and stays out of the pass/fail denominator unless a grader that
 was actually scored failed; an ordinary negative grader verdict remains a graded failure. The
-receipt withholds the aggregate score and delta while any run is ungraded, because the host's
-aggregate counts a skipped paid grader as a failure.
+receipt withholds a case's score and delta, and the overall figures, while any run has a skipped
+verdict among its score graders, graded or not, because the host's score counts a skipped paid
+grader as weight not earned.
 The script warns when in-flight work carries the spend past the cap. An explicit `--allow-tools`
 overrides the grouping and runs once with that grant.
 
@@ -1506,7 +1514,7 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
   and `over_budget`;
 - per case and arm: total `n`, `graded`, `ungraded`, passes over graded runs, rate and a 95% Wilson
   interval (the same formula as `tests/learn/evals/stats.ts`), plus the fired count;
-- every trace's host path in the kept sandbox and its durable copy path.
+- every trace's host path and its copy path, which is null when the trace was gone before the copy.
 
 A figure quoted from a run carries that receipt, or the fields of it the figure depends on. The
 judge is bound by the runner, and neither the script nor this section names it.

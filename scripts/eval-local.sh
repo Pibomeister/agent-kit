@@ -26,10 +26,10 @@
 #
 # Reads: dist/claude-code (run `bun run ak build --profile all` first), or $AK_EVAL_BUNDLE. Writes: evals/results/
 # under the bundle, the JSON result to $AK_EVAL_JSON (default: a temp file whose path is printed),
-# and the receipt beside it as <result>.receipt.json. The host runs with --keep-temp, which keeps
-# each run's sandbox (workspace and trace.jsonl) under the system temporary directory after the
-# invocation returns; each trace is then copied under <result>.traces/<case dir>/<arm>-<n>.jsonl,
-# because the system cleans that directory on its own schedule.
+# and the receipt beside it as <result>.receipt.json. The host runs with --keep-temp, which its
+# help describes as "Preserve scaffold dirs for debugging"; each trace the host reports is then
+# copied under <result>.traces/<case dir>/<arm>-<n>.jsonl when it is still there. Whether a trace
+# survives the invocation's return on the real host is unverified until the next paid run.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -53,9 +53,6 @@ if command -v xcrun >/dev/null 2>&1; then
   fi
 fi
 [[ -n "$host_git" && -x "$host_git" ]] || { echo "eval-local: git is required" >&2; exit 2; }
-git_shim="$(mktemp -d "${TMPDIR:-/tmp}/ak-git-shim.XXXXXX")"
-ln -s "$host_git" "$git_shim/git"
-host_path="$git_shim:$PATH"
 
 # The script reads four of the host's options itself: --case and --tag (to know which cases run),
 # --eval-dir (where they live) and --max-cost-usd (one budget across every invocation). --case and
@@ -139,6 +136,28 @@ if [[ "$scaffold" == auto ]]; then
   fi
 fi
 
+aside="$(mktemp -d "${TMPDIR:-/tmp}/ak-docker-aside.XXXXXX")"
+moved=()
+git_shim=""
+# shellcheck disable=SC2329 # invoked by the EXIT trap
+restore() {
+  local name
+  for name in "${moved[@]+"${moved[@]}"}"; do
+    if [[ -e "$HOME/.docker/$name" ]]; then
+      echo "eval-local: ~/.docker/$name reappeared during the run; the original is kept at $aside/$name" >&2
+    else
+      mv "$aside/$name" "$HOME/.docker/$name"
+    fi
+  done
+  rmdir "$aside" 2>/dev/null || true
+  rm -rf "$git_shim"
+}
+trap restore EXIT
+trap 'exit 130' INT TERM
+git_shim="$(mktemp -d "${TMPDIR:-/tmp}/ak-git-shim.XXXXXX")"
+ln -s "$host_git" "$git_shim/git"
+host_path="$git_shim:$PATH"
+
 pass_env=(HOME USER LOGNAME PATH SHELL TERM LANG TMPDIR
   HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy NODE_EXTRA_CA_CERTS SSL_CERT_FILE
   ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL CLAUDE_CODE_OAUTH_TOKEN
@@ -161,24 +180,6 @@ if [[ "$isolation" == env-allowlist ]]; then
 else
   runner=(env "PATH=$host_path")
 fi
-
-aside="$(mktemp -d "${TMPDIR:-/tmp}/ak-docker-aside.XXXXXX")"
-moved=()
-# shellcheck disable=SC2329 # invoked by the EXIT trap
-restore() {
-  local name
-  for name in "${moved[@]+"${moved[@]}"}"; do
-    if [[ -e "$HOME/.docker/$name" ]]; then
-      echo "eval-local: ~/.docker/$name reappeared during the run; the original is kept at $aside/$name" >&2
-    else
-      mv "$aside/$name" "$HOME/.docker/$name"
-    fi
-  done
-  rmdir "$aside" 2>/dev/null || true
-  rm -rf "$git_shim"
-}
-trap restore EXIT
-trap 'exit 130' INT TERM
 
 for name in cli-plugins bin; do
   if [[ -e "$HOME/.docker/$name" || -L "$HOME/.docker/$name" ]]; then
@@ -369,11 +370,14 @@ fi
 
 # Per case and arm: n runs, passes (a run passes when every grader that counts toward the score
 # passed; with-only graders do not count toward the score), the rate with its 95% Wilson interval,
-# and the fired count on the with arm. The graders that count are read from the runs, where the
-# host marks with-only ones; the case-level definitions carry no such mark. A run the host cut
+# and the fired count on the with arm. The graders that count are read from the runs, whose
+# withOnly boolean is the mark the receipt reads; a case-level definition carries it as
+# config.arm. A run the host cut
 # short for budget carries skippedPaidGraders and each skipped grader as failed with the
 # explanation "skipped: cost ceiling" (research/evals/2026-09-28-a1-rerun/budget-skipped-run.json);
-# those verdicts are missing, not negative, so the run is ungraded unless a scored grader failed. A run fired when every with-only `tool_used` grader on the
+# those verdicts are missing, not negative, so the run is ungraded unless a scored grader failed.
+# The host's score counts a skipped grader as weight not earned, so a case's score and delta, and
+# the overall figures, are withheld while any run has a missing verdict, graded or not. A run fired when every with-only `tool_used` grader on the
 # Skill tool passed; the case's grader definitions in the result name them. Other with-only graders,
 # such as a negative's check that the workflow was not carried out, are not firing. A case with no
 # such grader has fired null.
@@ -409,15 +413,18 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
         else {n: length, fired: map(select(length > 0 and all)) | length} end;
   def skill_graders: [.graders[]? | select(.type == "tool_used" and .config.tool == "Skill") | .name];
   def score_graders: [(.arms // {})[][]?.graders[]? | select(.withOnly | not) | .name] | unique;
+  def complete: score_graders as $expected
+      | [(.arms // {})[][]? | verdicts(.; $expected) | any(. == null)] | any | not;
   (.costUsd | if type == "number" then . * 10000 | round / 10000 else . end) as $cost
   | [.cases[] | score_graders as $expected
                 | arm(.arms.with // []; $expected) as $with | arm(.arms.without // []; $expected) as $without
-                | ($with.ungraded + $without.ungraded == 0) as $complete
+                | complete as $complete
                 | {name, dir, with: $with, without: $without, fired: fired(.arms.with // []; skill_graders),
                    score: (if $complete then .aggregates.score else null end),
                    scoreWithout: (if $complete then .aggregates.scoreWithout else null end),
                    delta: (if $complete then .aggregates.delta else null end)}] as $cases
   | ([$cases[] | .with.ungraded + .without.ungraded] | add // 0) as $ungraded
+  | ([.cases[] | complete] | all) as $complete
   | {
     measured: {revision: $revision, dirty: $dirty},
     bundle: {path: $bundle, sha256: $bundle_sha, freshAgainstSources: $fresh},
@@ -433,8 +440,8 @@ jq --arg revision "$revision" --argjson dirty "$dirty" --arg bundle "$bundle" \
     exitStatus: $status,
     result: $json,
     cases: $cases,
-    overall: {score: (if $ungraded == 0 then .aggregates.overallScore else null end),
-              meanDelta: (if $ungraded == 0 then .aggregates.meanDelta else null end),
+    overall: {score: (if $complete then .aggregates.overallScore else null end),
+              meanDelta: (if $complete then .aggregates.meanDelta else null end),
               ungraded: $ungraded, mergedFrom: (.merged // 1)},
     traces: $traces,
     costUsd: $cost, durationSeconds: .durationSeconds,

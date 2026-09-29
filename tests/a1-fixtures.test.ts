@@ -64,7 +64,7 @@ describe("A1 state-dependent fixtures", () => {
   });
 });
 
-describe("A1 cases whose host capability is unavailable", () => {
+describe("A1 cases the sandbox cannot measure", () => {
   test.each([
     "compound/correction-becomes-one-candidate",
     "super-bound/approved-direction-produces-spec-and-tickets",
@@ -101,6 +101,11 @@ describe("A1 scaffold content leaves the behavior observable", () => {
     const templates = require(join(workspace, "src/email/templates.js"));
     expect(templates.invoiceFooter).toBe("Payement due on reciept");
     expect(templates.render("Hi {{ name }}", { name: "Ada" })).toBe("Hi Ada");
+  });
+
+  test("the drafted-lesson case, though kept out of difference claims, still builds its premise", () => {
+    const workspace = scaffold("super-ship/lesson-is-drafted-not-published", "ak-a1-lesson-");
+    expect(existsSync(join(workspace, "evidence/migration-ordering.md"))).toBe(true);
   });
 
   test("the approved sandbox direction has a compatible tenant-policy path", () => {
