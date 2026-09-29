@@ -2,7 +2,7 @@
  * Shared plumbing for the manual learning-runtime evals: argument lookup, an
  * async spawn with a timeout, and scratch space. Not a test file.
  */
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "../../../src/learn/core/proc.ts";
@@ -22,6 +22,15 @@ export function cleanEnv(): Record<string, string> {
     if (value !== undefined && !NESTED_SESSION_VARS.includes(key)) env[key] = value;
   }
   return env;
+}
+
+/** Repository identity every manual-eval receipt needs to make its instrument reproducible. */
+export function evalInstrument(root: string, revision: string) {
+  return {
+    revision,
+    donors_present: existsSync(join(root, ".donors")),
+    install_config: existsSync(join(root, "ak.install.yaml")) ? "ak.install.yaml" : "default (no ak.install.yaml)",
+  };
 }
 
 /** A fresh git repository in scratch space, with one commit. */

@@ -92,7 +92,8 @@
  * Cost: each scored case carries the session's `cost_usd` as its host reported it (null when the
  * host reports none), and each subject's summary the total over the cases that reported one.
  * Each subject's receipt entry lists `observed_models`: the distinct models its host reported
- * serving the sessions, empty when the host does not report one.
+ * serving the sessions, empty when the host does not report one, and `max_turns`: the effective
+ * subject cap or null when that host runs uncapped.
  * The last stdout line is one JSON summary. `--json` writes the receipt, per-subject metrics,
  * confusion matrices and every scored case.
  */
@@ -106,15 +107,16 @@ import { run } from "../../../src/learn/core/proc.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
-import { loadMatrix } from "./matrix.ts";
+import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
-import { cleanEnv, option, scratchRepo } from "./session.ts";
+import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
 import { readsOf, unwrap, words } from "./subjects/shell.ts";
 import type { SessionEvent, SessionRequest, SessionResult, ToolEvent } from "./subjects/types.ts";
 
 export type Arm = "natural" | "nudged";
 export type Polarity = "positive" | "negative";
+const DEFAULT_MAX_TURNS = 6;
 /**
  * What a positive counts as right. `load`: a model-invoked skill loads. `recommend`: a prose
  * request for a user-invoked skill, which the law says only a typed `/ak:<id>` starts, so the
@@ -1134,6 +1136,7 @@ async function main(argv: string[]): Promise<number> {
   const report = [];
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
+    const maxTurns = effectiveMaxTurns(subject, DEFAULT_MAX_TURNS);
     // The package's skills reach the host only through its packaged bundle; `ak build` writes it.
     const bundleDir = bundleOn ? join(PACKAGE_ROOT, "dist", BUNDLE_FOR[subject.host]) : undefined;
     if (bundleDir !== undefined && !existsSync(bundleDir) && !dryRun) {
@@ -1150,12 +1153,12 @@ async function main(argv: string[]): Promise<number> {
       cwd,
       env: cleanEnv(),
       timeoutMs: 300_000,
-      maxTurns: 6,
+      ...(maxTurns === undefined ? {} : { maxTurns }),
       ...(injected === "" ? {} : { appendSystemPrompt: injected }),
       ...(bundleDir === undefined ? {} : { bundleDir }),
     });
     if (dryRun) {
-      console.log(JSON.stringify({ subject: subject.id, host: subject.host, injection: adapter.injection, cases: cases.length, command: adapter.command(request(cases[0]!), subject.model) }));
+      console.log(JSON.stringify({ subject: subject.id, host: subject.host, injection: adapter.injection, ...turnCapReceipt(subject, DEFAULT_MAX_TURNS), cases: cases.length, command: adapter.command(request(cases[0]!), subject.model) }));
       continue;
     }
     const sessions: SessionResult[] = await pool(cases, jobs, (c) => runSubject(adapter, subject.id, subject.model, request(c)));
@@ -1190,6 +1193,7 @@ async function main(argv: string[]): Promise<number> {
       subject: subject.id,
       host: subject.host,
       injection: adapter.injection,
+      ...turnCapReceipt(subject, DEFAULT_MAX_TURNS),
       bundle: bundleDir ?? "none",
       leaks: [...new Set(sessions.flatMap((x) => x.leaks ?? []))],
       observed_models: [...new Set(sessions.flatMap((x) => (x.model === undefined ? [] : [x.model])))].sort(),
@@ -1219,8 +1223,8 @@ async function main(argv: string[]): Promise<number> {
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
     argv: ["bun", "tests/learn/evals/trigger-eval.ts", ...argv],
-    revision: revision(),
-    subjects: report.map((r) => ({ subject: r.subject, host: r.host, injection: r.injection, bundle: r.bundle, leaks: r.leaks, observed_models: r.observed_models })),
+    ...evalInstrument(PACKAGE_ROOT, revision()),
+    subjects: report.map((r) => ({ subject: r.subject, host: r.host, injection: r.injection, max_turns: r.max_turns, bundle: r.bundle, leaks: r.leaks, observed_models: r.observed_models })),
   };
   const out = option(argv, "--json");
   if (out !== undefined) writeFileSync(out, JSON.stringify({ receipt, subjects: report }, null, 1));

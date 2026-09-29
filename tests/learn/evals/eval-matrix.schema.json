@@ -75,6 +75,18 @@
           "type": "string",
           "minLength": 1,
           "description": "The runner's binding, passed to the host opaquely. Absent, the host runs its own default binding, and no reviewer on the same host is independent of it."
+        },
+        "max-turns": {
+          "description": "Per-subject turn cap. A positive integer overrides the evaluator default; null explicitly removes the cap; absent preserves the evaluator default.",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     },

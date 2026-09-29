@@ -16,6 +16,7 @@ import { privateHome } from "./evals/subjects/home.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, ToolEvent } from "./evals/subjects/types.ts";
+import { evalInstrument } from "./evals/session.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "transcripts");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -158,6 +159,33 @@ describe("grok", () => {
     expect(argv.slice(0, 3)).toEqual(["grok", "-p", "Load the greet skill."]);
     expect(argv.join(" ")).toContain("-m bound-c --max-turns 2 --permission-mode dontAsk --rules ROSTER");
   });
+
+  test("argv: observed read-only looks are allowed without blanket shell or mutation approval", () => {
+    const argv = grok.command(req, undefined);
+    const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
+    expect(allow).toEqual([
+      "Read",
+      "Grep",
+      "Bash(ls)",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(head)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(cat *)",
+      "Bash(rg *)",
+      "Bash(grep *)",
+      "Bash(git status)",
+      "Bash(git log)",
+      "Bash(git diff)",
+      "Bash(git show)",
+      "Bash(git rev-parse)",
+    ]);
+    expect(argv).not.toContain("--always-approve");
+    expect(allow).not.toContain("Bash");
+    expect(allow.some((rule) => rule?.startsWith("Write") || rule?.startsWith("Edit"))).toBe(false);
+    expect(argv.slice(argv.indexOf("--permission-mode"), argv.indexOf("--permission-mode") + 2)).toEqual(["--permission-mode", "dontAsk"]);
+  });
 });
 
 describe("shell reads", () => {
@@ -255,5 +283,25 @@ describe("runSubject", () => {
     expect(adapterFor("claude").host).toBe("claude");
     expect(adapterFor("codex").host).toBe("codex");
     expect(adapterFor("grok").host).toBe("grok");
+  });
+});
+
+describe("eval receipt instrument", () => {
+  test("names the revision, donor availability, and default or explicit install configuration", () => {
+    const root = join(scratch, "instrument");
+    mkdirSync(root);
+    expect(evalInstrument(root, "abc123")).toEqual({
+      revision: "abc123",
+      donors_present: false,
+      install_config: "default (no ak.install.yaml)",
+    });
+
+    mkdirSync(join(root, ".donors"));
+    writeFileSync(join(root, "ak.install.yaml"), "attached: []\n");
+    expect(evalInstrument(root, "def456")).toEqual({
+      revision: "def456",
+      donors_present: true,
+      install_config: "ak.install.yaml",
+    });
   });
 });

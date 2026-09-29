@@ -8,7 +8,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_MATRIX, loadMatrix, type Matrix, parseMatrix, type Seat } from "./evals/matrix.ts";
+import { DEFAULT_MATRIX, effectiveMaxTurns, loadMatrix, type Matrix, parseMatrix, type Seat, turnCapReceipt } from "./evals/matrix.ts";
 import { buildPanel, calibration, grade, type Judge, parseVote, readQueue } from "./evals/panel.ts";
 import type { SessionResult } from "./evals/subjects/types.ts";
 
@@ -51,6 +51,44 @@ describe("matrix", () => {
     const tail = "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\npanels: {independent-of: subject, min-reviewers: 2}\n";
     expect(parseMatrix(`subjects: [{id: s-a, host: claude}]\n${tail}`).subjects[0]!.model).toBeUndefined();
     expect(() => parseMatrix(`subjects: [{id: s-a, host: claude}]\n${tail.replace(", model: y", "")}`)).toThrow(/model/);
+  });
+
+  test("a subject turn cap distinguishes an override, no cap, and the evaluator default", () => {
+    const tail = "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\npanels: {independent-of: subject, min-reviewers: 2}\n";
+    const matrix = parseMatrix(
+      "subjects:\n" +
+        "  - {id: s-a, host: claude, max-turns: 12}\n" +
+        "  - {id: s-b, host: grok, max-turns: null}\n" +
+        "  - {id: s-c, host: claude}\n" +
+        tail,
+    );
+    expect(matrix.subjects.map(({ id, maxTurns }) => [id, maxTurns])).toEqual([
+      ["s-a", 12],
+      ["s-b", null],
+      ["s-c", undefined],
+    ]);
+  });
+
+  test("a numeric turn cap is refused for a host that cannot enforce one", () => {
+    const yaml =
+      "subjects: [{id: s-a, host: codex, max-turns: 4}]\n" +
+      "reviewers: [{id: r-a, host: claude, model: x}, {id: r-b, host: grok, model: y}]\n" +
+      "panels: {independent-of: subject, min-reviewers: 2}\n";
+    expect(() => parseMatrix(yaml)).toThrow("subject 's-a' uses host 'codex', which cannot enforce max-turns");
+  });
+
+  test("the effective cap applies an override, explicit removal, evaluator default, and host capability", () => {
+    expect(effectiveMaxTurns({ id: "s-a", host: "claude", model: undefined, maxTurns: 12 }, 6)).toBe(12);
+    expect(effectiveMaxTurns({ id: "s-b", host: "grok", model: undefined, maxTurns: null }, 6)).toBeUndefined();
+    expect(effectiveMaxTurns({ id: "s-c", host: "claude", model: undefined }, 6)).toBe(6);
+    expect(effectiveMaxTurns({ id: "s-d", host: "codex", model: undefined }, 6)).toBeUndefined();
+  });
+
+  test("the receipt records each subject's effective cap, including no cap", () => {
+    expect(turnCapReceipt({ id: "s-a", host: "claude", model: undefined, maxTurns: 12 }, 6)).toEqual({ max_turns: 12 });
+    expect(turnCapReceipt({ id: "s-b", host: "grok", model: undefined, maxTurns: null }, 6)).toEqual({ max_turns: null });
+    expect(turnCapReceipt({ id: "s-c", host: "claude", model: undefined }, 6)).toEqual({ max_turns: 6 });
+    expect(turnCapReceipt({ id: "s-d", host: "codex", model: undefined }, 6)).toEqual({ max_turns: null });
   });
 });
 

@@ -6,14 +6,13 @@
  *
  * `--rules` appends to the system prompt. `dontAsk` refuses any call that would need approval
  * instead of waiting for one; a refused call ends the turn with `stopReason: cancelled` and no
- * reply, so the attempt is still in the stream but the session is cut short. The refused call need
- * not be a write: a shell `ls` of a directory outside the working tree is refused the same way.
- * Measured on 1.0.41 (2026-09-28): `default`, `plan` and `auto` cancel the turn on a refused call
- * too, and `--sandbox read-only`, which would make always-approve safe, refuses to start on a
- * machine whose `/var/run/docker.sock` is a symlink. So grok has no mode here that refuses a call
- * and lets the session go on; the parse reports `stopReason`, and the eval lists such a session as
- * invalid with that reason. Isolation is a private GROK_HOME and HOME with the Claude and
- * Cursor compatibility scans and cross-session memory off: by default grok also reads
+ * reply, so the attempt is still in the stream but the session is cut short. The adapter therefore
+ * supplies narrow `--allow` rules for read tools and the shell looks observed in the cross-host
+ * run, while `dontAsk` continues to refuse every unlisted call. The read-only sandbox remains
+ * unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports
+ * `stopReason`, and the eval lists a refused session as invalid with that reason. Isolation is a
+ * private GROK_HOME and HOME with the Claude and Cursor compatibility scans and cross-session
+ * memory off: by default grok also reads
  * `~/.claude` skills, rules, plugins and hooks, and `~/.agents/skills`. The bundle's skills are
  * copied into the private `skills/`.
  *
@@ -54,6 +53,25 @@ const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
   ["SKILLS", "RULES", "AGENTS", "MCPS", "HOOKS"].map((cell) => [`GROK_${vendor}_${cell}_ENABLED`, "false"] as const),
 );
 
+const READ_ONLY_ALLOW = [
+  "Read",
+  "Grep",
+  "Bash(ls)",
+  "Bash(ls *)",
+  "Bash(find *)",
+  "Bash(head)",
+  "Bash(head *)",
+  "Bash(tail *)",
+  "Bash(cat *)",
+  "Bash(rg *)",
+  "Bash(grep *)",
+  "Bash(git status)",
+  "Bash(git log)",
+  "Bash(git diff)",
+  "Bash(git show)",
+  "Bash(git rev-parse)",
+] as const;
+
 export const grok: SubjectAdapter = {
   host: "grok",
   injection: "append-system-prompt",
@@ -64,6 +82,7 @@ export const grok: SubjectAdapter = {
       req.prompt,
       "--output-format",
       "streaming-json",
+      ...READ_ONLY_ALLOW.flatMap((rule) => ["--allow", rule]),
       ...(model === undefined ? [] : ["-m", model]),
       ...(req.maxTurns === undefined ? [] : ["--max-turns", String(req.maxTurns)]),
       "--permission-mode",

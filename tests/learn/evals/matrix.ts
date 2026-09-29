@@ -20,6 +20,8 @@ export interface Subject {
   host: HostKind;
   /** The runner's binding, opaque here. Always a key, so a subject reads as `{ model?: string }` or `{ model: string | undefined }`. */
   model: string | undefined;
+  /** Per-subject override. `null` removes the evaluator's default; absent preserves it. */
+  maxTurns?: number | null;
 }
 
 /** A reviewer seat: always bound, so its independence from each subject can be checked. */
@@ -39,7 +41,21 @@ export interface Matrix {
   panels: PanelRules;
 }
 
+type MatrixSubject = Omit<Subject, "maxTurns"> & { "max-turns"?: number | null };
+type MatrixFile = Omit<Matrix, "subjects"> & { subjects: MatrixSubject[] };
+
 let validator: ReturnType<InstanceType<typeof Ajv2020>["compile"]> | undefined;
+
+/** The cap this evaluator can enforce for `subject`; undefined means no cap. */
+export function effectiveMaxTurns(subject: Subject, evaluatorDefault: number): number | undefined {
+  if (subject.host === "codex" || subject.maxTurns === null) return undefined;
+  return subject.maxTurns ?? evaluatorDefault;
+}
+
+/** Receipt fragment for the effective cap; JSON null means the host runs uncapped. */
+export function turnCapReceipt(subject: Subject, evaluatorDefault: number): { max_turns: number | null } {
+  return { max_turns: effectiveMaxTurns(subject, evaluatorDefault) ?? null };
+}
 
 /** Parse and validate matrix YAML. Throws with every problem found, never a partial matrix. */
 export function parseMatrix(text: string, source = "eval matrix"): Matrix {
@@ -50,15 +66,23 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
     for (const e of validator.errors ?? []) problems.push(`${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`);
   } else {
     const seen = new Set<string>();
-    const matrix = value as Matrix;
+    const matrix = value as MatrixFile;
     for (const seat of [...matrix.subjects, ...matrix.reviewers]) {
       if (seen.has(seat.id)) problems.push(`seat id '${seat.id}' appears twice`);
       seen.add(seat.id);
     }
+    for (const subject of matrix.subjects) {
+      if (subject.host === "codex" && typeof subject["max-turns"] === "number") {
+        problems.push(`subject '${subject.id}' uses host 'codex', which cannot enforce max-turns`);
+      }
+    }
   }
   if (problems.length > 0) throw new Error(`${source}: ${problems.join("; ")}`);
-  const matrix = value as Matrix;
-  return { ...matrix, subjects: matrix.subjects.map((s) => ({ ...s, model: s.model })) };
+  const matrix = value as MatrixFile;
+  return {
+    ...matrix,
+    subjects: matrix.subjects.map(({ "max-turns": maxTurns, ...subject }) => ({ ...subject, model: subject.model, maxTurns })),
+  };
 }
 
 /**
