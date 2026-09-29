@@ -13,7 +13,7 @@ git checkout -q main
 printf '\nSettlement reconciliation now belongs to the ledger service.\n' >> STANDARDS.md
 commit_all "standards: move reconciliation ownership" "2026-09-25T09:00:00+00:00"
 git checkout -q AK-603-settlement
-git rebase -q main
+GIT_COMMITTER_DATE="2026-09-25T10:00:00+00:00" git rebase -q main
 mkdir -p runs/review
 cat > runs/review/baseline.json <<JSON
 {"status":"material-change","old_base":"$old_base","old_reviewed_head":"$old_head","new_base":"$(git rev-parse main)","new_head":"$(head_sha)","old_approval":"approved","requirement_change":"ledger service now owns reconciliation","delta_cycles_remaining":1}
