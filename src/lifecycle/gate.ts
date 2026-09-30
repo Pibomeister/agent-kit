@@ -340,7 +340,8 @@ export interface CheckArgs {
   head?: Snapshot;
   /**
    * Bound earlier records by the fork point from the default branch. Only for a run named after its
-   * branch, which a reused branch would otherwise share with an old run; an explicit run id is unique.
+   * branch, which a reused branch would otherwise share with an old run; an explicit or opened run id
+   * is unique.
    */
   forkBound?: boolean;
 }
