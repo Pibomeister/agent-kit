@@ -17,7 +17,9 @@
 # feature flags and any model override. So by default the host runs under `env -i` with only the
 # variables in `pass_env` below (plus LC_* and any names listed in $AK_EVAL_PASS_ENV).
 # --inherit-env skips that and hands the host the whole shell environment; it exists for the
-# control run in scripts/eval-isolation-probe.sh and is recorded in the receipt.
+# control run in scripts/eval-isolation-probe.sh and is recorded in the receipt. Either way the
+# host's PATH and TMPDIR are the script's own: PATH gains the git directory described below, and
+# TMPDIR is the per-run directory described under "Reads".
 #
 # Why the ~/.docker shuffle: the eval sandbox refuses to start a Bash-granting case while any symlink
 # sits under ~/.docker, and Docker Desktop keeps symlinks in ~/.docker/cli-plugins and ~/.docker/bin.
