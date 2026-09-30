@@ -1004,17 +1004,6 @@ function verificationRules(rc: RuleContext): void {
   const status = str(doc["status"]);
   const kind = str(doc["kind"]);
 
-  const RULE_CHECK = "verification.check-names-ticket-verification";
-  const check = str(doc["check"]);
-  const ticketId = str(at(doc, "ticket.id"));
-  if (check !== null && ticketId !== null) {
-    const ticket = rc.index.byId.get(ticketId);
-    if (ticket !== undefined && ticket.schema === "ticket") {
-      const known = arr(ticket.doc["verification"]).map(obj).some((entry) => entry !== null && str(entry["id"]) === check);
-      if (!known) fail(rc, RULE_CHECK, `check ${check} is not one of ticket ${ticketId}'s named verification ids`);
-    }
-  }
-
   const RULE_PROSE = "verification.prose-never-substitutes-for-exit-status-and-digest";
   if (status === "passed" || status === "failed") {
     if (kind === "command") {

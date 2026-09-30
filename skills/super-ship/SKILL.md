@@ -94,8 +94,8 @@ The project's own release checks, discovered rather than assumed.
    artifact hash. A verdict of `blocked` or `unavailable` stops the run. Start with
    `node <this skill's directory>/../../bin/ak-gate.mjs check` (the bundle's `bin/`, two directories
    above this skill): it needs a current record from super-build, super-verify, super-review full (or
-   a delta at this head) and super-review readiness. The evidence path applies to an opened run, to
-   an explicit `--evidence`, or to a binding that declares it: there the check also resolves the
+   a delta at this head) and super-review readiness. The evidence path applies to an opened run or to
+   an explicit `--evidence`: there the check also resolves the
    verification refs, hashes and digested outputs against the run's ticket. A `refused: gate <g>` or
    `refused: evidence <reason>` line stops the run with `needs-input` naming that phase or receipt
    defect. A run that was never opened passes on its v1 markers with a note that they are history,

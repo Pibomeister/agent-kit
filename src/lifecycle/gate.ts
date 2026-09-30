@@ -215,18 +215,28 @@ function canonicalJson(value: unknown): string {
   return `{${entries.map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`).join(",")}}`;
 }
 
-/** Whether the store still holds this reference as a well-formed failed receipt, which no re-record replaces. */
-function storedFailure(dir: string, run: string, ref: ArtifactRef): boolean {
+/** The receipt a reference names, while the store still holds it under that hash. */
+function storedReceipt(dir: string, run: string, ref: ArtifactRef): Record<string, unknown> | undefined {
   const path = artifactPath(dir, run, ref.hash);
-  if (path === undefined || !existsSync(path)) return false;
+  if (path === undefined || !existsSync(path)) return undefined;
   const bytes = readFileSync(path);
-  if (sha256(bytes) !== ref.hash) return false;
+  if (sha256(bytes) !== ref.hash) return undefined;
   try {
-    const receipt = object(JSON.parse(new TextDecoder().decode(bytes)));
-    return receipt?.status === "failed" && verificationShapeReasons(receipt).length === 0;
+    return object(JSON.parse(new TextDecoder().decode(bytes)));
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+const boundTo = (receipt: Record<string, unknown>, snapshot: Snapshot): boolean => {
+  const source = object(receipt.source_revision);
+  return source?.revision === snapshot.revision && source?.diff_hash === snapshot.diff_hash;
+};
+
+/** Whether the store still holds this reference as a well-formed failed receipt at this snapshot, which no re-record replaces. */
+function storedFailure(dir: string, run: string, ref: ArtifactRef, snapshot: Snapshot): boolean {
+  const receipt = storedReceipt(dir, run, ref);
+  return receipt !== undefined && receipt.status === "failed" && boundTo(receipt, snapshot) && verificationShapeReasons(receipt).length === 0;
 }
 
 const runRecordPath = (dir: string, run: string): string => join(dir, "runs", safeRunId(run), "run.json");
@@ -332,13 +342,14 @@ export interface RecordArgs {
   now?: () => Date;
 }
 
-export function recordGate(a: RecordArgs): { ok: true; path: string; record: GateRecord } | { ok: false; reason: string } {
+export function recordGate(a: RecordArgs): { ok: true; path: string; record: GateRecord; skipped: string[] } | { ok: false; reason: string } {
   const snapshot = takeSnapshot(a.project);
   if (typeof snapshot === "string") return { ok: false, reason: snapshot };
   if ((a.receipts?.length ?? 0) > 0 && readRunRecord(a.dir, a.run) === undefined) {
     return { ok: false, reason: `run ${a.run} has no task-bound run record; open it with --ticket before recording receipts` };
   }
   const refs: ArtifactRef[] = [];
+  const skipped: string[] = [];
   for (const receiptPath of a.receipts ?? []) {
     let bytes: Uint8Array;
     let receipt: Record<string, unknown>;
@@ -352,6 +363,10 @@ export function recordGate(a: RecordArgs): { ok: true; path: string; record: Gat
     }
     if (receipt.schema !== "verification" || typeof receipt.id !== "string" || receipt.id === "") {
       return { ok: false, reason: `receipt ${receiptPath} must name schema verification and a non-empty id` };
+    }
+    if (!boundTo(receipt, snapshot)) {
+      skipped.push(`receipt ${receiptPath} is bound to revision ${String(object(receipt.source_revision)?.revision)}, not ${short(snapshot)}; not recorded`);
+      continue;
     }
     const output = receipt.output_digest;
     if (typeof output === "string") {
@@ -390,12 +405,17 @@ export function recordGate(a: RecordArgs): { ok: true; path: string; record: Gat
   const previous = readObject(path) as Partial<GateRecord> | undefined;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
     const recorded = new Set(refs.map((ref) => ref.id));
-    record.evidence = [...previous.evidence.filter((ref) => !recorded.has(ref.id) || storedFailure(a.dir, a.run, ref)), ...refs].filter(
+    const earlier = previous.evidence.filter((ref) => {
+      const stored = storedReceipt(a.dir, a.run, ref);
+      if (stored !== undefined && !boundTo(stored, snapshot)) return false;
+      return !recorded.has(ref.id) || storedFailure(a.dir, a.run, ref, snapshot);
+    });
+    record.evidence = [...earlier, ...refs].filter(
       (ref, index, all) => all.findIndex((candidate) => candidate.hash === ref.hash && candidate.id === ref.id) === index,
     );
   }
   atomicJson(path, record);
-  return { ok: true, path, record };
+  return { ok: true, path, record, skipped };
 }
 
 /** Every well-formed record for this run and gate. A file that is not one is ignored, never trusted. */
@@ -698,15 +718,16 @@ function evaluateEvidence(a: CheckArgs, head: Snapshot): { outcome: DecisionReco
       continue;
     }
     if (receipt.id !== ref.id) reasons.push({ code: "malformed", detail: `receipt ${ref.id} contains id ${String(receipt.id)}`, evidence: ref.id });
+    const before = reasons.length;
     if (receipt.run_id !== a.run) reasons.push({ code: "wrong-run", detail: `receipt ${ref.id} is for run ${String(receipt.run_id)}, not ${a.run}`, evidence: ref.id });
-    const source = object(receipt.source_revision)!;
-    if (source.revision !== head.revision || source.diff_hash !== head.diff_hash) {
+    if (!boundTo(receipt, head)) {
       reasons.push({ code: "wrong-revision", detail: `receipt ${ref.id} does not name ${short(head)}`, evidence: ref.id });
     }
     const task = object(receipt.ticket);
     if (task?.id !== run.ticket.id || task?.hash !== run.ticket.hash || (task?.schema !== undefined && task.schema !== "ticket")) {
       reasons.push({ code: "wrong-task", detail: `receipt ${ref.id} does not name ticket ${run.ticket.id} at ${run.ticket.hash}`, evidence: ref.id });
     }
+    const bound = reasons.length === before;
     if (receipt.invalidation !== undefined) reasons.push({ code: "invalidated", detail: `receipt ${ref.id} has been invalidated`, evidence: ref.id });
     const output = receipt.output_digest as string | undefined;
     if (output !== undefined) {
@@ -723,7 +744,7 @@ function evaluateEvidence(a: CheckArgs, head: Snapshot): { outcome: DecisionReco
     if (!nonempty(environment.id) || (expectedEnvironment !== undefined && environment.id !== expectedEnvironment.id)) {
       reasons.push({ code: "environment-mismatch", detail: `receipt ${ref.id} environment does not match the run`, evidence: ref.id });
     }
-    for (const criterion of receipt.supports as string[]) {
+    for (const criterion of bound ? (receipt.supports as string[]) : []) {
       if (receipt.status === "passed") passed.add(criterion);
       if (receipt.status === "failed") failed.add(criterion);
     }
@@ -961,6 +982,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       return 1;
     }
     if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
+    for (const line of r.skipped) io.err(`note: ${line}`);
     io.out(`recorded ${gate} for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);
     return 0;
   }

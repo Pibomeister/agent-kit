@@ -841,16 +841,6 @@ describe("verification rules", () => {
     expect(rulesOf(run(verification())).filter((r) => r.startsWith("verification."))).toEqual([]);
   });
 
-  test("verification.check-names-ticket-verification rejects an instrument the ticket did not name", () => {
-    const ref = { id: "ticket-1", schema: "ticket", hash: `sha256:${"a".repeat(64)}` };
-    const ticket = envelope("ticket", "ticket-1", { verification: [{ id: "project-check" }] });
-    const doc = verification({ check: "another-check", ticket: ref });
-    expect(rulesOf(run(doc, [ticket]))).toContain("verification.check-names-ticket-verification");
-    expect(rulesOf(run(verification({ check: "project-check", ticket: ref }), [ticket]))).not.toContain(
-      "verification.check-names-ticket-verification",
-    );
-  });
-
   test("verification.prose-never-substitutes-for-exit-status-and-digest catches a narrative pass", () => {
     const doc = verification({ exit_status: undefined, output_digest: undefined, notes: "tests were green" });
     delete doc["exit_status"];

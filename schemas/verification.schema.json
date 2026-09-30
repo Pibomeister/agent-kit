@@ -14,8 +14,7 @@
     "kind": { "enum": ["command", "probe", "manual"] },
     "check": {
       "description": "The ticket verification id this receipt executed. Optional for compatibility; the evidence-bearing lifecycle gate requires it and refuses an id the ticket does not declare.",
-      "$ref": "common.schema.json#/$defs/kebab_id",
-      "x-validator-rule": "verification.check-names-ticket-verification"
+      "$ref": "common.schema.json#/$defs/kebab_id"
     },
     "command": {
       "description": "The command as executed. Recorded as an argument vector so it is reproducible rather than paraphrased.",
