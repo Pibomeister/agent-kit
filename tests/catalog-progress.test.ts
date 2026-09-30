@@ -297,5 +297,7 @@ describe("catalog-progress.sh", () => {
     if (git(ROOT, "rev-parse", "--is-shallow-repository") === "false") {
       expect(new TextDecoder().decode(run.stdout)).not.toContain("SKIPPED");
     }
-  });
+    // The probe walks this repository's real history, which takes about as
+    // long as the default limit allows; the fixtures above have two commits.
+  }, 30_000);
 });
