@@ -52,6 +52,9 @@ Ticket exports for tiny-service-repo (AK-214, AK-341, AK-420, AK-421,
 AK-512, AK-702), each with acceptance criteria whose verification commands
 select tests by name (`npm run check -- --test-name-pattern="AK-214 AC-1"`).
 A scaffold copies the ones its case needs into the workspace's `tickets/`.
+`super-verify/named-criterion-gets-a-receipt` then removes the
+`Verification:` lines from its copy of AK-214, because that case measures
+whether the run finds the check command itself.
 The ultraqa case writes its own AK-702, an import contract, and does not
 use this export.
 
@@ -116,6 +119,25 @@ Cases scaffolded on these fixtures:
 | `babysit-pr/failing-check-is-repaired-within-the-cap` | tiny-service-repo, pr-812-org-cache |
 | `doc-review/changed-evidence-resurfaces-a-rejected-finding` | search-migration-round-two |
 | `doc-review/drafted-spec-gets-a-panel` | knowledgebase checkout (own pages) |
+| `compound/no-knowledgebase-means-no-repo-fallback` | tiny-service-repo |
+| `doc-review/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
+| `doc-review/third-round-does-not-run` | tiny-service-repo |
+| `receiving-review/refuses-to-produce-a-fresh-review` | tiny-service-repo |
+| `super-align/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
+| `super-align/typo-fix-does-not-start-alignment` | tiny-service-repo |
+| `super-bound/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
+| `super-bound/reviewed-ticket-does-not-reopen-bounding` | tiny-service-repo |
+| `super-build/round-cap-adjudicates-open-findings` | tiny-service-repo |
+| `super-review/baseline-reset-is-not-a-third-delta-loop` | tiny-service-repo |
+| `super-review/confidence-does-not-close-a-finding` | tiny-service-repo |
+| `super-review/refuses-to-edit-the-source-it-reviews` | tiny-service-repo |
+| `super-review/seat-isolation-unavailable-stops-the-run` | tiny-service-repo |
+| `super-review/third-fix-cycle-does-not-run` | tiny-service-repo |
+| `super-scout/caller-hint-is-not-evidence` | tiny-service-repo |
+| `super-scout/refuses-unbounded-question` | tiny-service-repo |
+| `super-ship/lesson-is-drafted-not-published` | tiny-service-repo |
+| `super-verify/refuses-code-quality-opinion` | tiny-service-repo |
+| `wayfind/out-of-scope-needs-a-reason` | tiny-service-repo |
 
 Each case's `scaffold.sh` opens with a comment saying what it builds and
 where the case's defect or decision point sits. As with tiny-config-repo, a
