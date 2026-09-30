@@ -322,6 +322,11 @@ is where a skill records the degradation its adapter contract describes — a sk
 restriction a host lacks lists it in `unsupported` and drops to `guided` or `manual`, rather than
 claiming a guarantee nothing enforces (`adapters/claude-code/CONTRACT.md` §4).
 
+An autonomous form that consumes evidence the worker could edit lists `trusted-evidence` in
+`requires[]`. Both hosts mark it `not-provided`; only the attached runner contract supplies it
+fail-closed. Never infer evidence provenance from filesystem permissions or from a successful
+in-process check.
+
 `ak validate` cross-checks `catalog.yaml`'s `invocation` against `skill.yaml`'s `invocation` and its
 entrypoint authorities, and fails on disagreement.
 

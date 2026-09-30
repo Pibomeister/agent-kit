@@ -1064,8 +1064,8 @@ adapters:
     batch: 1
     status: authored
     summary: >-
-      Grant validation, seat independence, budgets, idempotency keys, event delivery and tracker
-      credentials. Skills never issue their own grants.
+      Grant validation, trusted evidence outside worker-writable scope, seat independence, budgets,
+      idempotency keys, event delivery and tracker credentials. Skills never issue their own grants.
   - id: knowledgebase
     batch: 1
     status: authored

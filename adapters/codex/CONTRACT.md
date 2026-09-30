@@ -76,11 +76,12 @@ the whole reason host keys are generated rather than written (`AUTHORING.md` §4
 
 **Every `common#/$defs/capability` value carries the status
 `adapters/claude-code/CONTRACT.md` §3 gives it, with no per-capability difference on this host.**
-That table is the single statement for both hosts and is not restated here — a copy would be a
-second thing to keep in step, and the copy that decided would be whichever one the code read. It
-was restated here once, as prose naming thirteen of the sixteen capabilities, and the three it
-omitted (`isolated-worktree`, `isolated-review-context`, `independent-context`) had no stated
-status on this host at all until a parse of the table went looking for them.
+That table is the single statement the packager reads for both hosts. The trust-boundary row is
+also stated here because an omitted row could be misread as evidence trust on this host:
+
+| Capability | Status | Detail |
+|---|---|---|
+| `trusted-evidence` | `not-provided` | The worker and the evidence store share one OS authority, so the host cannot attest evidence the worker can edit |
 
 What differs on this host is not which capabilities are supplied but which **restrictions** the
 host can enforce. None of the rows below is a `capability` value:

@@ -91,6 +91,10 @@ that cannot be filled independently is **unavailable**, and unavailability block
 is never backfilled — not by the implementer, not by the author, not by the spec approver, and not by
 a seat already sitting on the panel (ruling `missing-supervisor-never-implementer`).
 
+Worker-attested evidence never lifts an autonomy ceiling. The evidence-consuming autonomous form
+requires `trusted-evidence`, supplied fail-closed by the runner contract; host permissions are not
+evidence provenance and never imply that capability.
+
 `ak validate` fails on any denylist hit outside `provenance/` and `research/sources/`, which quote the
 sources verbatim by design. The non-routing concepts arch § tells us to keep — per-finding solution
 specificity, difficulty, evidence classification, independent roles, iteration limits — all survive,

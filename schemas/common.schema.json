@@ -275,6 +275,7 @@
         "event-delivery",
         "human-channel",
         "runner-grants",
+        "trusted-evidence",
         "artifact-write",
         "firstmate-supervision"
       ]

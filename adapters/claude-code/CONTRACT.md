@@ -113,6 +113,7 @@ compound status is a value no consumer can act on.
 | `tracker-access` | `not-provided` | See `adapters/tracker/CONTRACT.md` |
 | `event-delivery` | `not-provided` | The host is session-scoped. Hooks fire inside a live session; there is no durable inbound event queue that survives the session, so no event can be delivered to a run that is not currently open |
 | `runner-grants` | `not-provided` | The host has no grant validator. Nothing in it can decide that a charter authorizes a checkpoint |
+| `trusted-evidence` | `not-provided` | The worker and the evidence store share one OS authority, so the host cannot attest evidence the worker can edit |
 | `firstmate-supervision` | `not-provided` | The host is the worker's harness, not a supervisor over it. See `adapters/firstmate/CONTRACT.md` |
 
 **"See `adapters/<x>/CONTRACT.md`" names where a capability can come from with that adapter

@@ -244,6 +244,7 @@ operations:
       Release checks, sensitive-data scan, PR preparation and the linked knowledgebase change,
       up to and including opening a pull request when the charter grants it.
     preconditions:
+      - the autonomous form requires `trusted-evidence` before super-ship step 2 runs `ak-gate.mjs check`
       - verification receipts bind to the head being shipped
       - review approval exists and binds to that head's artifact hash
     hard_gates:

@@ -10,6 +10,10 @@ import {
   loadCapabilityTable,
   type Supply,
 } from "../src/packaging/capability-table.ts";
+import { loadCatalog } from "../src/catalog/load.ts";
+import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { loadInstallConfig } from "../src/packaging/install.ts";
+import { loadSkillManifest } from "../src/packaging/manifest.ts";
 import { hasBlockingSkips } from "../src/validation/types.ts";
 import { makeTree } from "./helpers/tree.ts";
 
@@ -327,4 +331,38 @@ describe("a not-provided capability an attached adapter supplies", () => {
     expect(ceilingFor(["kb-write"], table)).toEqual(ceilingFor(["kb-write"], table, HOST_ALONE));
     expect(ceilingFor(["kb-write"], table, HOST_ALONE).blocking).toEqual(["kb-write"]);
   });
+});
+
+describe("super-ship's trusted-evidence ceiling", () => {
+  const table = loadCapabilityTable(REPO);
+  const manifest = loadSkillManifest(REPO, "super-ship");
+  const { catalog } = loadCatalog(REPO);
+  if (catalog === null) throw new Error("repository has no catalog");
+  const defaultInstall = loadInstallConfig(REPO, catalog);
+  const hostAlone: Supply = {
+    ...defaultInstall.supply,
+    attached: new Set(),
+  };
+
+  for (const host of HOST_IDS) {
+    test(`${host} permits the autonomous form only behind runner-contract's fail-closed supply`, () => {
+      expect(manifest.requires).toContain("trusted-evidence");
+      expect(table.status.get("trusted-evidence")).toBe("not-provided");
+      expect(defaultInstall.supply.suppliers.get("trusted-evidence")).toEqual(["runner-contract"]);
+      expect(defaultInstall.supply.attached.has("runner-contract")).toBe(true);
+
+      const withRunner = ceilingFor(manifest.requires, table, defaultInstall.supply);
+      expect(withRunner.mode).toBe("autonomous");
+      expect(withRunner.blocking).toEqual([]);
+      expect(withRunner.detached).toEqual([]);
+
+      const withoutRunner = ceilingFor(manifest.requires, table, hostAlone);
+      expect(withoutRunner.mode).toBe("guided");
+      expect(withoutRunner.blocking).toEqual([]);
+      expect(withoutRunner.detached).toContainEqual({
+        capability: "trusted-evidence",
+        adapters: ["runner-contract"],
+      });
+    });
+  }
 });

@@ -8,8 +8,9 @@ were independent, deliver a durable event, or carry a run across a restart
 in this catalog therefore rests on a **runner**: an existing workflow runner that owns execution,
 isolation, credentials, scheduling and durable state (plan §1.2).
 
-This file is the contract that runner must satisfy. It owns five things — grant validation, seat
-independence, budgets, idempotency, and run state — plus one capability folded in from arch §4.
+This file is the contract that runner must satisfy. It owns six things — grant validation, seat
+independence, budgets, idempotency, run state, and evidence collection outside worker-writable
+scope — plus one capability folded in from arch §4.
 
 **The fold.** Plan §4 sketched separate `issue-tracker` and `repository-events` adapter directories.
 `repository-events` is folded into this contract, because it owns the `event-delivery` capability
@@ -31,6 +32,7 @@ that must hold across trackers (ruling `tracker-of-record-falls-back-to-kb`). Th
 | Seat assignment and the independence attestation | The structural constraints the assignment must satisfy |
 | Budgets and resource accounting | Enforcement of the cap it was handed, and nothing else |
 | Durable run state across restarts | The state machine, and the record that makes a restart safe |
+| Evidence collection outside worker-writable scope | Evidence predicates and the explicit `trusted-evidence` requirement on consuming operations |
 | Durable event delivery; tracker credentials | The event and ticket artifact shapes, and what may be done on receipt |
 
 The package computes no prices, selects nothing, and schedules nothing.
@@ -40,6 +42,7 @@ The package computes no prices, selects nothing, and schedules nothing.
 | Capability | Unconfigured | What the refusal is |
 |---|---|---|
 | `runner-grants` | `fails-closed` | `delegated-grant` operations are unavailable and the entrypoint stops for explicit invocation (§2, "With no runner attached") |
+| `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach |
 
 This table is read by `ak build` and `ak validate` (`loadAdapterSupplies` in
 `src/packaging/install.ts`). A row is a claim that an operation needing the capability refuses

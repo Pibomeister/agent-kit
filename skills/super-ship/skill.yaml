@@ -63,6 +63,7 @@ requires:
   - process-exec
   - kb-write
   - runner-grants
+  - trusted-evidence
   - artifact-write
 
 inputs:
