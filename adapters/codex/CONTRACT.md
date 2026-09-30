@@ -101,8 +101,8 @@ For every U skill in the codex bundle:
 
 1. The `description`, copied verbatim from the canonical `SKILL.md`, opens by naming the skill's
    typed command and its class — `Human-started command: it runs only when the human's message
-   begins with /ak:<id>`, with `or under a validated grant` added where the skill has phase
-   operations — and says what to do on any other request: do not load or follow it, tell the human
+   begins with /ak:<id>`, followed where the skill has phase operations by the other authority that
+   may start it — and says what to do on any other request: do not load or follow it, tell the human
    to type that command. On a host that cannot suppress model invocation, the description
    is the only thing between a U skill and an unrequested start, so it is written to be read that
    way. `ak validate`'s `human-start` check fails a U skill whose description omits the command

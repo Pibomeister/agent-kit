@@ -372,15 +372,15 @@ The `description` is the activation surface. It carries the trigger and at least
 non-trigger clause, because on a host that cannot suppress model invocation the description is the
 only thing standing between a U skill and an unrequested start. For a user-invoked skill the
 non-trigger clause is fixed in form and checked: the description opens `Human-started command: it
-runs only when the human's message begins with /ak:<id>` (plus `or under a validated grant` where
-the skill has phase operations) and goes on `On any other request do not load or follow it; tell
-the human to type that command`, and the first item under `## Workflow` is the stop — it names
-`/ak:<id>` and says to stop when the message does not begin with it. `ak validate`'s `human-start`
-check (`src/validation/human-start.ts`) fails a U skill whose description omits the command
-(`invocation.description-omits-command`) or the words `human-started`
-(`invocation.description-omits-class`), or whose first workflow item does not name the command and
-say to stop (`invocation.first-step-not-stop`). The check reads the text; whether a session obeys
-it is what the skill's non-trigger eval case observes.
+runs only when the human's message begins with /ak:<id>` (where the skill has phase operations, the
+other authority that may start it follows, `or under a validated grant` for a delegated grant) and
+goes on `On any other request do not load or follow it; tell the human to type that command`, and
+the first item under `## Workflow` is the stop — it names `/ak:<id>` and says to stop when the
+message does not begin with it. `ak validate`'s `human-start` check (`src/validation/human-start.ts`)
+fails a U skill whose description omits the command (`invocation.description-omits-command`) or the
+words `human-started` (`invocation.description-omits-class`), or whose first workflow item does not
+name the command and say to stop (`invocation.first-step-not-stop`). The check reads the text;
+whether a session obeys it is what the skill's non-trigger eval case observes.
 
 ### 4.2 Fields with no prose mirror
 
