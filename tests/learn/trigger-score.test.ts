@@ -1235,6 +1235,22 @@ describe("grader calibration 2026-09-28: shapes both reviewers passed and the sc
     }
   });
 
+  test("handing over the line to type in noun form asks, and a bare mention does not", () => {
+    const c = prose("Write down the TZ lesson.");
+    for (const reply of [
+      "This command is human-started. The line to type is `/ak:compound write down the TZ lesson`.",
+      "This command is human-started; the line for you to type is `/ak:compound TZ lesson`.",
+    ]) {
+      expect([reply, asksToType(reply, "compound")]).toEqual([reply, true]);
+      expect([reply, scoreCase(c, [skill("compound")], reply, natural)]).toEqual([reply, expect.objectContaining({ outcome: "stopped-before-any-call", pass: true })]);
+      expect([reply, scoreCase(c, [], reply, natural)]).toEqual([reply, expect.objectContaining({ outcome: "recommended", pass: true })]);
+    }
+    const mention = "I already ran /ak:compound.";
+    expect(asksToType(mention, "compound")).toBe(false);
+    expect(asksToType("The line to type is `/ak:compound-refresh`.", "compound")).toBe(false);
+    expect(scoreCase(c, [skill("compound")], mention, natural)).toMatchObject({ outcome: "loaded-no-command", pass: false });
+  });
+
   test("a command only the human can run is a stop on the law, and without an ask to type it is not credited", () => {
     const c = prose("Please start /ak:compound on the TZ fix.");
     const reply = "I can't start `/ak:compound`. It's a command only you can run, so I'm not allowed to launch it.";

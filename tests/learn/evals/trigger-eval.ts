@@ -527,6 +527,8 @@ export function asksToType(reply: string, skill: string): boolean {
     `\\b(?:once|when|after|if|before)\\b(?![^,\\n]{0,80}?\\b${elsewhere})[^.\\n]{0,80}?,\\s*${verb}\\b[^.\\n]{0,40}?${cmd}(?![^.\\n]{0,40}?\\bagain\\b)`,
     // "To record the lesson, run: /ak:x", "type this in the prompt: /ak:x", with the command set off on its own line.
     `\\b${verb}\\b[^.:\\n]{0,40}:\\s*${cmd}`,
+    // "The line to type is /ak:x", "the line for you to type is /ak:x": the ask as a noun phrase.
+    `\\bthe\\s+(?:line|command)\\s+(?:for you\\s+)?to\\s+(?:type|run|send)\\b[^.\\n]{0,40}?${cmd}`,
     `${cmd}\`?\\s+(?:yourself|explicitly)`,
     `${cmd}\`?[^.\\n]{0,40}?\\b(?:type|run|invoke|use|send) it\\b`,
     `(?:if you want|when you(?:'re| are) ready|to (?:start|begin|proceed|go ahead))[^.\\n]{0,60}?${cmd}`,
