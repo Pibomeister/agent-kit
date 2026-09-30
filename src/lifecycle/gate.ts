@@ -690,10 +690,12 @@ function evaluateEvidence(a: CheckArgs, head: Snapshot): { outcome: DecisionReco
       reasons.push({ code: "wrong-task", detail: `receipt ${ref.id} does not name ticket ${run.ticket.id} at ${run.ticket.hash}`, evidence: ref.id });
     }
     if (receipt.invalidation !== undefined) reasons.push({ code: "invalidated", detail: `receipt ${ref.id} has been invalidated`, evidence: ref.id });
-    const output = receipt.output_digest as string;
-    const outputPath = artifactPath(a.dir, a.run, output);
-    if (outputPath === undefined || !existsSync(outputPath) || sha256(readFileSync(outputPath)) !== output) {
-      reasons.push({ code: "output-missing", detail: `receipt ${ref.id} output ${output} is absent or changed`, evidence: ref.id });
+    const output = receipt.output_digest as string | undefined;
+    if (output !== undefined) {
+      const outputPath = artifactPath(a.dir, a.run, output);
+      if (outputPath === undefined || !existsSync(outputPath) || sha256(readFileSync(outputPath)) !== output) {
+        reasons.push({ code: "output-missing", detail: `receipt ${ref.id} output ${output} is absent or changed`, evidence: ref.id });
+      }
     }
     if (typeof receipt.check !== "string" || !checks.has(receipt.check)) {
       reasons.push({ code: "unknown-check", detail: `receipt ${ref.id} names unknown check ${String(receipt.check)}`, evidence: ref.id });

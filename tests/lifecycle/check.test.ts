@@ -241,6 +241,33 @@ describe("ak lifecycle check, standalone", () => {
     }
   });
 
+  test("a receipt for a check that did not run neither counts nor refuses beside passed evidence", () => {
+    for (const status of ["not-run", "not-applicable"] as const) {
+      const dir = repo();
+      const ticketPath = ticket(dir, `unrun-${status}`);
+      const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const unrun = receipt(dir, run, ticketPath, {
+        status,
+        reason: "the check does not apply to this change",
+        exit_status: undefined,
+        output_digest: undefined,
+        artifacts: undefined,
+      });
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", unrun).code).toBe(0);
+
+      const alone = ak(dir, "check");
+      expect(alone.code).toBe(1);
+      expect(alone.err).toContain("refused: evidence uncovered: AC-1 has no passed evidence at this head");
+      expect(alone.err).not.toContain("output-missing");
+
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+      const checked = ak(dir, "check", "--json");
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ outcome: "allowed", reasons: [] });
+    }
+  }, 15_000);
+
   test("a later pass never overwrites a failure for the same criterion and head", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "unstable-check");
