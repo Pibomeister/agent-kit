@@ -709,13 +709,13 @@ export function repliesWithName(reply: string, names: readonly string[]): boolea
 }
 
 /**
- * Does the reply recommend the typed command? It asks the human to type `/ak:<id>` for an expected
- * skill (`asksToType`; a bare mention such as "I already ran /ak:compound" is not an ask), and the
- * prompt did not already carry that exact string: echoing a command the user wrote is not a
+ * Does the reply recommend the typed command? It names `/ak:<id>` for an expected skill as the way
+ * to start it (`namesCommand`; a bare mention such as "I already ran /ak:compound" does not), and
+ * the prompt did not already carry that exact string: echoing a command the user wrote is not a
  * recommendation.
  */
 export function recommends(c: Case, reply: string): boolean {
-  return c.expected.some((id) => !slashOf(id).test(c.prompt) && asksToType(reply, id));
+  return c.expected.some((id) => !slashOf(id).test(c.prompt) && namesCommand(reply, id));
 }
 
 /** Does the prose prompt already carry an expected skill's `/ak:<id>` (mid-sentence, not typed first)? */
@@ -769,18 +769,20 @@ export function classifyCall(event: ToolEvent): WorkflowCall {
  * first load of an expected skill, or every call in the session when no expected skill loaded,
  * since lookups made without loading are read the same as lookups after loading (ruling C).
  * The loading call itself is not in the list, except that a shell command which loads and writes
- * in one line (`cat SKILL.md > x`) is, as a write.
+ * in one line (`cat SKILL.md > x`) is, as a write. A `Read` an adapter derived from a shell command
+ * (`via: "shell"`) is not a call the session made: the command is already in the list.
  */
 export function workflowCalls(events: readonly RoutedEvent[], expected: readonly string[], options: ScoreOptions): WorkflowCall[] {
   const first = loadsOf(events, options).find((load) => expected.includes(load.skill));
-  if (first === undefined) return events.filter((e): e is ToolEvent => e.kind === "tool").map(classifyCall);
+  const made = (e: RoutedEvent): e is ToolEvent => e.kind === "tool" && e.input.via !== "shell";
+  if (first === undefined) return events.filter(made).map(classifyCall);
   const out: WorkflowCall[] = [];
   const load = events[first.index];
   if (load?.kind === "tool" && load.name === "Bash") {
     const call = classifyCall(load);
     if (call.kind === "write") out.push(call);
   }
-  for (const event of events.slice(first.index + 1)) if (event.kind === "tool") out.push(classifyCall(event));
+  for (const event of events.slice(first.index + 1)) if (made(event)) out.push(classifyCall(event));
   return out;
 }
 
@@ -1009,7 +1011,7 @@ export interface ProseMetrics {
    * the reply names the typed command and nothing changed. It folds `recommended` in, by definition.
    */
   pass: Rate;
-  /** Asked the human to type the command the prompt did not carry. Not a load, and in no routing rate. */
+  /** Nothing loaded, and the reply named the command the prompt did not carry. In no routing rate. */
   recommended: Rate;
   /** The skill loaded, however it ended. */
   loaded: Rate;
@@ -1030,7 +1032,7 @@ function proseMetrics(results: readonly Scored[]): ProseMetrics {
   const outcome = (o: Outcome) => count(results, (r) => r.outcome === o);
   return {
     pass: count(results, (r) => r.pass),
-    recommended: count(results, (r) => r.recommended),
+    recommended: outcome("recommended"),
     loaded: count(results, (r) => r.hit),
     stopped_before_any_call: outcome("stopped-before-any-call"),
     looked_then_stopped: outcome("looked-then-stopped"),

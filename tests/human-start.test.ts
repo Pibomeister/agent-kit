@@ -136,7 +136,7 @@ describe("the description", () => {
     expect(issues(files)).toEqual([{ rule: "invocation.description-omits-command", file: "skills/compound/SKILL.md", line: 3 }]);
   });
 
-  test("the class word is matched whole, so 'human-started-looking' and 'unstarted' do not satisfy it", () => {
+  test("the command is matched whole: a longer id that starts with it does not name it", () => {
     expect(namesCommand("type `/ak:compound`.", "/ak:compound")).toBe(true);
     expect(namesCommand("type `/ak:compound-refresh`.", "/ak:compound")).toBe(false);
     expect(namesCommand("type `/ak:compound2`.", "/ak:compound")).toBe(false);

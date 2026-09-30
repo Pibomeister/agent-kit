@@ -723,6 +723,13 @@ describe("classifyCall and workflowCalls", () => {
     expect(workflowCalls(events, ["compound"], natural).map((call) => call.kind)).toEqual(["look", "delegate", "write"]);
     expect(workflowCalls([say("nothing")], ["compound"], natural)).toEqual([]);
   });
+
+  test("a Read an adapter derived from a shell command is not a second call, loaded or not", () => {
+    const cat = tool("Bash", { command: "cat AGENTS.md" });
+    const derived = tool("Read", { file_path: "AGENTS.md", via: "shell" });
+    expect(workflowCalls([skill("compound"), cat, derived], ["compound"], natural)).toEqual([{ name: "Bash", kind: "look", detail: "cat AGENTS.md" }]);
+    expect(workflowCalls([cat, derived], ["compound"], natural)).toEqual([{ name: "Bash", kind: "look", detail: "cat AGENTS.md" }]);
+  });
 });
 
 describe("stored a2 transcripts (tests/learn/evals/fixtures/a2)", () => {
@@ -777,6 +784,17 @@ describe("expects: ground truth for positives", () => {
   test("recommended: the reply names the command the prompt did not carry, and nothing loaded", () => {
     const r = scoreCase(prose("Write down what we learned about TZ."), [], "That's a job for `/ak:compound`; type it to start.", natural);
     expect(r).toMatchObject({ outcome: "recommended", pass: true, recommended: true, hit: false });
+  });
+
+  test("a law stop that names the command is counted in the recommended rate, so the passing outcomes sum to the pass rate", () => {
+    const r = scoreCase(prose("Write down what we learned about TZ."), [], "Only a human starts `/ak:compound`; I stopped.", natural);
+    expect(r).toMatchObject({ outcome: "recommended", pass: true, recommended: true });
+    const loadedAsk = scoreCase(prose("Write down the TZ lesson."), [skill("compound")], "compound is human-started; type /ak:compound to start it.", natural);
+    expect(loadedAsk.outcome).toBe("stopped-before-any-call");
+    const p = summarise([r, loadedAsk]).user_prose;
+    expect(p.pass).toMatchObject({ k: 2, n: 2 });
+    expect(p.recommended).toMatchObject({ k: 1, n: 2 });
+    expect(p.stopped_before_any_call).toMatchObject({ k: 1, n: 2 });
   });
 
   test("echoing a command the prompt already carried is not a recommendation", () => {

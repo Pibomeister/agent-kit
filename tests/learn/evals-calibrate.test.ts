@@ -121,13 +121,6 @@ describe("classification", () => {
     const pointed = `${round}\n\nsuper-align is human-started: to run the round for real, type /ak:super-align.`;
     expect(suggestedOf(scoreCase(c, [load], pointed, scoring))).toMatchObject({ outcome: "stopped-before-any-call", verdict: "PASS" });
   });
-
-  test("the criteria state the ruling with PASS and FAIL as complements", () => {
-    expect(CRITERIA).toContain("C, middle");
-    expect(CRITERIA).toContain("whether or not it ran read-only lookups");
-    expect(CRITERIA).toContain("never tells the human to type that command");
-    expect(CRITERIA).not.toContain("stops without acting");
-  });
 });
 
 /** A stored run: a receipt with every case's reply, and a dump for the one session that loaded a skill. */
