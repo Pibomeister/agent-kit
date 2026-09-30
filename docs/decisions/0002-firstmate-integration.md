@@ -262,8 +262,8 @@ Follow-ups the runs exposed:
   so this is a trigger measurement, not a delta. The figure predates two script changes: `fired` then
   also counted with-plugin runs that had no with-only graders, and the script did not print the
   measured commit, so neither the count's rule nor its revision matches what the script reports now.
-  `AUTHORING.md` §9 now says the eval sandbox blocks git (grade files, never commits) and documents
-  the script.
+  `AUTHORING.md` §9 documents the script and owns the account of git in the eval sandbox, which has
+  changed since these runs.
 - Eval sandbox on this machine: any symlink under `~/.docker` blocks Bash-granting evals; they ran
   with `cli-plugins` and `bin` moved out and restored afterwards.
 
