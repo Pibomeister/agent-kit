@@ -194,9 +194,10 @@ describe("eval-local: the selected corpus matches its instrument", () => {
     expect(r.status).toBe(0);
     expect(r.receipt.isolation.method).toBe(`host-sandbox+${method}`);
     expect(r.receipt.tooling.git).toEqual({ source: "xcrun", path: r.developerGit });
-    expect(r.hostGit).toEqual({ git: join(r.hostPath[0], "git"), real: r.developerGit, first: ["git"] });
-    expect(r.hostPath[0]).not.toBe(dirname(r.developerGit));
-    expect(existsSync(r.hostPath[0])).toBe(false);
+    const first = r.hostPath[0]!;
+    expect(r.hostGit).toEqual({ git: join(first, "git"), real: r.developerGit, first: ["git"] });
+    expect(first).not.toBe(dirname(r.developerGit));
+    expect(existsSync(first)).toBe(false);
   });
 });
 
