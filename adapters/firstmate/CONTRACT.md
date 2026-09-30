@@ -173,7 +173,7 @@ A declaration is not enforcement (plan §1.2). What each claim in this contract 
 | A child does not push, merge, open a PR, run `fm-*` or no-mistakes, or write outside its destination | `hooks/child-guard.sh`, on Claude Code | Every other harness: the rule is prose in the brief and nothing more |
 | A child does not run `ak firstmate bind`, `install` or `remove`, or name the binding ledger | `hooks/child-guard.sh`, on Claude Code, as a token-matching tripwire (§6) | Shell indirection; the main-thread worker; every other harness |
 | The pipeline creates no unreviewed commit | `--skip review,document,rebase` plus `auto_fix.{test,lint,ci}: 0`, which `ak firstmate preflight` requires | A repository whose trusted config is changed after preflight |
-| The ship decision is the lifecycle's | super-ship's preconditions: receipts and a verdict bound to the shipped snapshot | A worker that pushes by hand; Firstmate's done gate then sees a head with no receipts |
+| The ship decision is the lifecycle's | super-ship's preconditions: receipts and a verdict bound to the shipped snapshot, and, for the autonomous form, trusted evidence (`adapters/runner-contract/CONTRACT.md` §2) | A worker that pushes by hand; Firstmate's done gate then sees a head with no receipts |
 
 The child guard can tell a child from its parent only because the host says so. Claude Code's
 PreToolUse input carries `agent_id` and `agent_type` for a call made inside a subagent and omits

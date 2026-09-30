@@ -38,20 +38,22 @@ non-interactive. It exits 0 and prints a grant record (`operation`, `binding`, `
 - the binding is outside the git worktree of `--cwd` (default the working directory) and outside the
   bound project and workspace, so the worker cannot have written it;
 - the operation is on the slip: `review.full` needs gate `review-full`, `review.readiness` needs
-  `review-readiness`, and `ship.prepare` needs `ship-preflight` and does the binding's
-  `delivery.action`, which never includes merge;
+  `review-readiness`, and `ship.prepare` needs `ship-preflight`. The grant authorizes the binding's
+  `delivery.action` and never a merge;
 - the pinned bundle the binding names still exists and hashes to the bound hash.
 
 Otherwise it exits 1 with a one-line reason and a `needs-decision` hint. The worker stops, reports
 `needs-decision` to Firstmate, and Firstmate decides or asks the captain. Any other operation, merge
 and scope changes included, is refused.
 
-The skills say this in one paragraph each; `adapters/firstmate/CONTRACT.md` §6 carries the table.
+The skills state the grant in the Authority section; `adapters/firstmate/CONTRACT.md` §6 carries the
+table. super-ship's Authority section states the further limit the amendment below records.
 
 ## Consequences
 
-- A bound worker runs full review, readiness review and ship without a hand invocation per phase, and
-  every such run cites the grant record it ran under.
+- A bound worker runs full review and readiness review without a hand invocation per phase, and
+  every such run cites the grant record it ran under. The autonomous form of `ship.prepare` stops
+  without trusted evidence, as the amendment of 2026-09-30 states.
 - The grant is only as strong as the binding's location. A harness that lets the worker write the
   Firstmate home defeats it, the same limit CONTRACT.md §5 already records for the binding itself.
   The record's `binding_sha256` lets a reviewer see the binding did not change between grants.

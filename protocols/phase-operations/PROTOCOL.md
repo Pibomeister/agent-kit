@@ -41,7 +41,9 @@ called with (ruling `entrypoint-phase-operation-split`; protocol `phase-operatio
   `explicit-or-delegated`. Absent, refused or unvalidatable: stop and return `needs-input`; a
   controller's belief that it is authorized is not a grant.
 - Every artifact named in that entry's `preconditions`, each bound to its
-  `common#/$defs/hash`. A precondition artifact whose hash no longer binds is absent.
+  `common#/$defs/hash`. A precondition artifact whose hash no longer binds is absent. A precondition
+  that names `trusted-evidence` is the signal in `adapters/runner-contract/CONTRACT.md` §2, not an
+  artifact hash.
 - The runner-supplied budgets. A cap the runner did not supply is not enforced and not guessed
   (`policies/limits.yaml` `runner_supplied`).
 
@@ -56,7 +58,9 @@ called with (ruling `entrypoint-phase-operation-split`; protocol `phase-operatio
 4. Check preconditions in this order and stop at the first failure: prerequisites present;
    evidence freshness — every approval and receipt binds to the current artifact hash and source
    revision, and a changed artifact inherits neither; authority — the charter lists this
-   checkpoint category and this action; budgets not already exhausted.
+   checkpoint category and this action; budgets not already exhausted. Where the entry requires
+   `trusted-evidence`, that check is `adapters/runner-contract/CONTRACT.md` §2, and worker-attested
+   gate records do not pass it.
 5. For each declared `common#/$defs/remote_side_effect`, derive the idempotency key
    `sha256(run_id · operation_id · target_identity · input_artifact_hash)` and read the remote
    for it. Found with a matching input hash: record success without repeating the effect. Found
@@ -87,7 +91,7 @@ string is not a status.
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "Grant validation is unavailable, so I will run the steps myself under my own authority." | Re-implementing the operation's steps inline is the first named forbidden substitute (`policies/invocation.yaml` `no_side_door`). Where a host cannot validate a grant, the skill stops (ruling `entrypoint-phase-operation-split`). | Return `needs-input` with `escalation.charter_rule: policy:invocation/no_side_door` and the exact entrypoint a human must invoke. |
-| "The run's own record says this phase passed, so the gate is satisfied." | A lifecycle record the workspace wrote about itself is advisory evidence, not host-issued authority. Authority is only a runner-validated grant. | Read the record as evidence, name the missing grant in the result, and block or advise per this operation's own gate. |
+| "The run's own record says this phase passed, so the gate is satisfied." | A lifecycle record the workspace wrote about itself is worker-attested. It is not host-issued authority, and it does not satisfy `trusted-evidence` on an autonomous evidence-consuming operation (`adapters/runner-contract/CONTRACT.md` §2). | Read the record as evidence. Name a missing grant, or name trusted evidence as unavailable, and stop with `needs-input`. |
 | "This branch was already pushed once; pushing again is harmless." | A restart that repeats a remote effect is exactly what the key-plus-read-back rule exists to prevent. | Derive the key, read the remote for it, and record success without repeating the effect. |
 | "I hold a grant for the full review, so the delta pass is covered." | A grant covers exactly one action or checkpoint and does not generalise (`policies/authority-defaults.yaml` `invariants`). Treating a prior grant as covering this one is a named forbidden substitute. | Request the grant this entry declares, or stop for explicit invocation. |
 
@@ -111,8 +115,9 @@ and its read-back, before and after the effect (`adapters/runner-contract/CONTRA
 
 - `complete`: the operation's own scope finished. Control passes to the `next_permitted_action`.
 - `needs-input`: a grant could not be validated, a precondition artifact was absent or no longer
-  bound, or the operation is undeclared. Returns the full `escalation` — need, options, tried,
-  default, charter rule, blocked artifact id.
+  bound, trusted evidence was unavailable where the entry requires it, or the operation is
+  undeclared. Returns the full `escalation` — need, options, tried, default, charter rule, blocked
+  artifact id.
 - `cap-reached`: a cap in `policies/limits.yaml` was reached. Returns the cap object and the
   next permitted action; it never continues under a relaxed bound.
 - `failed`: the phase logic errored, or a read-back could not be performed. Returns the error.

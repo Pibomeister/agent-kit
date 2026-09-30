@@ -51,7 +51,8 @@ No host emits `disable-model-invocation`. Claude Code takes the codex path for t
 - The Firstmate worker can load super-review and super-ship. Whether they then *run* still turns on
   authority: the binding is not a runner-validated grant (`research/briefs/carried-forward.md`,
   "runner-validated grants"), so a faithful worker reaches their authority step and stops unless the
-  supervisor invokes the phase explicitly. *Amended by ADR 0004:* `ak firstmate grant` now validates
-  the binding as the delegated grant, so the worker proceeds for the operations its binding covers.
+  supervisor invokes the phase explicitly. *Amended by ADR 0004:* `ak firstmate grant` validates
+  the binding as the delegated grant. The autonomous form of `ship.prepare` stops without trusted
+  evidence, as ADR-0004's amendment of 2026-09-30 states.
 - **Reverting** is two lines in `src/packaging/hosts.ts` (the key back on claude-code's list, and
   `no-model-invocation` back in its defaults), the five rows back to `guided`, and this ADR superseded.

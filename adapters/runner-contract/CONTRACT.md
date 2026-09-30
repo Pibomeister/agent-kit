@@ -276,6 +276,10 @@ Every transition validates, in this order, and refuses on the first failure:
 3. **Authority** — §2, for anything delegated.
 4. **Budgets** — §4.
 
+An evidence-consuming autonomous operation adds the trusted-evidence refusal in §2 ("How a runner
+signals trusted evidence") before it runs. The four checks above do not treat worker-attested gate
+records as that signal.
+
 ### The restart record
 
 The runner persists, per run, and the package requires to be handed back on resume:
