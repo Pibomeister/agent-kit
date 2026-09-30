@@ -78,3 +78,7 @@ The skills say this in one paragraph each; `adapters/firstmate/CONTRACT.md` §6 
   the paragraph in each skill's Authority section, `CONTRACT.md` §6, the authority sections of
   `WORKER.md` and `SUPERVISOR.md`, and marking this ADR superseded. Workers then stop at the authority
   step again, as ADR-0003 describes.
+
+**Amendment, 2026-09-30.** The grant remains the authorization record, but it no longer suffices for
+the autonomous form of `ship.prepare`. That form also requires the `trusted-evidence` capability,
+which this host does not provide.

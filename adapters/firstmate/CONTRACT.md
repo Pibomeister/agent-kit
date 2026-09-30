@@ -197,7 +197,7 @@ where the §4 audit reads it.
 |---|---|
 | `review.full` | `review-full` |
 | `review.readiness` | `review-readiness` |
-| `ship.prepare` | `ship-preflight`; the ship does the binding's `delivery.action` and never merges |
+| `ship.prepare` | `ship-preflight`; the grant authorizes the binding's `delivery.action` and never a merge. The autonomous form still requires trusted evidence and stops without it |
 
 Every grant also requires that the binding validates against its schema; that it is the binding
 `ak firstmate bind` registered, unmodified, in agent-kit's ledger at

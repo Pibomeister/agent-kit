@@ -67,6 +67,9 @@ Firstmate is your delegated controller, and this binding is the grant it gives y
 Exit 0 prints a grant record; cite it on the review or the ship record. A refusal means stop and report
 `needs-decision`. Nothing outside the binding is granted, merge included.
 
+The `ship.prepare` grant does not carry the ship through on this host. Step 2 of `super-ship` stops
+with `needs-input` naming trusted evidence as unavailable; report that stop rather than shipping.
+
 ## How you ship
 
 `super-ship` is the only thing that publishes, and it publishes through no-mistakes with review,

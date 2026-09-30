@@ -40,6 +40,10 @@ The binding is your grant to the worker for `review.full`, `review.readiness` an
 When the check refuses, the worker stops and sends `needs-decision`: decide it yourself or ask the
 captain. Merge is never on the binding and stays yours.
 
+The binding is still the grant for `ship.prepare`, but on this host a delegated ship ends in a
+`needs-input` stop naming trusted evidence as unavailable, not a `done … PR <url>` line, until a
+runner supplies trusted evidence.
+
 ## What the worker sends back
 
 One status line at a time (CONTRACT.md §4):
