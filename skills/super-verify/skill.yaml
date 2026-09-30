@@ -81,8 +81,9 @@ outputs:
     schema: verification
     summary: >-
       One receipt per check, carrying the command as an argument vector or the probe with its
-      target, exit status, output digest, revision and environment identity, and the criteria it
-      supports.
+      target, ticket verification id, exit status, output digest, revision and environment identity,
+      and the criteria it supports. The verify gate stores content-addressed references to these
+      files for an opened run.
   - id: acceptance-evidence-matrix
     summary: >-
       Every acceptance criterion with its outcome and the receipt that produced it, including the

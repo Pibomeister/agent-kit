@@ -61,7 +61,10 @@ export function auditRun(a: AuditArgs): string[] {
     if (head === undefined) refusals.push(`refused: gate ship-preflight has no current evidence (no record for run ${b.run_id} in ${dir})`);
   }
   if (head !== undefined || !gates.includes("ship-preflight")) {
-    refusals.push(...checkGates({ dir, run: b.run_id, gates, project, head }).refusals);
+    // A ticket-backed binding declares the strengthened path. Firstmate's existing brief-backed
+    // bindings retain their v1 run-id behavior until they carry a task artifact and run record.
+    const evidence = b.work_source.kind === "ticket";
+    refusals.push(...checkGates({ dir, run: b.run_id, gates, project, head, evidence }).refusals);
   }
 
   // Every operation the gates put on the slip ran under a grant, and every grant names this binding.

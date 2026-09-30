@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
 import { loadCatalog } from "../../src/catalog/load.ts";
-import { defaultEvidenceDir, PRE_SHIP_GATES, type Gate, type GateRecord } from "../../src/lifecycle/gate.ts";
+import { defaultEvidenceDir, PRE_SHIP_GATES, takeSnapshot, type Gate, type GateRecord } from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { makeTree } from "../helpers/tree.ts";
 
@@ -45,12 +45,70 @@ function ak(cwd: string, ...argv: string[]) {
 }
 
 const record = (cwd: string, ...gates: Gate[]) => {
-  for (const g of gates) expect(ak(cwd, "record", "--gate", g).code).toBe(0);
+  for (const g of gates) {
+    const branch = git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD");
+    const pointer = pointerPath(cwd, branch);
+    if (g === "verify" && existsSync(pointer)) {
+      const run = JSON.parse(readFileSync(pointer, "utf8")).run_id as string;
+      const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
+      const ticketPath = join(cwd, `${metadata.ticket.id}.json`);
+      expect(ak(cwd, "record", "--gate", g, "--receipt", receipt(cwd, run, ticketPath)).code).toBe(0);
+    } else {
+      expect(ak(cwd, "record", "--gate", g).code).toBe(0);
+    }
+  }
 };
 
 function ticket(cwd: string, id: string): string {
   const path = join(cwd, `${id}.json`);
-  writeFileSync(path, `${JSON.stringify({ schema: "ticket", schema_version: 1, id })}\n`);
+  writeFileSync(
+    path,
+    `${JSON.stringify({
+      schema: "ticket",
+      schema_version: 1,
+      id,
+      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified." }],
+      verification: [{ id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] }],
+    })}\n`,
+  );
+  return path;
+}
+
+function receipt(cwd: string, run: string, ticketPath: string, extra: Record<string, unknown> = {}): string {
+  const snapshot = takeSnapshot(cwd);
+  if (typeof snapshot === "string") throw new Error(snapshot);
+  const receiptDir = mkdtempSync(join(tmpdir(), "ak-receipt-"));
+  const outputPath = join(receiptDir, "verification-output.log");
+  writeFileSync(outputPath, "1 pass, 0 fail\n");
+  const outputDigest = `sha256:${createHash("sha256").update(readFileSync(outputPath)).digest("hex")}`;
+  const doc = {
+    schema: "verification",
+    schema_version: 1,
+    id: `verification-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    project: { id: "demo" },
+    run_id: run,
+    created_by: { role: "runner" },
+    inputs: [],
+    source_revision: snapshot,
+    created_at: "2026-09-29T00:00:00Z",
+    status: "passed",
+    kind: "command",
+    command: { argv: ["bun", "test"] },
+    exit_status: 0,
+    output_digest: outputDigest,
+    artifacts: [{ path: "verification-output.log", digest: outputDigest, kind: "log" }],
+    environment: { id: "test", isolated: true, secrets_policy: "none" },
+    supports: ["AC-1"],
+    check: "project-check",
+    ticket: {
+      id: JSON.parse(readFileSync(ticketPath, "utf8")).id,
+      schema: "ticket",
+      hash: `sha256:${createHash("sha256").update(readFileSync(ticketPath)).digest("hex")}`,
+    },
+    ...extra,
+  };
+  const path = join(receiptDir, `${doc.id}.json`);
+  writeFileSync(path, `${JSON.stringify(doc, null, 2)}\n`);
   return path;
 }
 
@@ -86,9 +144,114 @@ describe("ak lifecycle check, standalone", () => {
     const dir = repo();
     record(dir, ...PRE_SHIP_GATES);
     const r = ak(dir, "check");
-    expect(r.err).toBe("");
+    expect(r.err).toContain("note: v1 marker, no evidence references: history, not proof");
     expect(r.code).toBe(0);
     expect(r.out[0]).toContain(`ok: run feature has current evidence for ${PRE_SHIP_GATES.join(", ")}`);
+  });
+
+  test("a v1 marker remains phase evidence but is never promoted to verification evidence", () => {
+    const dir = repo();
+    record(dir, ...PRE_SHIP_GATES);
+
+    const compatible = ak(dir, "check");
+    expect(compatible.code).toBe(0);
+    expect(compatible.err).toContain("note: v1 marker, no evidence references: history, not proof");
+
+    const strengthened = ak(dir, "check", "--evidence");
+    expect(strengthened.code).toBe(1);
+    expect(strengthened.err).toContain("refused: evidence unavailable");
+  });
+
+  test("an opened task with receipt-backed verification is allowed and keeps a decision", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "evidenced-task");
+    const opened = ak(dir, "open", "--ticket", ticketPath);
+    const run = opened.out[0]!.replace(/^opened run /, "");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+
+    const checked = ak(dir, "check", "--json");
+    expect(checked.code).toBe(0);
+    const decision = JSON.parse(checked.out.join("\n"));
+    expect(decision).toMatchObject({ run_id: run, transition: "ship", outcome: "allowed", trust: "worker-attested", reasons: [] });
+    expect(readdirSync(join(defaultEvidenceDir(dir), run, "decisions"))).toHaveLength(1);
+  });
+
+  test("an opened task's current marker without receipts is refused", () => {
+    const dir = repo();
+    const run = open(dir, "missing-evidence");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: evidence missing");
+    expect(run).toMatch(/^feature-[0-9a-f]{12}$/);
+  }, 15_000);
+
+  test("wrong-revision and wrong-task receipts are refused by name", () => {
+    for (const defect of ["wrong-revision", "wrong-task"] as const) {
+      const dir = repo();
+      const ticketPath = ticket(dir, defect);
+      const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const snapshot = takeSnapshot(dir) as Exclude<ReturnType<typeof takeSnapshot>, string>;
+      const extra = defect === "wrong-revision"
+        ? { source_revision: { ...snapshot, revision: "f".repeat(40) } }
+        : { ticket: { id: "another-task", schema: "ticket", hash: `sha256:${"f".repeat(64)}` } };
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, extra)).code).toBe(0);
+      const checked = ak(dir, "check");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(`refused: evidence ${defect}`);
+    }
+  }, 15_000);
+
+  test("a zero-exit failure is failed evidence for its criterion", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "zero-exit");
+    const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const failed = receipt(dir, run, ticketPath, {
+      status: "failed",
+      exit_status: 0,
+      exit_disagreement: { verdict_from: "output", output_reports: "2 fail" },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", failed).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: evidence failed: AC-1 has failed evidence at this head");
+  });
+
+  test("one-byte edits to a stored receipt or output are refused", () => {
+    for (const target of ["receipt", "output"] as const) {
+      const dir = repo();
+      const ticketPath = ticket(dir, `tampered-${target}`);
+      const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const receiptPath = receipt(dir, run, ticketPath);
+      const receiptDoc = JSON.parse(readFileSync(receiptPath, "utf8"));
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+      const gateDir = join(defaultEvidenceDir(dir), run, "verify");
+      const gateRecord = JSON.parse(readFileSync(join(gateDir, readdirSync(gateDir)[0]!), "utf8"));
+      const hash = target === "receipt" ? gateRecord.evidence[0].hash : receiptDoc.output_digest;
+      const stored = join(defaultEvidenceDir(dir), run, "artifacts", hash.replace(/^sha256:/, ""));
+      writeFileSync(stored, Buffer.concat([readFileSync(stored), Buffer.from("x")]));
+      const checked = ak(dir, "check");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(target === "receipt" ? "evidence digest-mismatch" : "evidence output-missing");
+    }
+  });
+
+  test("a later pass never overwrites a failure for the same criterion and head", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "unstable-check");
+    const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const failed = receipt(dir, run, ticketPath, { status: "failed", exit_status: 1 });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", failed).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: evidence unstable: AC-1 has both failed and passed evidence at this head");
   });
 
   for (const missing of PRE_SHIP_GATES) {
@@ -428,7 +591,7 @@ describe("ak lifecycle check, standalone", () => {
     git(dir, "commit", "-qam", "build");
     record(dir, "verify", "review-full", "review-readiness");
     const r = ak(dir, "check");
-    expect(r.err).toBe("");
+    expect(r.err).toContain("note: v1 marker, no evidence references: history, not proof");
     expect(r.code).toBe(0);
   });
 
@@ -489,4 +652,91 @@ describe("the gate a bundle carries", () => {
       expect(refused.stderr.toString()).toContain("refused: gate build-checks has no current evidence");
     }
   });
+
+  test("both byte-identical packaged gates enforce the strengthened evidence cases", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    const contents = (["claude-code", "codex"] as const).map((host) => planBundle({ root: REPO, catalog }, host, {}).files.get(GATE_FILE)!.contents);
+    expect(contents[0]).toBe(contents[1]);
+
+    for (const [index, host] of (["claude-code", "codex"] as const).entries()) {
+      const script = join(mkdtempSync(join(tmpdir(), `ak-bin-${host}-`)), "ak-gate.mjs");
+      writeFileSync(script, contents[index]!);
+      const node = (cwd: string, ...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd });
+      const start = (id: string) => {
+        const dir = repo();
+        const ticketPath = ticket(dir, id);
+        const opened = node(dir, "open", "--ticket", ticketPath);
+        expect(opened.exitCode).toBe(0);
+        const run = opened.stdout.toString().trim().replace(/^opened run /, "");
+        for (const gate of ["build-checks", "review-full", "review-readiness"]) expect(node(dir, "record", "--gate", gate).exitCode).toBe(0);
+        return { dir, ticketPath, run, node: (...argv: string[]) => node(dir, ...argv) };
+      };
+
+      const legacy = repo();
+      for (const gate of PRE_SHIP_GATES) expect(node(legacy, "record", "--gate", gate, "--run", "legacy").exitCode).toBe(0);
+      expect(node(legacy, "check", "--run", "legacy").exitCode).toBe(0);
+      expect(node(legacy, "check", "--run", "legacy", "--evidence").stderr.toString()).toContain("evidence unavailable");
+
+      const allowed = start(`${host}-allowed`);
+      expect(allowed.node("record", "--gate", "verify", "--receipt", receipt(allowed.dir, allowed.run, allowed.ticketPath)).exitCode).toBe(0);
+      expect(JSON.parse(allowed.node("check", "--json").stdout.toString()).outcome).toBe("allowed");
+
+      const missing = start(`${host}-missing`);
+      expect(missing.node("record", "--gate", "verify").exitCode).toBe(0);
+      expect(missing.node("check").stderr.toString()).toContain("evidence missing");
+
+      for (const defect of ["wrong-revision", "wrong-task"] as const) {
+        const scenario = start(`${host}-${defect}`);
+        const snapshot = takeSnapshot(scenario.dir) as Exclude<ReturnType<typeof takeSnapshot>, string>;
+        const extra = defect === "wrong-revision"
+          ? { source_revision: { ...snapshot, revision: "e".repeat(40) } }
+          : { ticket: { id: "other", schema: "ticket", hash: `sha256:${"e".repeat(64)}` } };
+        expect(scenario.node("record", "--gate", "verify", "--receipt", receipt(scenario.dir, scenario.run, scenario.ticketPath, extra)).exitCode).toBe(0);
+        expect(scenario.node("check").stderr.toString()).toContain(`evidence ${defect}`);
+      }
+
+      const zero = start(`${host}-zero-exit`);
+      const zeroReceipt = receipt(zero.dir, zero.run, zero.ticketPath, {
+        status: "failed",
+        exit_status: 0,
+        exit_disagreement: { verdict_from: "output", output_reports: "2 fail" },
+      });
+      expect(zero.node("record", "--gate", "verify", "--receipt", zeroReceipt).exitCode).toBe(0);
+      expect(zero.node("check").stderr.toString()).toContain("evidence failed: AC-1");
+
+      for (const target of ["receipt", "output"] as const) {
+        const scenario = start(`${host}-tamper-${target}`);
+        const receiptPath = receipt(scenario.dir, scenario.run, scenario.ticketPath);
+        const receiptDoc = JSON.parse(readFileSync(receiptPath, "utf8"));
+        expect(scenario.node("record", "--gate", "verify", "--receipt", receiptPath).exitCode).toBe(0);
+        const gateDir = join(defaultEvidenceDir(scenario.dir), scenario.run, "verify");
+        const gate = JSON.parse(readFileSync(join(gateDir, readdirSync(gateDir)[0]!), "utf8"));
+        const hash = target === "receipt" ? gate.evidence[0].hash : receiptDoc.output_digest;
+        const stored = join(defaultEvidenceDir(scenario.dir), scenario.run, "artifacts", hash.replace(/^sha256:/, ""));
+        writeFileSync(stored, Buffer.concat([readFileSync(stored), Buffer.from("x")]));
+        expect(scenario.node("check").stderr.toString()).toContain(target === "receipt" ? "digest-mismatch" : "output-missing");
+      }
+
+      const unstable = start(`${host}-unstable`);
+      expect(unstable.node("record", "--gate", "verify", "--receipt", receipt(unstable.dir, unstable.run, unstable.ticketPath, { status: "failed", exit_status: 1 })).exitCode).toBe(0);
+      expect(unstable.node("record", "--gate", "verify", "--receipt", receipt(unstable.dir, unstable.run, unstable.ticketPath)).exitCode).toBe(0);
+      expect(unstable.node("check").stderr.toString()).toContain("evidence unstable: AC-1");
+
+      const deltaDir = repo();
+      const deltaTicket = ticket(deltaDir, `${host}-delta`);
+      const deltaRun = node(deltaDir, "open", "--ticket", deltaTicket).stdout.toString().trim().replace(/^opened run /, "");
+      expect(node(deltaDir, "record", "--gate", "build-checks").exitCode).toBe(0);
+      expect(node(deltaDir, "record", "--gate", "verify", "--receipt", receipt(deltaDir, deltaRun, deltaTicket)).exitCode).toBe(0);
+      expect(node(deltaDir, "record", "--gate", "review-full").exitCode).toBe(0);
+      git(deltaDir, "add", `${host}-delta.json`);
+      git(deltaDir, "commit", "-qam", "first head");
+      writeFileSync(join(deltaDir, "src/a.js"), "export const a = 12;\n");
+      expect(node(deltaDir, "record", "--gate", "verify", "--receipt", receipt(deltaDir, deltaRun, deltaTicket)).exitCode).toBe(0);
+      expect(node(deltaDir, "record", "--gate", "review-delta").exitCode).toBe(0);
+      expect(node(deltaDir, "record", "--gate", "review-readiness").exitCode).toBe(0);
+      expect(node(deltaDir, "check").exitCode).toBe(0);
+      expect(readdirSync(join(defaultEvidenceDir(deltaDir), deltaRun, "review-full"))).toHaveLength(1);
+    }
+  }, 120_000);
 });

@@ -142,6 +142,7 @@ export const SCHEMA_RULE_IMPLEMENTATIONS: Readonly<Record<string, RuleImplementa
   // verification.schema.json
   "verification.receipt-stale-when-revision-differs-from-head": ["verification.receipt-stale-when-revision-differs-from-head"],
   "verification.prose-never-substitutes-for-exit-status-and-digest": ["verification.prose-never-substitutes-for-exit-status-and-digest"],
+  "verification.check-names-ticket-verification": ["verification.check-names-ticket-verification"],
   "verification.weakened-check-requires-its-own-decision": ["verification.weakened-check-requires-its-own-decision"],
 };
 

@@ -104,7 +104,7 @@ describe("verification exit disagreement", () => {
     }
   });
 
-  test("keeps both shipped verification templates valid without editing them", () => {
+  test("keeps both shipped verification templates valid with an optional instrument id", () => {
     const decision = readJson(join(ROOT, "templates", "decision.weakening.example.json"));
     expectVerdict(readJson(join(ROOT, "templates", "verification.example.json")), true);
     expectVerdict(readJson(join(ROOT, "templates", "verification.weakened.example.json")), true, [decision]);

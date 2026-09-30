@@ -104,12 +104,17 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
 10. Claim exactly what the receipts support, and publish the matrix and the receipts through the
     knowledgebase adapter's `publishArtifact` operation with a run-artifact placement. Return the
     verdict per criterion, not a summary sentence over them.
-11. When every criterion is confirmed, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate verify`
-    (the bundle's `bin/`, two directories above this skill). The record names this revision and diff
-    hash, so any later edit makes it stale and super-ship sends you back here.
+11. When every criterion is confirmed, record the gate with every receipt file: `node <this skill's
+    directory>/../../bin/ak-gate.mjs record --gate verify --receipt <file>` (repeat `--receipt` for
+    each receipt). The bundle's gate copies each receipt and its digested output into the run store
+    and writes references in the v2 phase record; it does not turn those references into a verdict.
+    The record names this revision and diff hash, so any later edit makes it stale and super-ship
+    sends you back here.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--run` and `--dir` when it has them. A record on a run that
+    A branch-named v1 run has no task record, so retain its compatible marker-only call without
+    `--receipt`; it is history, not proof. A binding's brief supplies `--run` and `--dir` when it has
+    them. A record on a run that
     `ship-preflight` has closed is refused; the task needs a new `open`.
 
 ## Hard gates

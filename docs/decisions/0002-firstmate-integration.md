@@ -282,6 +282,15 @@ The first follow-up above is closed this way:
   they pass. super-ship checks first and records `ship-preflight` last. Standalone records default to
   `<git common dir>/agent-kit/evidence/<run>/`, so every worktree of a repository shares them and
   the tree stays clean. The run is the one `open` minted for the branch, else the branch name.
+- An opened run caches its ticket, verification receipts and their captured output by content hash in
+  that same uncommitted run store. `record --gate verify --receipt <file>` writes a v2 phase record of
+  references, while `check --evidence` resolves and re-hashes them, checks task, snapshot, named
+  instrument, environment and acceptance coverage, and appends a separate ship decision. The
+  decision says `worker-attested`: the cache makes missing, stale, inconsistent and changed evidence
+  detectable, but same-user storage is not independent authority. Legacy v1 markers remain readable
+  as phase history and are never promoted to proof. This gate-input cache does not displace the
+  knowledgebase's ownership of published sanitized receipts (ruling
+  `central-kb-owns-project-artifacts`).
 - The check reads "current" per gate. `verify`, `review-delta`, `review-readiness` and `ship-preflight`
   must name the exact head, revision and diff hash. `build-checks` and `review-full` may name an earlier
   revision in the head's history, because a fix loop moves the head after them, but a `review-full` on

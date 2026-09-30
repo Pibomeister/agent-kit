@@ -20,6 +20,7 @@
   "created_at": "2026-09-29T16:11:00Z",
   "status": "failed",
   "kind": "command",
+  "check": "project-check",
   "command": {
     "argv": ["sh", "./check.sh"],
     "cwd": "tests/behavior"

@@ -515,7 +515,12 @@ conflicts:
       for` for "a skill never creates an application-local documentation tree": it constrains
       where a skill writes while doing its job, not a class of request it turns away. `authority`
       rejected as well, though "a completed ship is not permission to rewrite project knowledge"
-      invites it -- the row governs ownership of artifacts rather than who may grant.
+      invites it -- the row governs ownership of artifacts rather than who may grant. Gate inputs
+      are the narrow exception in storage form, not ownership: the lifecycle gate keeps an
+      uncommitted, run-scoped content-addressed cache beside its phase records so it can re-hash
+      receipts and captured output before a transition. That cache is not an application-local
+      documentation tree and is never a publication destination; the knowledgebase still owns the
+      published, sanitized receipts.
     source:
       plan: "§1.2, §8, §11"
       locator: G:L1766

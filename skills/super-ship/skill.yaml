@@ -74,8 +74,9 @@ inputs:
     schema: verification
     required: true
     summary: >-
-      Receipts bound to the shipped head. Bound to another revision, they are history and the run
-      stops with needs-input.
+      Content-addressed receipts resolved by the lifecycle check and bound to the shipped head,
+      opened run, ticket, named check and environment. Missing or mismatched evidence stops with
+      needs-input; a v1 phase marker is history, not proof.
   - id: review-verdict
     schema: review
     required: true

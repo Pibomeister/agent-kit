@@ -20,6 +20,7 @@
   "created_at": "2026-09-19T09:00:00Z",
   "status": "failed",
   "kind": "command",
+  "check": "loader-suite",
   "command": {
     "argv": [
       "bun",

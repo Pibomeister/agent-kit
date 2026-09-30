@@ -92,13 +92,15 @@ The project's own release checks, discovered rather than assumed.
    `dry-run` stops there.
 2. Confirm the preconditions: receipts bind to the head, the review verdict binds to that head's
    artifact hash. A verdict of `blocked` or `unavailable` stops the run. Start with
-   `node <this skill's directory>/../../bin/ak-gate.mjs check` (the bundle's `bin/`, two directories above this skill): it
-   needs a current record from super-build, super-verify, super-review full (or a delta at this head)
-   and super-review readiness. A `refused: gate <g> has no current evidence` line stops the run with
-   `needs-input` naming that phase; go back and run it. Under a delegated `ship.prepare` grant the
-   check must be evidence-bearing: run on records the runner recorded for an opened run. A check on
-   worker-writable records satisfies the manual form only, so where the runner recorded none, stop
-   with `needs-input` naming trusted evidence as unavailable. Once every precondition holds, record
+   `node <this skill's directory>/../../bin/ak-gate.mjs check --evidence` (the bundle's `bin`, two
+   directories above this skill): it needs current phase records and resolves the verification refs,
+   hashes and digested outputs against the opened run's ticket. An opened run enables this path even
+   when the flag is omitted. A `refused: gate <g>` or `refused: evidence <reason>` line stops the run
+   with `needs-input` naming that phase or receipt defect; a legacy v1 marker is history, not proof.
+   Under a delegated `ship.prepare` grant the check must be evidence-bearing: run on records the
+   runner recorded for an opened run. A check on worker-writable records satisfies the manual form
+   only, so where the runner recorded none, stop with `needs-input` naming trusted evidence as
+   unavailable. Once every precondition holds, record
    `node <this skill's directory>/../../bin/ak-gate.mjs record --gate ship-preflight`.
    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
    branch-named v1 run when none was opened) and records default to the repository's git directory.
