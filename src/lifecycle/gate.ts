@@ -3,12 +3,13 @@
  * refuses to start until every phase before it has one for the head it would ship.
  *
  * The strengthened standalone path opens a task-bound run and keeps a pointer from the branch to it.
- * The compatible v1 path still names a run after its branch. Either way, a run resolved from the
- * branch has its earlier records bounded by the fork point from the default branch, but after a squash
- * or rebase merge a reused branch can keep old `build-checks` and `review-full` records in its history.
- * On the v1 path a successful check prints that known limit when the record predates the branch last
- * taking the default branch. An opened run that was never closed by `ship-preflight` has the same limit
- * and prints nothing: a new task opens a new run.
+ * The compatible v1 path still names a run after its branch. Its earlier records are bounded by the
+ * fork point from the default branch, but after a squash or rebase merge a reused branch can keep old
+ * `build-checks` and `review-full` records in its history. A successful check prints that known limit
+ * when the record predates the branch last taking the default branch.
+ *
+ * An opened run has no fork-point bound and prints no note. A run never closed by `ship-preflight`
+ * stays the branch's default until a new `open`, so every new task opens a new run.
  *
  * This is core. It needs no Firstmate: a standalone session keeps its records under the repository's
  * git common directory, and a Firstmate worker passes the binding's evidence store and run id instead.
@@ -338,12 +339,10 @@ export interface CheckArgs {
    */
   head?: Snapshot;
   /**
-   * Bound earlier records by the fork point from the default branch. Only for a run resolved from the
+   * Bound earlier records by the fork point from the default branch. Only for a run named after its
    * branch, which a reused branch would otherwise share with an old run; an explicit run id is unique.
    */
   forkBound?: boolean;
-  /** Print the known limit of a run named after its branch. Off for an opened run. */
-  limitNote?: boolean;
 }
 
 export interface CheckResult {
@@ -417,7 +416,7 @@ export function checkGates(a: CheckArgs): CheckResult {
         continue;
       }
       const counted = onLine[onLine.length - 1]!;
-      if (a.limitNote === true && fork !== undefined) {
+      if (a.forkBound === true && fork !== undefined) {
         const forkTime = git(a.project, ["show", "-s", "--format=%ct", fork.base]);
         const recorded = Date.parse(counted.recorded_at);
         if (forkTime.code === 0 && Number.isFinite(recorded) && Math.floor(recorded / 1000) <= Number(forkTime.text)) {
@@ -525,7 +524,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
 
   const explicitRun = str("run");
   let run = explicitRun;
-  let limitNote = false;
+  let forkBound = false;
   if (run === undefined) {
     const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
     if (branch.code !== 0 || branch.text === "") {
@@ -538,7 +537,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       return 1;
     }
     run = pointer.run ?? safeRunId(branch.text);
-    limitNote = pointer.run === undefined;
+    forkBound = pointer.run === undefined;
   }
   if (run === "") {
     io.err(`ak lifecycle ${sub}: --run needs a value`);
@@ -577,7 +576,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
     io.err(`ak lifecycle check: --gates takes ${GATES.join(", ")}${unknown.length > 0 ? `, not ${unknown.join(", ")}` : ""}`);
     return 2;
   }
-  const result = checkGates({ dir, run, gates: names as Gate[], project, forkBound: explicitRun === undefined, limitNote });
+  const result = checkGates({ dir, run, gates: names as Gate[], project, forkBound });
   if (result.ok) for (const note of result.notes) io.err(note);
   if (flags.get("json") === true) io.out(JSON.stringify({ run, dir, gates: names, ...result }, null, 2));
   else if (result.ok) io.out(`ok: run ${run} has current evidence for ${names.join(", ")} at ${short(result.head!)}`);

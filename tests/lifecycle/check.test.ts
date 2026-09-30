@@ -375,29 +375,26 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "check").out[0]).toContain(`ok: run ${runs["feat-x"]} has current evidence`);
   });
 
-  test("an opened run merged without ship-preflight does not lend its records to the reused branch", () => {
+  test("records taken before the first commit survive a mid-task merge from main on an opened run", () => {
     const dir = repo();
-    const run = open(dir, "unclosed");
-    record(dir, "build-checks");
-    git(dir, "add", "unclosed.json");
-    git(dir, "commit", "-qam", "task one");
-    record(dir, ...PRE_SHIP_GATES);
-    expect(ak(dir, "check").code).toBe(0);
+    const run = open(dir, "precommit");
+    record(dir, "build-checks", "verify", "review-full");
+    git(dir, "add", "precommit.json");
+    git(dir, "commit", "-qam", "first task commit");
 
     git(dir, "checkout", "-q", "main");
-    git(dir, "merge", "-q", "--no-ff", "-m", "merge feature", "feature");
+    writeFileSync(join(dir, "main.txt"), "upstream\n");
+    git(dir, "add", "main.txt");
+    git(dir, "commit", "-qm", "main advances");
     git(dir, "checkout", "-q", "feature");
-    git(dir, "merge", "-q", "--ff-only", "main");
+    git(dir, "merge", "-q", "--no-edit", "main");
     writeFileSync(join(dir, "src/a.js"), "export const a = 10;\n");
     record(dir, "verify", "review-delta", "review-readiness");
 
-    const r = ak(dir, "check");
-    expect(r.code).toBe(1);
-    expect(JSON.parse(readFileSync(pointerPath(dir, "feature"), "utf8")).run_id).toBe(run);
-    expect(r.err).toContain("refused: gate build-checks has no current evidence (every record is for a revision that is not an ancestor");
-    expect(r.err).toContain("since it left main at");
-    expect(r.err).toContain("refused: gate review-full has no current evidence");
-    expect(r.err).not.toContain("note:");
+    const checked = ak(dir, "check");
+    expect(checked.err).toBe("");
+    expect(checked.code).toBe(0);
+    expect(checked.out[0]).toContain(`ok: run ${run}`);
   });
 
   test("commits and a mid-task merge from main keep the opened run id and its earlier records", () => {

@@ -100,9 +100,9 @@ absence is recorded (`policies/limits.yaml`).
    ticket's branch checked out and before implementation:
    `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. The run binds
    to the branch checked out where it runs, and later gate commands on that branch resolve the
-   pointer it writes. Every new task opens a new run, even on a branch that already has one: a run
-   left open because its task merged without `ship-preflight` still lends its records to the branch
-   after a squash merge, and nothing reports it. A Firstmate binding already supplies a unique
+   pointer it writes. A run never closed by `ship-preflight` stays the branch's default until a
+   new `open`, and the gate does not tell an earlier task's unclosed run from this one, so every
+   new task opens a new run, even on a branch that already has one. A Firstmate binding already supplies a unique
    `--run` and `--dir`; keep that path unchanged and do not open another run.
 4. Dispatch one implementer (`roles/implementer/ROLE.md`) with the ticket as its single source of
    requirements. It spawns no implementers of its own, and no second implementer runs against this
