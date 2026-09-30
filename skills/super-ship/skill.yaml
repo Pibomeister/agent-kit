@@ -74,9 +74,9 @@ inputs:
     schema: verification
     required: true
     summary: >-
-      Content-addressed receipts resolved by the lifecycle check and bound to the shipped head,
-      opened run, ticket, named check and environment. Missing or mismatched evidence stops with
-      needs-input; a v1 phase marker is history, not proof.
+      Receipts bound to the shipped head. For an opened run the lifecycle check resolves them by
+      content hash and binds them to the run, ticket, named check and environment; missing or
+      mismatched evidence stops with needs-input. A v1 phase marker is history, not proof.
   - id: review-verdict
     schema: review
     required: true

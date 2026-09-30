@@ -13,6 +13,7 @@ import { runCli } from "../../src/cli.ts";
 import { loadCatalog } from "../../src/catalog/load.ts";
 import { defaultEvidenceDir, PRE_SHIP_GATES, takeSnapshot, type Gate, type GateRecord } from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
+import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
@@ -69,6 +70,7 @@ function ticket(cwd: string, id: string): string {
       id,
       acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified." }],
       verification: [{ id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] }],
+      approvals: [{ role: "human", approved_at: "2026-09-29T00:00:00Z" }],
     })}\n`,
   );
   return path;
@@ -103,7 +105,7 @@ function receipt(cwd: string, run: string, ticketPath: string, extra: Record<str
     ticket: {
       id: JSON.parse(readFileSync(ticketPath, "utf8")).id,
       schema: "ticket",
-      hash: `sha256:${createHash("sha256").update(readFileSync(ticketPath)).digest("hex")}`,
+      hash: artifactHash(JSON.parse(readFileSync(ticketPath, "utf8"))),
     },
     ...extra,
   };
@@ -123,7 +125,7 @@ function open(cwd: string, id: string): string {
   const metadata = JSON.parse(readFileSync(join(defaultEvidenceDir(cwd), "runs", run, "run.json"), "utf8"));
   expect(metadata).toEqual({
     run_id: run,
-    ticket: { id, hash: `sha256:${createHash("sha256").update(readFileSync(ticketPath)).digest("hex")}` },
+    ticket: { id, hash: artifactHash(JSON.parse(readFileSync(ticketPath, "utf8"))) },
     opened_at: expect.any(String),
     branch: "feature",
     base,
@@ -270,6 +272,61 @@ describe("ak lifecycle check, standalone", () => {
       expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ outcome: "allowed", reasons: [] });
     }
   }, 15_000);
+
+  test("a ticket ref binds by id and artifact hash, with or without a schema, and never another schema", () => {
+    for (const [schema, code] of [[undefined, 0], ["charter", 1]] as const) {
+      const dir = repo();
+      const ticketPath = ticket(dir, `ticket-ref-${schema ?? "bare"}`);
+      const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const ref = JSON.parse(readFileSync(receipt(dir, run, ticketPath), "utf8")).ticket;
+      const bound = receipt(dir, run, ticketPath, { ticket: { id: ref.id, hash: ref.hash, schema } });
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", bound).code).toBe(0);
+      const checked = ak(dir, "check");
+      expect(checked.code).toBe(code);
+      if (code === 1) expect(checked.err).toContain("refused: evidence wrong-task");
+    }
+  }, 15_000);
+
+  test("record refuses a receipt whose output log is not among its artifacts", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "unlisted-log");
+    const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+    const unlisted = receipt(dir, run, ticketPath, { artifacts: undefined });
+    const refused = ak(dir, "record", "--gate", "verify", "--receipt", unlisted);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain(unlisted);
+    expect(refused.err).toContain(JSON.parse(readFileSync(unlisted, "utf8")).output_digest);
+    expect(existsSync(join(defaultEvidenceDir(dir), run, "verify"))).toBe(false);
+  });
+
+  test("a corrected receipt re-recorded under the same id replaces the defective one at this head", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "corrected-receipt");
+    const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const id = "verification-corrected";
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, { id, check: undefined })).code).toBe(0);
+    const defective = ak(dir, "check");
+    expect(defective.code).toBe(1);
+    expect(defective.err).toContain("refused: evidence unknown-check");
+
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, { id })).code).toBe(0);
+    expect(ak(dir, "check").code).toBe(0);
+  });
+
+  test("a failed receipt stays refused after a passing receipt is re-recorded under its id", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "sticky-failure");
+    const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const id = "verification-sticky";
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, { id, status: "failed", exit_status: 1 })).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, { id })).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: evidence unstable: AC-1 has both failed and passed evidence at this head");
+  });
 
   test("a later pass never overwrites a failure for the same criterion and head", () => {
     const dir = repo();

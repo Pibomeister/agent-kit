@@ -93,7 +93,11 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
    `exit_disagreement` with `verdict_from: output` and an `output_reports` quote.
 6. Record one receipt per check with the command as an argument vector or the probe with its target,
    the exit status, the digest of the relevant output, the revision, the environment identity, and
-   the criteria it supports.
+   the criteria it supports. For an opened run the receipt also names the ticket verification id it
+   executed as `check`, lists the output log under `artifacts` with that digest, and carries the
+   ticket ref `{id, hash}` whose hash is `artifactHash` of the ticket (`common#/$defs/hash`: sha256
+   over its canonical JSON without `approvals`), the value `open` wrote as the ticket's hash in the
+   run record.
 7. Set the outcome of each check to what happened: it ran and confirmed, it ran and refuted, it did
    not run, it does not apply to this change, or it ran and settled nothing. Each outcome that is not
    a pass carries a reason.
@@ -108,13 +112,17 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
     directory>/../../bin/ak-gate.mjs record --gate verify --receipt <file>` (repeat `--receipt` for
     each receipt). The bundle's gate copies each receipt and its digested output into the run store
     and writes references in the v2 phase record; it does not turn those references into a verdict.
+    It refuses a receipt whose output log it cannot find, and the pre-ship check refuses one whose
+    ticket ref is not the run record's `artifactHash` value from step 6. Re-recording a corrected
+    receipt under the same id replaces the earlier one at this head, except a failed receipt, which
+    stays.
     The record names this revision and diff hash, so any later edit makes it stale and super-ship
     sends you back here.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A branch-named v1 run has no task record, so retain its compatible marker-only call without
-    `--receipt`; it is history, not proof. A binding's brief supplies `--run` and `--dir` when it has
-    them. A record on a run that
+    A binding's brief supplies `--run` and `--dir` when it has them. A run that was never opened,
+    whether branch-named or supplied by a binding, has no task record, so retain its compatible
+    marker-only call without `--receipt`; it is history, not proof. A record on a run that
     `ship-preflight` has closed is refused; the task needs a new `open`.
 
 ## Hard gates

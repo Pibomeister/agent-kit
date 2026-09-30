@@ -205,6 +205,30 @@ function storeArtifact(dir: string, run: string, bytes: Uint8Array): string {
   return hash;
 }
 
+/** The artifact hash form of common#/$defs/hash: keys sorted, no insignificant whitespace, `approvals` left out. */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, member]) => member !== undefined)
+    .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
+  return `{${entries.map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`).join(",")}}`;
+}
+
+/** Whether the store still holds this reference as a well-formed failed receipt, which no re-record replaces. */
+function storedFailure(dir: string, run: string, ref: ArtifactRef): boolean {
+  const path = artifactPath(dir, run, ref.hash);
+  if (path === undefined || !existsSync(path)) return false;
+  const bytes = readFileSync(path);
+  if (sha256(bytes) !== ref.hash) return false;
+  try {
+    const receipt = object(JSON.parse(new TextDecoder().decode(bytes)));
+    return receipt?.status === "failed" && verificationShapeReasons(receipt).length === 0;
+  } catch {
+    return false;
+  }
+}
+
 const runRecordPath = (dir: string, run: string): string => join(dir, "runs", safeRunId(run), "run.json");
 const branchPointerPath = (dir: string, branch: string): string =>
   join(dir, "branches", `${safeRunId(branch)}-${createHash("sha256").update(branch).digest("hex").slice(0, 12)}.json`);
@@ -250,11 +274,9 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const head = git(a.project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || head.text === "") return { ok: false, reason: `${a.project} has no committed revision` };
 
-  let contents: string;
   let ticket: unknown;
   try {
-    contents = readFileSync(a.ticket, "utf8");
-    ticket = JSON.parse(contents);
+    ticket = JSON.parse(readFileSync(a.ticket, "utf8"));
   } catch (e) {
     return { ok: false, reason: `cannot read ticket ${a.ticket}: ${(e as Error).message}` };
   }
@@ -262,7 +284,10 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
 
   const openedAt = new Date().toISOString();
-  const ticketHash = `sha256:${createHash("sha256").update(contents).digest("hex")}`;
+  const canonical = new TextEncoder().encode(
+    canonicalJson(Object.fromEntries(Object.entries(ticket as Record<string, unknown>).filter(([key]) => key !== "approvals"))),
+  );
+  const ticketHash = sha256(canonical);
   const nonce = randomBytes(16).toString("hex");
   const suffix = createHash("sha256").update(JSON.stringify([id, ticketHash, head.text, openedAt, nonce])).digest("hex").slice(0, 12);
   const branchId = safeRunId(branch.text).slice(0, 128 - suffix.length - 1);
@@ -275,7 +300,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     base: head.text,
   };
   atomicJson(runRecordPath(a.dir, runId), run);
-  storeArtifact(a.dir, runId, new TextEncoder().encode(contents));
+  storeArtifact(a.dir, runId, canonical);
   atomicJson(branchPointerPath(a.dir, branch.text), { run_id: runId });
   return { ok: true, run };
 }
@@ -328,31 +353,24 @@ export function recordGate(a: RecordArgs): { ok: true; path: string; record: Gat
     if (receipt.schema !== "verification" || typeof receipt.id !== "string" || receipt.id === "") {
       return { ok: false, reason: `receipt ${receiptPath} must name schema verification and a non-empty id` };
     }
-    const hash = storeArtifact(a.dir, a.run, bytes);
-    refs.push({ id: receipt.id, schema: "verification", hash });
-
-    const output = typeof receipt.output_digest === "string" ? receipt.output_digest : undefined;
-    const outputHex = output === undefined ? undefined : hashHex(output);
-    if (output !== undefined && outputHex !== undefined) {
-      const artifacts = Array.isArray(receipt.artifacts) ? receipt.artifacts : [];
-      const named = artifacts
-        .filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object" && !Array.isArray(entry))
-        .filter((entry) => entry.digest === output && typeof entry.path === "string")
-        .flatMap((entry) => [resolve(a.project, entry.path as string), resolve(dirname(receiptPath), entry.path as string)]);
-      const candidates = [
-        ...named,
-        `${receiptPath}.log`,
-        join(dirname(receiptPath), `${outputHex}.log`),
-        join(dirname(receiptPath), outputHex),
-      ];
-      for (const candidate of candidates) {
-        if (!existsSync(candidate) || !statSync(candidate).isFile()) continue;
-        const outputBytes = readFileSync(candidate);
-        if (sha256(outputBytes) !== output) continue;
-        storeArtifact(a.dir, a.run, outputBytes);
-        break;
+    const output = receipt.output_digest;
+    if (typeof output === "string") {
+      const log = (Array.isArray(receipt.artifacts) ? receipt.artifacts : [])
+        .map(object)
+        .flatMap((entry) =>
+          entry !== undefined && entry.digest === output && typeof entry.path === "string"
+            ? [resolve(dirname(receiptPath), entry.path), resolve(a.project, entry.path)]
+            : [],
+        )
+        .filter((candidate) => existsSync(candidate) && statSync(candidate).isFile())
+        .map((candidate) => readFileSync(candidate))
+        .find((candidate) => sha256(candidate) === output);
+      if (log === undefined) {
+        return { ok: false, reason: `receipt ${receiptPath} names output ${output}, but none of its artifacts entries resolves to a log with that digest` };
       }
+      storeArtifact(a.dir, a.run, log);
     }
+    refs.push({ id: receipt.id, schema: "verification", hash: storeArtifact(a.dir, a.run, bytes) });
   }
 
   const strengthenedVerify = a.gate === "verify" && (refs.length > 0 || readRunRecord(a.dir, a.run) !== undefined);
@@ -371,10 +389,10 @@ export function recordGate(a: RecordArgs): { ok: true; path: string; record: Gat
   const path = join(a.dir, safeRunId(a.run), a.gate, name);
   const previous = readObject(path) as Partial<GateRecord> | undefined;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
-    const combined = [...previous.evidence, ...(record.evidence ?? [])].filter(
+    const recorded = new Set(refs.map((ref) => ref.id));
+    record.evidence = [...previous.evidence.filter((ref) => !recorded.has(ref.id) || storedFailure(a.dir, a.run, ref)), ...refs].filter(
       (ref, index, all) => all.findIndex((candidate) => candidate.hash === ref.hash && candidate.id === ref.id) === index,
     );
-    record.evidence = combined;
   }
   atomicJson(path, record);
   return { ok: true, path, record };
@@ -686,7 +704,7 @@ function evaluateEvidence(a: CheckArgs, head: Snapshot): { outcome: DecisionReco
       reasons.push({ code: "wrong-revision", detail: `receipt ${ref.id} does not name ${short(head)}`, evidence: ref.id });
     }
     const task = object(receipt.ticket);
-    if (task?.id !== run.ticket.id || task?.hash !== run.ticket.hash || task?.schema !== "ticket") {
+    if (task?.id !== run.ticket.id || task?.hash !== run.ticket.hash || (task?.schema !== undefined && task.schema !== "ticket")) {
       reasons.push({ code: "wrong-task", detail: `receipt ${ref.id} does not name ticket ${run.ticket.id} at ${run.ticket.hash}`, evidence: ref.id });
     }
     if (receipt.invalidation !== undefined) reasons.push({ code: "invalidated", detail: `receipt ${ref.id} has been invalidated`, evidence: ref.id });
@@ -825,7 +843,7 @@ export const LIFECYCLE_USAGE = [
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
-  "  A receipt's captured output is read from its matching artifacts.path or a sibling named <sha256 hex>[.log].",
+  "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
   "",
   "Exit 0 when the record was written or every gate is current, 1 when refused, 2 on bad usage.",
 ];
