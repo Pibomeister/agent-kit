@@ -290,8 +290,8 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const ticketHash = sha256(canonical);
   const nonce = randomBytes(16).toString("hex");
   const suffix = createHash("sha256").update(JSON.stringify([id, ticketHash, head.text, openedAt, nonce])).digest("hex").slice(0, 12);
-  const branchId = safeRunId(branch.text).slice(0, 128 - suffix.length - 1);
-  const runId = `${branchId}-${suffix}`;
+  const branchId = safeRunId(branch.text).replace(/^[^A-Za-z0-9]+/, "").slice(0, 128 - suffix.length - 1);
+  const runId = branchId === "" ? suffix : `${branchId}-${suffix}`;
   const run: RunRecord = {
     run_id: runId,
     ticket: { id, hash: ticketHash },

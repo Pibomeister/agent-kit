@@ -598,6 +598,20 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "check").out[0]).toContain(`ok: run ${run} has current evidence`);
   });
 
+  test("a run opened on a branch that starts with a separator is one a receipt can name", () => {
+    for (const [branch, shape] of [["_wip", /^wip-[0-9a-f]{12}$/], ["__", /^[0-9a-f]{12}$/]] as const) {
+      const dir = repo();
+      git(dir, "checkout", "-q", "-b", branch);
+      const ticketPath = ticket(dir, "separator-branch");
+      const run = ak(dir, "open", "--ticket", ticketPath).out[0]!.replace(/^opened run /, "");
+      expect(run).toMatch(shape);
+      record(dir, ...PRE_SHIP_GATES);
+      const checked = ak(dir, "check", "--json");
+      expect(checked.code).toBe(0);
+      expect(JSON.parse(checked.out.join("\n"))).toMatchObject({ run_id: run, outcome: "allowed" });
+    }
+  }, 15_000);
+
   test("two opened branches whose names differ only in a separator each resolve their own run", () => {
     const dir = repo();
     const runs: Record<string, string> = {};
