@@ -238,8 +238,11 @@ describe("ak lifecycle check, standalone", () => {
       const checked = ak(dir, "check");
       expect(checked.code).toBe(1);
       expect(checked.err).toContain(target === "receipt" ? "evidence digest-mismatch" : "evidence output-missing");
+
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+      expect(ak(dir, "check").code).toBe(0);
     }
-  });
+  }, 15_000);
 
   test("a receipt for a check that did not run neither counts nor refuses beside passed evidence", () => {
     for (const status of ["not-run", "not-applicable"] as const) {

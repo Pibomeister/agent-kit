@@ -201,7 +201,7 @@ const artifactPath = (dir: string, run: string, hash: string): string | undefine
 function storeArtifact(dir: string, run: string, bytes: Uint8Array): string {
   const hash = sha256(bytes);
   const path = artifactPath(dir, run, hash)!;
-  if (!existsSync(path)) atomicBytes(path, bytes);
+  if (!existsSync(path) || sha256(readFileSync(path)) !== hash) atomicBytes(path, bytes);
   return hash;
 }
 
@@ -333,7 +333,7 @@ export function recordGate(a: RecordArgs): { ok: true; path: string; record: Gat
 
     const output = typeof receipt.output_digest === "string" ? receipt.output_digest : undefined;
     const outputHex = output === undefined ? undefined : hashHex(output);
-    if (output !== undefined && outputHex !== undefined && !existsSync(artifactPath(a.dir, a.run, output)!)) {
+    if (output !== undefined && outputHex !== undefined) {
       const artifacts = Array.isArray(receipt.artifacts) ? receipt.artifacts : [];
       const named = artifacts
         .filter((entry): entry is Record<string, unknown> => entry !== null && typeof entry === "object" && !Array.isArray(entry))
