@@ -82,18 +82,20 @@ No model-invoked case changed routing status. The four valid misses are the pre-
 
 ## U-prose by skill
 
-| Skill | Valid pass | Loaded-no-command | Missed | Invalid |
+The first three columns count valid sessions only, so pass, loaded-no-command and missed sum to the pass denominator on every row. The `Invalid` column counts the skill's invalid U-prose sessions once each, whatever scorer label they carry; the session listing below shows those labels with an `invalid` reading.
+
+| Skill | Valid pass | Valid loaded-no-command | Valid missed | Invalid |
 |---|---:|---:|---:|---:|
-| babysit-pr | 23/26 | 2 | 5 | 4 |
-| compound | 20/29 | 2 | 8 | 1 |
-| compound-refresh | 21/26 | 2 | 5 | 4 |
+| babysit-pr | 23/26 | 1 | 2 | 4 |
+| compound | 20/29 | 1 | 8 | 1 |
+| compound-refresh | 21/26 | 1 | 4 | 4 |
 | receiving-review | 25/30 | 1 | 4 | 0 |
 | super-align | 20/30 | 1 | 9 | 0 |
 | super-bound | 24/30 | 1 | 5 | 0 |
-| super-review | 18/27 | 1 | 11 | 3 |
-| super-ship | 18/27 | 2 | 10 | 3 |
+| super-review | 18/27 | 1 | 8 | 3 |
+| super-ship | 18/27 | 1 | 8 | 3 |
 | ultraqa | 21/30 | 0 | 9 | 0 |
-| wayfind | 25/28 | 2 | 3 | 2 |
+| wayfind | 25/28 | 0 | 3 | 2 |
 
 ## Every `loaded-no-command`, `violated`, or `missed` session
 
