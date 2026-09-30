@@ -1,7 +1,7 @@
 # Execution contract for improve-architecture (schemas/skill.schema.json).
 # Prose mirror: skills/improve-architecture/SKILL.md (AUTHORING.md §4.1).
 id: improve-architecture
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-

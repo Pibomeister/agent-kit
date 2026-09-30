@@ -1,10 +1,12 @@
 ---
 name: explain
 description: >-
-  Explains how and why existing behavior works, from repository and knowledgebase evidence, with
-  every claim traced to a source, marked as inference, or marked unknown. Use when a human asks
-  how or why something in the project works the way it does. Not for "should we change it", which
-  is a judgment, and not for fixing a failure or planning a change.
+  Human-started command: it runs only when the human's message begins with `/ak:explain`. On any
+  other request do not load or follow it; tell the human to type that command. Explains how and why
+  existing behavior works, from repository and knowledgebase evidence, with every claim traced to a
+  source, marked as inference, or marked unknown. Use when a human asks how or why something in the
+  project works the way it does. Not for "should we change it", which is a judgment, and not for
+  fixing a failure or planning a change.
 license: MIT
 metadata:
   ak_catalog_id: explain

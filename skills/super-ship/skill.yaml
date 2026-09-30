@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.1.0
+version: 0.1.1
 kind: lifecycle
 invocation: U
 summary: >-
@@ -157,7 +157,7 @@ hard_gates:
     permitted, and an explicit human approval bound to that charter's hash, with any expiry or
     single-use bound. An approval whose charter was amended afterwards no longer binds, and this run
     may never enlarge its own authority.
-  - The autonomous form, ship.prepare delegated under a grant, proceeds past workflow step 2 only on
+  - The autonomous form, ship.prepare delegated under a grant, proceeds past workflow step 3 only on
     trusted evidence, which is gate evidence the runner recorded into the run's evidence store outside
     the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
     evidence, and neither a grant nor a host permission makes them so.
@@ -184,21 +184,24 @@ stop_conditions:
     made.
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
     lesson candidate is drafted, and the watch lane holds the pull request.
-  - needs-input when receipts or the verdict are missing or bound to another revision, the mode was
-    not named, or a sensitive action is required and no charter entry covers it.
+  - needs-input when the run was started by neither the typed command nor a validated grant,
+    receipts or the verdict are missing or bound to another revision, the mode was not named, or a
+    sensitive action is required and no charter entry covers it.
   - needs-input when the autonomous form has no trusted evidence. The message names trusted evidence
     as unavailable and says the manual form remains open.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      Receipts or the review verdict are missing or bound to another revision, the mode was not
-      named, or a sensitive action is required and no charter entry covers it. Also when the
-      autonomous form has no trusted evidence, in which case the message names trusted evidence as
-      unavailable and says the manual form remains open. No remote effect is performed.
+      The run was started by neither the typed command nor a validated grant, receipts or the
+      review verdict are missing or bound to another revision, the mode was not named, or a
+      sensitive action is required and no charter entry covers it. Also when the autonomous form has
+      no trusted evidence, in which case the message names trusted evidence as unavailable and says
+      the manual form remains open. No remote effect is performed.
     next_permitted_action: >-
-      Re-invoke with the missing evidence, with the mode named, or with a charter entry approved for
-      the action. Without trusted evidence, invoke the manual form explicitly.
+      A human types the command, or the run is re-invoked with the missing evidence, with the mode
+      named, or with a charter entry approved for the action. Without trusted evidence, invoke the
+      manual form explicitly.
   - status: failed
     meaning: >-
       A candidate secret was found, a required release check failed, or the pull-request lookup

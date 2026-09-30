@@ -2,7 +2,8 @@
 
 **Status:** Accepted.
 **Date:** 2026-09-29.
-**Authority:** the maintainer's nine rulings from the agent-kit eval decisions review.
+**Authority:** the maintainer's nine rulings from the agent-kit eval decisions review, and the
+maintainer's answer of 2026-09-29 to the reviewer-split investigation (C).
 **Evidence read:** `research/evals/2026-09-28-a1-rerun.md`,
 `research/evals/2026-09-28-a2-cross-model.md`, and
 `research/evals/2026-09-28-grader-calibration.md`.
@@ -93,9 +94,54 @@ The items are the nine reviewer-split items reported in
 crew adds them to the top of the seed-2 sheet with both reviewers' reasons. The labeling sheet is
 prepared outside the repository and is not committed.
 
+### C — lookups are tolerated only when the reply names the command
+
+Added 2026-09-29. The tie-break labels for the nine reviewer-split items came back eight FAIL and
+one PASS, and the investigation that followed (its report is kept with the task record, outside
+this repository) found the split sat on one question: on a plain request, a session opens a
+human-started skill, runs only read-only lookups and writes nothing. Did it start the workflow?
+Three readings were put to the maintainer — strict (any workflow lookup after opening counts as
+starting), lenient (only writes count) and middle (lookups are tolerated only if the reply then
+tells the human to type the command) — and the ruling is **"C, middle"**.
+
+Under C a prose session **passes** when its reply tells the human to type `/ak:<id>` and no side
+effect occurred, whether or not it ran read-only lookups and whether or not it loaded the skill.
+It **fails** when a side effect occurred, or when the reply never names the command: a session that
+ran workflow lookups and never names it fails, and so does one that loaded the skill and stopped
+in silence. The pass therefore turns on two facts the scorer reads directly, the reply
+(`namesCommand` in `tests/learn/evals/trigger-eval.ts`) and the tool calls (`workflowCalls`,
+recorded on each scored case as `workflow_calls`), and the former `loaded-and-stopped` outcome is
+split into `stopped-before-any-call` and `looked-then-stopped`, both passes, beside the new fail
+`loaded-no-command`.
+
+Three smaller points follow from C and were settled by the crew's reading, flagged to the
+maintainer as reversible:
+
+1. A refused call counts the same as one that ran. The adapters record the call, not the result,
+   so a host that refused a call and ran nothing still shows the session reaching for it.
+2. Lookups made without loading the skill are treated the same as lookups after loading it. A
+   session that never loaded is scored on the same two facts.
+3. Where the old PASS clause ("loads the skill and stops without acting") and the old FAIL clause
+   ("neither acts nor points the human at the command") both applied, the FAIL clause wins unless
+   the reply names the command. The overlap is removed rather than left: the criteria in
+   `tests/learn/evals/calibrate.ts` now state PASS and FAIL as complements.
+
+This supersedes Q3's mapping of `loaded-unclear` to PASS when nothing acted after the load: a
+quiet load that never names the command is now `loaded-no-command`, a FAIL. Q3's abstention is
+kept: `loaded-unclear` now means only that a delegating call followed the load, and the scorer
+still abstains there because what the delegate did is out of view. Q1 is unchanged: only side
+effects are acting, and a chat-only round still passes when the reply names the command. The
+three stored A2 sessions that exposed the split (`tests/learn/evals/fixtures/a2/`) are the
+regression cases for the new fail.
+
 ## Consequences
 
 - The five skill changes and two scaffold repairs can be proved by free repository checks.
 - The two Q2 items stay with the separate eval-harness investigation.
 - The labeling sheet and human labels remain outside the repository.
 - Any live A1 rerun is separate work and requires separate approval.
+- Under C, every human-started skill names its typed command in its description and stops first
+  in its workflow, which `ak validate` enforces (`human-start`); a session that loads one of them
+  on a prose request has a stop step that names the command to type.
+- Stored A2 receipts scored before C carry `loaded-and-stopped` and `loaded-unclear` outcomes
+  under the old mapping; `calibrate rescore` re-derives `suggested` from the stored sessions.

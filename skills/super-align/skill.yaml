@@ -1,7 +1,7 @@
 # Execution contract for super-align (schemas/skill.schema.json).
 # Prose mirror: skills/super-align/SKILL.md. The two are one statement in two forms.
 id: super-align
-version: 0.1.0
+version: 0.1.1
 kind: lifecycle
 invocation: U
 summary: >-
@@ -118,9 +118,9 @@ hard_gates:
 stop_conditions:
   - complete when the human approved the restated direction and every published artifact's read-back
     matched what was sent.
-  - needs-input when there is no request, no explicit approval, a question outside the charter at
-    align.run, a fork only the human can settle, or publication reaches an unavailable knowledgebase
-    adapter.
+  - needs-input when the run was started by neither the typed command nor a validated grant, there
+    is no request, no explicit approval, a question outside the charter at align.run, a fork only
+    the human can settle, or publication reaches an unavailable knowledgebase adapter.
   - cap-reached when the runner-supplied alignment budget is exhausted.
   - cancelled when the human ends the run before approval.
   - failed when a configured knowledgebase operation fails or is unreachable, or a publication's
@@ -129,12 +129,15 @@ stop_conditions:
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The run cannot proceed without one answer or capability: a missing request, a withheld
-      approval, an out-of-charter question, a fork only the human can settle, or unavailable
-      kb-read and kb-write at publication.
+      The run cannot proceed without one answer or capability: a start by neither the typed
+      command nor a validated grant, a missing request, a withheld approval, an out-of-charter
+      question, a fork only the human can settle, or unavailable kb-read and kb-write at
+      publication.
     next_permitted_action: >-
-      Return what is settled so far and the single question that blocks. For an unavailable
-      knowledgebase adapter, return the completed interview and name kb-read and kb-write.
+      Return what is settled so far and the single question that blocks. For a start by neither
+      the typed command nor a grant, return the command to type and nothing else. For an
+      unavailable knowledgebase adapter, return the completed interview and name kb-read and
+      kb-write.
   - status: cap-reached
     meaning: The runner-supplied alignment budget ran out before the frontier emptied.
     next_permitted_action: Return the settled part of the design tree and the open frontier, undecided.

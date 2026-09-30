@@ -1,12 +1,14 @@
 ---
 name: doubt-driven
 description: >-
-  Names one consequential claim, extracts the artifact and the contract it must satisfy, has an
-  independent reviewer context try to disprove it without seeing the claim, and reconciles every
-  finding against the artifact text in a bounded loop. Use when a non-trivial decision is about to
-  stand: an irreversible migration, production authentication, a claimed invariant such as "this is
-  safe" or "this is idempotent". Not for mechanical changes, not for a verdict on finished work, and
-  not another generic code review. A recommendation is not authorization.
+  Human-started command: it runs only when the human's message begins with `/ak:doubt-driven`. On
+  any other request do not load or follow it; tell the human to type that command. Names one
+  consequential claim, extracts the artifact and the contract it must satisfy, has an independent
+  reviewer context try to disprove it without seeing the claim, and reconciles every finding against
+  the artifact text in a bounded loop. Use when a non-trivial decision is about to stand: an
+  irreversible migration, production authentication, a claimed invariant such as "this is safe" or
+  "this is idempotent". Not for mechanical changes, not for a verdict on finished work, and not
+  another generic code review. A recommendation is not authorization.
 license: MIT
 metadata:
   ak_catalog_id: doubt-driven

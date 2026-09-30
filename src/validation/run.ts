@@ -23,6 +23,7 @@ import { checkTemplateDocuments } from "./documents.ts";
 import { checkEvals } from "./evals.ts";
 import { checkFrontmatter } from "./frontmatter.ts";
 import { checkCaseNames, checkFiredIndicators, checkGraderSurfaces } from "./graders.ts";
+import { checkHumanStart } from "./human-start.ts";
 import { checkInvocation } from "./invocation.ts";
 import { checkBundleLinks, checkLoaderLinks, checkSourceLinks } from "./links.ts";
 import { checkInvocationPartition } from "./partition.ts";
@@ -70,6 +71,7 @@ export const CHECKS: readonly Check[] = [
   // See src/validation/skill-style.ts for why it cannot fail this run.
   { name: "skill-style", run: checkSkillStyle },
   { name: "invocation", run: checkInvocation },
+  { name: "human-start", run: checkHumanStart },
   { name: "policies", run: checkPolicies },
   { name: "invocation-partition", run: checkInvocationPartition },
   { name: "side-effects", run: checkSideEffects },

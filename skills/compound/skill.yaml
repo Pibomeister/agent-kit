@@ -1,7 +1,7 @@
 # Execution contract for compound (schemas/skill.schema.json).
 # Prose mirror: skills/compound/SKILL.md. The two are one statement in two forms.
 id: compound
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-
@@ -107,16 +107,20 @@ hard_gates:
 stop_conditions:
   - complete when one candidate is proposed, and published where authorized.
   - complete when there was no trigger or the counterfactual failed; the report says which.
-  - needs-input when the knowledgebase adapter is unavailable, or publishing was asked for without
+  - needs-input when the run was started by neither the typed command, a phase operation nor a
+    validated grant, the knowledgebase adapter is unavailable, or publishing was asked for without
     authority the host can validate.
   - failed when a write's read-back could not be performed.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The knowledgebase cannot be read or written, or a publish was requested without validatable
+      The run was started by neither the typed command, a phase operation nor a validated grant,
+      the knowledgebase cannot be read or written, or a publish was requested without validatable
       authority.
-    next_permitted_action: Return the drafted lesson text and the missing item; write nothing elsewhere.
+    next_permitted_action: >-
+      Return the drafted lesson text and the missing item; write nothing elsewhere. For a start by
+      none of the three, return the command to type and nothing else.
   - status: failed
     meaning: A knowledgebase write's read-back could not be performed.
     next_permitted_action: Report the error; a belief that the write landed is not a receipt.

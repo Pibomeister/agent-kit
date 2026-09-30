@@ -2,7 +2,7 @@
 # Prose mirror: skills/autopilot/SKILL.md (AUTHORING.md §4.1).
 
 id: autopilot
-version: 0.1.0
+version: 0.1.1
 kind: supervisor
 invocation: U
 summary: >-

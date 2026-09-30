@@ -1,10 +1,12 @@
 ---
 name: ultraqa
 description: >-
-  Adversarial behavioral verification: run the built thing as a hostile user would and record what
-  breaks. Separate from diff review and after it, never instead of it. At most five cycles, stopping
-  at three occurrences of the same failure. Any mutation it makes invalidates the affected review
-  evidence and says so.
+  Human-started command: it runs only when the human's message begins with `/ak:ultraqa`, or under a
+  validated grant. On any other request do not load or follow it; tell the human to type that
+  command. Adversarial behavioral verification: run the built thing as a hostile user would and
+  record what breaks. Separate from diff review and after it, never instead of it. At most five
+  cycles, stopping at three occurrences of the same failure. Any mutation it makes invalidates the
+  affected review evidence and says so.
 license: MIT
 metadata:
   ak_catalog_id: ultraqa
@@ -44,8 +46,9 @@ confidence that it probably fixed it (ruling `closure-requires-independent-verif
 ## Authority
 
 One entrypoint, `cycle`, running the declared phase operation `qa.cycle` under a grant covering
-`build-go`. A human may invoke it explicitly; a controller may start it in the verifying state of a
-delegated run.
+`build-go`. A human starts it by typing `/ak:ultraqa`; a controller may start it in the verifying
+state of a delegated run. A request in prose is not a start, even when it names this skill or the
+command.
 
 Where the host cannot validate the grant, the entrypoint stops for explicit invocation rather than
 reproducing the delegated effect through a side door (ruling `entrypoint-phase-operation-split`).
@@ -66,34 +69,39 @@ The cycle budget the runner supplies, and the failure ledger from any earlier cy
 
 ## Workflow
 
-1. Confirm the diff is clean for this revision — a review verdict and receipts that bind to it.
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:ultraqa`, or when a controller started the phase
+   operation `qa.cycle` under a validated grant. A request in prose is not a start, even when it
+   names this skill or the command. With neither, stop here: make no tool call, say that this
+   command is human-started, and give the human the line to type, `/ak:ultraqa` and their request.
+2. Confirm the diff is clean for this revision — a review verdict and receipts that bind to it.
    Absent, stop with `needs-input`; do not run as a substitute for the review.
-2. Record the revision under test and the hash of the workspace as found. Every finding this run
+3. Record the revision under test and the hash of the workspace as found. Every finding this run
    emits names that revision.
-3. Derive adversarial cases from the behavioral contract across the eight hostile classes in
+4. Derive adversarial cases from the behavioral contract across the eight hostile classes in
    `./references/adversarial-cases.md`: malformed input, repeated interruption, injected
    instructions, cancel-and-resume with stale state, a dirty worktree, hung or long-running commands,
    flaky tests, and misleading success output.
-4. Run one cycle: establish the baseline, exercise the cases against the running system, capture
+5. Run one cycle: establish the baseline, exercise the cases against the running system, capture
    what actually happened, and record each failure with the invocation that produced it and the
    observed behavior. A pass needs the baseline, the adversarial cases, the evidence and the cleanup
    all to pass, not the last of them alone.
-5. Classify a harness setup failure as harness debris rather than a product defect: repair the
+6. Classify a harness setup failure as harness debris rather than a product defect: repair the
    harness and re-run the case before any defect is recorded against the system.
-6. Fingerprint each failure by cause and symptom rather than by the line it surfaced on, so the same
+7. Fingerprint each failure by cause and symptom rather than by the line it surfaced on, so the same
    defect seen twice is recognised as one.
-7. Consult the failure ledger. A fingerprint on its third occurrence stops the run: three
+8. Consult the failure ledger. A fingerprint on its third occurrence stops the run: three
    occurrences is evidence the approach is wrong, not that the last attempt missed a detail.
-8. Where the cycle mutated the workspace — to isolate a failure or to repair one — record the
+9. Where the cycle mutated the workspace — to isolate a failure or to repair one — record the
    mutation and mark the review evidence it affects as invalidated. The approvals bound to the
    previous state do not carry forward to the mutated one.
-9. Clean up and roll back the cycle's scaffolding before the next one, leaving unrelated dirty work
-   untouched, so the next cycle starts from a state it can describe.
-10. Decide whether to run another cycle. New information from the last cycle justifies one; a repeat
+10. Clean up and roll back the cycle's scaffolding before the next one, leaving unrelated dirty work
+    untouched, so the next cycle starts from a state it can describe.
+11. Decide whether to run another cycle. New information from the last cycle justifies one; a repeat
     of what is already in the ledger does not. Five cycles is the ceiling.
-11. At the cap, or when a cycle produces no new information, stop and emit the failure ledger, the
+12. At the cap, or when a cycle produces no new information, stop and emit the failure ledger, the
     cycle record, the mutation record, the residual risks and the evidence-invalidation notice.
-12. Hand each remaining failure to the lane that owns the fix. At most two fix-and-verify cycles
+13. Hand each remaining failure to the lane that owns the fix. At most two fix-and-verify cycles
     follow; the third stops with an explicit blocked-or-replan decision and the open failures
     attached (ruling `two-fix-cycles-then-stop`).
 
@@ -174,8 +182,9 @@ No `pr-comment` and no `pr-thread-resolve`. No `kb-draft` and no `kb-publish`.
 `complete`: a cycle produced no new information, or the cycle cap was reached, and the ledger, the
 cycle record, the mutation record and the invalidation notice are emitted.
 
-`needs-input`: the diff is not clean for this revision, the behavioral contract is missing, or no
-runnable build exists. Returns what it would need and runs no cycle.
+`needs-input`: the run was started by neither the typed command nor a validated grant, the diff is
+not clean for this revision, the behavioral contract is missing, or no runnable build exists.
+Returns what it would need, which for the first is the command to type, and runs no cycle.
 
 `cap-reached`: five cycles ran, or a fingerprint reached three occurrences. Stops with the ledger and
 the blocked-or-replan decision attached.

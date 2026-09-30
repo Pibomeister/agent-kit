@@ -1,7 +1,7 @@
 # Execution contract for pov (schemas/skill.schema.json).
 # Prose mirror: skills/pov/SKILL.md. The two are one statement in two forms.
 id: pov
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-

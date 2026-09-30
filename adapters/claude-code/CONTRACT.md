@@ -153,7 +153,7 @@ Consequences the package accepts:
 
 | Restriction | Enforced? | How the package treats it |
 |---|---|---|
-| `disable-model-invocation: true` blocks model-initiated invocation | Yes, as documented host behavior | **Not used.** The packager does not emit it (`docs/decisions/0003-model-invocation.md`), so `no-model-invocation` is not claimed. A U skill's description clause and authority step hold the law, and its non-trigger eval case is what observes them |
+| `disable-model-invocation: true` blocks model-initiated invocation | Yes, as documented host behavior | **Not used.** The packager does not emit it (`docs/decisions/0003-model-invocation.md`), so `no-model-invocation` is not claimed. A U skill's description clause and stop-first workflow step hold the law — `ak validate`'s `human-start` check fails a U skill missing either — and its non-trigger eval case is what observes them in a session |
 | Permission prompts / permission modes | Yes, operator-configured | Outside the package's control and outside its guarantees. A skill never assumes a given mode |
 | `allowed-tools` denies unlisted tools | **No** | Never relied on. Declarative only |
 | Grant validation for delegated phase operations | **No** | See below |
@@ -220,7 +220,9 @@ Tests this adapter owns, in `tests/adapters/`:
 5. **Autonomy refusal** — building `profiles/autonomy` against this host without a runner adapter
    fails with the missing capabilities named.
 6. **Host conformance** — `claude plugin validate dist/claude-code --strict` exits zero.
-7. **Non-trigger behavior** — each U skill's non-trigger eval case does not fire the skill.
+7. **Non-trigger behavior** — each U skill's non-trigger eval case does not carry out the skill's
+   workflow: its decisive `llm` grader and the no-side-effect graders beside it (AUTHORING.md §9)
+   hold, whether or not the skill loaded.
 
 ---
 

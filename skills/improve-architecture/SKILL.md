@@ -1,10 +1,12 @@
 ---
 name: improve-architecture
 description: >-
-  Surveys a codebase for shallow modules, presents deepening candidates, and grills the one the
-  human picks into a proposed decision. Use when a human wants to know where the architecture has
-  gone shallow and runs /ak:improve-architecture. Not for cleanup inside a feature diff, not for a
-  repository-wide rewrite, and never started by the model on its own.
+  Human-started command: it runs only when the human's message begins with
+  `/ak:improve-architecture`. On any other request do not load or follow it; tell the human to type
+  that command. Surveys a codebase for shallow modules, presents deepening candidates, and grills
+  the one the human picks into a proposed decision. Use when a human wants to know where the
+  architecture has gone shallow and runs /ak:improve-architecture. Not for cleanup inside a feature
+  diff, and not for a repository-wide rewrite.
 license: MIT
 metadata:
   ak_catalog_id: improve-architecture

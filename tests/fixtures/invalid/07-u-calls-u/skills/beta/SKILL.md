@@ -1,6 +1,9 @@
 ---
 name: beta
-description: Reviews a large diff when a human asks for it.
+description: >-
+  Human-started command: it runs only when the human's message begins with `/ak:beta`. On any other
+  request do not load or follow it; tell the human to type that command. Reviews a large diff when a
+  human asks for it.
 ---
 
 # Beta
@@ -26,8 +29,10 @@ The ticket the request names. Absent: stop and report `needs-input`.
 
 ## Workflow
 
-1. Read the named ticket and record its id.
-2. Produce the receipt and return it.
+1. Check how this run was started. It is started only when the human's message begins with
+   `/ak:beta`. Otherwise stop, name the command and do nothing else.
+2. Read the named ticket and record its id.
+3. Produce the receipt and return it.
 
 ## Hard gates
 

@@ -1,9 +1,12 @@
 ---
 name: compound
 description: >-
-  Captures one reusable lesson from a real failure, a correction or a surprising review result, as
-  a candidate in the central knowledgebase. Use when verified work produced reasoning that the final
-  code, tests and existing lessons do not already carry. Not for routine runs that simply ended.
+  Human-started command: it runs only when the human's message begins with `/ak:compound`, or when a
+  shipping or autopilot run reaches its lesson operation. On any other request do not load or follow
+  it; tell the human to type that command. Captures one reusable lesson from a real failure, a
+  correction or a surprising review result, as a candidate in the central knowledgebase. Use when
+  verified work produced reasoning that the final code, tests and existing lessons do not already
+  carry. Not for routine runs that simply ended.
 license: MIT
 metadata:
   ak_catalog_id: compound
@@ -35,9 +38,10 @@ manufactured lesson just because a run ended.
 ## Authority
 
 Authority: `explicit` at the public entrypoint, `model` at the phase operation lesson.capture, and
-`explicit-or-delegated` at `lesson.publish`. A human starts the public entrypoint with
-`/ak:compound`. `super-ship` and `autopilot` reach this skill only through lesson.capture, which
-drafts a candidate from evidence already in the run and never publishes. Publishing runs through
+`explicit-or-delegated` at `lesson.publish`. A human starts the public entrypoint by typing
+`/ak:compound`. A request in prose is not a start, even when it names this skill or the command.
+`super-ship` and `autopilot` reach this skill only through lesson.capture, which drafts a candidate
+from evidence already in the run and never publishes. Publishing runs through
 `lesson.publish`: a human's explicit say-so in the session, or a runner-validated grant covering
 `publish-lesson`. Where the host cannot validate that grant, publishing stops for explicit
 invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-split`).
@@ -58,24 +62,30 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
 
 ## Workflow
 
-1. **Find the trigger.** Name the failure, correction or surprising review result, and the artifact
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:compound`, when a `super-ship` or `autopilot` run
+   reached lesson.capture, or when `lesson.publish` runs under a validated grant. A request in prose
+   is not a start, even when it names this skill or the command. With none of the three, stop here:
+   make no tool call, say that this command is human-started, and give the human the line to type,
+   `/ak:compound` and their request.
+2. **Find the trigger.** Name the failure, correction or surprising review result, and the artifact
    where it happened. No trigger: stop with no lesson and say so.
-2. **Apply the counterfactual.** If this lesson disappeared, would a future engineer reading the
+3. **Apply the counterfactual.** If this lesson disappeared, would a future engineer reading the
    final implementation still be likely to repeat the mistake or redo substantial investigation? If
    not, write nothing and report why. An explicit invocation asks for the judgment now; it does not
    lower the bar.
-3. **Look for the lesson already written.** Search the knowledgebase for the subject, and the
+4. **Look for the lesson already written.** Search the knowledgebase for the subject, and the
    runtime's ledgers when the profile is installed. A matching lesson that is still right means
    nothing to capture. A matching lesson made wrong or incomplete by this work is superseded: the
    new candidate names it in `supersedes`.
-4. **Draft one lesson.** A statement that applies to future work, its trigger bound to the
+5. **Draft one lesson.** A statement that applies to future work, its trigger bound to the
    occurrence, the evidence that shows it is real, and where it applies. One lesson per run: a
    session that produced several gets several runs, because a batched capture blurs which evidence
    supports which statement. Load
    [the prose-quality reference pack](../../references/prose-quality/REFERENCE.md) before wording it.
-5. **Propose it** through the adapter's `proposeLesson` as a `candidate`
+6. **Propose it** through the adapter's `proposeLesson` as a `candidate`
    (`schemas/lesson.schema.json`).
-6. **Publish only on authority.** At the public entrypoint, publish when the human says so in this
+7. **Publish only on authority.** At the public entrypoint, publish when the human says so in this
    session. At lesson.capture, never. At `lesson.publish`, only under the grant.
 
 ## Hard gates
@@ -120,8 +130,9 @@ is `failed`, never complete.
 
 - `complete` — one candidate proposed, published where authorized; or no trigger, or the
   counterfactual failed, and the report says which.
-- `needs-input` — the knowledgebase adapter is unavailable, or publishing was asked for without
-  authority the host can validate.
+- `needs-input` — the run was started by neither the typed command, a phase operation nor a
+  validated grant, which returns the command to type and nothing else; the knowledgebase adapter
+  is unavailable; or publishing was asked for without authority the host can validate.
 - `failed` — a write's read-back could not be performed.
 
 ## Limits

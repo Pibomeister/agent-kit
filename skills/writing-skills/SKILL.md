@@ -1,10 +1,12 @@
 ---
 name: writing-skills
 description: >-
-  Authors a new skill or edits an existing one in this package, test-first: a failing eval case
-  and a recorded baseline come before any wording, and the change stops as a candidate for a
-  separate review. Use when a human asks to write, change or harden a skill, protocol, role or
-  reference in this catalog. Not for project documentation, and not for promoting a change.
+  Human-started command: it runs only when the human's message begins with `/ak:writing-skills`. On
+  any other request do not load or follow it; tell the human to type that command. Authors a new
+  skill or edits an existing one in this package, test-first: a failing eval case and a recorded
+  baseline come before any wording, and the change stops as a candidate for a separate review. Use
+  when a human asks to write, change or harden a skill, protocol, role or reference in this catalog.
+  Not for project documentation, and not for promoting a change.
 license: MIT
 metadata:
   ak_catalog_id: writing-skills

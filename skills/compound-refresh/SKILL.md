@@ -1,10 +1,11 @@
 ---
 name: compound-refresh
 description: >-
-  Audits captured lessons against the current codebase and decides, for each, keep, update,
-  consolidate, replace or retire, recording the evidence and the supersession rather than erasing
-  anything. Use when lessons may have drifted, overlap, or contradict each other. Not for capturing
-  a new lesson.
+  Human-started command: it runs only when the human's message begins with `/ak:compound-refresh`.
+  On any other request do not load or follow it; tell the human to type that command. Audits
+  captured lessons against the current codebase and decides, for each, keep, update, consolidate,
+  replace or retire, recording the evidence and the supersession rather than erasing anything. Use
+  when lessons may have drifted, overlap, or contradict each other. Not for capturing a new lesson.
 license: MIT
 metadata:
   ak_catalog_id: compound-refresh
@@ -32,9 +33,10 @@ instead of silently erasing provenance.
 
 ## Authority
 
-Authority: `explicit`. A human starts this skill with `/ak:compound-refresh`, and it exposes no
-phase operation: no controller, grant or charter entry can start it. A controller that needs its
-effect stops and names the slash command (ruling `entrypoint-phase-operation-split`).
+Authority: `explicit`. A human starts this skill by typing `/ak:compound-refresh`, and it exposes
+no phase operation: no controller, grant or charter entry can start it. A request in prose is not
+a start, even when it names this skill or the command. A controller that needs its effect stops
+and names the slash command (ruling `entrypoint-phase-operation-split`).
 
 ## Inputs
 
@@ -50,8 +52,13 @@ effect stops and names the slash command (ruling `entrypoint-phase-operation-spl
 
 ## Workflow
 
-1. **Read each lesson in scope** and the code it describes.
-2. **Classify each one.**
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:compound-refresh`; no grant starts it. A request
+   in prose is not a start, even when it names this skill or the command. Otherwise, stop here: make
+   no tool call, say that this command is human-started, and give the human the line to type,
+   `/ak:compound-refresh` and their request.
+2. **Read each lesson in scope** and the code it describes.
+3. **Classify each one.**
    - **Keep** — still accurate and still useful. Record that it was checked, and nothing more.
    - **Update** — the statement holds but a detail drifted: a renamed path, a moved module, a
      changed flag. Correct the detail in place.
@@ -61,20 +68,20 @@ effect stops and names the slash command (ruling `entrypoint-phase-operation-spl
      new candidate that names the old one in `supersedes`.
    - **Retire** — the lesson no longer applies and nothing replaces it. Mark it retired with the
      reason; the record stays.
-3. **Put contradiction first.** Two lessons that disagree are resolved before any staleness work,
+4. **Put contradiction first.** Two lessons that disagree are resolved before any staleness work,
    because a reader acting on the wrong one does harm and a stale one only wastes time.
-4. **Leave the unverifiable alone.** A lesson whose claim cannot be checked from here is not false.
+5. **Leave the unverifiable alone.** A lesson whose claim cannot be checked from here is not false.
    Keep it and say it was not verified.
-5. **Change the runtime's ledgers only through the runtime** (under the `learning` profile):
+6. **Change the runtime's ledgers only through the runtime** (under the `learning` profile):
    - `ak learn review retire --id rp-NNN` retires a review pattern. The guardrail bullet goes; the
      pattern page stays with status `retired`, and a later ingest does not revive it.
    - `ak learn review rollback [--to SHA]` undoes the review ledger's judgement and policy commits.
      The raw event log is restored as it was, so what was observed is never taken back.
    - `ak learn memory rollback [--to SHA]` restores a repository's working memory and lessons.
-6. **Propose, then publish only on the human's say-so.** Every Update, Consolidate, Replace and
+7. **Propose, then publish only on the human's say-so.** Every Update, Consolidate, Replace and
    Retire goes to the knowledgebase as a candidate change. The human confirms it in this session
    before it is published (ruling `learning-drafts-not-publishes`).
-7. **Report every decision** with the lesson id, the outcome and the evidence behind it.
+8. **Report every decision** with the lesson id, the outcome and the evidence behind it.
 
 ## Hard gates
 
@@ -115,7 +122,8 @@ returns it (`adapters/runner-contract/CONTRACT.md`).
 ## Stop conditions
 
 - `complete` — every lesson in scope has a recorded decision.
-- `needs-input` — the knowledgebase adapter is unavailable, or a change awaits the human's
+- `needs-input` — the run was not started by the typed command, which returns the command to type
+  and nothing else; the knowledgebase adapter is unavailable; or a change awaits the human's
   confirmation.
 - `failed` — a write's read-back or a runtime command failed; the report names which.
 

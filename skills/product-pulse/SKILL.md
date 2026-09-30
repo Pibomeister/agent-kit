@@ -1,11 +1,13 @@
 ---
 name: product-pulse
 description: >-
-  Reads the product's configured signal sources over a lookback window and publishes a one-page
-  pulse report (headlines, usage, system performance, followups) with deltas against the prior equal
-  window and the strategy's key metrics carried forward. Use when a human wants a read on how the
-  product is doing and runs /ak:product-pulse. Not a dashboard, not permission to change the
-  roadmap, never a write to any product system, and never started by the model on its own.
+  Human-started command: it runs only when the human's message begins with `/ak:product-pulse`. On
+  any other request do not load or follow it; tell the human to type that command. Reads the
+  product's configured signal sources over a lookback window and publishes a one-page pulse report
+  (headlines, usage, system performance, followups) with deltas against the prior equal window and
+  the strategy's key metrics carried forward. Use when a human wants a read on how the product is
+  doing and runs /ak:product-pulse. Not a dashboard, not permission to change the roadmap, and never
+  a write to any product system.
 license: MIT
 metadata:
   ak_catalog_id: product-pulse

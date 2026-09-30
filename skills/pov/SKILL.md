@@ -1,12 +1,14 @@
 ---
 name: pov
 description: >-
-  Gives a decisive, project-grounded point of view in the subject's own shape: a graded verdict on
-  an adoption question, a take on a document, or a position on a bounded set of approaches. Every
-  verdict rests on verified project evidence and verified external evidence, and says so when
-  either is missing. Use when a human asks for your take, your recommendation, or whether to adopt
-  something. Not for explaining existing code, not for listing a document's findings, and not for
-  generating options on an open field. A recommendation is not authorization.
+  Human-started command: it runs only when the human's message begins with `/ak:pov`. On any other
+  request do not load or follow it; tell the human to type that command. Gives a decisive,
+  project-grounded point of view in the subject's own shape: a graded verdict on an adoption
+  question, a take on a document, or a position on a bounded set of approaches. Every verdict rests
+  on verified project evidence and verified external evidence, and says so when either is missing.
+  Use when a human asks for your take, your recommendation, or whether to adopt something. Not for
+  explaining existing code, not for listing a document's findings, and not for generating options on
+  an open field. A recommendation is not authorization.
 license: MIT
 metadata:
   ak_catalog_id: pov

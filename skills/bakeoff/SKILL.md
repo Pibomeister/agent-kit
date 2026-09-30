@@ -1,12 +1,14 @@
 ---
 name: bakeoff
 description: >-
-  Develops two or more competing approaches to one defined brief in separate fresh contexts, has
-  them judged independently against criteria fixed before any candidate was started, tries to break
-  the winner, and returns an evaluation artifact: selected, unresolved or incomplete. Use when a
-  goal is settled, several approaches are still alive, and arguing will not settle which is better.
-  Not for judging options that are already developed, not for generating options on an open field,
-  and not for adopting the winner into production.
+  Human-started command: it runs only when the human's message begins with `/ak:bakeoff`. On any
+  other request do not load or follow it; tell the human to type that command. Develops two or more
+  competing approaches to one defined brief in separate fresh contexts, has them judged
+  independently against criteria fixed before any candidate was started, tries to break the winner,
+  and returns an evaluation artifact: selected, unresolved or incomplete. Use when a goal is
+  settled, several approaches are still alive, and arguing will not settle which is better. Not for
+  judging options that are already developed, not for generating options on an open field, and not
+  for adopting the winner into production.
 license: MIT
 metadata:
   ak_catalog_id: bakeoff

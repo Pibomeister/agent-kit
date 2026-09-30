@@ -1,10 +1,12 @@
 ---
 name: super-align
 description: >-
-  Grills an unsettled request into agreed direction: a design tree worked in rounds, named terms,
-  two or three approaches with a recommendation, and an explicit human yes before anything is built.
-  Use when what to build is not yet agreed. Not for a request that already carries acceptance
-  criteria, and not for a single-file fix with no decision in it.
+  Human-started command: it runs only when the human's message begins with `/ak:super-align`, or
+  under a validated grant. On any other request do not load or follow it; tell the human to type
+  that command. Grills an unsettled request into agreed direction: a design tree worked in rounds,
+  named terms, two or three approaches with a recommendation, and an explicit human yes before
+  anything is built. Use when what to build is not yet agreed. Not for a request that already
+  carries acceptance criteria, and not for a single-file fix with no decision in it.
 license: MIT
 metadata:
   ak_catalog_id: super-align
@@ -42,8 +44,9 @@ decision. Nothing is implemented before a human approves.
 ## Authority
 
 Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
-`align.run`. A human starts the public entrypoint with `/ak:super-align`. A delegated controller
-starts `align.run` only under a runner-validated grant covering `align-answer`
+`align.run`. A human starts the public entrypoint by typing `/ak:super-align`. A request in prose
+is not a start, even when it names this skill or the command. A delegated controller starts
+`align.run` only under a runner-validated grant covering `align-answer`
 (`adapters/runner-contract/CONTRACT.md`), and only for a bounded question inside the charter's work
 source. Where the host cannot validate that grant, the operation stops for explicit invocation
 rather than answering (ruling `entrypoint-phase-operation-split`). No skill starts this skill
@@ -67,31 +70,37 @@ directly.
 
 ## Workflow
 
-1. Classify the work as **bounded**, **standard** or **architectural** from its ambiguity and how
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:super-align`, or when a controller started the
+   phase operation `align.run` under a validated grant. A request in prose is not a start, even when
+   it names this skill or the command. With neither, stop here: make no tool call, say that this
+   command is human-started, and give the human the line to type, `/ak:super-align` and their
+   request.
+2. Classify the work as **bounded**, **standard** or **architectural** from its ambiguity and how
    far it cuts across the system. Say which and why in one line. Uncertain lands on the heavier
    classification.
-2. Run the coherent-work gate: list every outcome in the request that carries its own acceptance
+3. Run the coherent-work gate: list every outcome in the request that carries its own acceptance
    boundary and could be delivered without the others. More than one — propose a plain-language
    breakdown, state only the relationships the material supports, and ask which one this run owns.
    The rest are context, not scope.
-3. State a hypothesis for what the human wants and a confidence number for it. Below roughly 70,
+4. State a hypothesis for what the human wants and a confidence number for it. Below roughly 70,
    state the reason on the same line.
-4. Load [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) before
+5. Load [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) before
    naming any term, and [the codebase-design reference pack](../../references/codebase-design/REFERENCE.md)
    when the question turns on where a seam or an interface goes.
-5. Build the design tree: each decision branches into the decisions that hang off it. The frontier
+6. Build the design tree: each decision branches into the decisions that hang off it. The frontier
    is every decision whose prerequisites are already settled.
-6. Ask the whole frontier in one round. Number each question and attach the answer you would give
+7. Ask the whole frontier in one round. Number each question and attach the answer you would give
    and the reason for it. Then stop and wait for the human.
-7. When an answer names a convention rather than a want, probe once: ask what they would actually
+8. When an answer names a convention rather than a want, probe once: ask what they would actually
    want if they did not have to justify the choice to anyone.
-8. Recompute the frontier from the answers and run the next round. Stop asking when the frontier is
+9. Recompute the frontier from the answers and run the next round. Stop asking when the frontier is
    empty and you can predict the human's answer to the next three questions you would ask.
-9. Present two or three approaches with their trade-offs, leading with the one you recommend and
-   why. A single option is not a choice; name what you rejected and on what grounds.
-10. Restate the direction in six fields — Outcome, User, Why now, Success, Constraint, Out of scope
+10. Present two or three approaches with their trade-offs, leading with the one you recommend and
+    why. A single option is not a choice; name what you rejected and on what grounds.
+11. Restate the direction in six fields — Outcome, User, Why now, Success, Constraint, Out of scope
     — and ask for approval. Out of scope is never omitted.
-11. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
+12. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
     ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish
     nothing and return `needs-input` naming `kb-read` and `kb-write`; the completed interview is
@@ -153,10 +162,11 @@ performed is `failed`, never complete.
 
 - `complete` — the human approved the restated direction, and every published artifact's read-back
   matched what was sent.
-- `needs-input` — no request, no explicit approval, a question outside the charter at `align.run`,
-  a fork only the human can settle, or publication reached an unavailable knowledgebase adapter.
-  The unavailable-adapter result names `kb-read` and `kb-write` and returns the completed interview
-  without publishing it.
+- `needs-input` — a start by neither the typed command nor a validated grant, no request, no
+  explicit approval, a question outside the charter at `align.run`, a fork only the human can
+  settle, or publication reached an unavailable knowledgebase adapter. The first returns the
+  command to type and nothing else. The unavailable-adapter result names `kb-read` and `kb-write`
+  and returns the completed interview without publishing it.
 - `cap-reached` — the runner-supplied alignment budget is exhausted. Returns the settled part of the
   tree and the open frontier, and decides none of it.
 - `cancelled` — the human ends the run. Nothing is published.

@@ -1,7 +1,7 @@
 # Execution contract for bakeoff (schemas/skill.schema.json).
 # Prose mirror: skills/bakeoff/SKILL.md. The two are one statement in two forms.
 id: bakeoff
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-

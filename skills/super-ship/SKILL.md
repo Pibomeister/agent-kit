@@ -1,10 +1,12 @@
 ---
 name: super-ship
 description: >-
-  Prepares a verified, reviewed change for publication: release checks, a sensitive-data scan, the
-  commit, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the
-  payload locally and pushing nothing, or publishes under a grant. Not for merging, not for
-  deploying, and not for deciding whether the change is correct.
+  Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or
+  under a validated grant. On any other request do not load or follow it; tell the human to type
+  that command. Prepares a verified, reviewed change for publication: release checks, a
+  sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs
+  dry, generating the payload locally and pushing nothing, or publishes under a grant. Not for
+  merging, not for deploying, and not for deciding whether the change is correct.
 license: MIT
 metadata:
   ak_catalog_id: super-ship
@@ -48,9 +50,10 @@ same charter requirement as merge.
 
 ## Authority
 
-Authority `explicit-or-delegated`, invocation U. A human starts it directly, or a delegated
-controller starts the same protocol through the declared phase operation `ship.prepare` under a
-runner-validated grant covering `ship-pr`.
+Authority `explicit-or-delegated`, invocation U. A human starts it by typing `/ak:super-ship`, or a
+delegated controller starts the same protocol through the declared phase operation `ship.prepare`
+under a runner-validated grant covering `ship-pr`. A request in prose is not a start, even when it
+names this skill or the command.
 
 There is one protocol behind both doors. Where the host cannot validate a grant, the entrypoint stops
 for explicit invocation rather than reproducing the delegated effect through a side door (ruling
@@ -88,9 +91,16 @@ The project's own release checks, discovered rather than assumed.
 
 ## Workflow
 
-1. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
+1. Check how this run was started, before any other step and before any tool call but the grant
+   check. It is started only when the human's message begins with `/ak:super-ship`, or when a
+   controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
+   binding the grant check is the `ak firstmate grant` call in Authority, and a refusal is a stop. A
+   request in prose is not a start, even when it names this skill or the command. With neither, stop
+   here: make no other tool call, say that this command is human-started, and give the human the
+   line to type, `/ak:super-ship` and their request.
+2. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
    `dry-run` stops there.
-2. Confirm the preconditions: receipts bind to the head, the review verdict binds to that head's
+3. Confirm the preconditions: receipts bind to the head, the review verdict binds to that head's
    artifact hash. A verdict of `blocked` or `unavailable` stops the run. Start with
    `node <this skill's directory>/../../bin/ak-gate.mjs check` (the bundle's `bin/`, two directories above this skill): it
    needs a current record from super-build, super-verify, super-review full (or a delta at this head)
@@ -106,31 +116,31 @@ The project's own release checks, discovered rather than assumed.
    an opened run. A closed run accepts `ship-preflight` again only at the head that closed it, which
    is what lets a `dry-run` be followed by `publish`. Once `ship-preflight` is recorded, a fix that
    moves the head needs a new run: `open` again and re-run every gated phase for it.
-3. Run the sensitive-data scan over what would be committed. A candidate secret stops the run; where
+4. Run the sensitive-data scan over what would be committed. A candidate secret stops the run; where
    one was already committed, report it for rotation rather than only removing it from the payload.
-4. Run the dependency-audit triage and the project's own release checks, and record each outcome
+5. Run the dependency-audit triage and the project's own release checks, and record each outcome
    against this head. A check that did not run is recorded as not run.
-5. Stage only the paths this change owns, named one by one. Never stage the whole tree and never
+6. Stage only the paths this change owns, named one by one. Never stage the whole tree and never
    stage by wildcard.
-6. Compose the commit message and the pull-request payload: what changed, why, the linked ticket,
+7. Compose the commit message and the pull-request payload: what changed, why, the linked ticket,
    the receipts and the review verdict.
-7. Detect whether an open pull request already exists for this branch, deterministically. Only an
+8. Detect whether an open pull request already exists for this branch, deterministically. Only an
    exit-0 empty result means there is none; any other outcome is unknown, and unknown is not none.
-8. In `dry-run`, emit the ship evidence record, holding the payload and the check results, and
+9. In `dry-run`, emit the ship evidence record, holding the payload and the check results, and
    stop. No branch is pushed, no pull request is opened, and the report says what would have been
    sent and to where.
-9. In `publish`, derive an idempotency key for each remote effect from the run id, the operation id,
-   the target identity and the input artifact hash — never from a timestamp, a random value, an
-   attempt counter or a session id. Read the target back before the effect and again after it.
-   Where the project ships through no-mistakes, the push and the pull request go through it with
-   review, document and rebase skipped, and a parked gate returns to the lifecycle rather than being
-   answered in the pipeline (ruling `no-mistakes-as-ship-transport`). The mechanics are in
-   `./references/transport-no-mistakes.md`.
-10. Draft the lesson candidate through the knowledgebase adapter's draft operation. It stays a draft:
+10. In `publish`, derive an idempotency key for each remote effect from the run id, the operation
+    id, the target identity and the input artifact hash — never from a timestamp, a random value, an
+    attempt counter or a session id. Read the target back before the effect and again after it.
+    Where the project ships through no-mistakes, the push and the pull request go through it with
+    review, document and rebase skipped, and a parked gate returns to the lifecycle rather than
+    being answered in the pipeline (ruling `no-mistakes-as-ship-transport`). The mechanics are in
+    `./references/transport-no-mistakes.md`.
+11. Draft the lesson candidate through the knowledgebase adapter's draft operation. It stays a draft:
     publishing it is a separate authority this run does not hold.
-11. Hand the open pull request to the watch lane, and report the ship as prepared rather than
+12. Hand the open pull request to the watch lane, and report the ship as prepared rather than
     finished until that lane owns it.
-12. Report what was done, what was skipped and why, and every action declined for want of a charter
+13. Report what was done, what was skipped and why, and every action declined for want of a charter
     entry.
 
 ## Hard gates
@@ -143,7 +153,7 @@ charter's hash, with any expiry or single-use bound. An approval whose charter w
 no longer binds, and this run may never enlarge its own authority (ruling
 `sensitive-actions-need-approved-charter-entry`).
 
-Gate: the autonomous form, `ship.prepare` delegated under a grant, proceeds past workflow step 2 only
+Gate: the autonomous form, `ship.prepare` delegated under a grant, proceeds past workflow step 3 only
 on trusted evidence: gate evidence the runner recorded into the run's evidence store outside the
 worker's reach. Gate records the worker itself wrote are worker-attested, not trusted evidence, and
 neither a grant nor a host permission makes them so.
@@ -225,10 +235,11 @@ In `dry-run` the effects performed are `artifact-write` alone.
 and pull request exist with their read-backs recorded, the lesson candidate is drafted, and the watch
 lane holds the pull request.
 
-`needs-input`: receipts or the review verdict are missing or bound to another revision, the mode was
-not named, or a sensitive action is required and no charter entry covers it. Returns what it would
-need and performs no remote effect. Also when the autonomous form has no trusted evidence: the
-message names trusted evidence as unavailable and says the manual form remains open.
+`needs-input`: the run was started by neither the typed command nor a validated grant, receipts or
+the review verdict are missing or bound to another revision, the mode was not named, or a sensitive
+action is required and no charter entry covers it. Returns what it would need, which for the first
+is the command to type, and performs no remote effect. Also when the autonomous form has no trusted
+evidence: the message names trusted evidence as unavailable and says the manual form remains open.
 
 `failed`: a candidate secret was found, a required release check failed, or the pull-request lookup
 returned an outcome that is neither success nor an empty list. The reason is named and the run stays

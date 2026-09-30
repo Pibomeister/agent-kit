@@ -1,7 +1,7 @@
 # Execution contract for compound-refresh (schemas/skill.schema.json).
 # Prose mirror: skills/compound-refresh/SKILL.md. The two are one statement in two forms.
 id: compound-refresh
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-
@@ -92,15 +92,18 @@ hard_gates:
 
 stop_conditions:
   - complete when every lesson in scope has a recorded decision.
-  - needs-input when the knowledgebase adapter is unavailable, or a change awaits the human's
-    confirmation.
+  - needs-input when the run was not started by the typed command, the knowledgebase adapter is
+    unavailable, or a change awaits the human's confirmation.
   - failed when a write's read-back or a runtime command failed.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The knowledgebase cannot be read or written, or a proposed change awaits confirmation.
-    next_permitted_action: Return the decisions and the pending changes; publish nothing unconfirmed.
+      The run was not started by the typed command, the knowledgebase cannot be read or written,
+      or a proposed change awaits confirmation.
+    next_permitted_action: >-
+      Return the decisions and the pending changes; publish nothing unconfirmed. For a run the
+      typed command did not start, return the command to type and nothing else.
   - status: failed
     meaning: A knowledgebase read-back or a runtime ledger command failed.
     next_permitted_action: Report which one; a belief that the change landed is not a receipt.

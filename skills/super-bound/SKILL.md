@@ -1,10 +1,12 @@
 ---
 name: super-bound
 description: >-
-  Turns an approved direction into a decision-level specification, a reviewed plan and a dependency
-  graph of zero-context implementation tickets with named verification. Use when the direction is
-  agreed and the work needs bounding. Not for deciding what to build, and not for a reviewed ticket
-  that already carries its acceptance criteria.
+  Human-started command: it runs only when the human's message begins with `/ak:super-bound`, or
+  under a validated grant. On any other request do not load or follow it; tell the human to type
+  that command. Turns an approved direction into a decision-level specification, a reviewed plan and
+  a dependency graph of zero-context implementation tickets with named verification. Use when the
+  direction is agreed and the work needs bounding. Not for deciding what to build, and not for a
+  reviewed ticket that already carries its acceptance criteria.
 license: MIT
 metadata:
   ak_catalog_id: super-bound
@@ -37,9 +39,10 @@ acceptance criteria and verification commands. A decision ticket is never an imp
 ## Authority
 
 Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
-`bound.run`. A human starts the public entrypoint with `/ak:super-bound`. A delegated controller
-starts `bound.run` only under a runner-validated grant covering `spec-approval`, and only with a
-second grant covering `ticket-approval` when the operation emits implementation tickets
+`bound.run`. A human starts the public entrypoint by typing `/ak:super-bound`. A request in prose
+is not a start, even when it names this skill or the command. A delegated controller starts
+`bound.run` only under a runner-validated grant covering `spec-approval`, and only with a second
+grant covering `ticket-approval` when the operation emits implementation tickets
 (`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate a grant, the operation
 stops for explicit invocation rather than approving on the controller's word (ruling
 `entrypoint-phase-operation-split`). No skill starts this skill directly; it calls `doc-review`,
@@ -60,39 +63,45 @@ which is model-invoked, and that direction is the legal one.
 
 ## Workflow
 
-1. Detect before you ask. Read what the repository already states — its dependency manifest, its
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:super-bound`, or when a controller started the
+   phase operation `bound.run` under a validated grant. A request in prose is not a start, even when
+   it names this skill or the command. With neither, stop here: make no tool call, say that this
+   command is human-started, and give the human the line to type, `/ak:super-bound` and their
+   request.
+2. Detect before you ask. Read what the repository already states — its dependency manifest, its
    test runner, its lint configuration, its continuous-integration configuration — report what you
    found in two lines, and ask only what is left.
-2. When the approved direction spans more than one module, draw the capability map first: a table of
+3. When the approved direction spans more than one module, draw the capability map first: a table of
    stable kebab-case module ids, each with its responsibility and what it depends on. The map is
    gated like every other step; a human reviews it before any module's specification is written.
-3. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
+4. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
    test seams, verification commands, out of scope. No file paths and no code, except a fragment a
    prototype already settled exactly — a state machine, a reducer, a schema, a type shape.
-4. Choose the test seams before the slices. The fewer seams the feature is verified across the
+5. Choose the test seams before the slices. The fewer seams the feature is verified across the
    better, and the ideal number is one; name the seam you chose and why it is the highest one
    available. Use the vocabulary the alignment run already established with
    [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) rather than
    renaming the same things here.
-5. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
+6. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket.
-6. Take the specification approval. The plan record carries it as `specification_approval`, bound
+7. Take the specification approval. The plan record carries it as `specification_approval`, bound
    to the specification's own hash (`specification_hash`), so slicing afterwards does not void it.
-7. Slice into tickets. Each slice cuts a narrow but complete path through every layer, is demoable
+8. Slice into tickets. Each slice cuts a narrow but complete path through every layer, is demoable
    or verifiable on its own, and is sized to fit one fresh context window.
-8. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
+9. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
    and what it produces that later tickets rely on with exact names, parameters and return types.
    Write for a skilled developer who knows almost nothing about this toolset or problem domain.
-9. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
-   ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
-   with no edge between them are still unsafe in parallel when they write the same file.
-10. Where one mechanical change breaks call sites across the tree and no vertical slice can land
+10. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
+    ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
+    with no edge between them are still unsafe in parallel when they write the same file.
+11. Where one mechanical change breaks call sites across the tree and no vertical slice can land
     green, use the wide-refactor shape instead: expand, then migrate in batches with each batch its
     own ticket blocked by the expand, then contract, blocked by every batch.
-11. Type-check every ticket. An implementer opening it with an empty context window who still
+12. Type-check every ticket. An implementer opening it with an empty context window who still
     cannot do it is not holding an implementation ticket: reshape it, or reclassify it
     `type: decision` and send it back.
-12. Self-review, then publish: every acceptance criterion is covered by a ticket, no ticket carries
+13. Self-review, then publish: every acceptance criterion is covered by a ticket, no ticket carries
     an unfinished-content marker or a "same as the earlier ticket" instruction, and each ticket's
     produced names and types match the next one's consumed names exactly.
 
@@ -157,8 +166,9 @@ performed is `failed`, never complete.
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
   ticket, and every published artifact's read-back matched what was sent.
-- `needs-input` — no approved alignment result, an approval bound to a different revision, a missing
-  grant at `bound.run`, or a settled decision that new evidence invalidated.
+- `needs-input` — a start by neither the typed command nor a validated grant, which returns the
+  command to type and nothing else; no approved alignment result, an approval bound to a different
+  revision, a missing grant at `bound.run`, or a settled decision that new evidence invalidated.
 - `cap-reached` — the consensus plan gate reached its round cap, or the runner-supplied ticket
   budget ran out. Returns the unresolved architectural question or the undecomposed remainder.
 - `cancelled` — the human ended the run before approving the specification.

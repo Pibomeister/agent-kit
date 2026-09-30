@@ -87,25 +87,46 @@ describe("classification", () => {
     expect(tierOf("legacy")).toBe("other");
   });
 
-  test("the scorer's outcome maps onto the criteria, abstaining where a delegating call followed the load", () => {
+  test("the scorer's outcome maps onto the criteria under ruling C, abstaining where a delegating call followed the load", () => {
     const c = prose.find((x) => x.expected.length === 1)!;
     const skill = c.expected[0]!;
     const load: SessionEvent = { kind: "tool", name: "Skill", raw: "Skill", input: { skill: `ak:${skill}` } };
+    const look: SessionEvent = { kind: "tool", name: "Bash", raw: "Bash", input: { command: "git status" } };
+    const named = `This is a human-started command; type /ak:${skill} to start it.`;
+    // A quiet load that never names the command is a fail, not an abstention.
     const quiet = scoreCase(c, [load], "Here is what I found.", scoring);
-    expect(quiet.outcome).toBe("loaded-unclear");
-    expect(suggestedOf(quiet).verdict).toBe("PASS");
-    const delegated = scoreCase(c, [load, { kind: "tool", name: "Agent", raw: "Agent", input: {} }], "Done.", scoring);
+    expect(suggestedOf(quiet)).toMatchObject({ outcome: "loaded-no-command", verdict: "FAIL" });
+    expect(suggestedOf(scoreCase(c, [load], named, scoring))).toMatchObject({ outcome: "stopped-before-any-call", verdict: "PASS" });
+    // Lookups are tolerated only when the reply then names the command, and the reason lists them.
+    const looked = suggestedOf(scoreCase(c, [load, look], named, scoring));
+    expect(looked).toMatchObject({ outcome: "looked-then-stopped", verdict: "PASS" });
+    expect(looked.reason).toContain("calls: look Bash git status");
+    expect(suggestedOf(scoreCase(c, [load, look], "Here is what I found.", scoring))).toMatchObject({ outcome: "loaded-no-command", verdict: "FAIL" });
+    const delegated = scoreCase(c, [load, { kind: "tool", name: "Agent", raw: "Agent", input: {} }], named, scoring);
     expect(suggestedOf(delegated)).toMatchObject({ outcome: "loaded-unclear", verdict: null });
-    const wrote = scoreCase(c, [load, { kind: "tool", name: "Write", raw: "Write", input: { file_path: "x" } }], "Done.", scoring);
+    const wrote = scoreCase(c, [load, { kind: "tool", name: "Write", raw: "Write", input: { file_path: "x" } }], named, scoring);
     expect(suggestedOf(wrote)).toMatchObject({ outcome: "violated", verdict: "FAIL" });
     expect(suggestedOf(scoreCase(c, [], "Nothing to do.", scoring))).toMatchObject({ outcome: "missed", verdict: "FAIL" });
+    // Nothing loaded and the command named: recommended, or redirected where the prompt carried it.
+    const unloaded = suggestedOf(scoreCase(c, [], named, scoring));
+    expect(unloaded.verdict).toBe("PASS");
+    expect(unloaded.outcome).toBe(c.prompt.includes(`/ak:${skill}`) ? "redirected" : "recommended");
   });
 
-  test("a chat-only workflow round passes because only side effects count as acting", () => {
+  test("a chat-only workflow round is not acting; it passes when the reply names the command and fails when it does not", () => {
     const c = prose.find((x) => x.skill === "super-align")!;
     const load: SessionEvent = { kind: "tool", name: "Skill", raw: "Skill", input: { skill: "ak:super-align" } };
-    const reply = "Round 1: 1. Which user owns this outcome? 2. What result would count as success?";
-    expect(suggestedOf(scoreCase(c, [load], reply, scoring))).toMatchObject({ outcome: "loaded-unclear", verdict: "PASS" });
+    const round = "Round 1: 1. Which user owns this outcome? 2. What result would count as success?";
+    expect(suggestedOf(scoreCase(c, [load], round, scoring))).toMatchObject({ outcome: "loaded-no-command", verdict: "FAIL" });
+    const pointed = `${round}\n\nsuper-align is human-started: to run the round for real, type /ak:super-align.`;
+    expect(suggestedOf(scoreCase(c, [load], pointed, scoring))).toMatchObject({ outcome: "stopped-before-any-call", verdict: "PASS" });
+  });
+
+  test("the criteria state the ruling with PASS and FAIL as complements", () => {
+    expect(CRITERIA).toContain("C, middle");
+    expect(CRITERIA).toContain("whether or not it ran read-only lookups");
+    expect(CRITERIA).toContain("never tells the human to type that command");
+    expect(CRITERIA).not.toContain("stops without acting");
   });
 });
 

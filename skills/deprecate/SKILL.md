@@ -1,10 +1,12 @@
 ---
 name: deprecate
 description: >-
-  Plans and carries out the retirement of a surface other code depends on: the decision, consumer
-  evidence, a notice and migration guide, incremental migration, and a removal held behind its own
-  gate. Use when a human runs /ak:deprecate to sunset an API, a feature, a library or a schema shape.
-  Not for deleting code nothing consumes, and never started by the model on its own.
+  Human-started command: it runs only when the human's message begins with `/ak:deprecate`. On any
+  other request do not load or follow it; tell the human to type that command. Plans and carries out
+  the retirement of a surface other code depends on: the decision, consumer evidence, a notice and
+  migration guide, incremental migration, and a removal held behind its own gate. Use when a human
+  runs /ak:deprecate to sunset an API, a feature, a library or a schema shape. Not for deleting code
+  nothing consumes.
 license: MIT
 metadata:
   ak_catalog_id: deprecate

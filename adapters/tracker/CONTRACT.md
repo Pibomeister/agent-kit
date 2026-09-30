@@ -163,7 +163,7 @@ the step each comes from is named.
 createTicket(ticket: TicketArtifact) -> Result<TicketRef>
 ```
 
-- **Called by** `wayfind`, charting step 4, first pass.
+- **Called by** `wayfind`, charting step 5, first pass.
 - **Carries** `schemas/ticket.schema.json`. The ref returned carries the system of record's id and
   URL, which is what a projection stores in `envelope.tracker`.
 - **Failure modes** — an artifact failing its own schema is refused before any write.
@@ -175,7 +175,7 @@ createTicket(ticket: TicketArtifact) -> Result<TicketRef>
 linkRecord(ticket: TicketRef, target: RecordLink) -> Result<TicketRef>
 ```
 
-- **Called by** `wayfind`, steps 5 and 9, linking a research finding or a prototype artifact from
+- **Called by** `wayfind`, steps 6 and 10, linking a research finding or a prototype artifact from
   its ticket; and wherever a projection is written, linking it to the authoritative record.
 - **Native** — the backend's link or attachment relation. **Convention** — a links section.
 - **Failure modes** — a target that does not resolve is refused rather than stored as a dangling
@@ -188,7 +188,7 @@ linkRecord(ticket: TicketRef, target: RecordLink) -> Result<TicketRef>
 addBlockingEdge(blocked: TicketRef, blocker: TicketRef) -> Result<TicketRef>
 ```
 
-- **Called by** `wayfind`, step 4, second pass: a ticket needs an identity before another can
+- **Called by** `wayfind`, step 5, second pass: a ticket needs an identity before another can
   reference it, so edges are wired after every ticket exists.
 - **Native** — the backend's dependency relation. **Convention** — a blocked-by section. In the
   knowledgebase fallback, a `prerequisites` entry of `kind: ticket`.
@@ -201,7 +201,7 @@ addBlockingEdge(blocked: TicketRef, blocker: TicketRef) -> Result<TicketRef>
 claimTicket(ticket: TicketRef, claimant: SeatRef) -> Result<TicketRef>
 ```
 
-- **Called by** `wayfind`, step 8, before any work on the ticket.
+- **Called by** `wayfind`, step 9, before any work on the ticket.
 - **Native** — the backend's assignment. **Knowledgebase fallback** — exclusive access requested
   from the runner, because the knowledgebase implements no locking
   (`adapters/knowledgebase/CONTRACT.md` §5), and the claim then recorded on the ticket.
@@ -217,7 +217,7 @@ claimTicket(ticket: TicketRef, claimant: SeatRef) -> Result<TicketRef>
 updateStatus(ticket: TicketRef, status: TicketStatus, resolution?: Text) -> Result<TicketRef>
 ```
 
-- **Called by** `wayfind`, steps 10 and 11: record the resolution and close, or close a ticket
+- **Called by** `wayfind`, steps 11 and 12: record the resolution and close, or close a ticket
   ruled out of scope with its reason.
 - **Carries** the `ticket` schema's status vocabulary. **Native** — the backend's workflow state,
   mapped by the binding. **Convention** — a status section, for a backend whose states cannot hold
@@ -232,7 +232,7 @@ updateStatus(ticket: TicketRef, status: TicketStatus, resolution?: Text) -> Resu
 readTickets(selector: TicketSelector) -> Result<TicketSummary[]>
 ```
 
-- **Called by** `wayfind`, steps 7 and 8: load the map at low resolution and choose an open,
+- **Called by** `wayfind`, steps 8 and 9: load the map at low resolution and choose an open,
   unblocked, unclaimed ticket.
 - **Outputs** — each ticket's ref, status, claimant and blocking edges, not its body, with the
   system of record's revision so a caller can bind what it chose to what it read.

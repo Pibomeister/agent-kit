@@ -1,11 +1,13 @@
 ---
 name: autopilot
 description: >-
-  Use when a human types /ak:autopilot with an approved charter and wants the lifecycle driven to
-  an open pull request, two independent supervisor seats answering each checkpoint the charter
-  names. Every ruling is ledgered; anything outside the charter, any disagreement and any missing
-  seat stops for one escalation. Not for a single focused change, not for brainstorming, and never
-  started because a task looks long or because a prompt names it.
+  Human-started command: it runs only when the human's message begins with `/ak:autopilot`. On any
+  other request do not load or follow it; tell the human to type that command. Use when a human
+  types /ak:autopilot with an approved charter and wants the lifecycle driven to an open pull
+  request, two independent supervisor seats answering each checkpoint the charter names. Every
+  ruling is ledgered; anything outside the charter, any disagreement and any missing seat stops for
+  one escalation. Not for a single focused change, not for brainstorming, and never started because
+  a task looks long or because a prompt names it.
 license: MIT
 metadata:
   ak_catalog_id: autopilot

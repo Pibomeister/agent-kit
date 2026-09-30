@@ -1,12 +1,13 @@
 ---
 name: ideate
 description: >-
-  Generates many grounded candidate ideas on an identified subject, critiques every one of them in
-  an independent reviewer context, rejects the weak ones with a reason from a closed list, and
-  returns a bounded set of survivors with a Not Doing list. Use when a human wants ideas,
-  improvements or directions before any one of them is chosen. Not for judging options already on
-  the table, not for defining a direction already chosen, and not for building anything. A
-  recommendation is not authorization.
+  Human-started command: it runs only when the human's message begins with `/ak:ideate`. On any
+  other request do not load or follow it; tell the human to type that command. Generates many
+  grounded candidate ideas on an identified subject, critiques every one of them in an independent
+  reviewer context, rejects the weak ones with a reason from a closed list, and returns a bounded
+  set of survivors with a Not Doing list. Use when a human wants ideas, improvements or directions
+  before any one of them is chosen. Not for judging options already on the table, not for defining a
+  direction already chosen, and not for building anything. A recommendation is not authorization.
 license: MIT
 metadata:
   ak_catalog_id: ideate

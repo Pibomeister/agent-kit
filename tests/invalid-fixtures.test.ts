@@ -144,6 +144,27 @@ const CASES: ReadonlyArray<InvalidCase> = [
     file: "evals/alpha/first-resume/case.yaml",
     message: /case name `interrupted-publish-resumes` is also used by evals\/alpha\/second-resume\/case\.yaml/,
   },
+  {
+    tree: "18-description-without-command",
+    what: "a user-invoked skill whose description never names its typed command",
+    rule: "invocation.description-omits-command",
+    file: "skills/alpha/SKILL.md",
+    message: /does not name `\/ak:alpha` in its description/,
+  },
+  {
+    tree: "19-description-without-class",
+    what: "a user-invoked skill whose description names the command but not the class",
+    rule: "invocation.description-omits-class",
+    file: "skills/alpha/SKILL.md",
+    message: /the words 'human-started' are absent/,
+  },
+  {
+    tree: "20-first-step-not-stop",
+    what: "a user-invoked skill whose first workflow step opens on the work",
+    rule: "invocation.first-step-not-stop",
+    file: "skills/alpha/SKILL.md",
+    message: /The first step under ## Workflow .* does not name `\/ak:alpha` or say to stop/,
+  },
 ];
 
 function errorsOf(tree: string): Issue[] {

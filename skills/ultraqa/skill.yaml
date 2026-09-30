@@ -2,7 +2,7 @@
 # Prose mirror: skills/ultraqa/SKILL.md (AUTHORING.md §4.1).
 
 id: ultraqa
-version: 0.1.0
+version: 0.1.1
 kind: operational
 invocation: U
 summary: >-
@@ -159,18 +159,21 @@ hard_gates:
 stop_conditions:
   - complete when a cycle produced no new information or the cycle cap was reached, and the ledger,
     cycle record, mutation record and invalidation notice are emitted.
-  - needs-input when the diff is not clean for this revision, the behavioral contract is missing, or
-    no runnable build exists. No cycle is run.
+  - needs-input when the run was started by neither the typed command nor a validated grant, the
+    diff is not clean for this revision, the behavioral contract is missing, or no runnable build
+    exists. No cycle is run.
   - cap-reached when five cycles ran or a fingerprint reached three occurrences, with the ledger and
     the blocked-or-replan decision attached.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The review verdict or receipts do not bind to this revision, the behavioral contract is
-      missing, or there is no runnable build. No cycle runs and no findings are emitted.
+      The run was started by neither the typed command nor a validated grant, the review verdict or
+      receipts do not bind to this revision, the behavioral contract is missing, or there is no
+      runnable build. No cycle runs and no findings are emitted.
     next_permitted_action: >-
-      Re-invoke once the diff is clean for this revision and a build that starts is available.
+      A human types the command, or the run is re-invoked once the diff is clean for this revision
+      and a build that starts is available.
   - status: cap-reached
     meaning: >-
       Five cycles ran, or one fingerprint reached three occurrences. The run stops with the ledger

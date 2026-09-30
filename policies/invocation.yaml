@@ -29,8 +29,9 @@ law:
         A user-invoked (U) skill is started by a human only. On a host with a slash-command
         surface, only the slash command counts as the human act.
       enforced_by: >-
-        the skill's own authority step and its description's non-trigger clause; no host flag is
-        emitted (docs/decisions/0003-model-invocation.md)
+        the skill's own text, which `ak validate` checks (`human-start`): the description names
+        the typed command and the class, and the first workflow step names the command and stops;
+        no host flag is emitted (docs/decisions/0003-model-invocation.md)
     - id: u-may-call-m
       rule: A user-invoked skill may call model-invoked (M) skills directly.
     - id: u-may-not-call-u
@@ -244,7 +245,7 @@ operations:
       Release checks, sensitive-data scan, PR preparation and the linked knowledgebase change,
       up to and including opening a pull request when the charter grants it.
     preconditions:
-      - in the autonomous form, super-ship step 2's `ak-gate.mjs check` requires `trusted-evidence`
+      - in the autonomous form, super-ship step 3's `ak-gate.mjs check` requires `trusted-evidence`
       - verification receipts bind to the head being shipped
       - review approval exists and binds to that head's artifact hash
     hard_gates:

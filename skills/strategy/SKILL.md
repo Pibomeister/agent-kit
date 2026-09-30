@@ -1,11 +1,13 @@
 ---
 name: strategy
 description: >-
-  Interviews a human for the product's standing strategy (purpose, positioning, users, key metrics,
-  tracks and boundaries), pushes back on weak answers, and publishes the result as the product's
-  strategy page in the knowledgebase. Use when a human starts or revisits a product's direction and
-  runs /ak:strategy. Not for planning features, scheduling work or updating the tracker, not for a
-  library with no product framing, and never started by the model on its own.
+  Human-started command: it runs only when the human's message begins with `/ak:strategy`. On any
+  other request do not load or follow it; tell the human to type that command. Interviews a human
+  for the product's standing strategy (purpose, positioning, users, key metrics, tracks and
+  boundaries), pushes back on weak answers, and publishes the result as the product's strategy page
+  in the knowledgebase. Use when a human starts or revisits a product's direction and runs
+  /ak:strategy. Not for planning features, scheduling work or updating the tracker, and not for a
+  library with no product framing.
 license: MIT
 metadata:
   ak_catalog_id: strategy

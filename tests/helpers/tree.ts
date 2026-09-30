@@ -28,11 +28,18 @@ export function makeTree(files: Record<string, string>): string {
  * body generated from the constant the check reads is clean under any value of
  * that constant, including a wrong one, so deriving it would make every tree
  * below agree with the implementation instead of with §3.
+ *
+ * Every caller catalogs the skill as user-invoked, so the body also carries what
+ * `human-start` reads: the description names `/ak:<name>` and the class, and the
+ * first workflow step is the stop (AUTHORING.md §4.1).
  */
 export function wellFormedSkill(name: string, description: string, preamble: string): string {
   return `---
 name: ${name}
-description: ${description}
+description: >-
+  Human-started command: it runs only when the human's message begins with \`/ak:${name}\`. On any
+  other request do not load or follow it; tell the human to type that command.
+  ${description}
 ---
 
 # ${name}
@@ -58,8 +65,10 @@ The ticket the request names. Absent: stop and report \`needs-input\`.
 
 ## Workflow
 
-1. Read the named ticket and record its id.
-2. Produce the receipt and return it.
+1. Check how this run was started. It is started only when the human's message begins with
+   \`/ak:${name}\`. Otherwise stop, name the command and do nothing else.
+2. Read the named ticket and record its id.
+3. Produce the receipt and return it.
 
 ## Hard gates
 

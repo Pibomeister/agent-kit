@@ -1,11 +1,12 @@
 ---
 name: triage
 description: >-
-  Moves tracker issues and external pull requests through the project's configured triage policy:
-  classify, check for duplicates and prior rejections, verify the claim, recommend, and apply the
-  outcome the maintainer chooses. Use when a human runs /ak:triage over their tracker. Not for a
-  project with no triage policy, not for reprioritizing or reassigning work, and never started by
-  the model on its own.
+  Human-started command: it runs only when the human's message begins with `/ak:triage`. On any
+  other request do not load or follow it; tell the human to type that command. Moves tracker issues
+  and external pull requests through the project's configured triage policy: classify, check for
+  duplicates and prior rejections, verify the claim, recommend, and apply the outcome the maintainer
+  chooses. Use when a human runs /ak:triage over their tracker. Not for a project with no triage
+  policy, and not for reprioritizing or reassigning work.
 license: MIT
 metadata:
   ak_catalog_id: triage

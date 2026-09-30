@@ -1,7 +1,7 @@
 # Execution contract for wayfind (schemas/skill.schema.json).
 # Prose mirror: skills/wayfind/SKILL.md. The two are one statement in two forms.
 id: wayfind
-version: 0.1.0
+version: 0.1.1
 kind: primitive
 invocation: U
 summary: >-
@@ -121,20 +121,22 @@ stop_conditions:
   - complete when the frontier is empty, nothing remains in Not yet specified, and the way to the
     destination is clear with nothing left to decide.
   - complete when charting surfaced no fog; the map is not drawn and the reason is reported.
-  - needs-input when there is no effort statement, no system of record, no grant at wayfind.map, or
-    a ticket whose resolution belongs to a human-started run. With no system of record it names
-    tracker-access and kb-write; a human waiver does not change that result.
+  - needs-input when the run was started by neither the typed command nor a validated grant, there
+    is no effort statement, no system of record, no grant at wayfind.map, or a ticket whose
+    resolution belongs to a human-started run. With no system of record it names tracker-access
+    and kb-write; a human waiver does not change that result.
   - cap-reached when one ticket has been resolved this session.
   - failed when the system of record is unreachable or a write's read-back cannot be performed.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      A prerequisite the run cannot supply itself, or a ticket the invocation law puts outside this
-      skill's reach.
+      A prerequisite the run cannot supply itself, a start by neither the typed command nor a
+      validated grant, or a ticket the invocation law puts outside this skill's reach.
     next_permitted_action: >-
-      Return the blocking item and the ticket text; do not resolve it here. For no system of record,
-      name tracker-access and kb-write and do not accept a session-only waiver.
+      Return the blocking item and the ticket text; do not resolve it here. For a start by neither
+      the typed command nor a grant, return the command to type and nothing else. For no system of
+      record, name tracker-access and kb-write and do not accept a session-only waiver.
   - status: cap-reached
     meaning: One ticket has been resolved this session and the per-session cap is spent.
     next_permitted_action: Return the updated map and the frontier; take nothing further.

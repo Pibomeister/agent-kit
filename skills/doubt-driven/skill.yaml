@@ -1,7 +1,7 @@
 # Execution contract for doubt-driven (schemas/skill.schema.json).
 # Prose mirror: skills/doubt-driven/SKILL.md. The two are one statement in two forms.
 id: doubt-driven
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-

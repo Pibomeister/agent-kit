@@ -1,9 +1,11 @@
 ---
 name: wayfind
 description: >-
-  Charts work too large for one session as a shared map of decision tickets, then resolves them one
-  at a time until the way to the destination is clear. Use when a loose effort is wrapped in fog.
-  Not for work whose route is already visible, and not for executing an agreed plan.
+  Human-started command: it runs only when the human's message begins with `/ak:wayfind`, or under a
+  validated grant. On any other request do not load or follow it; tell the human to type that
+  command. Charts work too large for one session as a shared map of decision tickets, then resolves
+  them one at a time until the way to the destination is clear. Use when a loose effort is wrapped
+  in fog. Not for work whose route is already visible, and not for executing an agreed plan.
 license: MIT
 metadata:
   ak_catalog_id: wayfind
@@ -37,8 +39,9 @@ dispatched to an implementer as though approved.
 ## Authority
 
 Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
-`wayfind.map`. A human starts the public entrypoint with `/ak:wayfind`. A delegated controller
-starts `wayfind.map` only under a runner-validated grant covering `ticket-approval`
+`wayfind.map`. A human starts the public entrypoint by typing `/ak:wayfind`. A request in prose is
+not a start, even when it names this skill or the command. A delegated controller starts
+`wayfind.map` only under a runner-validated grant covering `ticket-approval`
 (`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate that grant, the operation
 stops for explicit invocation rather than dispatching what it mapped (ruling
 `entrypoint-phase-operation-split`). This skill may start `/ak:research` and `/ak:prototype`, which
@@ -69,38 +72,44 @@ back rather than resolved here.
 
 ## Workflow
 
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:wayfind`, or when a controller started the phase
+   operation `wayfind.map` under a validated grant. A request in prose is not a start, even when it
+   names this skill or the command. With neither, stop here: make no tool call, say that this
+   command is human-started, and give the human the line to type, `/ak:wayfind` and their request.
+
 **Chart the map.**
 
-1. Name the destination: the specification, the decision or the change this effort is finding its
+2. Name the destination: the specification, the decision or the change this effort is finding its
    way to. Grill it inline until it is one sentence a reader could hold the whole effort against.
    The destination fixes the scope, so it is settled first and everything else is measured from it.
-2. Map the frontier breadth-first: fan out across the whole space rather than deep on one thread,
+3. Map the frontier breadth-first: fan out across the whole space rather than deep on one thread,
    surfacing the open decisions and the steps takeable now. If this surfaces no fog, stop: there is
    no map to draw. Say so and ask the human how they want to proceed.
-3. Write the map with five parts: Destination, Notes, Decisions so far (empty at charting), Not yet
+4. Write the map with five parts: Destination, Notes, Decisions so far (empty at charting), Not yet
    specified, Out of scope. The map is an index, not a store: a decision lives in its ticket, and
    the map gists it and links.
-4. Create the tickets you can state sharply now, then wire the blocking edges in a second pass,
+5. Create the tickets you can state sharply now, then wire the blocking edges in a second pass,
    because a ticket needs an identity before another can reference it. Everything you cannot yet
    phrase sharply stays in Not yet specified.
-5. Dispatch `/ak:research` for each research ticket created, in parallel, and link each finding from
+6. Dispatch `/ak:research` for each research ticket created, in parallel, and link each finding from
    its ticket. Hand back every `grilling` ticket for a human-started alignment run.
-6. Stop. Charting is one session's work and resolves nothing.
+7. Stop. Charting is one session's work and resolves nothing.
 
 **Work through the map.**
 
-7. Load the map at low resolution, not every ticket body, and orient to the destination before
+8. Load the map at low resolution, not every ticket body, and orient to the destination before
    choosing anything.
-8. Choose the ticket the human named, or the first frontier ticket in order — open, unblocked and
+9. Choose the ticket the human named, or the first frontier ticket in order — open, unblocked and
    unclaimed. Claim it before any work: the tracker's native assignment where a tracker is the
    system of record, and otherwise by asking the runner for exclusive access to the record, because
    the knowledgebase adapter implements no locking and neither does this body
    (`adapters/knowledgebase/CONTRACT.md`, "Known limitation").
-9. Resolve it by its type: `research` alone, `prototype` by dispatching it and linking the artifact,
-   `task` by doing the work that unblocks a decision, `grilling` never here.
-10. Record the resolution on the ticket, close it, and append one line to Decisions so far: the gist
+10. Resolve it by its type: `research` alone, `prototype` by dispatching it and linking the
+    artifact, `task` by doing the work that unblocks a decision, `grilling` never here.
+11. Record the resolution on the ticket, close it, and append one line to Decisions so far: the gist
     and the link, referred to by name.
-11. Graduate whatever fog the answer sharpened into new tickets, clearing each graduated patch from
+12. Graduate whatever fog the answer sharpened into new tickets, clearing each graduated patch from
     Not yet specified so it lives in one place only. Where the answer shows a ticket sits past the
     destination, close it and write one line in Out of scope: the gist and why, linking the closed
     ticket.
@@ -169,9 +178,11 @@ is `failed`, never complete.
 - `complete` — the frontier is empty, nothing remains in Not yet specified, and the way to the
   destination is clear with nothing left to decide.
 - `complete` — charting surfaced no fog. The map is not drawn and the reason is reported.
-- `needs-input` — no effort statement, no system of record, a missing grant at `wayfind.map`, or a
-  ticket whose resolution belongs to a human-started run. With no system of record it names both
-  `tracker-access` and `kb-write`; a human waiver does not change that result.
+- `needs-input` — a start by neither the typed command nor a validated grant, no effort statement,
+  no system of record, a missing grant at `wayfind.map`, or a ticket whose resolution belongs to a
+  human-started run. The first returns the command to type and nothing else. With no system of
+  record it names both `tracker-access` and `kb-write`; a human waiver does not change that
+  result.
 - `cap-reached` — one ticket has been resolved this session. Returns the updated map and the
   frontier, and takes nothing further.
 - `failed` — the system of record is unreachable, or a write's read-back cannot be performed.

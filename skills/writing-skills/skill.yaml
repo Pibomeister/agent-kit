@@ -1,7 +1,7 @@
 # Execution contract for writing-skills (schemas/skill.schema.json).
 # Prose mirror: skills/writing-skills/SKILL.md. The two are one statement in two forms.
 id: writing-skills
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-

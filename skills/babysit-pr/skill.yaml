@@ -2,7 +2,7 @@
 # Prose mirror: skills/babysit-pr/SKILL.md (AUTHORING.md §4.1).
 
 id: babysit-pr
-version: 0.1.0
+version: 0.1.1
 kind: operational
 invocation: U
 summary: >-
@@ -209,17 +209,21 @@ hard_gates:
 stop_conditions:
   - complete when the pull request reached a terminal state or the grant was withdrawn, and the watch
     record and terminal report are emitted.
-  - needs-input when the pull request cannot be identified or the runner delivers no events. No loop
-    is started as a substitute.
+  - needs-input when the run was started by neither the typed command nor a validated grant, the
+    pull request cannot be identified or the runner delivers no events. No loop is started as a
+    substitute.
   - cap-reached when three repair attempts were spent on one failure or a third fix cycle was
     requested, with the attempt history or the blocked-or-replan decision attached.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The pull request could not be identified, or the host supplies no event delivery. The run
-      reports what it would need and starts no polling loop.
-    next_permitted_action: Re-invoke once the pull request is identified and event delivery exists.
+      The run was started by neither the typed command nor a validated grant, the pull request
+      could not be identified, or the host supplies no event delivery. The run reports what it
+      would need and starts no polling loop.
+    next_permitted_action: >-
+      A human types the command, or the run is re-invoked once the pull request is identified and
+      event delivery exists.
   - status: cap-reached
     meaning: >-
       Three repair attempts were spent on one failure, or a third fix cycle was requested. The run

@@ -1,10 +1,13 @@
 ---
 name: super-review
 description: >-
-  Reviews a change with a panel of independent specialist seats over an immutable snapshot (full), a
-  two-axis delta over an accepted fix (delta), or the two-lane readiness gate (readiness). Use when a
-  change needs judgment against requirements, standards and tests. Reviewers cannot edit source. Not
-  for writing the fix, not for running acceptance checks, and not for repairing a red pipeline.
+  Human-started command: it runs only when the human's message begins with `/ak:super-review`, under
+  a validated grant, or as a delta inside an open review run. On any other request do not load or
+  follow it; tell the human to type that command. Reviews a change with a panel of independent
+  specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix (delta),
+  or the two-lane readiness gate (readiness). Use when a change needs judgment against requirements,
+  standards and tests. Reviewers cannot edit source. Not for writing the fix, not for running
+  acceptance checks, and not for repairing a red pipeline.
 license: MIT
 metadata:
   ak_catalog_id: super-review
@@ -50,10 +53,11 @@ their own failure modes, and they enter through `doc-review`.
 
 ## Authority
 
-`full` and `readiness`: authority `explicit-or-delegated`, invocation U. A human starts either
-directly, or a delegated controller starts the same protocol through the declared phase operations
-`review.full` and `review.readiness` under a runner-validated grant covering finding-adjudication.
-`delta`: authority `active-review-run`, invocation M, through `review.delta`.
+`full` and `readiness`: authority `explicit-or-delegated`, invocation U. A human starts either by
+typing `/ak:super-review`, or a delegated controller starts the same protocol through the declared
+phase operations `review.full` and `review.readiness` under a runner-validated grant covering
+finding-adjudication. A request in prose is not a start, even when it names this skill or the
+command. `delta`: authority `active-review-run`, invocation M, through `review.delta`.
 
 There is one protocol behind both doors, not a public wrapper and a second pipeline. Where the host
 cannot validate a grant, the entrypoint stops for explicit invocation rather than reproducing the
@@ -87,8 +91,14 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 
 ## Workflow
 
-1. Resolve the entrypoint and its authority. For `delta`, confirm a review run is open; if not, stop
-   with `needs-input`.
+1. Check how this run was started, before any other step and before any tool call but the grant
+   check. `full` and `readiness` are started only when the human's message begins with
+   `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
+   validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
+   Authority, and a refusal is a stop. A request in prose is not a start, even when it names this
+   skill or the command. With neither, stop here: make no other tool call, say that this command is
+   human-started, and give the human the line to type, `/ak:super-review` and their request. For
+   `delta`, confirm a review run is open; if not, stop with `needs-input`.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only
@@ -239,8 +249,10 @@ complete; the block is the result. A delta that ends by establishing a new basel
 the reset closes this scope and the new scope opens at pass 1, which is not a third loop (ruling
 `delta-baseline-reset-not-third-loop`).
 
-`needs-input`: no comparison base or reviewed head was named, or `delta` was invoked with no open
-review run. Returns what it would need and no partial verdict.
+`needs-input`: `full` or `readiness` was started by neither the typed command nor a validated
+grant, no comparison base or reviewed head was named, or `delta` was invoked with no open review
+run. Returns what it would need, which for the first is the command to type, and no partial
+verdict.
 
 `cap-reached`: a third fix cycle was requested. Stops with the blocked-or-replan decision and every
 open finding attached.

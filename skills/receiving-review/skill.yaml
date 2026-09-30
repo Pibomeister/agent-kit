@@ -2,7 +2,7 @@
 # Prose mirror: skills/receiving-review/SKILL.md (AUTHORING.md §4.1).
 
 id: receiving-review
-version: 0.1.0
+version: 0.1.1
 kind: standalone
 invocation: U
 summary: >-
@@ -152,15 +152,19 @@ hard_gates:
 stop_conditions:
   - complete when every open thread has a decision, evidence and a disposition, replies are posted
     where a reply grant was held, and the declined, escalated and routed lists are emitted.
-  - needs-input when the pull request or its threads could not be identified, or no grant was supplied
-    and the run would otherwise act (ruling `entrypoint-phase-operation-split`).
+  - needs-input when the run was started by neither the typed command nor a validated grant, the pull
+    request or its threads could not be identified, or no grant was supplied and the run would
+    otherwise act (ruling `entrypoint-phase-operation-split`).
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The pull request or its threads could not be identified, or no grant was supplied and the run
-      would otherwise act. Nothing is posted.
-    next_permitted_action: Re-invoke with the pull request identified, or with the grant supplied.
+      The run was started by neither the typed command nor a validated grant, the pull request or
+      its threads could not be identified, or no grant was supplied and the run would otherwise act.
+      Nothing is posted.
+    next_permitted_action: >-
+      A human types the command, or the run is re-invoked with the pull request identified or with
+      the grant supplied.
   - status: failed
     meaning: >-
       The repository is unreadable at the head the threads point at, or a remote call was refused

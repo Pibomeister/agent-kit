@@ -46,7 +46,7 @@ run wrote. Where the work source has no stated intent, the flag is left out rath
 
 Reconcile before every remote effect, per `adapters/runner-contract/CONTRACT.md` §5:
 
-1. Read the branch's open pull request, deterministically. Unknown is not none (workflow step 7).
+1. Read the branch's open pull request, deterministically. Unknown is not none (workflow step 8).
 2. Read the active no-mistakes run for the branch, if any.
 3. Where the pull request exists and its head is the head being shipped, the push is already done:
    return it rather than pushing again.

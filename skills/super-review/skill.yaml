@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-review/SKILL.md (AUTHORING.md §4.1).
 
 id: super-review
-version: 0.1.0
+version: 0.1.1
 kind: lifecycle
 invocation: U
 summary: >-
@@ -221,6 +221,9 @@ hard_gates:
 stop_conditions:
   - complete when every selected lane has a state, every required lane is covered, the
     verdict is set, and the review and findings are emitted. A blocked verdict is a complete run.
+  - The full and readiness entrypoints stop with needs-input where the run was started by neither
+    the typed command nor a validated grant, naming the command to type (ruling
+    `entrypoint-phase-operation-split`).
   - The delta stops with needs-input where no review run is open, naming the full entrypoint as the
     next permitted action (ruling `entrypoint-phase-operation-split`).
   - A third fix cycle stops with cap-reached and the blocked-or-replan decision.
@@ -231,9 +234,12 @@ stop_conditions:
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      No comparison base or reviewed head was named, or the delta was invoked with no open review
-      run. Returns what it would need and no partial verdict.
-    next_permitted_action: Re-invoke with the base and head named, or run the full entrypoint first.
+      The full or readiness entrypoint was started by neither the typed command nor a validated
+      grant, no comparison base or reviewed head was named, or the delta was invoked with no open
+      review run. Returns what it would need and no partial verdict.
+    next_permitted_action: >-
+      A human types the command, or the run is re-invoked with the base and head named, or the
+      full entrypoint runs first.
   - status: cap-reached
     meaning: >-
       A third fix cycle was requested. The run stops with an explicit blocked-or-replan decision and

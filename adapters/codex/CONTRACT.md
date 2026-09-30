@@ -99,14 +99,23 @@ portable, and the package does not pretend otherwise.
 
 For every U skill in the codex bundle:
 
-1. The generated `description` carries an explicit non-trigger clause drawn from the skill's
-   `## Not for` section. On a host that cannot suppress model invocation, the description is the only
-   thing between a U skill and an unrequested start, so it is written to be read that way.
-2. The skill's own `## Authority` section states `explicit`, and its first workflow step is the
-   authority check: started without an explicit human request, the skill stops and says so rather
-   than proceeding.
+1. The `description`, copied verbatim from the canonical `SKILL.md`, opens by naming the skill's
+   typed command and its class — `Human-started command: it runs only when the human's message
+   begins with /ak:<id>`, with `or under a validated grant` added where the skill has phase
+   operations — and says what to do on any other request: do not load or follow it, tell the human
+   to type that command. On a host that cannot suppress model invocation, the description
+   is the only thing between a U skill and an unrequested start, so it is written to be read that
+   way. `ak validate`'s `human-start` check fails a U skill whose description omits the command
+   (`invocation.description-omits-command`) or the class (`invocation.description-omits-class`).
+2. The skill's own `## Authority` section names the command and states that a prose request is
+   not a start, and its first workflow step is the stop: it names `/ak:<id>`, and started without
+   the human's message beginning with it — or, where the skill has phase operations, without a
+   runner-validated grant covering the phase — the skill stops, names the command and does nothing
+   else. `human-start` fails a U skill whose first workflow step does not name the command or does
+   not say to stop (`invocation.first-step-not-stop`).
 3. The non-trigger eval case for that skill is a **required** gate for this bundle rather than an
-   advisory one, because it is the only observation of a property the host does not enforce.
+   advisory one, because it is the only observation of the property in a live session: the checks
+   above hold the text, not the behavior.
 
 Every U skill's `packaging.hosts[]` entry for `adapter: codex` records this explicitly:
 `mode: manual`, with the unsuppressible model invocation named in `unsupported`
