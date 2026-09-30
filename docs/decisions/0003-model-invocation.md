@@ -25,7 +25,8 @@ codex never had the key. There the law is held by the skill itself (§3.1): a no
 description, an authority check as the first workflow step, `mode: manual`, and the non-trigger eval
 case as a required gate. *Amended 2026-09-29:* the first two were prose claims that nothing under
 `src/validation/` checked, and the stored A2 sessions showed the skills as written did not hold
-them — no description named the command or the class, and only one skill opened on authority.
+them — of the ten skills in those sessions, no description named the command or the class, and
+only one opened on authority.
 Every U skill's description now opens by naming `/ak:<id>` and the class, its first workflow step
 names the command and stops, and `ak validate`'s `human-start` check fails a U skill missing either
 (AUTHORING.md §4.1).
