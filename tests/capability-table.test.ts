@@ -339,19 +339,17 @@ describe("super-ship's trusted-evidence ceiling", () => {
   const manifest = loadSkillManifest(REPO, "super-ship");
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("repository has no catalog");
-  const defaultInstall = loadInstallConfig(REPO, catalog);
-  const hostAlone: Supply = {
-    ...defaultInstall.supply,
-    attached: new Set(),
-  };
+  const install = loadInstallConfig(REPO, catalog);
+  const allAttached: Supply = { ...install.supply, attached: new Set(install.attachable) };
+  const hostAlone: Supply = { ...install.supply, attached: new Set() };
 
   test("the autonomous form is permitted only behind runner-contract's fail-closed supply", () => {
     expect(manifest.requires).toContain("trusted-evidence");
     expect(table.status.get("trusted-evidence")).toBe("not-provided");
-    expect(defaultInstall.supply.suppliers.get("trusted-evidence")).toEqual(["runner-contract"]);
-    expect(defaultInstall.supply.attached.has("runner-contract")).toBe(true);
+    expect(install.supply.suppliers.get("trusted-evidence")).toEqual(["runner-contract"]);
+    expect(allAttached.attached.has("runner-contract")).toBe(true);
 
-    const withRunner = ceilingFor(manifest.requires, table, defaultInstall.supply);
+    const withRunner = ceilingFor(manifest.requires, table, allAttached);
     expect(withRunner.mode).toBe("autonomous");
     expect(withRunner.blocking).toEqual([]);
     expect(withRunner.detached).toEqual([]);
