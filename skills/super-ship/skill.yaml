@@ -157,6 +157,10 @@ hard_gates:
     permitted, and an explicit human approval bound to that charter's hash, with any expiry or
     single-use bound. An approval whose charter was amended afterwards no longer binds, and this run
     may never enlarge its own authority.
+  - The autonomous form, ship.prepare delegated under a grant, proceeds past workflow step 2 only on
+    trusted evidence, which is gate evidence the runner recorded into the run's evidence store outside
+    the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
+    evidence, and neither a grant nor a host permission makes them so.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
     dry run.
   - Every remote effect carries an idempotency key derived from the run id, the operation id, the
@@ -182,16 +186,19 @@ stop_conditions:
     lesson candidate is drafted, and the watch lane holds the pull request.
   - needs-input when receipts or the verdict are missing or bound to another revision, the mode was
     not named, or a sensitive action is required and no charter entry covers it.
+  - needs-input when the autonomous form has no trusted evidence. The message names trusted evidence
+    as unavailable and says the manual form remains open.
 
 failure_outcomes:
   - status: needs-input
     meaning: >-
       Receipts or the review verdict are missing or bound to another revision, the mode was not
-      named, or a sensitive action is required and no charter entry covers it. No remote effect is
-      performed.
+      named, or a sensitive action is required and no charter entry covers it. Also when the
+      autonomous form has no trusted evidence, in which case the message names trusted evidence as
+      unavailable and says the manual form remains open. No remote effect is performed.
     next_permitted_action: >-
       Re-invoke with the missing evidence, with the mode named, or with a charter entry approved for
-      the action.
+      the action. Without trusted evidence, invoke the manual form explicitly.
   - status: failed
     meaning: >-
       A candidate secret was found, a required release check failed, or the pull-request lookup
@@ -223,6 +230,9 @@ packaging:
         - >-
           kb-draft is not provided by the host; the knowledgebase adapter supplies it and refuses
           rather than falling back to a repository path when no knowledgebase is configured.
+        - >-
+          trusted evidence is not provided by the host: the worker can write every record the gate
+          reads. The autonomous form stops with needs-input there, and the manual form remains open.
     - adapter: codex
       mode: manual
       unsupported:
@@ -241,6 +251,9 @@ packaging:
         - >-
           kb-draft is not provided by the host; the knowledgebase adapter supplies it and refuses
           rather than falling back to a repository path when no knowledgebase is configured.
+        - >-
+          trusted evidence is not provided by the host: the worker can write every record the gate
+          reads. The autonomous form stops with needs-input there, and the manual form remains open.
 
 provenance:
   origin: donor

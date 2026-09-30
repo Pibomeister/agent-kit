@@ -62,6 +62,11 @@ Under a Firstmate binding, Firstmate is the delegated controller and the host va
 prints in the ship record. A refusal means stop and report `needs-decision` to Firstmate. The grant
 covers the binding's delivery action and nothing more; merge is never on it (ADR-0004).
 
+For the autonomous form, `ship.prepare` delegated under a grant, exit 0 is necessary and not
+sufficient. That form also needs trusted evidence: gate evidence the runner recorded into the run's
+evidence store, outside this worker's reach (`adapters/runner-contract/CONTRACT.md` §2). Gate records
+this worker wrote are worker-attested, and no grant turns them into trusted evidence.
+
 ## Inputs
 
 The head being shipped, named. Verification receipts that bind to that head
@@ -90,7 +95,10 @@ The project's own release checks, discovered rather than assumed.
    `node <this skill's directory>/../../bin/ak-gate.mjs check` (the bundle's `bin/`, two directories above this skill): it
    needs a current record from super-build, super-verify, super-review full (or a delta at this head)
    and super-review readiness. A `refused: gate <g> has no current evidence` line stops the run with
-   `needs-input` naming that phase; go back and run it. Once every precondition holds, record
+   `needs-input` naming that phase; go back and run it. Under a delegated `ship.prepare` grant the
+   check must be evidence-bearing: run on records the runner recorded for an opened run. A check on
+   worker-writable records satisfies the manual form only, so where the runner recorded none, stop
+   with `needs-input` naming trusted evidence as unavailable. Once every precondition holds, record
    `node <this skill's directory>/../../bin/ak-gate.mjs record --gate ship-preflight`.
    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
    branch-named v1 run when none was opened) and records default to the repository's git directory.
@@ -134,6 +142,11 @@ front, naming the action and exactly what is permitted, and an explicit human ap
 charter's hash, with any expiry or single-use bound. An approval whose charter was amended afterwards
 no longer binds, and this run may never enlarge its own authority (ruling
 `sensitive-actions-need-approved-charter-entry`).
+
+Gate: the autonomous form, `ship.prepare` delegated under a grant, proceeds past workflow step 2 only
+on trusted evidence: gate evidence the runner recorded into the run's evidence store outside the
+worker's reach. Gate records the worker itself wrote are worker-attested, not trusted evidence, and
+neither a grant nor a host permission makes them so.
 
 Gate: `dry-run` makes no remote call. Not a reduced one, not a single harmless one — none. A run that
 pushed a branch to show what the push would look like was not a dry run.
@@ -214,7 +227,8 @@ lane holds the pull request.
 
 `needs-input`: receipts or the review verdict are missing or bound to another revision, the mode was
 not named, or a sensitive action is required and no charter entry covers it. Returns what it would
-need and performs no remote effect.
+need and performs no remote effect. Also when the autonomous form has no trusted evidence: the
+message names trusted evidence as unavailable and says the manual form remains open.
 
 `failed`: a candidate secret was found, a required release check failed, or the pull-request lookup
 returned an outcome that is neither success nor an empty list. The reason is named and the run stays

@@ -42,7 +42,7 @@ The package computes no prices, selects nothing, and schedules nothing.
 | Capability | Unconfigured | What the refusal is |
 |---|---|---|
 | `runner-grants` | `fails-closed` | `delegated-grant` operations are unavailable and the entrypoint stops for explicit invocation (§2, "With no runner attached") |
-| `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach |
+| `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach (§2, "How a runner signals trusted evidence") |
 
 This table is read by `ak build` and `ak validate` (`loadAdapterSupplies` in
 `src/packaging/install.ts`). A row is a claim that an operation needing the capability refuses
@@ -111,6 +111,17 @@ read-only work may continue within budget. Control returns to the runner. No age
 their explicit form only. The public entrypoint **stops for explicit invocation** rather than
 reproducing a forbidden command's effect through a side door (`AGENTS.md`, "The invocation law";
 ruling `entrypoint-phase-operation-split`).
+
+### How a runner signals trusted evidence
+
+By recording the gate evidence itself, into the run's evidence store for the opened run, where the
+worker cannot write. That recording is the whole signal: evidence is trusted because of who wrote it
+and where, never because a record, a grant or a host permission says so. Gate records the worker
+wrote are worker-attested, and they satisfy the explicit form of an operation only.
+
+With this contract attached and no real runner behind it, no such evidence exists, and the autonomous
+form of an evidence-consuming operation stops with `status: needs-input` naming trusted evidence as
+unavailable. That stop is the `fails-closed` row in §1. The explicit form is unaffected.
 
 ---
 
