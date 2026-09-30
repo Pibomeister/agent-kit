@@ -73,6 +73,14 @@ function open(cwd: string, id: string): string {
   return run;
 }
 
+/** The branch pointer `open` persists: the readable branch name plus a hash of the full name. */
+const pointerPath = (cwd: string, branch: string): string =>
+  join(
+    defaultEvidenceDir(cwd),
+    "branches",
+    `${branch.replace(/[^A-Za-z0-9._:-]/g, "-")}-${createHash("sha256").update(branch).digest("hex").slice(0, 12)}.json`,
+  );
+
 describe("ak lifecycle check, standalone", () => {
   test("a run with every phase's record for the head passes", () => {
     const dir = repo();
@@ -340,12 +348,64 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "check").out[0]).toContain(`ok: run ${run} has current evidence`);
   });
 
+  test("two opened branches whose names differ only in a separator each resolve their own run", () => {
+    const dir = repo();
+    const runs: Record<string, string> = {};
+    for (const branch of ["feat/x", "feat-x"]) {
+      git(dir, "checkout", "-q", "-b", branch);
+      const opened = ak(dir, "open", "--ticket", ticket(dir, "collide"));
+      expect(opened.code).toBe(0);
+      runs[branch] = opened.out[0]!.replace(/^opened run /, "");
+      expect(JSON.parse(readFileSync(pointerPath(dir, branch), "utf8")).run_id).toBe(runs[branch]!);
+    }
+    expect(runs["feat/x"]).not.toBe(runs["feat-x"]);
+
+    git(dir, "checkout", "-q", "feat/x");
+    record(dir, ...PRE_SHIP_GATES, "ship-preflight");
+    expect(ak(dir, "check").out[0]).toContain(`ok: run ${runs["feat/x"]} has current evidence`);
+    const closed = ak(dir, "record", "--gate", "verify");
+    expect(closed.code).toBe(1);
+    expect(closed.err).toContain("run closed; open a new run");
+
+    git(dir, "checkout", "-q", "feat-x");
+    const other = ak(dir, "check");
+    expect(other.code).toBe(1);
+    expect(other.err).toContain(`no record for run ${runs["feat-x"]} `);
+    record(dir, ...PRE_SHIP_GATES);
+    expect(ak(dir, "check").out[0]).toContain(`ok: run ${runs["feat-x"]} has current evidence`);
+  });
+
+  test("an opened run merged without ship-preflight does not lend its records to the reused branch", () => {
+    const dir = repo();
+    const run = open(dir, "unclosed");
+    record(dir, "build-checks");
+    git(dir, "add", "unclosed.json");
+    git(dir, "commit", "-qam", "task one");
+    record(dir, ...PRE_SHIP_GATES);
+    expect(ak(dir, "check").code).toBe(0);
+
+    git(dir, "checkout", "-q", "main");
+    git(dir, "merge", "-q", "--no-ff", "-m", "merge feature", "feature");
+    git(dir, "checkout", "-q", "feature");
+    git(dir, "merge", "-q", "--ff-only", "main");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 10;\n");
+    record(dir, "verify", "review-delta", "review-readiness");
+
+    const r = ak(dir, "check");
+    expect(r.code).toBe(1);
+    expect(JSON.parse(readFileSync(pointerPath(dir, "feature"), "utf8")).run_id).toBe(run);
+    expect(r.err).toContain("refused: gate build-checks has no current evidence (every record is for a revision that is not an ancestor");
+    expect(r.err).toContain("since it left main at");
+    expect(r.err).toContain("refused: gate review-full has no current evidence");
+    expect(r.err).not.toContain("note:");
+  });
+
   test("commits and a mid-task merge from main keep the opened run id and its earlier records", () => {
     const dir = repo();
     const run = open(dir, "continuation");
-    record(dir, "build-checks", "verify", "review-full");
     git(dir, "add", "continuation.json");
     git(dir, "commit", "-qam", "first task commit");
+    record(dir, "build-checks", "verify", "review-full");
 
     git(dir, "checkout", "-q", "main");
     writeFileSync(join(dir, "main.txt"), "upstream\n");
@@ -360,7 +420,7 @@ describe("ak lifecycle check, standalone", () => {
     expect(checked.code).toBe(0);
     expect(checked.err).toBe("");
     expect(checked.out[0]).toContain(`ok: run ${run}`);
-    const pointer = JSON.parse(readFileSync(join(defaultEvidenceDir(dir), "branches", "feature.json"), "utf8"));
+    const pointer = JSON.parse(readFileSync(pointerPath(dir, "feature"), "utf8"));
     expect(pointer.run_id).toBe(run);
   });
 
