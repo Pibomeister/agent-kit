@@ -16,11 +16,13 @@ import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { gitRepo, scratch, testContext, type TestContext } from "./helpers.ts";
 
 const CLI = join(import.meta.dir, "..", "..", "src", "cli.ts");
+/** Each test starts the CLI as a subprocess, which under a loaded full run takes longer than the default 5s. */
+const TIMEOUT_MS = 60_000;
 
 /** `bun test` renders in UTC without setting TZ, so the subprocess is handed this process's zone: "next nightly" is a local date. */
 function hook(ctx: TestContext, cwd: string, stdin: string): { code: number; stdout: string } {
   const env = { ...ctx.env, TZ: Intl.DateTimeFormat().resolvedOptions().timeZone };
-  const result = run([process.execPath, CLI, "learn", "hook", "session-start"], { cwd, input: stdin, env, timeoutMs: 60_000 });
+  const result = run([process.execPath, CLI, "learn", "hook", "session-start"], { cwd, input: stdin, env, timeoutMs: TIMEOUT_MS });
   return { code: result.code, stdout: result.stdout };
 }
 
@@ -59,7 +61,7 @@ describe("ak learn hook session-start as a subprocess", () => {
     expect(block).toContain("- never hand-edit dist/ [ls-001]");
     expect(block).toContain("memory: reflected 3d ago");
     expect(out.stdout).toBe(`${block.trimEnd()}\n`);
-  });
+  }, TIMEOUT_MS);
 
   test("at a small cap the trimmed block is the same both ways", () => {
     const { ctx, root } = seeded({ AK_LEARN_MEMORY_TOKENS: "150" });
@@ -67,7 +69,7 @@ describe("ak learn hook session-start as a subprocess", () => {
     const block = sessionStartBlock(ctx);
     expect(block).not.toContain("shipped change number 39");
     expect(out.stdout).toBe(`${block.trimEnd()}\n`);
-  });
+  }, TIMEOUT_MS);
 
   test("the payload's cwd wins over the process cwd, as the host sends it", () => {
     const { ctx, root } = seeded();
@@ -75,12 +77,12 @@ describe("ak learn hook session-start as a subprocess", () => {
     const out = hook(ctx, scratch(), JSON.stringify({ cwd: join(root, "src") }));
     expect(out.stdout).toBe(`${sessionStartBlock({ ...ctx, cwd: join(root, "src") }).trimEnd()}\n`);
     expect(out.stdout).toContain("Working memory for this repo");
-  });
+  }, TIMEOUT_MS);
 
   test("a malformed payload falls back to the process cwd and still exits 0", () => {
     const { ctx, root } = seeded();
     const out = hook(ctx, root, "{not json");
     expect(out.code).toBe(0);
     expect(out.stdout).toBe(`${sessionStartBlock(ctx).trimEnd()}\n`);
-  });
+  }, TIMEOUT_MS);
 });
