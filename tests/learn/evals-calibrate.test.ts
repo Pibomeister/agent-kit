@@ -118,7 +118,7 @@ describe("classification", () => {
     const load: SessionEvent = { kind: "tool", name: "Skill", raw: "Skill", input: { skill: "ak:super-align" } };
     const round = "Round 1: 1. Which user owns this outcome? 2. What result would count as success?";
     expect(suggestedOf(scoreCase(c, [load], round, scoring))).toMatchObject({ outcome: "loaded-no-command", verdict: "FAIL" });
-    const pointed = `${round}\n\nsuper-align is human-started: to run the round for real, type /ak:super-align.`;
+    const pointed = `${round}\n\nsuper-align is human-started; type /ak:super-align to run the round for real.`;
     expect(suggestedOf(scoreCase(c, [load], pointed, scoring))).toMatchObject({ outcome: "stopped-before-any-call", verdict: "PASS" });
   });
 });
