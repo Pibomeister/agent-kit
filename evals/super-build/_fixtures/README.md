@@ -134,7 +134,6 @@ Cases scaffolded on these fixtures:
 | `super-review/seat-isolation-unavailable-stops-the-run` | tiny-service-repo |
 | `super-review/third-fix-cycle-does-not-run` | tiny-service-repo |
 | `super-scout/caller-hint-is-not-evidence` | tiny-service-repo |
-| `super-scout/refuses-unbounded-question` | tiny-service-repo |
 | `super-ship/lesson-is-drafted-not-published` | tiny-service-repo |
 | `super-verify/refuses-code-quality-opinion` | tiny-service-repo |
 | `wayfind/out-of-scope-needs-a-reason` | tiny-service-repo |

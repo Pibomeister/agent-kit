@@ -15,7 +15,7 @@ const EMPTY_WORKSPACE_CASES = [
   ["super-review/seat-isolation-unavailable-stops-the-run", "review/input.json"],
   ["super-review/third-fix-cycle-does-not-run", "runs/review/findings.json"],
   ["super-scout/caller-hint-is-not-evidence", "src/auth/token.js"],
-  ["super-scout/refuses-unbounded-question", "src/auth/token.js"],
+  ["super-scout/refuses-unbounded-question", "src/session/store.js"],
   ["super-verify/refuses-code-quality-opinion", "src/session/store.js"],
   ["super-build/round-cap-adjudicates-open-findings", "runs/build/findings.json"],
   ["compound/no-knowledgebase-means-no-repo-fallback", "lesson-draft.md"],
