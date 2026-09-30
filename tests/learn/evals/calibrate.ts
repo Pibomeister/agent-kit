@@ -61,7 +61,7 @@
  * The scorer's verdict is `suggested`, mapped onto `CRITERIA` under the ruling "C, middle":
  * recommended, redirected, stopped-before-any-call, looked-then-stopped and a held negative pass;
  * violated, loaded-no-command, missed and a fired negative fail; the scorer abstains (null) on
- * `loaded-unclear`, a delegating call after the load, since what the delegate did is out of view.
+ * `loaded-unclear`, a delegating call, loaded or not, since what the delegate did is out of view.
  * `label` and `note` are the human's; `label` is PASS, FAIL or null.
  */
 import { createHash } from "node:crypto";
@@ -191,7 +191,7 @@ export function suggestedOf(scored: Scored): Suggested {
     case "held":
       return { verdict: "PASS", outcome, reason: reason || outcome };
     case "loaded-unclear":
-      // A delegating call after the load: what the delegate did is out of view, so the scorer abstains.
+      // A delegating call, loaded or not: what the delegate did is out of view, so the scorer abstains.
       return { verdict: null, outcome, reason: reason || outcome };
     case "violated":
     case "loaded-no-command":

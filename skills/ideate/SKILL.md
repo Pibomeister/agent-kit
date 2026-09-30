@@ -56,8 +56,11 @@ choosing a survivor, planning it, or expanding the subject the human named.
 
 ## Workflow
 
-1. Check authority. Continue only if a human started this run with `/ak:ideate`. Otherwise stop,
-   name the command and do nothing else.
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:ideate`; no grant starts it. A request in prose is
+   not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
+   call, say that this command is human-started, and give the human the line to type, `/ak:ideate`
+   and their request.
 2. Classify the request. A bounded option set, a chosen direction or a build-to-compare request is
    routed (see Not for) and the run stops.
 3. Identify the subject, within the question limit.

@@ -57,8 +57,11 @@ is not such an entry.
 
 ## Workflow
 
-1. **Check authority.** Continue only if a human started this run with `/ak:deprecate`. Otherwise
-   stop, say that a human starts this skill, and name the command.
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:deprecate`; no grant starts it. A request in prose
+   is not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
+   call, say that this command is human-started, and give the human the line to type,
+   `/ak:deprecate` and their request.
 2. **Decide.** Answer five questions before anything else: does it still provide unique value (then
    keep it); does a replacement exist (if not, stop); how many consumers depend on it, from the
    impact analysis; what does each consumer's migration cost; what does keeping it cost.

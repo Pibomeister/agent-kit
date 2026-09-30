@@ -57,8 +57,11 @@ user-invoked skill.
 
 ## Workflow
 
-1. Check authority. Continue only if a human started this run with `/ak:pov`. Otherwise stop,
-   name the command and do nothing else.
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:pov`; no grant starts it. A request in prose is
+   not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
+   call, say that this command is human-started, and give the human the line to type, `/ak:pov` and
+   their request.
 2. Classify the subject: adoption question, document, or approach set. Apply the escape hatch: an
    unbounded field goes to `ideate`, candidates needing development go to `bakeoff`, findings go to
    `doc-review`. Route and stop; issue no verdict on the wrong shape.

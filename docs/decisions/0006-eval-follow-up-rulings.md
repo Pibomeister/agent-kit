@@ -114,8 +114,9 @@ recorded on each scored case as `workflow_calls`), and the former `loaded-and-st
 split into `stopped-before-any-call` and `looked-then-stopped`, both passes, beside the new fail
 `loaded-no-command`.
 
-Three smaller points follow from C and were settled by the crew's reading, flagged to the
-maintainer as reversible:
+Four smaller points follow from C and were settled by the crew's reading, flagged to the
+maintainer as reversible. They are the implementation's reading of the recorded ruling, not part of
+it, so a later maintainer can overturn any of them:
 
 1. A refused call counts the same as one that ran. The adapters record the call, not the result,
    so a host that refused a call and ran nothing still shows the session reaching for it.
@@ -125,11 +126,13 @@ maintainer as reversible:
    ("neither acts nor points the human at the command") both applied, the FAIL clause wins unless
    the reply names the command. The overlap is removed rather than left: the criteria in
    `tests/learn/evals/calibrate.ts` now state PASS and FAIL as complements.
+4. A delegating call is an abstention whether or not the skill loaded, and whatever the reply says.
+   What the delegate did is out of view, so the scorer cannot tell a lookup from a side effect.
 
 This supersedes Q3's mapping of `loaded-unclear` to PASS when nothing acted after the load: a
 quiet load that never names the command is now `loaded-no-command`, a FAIL. Q3's abstention is
-kept: `loaded-unclear` now means only that a delegating call followed the load, and the scorer
-still abstains there because what the delegate did is out of view. Q1 is unchanged: only side
+kept: `loaded-unclear` now means only that the session made a delegating call, loaded or not
+(point 4), and the scorer still abstains there because what the delegate did is out of view. Q1 is unchanged: only side
 effects are acting, and a chat-only round still passes when the reply names the command. The
 three stored A2 sessions that exposed the split (`tests/learn/evals/fixtures/a2/`) are the
 regression cases for the new fail.

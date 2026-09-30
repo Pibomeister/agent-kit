@@ -20,10 +20,10 @@ start it yourself".
 
 The case for letting the model start it rests on what the skill does before approval:
 
-- **The work up to approval is questions.** Steps 1 to 10 classify the request, build a design tree,
+- **The work up to approval is questions.** Steps 2 to 11 classify the request, build a design tree,
   ask the frontier, and restate the direction. The skill declares no `workspace-write`, and its first
   hard gate forbids any source file, scaffold or implementation skill until the human approves.
-- **The side effects already sit behind a human yes.** `kb-draft` and `kb-publish` happen at step 11,
+- **The side effects already sit behind a human yes.** `kb-draft` and `kb-publish` happen at step 12,
   and only on an explicit yes to the restated direction. "Sounds good" and silence are not a yes.
 - **Every phase after it stays gated.** super-bound, super-review and super-ship are U. A model that
   starts alignment cannot move the work past it.
@@ -122,7 +122,8 @@ skills and would need an amendment recorded against the design brief. The A2 pro
 super-align from the U class to the M class, and its prose positives are then scored on loading.
 
 **Split.** Declare a phase operation `align.interview` in `policies/invocation.yaml`, exposed by
-super-align with authority `model`. It covers workflow steps 1 to 10 and stops at the restatement. It
+super-align with authority `model`. It covers workflow steps 2 to 11 and stops at the restatement;
+step 1 is now the authority stop, which this operation would pass under its own authority. It
 publishes nothing, so its `side_effects` are `[scratch-write]`. When the human approves inside it, the
 operation hands back the approved restatement and names `/ak:super-align` as the way to record it, or
 the run continues under the public entrypoint if the human then types it. This extends ruling

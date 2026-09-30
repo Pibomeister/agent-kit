@@ -56,8 +56,11 @@ it and had an edit round.
 
 ## Workflow
 
-1. **Check authority.** Continue only if a human started this run with `/ak:strategy`. Otherwise
-   stop, say that a human starts this skill, and name the command.
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:strategy`; no grant starts it. A request in prose
+   is not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
+   call, say that this command is human-started, and give the human the line to type, `/ak:strategy`
+   and their request.
 2. **Ground, then show it.** Build a model of the product from the inputs and show it in three to
    five lines, each naming its source: what the product seems to be, who it seems to serve, where
    attention has gone. Invite correction. A repository with nothing substantive is a normal path:

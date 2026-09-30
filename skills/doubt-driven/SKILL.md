@@ -59,8 +59,11 @@ human authorizing that exact invocation; one authorization does not cover the ne
 
 ## Workflow
 
-1. Check authority. Continue only if a human started this run with `/ak:doubt-driven`.
-   Otherwise stop, name the command and do nothing else.
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:doubt-driven`; no grant starts it. A request in
+   prose is not a start, even when it names this skill or the command. Otherwise, stop here: make no
+   tool call, say that this command is human-started, and give the human the line to type,
+   `/ak:doubt-driven` and their request.
 2. Apply the non-triviality test (see When to use). A mechanical request or a finished-work verdict
    is routed (see Not for) and the run stops. A human's confidence does not make a non-trivial
    claim trivial; at least one cycle runs.

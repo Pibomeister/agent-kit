@@ -53,8 +53,11 @@ only writes are its own configuration page and its reports, both in the knowledg
 
 ## Workflow
 
-1. **Check authority.** Continue only if a human started this run with `/ak:product-pulse`.
-   Otherwise stop, say that a human starts this skill, and name the command.
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:product-pulse`; no grant starts it. A request in
+   prose is not a start, even when it names this skill or the command. Otherwise, stop here: make no
+   tool call, say that this command is human-started, and give the human the line to type,
+   `/ak:product-pulse` and their request.
 2. **Resolve the window.** Apply a 15-minute trailing buffer to its upper bound to absorb ingestion
    lag: a `24h` window reads `[now - 24h - 15m, now - 15m]`. The prior window is the same length,
    immediately before.

@@ -50,8 +50,11 @@ is named for the human rather than begun here.
 
 ## Workflow
 
-1. **Check authority.** Continue only if a human started this run with `/ak:improve-architecture`.
-   Otherwise stop, say that a human starts this skill, and name the command.
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:improve-architecture`; no grant starts it. A
+   request in prose is not a start, even when it names this skill or the command. Otherwise, stop
+   here: make no tool call, say that this command is human-started, and give the human the line to
+   type, `/ak:improve-architecture` and their request.
 2. **Scope before scanning.** Take the human's direction if there is one. Otherwise read a good
    stretch of the commit history and let the areas that keep changing pull attention first; widen
    the net only if the changes are scattered. Read the existing decisions and vocabulary for that

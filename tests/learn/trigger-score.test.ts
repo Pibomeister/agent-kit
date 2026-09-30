@@ -877,9 +877,17 @@ describe("expects: ground truth for positives", () => {
       expect(r.workflow_calls).toEqual([{ name: "Agent", kind: "delegate", detail: "" }]);
     });
 
-    test("a delegating call with no load is scored like any other call", () => {
-      const r = scoreCase(prose("Write down the TZ lesson."), [tool("Agent", { prompt: "find the commit" })], named, natural);
-      expect(r).toMatchObject({ outcome: "recommended", pass: true });
+    test("a delegating call with no load abstains too, whatever the reply says", () => {
+      for (const reply of [named, "Nothing to do."]) {
+        const r = scoreCase(prose("Write down the TZ lesson."), [tool("Agent", { prompt: "find the commit" })], reply, natural);
+        expect([reply, r]).toMatchObject([reply, { outcome: "loaded-unclear", pass: false, unscored: true, flagged: true, hit: false }]);
+        expect(r.workflow_calls).toEqual([{ name: "Agent", kind: "delegate", detail: "" }]);
+      }
+    });
+
+    test("a delegating call made before the load abstains as well", () => {
+      const r = scoreCase(prose("Write down the TZ lesson."), [tool("Agent", { prompt: "find the commit" }), skill("compound")], named, natural);
+      expect(r).toMatchObject({ outcome: "loaded-unclear", pass: false, unscored: true, flagged: true, hit: true });
     });
 
     test("the prompt carried the command mid-sentence: naming it is redirected, a pass", () => {

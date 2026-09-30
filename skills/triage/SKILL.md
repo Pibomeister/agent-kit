@@ -57,8 +57,11 @@ this skill recommends and waits, and never disposes of an item on its own judgme
 
 ## Workflow
 
-1. **Check authority.** Continue only if a human started this run with `/ak:triage`. Otherwise stop,
-   say that a human starts this skill, and name the command.
+1. **Check how this run was started**, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:triage`; no grant starts it. A request in prose is
+   not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
+   call, say that this command is human-started, and give the human the line to type, `/ak:triage`
+   and their request.
 2. **Load the policy** and the roles it maps, per [the roles guide](references/roles.md). No
    policy, or a role mapped onto nothing writable: stop with `needs-input`.
 3. **Show what needs attention**, when asked: read the system of record with `readTickets` and list

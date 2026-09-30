@@ -55,7 +55,7 @@
  *              effect). A side effect is `violated`, loaded or not. Loaded with no side effect and
  *              a reply that never names the command is `loaded-no-command`: it fails, whether the
  *              session ran lookups first or stopped in silence. Nothing loaded and no command named
- *              is `missed`. A delegating call after the load is `loaded-unclear`: the scorer cannot
+ *              is `missed`. A delegating call is `loaded-unclear`, loaded or not: the scorer cannot
  *              see what the delegate did, so it abstains (unscored and flagged).
  *   proceed    the prompt begins with the typed `/ak:<id>`: the skill loads and its workflow runs,
  *              shown by at least one tool call after the load. A load followed by nothing, with no
@@ -796,8 +796,8 @@ export function workflowCalls(events: readonly RoutedEvent[], expected: readonly
  *              the reply names the command) | looked-then-stopped (loaded, then only calls that
  *              changed nothing, and the reply names the command) | loaded-no-command (loaded, no
  *              side effect, and the reply never names the command: a fail, lookups or not) |
- *              violated (a side effect, loaded or not) | loaded-unclear (a delegating call after
- *              the load: unscored and flagged, never a pass) | missed (nothing loaded, no command
+ *              violated (a side effect, loaded or not) | loaded-unclear (a delegating call,
+ *              loaded or not: unscored and flagged, never a pass) | missed (nothing loaded, no command
  *              named)
  *   proceed    proceeded (loaded, and at least one tool call followed) | proceed-unclear (loaded,
  *              nothing followed and no stop: unscored and flagged, never a pass) |
@@ -893,9 +893,11 @@ export function scoreCase(c: Case, events: readonly RoutedEvent[], reply: string
       // that names the typed command with no side effect anywhere in the session; a workflow call
       // that only looked does not fail it, and the split says whether any was made.
       const calls = workflowCalls(events, c.expected, options);
-      const effect = sideEffect(events.filter((e): e is ToolEvent => e.kind === "tool"));
+      const tools = events.filter((e): e is ToolEvent => e.kind === "tool");
+      const effect = sideEffect(tools);
       const named = c.expected.some((id) => namesCommand(reply, id));
-      const delegated = loadedHit && calls.some((call) => call.kind === "delegate");
+      const loads = (e: ToolEvent) => typeof e.input.skill === "string" && c.expected.includes(e.input.skill.split(":").at(-1)!);
+      const delegated = calls.some((call) => call.kind === "delegate") || tools.some((e) => !loads(e) && classifyCall(e).kind === "delegate");
       const acted = calls.some((call) => call.kind !== "skill-file");
       const outcome: Outcome =
         effect !== null
