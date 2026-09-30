@@ -11,7 +11,6 @@ import {
   type Supply,
 } from "../src/packaging/capability-table.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
-import { HOST_IDS } from "../src/packaging/hosts.ts";
 import { loadInstallConfig } from "../src/packaging/install.ts";
 import { loadSkillManifest } from "../src/packaging/manifest.ts";
 import { hasBlockingSkips } from "../src/validation/types.ts";
@@ -344,25 +343,23 @@ describe("super-ship's trusted-evidence ceiling", () => {
     attached: new Set(),
   };
 
-  for (const host of HOST_IDS) {
-    test(`${host} permits the autonomous form only behind runner-contract's fail-closed supply`, () => {
-      expect(manifest.requires).toContain("trusted-evidence");
-      expect(table.status.get("trusted-evidence")).toBe("not-provided");
-      expect(defaultInstall.supply.suppliers.get("trusted-evidence")).toEqual(["runner-contract"]);
-      expect(defaultInstall.supply.attached.has("runner-contract")).toBe(true);
+  test("the autonomous form is permitted only behind runner-contract's fail-closed supply", () => {
+    expect(manifest.requires).toContain("trusted-evidence");
+    expect(table.status.get("trusted-evidence")).toBe("not-provided");
+    expect(defaultInstall.supply.suppliers.get("trusted-evidence")).toEqual(["runner-contract"]);
+    expect(defaultInstall.supply.attached.has("runner-contract")).toBe(true);
 
-      const withRunner = ceilingFor(manifest.requires, table, defaultInstall.supply);
-      expect(withRunner.mode).toBe("autonomous");
-      expect(withRunner.blocking).toEqual([]);
-      expect(withRunner.detached).toEqual([]);
+    const withRunner = ceilingFor(manifest.requires, table, defaultInstall.supply);
+    expect(withRunner.mode).toBe("autonomous");
+    expect(withRunner.blocking).toEqual([]);
+    expect(withRunner.detached).toEqual([]);
 
-      const withoutRunner = ceilingFor(manifest.requires, table, hostAlone);
-      expect(withoutRunner.mode).toBe("guided");
-      expect(withoutRunner.blocking).toEqual([]);
-      expect(withoutRunner.detached).toContainEqual({
-        capability: "trusted-evidence",
-        adapters: ["runner-contract"],
-      });
+    const withoutRunner = ceilingFor(manifest.requires, table, hostAlone);
+    expect(withoutRunner.mode).toBe("guided");
+    expect(withoutRunner.blocking).toEqual([]);
+    expect(withoutRunner.detached).toContainEqual({
+      capability: "trusted-evidence",
+      adapters: ["runner-contract"],
     });
-  }
+  });
 });
