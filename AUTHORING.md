@@ -1481,7 +1481,13 @@ one budget across the groups. The host checks it as runs start, so runs already 
 past the cap. The host is run with `--keep-temp`, which its help describes as "Preserve scaffold
 dirs for debugging"; each trace the host reports is then copied beside the result when it is
 still there, and indexed in the receipt, and the scaffold the host kept for that run is removed,
-so the copy is the only transcript left. Whether a trace survives the invocation's return on the
+so the copy is the only transcript left. The host also gets a temporary directory of its own as
+`TMPDIR`, which the script removes on every exit path, so an invocation that is interrupted or
+crashes before it writes a result leaves no scaffold behind wherever the host creates scaffolds
+under `os.tmpdir()`. Host 2.1.285 does that on every platform except macOS, where it creates them
+under `/tmp` whatever `TMPDIR` says; there a scaffold the host never reported stays as
+`/tmp/e-*` until it is removed by hand, because the script deletes only paths the host named and
+never lists `/tmp`. Whether a trace survives the invocation's return on the
 real host is unverified until the next paid run. The 2026-09-28 rerun ran without the flag, and
 its report has no transcripts. The graders that count toward a score are read from the runs, whose
 `withOnly` boolean is the mark the receipt reads; a case-level definition carries the same mark

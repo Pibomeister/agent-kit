@@ -29,8 +29,11 @@
 # and the receipt beside it as <result>.receipt.json. The host runs with --keep-temp, which its
 # help describes as "Preserve scaffold dirs for debugging"; each trace the host reports is then
 # copied under <result>.traces/<case dir>/<arm>-<n>.jsonl when it is still there, and the scaffold
-# the host kept for that run is removed. Whether a trace survives the invocation's return on the
-# real host is unverified until the next paid run.
+# the host kept for that run is removed. The host is given a temporary directory of its own as
+# TMPDIR, removed on every exit path. Host 2.1.285 creates its scaffolds under os.tmpdir() except
+# on macOS, where it uses /tmp whatever TMPDIR says; there a scaffold the host never reported (an
+# interrupted or crashed invocation) stays under /tmp/e-*. Whether a trace survives the
+# invocation's return on the real host is unverified until the next paid run.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -140,6 +143,7 @@ fi
 aside="$(mktemp -d "${TMPDIR:-/tmp}/ak-docker-aside.XXXXXX")"
 moved=()
 git_shim=""
+host_tmp=""
 # shellcheck disable=SC2329 # invoked by the EXIT trap
 restore() {
   local name
@@ -152,12 +156,17 @@ restore() {
   done
   rmdir "$aside" 2>/dev/null || true
   rm -rf "$git_shim"
+  if [[ -n "$host_tmp" ]]; then
+    chmod -R u+rwx "$host_tmp" 2>/dev/null || true
+    rm -rf "$host_tmp" || echo "eval-local: could not remove $host_tmp" >&2
+  fi
 }
 trap restore EXIT
 trap 'exit 130' INT TERM
 git_shim="$(mktemp -d "${TMPDIR:-/tmp}/ak-git-shim.XXXXXX")"
 ln -s "$host_git" "$git_shim/git"
 host_path="$git_shim:$PATH"
+host_tmp="$(mktemp -d "${TMPDIR:-/tmp}/ak-eval-host.XXXXXX")"
 
 pass_env=(HOME USER LOGNAME PATH SHELL TERM LANG TMPDIR
   HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy NODE_EXTRA_CA_CERTS SSL_CERT_FILE
@@ -173,13 +182,16 @@ if [[ "$isolation" == env-allowlist ]]; then
     if [[ "$name" == PATH ]]; then
       runner+=("PATH=$host_path")
       passed+=(PATH)
+    elif [[ "$name" == TMPDIR ]]; then
+      runner+=("TMPDIR=$host_tmp")
+      passed+=(TMPDIR)
     elif [[ -n "${!name+set}" ]]; then
       runner+=("$name=${!name}")
       passed+=("$name")
     fi
   done
 else
-  runner=(env "PATH=$host_path")
+  runner=(env "PATH=$host_path" "TMPDIR=$host_tmp")
 fi
 
 for name in cli-plugins bin; do

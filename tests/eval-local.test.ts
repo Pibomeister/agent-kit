@@ -24,7 +24,9 @@ const SCRIPT = join(REPO, "scripts", "eval-local.sh");
 // grader was skipped for budget), FAKE_FAILED (the named arm's cheap grader failed) and
 // FAKE_WITH_ONLY (case names whose graders are all with-only, so nothing counts toward the score).
 // Each run's sandbox lives under FAKE_DIR and is removed before the host exits unless --keep-temp
-// was passed, as the real host does; a kept sandbox is named e-* and sealed read-only. Its results carry the shape recorded in
+// was passed, as the real host does; a kept sandbox is named e-* and sealed read-only. Sandboxes
+// are made under os.tmpdir(), as the real host does off macOS, and that directory is recorded in
+// FAKE_DIR/tmpdir.txt. FAKE_CRASH ends the invocation after its sandboxes exist and before any result. Its results carry the shape recorded in
 // research/evals/2026-09-28-a1-rerun/budget-skipped-run.json: case-level grader definitions
 // without withOnly, run graders with scored and withOnly, and a budget-skipped grader as a
 // failed verdict explained "skipped: cost ceiling" on a run marked skippedPaidGraders.
@@ -32,12 +34,14 @@ const SCRIPT = join(REPO, "scripts", "eval-local.sh");
 // that PATH, with the entries of PATH's first directory, in FAKE_DIR/git.json.
 const FAKE_HOST = `#!/usr/bin/env bun
 import { appendFileSync, chmodSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 const argv = process.argv.slice(2);
 if (argv[0] === "--version") { console.log("0.0.0 (fake host)"); process.exit(0); }
 if (argv.includes("--help")) { console.log("--case <name>  --tag <tag>  --runs <n>  --max-cost-usd <usd>  --keep-temp"); process.exit(0); }
 appendFileSync(join(process.env.FAKE_DIR!, "argv.jsonl"), JSON.stringify(argv) + "\\n");
 writeFileSync(join(process.env.FAKE_DIR!, "path.txt"), process.env.PATH ?? "");
+writeFileSync(join(process.env.FAKE_DIR!, "tmpdir.txt"), tmpdir());
 const git = Bun.which("git");
 writeFileSync(join(process.env.FAKE_DIR!, "git.json"), JSON.stringify({
   git, real: git ? realpathSync(git) : null, first: readdirSync((process.env.PATH ?? "").split(":")[0]!),
@@ -58,7 +62,7 @@ const found = walk(evals).map((f) => ({ name: /^name: (.*)$/m.exec(readFileSync(
 const withOnly = (process.env.FAKE_WITH_ONLY ?? "").split(",").filter(Boolean);
 const sandboxes: string[] = [];
 const run = (name: string, arm: string, n: number, only: boolean) => {
-  const sandbox = join(process.env.FAKE_DIR!, \`e-\${name}-\${arm}-\${n}\`);
+  const sandbox = join(tmpdir(), \`e-\${name}-\${arm}-\${n}\`);
   const tracePath = join(sandbox, "out", "trace.jsonl");
   if (process.env.FAKE_TRACE === "1") {
     mkdirSync(join(sandbox, "out"), { recursive: true });
@@ -86,13 +90,13 @@ const cases = found
       with: Array.from({ length: runs }, (_, i) => run(c.name, "with", i + 1, only)),
       without: Array.from({ length: runs }, (_, i) => run(c.name, "without", i + 1, only)),
     }, aggregates: { score: 1, scoreWithout: 1, delta: 0 } }));
+const seal = () => { for (const sandbox of sandboxes) for (const sealed of [join(sandbox, "out", "trace.jsonl"), join(sandbox, "out"), sandbox]) chmodSync(sealed, 0o555); };
+if (process.env.FAKE_CRASH === "1") { seal(); process.exit(70); }
 const costs = (process.env.FAKE_COST ?? "0.5").split(",");
 const cost = cases.length === 0 ? 0 : Number(costs[Math.min(call, costs.length - 1)]);
 writeFileSync(out, JSON.stringify({ cases, costUsd: cost, durationSeconds: 1, partial: false, aggregates: { overallScore: cases.length ? 1 : null, meanDelta: 0 } }));
-for (const sandbox of sandboxes) {
-  if (!argv.includes("--keep-temp")) rmSync(sandbox, { recursive: true, force: true });
-  else for (const sealed of [join(sandbox, "out", "trace.jsonl"), join(sandbox, "out"), sandbox]) chmodSync(sealed, 0o555);
-}
+if (argv.includes("--keep-temp")) seal();
+else for (const sandbox of sandboxes) rmSync(sandbox, { recursive: true, force: true });
 if (cases.length === 0) { console.error("No eval cases found matching --case " + JSON.stringify(wanted)); process.exit(1); }
 process.exit(0);
 `;
@@ -142,7 +146,7 @@ function run(args: string[], env: Record<string, string> = {}) {
       TMPDIR: dir,
       AK_EVAL_BUNDLE: bundle,
       AK_EVAL_JSON: json,
-      AK_EVAL_PASS_ENV: "FAKE_DIR FAKE_DROP FAKE_COST FAKE_TRACE FAKE_UNGRADED FAKE_FAILED FAKE_WITH_ONLY",
+      AK_EVAL_PASS_ENV: "FAKE_DIR FAKE_DROP FAKE_COST FAKE_TRACE FAKE_CRASH FAKE_UNGRADED FAKE_FAILED FAKE_WITH_ONLY",
       FAKE_DIR: dir,
       ...env,
     },
@@ -151,9 +155,11 @@ function run(args: string[], env: Record<string, string> = {}) {
   const argvFile = join(dir, "argv.jsonl");
   const calls: string[][] = existsSync(argvFile) ? readFileSync(argvFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)) : [];
   const pathFile = join(dir, "path.txt");
+  const tmpFile = join(dir, "tmpdir.txt");
+  const hostTmp = existsSync(tmpFile) ? readFileSync(tmpFile, "utf8") : null;
   const hostPath = existsSync(pathFile) ? readFileSync(pathFile, "utf8").split(":") : [];
   return { status: r.status, stdout: r.stdout, stderr: r.stderr, result: read(json), receipt: read(json.replace(/\.json$/, ".receipt.json")), calls,
-           hostPath, hostGit: read(join(dir, "git.json")), developerGit };
+           dir, hostTmp, hostPath, hostGit: read(join(dir, "git.json")), developerGit };
 }
 
 const names = (result: { cases: Array<{ name: string }> }) => result.cases.map((c) => c.name).sort();
@@ -241,6 +247,18 @@ describe("eval-local: evidence retention and grading state", () => {
       expect(existsSync(trace.copy)).toBe(true);
       expect(readFileSync(trace.copy, "utf8")).toContain('"type":"assistant"');
     }
+  });
+
+  test("a host that dies before writing a result leaves no sandbox behind", () => {
+    const bystander = join(tmpdir(), `e-bystander-${process.pid}`);
+    mkdirSync(bystander);
+    made.push(bystander);
+    const r = run(["--case", "case-three"], { FAKE_TRACE: "1", FAKE_CRASH: "1" });
+    expect(r.status).toBe(70);
+    expect(r.result).toBeNull();
+    expect(dirname(r.hostTmp!)).toBe(r.dir);
+    expect(existsSync(r.hostTmp!)).toBe(false);
+    expect(existsSync(bystander)).toBe(true);
   });
 
   test("a budget-skipped grader is ungraded rather than a failed verdict", () => {
