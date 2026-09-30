@@ -69,7 +69,7 @@ includes:
       time; installing this profile unlocks nothing on its own.
 
   capabilities:
-    required: [runner-grants, event-delivery, artifact-write, independent-context]
+    required: [runner-grants, trusted-evidence, event-delivery, artifact-write, independent-context]
     commonly_added: [vcs-remote, tracker-access, kb-write, human-channel]
     note: >-
       `runner-grants` is not optional. Without a host that validates a grant against an immutable
@@ -79,6 +79,7 @@ includes:
 prerequisites:
   - an immutable charter, identified by a hash, outside worker-writable scope
   - a runner that validates grants and enforces seat independence
+  - for the autonomous ship.prepare, a runner that records gate evidence outside the worker's reach
   - every sensitive action the run needs, approved in advance as a charter entry
   - budgets supplied by the runner; this package enforces only the caps it was handed
 

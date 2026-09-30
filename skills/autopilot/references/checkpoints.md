@@ -16,7 +16,7 @@ the other and adds nothing to either.
 | Full review | `review.full` | `finding-adjudication` |
 | Fix loop | `review.delta` | runs inside the active review run; `delta-closure` when the charter lists it |
 | Readiness | `review.readiness` | `finding-adjudication` |
-| Ship | `ship.prepare` | `ship-pr`. Merge and deploy are never on it |
+| Ship | `ship.prepare` | `ship-pr`. Merge and deploy are never on it. The autonomous form also needs a runner that records gate evidence outside the worker's reach |
 | Pull-request feedback | `feedback.assess` | `reply-pr-comment`, plus `resolve-pr-thread` when resolving |
 | Pull-request watch | `pr.watch` | `ship-pr` |
 | CI repair | `ci.repair` | `ci-repair`, within its attempt cap |
