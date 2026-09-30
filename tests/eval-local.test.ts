@@ -24,14 +24,14 @@ const SCRIPT = join(REPO, "scripts", "eval-local.sh");
 // grader was skipped for budget), FAKE_FAILED (the named arm's cheap grader failed) and
 // FAKE_WITH_ONLY (case names whose graders are all with-only, so nothing counts toward the score).
 // Each run's sandbox lives under FAKE_DIR and is removed before the host exits unless --keep-temp
-// was passed, as the real host does. Its results carry the shape recorded in
+// was passed, as the real host does; a kept sandbox is named e-* and sealed read-only. Its results carry the shape recorded in
 // research/evals/2026-09-28-a1-rerun/budget-skipped-run.json: case-level grader definitions
 // without withOnly, run graders with scored and withOnly, and a budget-skipped grader as a
 // failed verdict explained "skipped: cost ceiling" on a run marked skippedPaidGraders.
 // It records the PATH it was started with in FAKE_DIR/path.txt, and the git it resolves through
 // that PATH, with the entries of PATH's first directory, in FAKE_DIR/git.json.
 const FAKE_HOST = `#!/usr/bin/env bun
-import { appendFileSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 const argv = process.argv.slice(2);
 if (argv[0] === "--version") { console.log("0.0.0 (fake host)"); process.exit(0); }
@@ -58,7 +58,7 @@ const found = walk(evals).map((f) => ({ name: /^name: (.*)$/m.exec(readFileSync(
 const withOnly = (process.env.FAKE_WITH_ONLY ?? "").split(",").filter(Boolean);
 const sandboxes: string[] = [];
 const run = (name: string, arm: string, n: number, only: boolean) => {
-  const sandbox = join(process.env.FAKE_DIR!, \`sandbox-\${name}-\${arm}-\${n}\`);
+  const sandbox = join(process.env.FAKE_DIR!, \`e-\${name}-\${arm}-\${n}\`);
   const tracePath = join(sandbox, "out", "trace.jsonl");
   if (process.env.FAKE_TRACE === "1") {
     mkdirSync(join(sandbox, "out"), { recursive: true });
@@ -89,7 +89,10 @@ const cases = found
 const costs = (process.env.FAKE_COST ?? "0.5").split(",");
 const cost = cases.length === 0 ? 0 : Number(costs[Math.min(call, costs.length - 1)]);
 writeFileSync(out, JSON.stringify({ cases, costUsd: cost, durationSeconds: 1, partial: false, aggregates: { overallScore: cases.length ? 1 : null, meanDelta: 0 } }));
-if (!argv.includes("--keep-temp")) for (const sandbox of sandboxes) rmSync(sandbox, { recursive: true, force: true });
+for (const sandbox of sandboxes) {
+  if (!argv.includes("--keep-temp")) rmSync(sandbox, { recursive: true, force: true });
+  else for (const sealed of [join(sandbox, "out", "trace.jsonl"), join(sandbox, "out"), sandbox]) chmodSync(sealed, 0o555);
+}
 if (cases.length === 0) { console.error("No eval cases found matching --case " + JSON.stringify(wanted)); process.exit(1); }
 process.exit(0);
 `;
@@ -227,13 +230,13 @@ describe("eval-local: the receipt checks what each group was meant to run", () =
 });
 
 describe("eval-local: evidence retention and grading state", () => {
-  test("the host keeps each run's sandbox and its trace is copied beside the receipt", () => {
+  test("each kept trace is copied beside the receipt and its sealed sandbox is removed", () => {
     const r = run(["--case", "case-three"], { FAKE_TRACE: "1" });
     expect(r.status).toBe(0);
     for (const call of r.calls) expect(call).toContain("--keep-temp");
     expect(r.receipt.traces).toHaveLength(2);
     for (const trace of r.receipt.traces) {
-      expect(existsSync(trace.hostPath)).toBe(true);
+      expect(existsSync(join(trace.hostPath, "..", ".."))).toBe(false);
       expect(trace.copy).not.toBeNull();
       expect(existsSync(trace.copy)).toBe(true);
       expect(readFileSync(trace.copy, "utf8")).toContain('"type":"assistant"');

@@ -1480,7 +1480,8 @@ host keeps only the last `--case` it is given, so neither flag is passed to it. 
 one budget across the groups. The host checks it as runs start, so runs already in flight can end
 past the cap. The host is run with `--keep-temp`, which its help describes as "Preserve scaffold
 dirs for debugging"; each trace the host reports is then copied beside the result when it is
-still there, and indexed in the receipt. Whether a trace survives the invocation's return on the
+still there, and indexed in the receipt, and the scaffold the host kept for that run is removed,
+so the copy is the only transcript left. Whether a trace survives the invocation's return on the
 real host is unverified until the next paid run. The 2026-09-28 rerun ran without the flag, and
 its report has no transcripts. The graders that count toward a score are read from the runs, whose
 `withOnly` boolean is the mark the receipt reads; a case-level definition carries the same mark

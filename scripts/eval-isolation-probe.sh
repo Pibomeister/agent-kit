@@ -81,8 +81,8 @@ status=$?
 set -e
 [[ -s "$json" ]] || { echo "eval-isolation-probe: no result at $json" >&2; exit "$status"; }
 
-# The run record holds no transcript, only a trace path, and the host deletes traces unless
-# --keep-temp is passed; so the probe keeps them, reads each one, then removes the scaffolds.
+# The run record holds no transcript, only a trace path. eval-local.sh copies each trace beside the
+# result and removes the scaffold the host kept, so the probe reads the copies its receipt lists.
 markers='Rust Token Killer|oh-my-claudecode|claude-mem|project-memory-context|lavish|no-mistakes|firstmate|OMC'
 verdicts=()
 while IFS=$'\t' read -r arm trace; do
@@ -106,13 +106,7 @@ while IFS=$'\t' read -r arm trace; do
                                   skills, agents, memoryPaths: .memory_paths} else null end)
     }' "$trace")")
   cp "$trace" "$work/trace-$arm.jsonl"
-  # The host seals a kept scaffold read-only; unseal it before removing it.
-  scaffold="$(dirname "$(dirname "$trace")")"
-  if [[ "$(basename "$scaffold")" == e-* ]]; then
-    chmod -R u+rwx "$scaffold" 2>/dev/null || true
-    rm -rf "$scaffold" || echo "eval-isolation-probe: could not remove $scaffold" >&2
-  fi
-done < <(jq -r '.cases[].arms | to_entries[] | .key as $arm | .value[] | [$arm, .tracePath] | @tsv' "$json")
+done < <(jq -r '.traces[] | [.arm, (.copy // .hostPath)] | @tsv' "${json%.json}.receipt.json")
 printf '%s\n' "${verdicts[@]}" | jq -s --arg mode "$mode" '{mode: $mode, arms: .}' | tee "$work/verdict.json"
 echo "eval-isolation-probe: result $json, receipt ${json%.json}.receipt.json, verdict $work/verdict.json, traces $work/trace-*.jsonl"
 exit "$status"

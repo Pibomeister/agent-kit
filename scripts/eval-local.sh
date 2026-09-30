@@ -28,8 +28,9 @@
 # under the bundle, the JSON result to $AK_EVAL_JSON (default: a temp file whose path is printed),
 # and the receipt beside it as <result>.receipt.json. The host runs with --keep-temp, which its
 # help describes as "Preserve scaffold dirs for debugging"; each trace the host reports is then
-# copied under <result>.traces/<case dir>/<arm>-<n>.jsonl when it is still there. Whether a trace
-# survives the invocation's return on the real host is unverified until the next paid run.
+# copied under <result>.traces/<case dir>/<arm>-<n>.jsonl when it is still there, and the scaffold
+# the host kept for that run is removed. Whether a trace survives the invocation's return on the
+# real host is unverified until the next paid run.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -313,6 +314,11 @@ for i in "${!groups[@]}"; do
         to="$traces_dir/$dir/$arm-$n.jsonl"
         mkdir -p "$(dirname "$to")"
         cp "$from" "$to"
+      fi
+      kept="$(dirname "$(dirname "$from")")"
+      if [[ "$(basename "$kept")" == e-* && -d "$kept" ]]; then
+        chmod -R u+rwx "$kept" 2>/dev/null || true
+        rm -rf "$kept" || echo "eval-local: could not remove $kept" >&2
       fi
       jq -nc --arg dir "$dir" --arg name "$name" --arg arm "$arm" --argjson run "$n" --arg from "$from" --arg to "$to" \
         '{dir: $dir, name: $name, arm: $arm, run: $run, hostPath: $from, copy: (if $to == "" then null else $to end)}' >>"$traces"
