@@ -6,6 +6,11 @@ import { describe, expect, test } from "bun:test";
 import classOutside from "./fixtures/delegation/invalid/class-outside-enum.json" with { type: "json" };
 import factorWithoutEvidence from "./fixtures/delegation/invalid/factor-without-evidence.json" with { type: "json" };
 import loweredWithoutHuman from "./fixtures/delegation/invalid/lowered-without-human-or-reason.json" with { type: "json" };
+import projectCheckKind from "./fixtures/delegation/invalid/project-check-kind-outside-enum.json" with { type: "json" };
+import projectCheckScope from "./fixtures/delegation/invalid/project-check-scope-not-diff.json" with { type: "json" };
+import projectCutPointMissing from "./fixtures/delegation/invalid/project-cut-point-missing.json" with { type: "json" };
+import projectEnforcement from "./fixtures/delegation/invalid/project-enforcement-not-advisory.json" with { type: "json" };
+import projectWeightMissing from "./fixtures/delegation/invalid/project-weight-missing.json" with { type: "json" };
 import readinessAboveTwo from "./fixtures/delegation/invalid/readiness-above-two.json" with { type: "json" };
 import project from "./fixtures/delegation/valid.project.json" with { type: "json" };
 import ticket from "./fixtures/delegation/valid.ticket.json" with { type: "json" };
@@ -54,6 +59,22 @@ describe("delegation schema records", () => {
     ).toBe(false);
   });
 
+  test.each([
+    ["an enforcement other than advisory", projectEnforcement.guidance.delegation],
+    ["a missing weight", projectWeightMissing.guidance.delegation],
+    ["a missing cut point", projectCutPointMissing.guidance.delegation],
+  ])("project delegation guidance with %s is rejected", (_label, overlay) => {
+    const delegation = { ...project.guidance.delegation, ...overlay };
+    expect(validateProject({ ...project, guidance: { ...project.guidance, delegation } })).toBe(false);
+  });
+
+  test.each([
+    ["a scope other than diff", projectCheckScope.checks],
+    ["a kind outside the vocabulary", projectCheckKind.checks],
+  ])("a project check with %s is rejected", (_label, checks) => {
+    expect(validateProject({ ...project, checks: [...project.checks, ...checks] })).toBe(false);
+  });
+
   test("the forbidden tier key is caught by the denylist", () => {
     const text = readFileSync(join(import.meta.dir, "data", "delegation", "tier-key.yaml"), "utf8");
     expect(matchTerms(text, DENY_TERMS).map((hit) => hit.term.id)).toContain("ladder-tier-assignment");
@@ -64,6 +85,11 @@ describe("delegation schema records", () => {
       "class-outside-enum.json",
       "factor-without-evidence.json",
       "lowered-without-human-or-reason.json",
+      "project-check-kind-outside-enum.json",
+      "project-check-scope-not-diff.json",
+      "project-cut-point-missing.json",
+      "project-enforcement-not-advisory.json",
+      "project-weight-missing.json",
       "readiness-above-two.json",
     ]);
   });

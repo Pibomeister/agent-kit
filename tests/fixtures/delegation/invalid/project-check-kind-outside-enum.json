@@ -1,0 +1,1 @@
+{ "checks": [{ "id": "style-diff", "kind": "style", "scope": "diff", "command": { "argv": ["bun", "run", "style:diff"] } }] }
