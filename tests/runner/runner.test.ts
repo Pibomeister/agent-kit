@@ -560,8 +560,8 @@ describe("runner guards", () => {
     card(g, "forged");
     g.runner.prepare("toy-run", {
       id: "bad",
-      operation: "bound.run",
-      grant: { charter_hash: `sha256:${"0".repeat(64)}`, covers: "spec-approval" },
+      operation: "align.run",
+      grant: { charter_hash: `sha256:${"0".repeat(64)}`, covers: "align-answer" },
       question: "Proceed?",
       options: ["yes", "no"],
       approve: "yes",
@@ -1023,29 +1023,39 @@ describe("runner guards", () => {
     expect(() => capped.runner.answer("toy-run", "card-1", "yes", "captain", "raise it")).toThrow("no open escalation");
   });
 
-  test("a card refused outside its checkpoint settles only as retry, so it never stands in for the real one", () => {
+  test("an out-of-phase card is rejected without stopping the run, and decides once its phase arrives", () => {
     const f = ready();
     card(f, "early-bound", "bound.run", "spec-approval");
-    expect(f.runner.decide("toy-run", "early-bound").escalation?.charter_rule).toBe("runner:state");
-    expect(() => f.runner.answer("toy-run", "early-bound", "yes", "captain", "Approve the spec now.")).toThrow(
-      "only retry can settle it",
+    expect(() => f.runner.decide("toy-run", "early-bound")).toThrow(
+      "bound.run is not the next permitted action; next is align.run",
     );
-    expect(f.runner.answer("toy-run", "early-bound", "retry", "captain", "Finish alignment first.")).toEqual({
-      operation: "bound.run",
-      status: "complete",
-      next_permitted_action: "align.run",
-    });
     card(f, "early-ship", "ship.prepare", "ship-pr");
-    expect(f.runner.decide("toy-run", "early-ship").escalation?.charter_rule).toBe("runner:state");
-    expect(() => f.runner.answer("toy-run", "early-ship", "yes", "captain", "Ship it.")).toThrow(
-      "only retry can settle it",
-    );
-    f.runner.answer("toy-run", "early-ship", "retry", "captain", "Not at ship yet.");
+    expect(() => f.runner.decide("toy-run", "early-ship")).toThrow("ship.prepare is not the next permitted action");
+    expect(f.runner.status("toy-run")).toMatchObject({ open_escalation: null, decisions: [] });
+    expect(stage(f)).toEqual(["created", "align.run"]);
     card(f, "align");
     expect(f.runner.decide("toy-run", "align").next_permitted_action).toBe("bound.run");
-    card(f, "bound", "bound.run", "spec-approval");
-    expect(f.runner.decide("toy-run", "bound").next_permitted_action).toBe("build.dispatch");
+    expect(f.runner.decide("toy-run", "early-bound").next_permitted_action).toBe("build.dispatch");
     expect(stage(f)).toEqual(["planning", "build.dispatch"]);
+  });
+
+  test("an approving answer cannot carry the run past a charter cap", () => {
+    const f = ready(0);
+    const stored = f.runner.status("toy-run").evidence["e1"];
+    if (stored === undefined) throw new Error("toy evidence was not collected");
+    writeFileSync(stored.ref, "different bytes");
+    card(f, "unproven");
+    expect(f.runner.decide("toy-run", "unproven").escalation?.charter_rule).toBe("runner:trusted-evidence");
+    expect(f.runner.answer("toy-run", "unproven", "yes", "captain", "Proceed anyway.")).toEqual({
+      operation: "align.run",
+      status: "cap-reached",
+      next_permitted_action: null,
+      cap: { limit: "alignment-questions", value: 0 },
+    });
+    const run = new Runner(f.privateDir, f.worker, root).status("toy-run");
+    expect(run).toMatchObject({ run_state: "cap-reached", next_permitted_action: null, open_escalation: null });
+    expect(run.budget_consumption["alignment_questions"] ?? 0).toBe(0);
+    expect(f.runner.ledger("toy-run").entries).toMatchObject([{ answered: true, answer: { choice: "yes" } }]);
   });
 
   test("a human no on ship leaves the pull request unopenable", () => {

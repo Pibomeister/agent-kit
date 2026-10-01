@@ -391,10 +391,12 @@ The ledger entry is marked answered and carries the choice, actor, rationale and
 decision artifact keeps the refusal, because a `decided` artifact needs two seat judgments. A
 resubmitted card cannot override the ruling: `prepare` refuses a card for the same operation and
 artifact at the same revision and diff, so only a revised artifact goes back to the seats. A `retry`
-choice, accepted whether or not the card lists it, instead reopens the checkpoint as it stood before
-the refusal. A card refused because it was not the next permitted action can only be answered
-`retry`, so a ruling never stands for a checkpoint the run has not reached. A `cap-reached` run is not
-answerable, because raising a cap needs a new human-approved charter.
+option, when the card lists one, instead reopens the checkpoint as it stood before the refusal.
+`decide` rejects a card that is not the next permitted action with an error and leaves the run as it
+was, so no escalation is ever opened for a checkpoint the run has not reached and every escalation's
+options are exactly the choices `answer` accepts. An approving answer is held to the same elapsed and
+budget caps as `decide`: at a cap the run goes to `cap-reached` instead of advancing. A
+`cap-reached` run is not answerable, because raising a cap needs a new human-approved charter.
 
 The service checks the active charter schema, recomputes its canonical hash, verifies its human
 approval and refuses any changed charter on resume. `collect` snapshots only files outside the

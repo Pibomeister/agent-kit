@@ -723,9 +723,10 @@ export class Runner {
     if (card === undefined) throw new Error("unknown checkpoint card");
     if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new checkpoint can be decided");
     const step = STAGE.get(card.operation);
+    if (step === undefined || !step.from.includes(run.run_state) || run.next_permitted_action !== card.operation)
+      throw new Error(`${card.operation} is not the next permitted action; next is ${run.next_permitted_action}`);
     const policy = this.covers.get(card.operation);
     if (
-      step === undefined ||
       policy === undefined ||
       policy.authority === "explicit" ||
       policy.authority === "model" ||
@@ -775,8 +776,6 @@ export class Runner {
         "policy:prototype-human-experience-needs-human",
         "A named human must judge the experience",
       );
-    if (!step.from.includes(run.run_state) || run.next_permitted_action !== card.operation)
-      return this.refuse(run, card, "runner:state", "Phase is not the next permitted action");
     if (!this.current(run))
       return this.refuse(
         run,
@@ -799,9 +798,14 @@ export class Runner {
       return this.refuse(run, card, "runner:trusted-evidence", "Required trusted evidence is missing or stale");
     if (card.operation === "ship.prepare" && !card.evidence.some((e) => run.evidence[e]?.kind === "verify"))
       return this.refuse(run, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+    const reached = this.capReached(run, step);
+    return reached === null ? null : this.cap(run, card, reached.limit, reached.value);
+  }
+
+  private capReached(run: Run, step: StageStep): { limit: string; value: number } | null {
     const elapsed = (Date.now() - Date.parse(run.created_at)) / 60_000;
-    const limits = charter.limits;
-    if (elapsed >= limits.elapsed_minutes) return this.cap(run, card, "elapsed-minutes", limits.elapsed_minutes);
+    const limits = run.charter.limits;
+    if (elapsed >= limits.elapsed_minutes) return { limit: "elapsed-minutes", value: limits.elapsed_minutes };
     if (step.budget !== undefined) {
       const used = run.budget_consumption[step.budget] ?? 0;
       const cap =
@@ -810,7 +814,7 @@ export class Runner {
           : step.budget === "tickets"
             ? limits.tickets
             : limits.review_rounds;
-      if (cap !== undefined && used >= cap) return this.cap(run, card, LIMIT_NAME.get(step.budget) ?? step.budget, cap);
+      if (cap !== undefined && used >= cap) return { limit: LIMIT_NAME.get(step.budget) ?? step.budget, value: cap };
     }
     return null;
   }
@@ -876,22 +880,22 @@ export class Runner {
     )
       throw new Error("card has no open escalation to answer");
     const card = decision.card;
-    if ((choice !== "retry" && !card.options.includes(choice)) || !ID.test(by) || !rationale.trim())
-      throw new Error("answer must name one of the card's options or retry, who answered and why");
+    if (!card.options.includes(choice) || !ID.test(by) || !rationale.trim())
+      throw new Error("answer must name one of the card's options, who answered and why");
     if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot answer the escalation");
     const step = STAGE.get(card.operation);
-    const inPhase =
-      step !== undefined && step.from.includes(resume.run_state) && resume.next_permitted_action === card.operation;
-    if (!inPhase && choice !== "retry")
-      throw new Error("this card was refused outside its checkpoint; only retry can settle it");
+    if (step === undefined) throw new Error("phase is not declared");
     run.run_state = resume.run_state;
     run.next_permitted_action = resume.next_permitted_action;
-    if (choice === card.approve && step !== undefined && inPhase) this.advance(run, step);
-    const result: OperationResult = {
-      operation: card.operation,
-      status: "complete",
-      next_permitted_action: run.next_permitted_action,
-    };
+    const reached = choice === card.approve ? this.capReached(run, step) : null;
+    if (reached !== null) {
+      run.run_state = "cap-reached";
+      run.next_permitted_action = null;
+    } else if (choice === card.approve) this.advance(run, step);
+    const result: OperationResult =
+      reached === null
+        ? { operation: card.operation, status: "complete", next_permitted_action: run.next_permitted_action }
+        : { operation: card.operation, status: "cap-reached", next_permitted_action: null, cap: reached };
     decision.answer = { by, choice, rationale, at: new Date().toISOString(), refusal: decision.result };
     decision.result = result;
     run.open_escalation = null;
