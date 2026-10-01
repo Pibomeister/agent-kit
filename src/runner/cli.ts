@@ -81,29 +81,27 @@ function childEnv() {
   return env;
 }
 
-function dispatchSeat(runner: Runner, runId: string, cardId: string, launcher: SeatLauncher): void {
-  const run = runner.status(runId);
-  const card = run.cards[cardId];
-  if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
-  const packet = {
-    run: runId,
-    charter_hash: run.charter_hash,
-    revision: run.revision,
-    card: {
-      id: card.id,
-      question: card.question,
-      options: card.options,
-      evidence: card.evidence.map((id) => ({ id, hash: run.evidence[id]?.hash ?? null })),
-      artifact_hash: card.artifact_hash,
-    },
-  };
-  const child = Bun.spawnSync(launcher.command, {
-    cwd: runner.workerRoot,
+async function spawnPiped(argv: string[], cwd: string, stdin?: string) {
+  const child = Bun.spawn(argv, {
+    cwd,
     env: childEnv(),
-    stdin: Buffer.from(JSON.stringify(packet)),
+    stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
     stdout: "pipe",
     stderr: "pipe",
   });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).arrayBuffer(),
+    child.exited,
+  ]);
+  return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
+}
+
+async function dispatchSeat(runner: Runner, runId: string, cardId: string, launcher: SeatLauncher): Promise<void> {
+  const card = runner.status(runId).cards[cardId];
+  if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
+  const packet = runner.packet(runId, cardId);
+  const child = await spawnPiped(launcher.command, runner.workerRoot, JSON.stringify(packet));
   if (child.exitCode !== 0) throw new Error(`seat ${launcher.seat} failed: ${child.stderr.toString().trim()}`);
   const answerValue: unknown = JSON.parse(child.stdout.toString());
   if (!isSeatAnswer(answerValue)) throw new Error(`seat ${launcher.seat} returned an invalid judgment`);
@@ -120,7 +118,7 @@ function dispatchSeat(runner: Runner, runId: string, cardId: string, launcher: S
   );
 }
 
-function execute(
+async function execute(
   runner: Runner,
   request: Request,
   adminToken: string,
@@ -201,12 +199,7 @@ function execute(
       const before = runner.syncRevision(runId);
       if (before.next_permitted_action !== "verify.record")
         throw new Error("verification is not the next permitted action");
-      const result = Bun.spawnSync(verifyCommand, {
-        cwd: runner.workerRoot,
-        env: childEnv(),
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const result = await spawnPiped(verifyCommand, runner.workerRoot);
       const after = runner.syncRevision(runId);
       if (before.revision !== after.revision || before.diff_hash !== after.diff_hash)
         throw new Error("verification changed the worker snapshot");
@@ -229,13 +222,15 @@ function execute(
       const cardId = str(a, "card_id");
       const early = runner.authorize(runId, cardId);
       if (early !== null) return early;
+      const failures: string[] = [];
       for (const launcher of launchers) {
         try {
-          dispatchSeat(runner, runId, cardId, launcher);
-        } catch {
-          break;
+          await dispatchSeat(runner, runId, cardId, launcher);
+        } catch (cause) {
+          failures.push(cause instanceof Error ? cause.message : String(cause));
         }
       }
+      if (failures.length > 0) throw new Error(`seat dispatch failed; retry decide: ${failures.join("; ")}`);
       return runner.decide(runId, cardId);
     }
     default:
@@ -335,18 +330,21 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   }
   const server = createServer((connection) => {
     let body = "";
+    let handled = false;
     connection.setEncoding("utf8");
-    connection.on("data", (chunk: string) => {
+    connection.on("data", async (chunk: string) => {
+      if (handled) return;
       body += chunk;
       if (body.length > 1_000_000) connection.destroy(new Error("runner request too large"));
       const newline = body.indexOf("\n");
       if (newline < 0) return;
+      handled = true;
       try {
         const requestValue: unknown = JSON.parse(body.slice(0, newline));
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         connection.end(
-          `${JSON.stringify({ ok: true, result: execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters) })}\n`,
+          `${JSON.stringify({ ok: true, result: await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters) })}\n`,
         );
       } catch (cause) {
         connection.end(

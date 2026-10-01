@@ -236,7 +236,7 @@ describe("runner guards", () => {
     const effectConfig = join(f.privateDir, "effects.json");
     const remote = join(f.privateDir, "remote-pr.txt");
     const judgeScript =
-      "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
+      "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); if (!packet.diff_hash) process.exit(4); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
     writeFileSync(
       seatConfig,
       JSON.stringify({

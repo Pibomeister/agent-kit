@@ -90,5 +90,14 @@ describe("stock Firstmate adapter", () => {
         delivery: "no-mistakes",
       }),
     ).toThrow();
+    expect(() =>
+      stockBrief({
+        run: "ENG-4133",
+        charter: "/private/charter.json",
+        socket: "/private/runner.sock",
+        workerToken: "w".repeat(48),
+        delivery: "no-mistakes",
+      }),
+    ).toThrow();
   });
 });

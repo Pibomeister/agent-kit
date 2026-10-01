@@ -72,7 +72,7 @@ export interface BriefArgs {
 
 export function stockBrief(args: BriefArgs): string {
   if (
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(args.run) ||
+    !/^[a-z0-9][a-z0-9-]*$/.test(args.run) ||
     args.workerToken.length < 32 ||
     [args.charter, args.socket, args.workerToken].some((value) => /[\r\n\0]/.test(value))
   )
