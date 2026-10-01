@@ -39,8 +39,8 @@ safe to rerun. Add `$HOME/.local/bin` to `PATH` if it is not already there. The 
 is created by `.github/workflows/publish-bundle.yml` after a green push to `main`. On the first
 merge, wait for that workflow to complete before using the commands above; no release tag is
 needed. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
-the publication workflow refuses changed bundles at the old version so host caches cannot hide an
-update. `profiles/core.yaml` is the recommended install — the full catalog is
+`tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
+again before publishing, so host caches cannot hide an update. `profiles/core.yaml` is the recommended install — the full catalog is
 real startup cost even with progressive disclosure.
 
 ## The spine: seven super skills
