@@ -9,7 +9,12 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function fixture(local: boolean, response = '{"error":"Authentication required, not authenticated"}', status = 1) {
+function fixture(
+  local: boolean,
+  response = '{"error":"Authentication required, not authenticated"}',
+  status = 1,
+  warning = "",
+) {
   const root = mkdtempSync(join(tmpdir(), "ak-linearis-"));
   roots.push(root);
   spawnSync("git", ["init", "-q", root]);
@@ -20,7 +25,7 @@ function fixture(local: boolean, response = '{"error":"Authentication required, 
   const executable = join(bin, "linearis");
   writeFileSync(
     executable,
-    `#!/bin/sh\nif [ "$1" = --version ]; then echo 2026.8.0; exit 0; fi\nprintf '%s\\n' '${response}'\nexit ${status}\n`,
+    `#!/bin/sh\nif [ "$1" = --version ]; then echo 2026.8.0; exit 0; fi\nprintf '%s\\n' '${warning}' >&2\nprintf '%s\\n' '${response}'\nexit ${status}\n`,
   );
   chmodSync(executable, 0o755);
   const doc = readFileSync(join(import.meta.dir, "../adapters/tracker/backends/linear-linearis.md"), "utf8");
@@ -47,6 +52,18 @@ describe("linearis guard", () => {
     const run = fixture(true);
     expect(run.status).toBe(42);
     expect(run.stderr).toContain("Authentication required, not authenticated");
+  });
+
+  test("keeps stderr warnings out of the result JSON on success", () => {
+    const run = fixture(true, '{"issues":[]}', 0, "ExperimentalWarning: fetch");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe('{"issues":[]}\n');
+    expect(run.stderr).toContain("ExperimentalWarning: fetch");
+  });
+
+  test("maps an auth rejection written to stderr to exit 42", () => {
+    const run = fixture(true, "", 1, "Error: No API token found");
+    expect(run.status).toBe(42);
   });
 
   test("retains failure status for unrelated application errors", () => {

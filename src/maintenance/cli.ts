@@ -104,9 +104,24 @@ function jsonCommand(binary: string, args: string[]) {
   return run.ok ? run.output : null;
 }
 
-function claudeRecords(): HostPlugin[] {
+function projectRoot(): string {
+  const top = command("git", ["rev-parse", "--show-toplevel"]);
+  return realpathSync(top.ok ? top.output : process.cwd());
+}
+
+export function inProject(row: HostPlugin, root: string): boolean {
+  if (row.projectPath === undefined) return true;
+  try {
+    return realpathSync(row.projectPath) === root;
+  } catch {
+    return false;
+  }
+}
+
+function claudeRecords(root: string): HostPlugin[] {
   const output = jsonCommand("claude", ["plugin", "list", "--json"]);
-  return output ? (parseJson(output, validPluginList) ?? []) : [];
+  const rows = output ? (parseJson(output, validPluginList) ?? []) : [];
+  return rows.filter((row) => inProject(row, root));
 }
 
 function codexRecords(): HostPlugin[] {
@@ -304,7 +319,7 @@ function print(items: Finding[]): number {
 
 async function doctor(): Promise<number> {
   const [claudeSource, codexSource] = await Promise.all([manifest("claude-code"), manifest("codex")]);
-  const claude = claudeRecords();
+  const claude = claudeRecords(projectRoot());
   const codex = codexRecords();
   const root = findBindingRoot(process.cwd());
   const binding = parseBinding(root);
@@ -335,9 +350,8 @@ async function update(): Promise<number> {
   const [claudeSource, codexSource] = await Promise.all([manifest("claude-code"), manifest("codex")]);
   if (!claudeSource && !codexSource) return print([checkSource("published", null)]);
   let failures = 0;
-  const claudeBefore = claudeRecords().filter(
-    (row) => row.id === ID && (row.scope !== "project" || row.projectPath === process.cwd()),
-  );
+  const root = projectRoot();
+  const claudeBefore = claudeRecords(root).filter((row) => row.id === ID);
   if (claudeBefore.length > 0) {
     const marketplace = command("claude", ["plugin", "marketplace", "update", "agent-kit"]);
     if (!marketplace.ok) {
@@ -345,9 +359,9 @@ async function update(): Promise<number> {
       failures += 1;
     } else
       for (const scope of new Set(claudeBefore.map((row) => row.scope ?? "user"))) {
-        const oldVersion = claudeBefore.find((row) => row.scope === scope)?.version ?? "unknown";
-        const result = command("claude", ["plugin", "update", ID, "--scope", scope, "--json"]);
-        const after = claudeRecords().find((row) => row.id === ID && row.scope === scope);
+        const oldVersion = claudeBefore.find((row) => (row.scope ?? "user") === scope)?.version ?? "unknown";
+        const result = command("claude", ["plugin", "update", ID, "--scope", scope, "--json"], root);
+        const after = claudeRecords(root).find((row) => row.id === ID && (row.scope ?? "user") === scope);
         const current = after?.version ?? "unknown";
         const okay = result.ok && current === claudeSource?.version;
         console.log(

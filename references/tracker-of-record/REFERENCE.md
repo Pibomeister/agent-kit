@@ -101,11 +101,13 @@ Setup is an operator task, not a skill. Stop at the first step that fails.
   home="$(mktemp -d)" || exit 1
   trap 'rm -rf "$home"' EXIT
   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
-  output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>&1)"
+  output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>"$home/stderr")"
   status=$?
+  errors="$(cat "$home/stderr")"
+  [ -z "$errors" ] || printf '%s\n' "$errors" >&2
   if [ "$status" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
   printf '%s\n' "$output" >&2
-  case "$output" in
+  case "$output$errors" in
     *AUTHENTICATION_REQUIRED*|*'Authentication required, not authenticated'*|*'No API token found'*) exit 42 ;;
   esac
   exit "$status"

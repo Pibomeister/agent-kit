@@ -11,6 +11,7 @@ import {
   checkSource,
   checkToken,
   findBindingRoot,
+  inProject,
   parseBinding,
 } from "../src/maintenance/cli.ts";
 
@@ -38,6 +39,17 @@ describe("ak doctor checks", () => {
     expect(checkPlugin("Claude Code", [{ id: "ak@agent-kit", enabled: true, version: "1.2.0" }], "1.2.0").level).toBe(
       "PASS",
     );
+  });
+
+  test("matches project-scoped installs to this repo through symlinks only", () => {
+    const root = realpathSync(project());
+    const link = `${project()}-link`;
+    roots.push(link);
+    symlinkSync(root, link);
+    expect(inProject({ id: "ak@agent-kit", scope: "user" }, root)).toBe(true);
+    expect(inProject({ id: "ak@agent-kit", scope: "project", projectPath: link }, root)).toBe(true);
+    expect(inProject({ id: "ak@agent-kit", scope: "project", projectPath: project() }, root)).toBe(false);
+    expect(inProject({ id: "ak@agent-kit", scope: "project", projectPath: join(root, "gone") }, root)).toBe(false);
   });
 
   test("requires a resolvable published bundle", () => {
