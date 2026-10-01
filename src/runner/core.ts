@@ -876,19 +876,17 @@ export class Runner {
     )
       throw new Error("card has no open escalation to answer");
     const card = decision.card;
-    if (!card.options.includes(choice) || !ID.test(by) || !rationale.trim())
-      throw new Error("answer must name one of the card's options, who answered and why");
+    if ((choice !== "retry" && !card.options.includes(choice)) || !ID.test(by) || !rationale.trim())
+      throw new Error("answer must name one of the card's options or retry, who answered and why");
     if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot answer the escalation");
+    const step = STAGE.get(card.operation);
+    const inPhase =
+      step !== undefined && step.from.includes(resume.run_state) && resume.next_permitted_action === card.operation;
+    if (!inPhase && choice !== "retry")
+      throw new Error("this card was refused outside its checkpoint; only retry can settle it");
     run.run_state = resume.run_state;
     run.next_permitted_action = resume.next_permitted_action;
-    const step = STAGE.get(card.operation);
-    if (
-      choice === card.approve &&
-      step !== undefined &&
-      step.from.includes(resume.run_state) &&
-      resume.next_permitted_action === card.operation
-    )
-      this.advance(run, step);
+    if (choice === card.approve && step !== undefined && inPhase) this.advance(run, step);
     const result: OperationResult = {
       operation: card.operation,
       status: "complete",

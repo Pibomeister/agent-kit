@@ -1023,6 +1023,31 @@ describe("runner guards", () => {
     expect(() => capped.runner.answer("toy-run", "card-1", "yes", "captain", "raise it")).toThrow("no open escalation");
   });
 
+  test("a card refused outside its checkpoint settles only as retry, so it never stands in for the real one", () => {
+    const f = ready();
+    card(f, "early-bound", "bound.run", "spec-approval");
+    expect(f.runner.decide("toy-run", "early-bound").escalation?.charter_rule).toBe("runner:state");
+    expect(() => f.runner.answer("toy-run", "early-bound", "yes", "captain", "Approve the spec now.")).toThrow(
+      "only retry can settle it",
+    );
+    expect(f.runner.answer("toy-run", "early-bound", "retry", "captain", "Finish alignment first.")).toEqual({
+      operation: "bound.run",
+      status: "complete",
+      next_permitted_action: "align.run",
+    });
+    card(f, "early-ship", "ship.prepare", "ship-pr");
+    expect(f.runner.decide("toy-run", "early-ship").escalation?.charter_rule).toBe("runner:state");
+    expect(() => f.runner.answer("toy-run", "early-ship", "yes", "captain", "Ship it.")).toThrow(
+      "only retry can settle it",
+    );
+    f.runner.answer("toy-run", "early-ship", "retry", "captain", "Not at ship yet.");
+    card(f, "align");
+    expect(f.runner.decide("toy-run", "align").next_permitted_action).toBe("bound.run");
+    card(f, "bound", "bound.run", "spec-approval");
+    expect(f.runner.decide("toy-run", "bound").next_permitted_action).toBe("build.dispatch");
+    expect(stage(f)).toEqual(["planning", "build.dispatch"]);
+  });
+
   test("a human no on ship leaves the pull request unopenable", () => {
     const ship = ready();
     reachShipReady(ship, false);
