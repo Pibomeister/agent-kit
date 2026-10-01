@@ -9,8 +9,8 @@ tested.
 
 Observations marked **verified (donor)** were read from the pinned clone at
 `compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1`. Observations marked
-**verified (CLI)** were taken from `codex-cli 0.159.2` on this machine. Everything else is a
-requirement on the packager.
+**verified (CLI)** were taken from `codex-cli 0.154.0` on this machine, except where §4 names a
+later version for the install pair. Everything else is a requirement on the packager.
 
 ---
 
@@ -88,7 +88,7 @@ host can enforce. None of the rows below is a `capability` value:
 
 | Restriction | claude-code | codex | Consequence |
 |---|---|---|---|
-| Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior | **No equivalent key verified** on `codex-cli 0.159.2` | The structural half of the invocation law is unavailable. See §3.1 |
+| Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior | **No equivalent key verified** on `codex-cli 0.154.0` | The structural half of the invocation law is unavailable. See §3.1 |
 | Tool restriction | `allowed-tools`, pre-approval only, denies nothing | Not emitted. The host has an OS-level sandbox instead, configured by the operator (`sandbox_permissions`, verified (CLI) in `codex plugin --help`) | Codex's confinement is real but **operator-owned and process-wide**, not per-skill. The package still declares side effects and still relies on neither |
 | Bundled behavioral eval runner | `claude plugin eval`, `<eval dir>/**/case.yaml` | **None verified** | The eval corpus is not executable against this bundle by a host-native runner. See §5 |
 | Manifest validator | `claude plugin validate --strict` | **None verified** | Bundle validation is `ak validate` plus an install smoke test |
@@ -144,13 +144,21 @@ capabilities.
 
 ## 4. Install
 
-Verified (CLI), `codex-cli 0.159.2`:
+Verified (CLI), `codex-cli 0.154.0`:
+
+```bash
+codex plugin marketplace add <source>   # local path, owner/repo[@ref], HTTPS or SSH Git URL
+codex plugin add <plugin>               # install from a configured or remote marketplace
+codex plugin list
+codex plugin remove <plugin>
+```
+
+Verified (CLI), `codex-cli 0.159.2`, for this bundle as a local marketplace. The first command
+reads `.claude-plugin/marketplace.json` at the marketplace root and fails without one:
 
 ```bash
 codex plugin marketplace add <dist/codex>
 codex plugin add ak@agent-kit
-codex plugin list
-codex plugin remove <plugin>
 ```
 
 `codex plugin marketplace add` accepts `--ref` for Git sources. The packager records the exact
@@ -173,8 +181,6 @@ Tests this adapter owns, in `tests/adapters/`:
    `package.json` names and describes the npm package, a manifest names and describes what the
    host addresses. They are two names for two objects, so a check that forces them to agree can
    only be satisfied by renaming one of them to suit the check.
-   The Codex marketplace entry's plugin `name`, `version`, and `description` agree with
-   `dist/codex/.codex-plugin/plugin.json`.
 
    The donor supports the `version` clause and no other. At
    `compound-engineering@05c42da:src/release/metadata.ts` the token `compoundPackage.` occurs
@@ -184,6 +190,9 @@ Tests this adapter owns, in `tests/adapters/`:
    `name` is compared manifest-to-manifest (`:403`); and the donor's own `package.json` carries no
    `license` key at all. The `license` clause is therefore this package's own release condition,
    `origin: conversation`, and is marked as such rather than attributed upstream.
+
+   The Codex marketplace entry's plugin `name`, `version`, and `description` agree with
+   `dist/codex/.codex-plugin/plugin.json`.
 3. **No leaked host keys** — the codex bundle contains no `disable-model-invocation` and no
    `allowed-tools`; the claude-code bundle contains both where required. A key from one host's set
    appearing in the other's bundle is a failure.

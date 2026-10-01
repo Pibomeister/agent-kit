@@ -811,11 +811,6 @@ function manifestObject(
     name: pkg.id,
     version: pkg.version,
   };
-  if (declared(pkg.description)) manifest.description = pkg.description;
-  if (declared(pkg.author)) manifest.author = { name: pkg.author };
-  if (declared(pkg.license)) manifest.license = pkg.license;
-  manifest.skills = skillRegistration(host, skills);
-  if (hasCorpus) manifest.experimental = { evals: EVAL_DIR };
   // From `package.description` and not `package.name`, which is the defect the
   // withdrawn parity clause was masking: the manifest shipped the literal
   // `agent-kit` as the bundle's description into every build, and the check
@@ -824,6 +819,7 @@ function manifestObject(
   //
   // Omitted rather than emitted blank when the catalog states none, for the
   // reason `author` and `license` are below.
+  if (declared(pkg.description)) manifest.description = pkg.description;
   // Key order follows the contract's own example at
   // `adapters/claude-code/CONTRACT.md` §1, and these are set before `skills` for
   // that reason. Each is omitted when the catalog does not declare it rather
@@ -831,6 +827,9 @@ function manifestObject(
   // whether the key is present and fail the comparison §5 requires, which is
   // the quieter of the two ways to be wrong. `checkManifestIdentity` is what
   // makes the omission loud.
+  if (declared(pkg.author)) manifest.author = { name: pkg.author };
+  if (declared(pkg.license)) manifest.license = pkg.license;
+  manifest.skills = skillRegistration(host, skills);
   // Last, as in §1's example, and conditioned on the corpus alone rather than
   // on the corpus and the host. The key is a pointer: emitted with nothing
   // behind it, it is the pointer half of this feature shipping without the
@@ -844,6 +843,7 @@ function manifestObject(
   // The host decision now lives in one place, at the copy, and the assertion
   // that codex's manifest carries no such key is a test rather than a
   // condition that cannot be observed failing.
+  if (hasCorpus) manifest.experimental = { evals: EVAL_DIR };
   return manifest;
 }
 

@@ -993,11 +993,11 @@ describe("the marketplace entry each host bundle carries", () => {
   });
 
   test("it carries no optional field this tree has no value for", () => {
-    // The donor carries `homepage`, `tags` and a `metadata.description`. This
-    // tree states none of them, and emitting a plausible one is how a manifest
-    // ends up asserting something nobody checked. Absence is the honest answer
-    // until a value exists, and this test is what stops one being invented
-    // later without a source.
+    // The donor carries `tags` and a `metadata.description`. This tree states
+    // neither, and emitting a plausible one is how a manifest ends up asserting
+    // something nobody checked. Absence is the honest answer until a value
+    // exists, and this test is what stops one being invented later without a
+    // source. `homepage` is not in this list: the root marketplace states it.
     const market = marketplaceIn(planBundle(ctxFor(), "claude-code", {}));
     expect("tags" in market.plugins[0]).toBe(false);
     expect("description" in market.metadata).toBe(false);
