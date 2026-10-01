@@ -467,8 +467,7 @@ async function update(): Promise<number> {
       source.level === "PASS"
         ? command("codex", ["plugin", "marketplace", "upgrade", "agent-kit", "--json"])
         : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
-    const localMarketplace = refresh.output.includes("not configured as a Git marketplace");
-    const result = refresh.ok || localMarketplace ? command("codex", ["plugin", "add", ID, "--json"]) : refresh;
+    const result = refresh.ok ? command("codex", ["plugin", "add", ID, "--json"]) : refresh;
     const after = codexRecords().find((row) => row.pluginId === ID);
     const current = after?.version ?? "unknown";
     const okay = result.ok && current === codexSource?.version;
