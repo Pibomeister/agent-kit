@@ -65,7 +65,7 @@
 #   spelling problem; it is an open question about why it is in the package, and it belongs in
 #   CONTRACT-DEFECTS.md rather than in a locator column. `locator: null` is not a resting state.
 #   acceptance_test The concrete behavior that proves the capability landed. Numbered release
-#                   scenarios refer to plan §10's list of 24.
+#                   scenarios refer to plan §10's list of 29.
 #   note            Present only where a reader would otherwise draw the wrong conclusion.
 
 schema_version: 1

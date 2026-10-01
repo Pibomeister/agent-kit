@@ -461,8 +461,8 @@ script has been run and its output committed with the fragment.
 a different matter: the merge takes the `adaptations` list and nothing else, so a sibling key is
 dropped. A `rationale:` that refers the reader to one — "recorded under `<key>` below" — resolves in
 the fragment and dangles in the generated file, which is the artifact `NOTICE` points a downstream
-consumer at. Write each row to stand alone, and cross-reference only paths and `donor@commit:path`
-sources, which survive.
+consumer at. Write each row to stand alone, and cross-reference only paths and source locators from
+the row itself — `donor@commit:path` or the anchored-local form below — which survive.
 
 **A `rationale:` that cites a section names the document, or it cites nothing.** *per dossier §24.2*
 shipped into `provenance/adaptations.yaml` at `ae061b2` and a reviewer caught it, not a check. It
@@ -614,22 +614,25 @@ moved or never existed is `origin: conversation`, not a guess at where it used t
 transcript's description of a donor, not from a donor's own README about itself. If the clone is not
 present, the citation is not available and the writer says so rather than paraphrasing.
 
-**Material held in `research/sources/` is cited at the pin, or not at all.** Some third-party
-material lives in-repo rather than at a donor pin — a recovered copy, a preserved earlier revision —
-and `provenance/upstream.lock.yaml` registers each one under `local_sources:` with its license and
-copyright. That register holds exactly one member today, `pocock-two-axis-backup`, so *each one*
-describes a population of one and this rule has no second case to generalise from. Registering it
-discharges the license obligation for holding it; it does not make it citable, and there is
-deliberately no `source:` spelling for a local source. Cite the pin wherever the claim survives
-there, and establish that it survives by reading the pin — never by renumbering. A recovered copy's
-line numbers do not correspond to the pin's, and a range carried across resolves against real text
-that says something else. Where a claim survives at no pin, cite the pin for the surrounding
-mechanism and say in the row's `rationale:` that the specific wording came from the registered local
-source; that row keeps its machine-checkable `source:` and states its one unverifiable element
-instead of hiding it. No row does this today — the lockfile's one entry records
-`cited_in_adaptations: false` — so the route is specified and unexercised, and whoever needs it
-first is also its first test. Do not invent a spelling — the reserved one, the evidence behind this
-rule and the trigger that would implement it are recorded beside `local_sources:` in the lockfile.
+**Material held in `research/sources/` takes the pinned route when the claim survives at a donor
+pin, and the anchored-local route when it does not.** `provenance/upstream.lock.yaml` registers each
+local source with its `working_copy`, digest, line count, license and copyright. Registering a file
+discharges the obligation for holding it; an adaptations row separately records derivation from it.
+
+The local-source form is
+`local:<local_source_id>@sha256:<64-hex>[#L<start>-<end>]`. The id resolves through
+`local_sources:`, the digest must equal both the registered digest and the committed working copy,
+and a supplied range must resolve inside that copy. Set `cited_in_adaptations: true` on a source
+that has a row. For a research report, include the exact line range: a report title or a path alone
+does not identify which capability was adapted. `ak validate` checks this route without `.donors/`;
+`ak build` preserves the row in the generated adaptations record.
+
+Use the anchored-local form only where no pin carries the adapted material. A recovered copy whose
+claim survives at a pin still cites `donor@commit:path`, after reading that pin rather than carrying
+the local copy's line numbers across. Local report attribution is additive: an entry adapted from a
+donor keeps its donor rows and may add report rows for report-origin capabilities. The entry-level
+`provenance_origin` remains the catalog's donor-or-conversation classification; it is not a second
+spelling for per-file report attribution.
 
 ---
 

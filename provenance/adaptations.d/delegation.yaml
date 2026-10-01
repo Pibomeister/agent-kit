@@ -1,0 +1,28 @@
+adaptations:
+  - path: policies/resolved-conflicts.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The report's sensitivity classes and overriding protected surfaces became the class-floor ruling without carrying its example score thresholds as universal gates.
+  - path: policies/resolved-conflicts.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The evidenced-factor structure became the distinction between a delegation class and a finding; the report's weights and cut points remain project guidance.
+  - path: policies/resolved-conflicts.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: Ticket-time and merge-time assessment, automatic raising and named-human lowering evidence became the class-authority ruling.
+  - path: policies/resolved-conflicts.yaml
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
+    rationale: Diff-scoped complexity, duplication, dead-code and boundary evidence became project checks that block only when declared mandatory.
+  - path: policies/resolved-conflicts.yaml
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L152-172
+    rationale: Fail-before evidence, mutation strength and acceptance-test author separation became the independent-oracle ruling.
+  - path: research/sources/engineering-skills-repo-plan.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: Release scenario 25 carries the report's rule that sensitive surfaces override a routine-looking change.
+  - path: research/sources/engineering-skills-repo-plan.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: Release scenario 26 carries merge-time re-assessment, raise-only automation and human-only lowering.
+  - path: research/sources/engineering-skills-repo-plan.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
+    rationale: Release scenario 27 distinguishes advisory structural evidence from project-declared blocking constraints.
+  - path: research/sources/engineering-skills-repo-plan.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L152-172
+    rationale: Release scenario 28 carries independent acceptance-test authorship and changed-line mutation strength.

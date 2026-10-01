@@ -57,7 +57,7 @@ const COMMON_SCHEMA = "schemas/common.schema.json";
 const DISCHARGE_CHECK = "discharged_in vocabulary";
 
 /** The numbered release scenarios in plan §10. */
-export const RELEASE_SCENARIO_COUNT = 24;
+export const RELEASE_SCENARIO_COUNT = 29;
 
 /** Markdown trees whose bodies carry §6's inline citations. */
 const MARKDOWN_ROOTS = ["skills", "packs", "protocols", "roles", "references", "adapters", "templates", "docs"];

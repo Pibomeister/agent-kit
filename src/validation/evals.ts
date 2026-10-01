@@ -39,7 +39,7 @@ const KIND_MEANING: Readonly<Record<string, string>> = {
 export const MINIMUM_CASES = 3;
 
 /** The numbered release scenarios in plan §10. */
-export const RELEASE_SCENARIOS: ReadonlyArray<number> = Array.from({ length: 24 }, (_, i) => i + 1);
+export const RELEASE_SCENARIOS: ReadonlyArray<number> = Array.from({ length: 29 }, (_, i) => i + 1);
 
 /**
  * A tag claiming a release scenario. The prefix is the claim; what follows is
@@ -49,7 +49,7 @@ export const RELEASE_SCENARIOS: ReadonlyArray<number> = Array.from({ length: 24 
  * and discarded everything that did not match. That made three different tags
  * indistinguishable: `smoke`, which is not a scenario claim and is rightly
  * ignored; `scenario-31`, which matched and then vanished because `uncovered`
- * is filtered over 1-24; and `scenario-100`, which did not match the two-digit
+ * is filtered over 1-29; and `scenario-100`, which did not match the two-digit
  * pattern and was dropped before the range was ever consulted. Only the first
  * should be silent. Splitting the claim from the number is what lets the other
  * two be reported instead of lost.

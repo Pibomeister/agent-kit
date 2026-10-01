@@ -346,7 +346,7 @@ submitted the following selections; the choice labels are reproduced verbatim fr
 | D9 | Build alongside the schema | Implement the deterministic scorer with the record schema. |
 | D10 | Require for owner/Red; recommend for agent-Yellow | On supported hosts, require and evidence advisor consultation for yellow-owner and Red, recommend it for yellow-agent, and keep Green silent. |
 
-**Recorded discrepancy.** D9's selection conflicts with the mission brief's explicit W7 deferral
-until the delegation reference has been exercised (`B:L99-L99`; `B:L220-L220`). W1 does not choose
-which instruction wins or start the scorer; W2 must reconcile the captain's later selection with the
-brief before W3 or W7 acts. D1–D8 and D10 refine the brief without changing W1's file scope.
+**D9 resolution.** The captain's later ruling is: "board pick wins, build the scorer with the
+schema." The later instruction supersedes the mission brief's W7 deferral (`B:L99-L99`;
+`B:L220-L220`), so the deterministic `ak delegation` scorer is built alongside the W3 record
+schema rather than waiting for a separately exercised reference pack.

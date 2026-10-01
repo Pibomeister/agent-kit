@@ -72,6 +72,21 @@ Do not fabricate a source path merely because Grok named a skill. A missing or r
 
 Upstream updates arrive as reviewable dependency-update proposals. They do not automatically rewrite the installed rules.
 
+### 1.5 Attribute research-report adaptations to anchored copies
+
+The delegation rubric and slop-avoidance report are committed, digest-anchored local sources. A
+file that adapts one of their capabilities records the exact passage in its
+`provenance/adaptations.d/` fragment with
+`local:<local_source_id>@sha256:<digest>#L<start>-<end>`. The source id and digest resolve through
+`provenance/upstream.lock.yaml`; the line range resolves against the registered `working_copy`.
+The validator checks all three against the committed bytes without requiring a donor clone.
+
+The report aliases used by the delegation dossier remain exact citations into those copies:
+`D:Lx-Ly` means `research/sources/delegation-rubric-red-yellow-green.md`, and `S:Lx-Ly` means
+`research/sources/slop-avoidance-agent-prs.md`. An adaptations row uses the machine form above,
+not the dossier alias. Report origin is additional per-file attribution; it does not replace donor
+attribution already owed by an entry or turn a report-derived number into a catalog-wide gate.
+
 ---
 
 ## 2. Complete capability inventory
@@ -628,6 +643,11 @@ Run actual hosts against fixture repositories and frozen task inputs. Include po
 22. A source merge activates KB coordination without bypassing KB checks.
 23. A successful routine run does not invent a lesson.
 24. Rolling back a skill leaves its supporting knowledge history intact.
+25. A ticket that touches a trust boundary is not built under a delegated `build-go`, however small the change.
+26. A diff that touches a sensitive area its ticket did not predict raises the class and stops delegated closure.
+27. A size or complexity number set as guidance may raise a class but never becomes a finding; set as a mandatory constraint, it blocks with named evidence.
+28. A `green` ticket's acceptance tests were not written by its implementer, and a test that kills no mutant on changed lines does not count as verification strength.
+29. On a host that offers an advisor tool, `yellow-owner` and `red` work records the required consultation evidence, `yellow-agent` work treats consultation as recommended, and `green` work stays silent; the advisor neither lowers the class nor closes a finding.
 
 Compare a small baseline set with the amalgamated versions under equivalent task/host conditions. Track correctness, missed serious findings, false-positive burden, instruction size, unnecessary spawns, human interruptions, loop counts, and wall time. Do not claim the combination is better merely because it contains more practices.
 

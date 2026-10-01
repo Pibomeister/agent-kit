@@ -92,9 +92,9 @@ donors:
 # verifies the file is the one the digest was taken against, and says nothing
 # about whether any locator citing it points at the right part of it.
 #
-# DECISION (2026-09-19, standing): a local source is real provenance, there is
-# deliberately no `source:` spelling for citing one, and building one is
-# deferred until a row needs it.
+# DECISION (2026-09-19; exercised 2026-09-30): a local source is real
+# provenance. Its `source:` spelling stayed reserved until a real row needed it;
+# the delegation reports are the first exercised cases.
 #
 #   Why they are real provenance and not fabrications. A local source is
 #   material this repository actually holds and actually distributes. The MIT
@@ -104,13 +104,13 @@ donors:
 #   which records a derivation rather than a holding: a file held but derived
 #   from owes attribution and still carries no row.
 #
-#   Why nothing cites one. Cite the pin wherever the claim survives there. For
+#   Why the route stayed deferred. Cite the pin wherever the claim survives there. For
 #   pocock-two-axis-backup, every claim batch 2 drew on survives at the pin
 #   verbatim, so every one of them cites the pin. The per-entry `relation_to_pin`
 #   below records the measured divergence and the two ways citing this copy by
 #   its own line numbers goes wrong.
 #
-#   The spelling, reserved but not implemented:
+#   The implemented spelling:
 #
 #       local:<local_source_id>@sha256:<64-hex>[#L<start>-<end>]
 #
@@ -118,24 +118,18 @@ donors:
 #   donor id through `donors:`, so license and copyright keep one lookup rule. It
 #   cannot be misparsed as a donor source: `parseDonorSource`
 #   (src/validation/provenance.ts) forbids `:` in its first group, so the two
-#   grammars are disjoint. A writer who reaches for it before it exists fails
-#   today as `provenance.malformed-source` - loudly, and never silently accepted.
+#   grammars are disjoint. `parseLocalAdaptationSource` resolves the local form;
+#   a malformed value still fails loudly as `provenance.malformed-source`.
 #
 #   The digest is mandatory and a bare line number is forbidden. A G:L range into
 #   the design transcript is safe because there is only one transcript; a line
 #   range into a file that has a near-twin at a pin is safe only when it is
 #   anchored to content. See `relation_to_pin.numbering`.
 #
-#   Trigger to implement. The first time a catalog file adapts material that
-#   survives at no pin. Then, and not before: teach the check loop in
-#   src/validation/provenance.ts a `local:` branch verifying that the row digest,
-#   this block's digest and sha256(working_copy) all agree and that any line range
-#   is in bounds - a check needing no clone, so it runs unconditionally, unlike
-#   donor-path-at-pin. Amend the header string in `renderAdaptations`, which names
-#   donor@commit:path as the only source form and is compared to the generated
-#   file byte for byte, and regenerate with `ak build` in the same commit. Until a
-#   real row exercises it, none of this is built: an unexercised parser branch
-#   looks supported and is not.
+#   The implementation verifies that the row digest, this block's digest and
+#   sha256(working_copy) agree and that any line range is in bounds. The check
+#   needs no clone and runs unconditionally, unlike donor-path-at-pin. The
+#   generated adaptations header names both accepted forms.
 #
 # AUTHORING.md's "Provenance law" section carries the operative rule for writers;
 # this block carries the evidence, so that neither has to be re-derived. The
@@ -209,7 +203,7 @@ local_sources:
     lines: 2265
   - id: plan
     description: >-
-      The governing design document: phases, batches, gates and the 24 release
+      The governing design document: phases, batches, gates and the 29 release
       scenarios. Cited as `plan §<section>` and as `arch §<section>` -- two
       spellings of this one file, and the file's name is the trap. The
       `-repo-plan` suffix is why a second spelling grew: ADR-0001 gives this
@@ -224,8 +218,8 @@ local_sources:
     # the digest adds is the case renumbering does not cover: §7's *body* being
     # rewritten under a heading that still reads `## 7.`, which every reference
     # to it survives while meaning something else.
-    sha256: fba7f575c6ac0d26e3d2ddf0c5d7c7851d7f624437830a1d5eb667bdc3cab088
-    lines: 676
+    sha256: 85d4065b464c876dc3e9c5f1c087b15b7b7729c49984129693f281d53cc493a3
+    lines: 696
   - id: wikiskill-summary
     description: >-
       A third-party summary, not the paper, of Tang, Rashtchian, Ferng, Tomkins, Juan and Vu,
@@ -254,8 +248,8 @@ local_sources:
     # `attribution_donor`.
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
-    # No adaptations row cites it. Only the dossier does.
-    cited_in_adaptations: false
+    # W2 rulings and release scenarios cite exact ranges through the anchored-local route.
+    cited_in_adaptations: true
   - id: slop-avoidance-agent-prs
     description: >-
       Report 2 of the same mission, "Slop Avoidance for Agent-Authored PRs: Detection, Prevention,
@@ -268,7 +262,8 @@ local_sources:
     lines: 310
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
-    cited_in_adaptations: false
+    # W2 rulings and release scenarios cite exact ranges through the anchored-local route.
+    cited_in_adaptations: true
   - id: mission-brief-risk-tiering-and-slop-avoidance
     description: >-
       The captain-written mission brief "Risk Tiering and Slop Avoidance", reproduced byte-for-byte.

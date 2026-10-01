@@ -218,20 +218,20 @@ describe("a scenario tag outside the release range", () => {
   test("scenario-31 is an error naming the case file and the tag", () => {
     // `scenario-31` typed for `scenario-13` parses, contributes nothing to
     // `covered`, and is filtered back out of `uncovered` because that list runs
-    // over 1-24. The writer loses the scenario they meant and the run says
+    // over 1-29. The writer loses the scenario they meant and the run says
     // nothing, which is indistinguishable from never having tagged the case.
     const issue = rejected("[scenario-31]")[0];
     expect(issue?.severity).toBe("error");
     expect(issue?.file).toBe(`${EVALS_DIR}/alpha/fires-on-trigger/case.yaml`);
     expect(issue?.message).toContain("scenario-31");
-    expect(issue?.message).toContain("24");
+    expect(issue?.message).toContain("29");
   });
 
-  test("scenario-24 is accepted: the boundary is the only input that separates the two checks", () => {
+  test("scenario-29 is accepted: the boundary is the only input that separates the two checks", () => {
     // The control, and the reason there are two assertions. An off-by-one range
     // test and a correct one agree on every out-of-range input; they differ on
-    // 24 alone, so the first test above passes under both.
-    expect(rejected("[scenario-24]")).toEqual([]);
+    // 29 alone, so the first test above passes under both.
+    expect(rejected("[scenario-29]")).toEqual([]);
     expect(rejected("[scenario-01]")).toEqual([]);
   });
 

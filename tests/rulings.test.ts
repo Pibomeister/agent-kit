@@ -133,6 +133,14 @@ describe("the policy file is the authority for ids", () => {
     expect(issue?.message).toContain("99");
   });
 
+  test("the expanded release boundary accepts scenario 29 and rejects scenario 30", () => {
+    const accepted = ctxFor({ [RULINGS_FILE]: rulings(ROW("accepted-row", "", 29)) });
+    expect(errors(checkRulings(accepted)).filter((i) => i.rule === "rulings.unknown-scenario")).toEqual([]);
+
+    const rejected = ctxFor({ [RULINGS_FILE]: rulings(ROW("rejected-row", "", 30)) });
+    expect(errors(checkRulings(rejected)).some((i) => i.rule === "rulings.unknown-scenario")).toBe(true);
+  });
+
   test("a row with no overrides block is complete, not incomplete", () => {
     const ctx = ctxFor({ [RULINGS_FILE]: rulings(ROW("reconciled-row")) });
     const { rows } = loadRulings(ctx.root);

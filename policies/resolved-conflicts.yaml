@@ -8,7 +8,8 @@
 # are the first raised by running under an outer supervisor this package does not own. Row 24 is
 # the first raised by a user requirement: that the package work with any ticket tracker. Rows
 # 25-27 bound the opt-in learning runtime: where it runs, who judges for it, and what form its
-# output takes.
+# output takes. Rows 28-32 govern delegation class, sensitive floors, independent acceptance
+# oracles, project-declared checks and host-conditional advisor consultation.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -190,7 +191,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 27
+rows: 32
 
 conflicts:
 
@@ -1162,3 +1163,128 @@ conflicts:
     source:
       plan: "§7.1, §8"
       locator: G:L1618
+
+  - id: delegation-class-is-authority-not-finding
+    tension: >-
+      The delegation rubric computes a class from several evidenced factors and also uses that
+      class to decide authorship and review involvement. Treating the computed result as a
+      finding, or treating classifier confidence as authority, would let a probabilistic judgment
+      grant or remove checkpoint authority and would turn project guidance numbers into defects.
+    ruling: >-
+      `delegation.class` decides which checkpoints a charter may delegate for one ticket. It is
+      computed from artifact evidence, never from a classifier's confidence, and is never a
+      finding. Project guidance numbers may raise the class without producing a finding. The
+      merge-time assessment may raise it automatically; only a named human may lower it, with the
+      reason recorded. A class grants neither merge nor deploy by default.
+    discharged_in: [authority, outputs]
+    binds:
+      schemas: [ticket, project]
+    scenario: 26
+    coverage: direct
+    note: >-
+      Report 1 separates evidenced factor scoring from merge-time authority at `D:L177-L199` and
+      `D:L256-L265`. Scenario 26 tests the raise-only merge-time result and refusal of delegated
+      closure. `hard-gates` was the runner-up: a higher class can cause a later checkpoint to block,
+      but this row decides what the class means and who may lower it, not every downstream stop.
+      The bindings are the W3 record surfaces; operational bodies join the row when their W5
+      changes land, rather than receiving citations before they implement the rule.
+    source:
+      plan: "§1.5, §10"
+
+  - id: sensitive-surface-sets-the-floor
+    tension: >-
+      A small diff can score as routine while touching authentication, money movement, destructive
+      data or another sensitive surface. Letting size or verification strength offset that signal
+      would delegate a checkpoint the attached pack or required sensitive action exists to guard.
+    ruling: >-
+      A never-dropped pack that attaches, or a sensitive action the ticket requires, sets a minimum
+      `delegation.class` that no other factor lowers. The floor is re-evaluated against the actual
+      diff before closure. Amount calculation, movement and reconciliation changes are explicit
+      sensitive actions alongside the existing protected actions; no class grants them by default.
+    discharged_in: [authority, hard-gates]
+    binds:
+      schemas: [ticket, common]
+    scenario: 25
+    coverage: direct
+    note: >-
+      Report 1's sensitivity classes and overriding Red surfaces are at `D:L21-L34`, with the
+      protected surface list summarized at `D:L201-L208`. Scenario 25 proves the floor by refusing
+      delegated `build-go` for a trust-boundary ticket regardless of size. `inputs` was the
+      runner-up because packs and actions supply the evidence; it lost because the row decides the
+      authority floor and the refusal when delegated authority falls below it. These bindings are
+      not identical to `delegation-class-is-authority-not-finding`: this row also governs the shared
+      sensitive-action vocabulary, while that row governs project guidance.
+    source:
+      plan: "§1.5, §10"
+
+  - id: unreviewed-work-needs-independent-oracle
+    tension: >-
+      Green work may ship without human code review, while an implementer who writes or rewrites
+      the acceptance tests after seeing its own implementation can make the oracle agree with the
+      code by construction. A green label cannot make self-authored acceptance evidence independent.
+    ruling: >-
+      Whenever work ships without human code review, a seat other than the implementer writes the
+      acceptance tests from the ticket's criteria before implementation. The implementer may not
+      change those tests without a recorded decision. Passing tests remain insufficient when the
+      project's declared mutation evidence shows that a test kills no mutant on changed lines.
+    discharged_in: [workflow, authority]
+    binds:
+      schemas: [ticket, verification]
+    scenario: 28
+    coverage: direct
+    note: >-
+      Report 2 states fail-before/pass-after, mutation strength and test-author separation at
+      `S:L152-L172`. Scenario 28 exercises both the independent author and the mutation-strength
+      consequence. `hard-gates` was the runner-up, but the implementer's inability to rewrite the
+      oracle is an authority boundary and the before-implementation ordering is a workflow rule;
+      whether missing evidence blocks is decided with the project's declared constraints.
+    source:
+      plan: "§1.5, §10"
+
+  - id: project-checks-block-only-as-constraints
+    tension: >-
+      Structural and mutation tools emit numbers that can sharpen review, and the reports propose
+      example thresholds. Making every receipt blocking would turn calibration guidance into a
+      catalog-wide gate; ignoring the receipts would discard useful maintainability and testing
+      evidence.
+    ruling: >-
+      Structural and mutation checks block only when the project declares the named check in
+      `mandatory_constraints`. Otherwise their receipts are evidence for the maintainability and
+      testing lenses. A guidance value may raise `delegation.class`, but it never becomes a finding
+      by itself. A mandatory constraint blocks with the named command, result and affected evidence.
+    discharged_in: [inputs, hard-gates, outputs]
+    binds:
+      schemas: [project, verification]
+    scenario: 27
+    coverage: direct
+    note: >-
+      Report 2 defines diff-scoped complexity and structural evidence at `S:L23-L45` and places
+      mutation and related checks in the reference execution stages at `S:L176-L195`. Scenario 27
+      directly distinguishes guidance from a mandatory constraint. `limits` was rejected: the row
+      deliberately fixes no numeric limit and instead decides when a project-chosen check blocks.
+    source:
+      plan: "§1.5, §10"
+
+  - id: advisor-consultation-follows-class
+    tension: >-
+      A supported host can obtain a second advisory judgment at risk-scored decision points, but
+      requiring it for every ticket wastes the signal and treating it as authority would let a
+      host-specific feature lower the class or replace independent review.
+    ruling: >-
+      On a host that offers an advisor tool, consultation is required and recorded as evidence for
+      `yellow-owner` and `red`, recommended for `yellow-agent`, and silent for `green`. An advisor
+      adds judgment evidence only: it never lowers `delegation.class`, authorizes a sensitive
+      action, closes a finding, or substitutes for a required independent lane. Hosts without the
+      tool remain valid and do not manufacture evidence of consultation.
+    discharged_in: [workflow, outputs]
+    binds:
+      schemas: [verification]
+    scenario: 29
+    coverage: direct
+    note: >-
+      Scenario 29 tests the full class split, the host-conditional boundary and the evidence
+      requirement. `authority` was rejected because the ruling expressly denies the advisor any
+      authority; the obligation is when consultation runs and what evidence it emits. The captain's
+      D10 decision is recorded in `research/dossiers/delegation.md`.
+    source:
+      plan: "§1.5, §10"
