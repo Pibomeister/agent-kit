@@ -197,7 +197,15 @@ const GATE_SOURCE = "src/lifecycle/gate.ts";
 const GATE_ADAPTER_IDS = "const BUNDLED_ADAPTER_IDS: readonly string[] = [];";
 export const GATE_FILE = "bin/ak-gate.mjs";
 /** The skills whose text runs `../../bin/ak-gate.mjs`; a bundle with any of them carries the gate. */
-const GATE_SKILLS = ["super-build", "super-verify", "super-review", "super-ship", "verify"];
+const GATE_SKILLS = [
+  "super-align",
+  "super-bound",
+  "super-build",
+  "super-verify",
+  "super-review",
+  "super-ship",
+  "verify",
+];
 
 /** gate.ts with its types stripped: it imports only `node:` built-ins, so the output runs under plain node. */
 function gateScript(source: string, adapterIds: readonly string[]): string {
