@@ -31,7 +31,8 @@ or a human) writes it with one line, from outside the repository:
 
 ```
 ak lifecycle bypass grant --task <id> --by <who authorized it> --reason <why> \
-  --out <supervisor home>/data/<task>/bypass.json --project <repo> [--hours <n>]
+  --out <supervisor home>/data/<task>/bypass.json --project <repo> \
+  --worktree <task worktree> [--hours <n>]
 ```
 
 It prints the brief section the supervisor pastes into the task's brief. Before each phase the worker
@@ -57,9 +58,13 @@ registers the file's real path and sha256 in a ledger under the account's home d
 missing, malformed, unregistered, copied, edited, inside any worktree or the git directory, for
 another repository, or past `expires_at`, which defaults to 24 hours and is capped at 168.
 
-**One task, one run.** `check` and `record --bypass` take the task id from the brief as `--task`,
-never from the grant file, and refuse unless it equals the grant's `task_id`. The first successful
-use writes its run id into the grant's ledger entry, and every later use from another run is refused.
+**One task.** `check` and `record --bypass` take the task id from the brief as `--task`, never
+from the grant file, and refuse unless it equals the grant's `task_id`. `grant` records the task's
+own worktree, which must be one of the repository's, and `check` and `record --bypass` refuse unless
+they run from it, so another task's worktree is refused even with the right `--task`. The grant is
+not bound to a run: the lifecycle opens new runs after align, so any run under the task may use it.
+Each phase check and `record --bypass` adds its run id to a `runs` list in the grant's ledger entry
+for audit; a check without `--phase` writes nothing.
 
 ## Consequences
 

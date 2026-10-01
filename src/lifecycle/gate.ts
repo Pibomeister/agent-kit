@@ -1164,6 +1164,8 @@ export interface BypassGrant {
   task_id: string;
   /** The real path of the git common directory of the repository the grant is for. */
   repo: string;
+  /** The real path of the task's own worktree; only a check from inside it passes. */
+  worktree: string;
   authorized_by: string;
   reason: string;
   covers: BypassPhase[];
@@ -1186,8 +1188,8 @@ interface BypassLedgerRecord {
   grant_id: string;
   grant_path: string;
   grant_sha256: string;
-  /** The run the grant was first used by; every later use must come from the same run. */
-  run_id?: string;
+  /** Every run that used the grant, for audit; never a refusal condition. */
+  runs?: string[];
 }
 
 /** Resolved from the account's home directory, never from `HOME` or another variable a worker could set. */
@@ -1227,6 +1229,8 @@ const refuse = (reason: string) => ({ ok: false as const, reason });
 export interface BypassGrantArgs {
   task: string;
   project: string;
+  /** The task's own worktree, one of the repository's. */
+  worktree: string;
   by: string;
   reason: string;
   out: string;
@@ -1251,6 +1255,9 @@ export function grantBypass(
     return no(
       `run it from outside the repository it grants: ${a.cwd} is a checkout of ${repo.common}, where a worker grants itself`,
     );
+  const worktree = realOr(a.worktree);
+  if (!repo.writable.slice(1).includes(worktree))
+    return no(`${a.worktree} is not one of the worktrees of ${repo.common}`);
   const out = realOr(a.out);
   for (const dir of repo.writable)
     if (within(out, dir)) return no(`${a.out} is inside ${dir}, which a worker in that repository can write`);
@@ -1266,6 +1273,7 @@ export function grantBypass(
     ),
     task_id: a.task,
     repo: repo.common,
+    worktree,
     authorized_by: a.by,
     reason: a.reason,
     covers: [...BYPASS_PHASES],
@@ -1288,8 +1296,6 @@ export interface BypassCheckArgs {
   grant: string;
   /** The task the worker was briefed on; the grant must name the same one. */
   task: string;
-  /** The run using the grant; the first use binds the grant to it. */
-  run: string;
   /** The phase to start, or undefined to check only that the grant still holds. */
   phase?: string;
   project: string;
@@ -1322,6 +1328,9 @@ export function checkBypass(
   const repo = repoOf(a.project);
   if (repo === undefined) return no(`${a.project} is not a git checkout`);
   if (g.repo !== repo.common) return no(`bypass grant ${id} is for ${String(g.repo)}, not ${repo.common}`);
+  const top = git(a.project, ["rev-parse", "--show-toplevel"]);
+  const tree = top.code === 0 && top.text !== "" ? realOr(top.text) : a.project;
+  if (g.worktree !== tree) return no(`bypass grant ${id} is for worktree ${String(g.worktree)}, not ${tree}`);
   for (const dir of repo.writable)
     if (within(at, dir)) return no(`bypass grant ${path} is inside ${dir}, which the worker can write`);
   const expires = String(g.expires_at);
@@ -1330,9 +1339,6 @@ export function checkBypass(
   if (a.phase !== undefined && !(Array.isArray(g.covers) && g.covers.includes(a.phase)))
     return no(`bypass grant ${id} does not cover ${a.phase}`);
   if (g.task_id !== a.task) return no(`bypass grant ${id} is for task ${String(g.task_id)}, not ${a.task}`);
-  if (entry.run_id !== undefined && entry.run_id !== a.run)
-    return no(`bypass grant ${id} is bound to run ${String(entry.run_id)}, not ${a.run}`);
-  if (entry.run_id === undefined) atomicJson(join(a.ledger, `${safeRunId(id)}.json`), { ...entry, run_id: a.run });
   return {
     ok: true,
     attribution: {
@@ -1346,6 +1352,15 @@ export function checkBypass(
   };
 }
 
+/** Adds a run that used the grant to its ledger entry, for audit. */
+function logBypassRun(ledger: string, grantId: string, run: string): void {
+  const path = join(ledger, `${safeRunId(grantId)}.json`);
+  const entry = readObject(path);
+  if (entry === undefined) return;
+  const runs = Array.isArray(entry.runs) ? entry.runs.map(String) : [];
+  if (!runs.includes(run)) atomicJson(path, { ...entry, runs: [...runs, run] });
+}
+
 /** The brief section a supervisor pastes into the task's brief: the one place the worker learns of the grant. */
 export function bypassBrief(grant: BypassGrant, path: string): string {
   return [
@@ -1355,7 +1370,7 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "It stands in for the typed command of super-align, super-bound, super-review full and readiness, and",
     `super-ship. Before starting one, run \`ak lifecycle bypass check --grant ${path} --task ${grant.task_id} --phase <phase>\``,
     "(or `node <bundle>/bin/ak-gate.mjs bypass check …`); exit 0 is the start, anything else is a stop.",
-    "The first check binds the grant to your run; a check from any other run is refused.",
+    `Run it from the task's worktree, ${grant.worktree}; a check from any other worktree is refused.`,
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
     `Pass \`--bypass ${path} --task ${grant.task_id}\` when you record review-full, review-readiness or ship-preflight.`,
@@ -1373,7 +1388,7 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
-  "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> [--hours <n>]",
+  "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "",
   `  gates: ${GATES.join(", ")}`,
@@ -1381,8 +1396,8 @@ export const LIFECYCLE_USAGE = [
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
   `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant from outside the repository; the worker`,
-  "  runs check before each phase and passes --bypass <file> --task <id> to record. The first use binds the",
-  "  grant to that run. Start only: approvals still stop.",
+  "  runs check before each phase and passes --bypass <file> --task <id> to record, from the",
+  "  task's worktree the grant names. Start only: approvals still stop.",
   "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
   "",
   "Exit 0 when the record was written or every gate is current, 1 when refused, 2 on bad usage.",
@@ -1392,7 +1407,7 @@ const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "dir", "project"],
   record: ["gate", "receipt", "class", "author-kind", "host", "bypass", "task", "run", "dir", "project"],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
-  "bypass grant": ["task", "by", "reason", "out", "hours", "project"],
+  "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
 };
 
@@ -1449,14 +1464,22 @@ export function main(
   }
 
   if (sub === "bypass grant") {
-    const [task, by, reason, out] = ["task", "by", "reason", "out"].map(str);
-    if (task === undefined || by === undefined || reason === undefined || out === undefined || !flags.has("project")) {
-      io.err("ak lifecycle bypass grant: --task, --by, --reason, --out and --project are required");
+    const [task, by, reason, out, worktree] = ["task", "by", "reason", "out", "worktree"].map(str);
+    if (
+      task === undefined ||
+      by === undefined ||
+      reason === undefined ||
+      out === undefined ||
+      worktree === undefined ||
+      !flags.has("project")
+    ) {
+      io.err("ak lifecycle bypass grant: --task, --by, --reason, --out, --project and --worktree are required");
       return 2;
     }
     const granted = grantBypass({
       task,
       project,
+      worktree: resolve(cwd, worktree),
       by,
       reason,
       out: resolve(cwd, out),
@@ -1519,14 +1542,23 @@ export function main(
       return 2;
     }
     const phase = str("phase");
-    const checked = checkBypass({ grant: resolve(cwd, grantPath), task, run, phase, project, ledger: bypassLedger });
+    const checked = checkBypass({
+      grant: resolve(cwd, grantPath),
+      task,
+      phase,
+      project,
+      ledger: bypassLedger,
+    });
     if (!checked.ok) {
       io.err(`ak lifecycle bypass check: refused: ${checked.reason}`);
       io.err("hint: stop and report needs-decision; the phase needs its typed command");
       return 1;
     }
     const used = { ...checked.attribution, phase: phase ?? null, run_id: run, checked_at: new Date().toISOString() };
-    if (phase !== undefined) atomicJson(join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`), used);
+    if (phase !== undefined) {
+      atomicJson(join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`), used);
+      logBypassRun(bypassLedger, checked.attribution.grant_id, run);
+    }
     io.out(JSON.stringify(used, null, 2));
     return 0;
   }
@@ -1548,7 +1580,6 @@ export function main(
       const checked = checkBypass({
         grant: resolve(cwd, bypassPath),
         task,
-        run,
         phase: BYPASS_GATE_PHASE[gate],
         project,
         ledger: bypassLedger,
@@ -1612,6 +1643,7 @@ export function main(
       io.err(`ak lifecycle record: ${r.reason}`);
       return 1;
     }
+    if (bypass !== undefined) logBypassRun(bypassLedger, bypass.grant_id, run);
     if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
     for (const line of r.skipped) io.err(`note: ${line}`);
     io.out(`recorded ${gate} for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);

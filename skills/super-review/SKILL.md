@@ -69,7 +69,7 @@ grant: cite the record it prints on the review. A refusal means stop and report 
 Firstmate (ADR-0004).
 
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
-task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
+task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
 --phase super-review:full` (or `super-review:readiness`): exit 0 is the start, and a refusal is a stop with
 `needs-decision`. The grant starts the review and nothing else; a decision a human would make inside
 it still goes to the supervisor through `needs-decision`. Record the gate with `--bypass <path> --task <id>`

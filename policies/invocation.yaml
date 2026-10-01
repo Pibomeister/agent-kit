@@ -415,8 +415,10 @@ bypass:
     one repository, until it expires. A supervisor (Firstmate or a human) writes it from outside
     the repository with `ak lifecycle bypass grant`; the worker runs `ak lifecycle bypass check
     --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
-    must equal the grant's; the first use binds the grant to its run, and any other run is refused. The phase runs as its explicit form. It is not a
-    phase operation, not a delegated grant and not trusted evidence.
+    must equal the grant's, and the check must run from the task's worktree the grant names. Any
+    run under that task may use it; each use is logged in the grant's ledger entry for audit. The
+    phase runs as its explicit form. It is not a phase operation, not a delegated grant and not
+    trusted evidence.
   phases: [super-align, super-bound, "super-review:full", "super-review:readiness", super-ship]
   start_only: >-
     The grant starts phases and nothing else. Every approval inside a phase stops with
