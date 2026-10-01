@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
@@ -90,6 +91,15 @@ const packageJson = (doc: Record<string, unknown>) => `${JSON.stringify(doc, nul
 
 const BASE: Record<string, string> = {
   "catalog.yaml": CATALOG,
+  ".claude-plugin/marketplace.json": `${JSON.stringify(
+    {
+      name: "agent-kit",
+      owner: { name: "marketplace owner" },
+      plugins: [{ name: "ak", homepage: "https://example.test/agent-kit" }],
+    },
+    null,
+    2,
+  )}\n`,
   // In every fixture because it is in every real tree: `ak` runs from a package
   // root. A plan with no package.json to agree with is not a plan with nothing
   // to check -- it is the manifests sitting in front of the check with no
@@ -851,14 +861,11 @@ describe("the two fields package.json is a party to, and the two it is not", () 
 });
 
 /**
- * The marketplace entry, which only one of the two bundles carries.
+ * The marketplace entry both installable bundles carry.
  *
- * `adapters/claude-code/CONTRACT.md` §1 puts `.claude-plugin/marketplace.json`
- * in that bundle's shape; `adapters/codex/CONTRACT.md` §2 does not list it in
- * the codex bundle at all, and that host installs through
- * `codex plugin marketplace add <path>` (§4) rather than from a file of this
- * name. So its presence is a third place the bundles are contractually
- * different, and it is asserted as a difference rather than assumed.
+ * Both hosts discover a local marketplace through
+ * `.claude-plugin/marketplace.json`; Codex needs it before
+ * `codex plugin add ak@agent-kit` can address the plugin.
  *
  * The shape is taken from the donor the contract cites,
  * `compound-engineering@05c42da:.claude-plugin/marketplace.json`, read at the
@@ -868,14 +875,69 @@ describe("the two fields package.json is a party to, and the two it is not", () 
  * them, and a plausible-looking invented one is the failure mode this package
  * has already produced once.
  */
-describe("the marketplace entry the claude-code bundle carries", () => {
-  const marketplaceIn = (plan: ReturnType<typeof planBundle>) =>
-    JSON.parse(plan.files.get(".claude-plugin/marketplace.json")?.contents ?? "{}");
+describe("the marketplace entry each host bundle carries", () => {
+  interface MarketplaceFixture {
+    name: string;
+    owner?: { name: string };
+    metadata: { version: string; description?: string };
+    plugins: [
+      {
+        name: string;
+        version: string;
+        description: string;
+        source: string;
+        author?: { name: string };
+        homepage?: string;
+        tags?: string[];
+      },
+    ];
+  }
 
-  test("the claude-code bundle carries it and the codex bundle does not", () => {
+  interface ManifestFixture {
+    name: string;
+    version: string;
+    description: string;
+    author?: { name: string };
+  }
+
+  const ajv = new Ajv2020({ strict: false });
+  const isMarketplaceFixture = ajv.compile<MarketplaceFixture>({
+    type: "object",
+    required: ["name", "metadata", "plugins"],
+    properties: {
+      name: { type: "string" },
+      owner: { type: "object" },
+      metadata: { type: "object" },
+      plugins: { type: "array", items: { type: "object" } },
+    },
+  });
+  const isManifestFixture = ajv.compile<ManifestFixture>({
+    type: "object",
+    required: ["name", "version", "description"],
+    properties: {
+      name: { type: "string" },
+      version: { type: "string" },
+      description: { type: "string" },
+      author: { type: "object" },
+    },
+  });
+
+  const marketplaceIn = (plan: ReturnType<typeof planBundle>): MarketplaceFixture => {
+    const parsed: unknown = JSON.parse(plan.files.get(".claude-plugin/marketplace.json")?.contents ?? "{}");
+    if (!isMarketplaceFixture(parsed)) throw new Error("invalid marketplace fixture");
+    return parsed;
+  };
+
+  const manifestIn = (plan: ReturnType<typeof planBundle>, path: string): ManifestFixture => {
+    const parsed: unknown = JSON.parse(plan.files.get(path)?.contents ?? "{}");
+    if (!isManifestFixture(parsed)) throw new Error("invalid manifest fixture");
+    return parsed;
+  };
+
+  test("both host bundles carry it", () => {
     const ctx = ctxFor();
     expect(planBundle(ctx, "claude-code", {}).files.has(".claude-plugin/marketplace.json")).toBe(true);
-    expect([...planBundle(ctx, "codex", {}).files.keys()].filter((p) => p.endsWith("marketplace.json"))).toEqual([]);
+    expect(planBundle(ctx, "codex", {}).files.has(".claude-plugin/marketplace.json")).toBe(true);
   });
 
   test("it lists exactly one plugin, sourced from the bundle root", () => {
@@ -907,34 +969,41 @@ describe("the marketplace entry the claude-code bundle carries", () => {
         .replace("  id: ak\n", "  id: not-ak\n"),
     });
     const plan = planBundle(ctx, "claude-code", {});
-    const manifest = JSON.parse(plan.files.get(".claude-plugin/plugin.json")?.contents ?? "{}");
+    const manifest = manifestIn(plan, ".claude-plugin/plugin.json");
     const market = marketplaceIn(plan);
-    expect(market.owner).toEqual(manifest.author);
+    expect(market.owner).toEqual({ name: "marketplace owner" });
     expect(market.plugins[0].author).toEqual(manifest.author);
+    expect(market.plugins[0].homepage).toBe("https://example.test/agent-kit");
     expect(market.metadata.version).toBe(manifest.version);
     expect(market.plugins[0].name).toBe(manifest.name);
   });
 
-  test("it carries no field this tree has no value for", () => {
+  test("the codex marketplace plugin agrees with the codex plugin manifest", () => {
+    const plan = planBundle(ctxFor(), "codex", {});
+    const manifest = manifestIn(plan, ".codex-plugin/plugin.json");
+    const market = marketplaceIn(plan);
+    expect(market.name).toBe("agent-kit");
+    expect(market.plugins).toHaveLength(1);
+    expect(market.plugins[0].source).toBe("./");
+    expect([market.plugins[0].name, market.plugins[0].version, market.plugins[0].description]).toEqual([
+      manifest.name,
+      manifest.version,
+      manifest.description,
+    ]);
+  });
+
+  test("it carries no optional field this tree has no value for", () => {
     // The donor carries `homepage`, `tags` and a `metadata.description`. This
     // tree states none of them, and emitting a plausible one is how a manifest
     // ends up asserting something nobody checked. Absence is the honest answer
     // until a value exists, and this test is what stops one being invented
     // later without a source.
     const market = marketplaceIn(planBundle(ctxFor(), "claude-code", {}));
-    expect("homepage" in market.plugins[0]).toBe(false);
     expect("tags" in market.plugins[0]).toBe(false);
     expect("description" in market.metadata).toBe(false);
   });
 
-  test("a catalog with no usable author fails rather than shipping an unowned marketplace", () => {
-    // `owner` is an ownership claim in a distributed file. With no author
-    // declared there is nothing to derive it from, and an empty owner is worse
-    // than a failed build.
-    //
-    // Blank as well as absent, at this emit site and not only at the manifest's:
-    // they are two guarded lines, and `{ "name": "" }` in a file that says who
-    // owns a published plugin is the shape that looks answered and is not.
+  test("a catalog with no usable author still fails the plugin manifest", () => {
     for (const catalog of [
       CATALOG.replace("  author: agent-kit maintainers\n", ""),
       CATALOG.replace("author: agent-kit maintainers", 'author: ""'),
@@ -942,7 +1011,7 @@ describe("the marketplace entry the claude-code bundle carries", () => {
       const plan = planBundle(ctxFor({ "catalog.yaml": catalog }), "claude-code", {});
       expect(plan.issues.some((i) => i.rule === "packaging.manifest-identity-missing")).toBe(true);
       const market = marketplaceIn(plan);
-      expect("owner" in market).toBe(false);
+      expect(market.owner).toEqual({ name: "marketplace owner" });
       expect("author" in market.plugins[0]).toBe(false);
     }
   });
@@ -1107,14 +1176,16 @@ describe("the two host bundles, compared", () => {
     expect(codex.files.has(".codex-plugin/plugin.json")).toBe(true);
   });
 
-  test("neither bundle carries anything at all from the other host's directory", () => {
+  test("neither bundle carries the other host's plugin manifest or build record", () => {
     // Asserted over every path rather than over the two manifest names, because
     // the build record sits in the same directory and had to move with it. A
     // check written against `plugin.json` alone would report clean over a codex
     // bundle still shipping `.claude-plugin/ak.json`, which is the same defect
     // one file further down.
     const { claude, codex } = bundles();
-    expect([...codex.files.keys()].filter((p) => p.startsWith(".claude-plugin/"))).toEqual([]);
+    expect(
+      [...codex.files.keys()].filter((p) => p.startsWith(".claude-plugin/") && p !== ".claude-plugin/marketplace.json"),
+    ).toEqual([]);
     expect([...claude.files.keys()].filter((p) => p.startsWith(".codex-plugin/"))).toEqual([]);
   });
 

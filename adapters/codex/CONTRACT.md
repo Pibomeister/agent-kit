@@ -9,7 +9,7 @@ tested.
 
 Observations marked **verified (donor)** were read from the pinned clone at
 `compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1`. Observations marked
-**verified (CLI)** were taken from `codex-cli 0.154.0` on this machine. Everything else is a
+**verified (CLI)** were taken from `codex-cli 0.159.2` on this machine. Everything else is a
 requirement on the packager.
 
 ---
@@ -61,6 +61,7 @@ confirms it.
 
 ```text
 dist/codex/
+├── .claude-plugin/marketplace.json # local marketplace registration for Codex CLI
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
 ├── skills/<id>/SKILL.md        # same bodies as dist/claude-code, different generated keys
 ├── skills/<id>/references/
@@ -87,7 +88,7 @@ host can enforce. None of the rows below is a `capability` value:
 
 | Restriction | claude-code | codex | Consequence |
 |---|---|---|---|
-| Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior | **No equivalent key verified** on `codex-cli 0.154.0` | The structural half of the invocation law is unavailable. See §3.1 |
+| Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior | **No equivalent key verified** on `codex-cli 0.159.2` | The structural half of the invocation law is unavailable. See §3.1 |
 | Tool restriction | `allowed-tools`, pre-approval only, denies nothing | Not emitted. The host has an OS-level sandbox instead, configured by the operator (`sandbox_permissions`, verified (CLI) in `codex plugin --help`) | Codex's confinement is real but **operator-owned and process-wide**, not per-skill. The package still declares side effects and still relies on neither |
 | Bundled behavioral eval runner | `claude plugin eval`, `<eval dir>/**/case.yaml` | **None verified** | The eval corpus is not executable against this bundle by a host-native runner. See §5 |
 | Manifest validator | `claude plugin validate --strict` | **None verified** | Bundle validation is `ak validate` plus an install smoke test |
@@ -143,11 +144,11 @@ capabilities.
 
 ## 4. Install
 
-Verified (CLI), `codex-cli 0.154.0`:
+Verified (CLI), `codex-cli 0.159.2`:
 
 ```bash
-codex plugin marketplace add <source>   # local path, owner/repo[@ref], HTTPS or SSH Git URL
-codex plugin add <plugin>               # install from a configured or remote marketplace
+codex plugin marketplace add <dist/codex>
+codex plugin add ak@agent-kit
 codex plugin list
 codex plugin remove <plugin>
 ```
@@ -172,6 +173,8 @@ Tests this adapter owns, in `tests/adapters/`:
    `package.json` names and describes the npm package, a manifest names and describes what the
    host addresses. They are two names for two objects, so a check that forces them to agree can
    only be satisfied by renaming one of them to suit the check.
+   The Codex marketplace entry's plugin `name`, `version`, and `description` agree with
+   `dist/codex/.codex-plugin/plugin.json`.
 
    The donor supports the `version` clause and no other. At
    `compound-engineering@05c42da:src/release/metadata.ts` the token `compoundPackage.` occurs
@@ -186,10 +189,10 @@ Tests this adapter owns, in `tests/adapters/`:
    appearing in the other's bundle is a failure.
 4. **Non-trigger corpus completeness** — every U skill in the codex bundle has a non-trigger eval
    case, and every such case's prompt is drawn from that skill's `## Not for` section.
-5. **Install smoke test** — `codex plugin marketplace add <dist/codex>` followed by
-   `codex plugin add`, then confirming the skills are listed. Run manually against the pinned CLI
-   version at release time and recorded as a receipt; not a CI gate, because it requires a host
-   install.
+5. **Install smoke test** — the bundle now carries the marketplace manifest required by
+   `codex plugin marketplace add <dist/codex>`; follow it with `codex plugin add ak@agent-kit`, then
+   confirm the skills are listed. Run manually against the pinned CLI version at release time and
+   record it as a receipt; it is not a CI gate because it requires a host install.
 
 **Reported honestly, not worked around:** with no verified host-native eval runner for this host, the
 behavioral corpus is executed against the claude-code bundle and, when a runner is attached, through

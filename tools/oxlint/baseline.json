@@ -331,13 +331,11 @@
     "typescript(no-unsafe-type-assertion)": 1
   },
   "src/packaging/plan.ts": {
-    "anti-slop(no-known-value-widening)": 5,
+    "anti-slop(no-known-value-widening)": 1,
     "anti-slop(no-runtime-typeof)": 2,
-    "anti-slop(no-unsafe-dictionary-type)": 7,
+    "anti-slop(no-unsafe-dictionary-type)": 2,
     "anti-slop(require-safety-comment-for-type-assertion)": 1,
-    "typescript(no-base-to-string)": 1,
     "typescript(no-unsafe-type-assertion)": 1,
-    "typescript(restrict-template-expressions)": 1,
     "unicorn(consistent-function-scoping)": 2,
     "unicorn(no-array-sort)": 2
   },
@@ -1043,11 +1041,11 @@
     "anti-slop(no-unsafe-dictionary-type)": 6,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
     "typescript(no-non-null-assertion)": 1,
-    "typescript(no-unsafe-assignment)": 27,
-    "typescript(no-unsafe-member-access)": 55,
-    "typescript(no-unsafe-return)": 5,
+    "typescript(no-unsafe-assignment)": 22,
+    "typescript(no-unsafe-member-access)": 39,
+    "typescript(no-unsafe-return)": 4,
     "typescript(no-unsafe-type-assertion)": 3,
-    "unicorn(consistent-function-scoping)": 25,
+    "unicorn(consistent-function-scoping)": 24,
     "unicorn(no-array-sort)": 5
   },
   "tests/policies.test.ts": {

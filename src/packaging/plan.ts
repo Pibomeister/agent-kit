@@ -1,4 +1,5 @@
 import { join, posix } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
 
 import { entryBodyPath } from "../catalog/layout.ts";
 import { listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
@@ -44,14 +45,8 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
 };
 
 /**
- * The marketplace entry, which only the claude-code bundle carries.
- *
- * `adapters/claude-code/CONTRACT.md` §1 puts it in that bundle's shape.
- * `adapters/codex/CONTRACT.md` §2 does not list it in the codex bundle, and
- * that host installs through `codex plugin marketplace add <path>` (§4) rather
- * than from a file of this name -- so emitting it there would be this package
- * inventing a requirement, which is the mistake in the opposite direction from
- * the one that produced two identical bundles.
+ * The marketplace entry both host bundles carry. Codex CLI discovers the local
+ * marketplace through the same path before resolving `ak@agent-kit`.
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
@@ -103,10 +98,56 @@ const PARITY_CHECK = "manifest parity";
  * should be sent to the catalog field behind it. The comparison reads the
  * emitted object, so a stale citation misdirects without changing a verdict.
  */
-const PARITY_FIELDS: ReadonlyArray<readonly [string, string]> = [
+const PARITY_FIELDS = [
   ["version", "package.version"],
   ["license", "package.license"],
-];
+] as const;
+
+interface HostManifest {
+  name: string;
+  version: string;
+  description?: string;
+  author?: { name: string };
+  license?: string;
+  skills?: string | string[];
+  experimental?: { evals: string };
+}
+
+interface RootMarketplace {
+  owner?: { name: string };
+  plugins?: Array<{ name: string; homepage?: string }>;
+}
+
+interface MarketplaceEntry {
+  name: string;
+  version: string;
+  description?: string;
+  author?: { name: string };
+  homepage?: string;
+  source: string;
+}
+
+interface MarketplaceDocument {
+  name: string;
+  owner?: { name: string };
+  metadata: { version: string };
+  plugins: MarketplaceEntry[];
+}
+
+const isRootMarketplace = new Ajv2020({ strict: false }).compile<RootMarketplace>({
+  type: "object",
+  properties: {
+    owner: { type: "object", required: ["name"], properties: { name: { type: "string" } } },
+    plugins: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["name"],
+        properties: { name: { type: "string" }, homepage: { type: "string" } },
+      },
+    },
+  },
+});
 
 /**
  * The field list as the messages spell it, derived rather than written out.
@@ -722,9 +763,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     path: HOST_MANIFEST_FILE[host],
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
-  if (host === "claude-code") {
-    files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
-  }
+  files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx, manifest) });
   files.set(BUILD_RECORD_FILE[host], {
     path: BUILD_RECORD_FILE[host],
     contents: buildRecord(
@@ -766,12 +805,17 @@ function manifestObject(
   host: HostId,
   skills: ReadonlyArray<string>,
   hasCorpus: boolean,
-): Record<string, unknown> {
+): HostManifest {
   const pkg = ctx.catalog.package;
-  const manifest: Record<string, unknown> = {
+  const manifest: HostManifest = {
     name: pkg.id,
     version: pkg.version,
   };
+  if (declared(pkg.description)) manifest.description = pkg.description;
+  if (declared(pkg.author)) manifest.author = { name: pkg.author };
+  if (declared(pkg.license)) manifest.license = pkg.license;
+  manifest.skills = skillRegistration(host, skills);
+  if (hasCorpus) manifest.experimental = { evals: EVAL_DIR };
   // From `package.description` and not `package.name`, which is the defect the
   // withdrawn parity clause was masking: the manifest shipped the literal
   // `agent-kit` as the bundle's description into every build, and the check
@@ -780,7 +824,6 @@ function manifestObject(
   //
   // Omitted rather than emitted blank when the catalog states none, for the
   // reason `author` and `license` are below.
-  if (declared(pkg.description)) manifest["description"] = pkg.description;
   // Key order follows the contract's own example at
   // `adapters/claude-code/CONTRACT.md` §1, and these are set before `skills` for
   // that reason. Each is omitted when the catalog does not declare it rather
@@ -788,9 +831,6 @@ function manifestObject(
   // whether the key is present and fail the comparison §5 requires, which is
   // the quieter of the two ways to be wrong. `checkManifestIdentity` is what
   // makes the omission loud.
-  if (declared(pkg.author)) manifest["author"] = { name: pkg.author };
-  if (declared(pkg.license)) manifest["license"] = pkg.license;
-  manifest["skills"] = skillRegistration(host, skills);
   // Last, as in §1's example, and conditioned on the corpus alone rather than
   // on the corpus and the host. The key is a pointer: emitted with nothing
   // behind it, it is the pointer half of this feature shipping without the
@@ -804,7 +844,6 @@ function manifestObject(
   // The host decision now lives in one place, at the copy, and the assertion
   // that codex's manifest carries no such key is a test rather than a
   // condition that cannot be observed failing.
-  if (hasCorpus) manifest["experimental"] = { evals: EVAL_DIR };
   return manifest;
 }
 
@@ -866,7 +905,7 @@ function parsePackageJson(text: string): Record<string, unknown> | null {
  * (`the two bundles are the same skills in two shapes`) rather than a
  * condition this could observe failing.
  */
-function checkManifestParity(root: string, manifest: Record<string, unknown>): Issue[] {
+function checkManifestParity(root: string, manifest: HostManifest): Issue[] {
   const text = readTextIfPresent(join(root, PACKAGE_FILE));
   const pkg = text === null ? null : parsePackageJson(text);
   if (pkg === null) {
@@ -915,28 +954,30 @@ function checkManifestParity(root: string, manifest: Record<string, unknown>): I
  * recalled: `name`, `owner`, `metadata`, and one `plugins[]` entry whose
  * `source` is `"./"`.
  *
- * `owner` is the catalog's `author`, not a second identity. The contract states
- * one identity for this package and the donor uses the same string in both
- * places; deriving it here means the two cannot disagree, and it avoids
- * inventing an owner, which would be a claim about a real party in a file that
- * gets distributed.
- *
- * The donor's `homepage`, `tags` and `metadata.description` are not emitted.
- * This tree states no value for any of them, and the failure this package has
- * already produced once is a plausible value nobody checked -- so the fields
- * are absent until something in the tree says what they are.
+ * The plugin identity comes from the generated host manifest. Marketplace
+ * ownership and homepage come from the repository-root marketplace manifest,
+ * the existing publication authority for those fields, so the bundle does not
+ * hand-copy or invent either value.
  */
-function marketplace(ctx: CheckContext): string {
+function marketplace(ctx: CheckContext, manifest: HostManifest): string {
   const pkg = ctx.catalog.package;
-  const entry: Record<string, unknown> = { name: pkg.id, description: pkg.name };
-  const doc: Record<string, unknown> = { name: pkg.name };
-  if (declared(pkg.author)) {
-    doc["owner"] = { name: pkg.author };
-    entry["author"] = { name: pkg.author };
-  }
-  doc["metadata"] = { version: pkg.version };
-  entry["source"] = "./";
-  doc["plugins"] = [entry];
+  const parsedRootMarketplace: unknown = JSON.parse(readTextIfPresent(join(ctx.root, MARKETPLACE_FILE)) ?? "{}");
+  const rootMarketplace = isRootMarketplace(parsedRootMarketplace) ? parsedRootMarketplace : {};
+  const rootPlugin = rootMarketplace.plugins?.[0];
+  const entry: MarketplaceEntry = {
+    name: manifest.name,
+    version: manifest.version,
+    description: manifest.description,
+    source: "./",
+  };
+  if (declared(pkg.author)) entry.author = { name: pkg.author };
+  if (rootPlugin?.homepage !== undefined) entry.homepage = rootPlugin.homepage;
+  const doc: MarketplaceDocument = {
+    name: pkg.name,
+    metadata: { version: pkg.version },
+    plugins: [entry],
+  };
+  if (rootMarketplace.owner !== undefined) doc.owner = rootMarketplace.owner;
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
 
