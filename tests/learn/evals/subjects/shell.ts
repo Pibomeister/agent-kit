@@ -207,13 +207,11 @@ export function grokReadOnlyPermissionRules() {
     "Bash(*>*)",
     "Bash(find *-delete*)",
     "Bash(find *-exec*)",
-    "Bash(find *-execdir*)",
     "Bash(find *-ok*)",
-    "Bash(find *-okdir*)",
     "Bash(find *-fprint*)",
-    "Bash(find *-fprintf*)",
     "Bash(find *-fls*)",
-    "Bash(rg *--pre*)",
+    "Bash(rg *--pre *)",
+    "Bash(rg *--pre=*)",
     "Bash(git *--output*)",
   ];
   return { allow: [...new Set(allow)], deny };

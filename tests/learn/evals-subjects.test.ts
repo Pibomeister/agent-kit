@@ -227,6 +227,7 @@ describe("grok", () => {
       "bun run ak validate",
       "sort",
       "sort -u",
+      "rg --pretty needle src",
       "git reflog show",
       "git --no-pager branch -vv",
       "git --no-pager remote -v",
@@ -246,6 +247,9 @@ describe("grok", () => {
       "node -e 'code' ak-gate.mjs check x",
       "gh pr create --fill",
       "find . -name x -delete",
+      "find . -execdir rm {} +",
+      "find . -okdir rm {} +",
+      "find . -fprintf out.txt %p",
       "sort -o out.txt in.txt",
       "sort -ro out.txt in.txt",
       "sort -uo out.txt in.txt",
@@ -255,6 +259,8 @@ describe("grok", () => {
       expect([write, admits(write)]).toEqual([write, false]);
     }
     expect(admits("sed -n 'w out.txt' notes.md")).toBe(false);
+    expect(admits("rg --pre cat needle")).toBe(false);
+    expect(admits("rg --pre=cat needle")).toBe(false);
     expect(grok.command(req, undefined)).not.toContain("Bash");
   });
 

@@ -43,7 +43,9 @@ a harmless output redirection need argument-aware parsing rather than a prefix g
 blocks `> file` also matches `2>/dev/null`. The same holds for a `git branch` or `git tag` listing
 beyond its exact forms (a trailing glob also admits `-D` or a name to create), for a git option that
 takes a value before the subcommand (`git -C dir status`), and for the ship gate's `check`, whose
-script path a glob cannot pin to the first argument. Bare `env` has no rule either. Those remain
+script path a glob cannot pin to the first argument. A glob cannot isolate a word either, so a
+`find` whose operand merely contains a writing flag's text (`-name '*-okay*'`) is refused with the
+writes. Bare `env` has no rule either. Those remain
 deliberate gaps: `dontAsk` still refuses them and the session remains invalid.
 
 ### Change
