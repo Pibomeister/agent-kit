@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 
 import { Runner } from "../../src/runner/core.ts";
@@ -237,7 +238,7 @@ describe("runner guards", () => {
     const remote = join(f.privateDir, "remote-pr.txt");
     const launches = join(f.privateDir, "launches.txt");
     const judgeScript =
-      "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); if (!packet.diff_hash) process.exit(4); const fs = require('node:fs'); fs.appendFileSync(process.argv[1], packet.card.id + '\\n'); if (packet.card.id === 'align') await Bun.sleep(300); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
+      "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); if (!packet.diff_hash) process.exit(4); const fs = require('node:fs'); fs.appendFileSync(process.argv[1], packet.card.id + '\\n'); if (packet.card.id === 'align') while (!fs.existsSync(process.argv[1] + '.open')) await Bun.sleep(20); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
     writeFileSync(
       seatConfig,
       JSON.stringify({
@@ -379,18 +380,32 @@ describe("runner guards", () => {
       expect(packet.exitCode).toBe(0);
       expect(packet.stdout.toString()).toContain('"charter_hash"');
       expect(packet.stdout.toString()).not.toContain('"judgments"');
-      const decideAsync = () =>
-        Bun.spawn(["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket], {
-          cwd: root,
-          env: { ...process.env, AK_RUNNER_TOKEN: workerToken },
-          stdout: "pipe",
-          stderr: "pipe",
+      const first = Bun.spawn(
+        ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
+        { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+      );
+      while (!existsSync(launches)) await Bun.sleep(20);
+      const second = await new Promise<{ response: Promise<string> }>((sent, failed) => {
+        const connection = createConnection(socket);
+        let response = "";
+        const done = new Promise<string>((ended) => connection.on("end", () => ended(response)));
+        connection.setEncoding("utf8");
+        connection.on("data", (chunk: string) => {
+          response += chunk;
         });
-      const overlapping = [decideAsync(), decideAsync()];
-      for (const decision of overlapping) {
-        expect(await decision.exited).toBe(0);
-        expect(await new Response(decision.stdout).text()).toContain('"status": "complete"');
-      }
+        connection.once("error", failed);
+        connection.once("connect", () =>
+          connection.write(
+            `${JSON.stringify({ token: workerToken, verb: "decide", args: { run: "toy-run", card_id: "align" } })}\n`,
+            () => sent({ response: done }),
+          ),
+        );
+      });
+      expect(call("status", workerToken).exitCode).toBe(0);
+      writeFileSync(`${launches}.open`, "");
+      expect(await first.exited).toBe(0);
+      expect(await new Response(first.stdout).text()).toContain('"status": "complete"');
+      expect(JSON.parse(await second.response)).toMatchObject({ ok: true, result: { status: "complete" } });
       expect(readFileSync(launches, "utf8").trim().split("\n")).toEqual(["align", "align"]);
       transcript.push(
         "`call prepare` + `call decide` on `align.run`, grant `align-answer` → complete; seat-a and seat-b launched separately.",
