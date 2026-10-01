@@ -86,11 +86,14 @@ export function scoreDelegation(ticket: DelegationTicket, project: DelegationPro
   const { factors } = source;
   const { weights } = guidance;
   const total =
-    factors.reversibility.score * weights.reversibility +
-    factors.size.score * weights.size +
-    factors.complexity.score * weights.complexity +
-    factors.spec.score * weights.spec +
-    (3 - factors.verification.score) * weights.verification;
+    Math.round(
+      (factors.reversibility.score * weights.reversibility +
+        factors.size.score * weights.size +
+        factors.complexity.score * weights.complexity +
+        factors.spec.score * weights.spec +
+        (3 - factors.verification.score) * weights.verification) *
+        1e9,
+    ) / 1e9;
   const scored: DelegationClass =
     total >= red ? "red" : total >= yellowOwner ? "yellow-owner" : total >= yellowAgent ? "yellow-agent" : "green";
   const computed =

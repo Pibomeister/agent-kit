@@ -69,6 +69,20 @@ describe("deterministic delegation scoring", () => {
     expect(scoreDelegation(input, PROJECT).class).toBe(expected);
   });
 
+  test("fractional weights that sum onto a cut point reach its class", () => {
+    const fractional: DelegationProject = {
+      guidance: {
+        delegation: {
+          weights: { reversibility: 0.7, size: 0.1, complexity: 0.2, spec: 0, verification: 0 },
+          cut_points: { yellow_agent: 1, yellow_owner: 2, red: 3 },
+          enforcement: "advisory",
+        },
+      },
+    };
+    const input = ticket("green", { reversibility: 1, size: 1, complexity: 1 });
+    expect(scoreDelegation(input, fractional).class).toBe("yellow-agent");
+  });
+
   test("a never-dropped pack sets a floor", () => {
     const input = ticket("green", {}, { floor: { packs: ["pack-secure"], sensitive_actions: [] } });
     expect(scoreDelegation(input, PROJECT).class).toBe("yellow-owner");
