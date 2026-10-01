@@ -35,9 +35,13 @@ jobs:
           set -euo pipefail
           release_dir="$(mktemp -d)"
           trap 'git worktree remove --force "$release_dir" 2>/dev/null || true' EXIT
-          if git ls-remote --exit-code --heads origin published >/dev/null; then
+          found=0
+          git ls-remote --exit-code --heads origin published >/dev/null || found=$?
+          if [ "$found" -eq 0 ]; then
             git fetch origin published
             git worktree add -B published "$release_dir" origin/published
+          elif [ "$found" -ne 2 ]; then
+            exit "$found"
           else
             git worktree add --detach "$release_dir"
             git -C "$release_dir" checkout --orphan published
