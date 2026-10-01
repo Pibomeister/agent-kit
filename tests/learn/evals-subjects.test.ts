@@ -237,7 +237,7 @@ describe("grok", () => {
     }
   });
 
-  test("looks that print the operator's environment or tokens stay refused, and the receipt names the call", () => {
+  test("the direct environment and token forms stay refused and named, while expansion through echo is admitted", () => {
     const parsed = grok.parse(fixture("grok-refused-disclosure.doc-derived.jsonl"));
     const command = String(tools(parsed.events).at(-1)?.input.command);
     expect(command.split("; ")).toEqual(["printenv GH_TOKEN", "gh auth status --show-token"]);
@@ -246,6 +246,10 @@ describe("grok", () => {
       expect([look, admits(look)]).toEqual([look, false]);
     }
     expect(admits("gh auth status")).toBe(true);
+    for (const look of ["echo $GH_TOKEN", "echo ${GH_TOKEN}", "echo $(printenv)", 'test -n "$GH_TOKEN"']) {
+      expect([look, readOnlyShell(look)]).toEqual([look, true]);
+      expect([look, admits(look)]).toEqual([look, true]);
+    }
     expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBe(
       `host cancelled refused Bash call: ${command}`,
     );

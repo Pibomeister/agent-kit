@@ -56,12 +56,18 @@ cannot tell `2>/dev/null` from `> file` and admitting redirects would let `cat a
 deny is kept on that ground, at the cost of sessions whose discovery chain uses such a form.
 Whether the base rules actually admitted these forms on the live host is unverified.
 
-Three looks are refused on purpose rather than for want of grammar. The subject inherits the
-operator's environment, so `printenv` (with or without a name), a flagged `gh auth status` such as
-`--show-token`, and `web_fetch` would put exported credentials into the model context and the
-stored transcript, or send requests to arbitrary URLs. The scorer still classes all three as
-read-only; Grok has no rule for them. Only bare `gh auth status` is allowed. A session that
-attempts one is cancelled, stays invalid, and its receipt names the call.
+Three direct forms are refused on purpose rather than for want of grammar: `printenv` (with or
+without a name), `gh auth status --show-token` (any flagged form; only bare `gh auth status` is
+allowed), and `web_fetch`. The scorer still classes all three as read-only; Grok has no rule for
+them. A session that attempts one is cancelled, stays invalid, and its receipt names the call.
+
+That refusal is not isolation, and nothing here should be read as one. The inherited environment
+reaches the subject. Variable expansion and command substitution through admitted programs such as
+`echo` and `test` (`echo $GH_TOKEN`, `test -n "$GH_TOKEN"`, `echo $(printenv)`) remain admitted and
+are scored read-only, so the same values can still enter the model context and the stored
+transcript. The read-only gh commands and `git remote show` reach the network. Whether the live host
+expands variables before permission matching is unverified. Scrubbing the environment is out of
+scope for this repair and tracked separately.
 
 ### Change
 

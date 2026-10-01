@@ -153,8 +153,10 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * gate's `check` behind a path, git options that take a value before the subcommand, and harmless
  * output redirections that the same glob used to deny writes would also match. `git branch`,
  * `git tag` and `sort` are exact forms, because a trailing glob would also admit a ref-writing
- * flag, a name to create, or a bundled `-o`. `printenv` and a flagged `gh auth status` are looks to
- * the scorer and have no rule here, because they print the operator's environment and tokens.
+ * flag, a name to create, or a bundled `-o`. The direct `printenv` and `gh auth status
+ * --show-token` forms are looks to the scorer and have no rule here. Variable expansion and command
+ * substitution through an admitted program such as `echo` or `test` remain admitted, so the
+ * inherited environment still reaches the subject.
  * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
  * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
  * refuses every segment containing `>`, which no rule did before it.
