@@ -139,8 +139,9 @@ The full contract is `AUTHORING.md`. The parts that get violated most:
    skill's gate is its own authority step (`docs/decisions/0003-model-invocation.md`).
 2. **≤150 lines, hard cap 300.** Longer material goes behind `references/`. Progressive disclosure is
    the mechanism — not a full-body shim that depends on another plugin's hooks.
-3. **Every adapted file needs a provenance row** in `provenance/adaptations.yaml` of the form
-   `donor@commit:path`, and that path must exist at the pin. A capability with no upstream source is
+3. **Every adapted file needs a provenance row** in `provenance/adaptations.yaml`:
+   `donor@commit:path`, whose path must exist at the pin, or the anchored-local form in
+   `AUTHORING.md` §5. A capability with no upstream source is
    `origin: conversation` with a `G:L` locator — never a fabricated source path.
 4. **Cite the ruling.** Wherever a skill touches a resolved conflict, it references the row in
    `policies/resolved-conflicts.yaml`. Improvisation at those exact points is what the rulings exist
