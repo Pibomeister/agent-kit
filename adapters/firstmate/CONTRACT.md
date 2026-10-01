@@ -248,10 +248,16 @@ Firstmate writes it from its home with `ak lifecycle bypass grant --task <id> --
 brief. The worker runs `ak lifecycle bypass check --grant <path> --task <id> --phase <phase>` before
 super-align, super-bound, super-review `full` or `readiness`, and super-ship; exit 0 is the start.
 The grant is start-only: every approval inside those phases still reaches Firstmate as
-`needs-decision`, and merge and deploy are never on it. The task id must equal the grant's and the check must run
-from the task's worktree the grant names; any run under that task may use it. Gate records made with `--bypass <path> --task <id>` carry `authority.mode: bypass` and who authorized it.
+`needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
+check must run from inside the task's worktree the grant names (`--project` cannot stand in for it);
+any run under that task may use it. Gate records made with `--bypass <path> --task <id>` carry
+`authority.mode: bypass` and who authorized it, and once a phase started under the grant its gate
+cannot be recorded without it.
 
-`grant` refuses to run from a checkout of the repository or to write inside its worktrees or git
-directory, and `check` refuses a grant that is unregistered, copied, edited, expired, for another
-repository or inside a worktree. A same-user process running `grant` from outside the repository
-still passes; like the binding, the grant is only as strong as the host's write isolation.
+`grant` refuses to run from inside any worktree of the repository or under the home's `projects/`,
+or to write inside a worktree or the git directory, and it records the issuing directory, host and
+home. `check` refuses a grant that is unregistered, copied, edited, expired, for another repository
+or inside a worktree, and judges only the bytes it opened. A same-user worker can still issue a grant
+from elsewhere: this guards against accidents and shortcuts, not a determined worker. Firstmate
+accepted that limit on the captain's behalf on 2026-10-01 (ADR-0008); an out-of-account issuer is
+the follow-up.

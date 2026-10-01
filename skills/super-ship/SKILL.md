@@ -2,11 +2,12 @@
 name: super-ship
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or
-  under a validated grant. On any other request do not load or follow it; tell the human to type
-  that command. Prepares a verified, reviewed change for publication: release checks, a
-  sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs
-  dry, generating the payload locally and pushing nothing, or publishes under a grant. Not for
-  merging, not for deploying, and not for deciding whether the change is correct.
+  under a validated grant, or when a supervisor's bypass grant passes `ak lifecycle bypass check`.
+  On any other request do not load or follow it; tell the human to type that command. Prepares a
+  verified, reviewed change for publication: release checks, a sensitive-data scan, the commit,
+  the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload
+  locally and pushing nothing, or publishes under a grant. Not for merging, not for deploying, and
+  not for deciding whether the change is correct.
 license: MIT
 metadata:
   ak_catalog_id: super-ship

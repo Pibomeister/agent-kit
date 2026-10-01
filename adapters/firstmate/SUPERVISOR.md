@@ -88,7 +88,10 @@ ak lifecycle bypass grant --task <task-id> --by <who authorized it> --reason <wh
 ```
 
 The section tells the worker to pass `--task <task-id>` to every check and to `record --bypass`;
-a check for another task, or from any worktree but the task's, is refused.
+a check for another task, or run from any worktree but the task's, is refused. Issue it from the
+home itself: `grant` refuses from inside a task checkout or `projects/`, and records where it ran so
+an audit can spot a grant you did not issue. It cannot stop a same-user worker issuing one from
+elsewhere; ADR-0008 records that limit as accepted.
 It starts super-align, super-bound, super-review full and readiness, and super-ship for that task
 only, until it expires (24 hours by default). It starts phases only: the worker still sends you
 `needs-decision` for every approval inside them — the design yes, the specification and ticket

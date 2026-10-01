@@ -1,13 +1,14 @@
 ---
 name: super-review
 description: >-
-  Human-started command: it runs only when the human's message begins with `/ak:super-review`, under
-  a validated grant, or as a delta inside an open review run. On any other request do not load or
-  follow it; tell the human to type that command. Reviews a change with a panel of independent
-  specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix (delta),
-  or the two-lane readiness gate (readiness). Use when a change needs judgment against requirements,
-  standards and tests. Reviewers cannot edit source. Not for writing the fix, not for running
-  acceptance checks, and not for repairing a red pipeline.
+  Human-started command: it runs only when the human's message begins with `/ak:super-review`,
+  under a validated grant, when a supervisor's bypass grant passes `ak lifecycle bypass check`, or
+  as a delta inside an open review run. On any other request do not load or follow it; tell the
+  human to type that command. Reviews a change with a panel of independent specialist seats over
+  an immutable snapshot (full), a two-axis delta over an accepted fix (delta), or the two-lane
+  readiness gate (readiness). Use when a change needs judgment against requirements, standards and
+  tests. Reviewers cannot edit source. Not for writing the fix, not for running acceptance checks,
+  and not for repairing a red pipeline.
 license: MIT
 metadata:
   ak_catalog_id: super-review
