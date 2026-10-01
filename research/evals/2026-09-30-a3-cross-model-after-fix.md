@@ -261,3 +261,5 @@ Do not claim the invocation rule holds on every host yet.
 3. Fix and calibrate the scorer's command-first/code-block false negatives, then rescore these stored transcripts for free. Do not rerun paid sessions for that.
 4. Repair Grok's refused-call continuation/allow behavior before using it to claim typed or M-routing parity. Reconsider the six-turn cap for the smaller Claude subject. Both are instrument problems, not evidence the skill wording failed.
 5. Add Codex token-usage retention as a follow-up if cost accounting is needed; exact dollars still require an external pricing source.
+
+Option A's completed free rescore is recorded in [A2 rescore after command-first and `count-objects` repairs](2026-10-01-a2-rescore-command-first.md).

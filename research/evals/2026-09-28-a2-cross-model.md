@@ -219,6 +219,9 @@ violations from 14 to 12. Grok's figures do not move in either view (prose 0/7, 
 
 ## Rescored after the shell-classifier repair
 
+The later command-first and `count-objects` follow-up is recorded in
+[A2 rescore after command-first and `count-objects` repairs](2026-10-01-a2-rescore-command-first.md).
+
 The same 600 sessions were rescored again at `c96e84a8fcd92a3cad8c4fdccc7e34b5e63f6a02`.
 No session was rerun. This pass compares that scorer with current-main parent
 `5100d5280be32b1f50318b16f231c3d919111de6`, so it isolates this workstream rather than
