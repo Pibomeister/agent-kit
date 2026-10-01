@@ -1430,7 +1430,7 @@ the spelling — so this is not about the checks. It is that a corpus spelling o
 answers a `grep` with a subset that looks like the whole, which is how a false gap report was
 produced against this tree and routed to two lanes. `evals.scenario-tag-noncanonical` reports the
 padded form. Across the whole catalog the
-case corpus must cover **all 24** release scenarios in the plan's "Evaluation and release gates";
+case corpus must cover **all 29** release scenarios in the plan's "Evaluation and release gates";
 `ak validate` reports uncovered scenario numbers. A writer covers the scenarios its dossier assigns
 to its batch and reports any it cannot exercise, rather than tagging a case that does not actually
 test the scenario.
