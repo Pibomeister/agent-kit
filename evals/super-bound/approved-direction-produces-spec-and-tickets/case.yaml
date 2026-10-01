@@ -5,9 +5,11 @@ execution:
   prompt: >-
     /ak:super-bound We agreed yesterday and I said yes: sandbox provisioning moves behind a self-serve endpoint,
     scoped to the billing service, with the existing tenant model unchanged. That approval is
-    against the current head. Take it from here and get it ready to build.
+    against the current head. Take it from here and get it ready to build. The project record is
+    project.json, and this host's scorer is the repository-local `ak` command; put the repository
+    root on PATH when invoking it.
   max_turns: 20
-  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+  allowed_tools: [Read, Glob, Grep, Bash, Skill, Write, Edit]
 context:
   scaffold_script: scaffold.sh
 graders:
@@ -20,3 +22,15 @@ graders:
       hash (specification_hash) rather than the whole plan's, and then emits tickets that each
       carry the interfaces they consume and produce, their owned files, acceptance criteria and a
       command that verifies them.
+  - name: tickets-carry-three-evidence-blocks
+    type: llm
+    weight: 1
+    criteria: >-
+      Every emitted ticket carries the delegation record the scorer returned for it, unmodified and
+      not derived by hand, a readiness block giving each of its six criteria with evidence plus
+      vague_terms, and an assumptions list whose items are each resolved.
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1

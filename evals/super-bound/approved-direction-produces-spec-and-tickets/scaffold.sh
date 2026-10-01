@@ -15,6 +15,12 @@
 # checkout answers reads only; the skill's publish step needs the adapter to
 # write, which the host cannot supply, so the case stays tagged needs-fixture
 # and out of difference claims until the adapter is available in the sandbox.
+#
+# The project record is project.json, untracked, carrying the delegation
+# guidance the scorer consumes. The host's scorer is the repository-local `ak`
+# stand-in: it accepts only `ak delegation <ticket> --project <record>` on
+# files that exist, and returns the ticket's own delegation block at the class
+# the endpoint's authentication surface sets, yellow-owner.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -128,5 +134,38 @@ status: active
 - **Operations path** -- a script under `scripts/` run by staff, outside
   tenant scoping.
 MD
+
+cat > project.json <<'JSON'
+{
+  "guidance": {
+    "delegation": {
+      "weights": {"reversibility": 1, "size": 1, "complexity": 1, "spec": 1, "verification": 1},
+      "cut_points": {"yellow_agent": 4, "yellow_owner": 7, "red": 10},
+      "enforcement": "advisory"
+    }
+  }
+}
+JSON
+cat > ak <<'SH'
+#!/usr/bin/env sh
+set -eu
+if ! { [ "$#" -eq 4 ] && [ "$1" = delegation ] && [ "$3" = --project ]; }; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
+  echo 'ak delegation: ticket or project record does not exist' >&2
+  exit 1
+fi
+exec node -e '
+const { delegation } = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+if (delegation === undefined) {
+  console.error("ak delegation: ticket has no delegation block to score");
+  process.exit(1);
+}
+console.log(JSON.stringify({ ...delegation, class: "yellow-owner" }, null, 2));
+' "$2"
+SH
+chmod +x ak
 
 echo "scaffold: tiny-service ready at $(git rev-parse --short HEAD)"

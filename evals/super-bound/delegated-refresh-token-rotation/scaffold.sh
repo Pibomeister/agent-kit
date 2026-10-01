@@ -78,8 +78,14 @@ JSON
 cat > ak <<'SH'
 #!/usr/bin/env sh
 set -eu
-[ "$#" -eq 4 ] && [ "$1" = delegation ] && [ "$3" = --project ]
-[ -f "$2" ] && [ -f "$4" ]
+if ! { [ "$#" -eq 4 ] && [ "$1" = delegation ] && [ "$3" = --project ]; }; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
+  echo 'ak delegation: ticket or project record does not exist' >&2
+  exit 1
+fi
 cat scorer-output.json
 SH
 cat > advisor <<'SH'

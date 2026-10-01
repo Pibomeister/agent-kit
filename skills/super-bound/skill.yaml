@@ -251,12 +251,13 @@ tests:
   - id: approved-direction-produces-spec-and-tickets
     kind: positive
     given: >-
-      A human brings an approved direction for a bounded feature, bound to the current revision, and
-      asks for the plan.
+      A human brings an approved direction for a bounded feature, bound to the current revision, with
+      a project record carrying delegation guidance, and asks for the plan.
     expect: >-
       The skill reads the repository's own configuration, writes a decision-level specification with
       named test seams, runs the document review, takes an approval bound to the artifact hash, and
-      emits tickets each carrying consumed and produced signatures and a verification command.
+      emits tickets each carrying consumed and produced signatures, a verification command, and the
+      ak delegation record, readiness and assumptions blocks.
   - id: reviewed-ticket-does-not-reopen-bounding
     kind: negative
     given: >-
