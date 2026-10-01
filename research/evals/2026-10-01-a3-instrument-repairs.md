@@ -45,8 +45,23 @@ beyond its exact forms (a trailing glob also admits `-D` or a name to create), f
 takes a value before the subcommand (`git -C dir status`), and for the ship gate's `check`, whose
 script path a glob cannot pin to the first argument. A glob cannot isolate a word either, so a
 `find` whose operand merely contains a writing flag's text (`-name '*-okay*'`) is refused with the
-writes. Bare `env` has no rule either. Those remain
-deliberate gaps: `dontAsk` still refuses them and the session remains invalid.
+writes. Bare `env` has no rule either. Those remain deliberate gaps: `dontAsk` still refuses them
+and the session remains invalid.
+
+The redirect deny is different in kind: it is a **new refusal** relative to the base list, not a
+gap that remains. The base adapter had prefix rules (`ls *`, `cat *`, `grep *`, `git log *`) and no
+deny, so under the documented grammar those rules covered a segment carrying `2>/dev/null`, `2>&1`,
+a `'%h -> %s'` format or a `'=>'` pattern. `Bash(*>*)` now refuses every one of them, because a glob
+cannot tell `2>/dev/null` from `> file` and admitting redirects would let `cat a > b` through. The
+deny is kept on that ground, at the cost of sessions whose discovery chain uses such a form.
+Whether the base rules actually admitted these forms on the live host is unverified.
+
+Three looks are refused on purpose rather than for want of grammar. The subject inherits the
+operator's environment, so `printenv` (with or without a name), a flagged `gh auth status` such as
+`--show-token`, and `web_fetch` would put exported credentials into the model context and the
+stored transcript, or send requests to arbitrary URLs. The scorer still classes all three as
+read-only; Grok has no rule for them. Only bare `gh auth status` is allowed. A session that
+attempts one is cancelled, stays invalid, and its receipt names the call.
 
 ### Change
 
@@ -56,15 +71,19 @@ The canonical read-only program, git-subcommand, git-action and gh-action tables
 tables instead of copying a second list. Write-shaped forms covered by a broad read prefix have
 explicit `--deny` rules for output redirection, writing `find` flags, preprocessors and git
 `--output`. `sort` is allowed only bare or with exact ordering flags, so no rule reaches its `-o`,
-bundled or not; a `sort` with a key or a file operand stays refused. Ref mutation and PR creation need no deny: `git branch` and `git tag` are allowed
-only in exact listing forms, and no rule covers `gh pr create`. Deny precedence keeps the guarded
+bundled or not; a `sort` with a key or a file operand stays refused. Ref mutation and PR creation
+need no deny: `git branch` and `git tag` are allowed only in exact listing forms, and no rule covers
+`gh pr create`. Deny precedence keeps the guarded
 writes refused, and the adapter remains on `dontAsk`.
 
 The stored fixture `grok-cancelled-read.jsonl` carries an archived read-only chain that the old list
 did not cover. Its test matches each segment against the emitted rules under the documented grammar
 and proves every one is now admitted. A separate test proves that segments the scorer calls writes,
 among them ref-writing `git branch` and `git tag` forms, are admitted by no rule, and that blanket
-Bash stays out. When a refusal remains, `invalidSession` now names the final attempted tool and
+Bash stays out. The doc-derived fixture `grok-refused-disclosure.doc-derived.jsonl` carries a
+cancelled `printenv GH_TOKEN; gh auth status --show-token` call; its test proves both segments
+match no rule and that the invalid reason names the call. A further test pins the four redirect
+forms above as refused. When a refusal remains, `invalidSession` now names the final attempted tool and
 includes the shell command for Bash, instead of recording only `host cancelled a refused call`. The
 reads an adapter derives from a shell call are not host calls, so they are neither named as the
 refused call nor counted toward the turn cap.
@@ -126,15 +145,19 @@ formerly capped cases below now reach their law stop or typed-command response.
 
 ## Proposed paid smoke — approval required
 
-Run six sessions, and only these, after captain approval:
+Run seven sessions, and only these, after captain approval:
 
 - subject-fable: `dev-diagnose-p1`, `dev-super-verify-p1`, `dev-wayfind-s1`;
-- subject-grok: `dev-super-build-p1`, `dev-diagnose-p1`, `dev-super-ship-s1`.
+- subject-grok: `dev-super-build-p1`, `dev-diagnose-p1`, `dev-super-ship-s1`;
+- subject-grok, one redirect probe: a prompt that asks for the discovery chain
+  `ls -la 2>/dev/null && git status -sb 2>/dev/null` verbatim. It settles what the fixtures cannot:
+  whether the live host refuses a `2>/dev/null` chain under the new deny, and whether the receipt
+  names it. A refusal there is the recorded cost of the deny, not a failed repair.
 
 The fable cases were previously capped; the Grok set covers model-invoked and typed routing plus the
 read-only discovery chains seen in the archive. A3 printed $39.2139 for 120 subject-fable sessions
-($0.3268 each) and $2.7373 for 120 Grok sessions ($0.0228 each). Three of each therefore estimate
-to **$1.05** in host-reported cost. A conservative approval ceiling would be **$2.10**, twice the
-estimate, with the run stopped rather than widened if either repair still fails.
+($0.3268 each) and $2.7373 for 120 Grok sessions ($0.0228 each). Three subject-fable and four Grok
+sessions therefore estimate to **$1.07** in host-reported cost. A conservative approval ceiling
+would be **$2.14**, twice the estimate, with the run stopped rather than widened if either repair still fails.
 
 No such session was run for this repair.

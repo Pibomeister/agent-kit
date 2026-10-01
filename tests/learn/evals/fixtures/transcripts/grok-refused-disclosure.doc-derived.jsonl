@@ -1,0 +1,2 @@
+{"type":"tool_call","toolName":"run_terminal_command","rawInput":{"command":"printenv GH_TOKEN; gh auth status --show-token","description":"Check GitHub credentials"}}
+{"type":"end","stopReason":"cancelled","num_turns":1,"modelUsage":{}}

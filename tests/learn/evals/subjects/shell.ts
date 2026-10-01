@@ -153,13 +153,16 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * gate's `check` behind a path, git options that take a value before the subcommand, and harmless
  * output redirections that the same glob used to deny writes would also match. `git branch`,
  * `git tag` and `sort` are exact forms, because a trailing glob would also admit a ref-writing
- * flag, a name to create, or a bundled `-o`. `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies
- * guard the write-shaped forms of broad safe-prefix rules; deny wins over allow in Grok's grammar.
+ * flag, a name to create, or a bundled `-o`. `printenv` and a flagged `gh auth status` are looks to
+ * the scorer and have no rule here, because they print the operator's environment and tokens.
+ * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
+ * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
+ * refuses every segment containing `>`, which no rule did before it.
  */
 export function grokReadOnlyPermissionRules() {
   const grammarGaps = new Set(["awk", "["]);
   const allow = READ_ONLY_PROGRAMS.filter((program) => !grammarGaps.has(program)).flatMap(bashRules);
-  allow.push("Bash(printenv)", "Bash(printenv *)", "Bash(command -v *)", "Bash(command -V *)");
+  allow.push("Bash(command -v *)", "Bash(command -V *)");
   allow.push(...["", " -u", " -r", " -n", " -rn", " -nr"].map((flags) => `Bash(sort${flags})`));
   const git = READ_ONLY_GIT.flatMap((subcommand): string[] => [subcommand, `${subcommand} *`]);
   for (const [subcommand, actions] of Object.entries(READ_ONLY_GIT_ACTIONS)) {
@@ -194,7 +197,8 @@ export function grokReadOnlyPermissionRules() {
   );
   for (const prefix of ["git", "git --no-pager"]) allow.push(...git.map((rest) => `Bash(${prefix} ${rest})`));
   for (const [group, actions] of Object.entries(READ_ONLY_GH_ACTIONS)) {
-    for (const action of actions) allow.push(...bashRules(`gh ${group} ${action}`));
+    for (const action of actions)
+      allow.push(...(group === "auth" ? [`Bash(gh ${group} ${action})`] : bashRules(`gh ${group} ${action}`)));
   }
   allow.push(
     "Bash(ak learn review report)",

@@ -9,7 +9,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
-import { readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
+import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
@@ -237,6 +237,29 @@ describe("grok", () => {
     }
   });
 
+  test("looks that print the operator's environment or tokens stay refused, and the receipt names the call", () => {
+    const parsed = grok.parse(fixture("grok-refused-disclosure.doc-derived.jsonl"));
+    const command = String(tools(parsed.events).at(-1)?.input.command);
+    expect(command.split("; ")).toEqual(["printenv GH_TOKEN", "gh auth status --show-token"]);
+    for (const look of [...command.split("; "), "printenv"]) {
+      expect([look, readOnlyShell(look)]).toEqual([look, true]);
+      expect([look, admits(look)]).toEqual([look, false]);
+    }
+    expect(admits("gh auth status")).toBe(true);
+    expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBe(
+      `host cancelled refused Bash call: ${command}`,
+    );
+    const argv = grok.command(req, undefined);
+    expect(argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []))).not.toContain("WebFetch");
+  });
+
+  test("every segment with a redirect is refused, the harmless forms included", () => {
+    for (const look of ["ls -la 2>/dev/null", "git status 2>&1", "git log --format='%h -> %s'", "grep -rn '=>' src"]) {
+      expect([look, readOnlyShell(look)]).toEqual([look, true]);
+      expect([look, admits(look)]).toEqual([look, false]);
+    }
+  });
+
   test("no rule admits a segment the scorer calls a write", () => {
     for (const write of [
       "git branch -v -D main",
@@ -289,7 +312,7 @@ describe("grok", () => {
   test("argv: observed read-only looks are allowed without blanket shell or mutation approval", () => {
     const argv = grok.command(req, undefined);
     const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
-    expect(allow).toEqual(expect.arrayContaining(["Read", "Grep", "WebFetch", "Bash(find *)", "Bash(git show *)"]));
+    expect(allow).toEqual(expect.arrayContaining(["Read", "Grep", "Bash(find *)", "Bash(git show *)"]));
     expect(argv).not.toContain("--always-approve");
     expect(allow).not.toContain("Bash");
     expect(allow.some((rule) => rule?.startsWith("Write") || rule?.startsWith("Edit"))).toBe(false);
