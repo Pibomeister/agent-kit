@@ -2,11 +2,11 @@
 # replace each `model` value with the binding the runner supplies for that seat; the values below
 # only show where a binding goes. Schema: tests/learn/evals/eval-matrix.schema.json.
 subjects:
-  # `max-turns` is per subject: a positive integer overrides an evaluator's default, null removes
-  # the cap, and absence preserves the default. A host without a cap flag must leave it absent/null.
-  - { id: subject-a, host: claude, model: runner-binds-subject-a, max-turns: 6 }
-  - { id: subject-b, host: codex, model: runner-binds-subject-b }
-  - { id: subject-c, host: grok, model: runner-binds-subject-c, max-turns: null }
+  # `max-turns` is declared per subject: 20 is the evaluator default, sized above the archived
+  # valid-session maximum of 15 tool events; null removes the cap. A host without a cap flag uses null.
+  - { id: subject-a, host: claude, model: runner-binds-subject-a, max-turns: 20 }
+  - { id: subject-b, host: codex, model: runner-binds-subject-b, max-turns: null }
+  - { id: subject-c, host: grok, model: runner-binds-subject-c, max-turns: 20 }
 reviewers:
   - { id: reviewer-a, host: claude, model: runner-binds-reviewer-a }
   - { id: reviewer-b, host: codex, model: runner-binds-reviewer-b }

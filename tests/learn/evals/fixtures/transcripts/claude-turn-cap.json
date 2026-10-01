@@ -1,0 +1,14 @@
+{
+  "source": "A2 subject-fable dev-compound-p1, paths scrubbed",
+  "exitCode": 1,
+  "timedOut": false,
+  "reply": "",
+  "events": [
+    { "kind": "tool", "name": "Skill", "raw": "Skill", "input": { "skill": "ak:compound" } },
+    { "kind": "tool", "name": "Bash", "raw": "Bash", "input": { "command": "git status --short" } },
+    { "kind": "tool", "name": "Bash", "raw": "Bash", "input": { "command": "git log -1 --oneline" } },
+    { "kind": "tool", "name": "Bash", "raw": "Bash", "input": { "command": "git branch -a" } },
+    { "kind": "tool", "name": "Bash", "raw": "Bash", "input": { "command": "git stash list" } },
+    { "kind": "tool", "name": "Bash", "raw": "Bash", "input": { "command": "git ls-files" } }
+  ]
+}

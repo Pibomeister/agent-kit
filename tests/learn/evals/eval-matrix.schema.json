@@ -77,7 +77,7 @@
           "description": "The runner's binding, passed to the host opaquely. Absent, the host runs its own default binding, and no reviewer on the same host is independent of it."
         },
         "max-turns": {
-          "description": "Per-subject turn cap. A positive integer overrides the evaluator default; null explicitly removes the cap; absent preserves the evaluator default.",
+          "description": "Per-subject turn cap. A positive integer overrides the evaluator default; null explicitly removes the cap; absent preserves that default. The trigger evaluator's documented default is 20.",
           "oneOf": [
             {
               "type": "integer",

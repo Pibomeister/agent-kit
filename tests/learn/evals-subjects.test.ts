@@ -189,6 +189,32 @@ describe("grok", () => {
     expect(parsed.stopReason).toBe("cancelled");
   });
 
+  test("an archived read-only chain has narrow allow rules for every segment Grok refused", () => {
+    const parsed = grok.parse(fixture("grok-cancelled-read.jsonl"));
+    const command = String(tools(parsed.events).at(-1)?.input.command);
+    expect(command).toBe(
+      "git status -sb && git branch -vv && gh pr list --state open --json number,title,url; echo ---",
+    );
+
+    const argv = grok.command(req, undefined);
+    const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
+    expect(allow).toContain("Bash(git branch -v*)");
+    expect(allow).toContain("Bash(gh pr list *)");
+    expect(allow).toContain("Bash(echo *)");
+  });
+
+  test("read-only allowances retain explicit guards for shell writes", () => {
+    const argv = grok.command(req, undefined);
+    const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
+    const deny = argv.flatMap((value, index) => (value === "--deny" ? [argv[index + 1]] : []));
+    expect(argv).not.toContain("Bash");
+    expect(allow).not.toContain("Bash(git remote *)");
+    expect(deny).toContain("Bash(*>*)");
+    expect(deny).toContain("Bash(find *-delete*)");
+    expect(deny).toContain("Bash(git branch -d*)");
+    expect(deny).toContain("Bash(gh pr create*)");
+  });
+
   test("a session that ends normally reports its stop reason", () => {
     expect(grok.parse(JSON.stringify({ type: "end", stopReason: "end_turn", num_turns: 1 })).stopReason).toBe(
       "end_turn",
@@ -214,29 +240,7 @@ describe("grok", () => {
   test("argv: observed read-only looks are allowed without blanket shell or mutation approval", () => {
     const argv = grok.command(req, undefined);
     const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
-    expect(allow).toEqual([
-      "Read",
-      "Grep",
-      "Bash(ls)",
-      "Bash(ls *)",
-      "Bash(find *)",
-      "Bash(head)",
-      "Bash(head *)",
-      "Bash(tail)",
-      "Bash(tail *)",
-      "Bash(cat *)",
-      "Bash(rg *)",
-      "Bash(grep *)",
-      "Bash(git status)",
-      "Bash(git status *)",
-      "Bash(git log)",
-      "Bash(git log *)",
-      "Bash(git diff)",
-      "Bash(git diff *)",
-      "Bash(git show)",
-      "Bash(git show *)",
-      "Bash(git rev-parse *)",
-    ]);
+    expect(allow).toEqual(expect.arrayContaining(["Read", "Grep", "WebFetch", "Bash(find *)", "Bash(git show *)"]));
     expect(argv).not.toContain("--always-approve");
     expect(allow).not.toContain("Bash");
     expect(allow.some((rule) => rule?.startsWith("Write") || rule?.startsWith("Edit"))).toBe(false);

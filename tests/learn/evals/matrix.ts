@@ -13,6 +13,11 @@ import type { HostKind } from "./subjects/types.ts";
 
 export const MATRIX_FILE = join(PACKAGE_ROOT, ".work", "eval-matrix.yaml");
 export const MATRIX_SCHEMA = join(import.meta.dir, "eval-matrix.schema.json");
+/**
+ * A2 valid Claude-host sessions used at most 15 tool events before replying (197 sessions; p95 9).
+ * Twenty leaves five events of headroom without turning the cap into an accidental six-turn gate.
+ */
+export const DEFAULT_MAX_TURNS = 20;
 
 /** A subject under test. With no `model` the host runs its own default binding. */
 export interface Subject {
@@ -47,13 +52,13 @@ type MatrixFile = Omit<Matrix, "subjects"> & { subjects: MatrixSubject[] };
 let validator: ReturnType<InstanceType<typeof Ajv2020>["compile"]> | undefined;
 
 /** The cap this evaluator can enforce for `subject`; undefined means no cap. */
-export function effectiveMaxTurns(subject: Subject, evaluatorDefault: number): number | undefined {
+export function effectiveMaxTurns(subject: Subject, evaluatorDefault = DEFAULT_MAX_TURNS): number | undefined {
   if (subject.host === "codex" || subject.maxTurns === null) return undefined;
   return subject.maxTurns ?? evaluatorDefault;
 }
 
 /** Receipt fragment for the effective cap; JSON null means the host runs uncapped. */
-export function turnCapReceipt(subject: Subject, evaluatorDefault: number): { max_turns: number | null } {
+export function turnCapReceipt(subject: Subject, evaluatorDefault = DEFAULT_MAX_TURNS): { max_turns: number | null } {
   return { max_turns: effectiveMaxTurns(subject, evaluatorDefault) ?? null };
 }
 
@@ -98,7 +103,7 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
  * `.work/eval-matrix.yaml` and bind it to run more.
  */
 export const DEFAULT_MATRIX: Matrix = {
-  subjects: [{ id: "subject-default", host: "claude", model: undefined }],
+  subjects: [{ id: "subject-default", host: "claude", model: undefined, maxTurns: DEFAULT_MAX_TURNS }],
   reviewers: [],
   panels: { "independent-of": "subject", "min-reviewers": 2 },
 };

@@ -122,12 +122,19 @@ import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
-import { readsOf, unwrap, words } from "./subjects/shell.ts";
+import {
+  READ_ONLY_GH_ACTIONS,
+  READ_ONLY_GIT,
+  READ_ONLY_GIT_ACTIONS,
+  READ_ONLY_PROGRAMS,
+  readsOf,
+  unwrap,
+  words,
+} from "./subjects/shell.ts";
 import type { SessionEvent, SessionRequest, SessionResult, ToolEvent } from "./subjects/types.ts";
 
 export type Arm = "natural" | "nudged";
 export type Polarity = "positive" | "negative";
-const DEFAULT_MAX_TURNS = 6;
 /**
  * What a positive counts as right. `load`: a model-invoked skill loads. `recommend`: a prose
  * request for a user-invoked skill, which the law says only a typed `/ak:<id>` starts, so the
@@ -333,66 +340,13 @@ const MUTATING = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "Delete"
 /** Tools that start other work; after a U skill loads they mean it went on, but a read-only helper is possible. */
 const DELEGATING = new Set(["Agent", "Task", "Skill"]);
 /** Programs that only look, whatever their arguments (subject to `WRITING_FLAGS`). `cd` moves, and changes nothing. */
-const LOOKING = new Set([
-  "cd",
-  "pushd",
-  "popd",
-  "ls",
-  "cat",
-  "bat",
-  "nl",
-  "less",
-  "more",
-  "head",
-  "tail",
-  "wc",
-  "grep",
-  "egrep",
-  "fgrep",
-  "rg",
-  "find",
-  "pwd",
-  "echo",
-  "awk",
-  "tree",
-  "stat",
-  "file",
-  "which",
-  "type",
-  "true",
-  "cut",
-  "realpath",
-  "lsof",
-  "[",
-  "test",
-]);
+const LOOKING = new Set<string>(READ_ONLY_PROGRAMS);
 /** git subcommands that only look, whatever their flags. */
-const GIT_LOOKING = new Set([
-  "status",
-  "log",
-  "diff",
-  "show",
-  "rev-parse",
-  "ls-files",
-  "ls-tree",
-  "blame",
-  "shortlog",
-  "describe",
-  "cat-file",
-  "grep",
-  "merge-base",
-  "rev-list",
-  "for-each-ref",
-  "show-ref",
-  "count-objects",
-]);
+const GIT_LOOKING = new Set<string>([...READ_ONLY_GIT, "count-objects"]);
 /** git subcommands that look only with one of these first operands (or none, where `""` is listed). */
-const GIT_LOOKING_ACTION: Record<string, ReadonlySet<string>> = {
-  stash: new Set(["list", "show"]),
-  remote: new Set(["", "show", "get-url"]),
-  worktree: new Set(["list"]),
-  notes: new Set(["list"]),
-};
+const GIT_LOOKING_ACTION = new Map(
+  Object.entries(READ_ONLY_GIT_ACTIONS).map(([subcommand, actions]) => [subcommand, new Set(actions)]),
+);
 /** git options that come before the subcommand and take a value. */
 const GIT_GLOBAL_VALUE = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace"]);
 /** `git branch` and `git tag` flags that change refs; without one, and without a name to create, they list. */
@@ -496,8 +450,11 @@ function readOnlyGit(args: readonly string[]): boolean {
     const action = rest.find((w) => ["show", "exists", "expire", "delete"].includes(w));
     return action === undefined || action === "show";
   }
-  const actions = GIT_LOOKING_ACTION[sub];
-  if (actions !== undefined) return actions.has(rest.find((w) => !w.startsWith("-")) ?? "");
+  const actions = GIT_LOOKING_ACTION.get(sub);
+  if (actions !== undefined) {
+    const requested = rest.find((word) => !word.startsWith("-")) ?? "";
+    return [...actions].some((action) => action === requested);
+  }
   if (sub === "config") return rest.some((w) => ["--get", "--get-all", "--get-regexp", "--list", "-l"].includes(w));
   if (sub === "branch" || sub === "tag") {
     if (rest.some((w) => GIT_REF_WRITES[sub]!.test(w))) return false;
@@ -510,10 +467,8 @@ function readOnlyGit(args: readonly string[]): boolean {
 function readOnlyGh(args: readonly string[]): boolean {
   const [group, action] = args;
   if (group === "api") return !args.some((w) => /^(?:-X|--method|-f|-F|--field|--raw-field|--input)(?:=|$)/.test(w));
-  if (group === "auth") return action === "status";
-  if (group === "repo") return action === "view";
-  return (
-    ["pr", "issue", "run"].includes(group ?? "") && ["view", "list", "checks", "diff", "status"].includes(action ?? "")
+  return Object.entries(READ_ONLY_GH_ACTIONS).some(([candidate, actions]) =>
+    candidate === group ? actions.some((readOnly) => readOnly === action) : false,
   );
 }
 
@@ -1123,11 +1078,22 @@ export function scoreCase(
  * scored outcome is kept beside the reason, so a cancelled session's loads can still be read.
  */
 export function invalidSession(
-  session: Pick<SessionResult, "exitCode" | "timedOut" | "reply" | "stopReason">,
+  session: Pick<SessionResult, "exitCode" | "timedOut" | "reply" | "stopReason"> &
+    Partial<Pick<SessionResult, "events" | "turns">>,
+  maxTurns?: number,
 ): string | null {
   if (session.timedOut) return "timeout";
+  if (session.stopReason === "cancelled") {
+    const call = (session.events ?? []).filter((event): event is ToolEvent => event.kind === "tool").at(-1);
+    if (call === undefined) return "host cancelled a refused call";
+    const shell = call.name === "Bash" ? shellCommand(call) : null;
+    const command = shell === null ? "" : `: ${shell}`;
+    return `host cancelled refused ${call.name} call${command}`;
+  }
+  const toolEvents = (session.events ?? []).filter((event) => event.kind === "tool").length;
+  if (maxTurns !== undefined && session.reply.trim() === "" && (session.turns === maxTurns || toolEvents >= maxTurns))
+    return `turn cap ${maxTurns} reached after ${toolEvents} tool events`;
   if (session.exitCode !== 0) return `exit ${session.exitCode}`;
-  if (session.stopReason === "cancelled") return "host cancelled a refused call";
   if (session.reply.trim() === "") return "empty reply";
   return null;
 }
@@ -1549,7 +1515,7 @@ async function main(argv: string[]): Promise<number> {
   const report = [];
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
-    const maxTurns = effectiveMaxTurns(subject, DEFAULT_MAX_TURNS);
+    const maxTurns = effectiveMaxTurns(subject);
     // The package's skills reach the host only through its packaged bundle; `ak build` writes it.
     const bundleDir = bundleOn ? join(PACKAGE_ROOT, "dist", BUNDLE_FOR[subject.host]) : undefined;
     if (bundleDir !== undefined && !existsSync(bundleDir) && !dryRun) {
@@ -1579,7 +1545,7 @@ async function main(argv: string[]): Promise<number> {
           subject: subject.id,
           host: subject.host,
           injection: adapter.injection,
-          ...turnCapReceipt(subject, DEFAULT_MAX_TURNS),
+          ...turnCapReceipt(subject),
           cases: cases.length,
           command: adapter.command(request(cases[0]!), subject.model),
         }),
@@ -1591,7 +1557,7 @@ async function main(argv: string[]): Promise<number> {
     );
     const results = cases.map((c, i) => {
       const scored = scoreCase(c, sessions[i]!.events, sessions[i]!.reply, scoring, sessions[i]!.slashCommands);
-      const invalid = invalidSession(sessions[i]!);
+      const invalid = invalidSession(sessions[i]!, maxTurns);
       return invalid === null ? scored : { ...scored, invalid };
     });
 
@@ -1637,7 +1603,7 @@ async function main(argv: string[]): Promise<number> {
       subject: subject.id,
       host: subject.host,
       injection: adapter.injection,
-      ...turnCapReceipt(subject, DEFAULT_MAX_TURNS),
+      ...turnCapReceipt(subject),
       bundle: bundleDir ?? "none",
       leaks: [...new Set(sessions.flatMap((x) => x.leaks ?? []))],
       observed_models: [...new Set(sessions.flatMap((x) => (x.model === undefined ? [] : [x.model])))].sort(),

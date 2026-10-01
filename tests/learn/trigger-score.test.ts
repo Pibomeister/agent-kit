@@ -1233,6 +1233,17 @@ describe("expects: ground truth for positives", () => {
 });
 
 describe("invalid sessions and the no-op floor", () => {
+  test("an archived capped session names its cap and observed tool-event count", () => {
+    expect(
+      invalidSession(
+        JSON.parse(
+          readFileSync(join(import.meta.dir, "evals", "fixtures", "transcripts", "claude-turn-cap.json"), "utf8"),
+        ),
+        6,
+      ),
+    ).toBe("turn cap 6 reached after 6 tool events");
+  });
+
   test("a timeout, a non-zero exit or an empty reply is not a trial", () => {
     expect(invalidSession({ exitCode: 0, timedOut: true, reply: "TIMEOUT" })).toBe("timeout");
     expect(invalidSession({ exitCode: 1, timedOut: false, reply: "partial" })).toBe("exit 1");
@@ -1241,9 +1252,11 @@ describe("invalid sessions and the no-op floor", () => {
   });
 
   test("a session the host cancelled on a refused call says so, rather than reading as an empty reply", () => {
-    // grok under dontAsk ends the turn at the first refused call, with no reply.
-    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "", stopReason: "cancelled" })).toBe(
-      "host cancelled a refused call",
+    const parsed = grok.parse(
+      readFileSync(join(import.meta.dir, "evals", "fixtures", "transcripts", "grok-cancelled-read.jsonl"), "utf8"),
+    );
+    expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBe(
+      "host cancelled refused Bash call: git status -sb && git branch -vv && gh pr list --state open --json number,title,url; echo ---",
     );
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "", stopReason: "end_turn" })).toBe("empty reply");
   });

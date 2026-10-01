@@ -1,0 +1,2 @@
+{"type":"tool_call","toolName":"run_terminal_command","rawInput":{"command":"git status -sb && git branch -vv && gh pr list --state open --json number,title,url; echo ---","description":"Inspect the checkout and open pull requests"}}
+{"type":"end","stopReason":"cancelled","num_turns":1,"modelUsage":{}}

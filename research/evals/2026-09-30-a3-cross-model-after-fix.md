@@ -260,6 +260,7 @@ Do not claim the invocation rule holds on every host yet.
 2. Tighten or clarify the first-step wording for `super-review`, `super-ship`, and `super-align`, and investigate the seven valid `subject-sol` loaded-no-command rows. These are the clearest remaining behavioral failures.
 3. Fix and calibrate the scorer's command-first/code-block false negatives, then rescore these stored transcripts for free. Do not rerun paid sessions for that.
 4. Repair Grok's refused-call continuation/allow behavior before using it to claim typed or M-routing parity. Reconsider the six-turn cap for the smaller Claude subject. Both are instrument problems, not evidence the skill wording failed.
+   The fixture-backed instrument changes and the still-unapproved live smoke are recorded in [the A3 instrument repair note](2026-10-01-a3-instrument-repairs.md).
 5. Add Codex token-usage retention as a follow-up if cost accounting is needed; exact dollars still require an external pricing source.
 
 Option A's completed free rescore is recorded in [A2 rescore after command-first and `count-objects` repairs](2026-10-01-a2-rescore-command-first.md).

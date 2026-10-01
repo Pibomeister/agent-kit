@@ -859,7 +859,7 @@
   },
   "tests/learn/evals/trigger-eval.ts": {
     "anti-slop(no-array-filter-map)": 1,
-    "anti-slop(no-known-value-widening)": 9,
+    "anti-slop(no-known-value-widening)": 8,
     "anti-slop(no-runtime-typeof)": 5,
     "anti-slop(require-safety-comment-for-type-assertion)": 5,
     "eslint(no-shadow)": 1,

@@ -71,6 +71,160 @@ export function unwrap(command: string): string {
   return inner.length === 1 ? inner[0]! : command;
 }
 
+/** Programs the scorer accepts as read-only for all arguments not rejected by its write-flag guard. */
+export const READ_ONLY_PROGRAMS = [
+  "cd",
+  "pushd",
+  "popd",
+  "ls",
+  "cat",
+  "bat",
+  "nl",
+  "less",
+  "more",
+  "head",
+  "tail",
+  "wc",
+  "grep",
+  "egrep",
+  "fgrep",
+  "rg",
+  "find",
+  "pwd",
+  "echo",
+  "awk",
+  "tree",
+  "stat",
+  "file",
+  "which",
+  "type",
+  "true",
+  "cut",
+  "realpath",
+  "lsof",
+  "[",
+  "test",
+] as const;
+
+/** Git subcommands the scorer accepts as read-only after global options. */
+export const READ_ONLY_GIT = [
+  "status",
+  "log",
+  "diff",
+  "show",
+  "rev-parse",
+  "ls-files",
+  "ls-tree",
+  "blame",
+  "shortlog",
+  "describe",
+  "cat-file",
+  "grep",
+  "merge-base",
+  "rev-list",
+  "for-each-ref",
+  "show-ref",
+] as const;
+
+/** Git subcommands the scorer accepts only for these first non-option actions. */
+export const READ_ONLY_GIT_ACTIONS = {
+  stash: ["list", "show"],
+  remote: ["", "show", "get-url"],
+  worktree: ["list"],
+  notes: ["list"],
+} as const;
+
+/** gh group/action pairs the scorer accepts as read-only. `api` has flag-sensitive handling. */
+export const READ_ONLY_GH_ACTIONS = {
+  auth: ["status"],
+  repo: ["view"],
+  pr: ["view", "list", "checks", "diff", "status"],
+  issue: ["view", "list", "checks", "diff", "status"],
+  run: ["view", "list", "checks", "diff", "status"],
+} as const;
+
+const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${prefix} *)`];
+
+/**
+ * Grok permission rules generated from the scorer's read-only tables. The host matches shell
+ * segments by glob, so commands whose safe subset needs semantic parsing stay out: awk programs,
+ * curl flags, gh api flags, shell loops, arbitrary help/version calls, and harmless output
+ * redirections that the same glob used to deny writes would also match. `dontAsk` leaves those
+ * visible as cancelled invalid sessions. Denies guard the write-shaped forms of broad safe-prefix
+ * rules; deny wins over allow in Grok's grammar.
+ */
+export function grokReadOnlyPermissionRules() {
+  const grammarGaps = new Set(["awk", "["]);
+  const allow = READ_ONLY_PROGRAMS.filter((program) => !grammarGaps.has(program)).flatMap(bashRules);
+  allow.push("Bash(printenv)", "Bash(printenv *)", "Bash(command -v *)", "Bash(command -V *)");
+  allow.push("Bash(sed *)", "Bash(sort *)");
+  allow.push(...READ_ONLY_GIT.flatMap((subcommand) => bashRules(`git ${subcommand}`)));
+  for (const [subcommand, actions] of Object.entries(READ_ONLY_GIT_ACTIONS)) {
+    for (const action of actions) {
+      const prefix = ["git", subcommand, action].filter(Boolean).join(" ");
+      allow.push(...(action === "" ? [`Bash(${prefix})`] : bashRules(prefix)));
+    }
+  }
+  allow.push("Bash(git reflog)", "Bash(git reflog show *)");
+  allow.push(
+    "Bash(git config --get *)",
+    "Bash(git config --get-all *)",
+    "Bash(git config --get-regexp *)",
+    "Bash(git config --list*)",
+    "Bash(git config -l*)",
+    "Bash(git branch)",
+    "Bash(git branch -a*)",
+    "Bash(git branch -r*)",
+    "Bash(git branch -v*)",
+    "Bash(git branch --list*)",
+    "Bash(git branch --show-current*)",
+    "Bash(git tag)",
+    "Bash(git tag -l*)",
+    "Bash(git tag --list*)",
+  );
+  for (const [group, actions] of Object.entries(READ_ONLY_GH_ACTIONS)) {
+    for (const action of actions) allow.push(...bashRules(`gh ${group} ${action}`));
+  }
+  allow.push(
+    "Bash(ak learn review report)",
+    "Bash(ak learn memory show)",
+    "Bash(bun run ak validate *)",
+    "Bash(bun run ak status *)",
+    "Bash(node *ak-gate.mjs check *)",
+    "Bash(bun *ak-gate.mjs check *)",
+  );
+
+  const deny = [
+    "Bash(*>*)",
+    "Bash(find *-delete*)",
+    "Bash(find *-exec*)",
+    "Bash(find *-execdir*)",
+    "Bash(find *-ok*)",
+    "Bash(find *-okdir*)",
+    "Bash(find *-fprint*)",
+    "Bash(find *-fprintf*)",
+    "Bash(find *-fls*)",
+    "Bash(rg *--pre*)",
+    "Bash(sed *-i*)",
+    "Bash(sed *--in-place*)",
+    "Bash(sort *-o*)",
+    "Bash(git *--output*)",
+    "Bash(git branch -d*)",
+    "Bash(git branch -D*)",
+    "Bash(git branch -m*)",
+    "Bash(git branch -M*)",
+    "Bash(git branch -c*)",
+    "Bash(git branch -C*)",
+    "Bash(git tag -d*)",
+    "Bash(git tag -a*)",
+    "Bash(git tag -s*)",
+    "Bash(git tag -m*)",
+    "Bash(git tag -F*)",
+    "Bash(gh pr create*)",
+  ];
+  return { allow: [...new Set(allow)], deny };
+}
+
 /** Programs that print a file, and the options of each that take a value. */
 const READERS: Record<string, ReadonlySet<string>> = {
   cat: new Set(),
