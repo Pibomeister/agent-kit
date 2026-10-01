@@ -19,8 +19,9 @@
 # The project record is project.json, untracked, carrying the delegation
 # guidance the scorer consumes. The host's scorer is the repository-local `ak`
 # stand-in: it accepts only `ak delegation <ticket> --project <record>` on
-# files that exist, and returns the ticket's own delegation block at the class
-# the endpoint's authentication surface sets, yellow-owner.
+# files that exist, and returns the ticket's own delegation block at the
+# highest of the submitted class, the yellow-owner the endpoint's
+# authentication surface sets, and red when the floor names a red action.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -163,7 +164,15 @@ if (delegation === undefined) {
   console.error("ak delegation: ticket has no delegation block to score");
   process.exit(1);
 }
-console.log(JSON.stringify({ ...delegation, class: "yellow-owner" }, null, 2));
+const classes = ["green", "yellow-agent", "yellow-owner", "red"];
+const redActions = [
+  "merge", "deploy", "production-credentials", "destructive-data",
+  "money-movement", "trust-boundary-change", "force-push", "history-rewrite",
+];
+const actions = delegation.floor?.sensitive_actions ?? [];
+const floor = actions.some((action) => redActions.includes(action)) ? "red" : "yellow-owner";
+const highest = Math.max(classes.indexOf(delegation.class), classes.indexOf(floor));
+console.log(JSON.stringify({ ...delegation, class: classes[highest] }, null, 2));
 ' "$2"
 SH
 chmod +x ak

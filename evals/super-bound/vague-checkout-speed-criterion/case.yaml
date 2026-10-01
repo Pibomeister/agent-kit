@@ -14,6 +14,11 @@ execution:
 context:
   scaffold_script: scaffold.sh
 graders:
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1
   - name: persists-readiness-before-stop
     type: llm
     focus: { source: file, path: tickets/checkout-performance.json }

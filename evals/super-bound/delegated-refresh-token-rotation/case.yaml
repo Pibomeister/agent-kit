@@ -16,10 +16,15 @@ execution:
 context:
   scaffold_script: scaffold.sh
 graders:
-  - name: runs-scorer-and-advisor-tools
+  - name: runs-the-scorer
     type: tool_used
     tool: Bash
-    min: 2
+    input_match: 'ak\s+delegation'
+    weight: 1
+  - name: consults-the-advisor
+    type: tool_used
+    tool: Bash
+    input_match: '(?:^|[\s/;&|"])advisor(?:[\s;&|"\\]|$)'
     weight: 1
   - name: persists-stop-evidence
     type: llm
