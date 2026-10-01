@@ -1,10 +1,13 @@
 # Publication and setup smoke receipt
 
-Measured source: `e941c7a4a0140703f69d5555800c445cdf7fdc71` on `fm/ak-fixes`.
+Measured source: `1bc7ce052488ac0a0be9ebb61c0e66340944c3b1` on `fm/ak-fixes`. Its code is
+identical to its parent `46a8f87`; that commit changed only this receipt.
 Host instruments: Claude Code 2.1.287, Codex CLI 0.159.0, Bun 1.3.10, Node 25.6.1,
 Git 2.50.1 (Apple Git-155) and real `linearis@2026.8.0`. Every host install used isolated
 configuration directories.
-The unpublished bundle came from `bun run ak build` at this source revision.
+The unpublished bundle came from `bun run ak build` at this source revision (exit 0, 0 errors,
+0 checks skipped). The built Codex bundle carries `dist/codex/.claude-plugin/marketplace.json`
+(marketplace `agent-kit`, plugin `ak` with source `./`) beside `dist/codex/.codex-plugin/plugin.json`.
 
 ## Failing-first checks
 
@@ -18,12 +21,10 @@ $ bun test tests/maintenance.test.ts tests/linearis-guard.test.ts tests/version-
 26 pass, 0 fail, 89 expect() calls, exit 0
 ```
 
-The full suite was last run here at `c0201d6`, before the later maintenance edits (`25f2936`
-caches the script build, `b40d82c` removes an unreachable Codex fallback in `ak update`):
-2717 pass, 1 donor-snapshot skip, 0 fail, exit 0. At that revision `bun run lint`,
-`bunx tsc --noEmit`, `bun run ak validate`, `bun run ak build`, and `bun run ak build --check`
-exited 0. The validator reported one skipped donor-path check
-because `.donors/` was unavailable here; that figure is not a provenance receipt.
+This receipt does not quote a full-suite, lint or typecheck figure at this revision. Those are
+the pipeline's test and lint gates, which run on the same head. The `ak build` figure above
+comes from the working tree and is not a provenance receipt; use
+`research/probes/validate-figure.sh` for that.
 
 ## HTTPS-only marketplace install
 
@@ -56,7 +57,7 @@ $ bash research/probes/linearis-guard.sh
 PASS  negative control: npm exec --no accepts a PATH binary outside this project
 PASS  zsh guarded success keeps result JSON
 PASS  zsh guarded auth rejection becomes exit 42
-linearis 2026.8.0, guard extracted from adapters/tracker/backends/linear-linearis.md at e941c7a: 0 failed
+linearis 2026.8.0, guard extracted from adapters/tracker/backends/linear-linearis.md at 1bc7ce0: 0 failed
 exit 0 (12 PASS rows)
 ```
 
