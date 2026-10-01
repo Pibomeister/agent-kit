@@ -199,12 +199,14 @@ interface LocalAdaptationSource {
 }
 
 function parseLocalAdaptationSource(text: string): LocalAdaptationSource | null {
-  const match = /^local:([A-Za-z0-9._-]+)@sha256:([0-9a-f]{64})(?:#L(\d+)(?:-(\d+))?)?$/.exec(text.trim());
+  const match = /^local:([A-Za-z0-9._-]+)@sha256:([0-9a-f]{64})(?:#L(\d+)-(\d+))?$/.exec(text.trim());
   if (match?.[1] === undefined || match[2] === undefined) return null;
-  if (match[3] === undefined) return { id: match[1], sha256: match[2], start: null, end: null };
+  if (match[3] === undefined || match[4] === undefined) {
+    return { id: match[1], sha256: match[2], start: null, end: null };
+  }
 
   const start = Number(match[3]);
-  const end = match[4] === undefined ? start : Number(match[4]);
+  const end = Number(match[4]);
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || start > end) return null;
   return { id: match[1], sha256: match[2], start, end };
 }

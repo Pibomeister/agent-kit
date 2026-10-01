@@ -369,6 +369,12 @@ local_sources:
     expect(issue?.message).toContain(REPORT_DIGEST.slice(0, 12));
   });
 
+  test("a single-line local range is not a spelling the route accepts", () => {
+    const issues = localSourceIssues(`local:report@sha256:${REPORT_DIGEST}#L2`);
+    const issue = issues.find((i) => i.rule === "provenance.malformed-source");
+    expect(issue?.severity).toBe("error");
+  });
+
   test("a local adaptation range must resolve inside the registered source", () => {
     const issues = localSourceIssues(`local:report@sha256:${REPORT_DIGEST}#L2-4`);
     const issue = issues.find((i) => i.rule === "provenance.local-adaptation-range");
