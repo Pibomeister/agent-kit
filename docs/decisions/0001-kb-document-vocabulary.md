@@ -91,6 +91,7 @@ durable artifact.
 | `super-verify` | — | `verification` |
 | `super-review` | `gotcha` only when a finding teaches a durable rule | `review`, `finding` |
 | `super-ship` | — | ship evidence, paired-PR link |
+| `verify` | `sop` (the recipe that worked, where the host provides `kb-write`) | `verification`, acceptance-to-evidence matrix |
 | `wayfind` | — | `map`, `ticket` (decision) |
 | `diagnose` | `gotcha` (root cause with its proof) | diagnostic packet or bounded patch, never both |
 | `compound` | `gotcha` or `pattern` | `lesson` |

@@ -276,7 +276,7 @@ Firstmate adapter only calls into core. No core command, test or CI job needs Fi
 The first follow-up above is closed this way:
 
 - `src/lifecycle/gate.ts` (`ak lifecycle open|record|check`, and `bin/ak-gate.mjs` in every bundle that
-  carries a super-* skill, run with plain node) defines one gate record format:
+  carries a skill that runs it, run with plain node) defines one gate record format:
   `{run_id, gate, snapshot{repo, revision, diff_hash}, recorded_at}`. The snapshot helpers moved here
   from `src/firstmate/snapshot.ts`. super-build, super-verify and super-review record their gate when
   they pass. super-ship checks first and records `ship-preflight` last. Standalone records default to
