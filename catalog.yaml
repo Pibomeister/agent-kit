@@ -63,7 +63,8 @@ skills:
     status: authored
     summary: >-
       Requirements/spec, implementation plan, dependency DAG, ownership boundaries, acceptance
-      criteria and verification commands. Decision tickets are never implementation tickets.
+      criteria and verification commands, with evidenced readiness, assumptions and delegation per
+      ticket. Decision tickets are never implementation tickets.
 
   - id: super-scout
     kind: lifecycle
@@ -843,8 +844,8 @@ references:
   - id: delegation
     batch: 11
     provenance_origin: conversation
-    status: contract
-    loaded_by: [super-bound, super-verify, super-review, super-ship]
+    status: authored
+    loaded_by: [super-bound]
     summary: >-
       Evidence-backed delegation classes, sensitive floors, ticket and merge assessments, and
       the records lifecycle skills consume without recomputing the scorer.

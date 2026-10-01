@@ -260,6 +260,39 @@ seat_separation:
     scenario: 17
 
 # ---------------------------------------------------------------------------
+# Delegation class limits — which checkpoints a charter may delegate for one ticket.
+# The class narrows a charter; it never grants a checkpoint the charter does not list.
+# ---------------------------------------------------------------------------
+delegation_classes:
+  green:
+    author: agent
+    delegable_checkpoints:
+      - ticket-approval
+      - build-go
+      - finding-adjudication
+      - delta-closure
+      - ci-repair
+      - ship-pr
+  yellow-agent:
+    author: agent
+    delegable_checkpoints: [ticket-approval, build-go, delta-closure, ci-repair]
+  yellow-owner:
+    author: agent-drafts-human-owns
+    delegable_checkpoints: [build-go]
+    requires: owner-approved-ticket
+  red:
+    author: human
+    delegable_checkpoints: []
+  floor: >-
+    Attached packs and required sensitive actions may raise the class; no factor or lowering may
+    cross that floor.
+  invariants:
+    - a human merges every class
+    - merge and deploy remain sensitive actions for every class
+    - the class only narrows checkpoint authority already present in the charter
+  rulings: [delegation-class-is-authority-not-finding, sensitive-surface-sets-the-floor]
+
+# ---------------------------------------------------------------------------
 # Checkpoint decisions — plan §7.3.
 # ---------------------------------------------------------------------------
 checkpoints:

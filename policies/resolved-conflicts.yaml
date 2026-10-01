@@ -1178,7 +1178,10 @@ conflicts:
       reason recorded. A class grants neither merge nor deploy by default.
     discharged_in: [authority, outputs]
     binds:
+      skills: [super-bound]
+      references: [delegation]
       schemas: [ticket, project]
+      policies: [authority-defaults]
     scenario: 26
     coverage: direct
     note: >-
@@ -1203,7 +1206,10 @@ conflicts:
       sensitive actions alongside the existing protected actions; no class grants them by default.
     discharged_in: [authority, hard-gates]
     binds:
+      skills: [super-bound]
+      references: [delegation]
       schemas: [ticket, common]
+      policies: [authority-defaults]
     scenario: 25
     coverage: direct
     note: >-
@@ -1278,6 +1284,8 @@ conflicts:
       tool remain valid and do not manufacture evidence of consultation.
     discharged_in: [workflow, outputs]
     binds:
+      skills: [super-bound]
+      references: [delegation]
       schemas: [verification]
     scenario: 29
     coverage: direct

@@ -284,7 +284,7 @@ local_sources:
     lines: 231
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
-    cited_in_adaptations: false
+    cited_in_adaptations: true
   - id: verifier-seat-design-report
     description: >-
       The verifier-seat design report commissioned for agent-kit. It records the documented

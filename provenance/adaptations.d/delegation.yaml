@@ -1,4 +1,76 @@
 adaptations:
+  - path: references/delegation/REFERENCE.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: Sensitive surfaces and their overriding effect became the never-lowered delegation floor without importing the report's sample thresholds.
+  - path: references/delegation/REFERENCE.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-219
+    rationale: The evidenced factors, four classes and authorship meanings became the shared class vocabulary while project weights and cut points remain advisory.
+  - path: references/delegation/REFERENCE.md
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: Ticket-time and merge-time assessment, raise-only recomputation and named-human lowering became the two-snapshot lifecycle.
+  - path: references/delegation/REFERENCE.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L82-98
+    rationale: Transparent size, diffusion, hotspot and prior-fix inputs became optional complexity evidence rather than a learned or package-wide gate.
+  - path: references/delegation/REFERENCE.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: The six readiness criteria, vague-term pass and assumption resolution became per-ticket evidence and frontier questions.
+  - path: skills/super-bound/SKILL.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: The readiness and assumption procedures became a per-ticket workflow hook, with shared criteria deferred to the delegation reference.
+  - path: skills/super-bound/SKILL.md
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L138-150
+    rationale: The reversible stack order became the slicing sequence, with schema contract isolated as its own ticket and numeric size guidance left advisory.
+  - path: skills/super-bound/skill.yaml
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-150
+    rationale: The execution contract mirrors the body's readiness, assumption and ordered-stack obligations without reproducing their shared rubric.
+  - path: skills/super-bound/SKILL.md
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-spec/SKILL.md
+    rationale: The decision-level specification sections, seams-first rule and prototype-settled fragment survive while repository-local writes become knowledgebase publication.
+  - path: skills/super-bound/SKILL.md
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
+    rationale: Vertical slicing, blocking edges and the wide-refactor carve-out survive with parallel safety widened to shared artifacts and file ownership.
+  - path: skills/super-bound/SKILL.md
+    source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-plans/SKILL.md
+    rationale: Zero-context calibration, interface contracts, right-sizing and self-review survive; unfinished-content phrasing remains a hard gate.
+  - path: skills/super-bound/SKILL.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-plan/SKILL.md
+    rationale: The specify-then-plan split, document review before slicing and stop on invalidated decisions survive without donor-specific artifact roots.
+  - path: skills/super-bound/SKILL.md
+    source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/spec-driven-development/SKILL.md
+    rationale: The gated capability map with stable module ids survives as the pre-specification boundary.
+  - path: skills/super-bound/SKILL.md
+    source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/constraint-driven-development/SKILL.md
+    rationale: Detect-before-asking survives while repository-local constraints and package-wide thresholds do not.
+  - path: skills/super-bound/skill.yaml
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-spec/SKILL.md
+    rationale: The approved-direction trigger and decision-level specification gate remain in the execution contract.
+  - path: skills/super-bound/skill.yaml
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
+    rationale: The implementation-ticket and decision-ticket outputs remain declared against the shared ticket schema.
+  - path: skills/super-bound/skill.yaml
+    source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-plans/SKILL.md
+    rationale: The zero-context and unfinished-content gates remain mirrored in the machine contract.
+  - path: skills/super-bound/skill.yaml
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-plan/SKILL.md
+    rationale: The document-review child skill and invalidated-decision stop remain declared.
+  - path: skills/super-bound/skill.yaml
+    source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/spec-driven-development/SKILL.md
+    rationale: The capability-map trigger remains declared for approved directions spanning modules.
+  - path: skills/super-bound/skill.yaml
+    source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/constraint-driven-development/SKILL.md
+    rationale: Project guidance remains a declared input and now fails closed when delegation guidance needed by the scorer is absent.
+  - path: policies/authority-defaults.yaml
+    source: local:mission-brief-risk-tiering-and-slop-avoidance@sha256:90abd48e019f09ea3d58c11028148fc971dbefe145c70c0822364f15b1729b38#L150-159
+    rationale: The captain's class-to-checkpoint table became the authoritative policy map while merge and deploy remain sensitive for every class.
+  - path: evals/super-bound/delegated-refresh-token-rotation/case.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L244-245
+    rationale: The report's refresh-token worked example supplies the sensitive-floor expectation without printing it in the requester prompt.
+  - path: evals/super-bound/vague-checkout-speed-criterion/case.yaml
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: The readiness and vague-term research supplies the failure shape while the requester prompt states only the underspecified criterion.
+  - path: evals/super-bound/refused-oversized-change-split/case.yaml
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L138-150
+    rationale: The report's stack order supplies the grader expectation while the requester prompt states only the large change and refusal.
   - path: catalog.yaml
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
     rationale: >-
