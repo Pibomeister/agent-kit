@@ -2,11 +2,12 @@
 name: super-bound
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-bound`, or
-  under a validated grant. On any other request do not load or follow it; tell the human to type
-  that command. Turns an approved direction into a decision-level specification, a reviewed plan and
-  a dependency graph of zero-context implementation tickets with named verification. Use when the
-  direction is agreed and the work needs bounding. Not for deciding what to build, and not for a
-  reviewed ticket that already carries its acceptance criteria.
+  under a validated grant, or when a supervisor's bypass grant passes `ak lifecycle bypass check`.
+  On any other request do not load or follow it; tell the human to type that command. Turns an
+  approved direction into a decision-level specification, a reviewed plan and a dependency graph
+  of zero-context implementation tickets with named verification. Use when the direction is agreed
+  and the work needs bounding. Not for deciding what to build, and not for a reviewed ticket that
+  already carries its acceptance criteria.
 license: MIT
 metadata:
   ak_catalog_id: super-bound
@@ -112,7 +113,9 @@ approves its own specification or tickets.
     `type: decision` and send it back.
 13. Self-review, then publish: every acceptance criterion is covered by a ticket, no ticket carries
     an unfinished-content marker or a "same as the earlier ticket" instruction, and each ticket's
-    produced names and types match the next one's consumed names exactly.
+    produced names and types match the next one's consumed names exactly. Under a bypass grant,
+    report `needs-decision` listing the tickets and their hashes and stop before publishing; only
+    the supervisor's answer approves them.
 
 ## Hard gates
 

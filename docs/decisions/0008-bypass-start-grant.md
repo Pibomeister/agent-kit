@@ -5,7 +5,8 @@
 **Authority:** the captain's request for a bypass mode for agent-kit, and the captain's choice of
 start-only scope ("agent-kit: A"), both relayed by Firstmate on 2026-10-01. Amends the source
 invocation law's human-only start rule for super-align, super-bound, super-review `full` and
-`readiness`, and super-ship. Numbered 0008 because ADR-0007 is taken by the runner's standing grant on
+`readiness`, and super-ship. The same-user limit under Consequences was accepted by Firstmate on the
+captain's behalf on 2026-10-01, after an independent review of PR #52. Numbered 0008 because ADR-0007 is taken by the runner's standing grant on
 its own branch.
 **Prior art read:** `policies/invocation.yaml`, ADR-0004 (the binding as grant and its ledger),
 ADR-0007 on branch `fm/ak-runner` at `63bf3c3` (the runner's standing grant for autopilot),
@@ -39,8 +40,12 @@ It prints the brief section the supervisor pastes into the task's brief. Before 
 runs `ak lifecycle bypass check --grant <file> --task <id> --phase <phase>` (or the bundle's
 `bin/ak-gate.mjs bypass check`). Exit 0 is the start and leaves a use record under
 `<evidence>/<run>/bypass/`. A refusal is a stop with `needs-decision`. When the worker records
-`review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file> --task <id>`, and the gate record
-carries `authority: {mode: "bypass", grant_id, grant, grant_sha256, authorized_by, task_id}`.
+`review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file> --task <id>`, and the
+gate record carries `authority: {mode: "bypass", grant_id, grant, grant_sha256, authorized_by,
+task_id}`. The attribution is not optional once used: a gate whose phase has a use record in the run,
+or whose record at this snapshot already carries a grant, is refused without `--bypass` naming that
+grant. `--bypass` on a gate no bypass phase records (`build-checks`, `verify`, `review-delta`) is
+refused.
 
 **Start only.** The grant starts phases and nothing else. Every approval inside a phase still stops
 with `needs-decision` for the supervisor who holds the grant: super-align's explicit yes, super-bound's
@@ -51,17 +56,23 @@ its explicit form, as if the command had been typed; it is not the delegated for
 make worker-written evidence trusted.
 
 **Trust.** The same model as ADR-0004 and the runner's standing grant: authority comes from an
-artifact outside the worker's write scope, bound by hash. `grant` refuses to run from a checkout of
-the repository it grants and refuses to write into any of its worktrees or its git directory. It
-registers the file's real path and sha256 in a ledger under the account's home directory
-(`~/.agent-kit/bypass/`, from the account record, not `HOME`). `check` refuses a file that is
-missing, malformed, unregistered, copied, edited, inside any worktree or the git directory, for
-another repository, or past `expires_at`, which defaults to 24 hours and is capped at 168.
+artifact outside the worker's write scope, bound by hash. `grant` refuses to run from inside any
+worktree or the git directory of the repository it grants, or from under a Firstmate home's
+`projects/`, and refuses to write into any worktree or the git directory. It registers the file's real
+path and sha256 in a ledger under the account's home directory (`~/.agent-kit/bypass/`, from the
+account record, not `HOME`), and the grant and its ledger entry record who issued it: the issuing
+process's working directory, the host and the Firstmate home `--out` lies in. `check` opens the grant
+once and judges those bytes only: the file it opened must be the registered one (same device and
+inode), and the bytes it parses must hash to the registered sha256, so swapping the path mid-check
+cannot pair forged fields with a genuine hash. It refuses a file that is missing, malformed,
+unregistered, copied, edited, inside any worktree or the git directory, for another repository, or
+past `expires_at`, which defaults to 24 hours and is capped at 168.
 
 **One task.** `check` and `record --bypass` take the task id from the brief as `--task`, never
 from the grant file, and refuse unless it equals the grant's `task_id`. `grant` records the task's
-own worktree, which must be one of the repository's, and `check` and `record --bypass` refuse unless
-they run from it, so another task's worktree is refused even with the right `--task`. The grant is
+own worktree, which must be one of the repository's, and `check` and `record --bypass` compare it with the worktree of
+the directory they run from, never with a flag: `--project` must name that same worktree, so another
+task's worktree is refused even with the right `--task` and `--project` naming the granted one. The grant is
 not bound to a run: the lifecycle opens new runs after align, so any run under the task may use it.
 Each phase check and `record --bypass` adds its run id to a `runs` list in the grant's ledger entry
 for audit; a check without `--phase` writes nothing.
@@ -71,11 +82,13 @@ for audit; a check without `--phase` writes nothing.
 - A captain-authorized task runs align through ship without a human typing a command, and its
   approvals reach the supervisor as `needs-decision` lines instead of being skipped.
 - Without a grant nothing changes: every phase stops at its authority step as before.
-- The limit: a same-user process that runs `grant` from outside the repository, or edits the ledger,
-  still produces a grant `check` accepts. The refusals above stop a worker that writes a grant inside
-  its worktree or runs `grant` from it, which is the mistake or shortcut a worker is likely to try,
-  but they are not a security boundary. Preventing a deliberate same-user forgery needs host write
-  isolation or a grant issuer outside the worker's account, which is what the runner provides.
+- **The same-user limit, accepted.** A worker runs as the same OS user as the supervisor, so it can
+  run `grant` from a directory outside the repository, or write the ledger, and get a grant `check`
+  accepts. On a single-user install the refusals guard against accidents and shortcuts, not against
+  a determined worker. The issuer fields make a self-issued grant visible to an audit that compares
+  them with where the supervisor issues from; a worker can forge them too. Firstmate accepted this
+  limit on the captain's behalf on 2026-10-01, as the runner's admin-token ruling did. The follow-up
+  is an issuer outside the worker's account: the runner, or a separate uid.
 - Revoking a grant is deleting its file; `check` then refuses.
 - When the runner lands, a bypass grant can become a runner-issued grant with the same fields. Records
   citing it stay readable because the attribution names the grant by hash.

@@ -15,9 +15,10 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
@@ -83,6 +84,29 @@ function ak(cwd: string, ledger: string, ...argv: string[]) {
   const err: string[] = [];
   const code = main(argv, { out: (l) => out.push(l), err: (l) => err.push(l) }, cwd, ledger);
   return { code, out: out.join("\n"), err: err.join("\n") };
+}
+
+/** `bypass grant` for task T-1 on the setup's worktree, run from `cwd`. */
+function grantFrom(s: ReturnType<typeof setup>, cwd: string, out: string, ...extra: string[]) {
+  return ak(
+    cwd,
+    s.ledger,
+    "bypass",
+    "grant",
+    "--task",
+    "T-1",
+    "--by",
+    "captain",
+    "--reason",
+    "r",
+    "--out",
+    out,
+    "--project",
+    s.project,
+    "--worktree",
+    s.worktree,
+    ...extra,
+  );
 }
 
 function granted() {
@@ -239,6 +263,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     const r = checkBypass({
       grant: s.grantPath,
       task: "T-1",
+      cwd: s.worktree,
       phase: "super-align",
       project: s.worktree,
       ledger: s.ledger,
@@ -315,6 +340,35 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(readRecords(defaultEvidenceDir(other), "other", "review-full")).toEqual([]);
   });
 
+  test("--project naming the granted worktree does not let another worktree pass check or record --bypass", () => {
+    const { project, worktree, ledger, grantPath } = granted();
+    const other = join(dir("ak-bypass-wt-"), "other");
+    git(project, "worktree", "add", "-q", "-b", "other", other);
+    const flags = ["--grant", grantPath, "--task", "T-1", "--project", worktree];
+    const r = ak(other, ledger, "bypass", "check", ...flags, "--phase", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is not the worktree this runs from");
+    expect(existsSync(join(defaultEvidenceDir(other), "other", "bypass"))).toBe(false);
+    const rec = ak(
+      other,
+      ledger,
+      "record",
+      "--gate",
+      "review-full",
+      "--bypass",
+      grantPath,
+      "--task",
+      "T-1",
+      "--project",
+      worktree,
+      "--run",
+      "other",
+    );
+    expect(rec.code).toBe(1);
+    expect(rec.err).toContain("is not the worktree this runs from");
+    expect(readRecords(defaultEvidenceDir(other), "other", "review-full")).toEqual([]);
+  });
+
   test("grant refuses a worktree that is not one of the repository's", () => {
     const s = setup();
     const r = ak(
@@ -371,6 +425,98 @@ describe("one task: the grant binds to the task it names and that task's worktre
   });
 });
 
+describe("attribution: --bypass only where a phase covers the gate, and never optional once used", () => {
+  test.each(["build-checks", "verify", "review-delta"])(
+    "record --gate %s --bypass is refused and writes nothing",
+    (gate) => {
+      const { worktree, ledger, grantPath } = granted();
+      const r = ak(worktree, ledger, "record", "--gate", gate, "--bypass", grantPath, "--task", "T-1");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("does not apply");
+      expect(existsSync(join(defaultEvidenceDir(worktree), "task", gate))).toBe(false);
+    },
+  );
+
+  test("a review started under a grant cannot be recorded without it", () => {
+    const { worktree, ledger, grantPath } = granted();
+    expect(
+      ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-review:full")
+        .code,
+    ).toBe(0);
+    const plain = ak(worktree, ledger, "record", "--gate", "review-full");
+    expect(plain.code).toBe(1);
+    expect(plain.err).toContain("started under bypass grant");
+    expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
+    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-1").code).toBe(
+      0,
+    );
+    expect(only(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).authority?.mode).toBe("bypass");
+  });
+
+  test("a plain re-record cannot strip the attribution from a bypassed record", () => {
+    const { worktree, ledger, grantPath } = granted();
+    expect(
+      ak(worktree, ledger, "record", "--gate", "review-readiness", "--bypass", grantPath, "--task", "T-1").code,
+    ).toBe(0);
+    expect(ak(worktree, ledger, "record", "--gate", "review-readiness").code).toBe(1);
+    expect(only(readRecords(defaultEvidenceDir(worktree), "task", "review-readiness")).authority?.mode).toBe("bypass");
+  });
+});
+
+describe("a forged grant cannot ride a genuine grant's hash", () => {
+  test("swapping the grant path between a forged file and the genuine one never passes an expired grant", async () => {
+    const s = setup();
+    expect(grantFrom(s, s.home, s.grantPath, "--hours", "1").code).toBe(0);
+    const genuine = readFileSync(s.grantPath, "utf8");
+    const forged = join(s.home, "forged.json");
+    writeFileSync(forged, genuine.replace(/"expires_at": "[^"]*"/, '"expires_at": "2099-01-01T00:00:00.000Z"'));
+    expect(readFileSync(forged, "utf8")).toContain("2099-01-01");
+    const link = join(s.home, "link.json");
+    symlinkSync(s.grantPath, link);
+    const flipper = Bun.spawn(
+      [
+        "bun",
+        "-e",
+        `const fs=require("node:fs");const [l,a,b]=process.argv.slice(1);for(let i=0;;i++){const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l)}`,
+        link,
+        s.grantPath,
+        forged,
+      ],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+    await Bun.sleep(100);
+    const later = new Date(Date.now() + 48 * 3_600_000);
+    const reasons = new Map<string, number>();
+    let passed = 0;
+    const until = Date.now() + 1500;
+    while (Date.now() < until) {
+      const r = checkBypass({
+        grant: link,
+        task: "T-1",
+        phase: "super-align",
+        cwd: s.worktree,
+        project: s.worktree,
+        ledger: s.ledger,
+        now: () => later,
+      });
+      if (r.ok) passed += 1;
+      else {
+        const kind = r.reason.includes("expired")
+          ? "expired"
+          : r.reason.includes("registered")
+            ? "not registered"
+            : "other";
+        reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
+      }
+    }
+    flipper.kill();
+    await flipper.exited;
+    expect(passed).toBe(0);
+    expect(reasons.get("expired") ?? 0).toBeGreaterThan(0);
+    expect(reasons.get("not registered") ?? 0).toBeGreaterThan(0);
+  });
+});
+
 describe("a worker-authored grant is rejected", () => {
   test("grant refuses to run from a checkout of the repository it grants", () => {
     const s = setup();
@@ -393,9 +539,32 @@ describe("a worker-authored grant is rejected", () => {
       s.worktree,
     );
     expect(r.code).toBe(1);
-    expect(r.err).toContain("run it from outside the repository");
+    expect(r.err).toContain("is a task checkout");
+    expect(r.err).not.toMatch(/outside|elsewhere|another directory/);
     expect(existsSync(s.grantPath)).toBe(false);
     expect(readdirSync(s.ledger)).toEqual([]);
+  });
+
+  test("grant refuses from a subdirectory of a worktree and from under a Firstmate projects dir", () => {
+    const s = setup();
+    mkdirSync(join(s.worktree, "src", "deep"), { recursive: true });
+    const fm = dir("ak-bypass-fm-");
+    for (const sub of ["data", "state", "projects/scratch"]) mkdirSync(join(fm, sub), { recursive: true });
+    for (const cwd of [join(s.worktree, "src", "deep"), join(fm, "projects", "scratch")]) {
+      const r = grantFrom(s, cwd, s.grantPath);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("is a task checkout");
+    }
+    expect(readdirSync(s.ledger)).toEqual([]);
+  });
+
+  test("the grant and its ledger entry record who issued it: cwd, host and supervisor home", () => {
+    const s = setup();
+    for (const sub of ["data", "state", "projects"]) mkdirSync(join(s.home, sub), { recursive: true });
+    expect(grantFrom(s, s.home, s.grantPath).code).toBe(0);
+    const issued = { cwd: realpathSync(s.home), host: hostname(), supervisor_home: realpathSync(s.home) };
+    expect(JSON.parse(readFileSync(s.grantPath, "utf8"))).toMatchObject({ issued });
+    expect(JSON.parse(readFileSync(join(s.ledger, `${grantId(s.ledger)}.json`), "utf8"))).toMatchObject({ issued });
   });
 
   test("grant refuses to write inside the worktree or the git directory", () => {

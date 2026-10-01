@@ -2,11 +2,12 @@
 name: super-align
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-align`, or
-  under a validated grant. On any other request do not load or follow it; tell the human to type
-  that command. Grills an unsettled request into agreed direction: a design tree worked in rounds,
-  named terms, two or three approaches with a recommendation, and an explicit human yes before
-  anything is built. Use when what to build is not yet agreed. Not for a request that already
-  carries acceptance criteria, and not for a single-file fix with no decision in it.
+  under a validated grant, or when a supervisor's bypass grant passes `ak lifecycle bypass check`.
+  On any other request do not load or follow it; tell the human to type that command. Grills an
+  unsettled request into agreed direction: a design tree worked in rounds, named terms, two or
+  three approaches with a recommendation, and an explicit human yes before anything is built. Use
+  when what to build is not yet agreed. Not for a request that already carries acceptance
+  criteria, and not for a single-file fix with no decision in it.
 license: MIT
 metadata:
   ak_catalog_id: super-align

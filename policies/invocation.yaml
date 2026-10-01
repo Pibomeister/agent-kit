@@ -415,8 +415,8 @@ bypass:
     one repository, until it expires. A supervisor (Firstmate or a human) writes it from outside
     the repository with `ak lifecycle bypass grant`; the worker runs `ak lifecycle bypass check
     --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
-    must equal the grant's, and the check must run from the task's worktree the grant names. Any
-    run under that task may use it; each use is logged in the grant's ledger entry for audit. The
+    must equal the grant's, and the check must run from inside the task's worktree the grant
+    names; `--project` cannot substitute for that. Any run under that task may use it; each use is logged in the grant's ledger entry for audit. The
     phase runs as its explicit form. It is not a phase operation, not a delegated grant and not
     trusted evidence.
   phases: [super-align, super-bound, "super-review:full", "super-review:readiness", super-ship]
@@ -428,13 +428,18 @@ bypass:
   never: [merge, deploy, autopilot, scope-expansion]
   attribution: >-
     Each check leaves a use record under `<evidence>/<run>/bypass/`, and a gate recorded with
-    `--bypass <file> --task <id>` carries `authority.mode: bypass` with the grant's id, path, sha256, task and who
-    authorized it.
+    `--bypass <file> --task <id>` carries `authority.mode: bypass` with the grant's id, path,
+    sha256, task and who authorized it. Once a phase was started under a grant, or a record at the
+    snapshot carries one, recording that gate without the same grant is refused; `--bypass` on a
+    gate no bypass phase records is refused.
   trust: >-
     The grant lives outside every worktree and the git directory of its repository, and its real
-    path and sha256 are registered in a ledger under the account's home directory. A same-user
-    process outside the repository can still write one; that boundary is the host's, as for the
-    Firstmate binding (ADR-0004).
+    path and sha256 are registered in a ledger under the account's home directory, with the
+    issuing directory, host and Firstmate home recorded for audit. The check judges the bytes it
+    opened once, from the registered inode. A same-user worker can still issue one from outside
+    the repository: on a single-user install this guards against accidents and shortcuts, not a
+    determined worker. Firstmate accepted that limit on the captain's behalf on 2026-10-01; an
+    issuer outside the worker's account (the runner, or a separate uid) is the follow-up.
   ruling: entrypoint-phase-operation-split
 
 packs:
