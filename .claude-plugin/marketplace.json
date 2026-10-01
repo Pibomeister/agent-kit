@@ -12,7 +12,7 @@
       "description": "Seven super skills plus packs, protocols and roles: align, bound, scout, build, verify, review, ship.",
       "source": {
         "source": "git-subdir",
-        "url": "Pibomeister/agent-kit",
+        "url": "https://github.com/Pibomeister/agent-kit.git",
         "path": "dist/claude-code",
         "ref": "published"
       },

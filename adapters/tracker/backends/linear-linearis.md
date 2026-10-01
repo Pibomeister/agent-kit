@@ -108,15 +108,15 @@ command:
   trap 'rm -rf "$home"' EXIT
   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
   output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>"$home/stderr")"
-  status=$?
+  linearis_rc=$?
   errors="$(cat "$home/stderr")"
   [ -z "$errors" ] || printf '%s\n' "$errors" >&2
-  if [ "$status" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
+  if [ "$linearis_rc" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
   printf '%s\n' "$output" >&2
   case "$output$errors" in
     *AUTHENTICATION_REQUIRED*|*'Authentication required, not authenticated'*|*'No API token found'*) exit 42 ;;
   esac
-  exit "$status"
+  exit "$linearis_rc"
 )
 ```
 
@@ -131,6 +131,8 @@ Each line is load-bearing:
   resolved with `pwd -P`, and the upward search stops at the top level or at `/`, whichever comes
   first — it cannot walk past either. The token file and the binary are the project's only when
   resolved from that root.
+- **The binary is resolved by path and checked with `realpath`.** A same-named global command on
+  `PATH`, or a symlink from the project's `.bin` to a global executable, cannot satisfy the guard.
 - **The token is read once**, with CR and surrounding whitespace stripped, so a file saved on
   Windows or ending in a blank line is neither a different token nor a blank one passed through. A
   file holding whitespace *inside* the token — two lines, two words — is refused rather than
@@ -145,6 +147,10 @@ Each line is load-bearing:
 - **`HOME` and `XDG_CONFIG_HOME` point at an empty directory.** linearis's global stores live
   under them, so with nothing there to read, no path through its resolution order reaches the
   operator's global login — even if the token check above were bypassed.
+- **stdout remains result JSON.** The temporary home's `stderr` file keeps warnings out of a
+  successful response. On failure the guard prints both streams to stderr and maps the observed
+  authentication messages to exit `42`; other exit codes pass through. `linearis_rc` also works in
+  zsh, where `status` is read-only.
 
 **Preflight, before every call.** The operation refuses — and linearis is not started — unless all
 of these hold. The guarded form performs the first three; the fourth is checked once per session:
@@ -167,7 +173,7 @@ the global store. A blank token file is therefore refused exactly as a missing o
 empty home makes the global store unreachable anyway.
 
 **Verified offline at `2026.8.0`** by `research/probes/linearis-guard.sh`, which extracts the
-guarded form above from this file, runs it under `sh`, installs the package exactly into a scratch project and routes
+guarded form above from this file, runs it under `sh` and `zsh` where available, installs the package exactly into a scratch project and routes
 every request to a dead proxy (with `NODE_USE_ENV_PROXY=1`, without which Node's `fetch` ignores
 the proxy variables and the request reaches Linear), so no call can reach Linear:
 
@@ -182,6 +188,9 @@ the proxy variables and the request reaches Linear), so no call can reach Linear
 | Control: linearis, `LINEAR_API_TOKEN=""`, `HOME` holding a `~/.linear_api_token` | Warned that `~/.linear_api_token` is deprecated and used it: the global fallback is real |
 | Guarded form, padded project token, operator `HOME` holding that global token | No deprecation warning; the request stopped at the proxy (`fetch failed`), so the project token was the one sent |
 | Every guarded run | The temporary home is gone afterwards |
+| Negative control: `npm exec --no` in another project with linearis only on `PATH` | Prints `2026.8.0`; this is why the guard invokes a checked project path |
+| Guarded success under zsh with a fake local linearis | Result JSON only on stdout, exit `0` |
+| Guarded auth rejection under zsh with a fake local linearis | Rejection on stderr, exit `42` |
 
 Removing the `GIT_*` unset, the `trap` or the inner-whitespace refusal from the form above turns the
 matching row red; the probe was run that way once to confirm it can fail.

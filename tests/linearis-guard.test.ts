@@ -14,6 +14,7 @@ function fixture(
   response = '{"error":"Authentication required, not authenticated"}',
   status = 1,
   warning = "",
+  shell = "sh",
 ) {
   const root = mkdtempSync(join(tmpdir(), "ak-linearis-"));
   roots.push(root);
@@ -33,7 +34,7 @@ function fixture(
   if (!block) throw new Error("linearis guard block is missing");
   const guard = join(root, "guard.sh");
   writeFileSync(guard, block.replace("<command>", '"$@"'));
-  const run = spawnSync("sh", [guard, "issues", "list"], {
+  const run = spawnSync(shell, [guard, "issues", "list"], {
     cwd: root,
     encoding: "utf8",
     env: { ...process.env, PATH: `${join(root, "global-bin")}:${process.env.PATH}`, token_file: ".linear-token" },
@@ -69,5 +70,14 @@ describe("linearis guard", () => {
   test("retains failure status for unrelated application errors", () => {
     const run = fixture(true, '{"error":"Issue not found"}');
     expect(run.status).toBe(1);
+  });
+
+  test("keeps success output and authentication exit 42 under zsh", () => {
+    if (spawnSync("zsh", ["--version"]).status !== 0) return;
+    const success = fixture(true, '{"issues":[]}', 0, "", "zsh");
+    expect(success.status).toBe(0);
+    expect(success.stdout).toBe('{"issues":[]}\n');
+    const rejected = fixture(true, '{"error":"Authentication required, not authenticated"}', 1, "", "zsh");
+    expect(rejected.status).toBe(42);
   });
 });

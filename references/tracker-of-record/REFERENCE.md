@@ -102,19 +102,21 @@ Setup is an operator task, not a skill. Stop at the first step that fails.
   trap 'rm -rf "$home"' EXIT
   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
   output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>"$home/stderr")"
-  status=$?
+  linearis_rc=$?
   errors="$(cat "$home/stderr")"
   [ -z "$errors" ] || printf '%s\n' "$errors" >&2
-  if [ "$status" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
+  if [ "$linearis_rc" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
   printf '%s\n' "$output" >&2
   case "$output$errors" in
     *AUTHENTICATION_REQUIRED*|*'Authentication required, not authenticated'*|*'No API token found'*) exit 42 ;;
   esac
-  exit "$status"
+  exit "$linearis_rc"
 )
 ```
 
-Exit `0` is the result JSON. The guard maps linearis's authentication rejection, including its
+The `realpath` check refuses a global command on `PATH` and symlinks that escape the project's
+dependency tree. The guard keeps stderr warnings out of successful result JSON, and `linearis_rc`
+works in zsh, whose `status` parameter is read-only. Exit `0` is the result JSON. The guard maps linearis's authentication rejection, including its
 observed exit-`1` message, to `42`: `needs-input`. Exit `2` is a wrong invocation, `failed` and
 not retried with guessed flags. Other exit-`1` application errors are `failed`.
 

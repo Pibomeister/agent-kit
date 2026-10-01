@@ -21,7 +21,13 @@ function bundle(dir: string, version: string, skill: string) {
   writeFileSync(join(dir, "claude-code/SKILL.md"), skill);
 }
 
-function gate(published: [string, string] | null, built: [string, string], packageVersion = built[0], origin = "") {
+function gate(
+  published: [string, string] | null,
+  built: [string, string],
+  packageVersion = built[0],
+  origin = "",
+  omitPublishedManifest = false,
+) {
   const root = mkdtempSync(join(tmpdir(), "ak-version-gate-"));
   roots.push(root);
   const remote = join(root, "remote.git");
@@ -32,6 +38,7 @@ function gate(published: [string, string] | null, built: [string, string], packa
     const release = join(root, "release");
     git(root, "init", "-q", release);
     bundle(join(release, "dist"), ...published);
+    if (omitPublishedManifest) rmSync(join(release, "dist/claude-code/.claude-plugin/plugin.json"));
     git(release, "add", "dist");
     git(release, "commit", "-qm", "publish");
     git(release, "push", "-q", remote, "HEAD:refs/heads/published");
@@ -51,6 +58,21 @@ describe("bundle version gate", () => {
 
   test("accepts changed content with a version bump", () => {
     expect(gate(["0.1.0", "old"], ["0.2.0", "new"]).status).toBe(0);
+  });
+
+  test("refuses unreadable published manifest even with a new current version", () => {
+    const run = gate(["0.1.0", "old"], ["0.2.0", "new"], "0.2.0", "", true);
+    expect(run.status).toBe(1);
+  });
+
+  test("refuses a changed bundle published at a lower version", () => {
+    const run = gate(["0.2.0", "old"], ["0.1.0", "new"]);
+    expect(run.status).toBe(1);
+  });
+
+  test("release outranks its prerelease, but a prerelease cannot replace the release", () => {
+    expect(gate(["0.1.0-dev", "old"], ["0.1.0", "new"]).status).toBe(0);
+    expect(gate(["0.1.0", "old"], ["0.1.0-dev", "new"]).status).toBe(1);
   });
 
   test("accepts unchanged content at the published version", () => {

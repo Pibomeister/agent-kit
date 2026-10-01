@@ -1,13 +1,22 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, relative } from "node:path";
 import Ajv, { type ValidateFunction } from "ajv";
 import Ajv2020 from "ajv/dist/2020.js";
-import { parseDocument } from "yaml";
 
 import commonSchema from "../../schemas/common.schema.json" with { type: "json" };
 import trackerSchema from "../../schemas/tracker-binding.schema.json" with { type: "json" };
+import linearisSchema from "../../schemas/tracker-backends/linear-linearis.schema.json" with { type: "json" };
+import {
+  BINDING_FILE,
+  checkTrackerSecret,
+  findProjectRoot,
+  loadTrackerBinding,
+  type BindingValidators,
+  type TrackerBinding,
+} from "../tracker/binding.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -24,6 +33,16 @@ interface HostPlugin {
   enabled?: boolean;
   scope?: string;
   projectPath?: string;
+  projectEnabled?: boolean;
+}
+interface ClaudeMarketplace {
+  name: string;
+  source: string;
+  repo?: string;
+  url?: string;
+}
+interface CodexConfig {
+  marketplaces?: Record<string, { source?: string; ref?: string }>;
 }
 interface PublishedManifest {
   name: string;
@@ -32,15 +51,9 @@ interface PublishedManifest {
 interface ProjectSettings {
   enabledPlugins?: Record<string, boolean>;
 }
-interface TrackerBinding {
-  backend: string;
-  token_file: string;
-  defaults: Record<string, string>;
-}
 interface BindingCheck {
   finding: Finding;
-  token: string | null;
-  backend: string | null;
+  binding: TrackerBinding | null;
 }
 
 const ajv = new Ajv();
@@ -53,6 +66,7 @@ const pluginSchema = {
     enabled: { type: "boolean" },
     scope: { type: "string" },
     projectPath: { type: "string" },
+    projectEnabled: { type: "boolean" },
   },
   additionalProperties: true,
 };
@@ -61,6 +75,34 @@ const validCodexList = ajv.compile<{ installed: HostPlugin[] }>({
   type: "object",
   required: ["installed"],
   properties: { installed: { type: "array", items: pluginSchema } },
+  additionalProperties: true,
+});
+const validClaudeMarketplaces = ajv.compile<ClaudeMarketplace[]>({
+  type: "array",
+  items: {
+    type: "object",
+    required: ["name", "source"],
+    properties: {
+      name: { type: "string" },
+      source: { type: "string" },
+      repo: { type: "string" },
+      url: { type: "string" },
+    },
+    additionalProperties: true,
+  },
+});
+const validCodexConfig = ajv.compile<CodexConfig>({
+  type: "object",
+  properties: {
+    marketplaces: {
+      type: "object",
+      additionalProperties: {
+        type: "object",
+        properties: { source: { type: "string" }, ref: { type: "string" } },
+        additionalProperties: true,
+      },
+    },
+  },
   additionalProperties: true,
 });
 const validManifest = ajv.compile<PublishedManifest>({
@@ -77,6 +119,11 @@ const validSettings = ajv.compile<ProjectSettings>({
 const bindingAjv = new Ajv2020({ strict: false });
 bindingAjv.addSchema(commonSchema);
 const validBinding = bindingAjv.compile<TrackerBinding>(trackerSchema);
+const validLinearis = bindingAjv.compile<TrackerBinding>(linearisSchema);
+const bindingValidators: BindingValidators = {
+  binding: validBinding,
+  backends: new Map([["linear-linearis", validLinearis]]),
+};
 
 const ID = "ak@agent-kit";
 const ROOT = process.env.AK_PUBLISHED_ROOT ?? "https://raw.githubusercontent.com/Pibomeister/agent-kit/published";
@@ -85,8 +132,8 @@ function finding(level: Level, check: string, detail: string, remedy: string): F
   return { level, check, detail, remedy };
 }
 
-function command(binary: string, args: string[], cwd = process.cwd()) {
-  const run = spawnSync(binary, args, { cwd, encoding: "utf8", env: process.env });
+function command(binary: string, args: string[], cwd = process.cwd(), env = process.env) {
+  const run = spawnSync(binary, args, { cwd, encoding: "utf8", env });
   return { ok: run.status === 0, output: (run.stdout || run.stderr || run.error?.message || "").trim() };
 }
 
@@ -99,8 +146,8 @@ function parseJson<T>(source: string, validate: ValidateFunction<T>): T | null {
   }
 }
 
-function jsonCommand(binary: string, args: string[]) {
-  const run = command(binary, args);
+function jsonCommand(binary: string, args: string[], cwd = process.cwd()) {
+  const run = command(binary, args, cwd);
   return run.ok ? run.output : null;
 }
 
@@ -110,6 +157,7 @@ function projectRoot(): string {
 }
 
 export function inProject(row: HostPlugin, root: string): boolean {
+  if (row.projectEnabled === true) return true;
   if (row.projectPath === undefined) return true;
   try {
     return realpathSync(row.projectPath) === root;
@@ -119,9 +167,44 @@ export function inProject(row: HostPlugin, root: string): boolean {
 }
 
 function claudeRecords(root: string): HostPlugin[] {
-  const output = jsonCommand("claude", ["plugin", "list", "--json"]);
+  const output = jsonCommand("claude", ["plugin", "list", "--json"], root);
   const rows = output ? (parseJson(output, validPluginList) ?? []) : [];
   return rows.filter((row) => inProject(row, root));
+}
+
+export function isClaudeSource(marketplace: ClaudeMarketplace): boolean {
+  if (marketplace.name !== "agent-kit") return false;
+  if (marketplace.source === "github") return marketplace.repo === "Pibomeister/agent-kit";
+  return (
+    marketplace.source === "git" &&
+    /^https:\/\/github\.com\/Pibomeister\/agent-kit(?:\.git)?$/.test(marketplace.url ?? "")
+  );
+}
+
+function claudeSourceConfigured(root: string): boolean {
+  const output = jsonCommand("claude", ["plugin", "marketplace", "list", "--json"], root);
+  return output ? (parseJson(output, validClaudeMarketplaces) ?? []).some(isClaudeSource) : false;
+}
+
+export function isCodexSource(source: string | undefined, ref: string | undefined): boolean {
+  return (
+    ref === "published" &&
+    (source === "Pibomeister/agent-kit" ||
+      source === "https://github.com/Pibomeister/agent-kit.git" ||
+      source === "https://github.com/Pibomeister/agent-kit")
+  );
+}
+
+function codexSourceConfigured(): boolean {
+  const file = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "config.toml");
+  try {
+    const value: unknown = Bun.TOML.parse(readFileSync(file, "utf8"));
+    if (!validCodexConfig(value)) return false;
+    const source = value.marketplaces?.["agent-kit"];
+    return isCodexSource(source?.source, source?.ref);
+  } catch {
+    return false;
+  }
 }
 
 function codexRecords(): HostPlugin[] {
@@ -147,7 +230,7 @@ export function checkPlugin(host: string, installed: HostPlugin[], latest: strin
   );
 }
 
-export function checkSource(host: string, published: PublishedManifest | null): Finding {
+export function checkSource(host: string, published: PublishedManifest | null, configured = true): Finding {
   if (!published || published.name !== "ak") {
     return finding(
       "FAIL",
@@ -156,6 +239,13 @@ export function checkSource(host: string, published: PublishedManifest | null): 
       "Publish the validated bundle branch, then retry.",
     );
   }
+  if (!configured)
+    return finding(
+      "FAIL",
+      `${host} marketplace source`,
+      "configured marketplace is local or points at another source",
+      "Re-add agent-kit from Pibomeister/agent-kit (Codex: --ref published).",
+    );
   return finding("PASS", `${host} marketplace source`, `resolves to ak ${published.version}`, "No action needed.");
 }
 
@@ -185,12 +275,8 @@ export function checkProjectEnablement(project: string): Finding {
 }
 
 export function findBindingRoot(start: string): string | null {
-  const topResult = command("git", ["rev-parse", "--show-toplevel"], start);
-  const top = topResult.ok ? realpathSync(topResult.output) : realpathSync(start);
-  for (let dir = realpathSync(start); ; dir = dirname(dir)) {
-    if (existsSync(join(dir, "ak.tracker.yaml"))) return dir;
-    if (dir === top || dirname(dir) === dir || relative(top, dir).startsWith("..")) return null;
-  }
+  const root = findProjectRoot(start);
+  return existsSync(join(root, BINDING_FILE)) ? root : null;
 }
 
 export function parseBinding(root: string | null): BindingCheck {
@@ -202,67 +288,50 @@ export function parseBinding(root: string | null): BindingCheck {
         "no ak.tracker.yaml",
         "Add a project tracker binding if this repo uses an external tracker.",
       ),
-      token: null,
-      backend: null,
+      binding: null,
     };
-  const file = join(root, "ak.tracker.yaml");
-  try {
-    const parsed = parseDocument(readFileSync(file, "utf8"), { uniqueKeys: true });
-    if (parsed.errors.length > 0) throw parsed.errors[0];
-    const data: unknown = parsed.toJS();
-    if (!validBinding(data)) throw new Error("binding does not match tracker-binding.schema.json");
-    return {
-      finding: finding("PASS", "tracker binding", `${data.backend} parses`, "No action needed."),
-      token: data.token_file,
-      backend: data.backend,
-    };
-  } catch (cause) {
+  const loaded = loadTrackerBinding(root, "", bindingValidators);
+  if (loaded.binding === null) {
+    const issue = loaded.issues[0];
     return {
       finding: finding(
         "FAIL",
         "tracker binding",
-        cause instanceof Error ? (cause.message.split("\n")[0] ?? "invalid YAML") : "invalid YAML",
-        `Repair ${file}, then run ak tracker check.`,
+        issue?.message ?? "invalid binding",
+        `Repair ${join(root, BINDING_FILE)}, then run ak tracker check.`,
       ),
-      token: null,
-      backend: null,
+      binding: null,
     };
   }
+  return {
+    finding: finding("PASS", "tracker binding", `${loaded.binding.backend} parses`, "No action needed."),
+    binding: loaded.binding,
+  };
 }
 
-export function checkToken(root: string | null, token: string | null): Finding {
-  if (!root || !token)
+export function checkToken(root: string | null, binding: TrackerBinding | null): Finding {
+  if (!root || !binding)
     return finding("WARN", "tracker token", "no binding token_file to check", "Add a valid tracker binding first.");
-  const file = resolve(root, token);
-  if (isAbsolute(token) || relative(root, file).startsWith("..") || !existsSync(file)) {
+  try {
+    const issues = checkTrackerSecret(root, binding);
+    const error = issues.find((issue) => issue.severity === "error");
+    if (error)
+      return finding("FAIL", "tracker token", error.message, "Repair the token file, then run ak tracker check.");
+    const path = join(root, binding.token_file);
+    const mode = statSync(path).mode & 0o777;
+    if (mode !== 0o600)
+      return finding("FAIL", "tracker token", `mode ${mode.toString(8)}, expected 600`, `Run chmod 600 ${path}.`);
+    const warning = issues.find((issue) => issue.severity === "warning");
+    if (warning) return finding("WARN", "tracker token", warning.message, "Run ak tracker check for details.");
+    return finding("PASS", "tracker token", "exists, mode 600, gitignored and untracked", "No action needed.");
+  } catch (cause) {
     return finding(
       "FAIL",
       "tracker token",
-      "token file is absent or outside the project",
-      "Create the token file inside the project.",
+      cause instanceof Error ? cause.message : "token check failed",
+      "Run ak tracker check for details.",
     );
   }
-  if (relative(realpathSync(root), realpathSync(file)).startsWith("..")) {
-    return finding(
-      "FAIL",
-      "tracker token",
-      "token file resolves outside the project",
-      "Keep the token file inside the project.",
-    );
-  }
-  const mode = statSync(file).mode & 0o777;
-  if (mode !== 0o600)
-    return finding("FAIL", "tracker token", `mode ${mode.toString(8)}, expected 600`, `Run chmod 600 ${file}.`);
-  const ignored = command("git", ["check-ignore", "-q", "--no-index", "--", file], root).ok;
-  const tracked = command("git", ["ls-files", "--error-unmatch", "--", file], root).ok;
-  if (!ignored || tracked)
-    return finding(
-      "FAIL",
-      "tracker token",
-      tracked ? "token is tracked by git" : "token is not gitignored",
-      `Ignore ${token} in the project's .gitignore and remove it from git history if tracked.`,
-    );
-  return finding("PASS", "tracker token", "exists, mode 600, gitignored and untracked", "No action needed.");
 }
 
 export function checkLinearis(root: string | null, backend: string | null): Finding {
@@ -274,13 +343,19 @@ export function checkLinearis(root: string | null, backend: string | null): Find
       "Add the binding if this repo uses Linear.",
     );
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
-  const top = topResult.ok ? topResult.output : root;
+  const top = topResult.ok ? realpathSync(topResult.output) : realpathSync(root);
   for (const base of new Set([root, top])) {
     const binary = join(base, "node_modules", ".bin", "linearis");
     if (!existsSync(binary)) continue;
     const target = realpathSync(binary);
-    if (relative(join(base, "node_modules"), target).startsWith("..")) continue;
-    const version = command(binary, ["--version"], root);
+    if ([root, top].every((folder) => relative(join(realpathSync(folder), "node_modules"), target).startsWith("..")))
+      return finding(
+        "FAIL",
+        "linearis",
+        "project binary resolves outside the dependency tree",
+        "Install linearis in this project's node_modules.",
+      );
+    const version = command(binary, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version.ok && version.output === "2026.8.0")
       return finding("PASS", "linearis", `${binary} is project-local at 2026.8.0`, "No action needed.");
     return finding(
@@ -319,21 +394,30 @@ function print(items: Finding[]): number {
 
 async function doctor(): Promise<number> {
   const [claudeSource, codexSource] = await Promise.all([manifest("claude-code"), manifest("codex")]);
-  const claude = claudeRecords(projectRoot());
+  const hostRoot = projectRoot();
+  const claude = claudeRecords(hostRoot);
   const codex = codexRecords();
+  const hasClaude = claude.some((row) => row.id === ID);
+  const hasCodex = codex.some((row) => row.pluginId === ID);
+  const claudeConfigured = claudeSourceConfigured(hostRoot);
+  const codexConfigured = codexSourceConfigured();
   const root = findBindingRoot(process.cwd());
   const binding = parseBinding(root);
   const items = [
-    checkSource("Claude Code", claudeSource),
-    checkSource("Codex", codexSource),
+    hasClaude || claudeConfigured
+      ? checkSource("Claude Code", claudeSource, claudeConfigured)
+      : finding("WARN", "Claude Code marketplace source", "not configured", "Install ak from Pibomeister/agent-kit."),
+    hasCodex || codexConfigured
+      ? checkSource("Codex", codexSource, codexConfigured)
+      : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource?.version ?? null),
     checkPlugin("Codex", codex, codexSource?.version ?? null),
     checkProjectEnablement(process.cwd()),
     binding.finding,
-    checkToken(root, binding.token),
-    checkLinearis(root, binding.backend),
+    checkToken(root, binding.binding),
+    checkLinearis(root, binding.binding?.backend ?? null),
   ];
-  if (!claude.some((row) => row.id === ID) && !codex.some((row) => row.pluginId === ID)) {
+  if (!hasClaude && !hasCodex) {
     items.push(
       finding(
         "FAIL",
@@ -353,14 +437,20 @@ async function update(): Promise<number> {
   const root = projectRoot();
   const claudeBefore = claudeRecords(root).filter((row) => row.id === ID);
   if (claudeBefore.length > 0) {
-    const marketplace = command("claude", ["plugin", "marketplace", "update", "agent-kit"]);
+    const source = checkSource("Claude Code", claudeSource, claudeSourceConfigured(root));
+    const marketplace =
+      source.level === "PASS"
+        ? command("claude", ["plugin", "marketplace", "update", "agent-kit"], root)
+        : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
     if (!marketplace.ok) {
       console.error(`FAIL Claude Code update: ${marketplace.output}`);
       failures += 1;
     } else
       for (const scope of new Set(claudeBefore.map((row) => row.scope ?? "user"))) {
-        const oldVersion = claudeBefore.find((row) => (row.scope ?? "user") === scope)?.version ?? "unknown";
-        const result = command("claude", ["plugin", "update", ID, "--scope", scope, "--json"], root);
+        const installation = claudeBefore.find((row) => (row.scope ?? "user") === scope);
+        const oldVersion = installation?.version ?? "unknown";
+        const updateRoot = scope === "user" ? root : (installation?.projectPath ?? root);
+        const result = command("claude", ["plugin", "update", ID, "--scope", scope, "--json"], updateRoot);
         const after = claudeRecords(root).find((row) => row.id === ID && (row.scope ?? "user") === scope);
         const current = after?.version ?? "unknown";
         const okay = result.ok && current === claudeSource?.version;
@@ -372,7 +462,11 @@ async function update(): Promise<number> {
   }
   const codexBefore = codexRecords().find((row) => row.pluginId === ID);
   if (codexBefore) {
-    const refresh = command("codex", ["plugin", "marketplace", "upgrade", "agent-kit", "--json"]);
+    const source = checkSource("Codex", codexSource, codexSourceConfigured());
+    const refresh =
+      source.level === "PASS"
+        ? command("codex", ["plugin", "marketplace", "upgrade", "agent-kit", "--json"])
+        : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
     const localMarketplace = refresh.output.includes("not configured as a Git marketplace");
     const result = refresh.ok || localMarketplace ? command("codex", ["plugin", "add", ID, "--json"]) : refresh;
     const after = codexRecords().find((row) => row.pluginId === ID);

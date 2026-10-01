@@ -40,8 +40,10 @@ is created by `.github/workflows/publish-bundle.yml` after a green push to `main
 merge, wait for that workflow to complete before using the commands above; no release tag is
 needed. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
-again before publishing, so host caches cannot hide an update. `profiles/core.yaml` is the recommended install — the full catalog is
-real startup cost even with progressive disclosure.
+again before publishing, so host caches cannot hide an update.
+
+`profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
+with progressive disclosure.
 
 ## The spine: seven super skills
 
