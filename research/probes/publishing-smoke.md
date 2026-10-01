@@ -1,8 +1,9 @@
 # Publication and setup smoke receipt
 
-Measured source: `c0201d6015947691e53daa8a1f06d01f703490b2` on `fm/ak-fixes`.
+Measured source: `e941c7a4a0140703f69d5555800c445cdf7fdc71` on `fm/ak-fixes`.
 Host instruments: Claude Code 2.1.287, Codex CLI 0.159.0, Bun 1.3.10, Node 25.6.1,
-Git and real `linearis@2026.8.0`. Every host install used isolated configuration directories.
+Git 2.50.1 (Apple Git-155) and real `linearis@2026.8.0`. Every host install used isolated
+configuration directories.
 The unpublished bundle came from `bun run ak build` at this source revision.
 
 ## Failing-first checks
@@ -17,9 +18,11 @@ $ bun test tests/maintenance.test.ts tests/linearis-guard.test.ts tests/version-
 26 pass, 0 fail, 89 expect() calls, exit 0
 ```
 
-The same source tree passed the full suite before commit: 2717 pass, 1 donor-snapshot skip,
-0 fail, exit 0. `bun run lint`, `bunx tsc --noEmit`, `bun run ak validate`, `bun run ak build`,
-and `bun run ak build --check` exited 0. The validator reported one skipped donor-path check
+The full suite was last run here at `c0201d6`, before the later maintenance edits (`25f2936`
+caches the script build, `b40d82c` removes an unreachable Codex fallback in `ak update`):
+2717 pass, 1 donor-snapshot skip, 0 fail, exit 0. At that revision `bun run lint`,
+`bunx tsc --noEmit`, `bun run ak validate`, `bun run ak build`, and `bun run ak build --check`
+exited 0. The validator reported one skipped donor-path check
 because `.donors/` was unavailable here; that figure is not a provenance receipt.
 
 ## HTTPS-only marketplace install
@@ -53,7 +56,7 @@ $ bash research/probes/linearis-guard.sh
 PASS  negative control: npm exec --no accepts a PATH binary outside this project
 PASS  zsh guarded success keeps result JSON
 PASS  zsh guarded auth rejection becomes exit 42
-linearis 2026.8.0, guard extracted from adapters/tracker/backends/linear-linearis.md at c0201d6: 0 failed
+linearis 2026.8.0, guard extracted from adapters/tracker/backends/linear-linearis.md at e941c7a: 0 failed
 exit 0 (12 PASS rows)
 ```
 
@@ -62,10 +65,21 @@ warnings out of successful result JSON.
 
 ## Doctor and update against configured Git source
 
-The installed Codex marketplace was registered from the local Git remote using the real
-`--ref published` command. Its `CODEX_HOME/config.toml` has a Git source and `ref = "published"`.
-`AK_PUBLISHED_ROOT` points to an isolated local bundle with the same `0.1.0` manifest. A fresh `CLAUDE_CONFIG_DIR`
-contains no Claude install, so its warnings are expected:
+A local bare remote holds a `published` branch laid out as `publish-bundle.yml` writes it
+(`dist/` plus `.agents/plugins/marketplace.json`). `GIT_CONFIG_GLOBAL` rewrites only
+`https://github.com/Pibomeister/agent-kit.git` to it, and `GIT_SSH_COMMAND=false` blocks SSH. In an
+isolated `CODEX_HOME`, the real commands register and install from the GitHub URL:
+
+```text
+$ codex plugin marketplace add https://github.com/Pibomeister/agent-kit.git --ref published
+marketplace_add_exit=0   # config.toml: source_type = "git", ref = "published"
+$ codex plugin add ak@agent-kit --json
+plugin_add_exit=0        # "version": "0.1.0"
+```
+
+`AK_PUBLISHED_ROOT` points at that release tree. Doctor and update ran from a scratch Git project
+with a fresh `CLAUDE_CONFIG_DIR` holding no Claude install, so the Claude and project warnings are
+expected:
 
 ```text
 $ bun dist/claude-code/bin/ak doctor
@@ -78,11 +92,20 @@ PASS Codex: 0.1.0 -> 0.1.0
 update_exit=0
 ```
 
-Against an actual old local Claude marketplace, both commands exit 1 and say the configured
-source is local, with a re-add remedy. Automated integration tests cover doctor and update from a
-linked worktree and a subdirectory; bundled doctor rejects a blank token, a binding missing the
-required team, and an unknown backend. The version-gate tests reject a missing published manifest,
-a changed bundle at a reused version, and a downgrade; a valid version bump and first publish pass.
+Against an old local Claude marketplace (a copy of `dist/claude-code` added by path, then
+`claude plugin install ak@agent-kit`), both commands exit 1:
+
+```text
+FAIL Claude Code marketplace source: configured marketplace is local or points at another source.
+doctor_exit=1
+FAIL Claude Code update: configured marketplace is local or points at another source.
+update_exit=1
+```
+
+Automated integration tests cover doctor and update from a linked worktree and a subdirectory;
+bundled doctor rejects a blank token, a binding missing the required team, and an unknown backend.
+The version-gate tests reject a missing published manifest, a changed bundle at a reused version,
+and a downgrade; a valid version bump and first publish pass.
 
 After merge, `.github/workflows/publish-bundle.yml` creates or updates `published` from `ak build`.
 No release tag is needed. The remaining remote smoke is to run the README's Claude and Codex
