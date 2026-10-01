@@ -376,12 +376,16 @@ options refuses the card: the run goes to `needs-input` with a `runner:seat-inde
 that carries each launcher's error, and the seat is not relaunched. Without a seat configuration the
 supervisor may submit separate judgments with `judge`, and a missing judgment blocks the card.
 
-`answer` records the human's or supervisor's ruling on the open escalation: a `choice` from its
-options, the `actor` who ruled and a `rationale`. An excluded actor cannot answer. The service marks
-that ledger entry answered, clears the escalation and returns the run to the state and next
-permitted action it had before the refusal. The answer settles the refused card, which is not
-re-dispatched; the worker prepares a new card to retry the phase. A `cap-reached` run is not
-answerable, because raising a cap needs a new human-approved charter.
+`answer` settles the escalated card with the human's or supervisor's ruling: the `card_id`, a
+`choice` from the card's options, the `actor` who ruled and a `rationale`. An excluded actor cannot
+answer. The card becomes decided with that choice, so `decide` replays the ruling and no seat is
+relaunched, and the run takes the transition a seat-agreed ruling with that choice would. The ledger
+entry is marked answered and carries the choice, actor, rationale and time; the card's decision
+artifact keeps the refusal, because a `decided` artifact needs two seat judgments. A new card cannot
+override the ruling: `prepare` refuses a card for the same operation at the same revision and diff.
+The one exception is a ruling whose choice is `retry`, which returns the run to the state it had
+before the refusal so the worker can prepare a new card. A `cap-reached` run is not answerable,
+because raising a cap needs a new human-approved charter.
 
 The service checks the active charter schema, recomputes its canonical hash, verifies its human
 approval and refuses any changed charter on resume. `collect` snapshots only files outside the

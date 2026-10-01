@@ -97,7 +97,7 @@ export interface Decision {
   at: string;
   revision: string;
   diff_hash: string;
-  answer?: { by: string; choice: string; rationale: string; at: string };
+  answer?: { by: string; choice: string; rationale: string; at: string; refusal: OperationResult };
 }
 
 export interface Effect {

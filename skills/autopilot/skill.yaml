@@ -214,7 +214,9 @@ failure_outcomes:
       shipping are stopped.
     next_permitted_action: >-
       The human answers the escalation, supplies the charter or work source, or runs the named
-      public command for the next phase.
+      public command for the next phase. Under a runner the answer settles the blocked card with the
+      chosen option, is ledgered with who chose it and why, and advances the run as a seat-agreed
+      ruling would; a new card cannot override it unless the choice is retry.
   - status: cap-reached
     meaning: >-
       A runner cap or the fix-cycle cap on a finding was reached. Any pull request is left as it is

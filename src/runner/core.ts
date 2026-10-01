@@ -263,7 +263,8 @@ export class Runner {
       if (!this.decisionSchema(doc))
         throw new Error(`runner decision artifact invalid: ${JSON.stringify(this.decisionSchema.errors)}`);
       this.atomic(join(this.stateDir, `${run.id}-${decision.card.id}.decision.json`), doc);
-      const outcome: "ruling" | "escalation" = decision.result.status === "complete" ? "ruling" : "escalation";
+      const outcome: "ruling" | "escalation" =
+        (decision.answer?.refusal ?? decision.result).status === "complete" ? "ruling" : "escalation";
       const entry = {
         checkpoint: this.covers.get(decision.card.operation)?.covers ?? "align-answer",
         decision: { id: decision.card.id, schema: "decision", hash: artifactHash(doc) },
@@ -277,11 +278,15 @@ export class Runner {
       };
       if (outcome === "ruling")
         return { checkpoint: entry.checkpoint, decision: entry.decision, outcome: entry.outcome, ruling: entry.ruling };
+      const answer = decision.answer;
       return {
         checkpoint: entry.checkpoint,
         decision: entry.decision,
         outcome: entry.outcome,
         answered: entry.answered,
+        ...(answer === undefined
+          ? {}
+          : { answer: { choice: answer.choice, by: answer.by, rationale: answer.rationale, at: answer.at } }),
       };
     });
     const ledger = {
@@ -316,7 +321,8 @@ export class Runner {
   }
 
   private decisionArtifact(run: Run, decision: Decision) {
-    const { card, result, at } = decision;
+    const { card, at } = decision;
+    const result = decision.answer?.refusal ?? decision.result;
     const charterSeats = run.charter.supervisors.seats;
     const evidence = card.evidence.flatMap((id) => {
       const found = run.evidence[id];
@@ -602,6 +608,17 @@ export class Runner {
         throw new Error("checkpoint card changed");
       return existing;
     }
+    if (
+      run.decisions.some(
+        (d) =>
+          d.answer !== undefined &&
+          d.answer.choice !== "retry" &&
+          d.card.operation === card.operation &&
+          d.revision === run.revision &&
+          d.diff_hash === run.diff_hash,
+      )
+    )
+      throw new Error("a human ruling settled this checkpoint at this revision; a new card cannot override it");
     const prepared = { ...card, judgments: [] };
     run.cards[card.id] = prepared;
     this.save(run);
@@ -820,17 +837,6 @@ export class Runner {
       return this.refuse(run, card, "runner:seat-independence", "Two independent supervisor dispatches are required");
     if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
       return this.refuse(run, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
-    const limits = charter.limits;
-    if (step.budget !== undefined) {
-      const used = run.budget_consumption[step.budget] ?? 0;
-      const cap =
-        step.budget === "alignment_questions"
-          ? limits.alignment_questions
-          : step.budget === "tickets"
-            ? limits.tickets
-            : limits.review_rounds;
-      if (cap !== undefined) run.budget_consumption[step.budget] = used + 1;
-    }
     const result: OperationResult = { operation: card.operation, status: "complete", next_permitted_action: step.next };
     run.decisions.push({
       card,
@@ -839,28 +845,63 @@ export class Runner {
       revision: run.revision,
       diff_hash: run.diff_hash,
     });
-    run.run_state = step.to;
-    run.next_permitted_action = step.next;
+    this.advance(run, step);
     this.save(run);
     return result;
   }
 
-  answer(id: string, choice: string, by: string, rationale: string): Run {
+  answer(id: string, cardId: string, choice: string, by: string, rationale: string): OperationResult {
     const run = this.load(id);
-    const escalation = run.open_escalation;
-    const decision = run.decisions.findLast((d) => d.result.status === "needs-input" && d.answer === undefined);
-    if (run.run_state !== "needs-input" || escalation === null || decision === undefined || run.resume === undefined)
-      throw new Error("run has no open escalation to answer");
-    if (!escalation.options.some((option) => option.id === choice) || !ID.test(by) || !rationale.trim())
-      throw new Error("answer must name an escalation option, who answered and why");
+    const decision = run.decisions.find((d) => d.card.id === cardId);
+    const resume = run.resume;
+    if (
+      run.run_state !== "needs-input" ||
+      !run.open_escalation?.blocked.includes(cardId) ||
+      decision?.result.status !== "needs-input" ||
+      resume === undefined
+    )
+      throw new Error("card has no open escalation to answer");
+    const card = decision.card;
+    if (!card.options.includes(choice) || !ID.test(by) || !rationale.trim())
+      throw new Error("answer must name one of the card's options, who answered and why");
     if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot answer the escalation");
-    decision.answer = { by, choice, rationale, at: new Date().toISOString() };
-    run.run_state = run.resume.run_state;
-    run.next_permitted_action = run.resume.next_permitted_action;
+    run.run_state = resume.run_state;
+    run.next_permitted_action = resume.next_permitted_action;
+    const step = STAGE.get(card.operation);
+    if (
+      choice !== "retry" &&
+      step !== undefined &&
+      step.from.includes(resume.run_state) &&
+      resume.next_permitted_action === card.operation
+    )
+      this.advance(run, step);
+    const result: OperationResult = {
+      operation: card.operation,
+      status: "complete",
+      next_permitted_action: run.next_permitted_action,
+    };
+    decision.answer = { by, choice, rationale, at: new Date().toISOString(), refusal: decision.result };
+    decision.result = result;
     run.open_escalation = null;
     delete run.resume;
     this.save(run);
-    return run;
+    return result;
+  }
+
+  private advance(run: Run, step: StageStep): void {
+    if (step.budget !== undefined) {
+      const used = run.budget_consumption[step.budget] ?? 0;
+      const limits = run.charter.limits;
+      const cap =
+        step.budget === "alignment_questions"
+          ? limits.alignment_questions
+          : step.budget === "tickets"
+            ? limits.tickets
+            : limits.review_rounds;
+      if (cap !== undefined) run.budget_consumption[step.budget] = used + 1;
+    }
+    run.run_state = step.to;
+    run.next_permitted_action = step.next;
   }
 
   private cap(run: Run, card: Card, limit: string, value: number): OperationResult {

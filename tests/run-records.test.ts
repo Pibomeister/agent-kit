@@ -336,6 +336,19 @@ describe("the run ledger", () => {
     expect(validate({ ...base, entries: [{ ...entries[0], ruling }] })).toBe(false);
   });
 
+  test("an answer is carried only by an answered escalation", () => {
+    const answer = {
+      choice: "accept",
+      by: "captain",
+      rationale: "The receipt supports it.",
+      at: "2026-10-01T00:00:00Z",
+    };
+    expect(
+      validate({ ...base, entries: [...entries, { ...open("example-decision-3"), answered: true, answer }] }),
+    ).toBe(true);
+    expect(validate({ ...base, entries: [...entries, { ...open("example-decision-3"), answer }] })).toBe(false);
+  });
+
   test("a ruling carries no answered flag", () => {
     expect(validate({ ...base, entries: [{ ...entries[0], answered: true }, entries[1]] })).toBe(false);
   });

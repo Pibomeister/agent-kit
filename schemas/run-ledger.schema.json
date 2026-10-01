@@ -49,9 +49,25 @@
           "answered": {
             "description": "Whether the human has answered the escalation. The answer settles the card; it is not re-dispatched.",
             "type": "boolean"
+          },
+          "answer": {
+            "description": "The ruling that settled an answered escalation: the option chosen, who chose it, why, and when.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["choice", "by", "rationale", "at"],
+            "properties": {
+              "choice": { "$ref": "common.schema.json#/$defs/kebab_id" },
+              "by": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "rationale": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+            }
           }
         },
         "allOf": [
+          {
+            "if": { "required": ["answer"] },
+            "then": { "required": ["answered"], "properties": { "answered": { "const": true } } }
+          },
           {
             "if": { "properties": { "outcome": { "const": "ruling" } }, "required": ["outcome"] },
             "then": { "required": ["ruling"], "not": { "required": ["answered"] } },

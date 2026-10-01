@@ -32,7 +32,7 @@ must be supervisor-owned; a worker-authored file never supplies effect commands.
 | `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","no"],"evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}` |
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
 | `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A launcher that fails or answers outside the options refuses the card with its error |
-| `answer` | Firstmate | `{"run":"r","choice":"yes","actor":"captain","rationale":"..."}`; rules on the open escalation and returns the run to its state before the refusal. The refused card stays settled; prepare a new card to retry |
+| `answer` | Firstmate | `{"run":"r","card_id":"align-1","choice":"yes","actor":"captain","rationale":"..."}`; settles the escalated card with that option and advances the run as a seat-agreed ruling would, without relaunching seats. A new card cannot override it at the same revision unless the choice is `retry`, which reopens the checkpoint |
 | `sync`, `run-verify` | Worker | `{"run":"r"}`; sync observes the current Git revision and diff, while verification executes only the private configured command |
 | `effect` | Firstmate | `{"run":"r","effect":"pr-open","target":"repo/pr-identity","input_hash":"sha256:<digest>"}` |
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |

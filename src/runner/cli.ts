@@ -190,7 +190,7 @@ async function execute(
         str(a, "rationale"),
       );
     case "answer":
-      return runner.answer(str(a, "run"), str(a, "choice"), str(a, "actor"), str(a, "rationale"));
+      return runner.answer(str(a, "run"), str(a, "card_id"), str(a, "choice"), str(a, "actor"), str(a, "rationale"));
     case "verify":
       return runner.verify(str(a, "run"), str(a, "evidence"));
     case "event":

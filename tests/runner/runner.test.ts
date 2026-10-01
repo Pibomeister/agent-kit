@@ -897,41 +897,61 @@ describe("runner guards", () => {
     expect(f.runner.decide("toy-run", "card-1").escalation?.charter_rule).toBe("runner:trusted-evidence");
   });
 
-  test("an answered escalation resumes the run, and a new card can then pass", () => {
+  test("an answer settles the escalated card with the human's ruling, and a new card cannot flip it", () => {
+    const split = (f: ReturnType<typeof ready>, id: string, options: string[]) => {
+      f.runner.prepare("toy-run", {
+        id,
+        operation: "align.run",
+        grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+        question: "Proceed?",
+        options,
+        evidence: ["e1"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      });
+      f.runner.judge("toy-run", id, "seat-a", "supervisor-1", `${id}-a`, options[0] ?? "", []);
+      f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-b`, options[1] ?? "", []);
+      return f.runner.decide("toy-run", id);
+    };
     const f = ready();
-    f.runner.prepare("toy-run", {
-      id: "split",
-      operation: "align.run",
-      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
-      question: "Proceed?",
-      options: ["yes", "no"],
-      evidence: ["e1"],
-      artifact_hash: `sha256:${"b".repeat(64)}`,
-    });
-    f.runner.judge("toy-run", "split", "seat-a", "supervisor-1", "split-a", "yes", []);
-    f.runner.judge("toy-run", "split", "seat-b", "supervisor-2", "split-b", "no", []);
-    expect(f.runner.decide("toy-run", "split").escalation?.charter_rule).toBe("runner:supervisor-disagreement");
+    expect(split(f, "split", ["yes", "no"]).escalation?.charter_rule).toBe("runner:supervisor-disagreement");
     expect(() => card(f, "early")).toThrow("stopped");
-    expect(() => f.runner.answer("toy-run", "maybe", "captain", "not an option")).toThrow("escalation option");
-    expect(() => f.runner.answer("toy-run", "yes", "implementer-1", "self-approval")).toThrow("excluded actor");
-    const resumed = f.runner.answer("toy-run", "yes", "captain", "Seat a cited the receipt; proceed.");
-    expect(resumed).toMatchObject({ run_state: "created", next_permitted_action: "align.run", open_escalation: null });
-    expect(() => f.runner.answer("toy-run", "yes", "captain", "again")).toThrow("no open escalation");
-    expect(f.runner.ledger("toy-run").entries).toMatchObject([{ decision: { id: "split" }, answered: true }]);
-    expect(f.runner.decide("toy-run", "split").status).toBe("needs-input");
-    card(f, "retry");
-    expect(f.runner.decide("toy-run", "retry").status).toBe("complete");
-    expect(new Runner(f.privateDir, f.worker, root).status("toy-run").run_state).toBe("alignment");
+    expect(() => f.runner.answer("toy-run", "split", "maybe", "captain", "not an option")).toThrow("card's options");
+    expect(() => f.runner.answer("toy-run", "split", "no", "implementer-1", "self-ruling")).toThrow("excluded actor");
+    const ruled = f.runner.answer("toy-run", "split", "no", "captain", "The receipt does not support this direction.");
+    expect(ruled).toEqual({ operation: "align.run", status: "complete", next_permitted_action: "bound.run" });
+    expect(f.runner.decide("toy-run", "split")).toEqual(ruled);
+    expect(() => f.runner.answer("toy-run", "split", "yes", "captain", "again")).toThrow("no open escalation");
+    expect(new Runner(f.privateDir, f.worker, root).status("toy-run")).toMatchObject({
+      run_state: "alignment",
+      next_permitted_action: "bound.run",
+      open_escalation: null,
+    });
+    expect(f.runner.ledger("toy-run").entries).toMatchObject([
+      {
+        decision: { id: "split" },
+        outcome: "escalation",
+        answered: true,
+        answer: { choice: "no", by: "captain", rationale: "The receipt does not support this direction." },
+      },
+    ]);
+    expect(() => card(f, "flip")).toThrow("human ruling settled this checkpoint");
+    const g = ready();
+    expect(split(g, "unsure", ["yes", "retry"]).status).toBe("needs-input");
+    expect(g.runner.answer("toy-run", "unsure", "retry", "captain", "Ask the seats again.").next_permitted_action).toBe(
+      "align.run",
+    );
+    card(g, "again");
+    expect(g.runner.decide("toy-run", "again").status).toBe("complete");
     const capped = ready(0);
     card(capped);
     expect(capped.runner.decide("toy-run", "card-1").status).toBe("cap-reached");
-    expect(() => capped.runner.answer("toy-run", "yes", "captain", "raise it")).toThrow("no open escalation");
+    expect(() => capped.runner.answer("toy-run", "card-1", "yes", "captain", "raise it")).toThrow("no open escalation");
     transcript.push(
-      "Escalation: seat disagreement → `needs-input`; supervisor `answer` → ledger entry answered, run back to `created`; a new card then completed. A `cap-reached` run is not answerable.",
+      "Escalation: seat disagreement → `needs-input`; supervisor `answer` `no` settled the card, advanced the run and was ledgered with its actor and rationale; a fresh card for the same checkpoint was refused. A `retry` ruling reopened the checkpoint. A `cap-reached` run is not answerable.",
     );
   });
 
-  test("a failing seat launcher refuses with its error, and only the supervisor token can answer", async () => {
+  test("a failing seat launcher refuses with its error, and a supervisor answer settles the card", async () => {
     const f = fixture();
     const socket = join(f.privateDir, "runner.sock");
     const seatConfig = join(f.privateDir, "seats.json");
@@ -939,6 +959,7 @@ describe("runner guards", () => {
     const workerToken = "b".repeat(48);
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    const crashes = join(f.privateDir, "crashes.txt");
     writeFileSync(
       seatConfig,
       JSON.stringify({
@@ -957,7 +978,12 @@ describe("runner guards", () => {
             seat: "seat-b",
             actor: "supervisor-2",
             lineage: ["supervisor-2"],
-            command: ["bun", "-e", "console.error('seat crashed'); process.exit(7);"],
+            command: [
+              "bun",
+              "-e",
+              "require('node:fs').appendFileSync(process.argv[1], 'crash\\n'); console.error('seat crashed'); process.exit(7);",
+              crashes,
+            ],
           },
         ],
       }),
@@ -1032,13 +1058,34 @@ describe("runner guards", () => {
         escalation: { charter_rule: "runner:seat-independence" },
       });
       expect(JSON.stringify(refusal)).toContain("seat seat-b: launcher exited 7: seat crashed");
-      const ruling = { ...run, choice: "yes", actor: "captain", rationale: "Seat b crashed; seat a's reading stands." };
+      const ruling = {
+        ...run,
+        card_id: "align",
+        choice: "yes",
+        actor: "captain",
+        rationale: "Seat b crashed; seat a's reading stands.",
+      };
       expect(call("answer", workerToken, ruling).exitCode).toBe(1);
       expect(call("answer", adminToken, ruling).exitCode).toBe(0);
+      const replayed = call("decide", workerToken, { ...run, card_id: "align" });
+      expect(JSON.parse(replayed.stdout.toString())).toEqual({
+        operation: "align.run",
+        status: "complete",
+        next_permitted_action: "bound.run",
+      });
+      expect(readFileSync(crashes, "utf8")).toBe("crash\n");
       const status: unknown = JSON.parse(call("status", workerToken, run).stdout.toString());
-      expect(status).toMatchObject({ run_state: "created", next_permitted_action: "align.run", open_escalation: null });
+      expect(status).toMatchObject({
+        run_state: "alignment",
+        next_permitted_action: "bound.run",
+        open_escalation: null,
+      });
+      const ledger: unknown = JSON.parse(call("ledger", workerToken, run).stdout.toString());
+      expect(ledger).toMatchObject({
+        entries: [{ answered: true, answer: { choice: "yes", by: "captain", rationale: ruling.rationale } }],
+      });
       transcript.push(
-        "Seat launcher exit 7 → `decide` returned `needs-input` carrying the launcher error; worker `answer` refused (exit 1); supervisor `answer` resumed the run at `align.run`.",
+        "Seat launcher exit 7 → `decide` returned `needs-input` carrying the launcher error; worker `answer` refused (exit 1); supervisor `answer` `yes` settled the card, advanced the run to `bound.run` and was ledgered; a replayed `decide` returned the ruling without relaunching seats.",
       );
     } finally {
       server.kill();
