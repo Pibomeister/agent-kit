@@ -19,6 +19,7 @@ export interface CardInput {
   emits_tickets?: boolean;
   question: string;
   options: string[];
+  approve: string;
   evidence: string[];
   artifact_hash: string;
   human_experience?: boolean;

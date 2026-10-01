@@ -376,16 +376,23 @@ options refuses the card: the run goes to `needs-input` with a `runner:seat-inde
 that carries each launcher's error, and the seat is not relaunched. Without a seat configuration the
 supervisor may submit separate judgments with `judge`, and a missing judgment blocks the card.
 
+Every card names its approving option in `approve`, one of its `options`; `prepare` refuses a card
+without it. Only that choice advances the run, whether two seats agree on it or a human answers with
+it. Any other choice (no, revise, hold, reject) is recorded as the ruling, leaves the run at the same
+stage with that operation as its next permitted action, issues no grant and authorizes no effect: a
+non-approving `ship.prepare` never unlocks `pr-open` or a push. The way forward is a revised card that
+an approving decision then settles.
+
 `answer` settles the escalated card with the human's or supervisor's ruling: the `card_id`, a
 `choice` from the card's options, the `actor` who ruled and a `rationale`. An excluded actor cannot
 answer. The card becomes decided with that choice, so `decide` replays the ruling and no seat is
-relaunched, and the run takes the transition a seat-agreed ruling with that choice would. The ledger
-entry is marked answered and carries the choice, actor, rationale and time; the card's decision
-artifact keeps the refusal, because a `decided` artifact needs two seat judgments. A new card cannot
-override the ruling: `prepare` refuses a card for the same operation at the same revision and diff.
-The one exception is a ruling whose choice is `retry`, which returns the run to the state it had
-before the refusal so the worker can prepare a new card. A `cap-reached` run is not answerable,
-because raising a cap needs a new human-approved charter.
+relaunched, and the run moves exactly as an agreeing pair of seats with that choice would move it.
+The ledger entry is marked answered and carries the choice, actor, rationale and time; the card's
+decision artifact keeps the refusal, because a `decided` artifact needs two seat judgments. A
+resubmitted card cannot override the ruling: `prepare` refuses a card for the same operation and
+artifact at the same revision and diff, so only a revised artifact goes back to the seats. A `retry`
+choice instead reopens the checkpoint as it stood before the refusal. A `cap-reached` run is not
+answerable, because raising a cap needs a new human-approved charter.
 
 The service checks the active charter schema, recomputes its canonical hash, verifies its human
 approval and refuses any changed charter on resume. `collect` snapshots only files outside the

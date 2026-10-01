@@ -101,6 +101,11 @@ function digest(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
+function approved(decision: Decision): boolean {
+  const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
+  return decision.result.status === "complete" && choice === decision.card.approve;
+}
+
 function charterDigest(charter: Charter): string {
   const blanked = structuredClone(charter);
   blanked.immutability.hash = "";
@@ -407,7 +412,7 @@ export class Runner {
         recorded_by: "runner",
         note: result.status,
       },
-      grants_issued: decided ? [card.grant] : [],
+      grants_issued: decided && card.judgments[0]?.choice === card.approve ? [card.grant] : [],
       escalation: decided ? undefined : escalation,
       result,
     };
@@ -599,9 +604,10 @@ export class Runner {
       card.options.length < 2 ||
       card.options.length > 6 ||
       card.options.some((option) => !ID.test(option)) ||
-      new Set(card.options).size !== card.options.length
+      new Set(card.options).size !== card.options.length ||
+      !card.options.includes(card.approve)
     )
-      throw new Error("invalid checkpoint card");
+      throw new Error("invalid checkpoint card: options must be unique ids and include the approving option");
     const existing = run.cards[card.id];
     if (existing !== undefined) {
       if (JSON.stringify({ ...existing, judgments: [] }) !== JSON.stringify({ ...card, judgments: [] }))
@@ -614,11 +620,14 @@ export class Runner {
           d.answer !== undefined &&
           d.answer.choice !== "retry" &&
           d.card.operation === card.operation &&
+          d.card.artifact_hash === card.artifact_hash &&
           d.revision === run.revision &&
           d.diff_hash === run.diff_hash,
       )
     )
-      throw new Error("a human ruling settled this checkpoint at this revision; a new card cannot override it");
+      throw new Error(
+        "a human ruling settled this card at this revision; revise its artifact before preparing another",
+      );
     const prepared = { ...card, judgments: [] };
     run.cards[card.id] = prepared;
     this.save(run);
@@ -837,7 +846,12 @@ export class Runner {
       return this.refuse(run, card, "runner:seat-independence", "Two independent supervisor dispatches are required");
     if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
       return this.refuse(run, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
-    const result: OperationResult = { operation: card.operation, status: "complete", next_permitted_action: step.next };
+    const approve = card.judgments[0]?.choice === card.approve;
+    const result: OperationResult = {
+      operation: card.operation,
+      status: "complete",
+      next_permitted_action: approve ? step.next : card.operation,
+    };
     run.decisions.push({
       card,
       result,
@@ -845,7 +859,7 @@ export class Runner {
       revision: run.revision,
       diff_hash: run.diff_hash,
     });
-    this.advance(run, step);
+    if (approve) this.advance(run, step);
     this.save(run);
     return result;
   }
@@ -869,7 +883,7 @@ export class Runner {
     run.next_permitted_action = resume.next_permitted_action;
     const step = STAGE.get(card.operation);
     if (
-      choice !== "retry" &&
+      choice === card.approve &&
       step !== undefined &&
       step.from.includes(resume.run_state) &&
       resume.next_permitted_action === card.operation
@@ -1031,7 +1045,7 @@ export class Runner {
     if (old?.confirmed) return old;
     if (repoEffect) {
       const ship = run.decisions.findLast(
-        (decision) => decision.card.operation === "ship.prepare" && decision.result.status === "complete",
+        (decision) => decision.card.operation === "ship.prepare" && approved(decision),
       );
       const permitted =
         operation === "pr-open"
@@ -1087,9 +1101,7 @@ export class Runner {
 
   complete(id: string): Run {
     const run = this.load(id);
-    const ship = run.decisions.findLast(
-      (decision) => decision.card.operation === "ship.prepare" && decision.result.status === "complete",
-    );
+    const ship = run.decisions.findLast((decision) => decision.card.operation === "ship.prepare" && approved(decision));
     const verification = Object.values(run.evidence).find(
       (evidence) =>
         evidence.kind === "verify" && evidence.revision === run.revision && evidence.diff_hash === run.diff_hash,

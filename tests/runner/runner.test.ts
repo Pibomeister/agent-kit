@@ -146,6 +146,7 @@ function card(f: ReturnType<typeof ready>, id = "card-1", operation = "align.run
     grant: { charter_hash: f.charter.immutability.hash, covers },
     question: "Proceed?",
     options: ["yes", "no"],
+    approve: "yes",
     evidence: ["e1"],
     artifact_hash: `sha256:${"b".repeat(64)}`,
   });
@@ -153,7 +154,28 @@ function card(f: ReturnType<typeof ready>, id = "card-1", operation = "align.run
   f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-dispatch-b`, "yes", []);
 }
 
-function reachShipReady(f: ReturnType<typeof ready>) {
+function split(f: ReturnType<typeof ready>, id: string, options: string[], operation = "align.run") {
+  const covers = operation === "ship.prepare" ? "ship-pr" : "align-answer";
+  f.runner.prepare("toy-run", {
+    id,
+    operation,
+    grant: { charter_hash: f.charter.immutability.hash, covers },
+    question: "Proceed?",
+    options,
+    approve: options[0] ?? "",
+    evidence: [operation === "ship.prepare" ? "verify" : "e1"],
+    artifact_hash: `sha256:${"b".repeat(64)}`,
+  });
+  f.runner.judge("toy-run", id, "seat-a", "supervisor-1", `${id}-a`, options[0] ?? "", []);
+  f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-b`, options[1] ?? "", []);
+  return f.runner.decide("toy-run", id);
+}
+function stage(f: ReturnType<typeof ready>) {
+  const run = new Runner(f.privateDir, f.worker, root).status("toy-run");
+  return [run.run_state, run.next_permitted_action];
+}
+
+function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
   for (const [id, operation, covers] of [
     ["align", "align.run", "align-answer"],
     ["bound", "bound.run", "spec-approval"],
@@ -173,12 +195,14 @@ function reachShipReady(f: ReturnType<typeof ready>) {
     card(f, id, operation, covers);
     expect(f.runner.decide("toy-run", id).status).toBe("complete");
   }
+  if (!ship) return;
   f.runner.prepare("toy-run", {
     id: "ship",
     operation: "ship.prepare",
     grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
     question: "Open PR?",
     options: ["yes", "no"],
+    approve: "yes",
     evidence: ["verify"],
     artifact_hash: `sha256:${"b".repeat(64)}`,
   });
@@ -372,6 +396,7 @@ describe("runner guards", () => {
             grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
             question: "Proceed?",
             options: ["yes", "no"],
+            approve: "yes",
             evidence: ["e1"],
             artifact_hash: `sha256:${"b".repeat(64)}`,
           },
@@ -428,6 +453,7 @@ describe("runner guards", () => {
               grant: { charter_hash: f.charter.immutability.hash, covers },
               question: `Proceed with ${id}?`,
               options: ["yes", "no"],
+              approve: "yes",
               evidence: [evidence],
               artifact_hash: `sha256:${"b".repeat(64)}`,
             },
@@ -538,6 +564,7 @@ describe("runner guards", () => {
       grant: { charter_hash: `sha256:${"0".repeat(64)}`, covers: "spec-approval" },
       question: "Proceed?",
       options: ["yes", "no"],
+      approve: "yes",
       evidence: ["e1"],
       artifact_hash: `sha256:${"b".repeat(64)}`,
     });
@@ -549,6 +576,7 @@ describe("runner guards", () => {
       grant: { charter_hash: h.charter.immutability.hash, covers: "merge" },
       question: "Merge?",
       options: ["yes", "no"],
+      approve: "yes",
       evidence: ["e1"],
       artifact_hash: `sha256:${"b".repeat(64)}`,
     });
@@ -566,6 +594,7 @@ describe("runner guards", () => {
       grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
       question: "Proceed?",
       options: ["yes", "no"],
+      approve: "yes",
       evidence: ["e1"],
       artifact_hash: `sha256:${"b".repeat(64)}`,
     });
@@ -614,6 +643,7 @@ describe("runner guards", () => {
       grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
       question: "How does it feel?",
       options: ["yes", "no"],
+      approve: "yes",
       evidence: ["e1"],
       artifact_hash: `sha256:${"b".repeat(64)}`,
       human_experience: true,
@@ -628,6 +658,7 @@ describe("runner guards", () => {
       grant: { charter_hash: g.charter.immutability.hash, covers: "align-answer" },
       question: "Proceed?",
       options: ["yes", "no"],
+      approve: "yes",
       evidence: ["e1"],
       artifact_hash: `sha256:${"b".repeat(64)}`,
     });
@@ -772,6 +803,7 @@ describe("runner guards", () => {
       grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
       question: "Open PR?",
       options: ["yes", "no"],
+      approve: "yes",
       evidence: ["verify"],
       artifact_hash: `sha256:${"b".repeat(64)}`,
     });
@@ -844,6 +876,7 @@ describe("runner guards", () => {
         grant: { charter_hash: f.charter.immutability.hash, covers },
         question: "Accept changed head?",
         options: ["yes", "no"],
+        approve: "yes",
         evidence: ["verify-new"],
         artifact_hash: `sha256:${"d".repeat(64)}`,
       });
@@ -897,35 +930,52 @@ describe("runner guards", () => {
     expect(f.runner.decide("toy-run", "card-1").escalation?.charter_rule).toBe("runner:trusted-evidence");
   });
 
-  test("an answer settles the escalated card with the human's ruling, and a new card cannot flip it", () => {
-    const split = (f: ReturnType<typeof ready>, id: string, options: string[]) => {
-      f.runner.prepare("toy-run", {
-        id,
+  test("a card must name its approving option, and seats agreeing on another do not advance", () => {
+    const unapproved = ready();
+    expect(() =>
+      unapproved.runner.prepare("toy-run", {
+        id: "loose",
         operation: "align.run",
-        grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+        grant: { charter_hash: unapproved.charter.immutability.hash, covers: "align-answer" },
         question: "Proceed?",
-        options,
+        options: ["yes", "no"],
+        approve: "maybe",
         evidence: ["e1"],
         artifact_hash: `sha256:${"b".repeat(64)}`,
-      });
-      f.runner.judge("toy-run", id, "seat-a", "supervisor-1", `${id}-a`, options[0] ?? "", []);
-      f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-b`, options[1] ?? "", []);
-      return f.runner.decide("toy-run", id);
-    };
+      }),
+    ).toThrow("approving option");
+
+    const seats = ready();
+    seats.runner.prepare("toy-run", {
+      id: "nay",
+      operation: "align.run",
+      grant: { charter_hash: seats.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    seats.runner.judge("toy-run", "nay", "seat-a", "supervisor-1", "nay-a", "no", []);
+    seats.runner.judge("toy-run", "nay", "seat-b", "supervisor-2", "nay-b", "no", []);
+    expect(seats.runner.decide("toy-run", "nay").next_permitted_action).toBe("align.run");
+    expect(stage(seats)).toEqual(["created", "align.run"]);
+    card(seats, "revised");
+    expect(seats.runner.decide("toy-run", "revised").next_permitted_action).toBe("bound.run");
+    expect(stage(seats)).toEqual(["alignment", "bound.run"]);
+  });
+
+  test("a human answer settles the card: no keeps the stage and blocks a resubmission, yes advances", () => {
     const f = ready();
     expect(split(f, "split", ["yes", "no"]).escalation?.charter_rule).toBe("runner:supervisor-disagreement");
     expect(() => card(f, "early")).toThrow("stopped");
     expect(() => f.runner.answer("toy-run", "split", "maybe", "captain", "not an option")).toThrow("card's options");
     expect(() => f.runner.answer("toy-run", "split", "no", "implementer-1", "self-ruling")).toThrow("excluded actor");
     const ruled = f.runner.answer("toy-run", "split", "no", "captain", "The receipt does not support this direction.");
-    expect(ruled).toEqual({ operation: "align.run", status: "complete", next_permitted_action: "bound.run" });
+    expect(ruled).toEqual({ operation: "align.run", status: "complete", next_permitted_action: "align.run" });
     expect(f.runner.decide("toy-run", "split")).toEqual(ruled);
     expect(() => f.runner.answer("toy-run", "split", "yes", "captain", "again")).toThrow("no open escalation");
-    expect(new Runner(f.privateDir, f.worker, root).status("toy-run")).toMatchObject({
-      run_state: "alignment",
-      next_permitted_action: "bound.run",
-      open_escalation: null,
-    });
+    expect(stage(f)).toEqual(["created", "align.run"]);
     expect(f.runner.ledger("toy-run").entries).toMatchObject([
       {
         decision: { id: "split" },
@@ -934,7 +984,32 @@ describe("runner guards", () => {
         answer: { choice: "no", by: "captain", rationale: "The receipt does not support this direction." },
       },
     ]);
-    expect(() => card(f, "flip")).toThrow("human ruling settled this checkpoint");
+    expect(() => card(f, "flip")).toThrow("human ruling settled this card");
+    f.runner.prepare("toy-run", {
+      id: "rewrite",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed with the revised direction?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"d".repeat(64)}`,
+    });
+    f.runner.judge("toy-run", "rewrite", "seat-a", "supervisor-1", "rewrite-a", "yes", []);
+    f.runner.judge("toy-run", "rewrite", "seat-b", "supervisor-2", "rewrite-b", "yes", []);
+    expect(f.runner.decide("toy-run", "rewrite").next_permitted_action).toBe("bound.run");
+
+    const yes = ready();
+    expect(split(yes, "split", ["yes", "no"]).status).toBe("needs-input");
+    expect(yes.runner.answer("toy-run", "split", "yes", "captain", "Seat a cited the receipt.")).toEqual({
+      operation: "align.run",
+      status: "complete",
+      next_permitted_action: "bound.run",
+    });
+    expect(stage(yes)).toEqual(["alignment", "bound.run"]);
+  });
+
+  test("retry reopens the checkpoint, and a cap-reached run is not answerable", () => {
     const g = ready();
     expect(split(g, "unsure", ["yes", "retry"]).status).toBe("needs-input");
     expect(g.runner.answer("toy-run", "unsure", "retry", "captain", "Ask the seats again.").next_permitted_action).toBe(
@@ -946,8 +1021,40 @@ describe("runner guards", () => {
     card(capped);
     expect(capped.runner.decide("toy-run", "card-1").status).toBe("cap-reached");
     expect(() => capped.runner.answer("toy-run", "card-1", "yes", "captain", "raise it")).toThrow("no open escalation");
+  });
+
+  test("a human no on ship leaves the pull request unopenable", () => {
+    const ship = ready();
+    reachShipReady(ship, false);
+    expect(split(ship, "ship", ["yes", "no"], "ship.prepare").status).toBe("needs-input");
+    ship.runner.answer("toy-run", "ship", "no", "captain", "Not ready to publish.");
+    expect(stage(ship)).toEqual(["ready-to-ship", "ship.prepare"]);
+    expect(() =>
+      ship.runner.effect(
+        "toy-run",
+        "pr-open",
+        "toy/pr",
+        `sha256:${"c".repeat(64)}`,
+        () => null,
+        () => {
+          throw new Error("a refused ship opened a pull request");
+        },
+      ),
+    ).toThrow("current ship checkpoint");
+    expect(() =>
+      ship.runner.effect(
+        "toy-run",
+        "remote-push",
+        "toy:branch",
+        `sha256:${"c".repeat(64)}`,
+        () => null,
+        () => {
+          throw new Error("a refused ship pushed the branch");
+        },
+      ),
+    ).toThrow("current ship checkpoint");
     transcript.push(
-      "Escalation: seat disagreement → `needs-input`; supervisor `answer` `no` settled the card, advanced the run and was ledgered with its actor and rationale; a fresh card for the same checkpoint was refused. A `retry` ruling reopened the checkpoint. A `cap-reached` run is not answerable.",
+      "Rulings: seats agreeing on a non-approving option and a human `no` both left the run at its stage, ledgered with actor and rationale; a resubmitted card was refused and a revised one advanced. A human `yes` advanced; `retry` reopened the checkpoint; a human `no` on ship left `pr-open` refused. A `cap-reached` run is not answerable.",
     );
   });
 
@@ -1045,6 +1152,7 @@ describe("runner guards", () => {
           grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
           question: "Proceed?",
           options: ["yes", "no"],
+          approve: "yes",
           evidence: ["e1"],
           artifact_hash: `sha256:${"b".repeat(64)}`,
         },

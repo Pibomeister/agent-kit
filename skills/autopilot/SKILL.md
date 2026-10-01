@@ -99,8 +99,9 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    The runner's build gate authorizes the implementer seat's `/ak:super-build`; `run-verify` records the
    configured verification command's output outside the worker root. The supervisors do not write
    the patch.
-6. At each checkpoint, freeze a decision card: the question, two to six bounded options, the
-   evidence refs and the affected artifact hashes (`schemas/decision.schema.json`).
+6. At each checkpoint, freeze a decision card: the question, two to six bounded options, the one
+   option that approves, the evidence refs and the affected artifact hashes
+   (`schemas/decision.schema.json`). Only the approving option advances the run.
 7. Run the deterministic authority check first: the charter lists this category and action, the
    required evidence is present and still binds, and both seats are available and independent.
 8. Let the runner's Firstmate launchers dispatch the frozen card to both seats as separate crewmates,

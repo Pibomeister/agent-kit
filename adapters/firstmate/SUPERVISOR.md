@@ -48,8 +48,9 @@ invalidates prior verification and review evidence; sync, verify and review agai
 The runner decides checkpoints from two independent supervisor judgments and charter evidence.
 The implementer does not review its own patch. A missing seat, a failed seat launcher or disagreement is one
 escalation through Firstmate's normal needs-decision protocol; relay the human's ruling with
-`ak runner call answer`, which settles that card with the chosen option and advances the run. Only a
-`retry` choice sends the worker back to prepare a new card.
+`ak runner call answer`, which settles that card with the chosen option. Only the card's approving
+option advances the run; any other choice keeps it at that stage, opens nothing, and sends the worker
+back to prepare a revised card. A `retry` choice reopens the checkpoint unchanged.
 
 ## Legacy patched binding
 

@@ -120,7 +120,7 @@ const argsSchema = {
     card: {
       type: "object",
       additionalProperties: false,
-      required: ["id", "operation", "grant", "question", "options", "evidence", "artifact_hash"],
+      required: ["id", "operation", "grant", "question", "options", "approve", "evidence", "artifact_hash"],
       properties: {
         id: { type: "string" },
         operation: { type: "string" },
@@ -129,6 +129,7 @@ const argsSchema = {
         emits_tickets: { type: "boolean" },
         question: { type: "string" },
         options: stringArray,
+        approve: { type: "string" },
         evidence: stringArray,
         artifact_hash: { type: "string" },
         human_experience: { type: "boolean" },
