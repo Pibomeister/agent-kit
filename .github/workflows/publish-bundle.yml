@@ -1,0 +1,78 @@
+name: publish-bundle
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: published-bundle
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun test
+      - run: bun run ak validate
+      - run: bun run ak build
+      - run: bun run ak build --check
+      - name: Publish generated bundles to the published branch
+        run: |
+          set -euo pipefail
+          release_dir="$(mktemp -d)"
+          trap 'git worktree remove --force "$release_dir" 2>/dev/null || true' EXIT
+          if git ls-remote --exit-code --heads origin published >/dev/null; then
+            git fetch origin published
+            git worktree add -B published "$release_dir" origin/published
+          else
+            git worktree add --detach "$release_dir"
+            git -C "$release_dir" checkout --orphan published
+          fi
+          previous_version=""
+          if [ -f "$release_dir/dist/claude-code/.claude-plugin/plugin.json" ]; then
+            previous_version="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$release_dir/dist/claude-code/.claude-plugin/plugin.json")"
+          fi
+          git -C "$release_dir" rm -rf . >/dev/null || true
+          git -C "$release_dir" clean -fdx >/dev/null
+          cp -R dist "$release_dir/dist"
+          mkdir -p "$release_dir/.agents/plugins"
+          cat > "$release_dir/.agents/plugins/marketplace.json" <<'JSON'
+          {
+            "name": "agent-kit",
+            "interface": { "displayName": "agent-kit" },
+            "plugins": [
+              {
+                "name": "ak",
+                "source": { "source": "local", "path": "./dist/codex" },
+                "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+                "category": "Coding"
+              }
+            ]
+          }
+          JSON
+          git -C "$release_dir" add -A
+          if ! git -C "$release_dir" diff --cached --quiet -- dist; then
+            current_version="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$release_dir/dist/claude-code/.claude-plugin/plugin.json")"
+            if [ "$previous_version" = "$current_version" ]; then
+              echo "Bundle changed without a catalog.yaml and package.json version bump" >&2
+              exit 1
+            fi
+          fi
+          if ! git -C "$release_dir" diff --cached --quiet; then
+            git -C "$release_dir" -c user.name=github-actions -c user.email=github-actions[bot]@users.noreply.github.com commit -m "Publish validated agent-kit bundles from $GITHUB_SHA"
+            git -C "$release_dir" push origin published
+          fi

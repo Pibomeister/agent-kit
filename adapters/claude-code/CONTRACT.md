@@ -194,8 +194,8 @@ Concretely, on this host alone, with no runner attached:
 
 ```bash
 # Install
-claude plugin marketplace add ~/Documents/agent-kit
-claude plugin install ak@agent-kit          # restart required; skills appear under /ak:
+claude plugin marketplace add Pibomeister/agent-kit
+claude plugin install ak@agent-kit --scope project # restart required; skills appear under /ak:
 
 # Validate the built bundle — CI gate
 claude plugin validate dist/claude-code --strict

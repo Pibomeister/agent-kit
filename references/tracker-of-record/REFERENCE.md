@@ -88,19 +88,33 @@ Setup is an operator task, not a skill. Stop at the first step that fails.
   token="${token%"${token##*[![:space:]]}"}"
   [ -n "$token" ] || { echo "refused: $token_file is blank" >&2; exit 1; }
   case "$token" in *[[:space:]]*) echo "refused: $token_file holds more than one line or word" >&2; exit 1 ;; esac
-  version="$(NO_UPDATE_NOTIFIER=1 npm exec --no -- linearis --version)" || { echo "refused: linearis is not installed in this project" >&2; exit 1; }
+  binary="$root/node_modules/.bin/linearis"
+  [ -x "$binary" ] || binary="$top/node_modules/.bin/linearis"
+  [ -x "$binary" ] || { echo "refused: linearis is not installed in this project" >&2; exit 1; }
+  resolved="$(realpath "$binary")" || exit 1
+  case "$resolved" in
+    "$root/node_modules/"*|"$top/node_modules/"*) ;;
+    *) echo "refused: linearis resolves outside this project's dependencies" >&2; exit 1 ;;
+  esac
+  version="$(NO_UPDATE_NOTIFIER=1 "$binary" --version)" || exit 1
   [ "$version" = "2026.8.0" ] || { echo "refused: linearis $version installed, 2026.8.0 required" >&2; exit 1; }
   home="$(mktemp -d)" || exit 1
   trap 'rm -rf "$home"' EXIT
   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
-  LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 \
-    npm exec --no -- linearis <command>
+  output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>&1)"
+  status=$?
+  if [ "$status" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
+  printf '%s\n' "$output" >&2
+  case "$output" in
+    *AUTHENTICATION_REQUIRED*|*'Authentication required, not authenticated'*|*'No API token found'*) exit 42 ;;
+  esac
+  exit "$status"
 )
 ```
 
-Exit `0` is the result JSON. `42` is a rejected token: `needs-input`. `2` is a wrong invocation:
-`failed`, not retried with guessed flags. `1` is an application error, or "No API token found",
-which is the refusal it describes.
+Exit `0` is the result JSON. The guard maps linearis's authentication rejection, including its
+observed exit-`1` message, to `42`: `needs-input`. Exit `2` is a wrong invocation, `failed` and
+not retried with guessed flags. Other exit-`1` application errors are `failed`.
 
 | Operation | linearis command |
 |---|---|

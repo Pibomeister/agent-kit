@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 import { attach, formatAttachResult } from "./attach/index.ts";
 import { scoreDelegationFiles } from "./delegation.ts";
@@ -56,6 +57,8 @@ const USAGE = [
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
   "  ak firstmate <subcommand> …                bind agent-kit to a patched Firstmate home (optional)",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
+  "  ak doctor                                  inspect the installed hosts and current project",
+  "  ak update                                  refresh installed ak plugins to the published version",
   "  ak learn <area> <verb> ...                 the opt-in learning runtime (`ak learn` for help)",
   "",
   "Exit 0 when nothing failed, non-zero on any error.",
@@ -310,6 +313,16 @@ function trackerCommand(parsed: Parsed, options: CliOptions): number {
 }
 
 export function runCli(argv: readonly string[], options: CliOptions): number {
+  if (argv[0] === "doctor" || argv[0] === "update") {
+    const result = spawnSync(process.execPath, [join(import.meta.dir, "maintenance", "cli.ts"), argv[0]], {
+      cwd: options.cwd,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (result.stdout) for (const line of result.stdout.trimEnd().split("\n")) options.io.out(line);
+    if (result.stderr) for (const line of result.stderr.trimEnd().split("\n")) options.io.err(line);
+    return result.status ?? 1;
+  }
   // Its own flags and its own parser: see src/firstmate/cli.ts.
   if (argv[0] === "lifecycle") return runLifecycle(argv.slice(1), options.io, options.cwd);
   if (argv[0] === "firstmate") return runFirstmate(argv.slice(1), options.io);
