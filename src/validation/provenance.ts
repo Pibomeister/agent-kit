@@ -254,24 +254,13 @@ function loadLocalSourceRecords(root: string): Map<string, LocalSource> {
   if (doc === null || "error" in doc) return sources;
 
   for (const entry of listOf(doc.value, ["local_sources"])) {
-    const idValue = JSON.stringify(entry["id"]);
-    const workingCopyValue = JSON.stringify(entry["working_copy"]);
-    const sha256Value = JSON.stringify(entry["sha256"]);
-    const linesValue = JSON.stringify(entry["lines"]);
-    if (idValue === undefined || !idValue.startsWith('"')) continue;
-    if (workingCopyValue === undefined || !workingCopyValue.startsWith('"')) continue;
-    if (sha256Value === undefined || !sha256Value.startsWith('"')) continue;
-    if (linesValue === undefined || !/^\d+$/.test(linesValue)) continue;
-    const id = String(JSON.parse(idValue));
-    const workingCopy = String(JSON.parse(workingCopyValue));
-    const sha256 = String(JSON.parse(sha256Value));
-    const lines = Number(linesValue);
-    if (!Number.isSafeInteger(lines)) continue;
-    sources.set(id, {
-      workingCopy,
-      sha256,
-      lines,
-    });
+    const id = entry["id"];
+    const workingCopy = entry["working_copy"];
+    const sha256 = entry["sha256"];
+    const lines = entry["lines"];
+    if (typeof id !== "string" || typeof workingCopy !== "string" || typeof sha256 !== "string") continue;
+    if (typeof lines !== "number" || !Number.isSafeInteger(lines) || lines < 0) continue;
+    sources.set(id, { workingCopy, sha256, lines });
   }
   return sources;
 }
@@ -1057,7 +1046,7 @@ export function checkProvenance(ctx: CheckContext): Issue[] {
     if (atPin !== null) issues.push(atPin);
   }
 
-  issues.push(...checkEntryOrigins(ctx, rows));
+  issues.push(...checkEntryOrigins(ctx, donorRows));
   return issues;
 }
 
@@ -1082,7 +1071,7 @@ const DISPOSITIONS_THAT_LAND: ReadonlyArray<string> = ["retained", "folded", "re
  * `destination` -- never an id lookup, which would assume a file shape that
  * does not exist.
  */
-function checkEntryOrigins(ctx: CheckContext, rows: ReadonlyArray<Adaptation>): Issue[] {
+function checkEntryOrigins(ctx: CheckContext, donorRows: ReadonlyArray<Adaptation>): Issue[] {
   const { root, catalog } = ctx;
   const issues: Issue[] = [];
 
@@ -1237,13 +1226,13 @@ function checkEntryOrigins(ctx: CheckContext, rows: ReadonlyArray<Adaptation>): 
       const dir = entryDir(section, entry.id);
 
       if (entry.provenanceOrigin === "donor") {
-        const covered = rows.some((r) => r.path === dir || r.path.startsWith(`${dir}/`));
+        const covered = donorRows.some((r) => r.path === dir || r.path.startsWith(`${dir}/`));
         if (!covered) {
           issues.push(
             error(
               "provenance.missing-adaptation",
               dir,
-              `${section}/${entry.id} declares provenance_origin: donor but no row in ${ADAPTATIONS_FILE} covers a file under ${dir}/.`,
+              `${section}/${entry.id} declares provenance_origin: donor but no donor@commit:path row in ${ADAPTATIONS_FILE} covers a file under ${dir}/.`,
             ),
           );
         }

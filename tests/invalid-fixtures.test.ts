@@ -79,7 +79,7 @@ const CASES: ReadonlyArray<InvalidCase> = [
     what: "an adapted directory with no provenance row",
     rule: "provenance.missing-adaptation",
     file: "skills/alpha",
-    message: /declares provenance_origin: donor but no row in provenance\/adaptations\.yaml/,
+    message: /declares provenance_origin: donor but no donor@commit:path row in provenance\/adaptations\.yaml/,
   },
   {
     tree: "09-smell-with-difficulty",

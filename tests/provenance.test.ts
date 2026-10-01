@@ -338,10 +338,10 @@ local_sources:
     cited_in_adaptations: true
 `;
 
-  function localSourceIssues(source: string) {
+  function localSourceIssues(source: string, path = "skills/invented/SKILL.md") {
     const ctx = ctxFor({
       "provenance/upstream.lock.yaml": localLock,
-      "provenance/adaptations.d/batch-1.yaml": `adaptations:\n  - path: skills/adapted/SKILL.md\n    source: ${source}\n`,
+      "provenance/adaptations.d/batch-1.yaml": `adaptations:\n  - path: ${path}\n    source: ${source}\n`,
       "provenance/conversation-map.yaml": CONVERSATION_MAP,
       "research/sources/report.md": REPORT,
     });
@@ -351,8 +351,15 @@ local_sources:
 
   test("an adaptation can cite an anchored local-source range without requiring donor clones", () => {
     const issues = localSourceIssues(`local:report@sha256:${REPORT_DIGEST}#L1-2`);
-    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(issues.filter((i) => i.severity === "error" && i.file !== "skills/adapted")).toEqual([]);
     expect(issues.some((i) => i.rule === "provenance.donors-unavailable")).toBe(false);
+  });
+
+  test("a local row does not stand in for the donor row a donor-origin entry owes", () => {
+    const issues = localSourceIssues(`local:report@sha256:${REPORT_DIGEST}#L1-2`, "skills/adapted/SKILL.md");
+    const issue = issues.find((i) => i.rule === "provenance.missing-adaptation");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("skills/adapted");
   });
 
   test("a local adaptation digest must equal the digest registered for that source", () => {
