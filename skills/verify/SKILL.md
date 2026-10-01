@@ -26,9 +26,8 @@ metadata:
 ## Authority
 
 Authority: `explicit`. A human starts it with `/ak:verify`. No phase operation exposes it
-(`policies/invocation.yaml` lists it among the user-invoked skills that expose none), so no
-controller can start it under a grant. Started any other way, it stops at step 1 and names the
-command.
+(`policies/invocation.yaml` lists it among the user-invoked skills that expose none), so no controller
+can start it under a grant. Started any other way, it stops at step 1 and names the command.
 
 ## Inputs
 
@@ -38,12 +37,10 @@ command.
 - The project's declared verification recipe, commands, runtime facilities and required evidence
   kinds. Undeclared facilities are unavailable; the command never assumes a browser, service or
   tracing facility.
-- An identified environment. Knowledgebase `publishArtifact` access is optional: without `kb-write`
-  the artifacts are returned unpublished and named as such, never written into the application
-  repository as project documentation (ruling `central-kb-owns-project-artifacts`).
+- An identified environment. `kb-write` is optional: without it the artifacts are returned unpublished
+  and named as such, never written into the repository (ruling `central-kb-owns-project-artifacts`).
 - Optional `independent-context`. When declared, the host supplies a fresh seat and its capability
-  level; an unfillable seat is `unavailable`, never replaced by the implementer (ruling
-  `missing-supervisor-never-implementer`).
+  level; unfillable is `unavailable`, never the implementer (ruling `missing-supervisor-never-implementer`).
 
 ## Workflow
 
@@ -88,10 +85,11 @@ command.
    `publishArtifact`; otherwise return them unpublished and say so. The recipe is host-neutral and
    content-addressed, never a host-specific project path (ruling `central-kb-owns-project-artifacts`).
 9. Only when every criterion passed with every declared kind, record the gate from the project
-   checkout: `node <skill-dir>/../../bin/ak-gate.mjs record --gate verify --receipt <file>`, repeating
-   `--receipt` per receipt file. The run is the branch's opened-run pointer; this command never opens
-   one. A never-opened run has no task record, so retain its compatible marker-only call without
-   `--receipt`: history, not proof. A markdown or absent ticket returns receipts and says no gate.
+   checkout; this command never opens a run. In order: a markdown or absent ticket returns receipts
+   and says no gate. A JSON ticket whose run was never opened has no task record, so retain its
+   compatible marker-only call, `node <skill-dir>/../../bin/ak-gate.mjs record --gate verify`:
+   history, not proof. On the branch's opened run add `--receipt <file>` per receipt file; if the
+   gate notes a receipt as skipped, report that no gate was recorded.
 
 ## Hard gates
 
@@ -107,8 +105,9 @@ its command or probe, outcome, digest, revision, environment or criterion bindin
 Gate: when `independent-context` is declared, a missing fresh seat is `unavailable` and blocks that
 criterion. It is never backfilled by the implementer, author, spec approver or an already-seated
 role (ruling `missing-supervisor-never-implementer`). A host-unattested receipt counts only with that
-gap disclosed on its attestation input and in the matrix, which the gate record references; on a
-runner-enforced path a receipt claiming independence without runner attestation does not count.
+gap disclosed in the matrix and on its attestation input. An opened run's gate record references the
+receipt, whose `inputs` carry it; a marker-only record carries none. On a runner-enforced path a
+receipt claiming independence without runner attestation does not count.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -123,14 +122,15 @@ runner-enforced path a receipt claiming independence without runner attestation 
   published through `publishArtifact` with run-artifact placement, or returned unpublished.
 - A successful discovered recipe, content-addressed; published as a `sop` KB document where
   `kb-write` exists. Later runs replay it and invalidate it when its hash or declaration changes.
-- The `verify` gate record when every criterion is covered and a run is open. No prose approval.
+- The `verify` gate record when every criterion is covered, in the form step 9 orders. No prose approval.
 
 ## Side effects
 
 `process-exec`, `scratch-write`, `artifact-write`, `kb-publish`.
 
-`kb-publish` happens only where the host provides `kb-write`; it uses the artifact content hash as
-its idempotency key and reads the returned reference back. No `workspace-write`, no `local-commit`.
+`kb-publish` happens only where the host provides `kb-write`, keyed by the artifact content hash.
+Receipts, logs, matrix and an unpublished recipe go to scratch outside the checkout, each log beside
+its receipt: a file in the checkout changes the bound snapshot. No `workspace-write`, no `local-commit`.
 
 ## Stop conditions
 

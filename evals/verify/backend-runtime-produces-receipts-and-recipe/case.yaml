@@ -38,8 +38,9 @@ graders:
     criteria: >-
       The scaffold opened a run on the JSON ticket AK-901. The verify gate is recorded on that
       opened run only after the passed receipt exists, with that receipt file supplied to the gate
-      command and carrying the run id, the ticket ref and the check id health-api. The run does not
-      open a run of its own.
+      command and carrying the run id, the ticket ref and the check id health-api. The receipt and
+      its output log are written outside the checkout, so the gate command does not note the receipt
+      as skipped. The run does not open a run of its own.
   - name: ran-a-project-command
     type: tool_used
     tool: Bash
