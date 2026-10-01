@@ -52,7 +52,7 @@ which is model-invoked, and that direction is the legal one.
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
 task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
 --phase super-bound`: exit 0 is the start, and a refusal is a stop with
-`needs-decision`. The grant starts the phase and nothing else. The specification approval at step 7
+`needs-decision`. The grant starts the phase and nothing else. The specification approval at step 8
 and every ticket approval still come from the supervisor through `needs-decision`; the worker never
 approves its own specification or tickets.
 
@@ -93,28 +93,31 @@ approves its own specification or tickets.
    available. Use the vocabulary the alignment run already established with
    [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) rather than
    renaming the same things here.
-6. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
+6. When the caller supplies a draft ticket or scorer input, load the delegation reference and run
+   `ak delegation` now. Persist the scorer output, readiness and assumptions on the evidence-bearing
+   draft before document review; the draft is not an approved implementation ticket.
+7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. That review is a step in this run, not its end: once the verdict is in, continue through
    approval and tickets.
-7. Take the specification approval. The plan record carries it as `specification_approval`, bound
+8. Take the specification approval. The plan record carries it as `specification_approval`, bound
    to the specification's own hash (`specification_hash`), so slicing afterwards does not void it.
    Under a bypass grant, report `needs-decision` naming the specification hash and stop; only the
    supervisor's answer is the approval.
-8. Load [the delegation reference pack](../../references/delegation/REFERENCE.md) and follow its
+9. Load [the delegation reference pack](../../references/delegation/REFERENCE.md) and follow its
    ordered stack, readiness, assumptions and advisor procedures for every zero-context slice.
-9. Run `ak delegation <ticket> --project <project-record>` after populating its floor and evidenced
+10. Run `ak delegation <ticket> --project <project-record>` after populating its floor and evidenced
    factors; persist its complete JSON with `readiness` and `assumptions` before returning, including
    on `needs-input`. Never derive the class in this body.
-10. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
+11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
     and what it produces that later tickets rely on with exact names, parameters and return types.
     Write for a skilled developer who knows almost nothing about this toolset or problem domain.
-11. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
+12. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
     ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
     with no edge between them are still unsafe in parallel when they write the same file.
-12. Type-check every ticket. An implementer opening it with an empty context window who still
+13. Type-check every ticket. An implementer opening it with an empty context window who still
     cannot do it is not holding an implementation ticket: reshape it, or reclassify it
     `type: decision` and send it back.
-13. Self-review, then publish: every acceptance criterion is covered by a ticket, no ticket carries
+14. Self-review, then publish: every acceptance criterion is covered by a ticket, no ticket carries
     an unfinished-content marker or a "same as the earlier ticket" instruction, and each ticket's
     produced names and types match the next one's consumed names exactly. Under a bypass grant,
     report `needs-decision` listing the tickets and their hashes and stop before publishing; only
