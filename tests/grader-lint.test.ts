@@ -262,6 +262,8 @@ function candidateInputs(): unknown[] {
     { command: "gh api graphql -f query='mutation { resolveReviewThread }'" },
     { command: "no-mistakes status" },
     { command: "bun run db:migrate" },
+    { command: "ak delegation tickets/t.json --project project.json" },
+    { command: "./advisor" },
     { file_path: "src/cookie.ts", content: "x" },
     { file_path: "catalog.yaml", old_string: "x", new_string: "y" },
   ];
