@@ -14,6 +14,8 @@ import { loadCatalog } from "../../src/catalog/load.ts";
 import {
   defaultEvidenceDir,
   PRE_SHIP_GATES,
+  readRecords,
+  recordGate,
   takeSnapshot,
   type Gate,
   type GateRecord,
@@ -190,6 +192,50 @@ describe("ak lifecycle check, standalone", () => {
       class: "yellow-agent",
       implementer: { author_kind: "agent", host: "codex" },
     });
+  });
+
+  test("a blank --host is refused before it can replace a readable record", () => {
+    const dir = repo();
+    const identity = ["--class", "green", "--author-kind", "agent"];
+    expect(ak(dir, "record", "--gate", "build-checks", ...identity, "--host", "codex").code).toBe(0);
+    const blank = ak(dir, "record", "--gate", "build-checks", ...identity, "--host=");
+    expect(blank.code).toBe(2);
+    expect(blank.err).toContain("--host needs a non-blank value");
+    const records = readRecords(defaultEvidenceDir(dir), "feature", "build-checks");
+    expect(records.map((entry) => entry.implementer)).toEqual([{ author_kind: "agent", host: "codex" }]);
+    const programmatic = recordGate({
+      dir: defaultEvidenceDir(dir),
+      run: "feature",
+      gate: "build-checks",
+      project: dir,
+      implementer: { author_kind: "agent", host: " " },
+    });
+    expect(programmatic.ok).toBe(false);
+  });
+
+  test("re-recording a snapshot without the identity flags keeps its class and implementer", () => {
+    const dir = repo();
+    const identity = ["--class", "yellow-agent", "--author-kind", "agent", "--host", "codex"];
+    expect(ak(dir, "record", "--gate", "build-checks", ...identity).code).toBe(0);
+    expect(ak(dir, "record", "--gate", "build-checks").code).toBe(0);
+    const records = readRecords(defaultEvidenceDir(dir), "feature", "build-checks");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      class: "yellow-agent",
+      implementer: { author_kind: "agent", host: "codex" },
+    });
+  });
+
+  test("a record whose implementer is null is skipped, not thrown on", () => {
+    const dir = repo();
+    expect(ak(dir, "record", "--gate", "build-checks").code).toBe(0);
+    const gateDir = join(defaultEvidenceDir(dir), "feature", "build-checks");
+    const [recordFile] = readdirSync(gateDir);
+    if (recordFile === undefined) throw new Error("gate record was not written");
+    const path = join(gateDir, recordFile);
+    const written: unknown = JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(path, JSON.stringify(Object.assign({}, written, { implementer: null })));
+    expect(readRecords(defaultEvidenceDir(dir), "feature", "build-checks")).toEqual([]);
   });
 
   test("a run with every phase's record for the head passes", () => {

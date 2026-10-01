@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
+import validProject from "./fixtures/delegation/valid.project.json" with { type: "json" };
+import validTicket from "./fixtures/delegation/valid.ticket.json" with { type: "json" };
 import { runCli } from "../src/cli.ts";
 import {
   scoreDelegation,
@@ -127,5 +129,26 @@ test("ak delegation reads sibling ticket and project records and prints the tick
     floor: { packs: ["pack-data"], sensitive_actions: [] },
     factors: { reversibility: { score: 2 } },
     lowered_by: null,
+  });
+});
+
+test("ak delegation names the block a record lacks", () => {
+  const root = makeTree({});
+  writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
+  writeFileSync(join(root, "bare-ticket.json"), JSON.stringify({ ...validTicket, delegation: undefined }));
+  writeFileSync(join(root, "project.json"), JSON.stringify(validProject));
+  writeFileSync(
+    join(root, "bare-project.json"),
+    JSON.stringify({ ...validProject, guidance: { ...validProject.guidance, delegation: undefined } }),
+  );
+  const run = (...argv: string[]) => {
+    const err: string[] = [];
+    const code = runCli(["delegation", ...argv], { cwd: root, io: { out: () => {}, err: (line) => err.push(line) } });
+    return { code, err: err.join("\n") };
+  };
+  expect(run("bare-ticket.json")).toEqual({ code: 1, err: "ak delegation: ticket has no delegation block to score" });
+  expect(run("ticket.json", "--project", "bare-project.json")).toEqual({
+    code: 1,
+    err: "ak delegation: project has no guidance.delegation block (weights and cut points)",
   });
 });

@@ -8,9 +8,8 @@ import { parse as parseYaml } from "yaml";
 import commonSchema from "../schemas/common.schema.json" with { type: "json" };
 import projectSchema from "../schemas/project.schema.json" with { type: "json" };
 import ticketSchema from "../schemas/ticket.schema.json" with { type: "json" };
+import { DELEGATION_CLASSES, type DelegationClass } from "./lifecycle/gate.ts";
 
-export const DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red"] as const;
-export type DelegationClass = (typeof DELEGATION_CLASSES)[number];
 export type DelegationFactorName = "reversibility" | "size" | "complexity" | "spec" | "verification";
 
 export interface DelegationFactor {
@@ -27,12 +26,12 @@ export interface DelegationRecord {
 }
 
 export interface DelegationTicket {
-  delegation: DelegationRecord;
+  delegation?: DelegationRecord;
 }
 
 export interface DelegationProject {
   guidance: {
-    delegation: {
+    delegation?: {
       weights: Record<DelegationFactorName, number>;
       cut_points: { yellow_agent: number; yellow_owner: number; red: number };
       enforcement: "advisory";
@@ -60,12 +59,6 @@ const ACTION_FLOORS = new Map<string, DelegationClass>([
   ["history-rewrite", "red"],
 ]);
 
-const validation = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
-addFormats(validation);
-validation.addSchema(commonSchema);
-const validateTicket = validation.compile<DelegationTicket>(ticketSchema);
-const validateProject = validation.compile<DelegationProject>(projectSchema);
-
 function highest(...classes: DelegationClass[]): DelegationClass {
   return classes.reduce(
     (left, right) => (DELEGATION_CLASSES.indexOf(right) > DELEGATION_CLASSES.indexOf(left) ? right : left),
@@ -82,7 +75,9 @@ function floorClass(floor: DelegationRecord["floor"]): DelegationClass {
 
 export function scoreDelegation(ticket: DelegationTicket, project: DelegationProject): DelegationRecord {
   const source = ticket.delegation;
+  if (source === undefined) throw new Error("ticket has no delegation block to score");
   const guidance = project.guidance.delegation;
+  if (guidance === undefined) throw new Error("project has no guidance.delegation block (weights and cut points)");
   const { yellow_agent: yellowAgent, yellow_owner: yellowOwner, red } = guidance.cut_points;
   if (!(yellowAgent < yellowOwner && yellowOwner < red)) {
     throw new Error("project.guidance.delegation cut points must be strictly ascending");
@@ -138,7 +133,10 @@ export function scoreDelegationFiles(
   if (projectPath === undefined || !existsSync(projectPath)) {
     throw new Error("project record not found; place project.json beside the ticket or pass --project <path>");
   }
-  const ticket = readDocument(ticketPath, validateTicket, "ticket");
-  const project = readDocument(projectPath, validateProject, "project");
+  const validation = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
+  addFormats(validation);
+  validation.addSchema(commonSchema);
+  const ticket = readDocument(ticketPath, validation.compile<DelegationTicket>(ticketSchema), "ticket");
+  const project = readDocument(projectPath, validation.compile<DelegationProject>(projectSchema), "project");
   return scoreDelegation(ticket, project);
 }

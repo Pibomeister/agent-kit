@@ -141,8 +141,10 @@ export const GATES = [
   "ship-preflight",
 ] as const;
 export type Gate = (typeof GATES)[number];
-export type DelegationClass = "green" | "yellow-agent" | "yellow-owner" | "red";
-export type AuthorKind = "human" | "agent";
+export const DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red"] as const;
+export type DelegationClass = (typeof DELEGATION_CLASSES)[number];
+export const AUTHOR_KINDS = ["human", "agent"] as const;
+export type AuthorKind = (typeof AUTHOR_KINDS)[number];
 
 /** What super-ship checks before it starts: every phase before it. */
 export const PRE_SHIP_GATES: readonly Gate[] = ["build-checks", "verify", "review-full", "review-readiness"];
@@ -380,9 +382,19 @@ export interface RecordArgs {
   now?: () => Date;
 }
 
+function implementerWellFormed(implementer: GateRecord["implementer"]): boolean {
+  return (
+    implementer === undefined ||
+    (AUTHOR_KINDS.includes(implementer?.author_kind) && Boolean(implementer?.host?.trim?.()))
+  );
+}
+
 export function recordGate(
   a: RecordArgs,
 ): { ok: true; path: string; record: GateRecord; skipped: string[] } | { ok: false; reason: string } {
+  if (!implementerWellFormed(a.implementer)) {
+    return { ok: false, reason: "the implementer needs an author kind of human or agent and a non-blank host" };
+  }
   const snapshot = takeSnapshot(a.project);
   if (typeof snapshot === "string") return { ok: false, reason: snapshot };
   if ((a.receipts?.length ?? 0) > 0 && readRunRecord(a.dir, a.run) === undefined) {
@@ -447,13 +459,16 @@ export function recordGate(
     recorded_at: (a.now ?? (() => new Date()))().toISOString(),
     ...(strengthenedVerify ? { evidence: refs } : {}),
   };
-  if (a.delegationClass !== undefined) record.class = a.delegationClass;
-  if (a.implementer !== undefined) record.implementer = a.implementer;
   // One file per gate and snapshot: re-recording the same state is idempotent, and a fix cycle adds a
   // record rather than replacing the one before it.
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
   const path = join(a.dir, safeRunId(a.run), a.gate, name);
   const previous = readObject(path) as Partial<GateRecord> | undefined;
+  const recordedClass = a.delegationClass ?? DELEGATION_CLASSES.find((known) => known === previous?.class);
+  const implementer =
+    a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);
+  if (recordedClass !== undefined) record.class = recordedClass;
+  if (implementer !== undefined) record.implementer = implementer;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
     const recorded = new Set(refs.map((ref) => ref.id));
     const earlier = previous.evidence.filter((ref) => {
@@ -494,10 +509,8 @@ export function readRecords(dir: string, run: string, gate: Gate): GateRecord[] 
       typeof g.recorded_at === "string" &&
       typeof g.snapshot?.revision === "string" &&
       typeof g.snapshot?.diff_hash === "string" &&
-      (g.class === undefined || ["green", "yellow-agent", "yellow-owner", "red"].includes(g.class)) &&
-      (g.implementer === undefined ||
-        ((g.implementer.author_kind === "human" || g.implementer.author_kind === "agent") &&
-          Boolean(g.implementer.host?.trim?.())))
+      (g.class === undefined || DELEGATION_CLASSES.includes(g.class)) &&
+      implementerWellFormed(g.implementer)
     ) {
       const evidenceValid =
         g.schema_version === 1 ||
@@ -1211,26 +1224,26 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       io.err("ak lifecycle record: --receipt is only valid with --gate verify");
       return 2;
     }
-    const delegationClass = str("class");
-    const authorKind = str("author-kind");
+    const classFlag = str("class");
+    const authorKindFlag = str("author-kind");
     const host = str("host");
-    const identityMembers = [delegationClass, authorKind, host].filter((value) => value !== undefined).length;
+    const identityMembers = [classFlag, authorKindFlag, host].filter((value) => value !== undefined).length;
     if (identityMembers !== 0 && identityMembers !== 3) {
       io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
       return 2;
     }
-    if (
-      delegationClass !== undefined &&
-      delegationClass !== "green" &&
-      delegationClass !== "yellow-agent" &&
-      delegationClass !== "yellow-owner" &&
-      delegationClass !== "red"
-    ) {
-      io.err("ak lifecycle record: --class must be green, yellow-agent, yellow-owner, or red");
+    const delegationClass = DELEGATION_CLASSES.find((known) => known === classFlag);
+    if (classFlag !== undefined && delegationClass === undefined) {
+      io.err(`ak lifecycle record: --class must be one of ${DELEGATION_CLASSES.join(", ")}`);
       return 2;
     }
-    if (authorKind !== undefined && authorKind !== "human" && authorKind !== "agent") {
-      io.err("ak lifecycle record: --author-kind must be human or agent");
+    const authorKind = AUTHOR_KINDS.find((known) => known === authorKindFlag);
+    if (authorKindFlag !== undefined && authorKind === undefined) {
+      io.err(`ak lifecycle record: --author-kind must be one of ${AUTHOR_KINDS.join(", ")}`);
+      return 2;
+    }
+    if (host !== undefined && host.trim() === "") {
+      io.err("ak lifecycle record: --host needs a non-blank value");
       return 2;
     }
     const opened = readRunRecord(dir, run);
@@ -1245,20 +1258,14 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
         return 1;
       }
     }
-    const recordedClass: DelegationClass | undefined = delegationClass;
-    const implementer: RecordArgs["implementer"] =
-      authorKind === "human" && host !== undefined
-        ? { author_kind: "human", host }
-        : authorKind === "agent" && host !== undefined
-          ? { author_kind: "agent", host }
-          : undefined;
+    const implementer = authorKind !== undefined && host !== undefined ? { author_kind: authorKind, host } : undefined;
     const r = recordGate({
       dir,
       run,
       gate,
       project,
       receipts: receipts.map((path) => resolve(cwd, path)),
-      delegationClass: recordedClass,
+      delegationClass,
       implementer,
     });
     if (!r.ok) {
