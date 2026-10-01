@@ -86,6 +86,9 @@ adaptations:
   - path: packs/pack-test/PACK.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-code-review/references/persona-catalog.md
     rationale: The testing persona's behavioral triggers and its production-file-presence non-trigger became the behavior-change rule and the refactor non-trigger.
+  - path: policies/authority-defaults.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The report's protected money surfaces became a human-approved sensitive action that no charter grants by default.
   - path: policies/resolved-conflicts.yaml
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The evidenced-factor structure became the distinction between a delegation class and a finding; the report's weights and cut points remain project guidance.
@@ -347,9 +350,27 @@ adaptations:
   - path: roles/reviewer-standards/ROLE.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/subagent-driven-development/task-reviewer-prompt.md
     rationale: Code-quality half of the same reviewer template.
+  - path: schemas/common.schema.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: Money calculation, movement and reconciliation changes became one explicit sensitive action in the shared authorization vocabulary.
+  - path: schemas/project.schema.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The sample weights and cut points became explicitly advisory, project-calibrated delegation guidance.
+  - path: schemas/project.schema.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L152-172
+    rationale: Changed-line mutation and protected acceptance-test concepts became mutation commands and protected test paths in the project record.
+  - path: schemas/project.schema.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
+    rationale: Diff-scoped complexity, duplication, dead-code and boundary checks became project command declarations whose receipts are evidence.
   - path: schemas/review-event.schema.json
     source: claude-reflect@2c892cab8fe1285d8116216ec18b6b7b44bcd394:scripts/lib/reflect_utils.py
     rationale: The correction record's shape (message, sentiment, timestamp) is adapted into the correction kind of review event, which shares one schema with review findings and resolutions. The donor's confidence score is kept as an optional field and never read as a gate.
+  - path: schemas/ticket.schema.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The report's evidenced factors and four-class rubric became the strict delegation record shape without adopting its sample cut points as catalog-wide gates.
+  - path: schemas/ticket.schema.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: The report's six readiness criteria and resolved-assumption procedure became per-criterion evidence and assumption records on tickets.
   - path: skills/autopilot/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/lfg/SKILL.md
     rationale: "Carried: nothing is implemented without a work source verified this run, a stop names why, and a stop leaves nothing pushed that was not already pushed. Not carried: proceeding without waiting on reversible work, or a single driver pipeline beside the lifecycle."
@@ -1058,9 +1079,63 @@ adaptations:
   - path: skills/writing-skills/skill.yaml
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-skills/testing-skills-with-subagents.md
     rationale: The independent-context prerequisite and the eval-runner input condense the donor's fresh-subagent testing setup.
+  - path: src/cli.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The report's deterministic rubric is exposed through the existing command-line tool as the delegation subcommand rather than as a new lifecycle entrypoint.
+  - path: src/delegation.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The factor formula, inverse verification contribution and project-calibrated cut points became the deterministic scorer.
+  - path: src/delegation.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: Ticket and merge recomputation became raise-only scoring with named-human lowering that cannot cross a sensitive floor.
   - path: src/learn/review/hooks.ts
     source: claude-reflect@2c892cab8fe1285d8116216ec18b6b7b44bcd394:scripts/lib/reflect_utils.py
     rationale: "detectPatterns is a port of detect_patterns: the same pattern tables, thresholds and order of checks, translated to TypeScript. A detected correction becomes a review event of kind correction in the runtime's own ledger rather than an entry in the donor's learnings queue."
   - path: src/learn/skills/learn.ts
     source: claude-reflect@2c892cab8fe1285d8116216ec18b6b7b44bcd394:scripts/lib/reflect_utils.py
     rationale: "extractUserMessages ports extract_user_messages, with should_include_message's filter: user turns of a JSONL transcript, meta turns and non-text parts dropped. The messages feed the skill scout's repetition count; the donor's in-command skill writing is not ported."
+  - path: src/lifecycle/gate.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L298-311
+    rationale: The class join key for later outcome calibration became optional revision-bound gate evidence.
+  - path: src/lifecycle/gate.ts
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
+    rationale: The report's author-kind observation became model-free implementer authorship plus the host adapter on a gate record.
+  - path: templates/charter.amendment.example.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The amended charter fixture retains the protected money-movement action in its denied set.
+  - path: templates/charter.example.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The example charter's denied actions now exercises the protected money-movement action.
+  - path: tests/charter-constraints.test.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The charter schema fixture exercises money movement as a sensitive action.
+  - path: tests/data/delegation/tier-key.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The invalid fixture proves the report's ladder vocabulary is translated into the repository's class key rather than copied into catalog content.
+  - path: tests/delegation-schemas.test.ts
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: Schema tests exercise readiness evidence, assumptions and invalid delegation shapes against the shipped schemas.
+  - path: tests/delegation.test.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: Boundary tests exercise every class and the inverse verification contribution at project-selected cut points.
+  - path: tests/fixtures/delegation/invalid/class-outside-enum.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The invalid fixture proves the four-class vocabulary is closed.
+  - path: tests/fixtures/delegation/invalid/factor-without-evidence.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The invalid fixture proves every factor score cites non-empty evidence.
+  - path: tests/fixtures/delegation/invalid/lowered-without-human-or-reason.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: The invalid fixture proves lowering requires a named human and recorded reason.
+  - path: tests/fixtures/delegation/invalid/readiness-above-two.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-119
+    rationale: The invalid fixture proves each readiness criterion stays on its zero-through-two scale.
+  - path: tests/fixtures/delegation/valid.project.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
+    rationale: The valid project fixture exercises delegation guidance plus all six diff-scoped command kinds and protected tests.
+  - path: tests/fixtures/delegation/valid.ticket.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The valid ticket fixture exercises all factor scores, evidence, class, floor and lowering fields.
+  - path: tests/lifecycle/check.test.ts
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
+    rationale: The lifecycle test proves gate records persist author kind and host without naming a model.

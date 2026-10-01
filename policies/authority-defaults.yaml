@@ -6,7 +6,7 @@
 #
 # Vocabularies are the closed enums in schemas/common.schema.json:
 #   #/$defs/grantable_action      the twelve actions a charter may list
-#   #/$defs/sensitive_action      the ten actions no charter grants by default
+#   #/$defs/sensitive_action      the eleven actions no charter grants by default
 #   #/$defs/checkpoint_category   the ten checkpoints a supervisor pair may decide
 #   #/$defs/grant_ref             what a runner-issued grant looks like
 # `ak validate` fails on any action, checkpoint or capability named here that is not in those
@@ -165,6 +165,10 @@ sensitive_actions:
       why: Repository test code does not receive production secrets by default.
     - action: destructive-data
       why: Irreversible data operations are detected and separately gated by pack-data.
+    - action: money-movement
+      why: >-
+        Changes to amount calculation, capture, refund, payout, movement or reconciliation logic
+        require an explicit human-approved scope regardless of their size.
     - action: dependency-add
       why: Supply-chain evidence and compatibility are pack-deps obligations, not a side effect.
     - action: public-contract-change

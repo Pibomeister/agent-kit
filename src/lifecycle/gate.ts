@@ -141,6 +141,8 @@ export const GATES = [
   "ship-preflight",
 ] as const;
 export type Gate = (typeof GATES)[number];
+export type DelegationClass = "green" | "yellow-agent" | "yellow-owner" | "red";
+export type AuthorKind = "human" | "agent";
 
 /** What super-ship checks before it starts: every phase before it. */
 export const PRE_SHIP_GATES: readonly Gate[] = ["build-checks", "verify", "review-full", "review-readiness"];
@@ -160,6 +162,8 @@ export interface GateRecord {
   gate: Gate;
   snapshot: Snapshot;
   recorded_at: string;
+  class?: DelegationClass;
+  implementer?: { author_kind: AuthorKind; host: string };
   evidence?: ArtifactRef[];
 }
 
@@ -371,6 +375,8 @@ export interface RecordArgs {
   gate: Gate;
   project: string;
   receipts?: readonly string[];
+  delegationClass?: DelegationClass;
+  implementer?: { author_kind: AuthorKind; host: string };
   now?: () => Date;
 }
 
@@ -441,6 +447,8 @@ export function recordGate(
     recorded_at: (a.now ?? (() => new Date()))().toISOString(),
     ...(strengthenedVerify ? { evidence: refs } : {}),
   };
+  if (a.delegationClass !== undefined) record.class = a.delegationClass;
+  if (a.implementer !== undefined) record.implementer = a.implementer;
   // One file per gate and snapshot: re-recording the same state is idempotent, and a fix cycle adds a
   // record rather than replacing the one before it.
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
@@ -485,7 +493,11 @@ export function readRecords(dir: string, run: string, gate: Gate): GateRecord[] 
       g.gate === gate &&
       typeof g.recorded_at === "string" &&
       typeof g.snapshot?.revision === "string" &&
-      typeof g.snapshot?.diff_hash === "string"
+      typeof g.snapshot?.diff_hash === "string" &&
+      (g.class === undefined || ["green", "yellow-agent", "yellow-owner", "red"].includes(g.class)) &&
+      (g.implementer === undefined ||
+        ((g.implementer.author_kind === "human" || g.implementer.author_kind === "agent") &&
+          Boolean(g.implementer.host?.trim?.())))
     ) {
       const evidenceValid =
         g.schema_version === 1 ||
@@ -1086,7 +1098,7 @@ export const LIFECYCLE_USAGE = [
   "ak lifecycle — the gate records each lifecycle phase leaves, and the check super-ship runs first",
   "",
   "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "",
   `  gates: ${GATES.join(", ")}`,
@@ -1100,7 +1112,7 @@ export const LIFECYCLE_USAGE = [
 
 const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "dir", "project"],
-  record: ["gate", "receipt", "run", "dir", "project"],
+  record: ["gate", "receipt", "class", "author-kind", "host", "run", "dir", "project"],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
 };
 
@@ -1199,6 +1211,28 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       io.err("ak lifecycle record: --receipt is only valid with --gate verify");
       return 2;
     }
+    const delegationClass = str("class");
+    const authorKind = str("author-kind");
+    const host = str("host");
+    const identityMembers = [delegationClass, authorKind, host].filter((value) => value !== undefined).length;
+    if (identityMembers !== 0 && identityMembers !== 3) {
+      io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
+      return 2;
+    }
+    if (
+      delegationClass !== undefined &&
+      delegationClass !== "green" &&
+      delegationClass !== "yellow-agent" &&
+      delegationClass !== "yellow-owner" &&
+      delegationClass !== "red"
+    ) {
+      io.err("ak lifecycle record: --class must be green, yellow-agent, yellow-owner, or red");
+      return 2;
+    }
+    if (authorKind !== undefined && authorKind !== "human" && authorKind !== "agent") {
+      io.err("ak lifecycle record: --author-kind must be human or agent");
+      return 2;
+    }
     const opened = readRunRecord(dir, run);
     if (opened?.closed_at !== undefined) {
       const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
@@ -1211,7 +1245,22 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
         return 1;
       }
     }
-    const r = recordGate({ dir, run, gate, project, receipts: receipts.map((path) => resolve(cwd, path)) });
+    const recordedClass: DelegationClass | undefined = delegationClass;
+    const implementer: RecordArgs["implementer"] =
+      authorKind === "human" && host !== undefined
+        ? { author_kind: "human", host }
+        : authorKind === "agent" && host !== undefined
+          ? { author_kind: "agent", host }
+          : undefined;
+    const r = recordGate({
+      dir,
+      run,
+      gate,
+      project,
+      receipts: receipts.map((path) => resolve(cwd, path)),
+      delegationClass: recordedClass,
+      implementer,
+    });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);
       return 1;

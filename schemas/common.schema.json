@@ -368,6 +368,7 @@
         "deploy",
         "production-credentials",
         "destructive-data",
+        "money-movement",
         "dependency-add",
         "public-contract-change",
         "trust-boundary-change",

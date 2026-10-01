@@ -1,0 +1,63 @@
+{
+  "schema": "ticket",
+  "schema_version": 1,
+  "id": "delegation-ticket",
+  "project": { "id": "delegation-project", "repo": "example/app" },
+  "run_id": "delegation-run",
+  "created_by": { "role": "supervisor" },
+  "inputs": [],
+  "source_revision": { "repo": "example/app", "revision": "0000000000000000000000000000000000000000" },
+  "created_at": "2026-09-30T12:00:00Z",
+  "status": "approved",
+  "type": "implementation",
+  "title": "Apply an additive customer-data migration",
+  "work_source": {
+    "kind": "requirements",
+    "ref": {
+      "id": "delegation-requirements",
+      "schema": "plan-record",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "goal": "Add a reversible customer-data field and verify the backfill path.",
+  "non_goals": ["Removing the previous field."],
+  "acceptance_criteria": [{ "id": "AC-1", "text": "The additive migration passes its integration check." }],
+  "prerequisites": [],
+  "allowed_changes": { "files": ["db/migrations/**"] },
+  "read_dependencies": ["src/data/**"],
+  "verification": [
+    { "id": "migration-check", "check": "Run the migration integration check.", "kind": "command", "supports": ["AC-1"] }
+  ],
+  "stop_conditions": ["The migration requires an irreversible rewrite."],
+  "kb_refs": [],
+  "integration_owner": "data-owner",
+  "write_ownership": {
+    "paths": ["db/migrations/**"],
+    "generated_artifacts": [],
+    "migration_sequence": "20260930",
+    "interfaces": [{ "name": "customer-record", "role": "changes" }]
+  },
+  "delegation": {
+    "class": "yellow-agent",
+    "stage": "ticket",
+    "floor": { "packs": ["pack-data"], "sensitive_actions": [] },
+    "factors": {
+      "reversibility": { "score": 2, "evidence": ["The migration is additive and the backfill is a separate script."] },
+      "size": { "score": 1, "evidence": ["The estimate is four files."] },
+      "complexity": { "score": 1, "evidence": ["The affected data path has one existing migration pattern."] },
+      "spec": { "score": 1, "evidence": ["Five readiness criteria are complete and one has a partial example."] },
+      "verification": { "score": 2, "evidence": ["An integration check covers the migration path."] }
+    },
+    "lowered_by": null
+  },
+  "readiness": {
+    "acceptance_criteria": { "score": 2, "evidence": ["AC-1 states the observable result."] },
+    "interfaces": { "score": 2, "evidence": ["customer-record is the only changed interface."] },
+    "examples": { "score": 1, "evidence": ["The additive migration path is exemplified."] },
+    "non_goals": { "score": 2, "evidence": ["Removal of the previous field is excluded."] },
+    "existing_pattern": { "score": 1, "evidence": ["A prior additive migration is cited."] },
+    "verification_path": { "score": 2, "evidence": ["migration-check supports AC-1."] },
+    "vague_terms": []
+  },
+  "assumptions": [{ "text": "The backfill runs off-peak.", "resolved_as": "non-goal" }]
+}

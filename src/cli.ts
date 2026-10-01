@@ -10,6 +10,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
 import { attach, formatAttachResult } from "./attach/index.ts";
+import { scoreDelegationFiles } from "./delegation.ts";
 import { runFirstmate } from "./firstmate/cli.ts";
 import { main as runLifecycle } from "./lifecycle/gate.ts";
 import { runLearn } from "./learn/cli.ts";
@@ -51,6 +52,7 @@ const USAGE = [
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
   "  ak build [--check] [--profile <id>|all]    emit dist/claude-code and dist/codex",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
+  "  ak delegation <ticket> [--project <path>] compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
   "  ak firstmate <subcommand> …                bind agent-kit to a patched Firstmate home (optional)",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
@@ -66,7 +68,7 @@ interface Parsed {
   unknown: string[];
 }
 
-const VALUE_FLAGS = new Set(["profile", "host"]);
+const VALUE_FLAGS = new Set(["profile", "host", "project"]);
 
 function parse(argv: readonly string[]): Parsed {
   const positional: string[] = [];
@@ -258,6 +260,24 @@ function attachCommand(parsed: Parsed, options: CliOptions): number {
   return 0;
 }
 
+function delegationCommand(parsed: Parsed, options: CliOptions): number {
+  const ticket = parsed.positional[0];
+  if (ticket === undefined || parsed.positional.length !== 1) {
+    options.io.err("ak delegation: needs exactly one ticket path");
+    for (const line of USAGE) options.io.err(line);
+    return 2;
+  }
+  const project = parsed.flags.get("project");
+  try {
+    const record = scoreDelegationFiles(ticket, project === true ? undefined : project, options.cwd);
+    options.io.out(JSON.stringify(record, null, 2));
+    return 0;
+  } catch (cause) {
+    options.io.err(`ak delegation: ${cause instanceof Error ? cause.message : String(cause)}`);
+    return 1;
+  }
+}
+
 /**
  * `ak tracker check`: a project folder's ak.tracker.yaml and the secret it names.
  *
@@ -309,6 +329,8 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
       return build(parsed, options);
     case "attach":
       return attachCommand(parsed, options);
+    case "delegation":
+      return delegationCommand(parsed, options);
     case "tracker":
       return trackerCommand(parsed, options);
     case undefined:

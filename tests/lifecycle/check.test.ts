@@ -166,6 +166,32 @@ const pointerPath = (cwd: string, branch: string): string =>
   );
 
 describe("ak lifecycle check, standalone", () => {
+  test("a gate record carries delegation class and implementer author kind plus host", () => {
+    const dir = repo();
+    const recorded = ak(
+      dir,
+      "record",
+      "--gate",
+      "build-checks",
+      "--class",
+      "yellow-agent",
+      "--author-kind",
+      "agent",
+      "--host",
+      "codex",
+    );
+    expect(recorded.code).toBe(0);
+    const gateDir = join(defaultEvidenceDir(dir), "feature", "build-checks");
+    const [recordFile] = readdirSync(gateDir);
+    expect(recordFile).toBeDefined();
+    if (recordFile === undefined) throw new Error("gate record was not written");
+    const gate: unknown = JSON.parse(readFileSync(join(gateDir, recordFile), "utf8"));
+    expect(gate).toMatchObject({
+      class: "yellow-agent",
+      implementer: { author_kind: "agent", host: "codex" },
+    });
+  });
+
   test("a run with every phase's record for the head passes", () => {
     const dir = repo();
     record(dir, ...PRE_SHIP_GATES);

@@ -123,7 +123,7 @@
       }
     },
     "guidance": {
-      "description": "Plan 3 and plan 11. Advisory starting points, never universal hard limits (ruling `numeric-heuristics-are-guidance`: both are configurable per project, carried here, and neither is validated, enforced, or grounds for a finding on its own). 'enforcement' is pinned to 'advisory' in both blocks, so no configuration can promote either heuristic into a gate; exceeding a target is recorded in 'exceptions' rather than answered with an artificial file split or a meaningless test.",
+      "description": "Plan 3 and plan 11. Advisory starting points, never universal hard limits (rulings `numeric-heuristics-are-guidance` and `delegation-class-is-authority-not-finding`). Each guidance block pins enforcement to advisory, so no configuration can promote a heuristic into a finding or gate; a named mandatory constraint is the separate blocking route.",
       "type": "object",
       "additionalProperties": false,
       "required": ["pr_size", "test_pyramid", "exceptions"],
@@ -149,6 +149,37 @@
           },
           "x-validator-rule": "project.test-pyramid-percentages-sum-to-100"
         },
+        "delegation": {
+          "description": "Project-calibrated factor weights and the inclusive lower bounds for the three raised classes. Green is every score below yellow_agent. Verification strength retains its central inverse semantics: its weighted contribution is three minus the recorded factor score.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["weights", "cut_points", "enforcement"],
+          "properties": {
+            "weights": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["reversibility", "size", "complexity", "spec", "verification"],
+              "properties": {
+                "reversibility": { "type": "number", "minimum": 0 },
+                "size": { "type": "number", "minimum": 0 },
+                "complexity": { "type": "number", "minimum": 0 },
+                "spec": { "type": "number", "minimum": 0 },
+                "verification": { "type": "number", "minimum": 0 }
+              }
+            },
+            "cut_points": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["yellow_agent", "yellow_owner", "red"],
+              "properties": {
+                "yellow_agent": { "type": "number", "minimum": 0 },
+                "yellow_owner": { "type": "number", "minimum": 0 },
+                "red": { "type": "number", "minimum": 0 }
+              }
+            },
+            "enforcement": { "const": "advisory" }
+          }
+        },
         "exceptions": {
           "description": "Recorded departures from the guidance. Recording is the required response; the run is not blocked by one (plan 3).",
           "type": "array",
@@ -157,7 +188,7 @@
             "additionalProperties": false,
             "required": ["guidance", "reason", "recorded_at"],
             "properties": {
-              "guidance": { "enum": ["pr_size", "test_pyramid"] },
+              "guidance": { "enum": ["pr_size", "test_pyramid", "delegation", "checks", "protected_tests"] },
               "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
               "recorded_at": { "$ref": "common.schema.json#/$defs/timestamp" },
               "scope": { "$ref": "common.schema.json#/$defs/nonempty_string" },
@@ -170,6 +201,41 @@
         }
       },
       "x-validator-rule": "project.numeric-guidance-never-becomes-a-gate"
+    },
+    "checks": {
+      "description": "Project-declared diff-scoped structural and test-strength commands. Their receipts are evidence; a check blocks only when a mandatory constraint separately names it (ruling `project-checks-block-only-as-constraints`).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "scope", "command"],
+        "properties": {
+          "id": { "$ref": "common.schema.json#/$defs/kebab_id" },
+          "kind": {
+            "enum": ["complexity", "duplication", "dead-code", "boundaries", "mutation", "diff-coverage"]
+          },
+          "scope": { "const": "diff" },
+          "command": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["argv"],
+            "properties": {
+              "argv": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+              },
+              "cwd": { "$ref": "common.schema.json#/$defs/repo_path" }
+            }
+          }
+        }
+      }
+    },
+    "protected_tests": {
+      "description": "Critical acceptance and end-to-end tests the implementer may not change without a recorded decision when work ships without human code review (ruling `unreviewed-work-needs-independent-oracle`).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/glob" }
     },
     "mandatory_constraints": {
       "description": "The project's actual hard constraints, established per project (plan 3). These, unlike 'guidance', may block. Each one names the evidence that shows it was met, so a constraint cannot be satisfied by assertion.",

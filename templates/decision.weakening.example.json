@@ -61,10 +61,10 @@
     }
   ],
   "charter": {
-    "hash": "sha256:fd1d73c884f27268954704a9a1a850929e58c50c9ba5f32f99bd5b8c076c50c0",
+    "hash": "sha256:a0ccdf313b7c0c590625a0ca2fd02f09505e2afc558994d4c6f83a30e065f711",
     "rule": "charter:checkpoints/ci-repair",
     "grant": {
-      "charter_hash": "sha256:f3997ae1edfe6473d77c4cb8ee42484ca1d66316c15a0fc4a57160749d159c84",
+      "charter_hash": "sha256:9cbd02bdfab5e8418738aec237ba8bbae5b2dc1fc68eee431cae7429c991292b",
       "covers": "ci-repair",
       "decision": "example-decision-3"
     }
@@ -124,7 +124,7 @@
   },
   "grants_issued": [
     {
-      "charter_hash": "sha256:f3997ae1edfe6473d77c4cb8ee42484ca1d66316c15a0fc4a57160749d159c84",
+      "charter_hash": "sha256:9cbd02bdfab5e8418738aec237ba8bbae5b2dc1fc68eee431cae7429c991292b",
       "covers": "ci-repair",
       "decision": "example-decision-3"
     }

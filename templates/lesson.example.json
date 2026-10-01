@@ -60,7 +60,7 @@
     "authorization": {
       "kind": "delegated-grant",
       "grant": {
-        "charter_hash": "sha256:dc3df18744b1406b790268348f791d8757665c0e89c84d56a98d361041851d1f",
+        "charter_hash": "sha256:7d0deafe9af85cf17bf2721ad6588d7db4fb09f682693db10535e3a9235f0947",
         "covers": "publish-lesson",
         "decision": "example-decision-1"
       }

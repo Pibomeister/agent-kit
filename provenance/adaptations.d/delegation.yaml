@@ -26,3 +26,78 @@ adaptations:
   - path: research/sources/engineering-skills-repo-plan.md
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L152-172
     rationale: Release scenario 28 carries independent acceptance-test authorship and changed-line mutation strength.
+  - path: schemas/ticket.schema.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The report's evidenced factors and four-class rubric became the strict delegation record shape without adopting its sample cut points as catalog-wide gates.
+  - path: schemas/ticket.schema.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: The report's six readiness criteria and resolved-assumption procedure became per-criterion evidence and assumption records on tickets.
+  - path: schemas/project.schema.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The sample weights and cut points became explicitly advisory, project-calibrated delegation guidance.
+  - path: schemas/project.schema.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
+    rationale: Diff-scoped complexity, duplication, dead-code and boundary checks became project command declarations whose receipts are evidence.
+  - path: schemas/project.schema.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L152-172
+    rationale: Changed-line mutation and protected acceptance-test concepts became mutation commands and protected test paths in the project record.
+  - path: schemas/common.schema.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: Money calculation, movement and reconciliation changes became one explicit sensitive action in the shared authorization vocabulary.
+  - path: policies/authority-defaults.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The report's protected money surfaces became a human-approved sensitive action that no charter grants by default.
+  - path: src/delegation.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The factor formula, inverse verification contribution and project-calibrated cut points became the deterministic scorer.
+  - path: src/delegation.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: Ticket and merge recomputation became raise-only scoring with named-human lowering that cannot cross a sensitive floor.
+  - path: src/cli.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The report's deterministic rubric is exposed through the existing command-line tool as the delegation subcommand rather than as a new lifecycle entrypoint.
+  - path: src/lifecycle/gate.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L298-311
+    rationale: The class join key for later outcome calibration became optional revision-bound gate evidence.
+  - path: src/lifecycle/gate.ts
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
+    rationale: The report's author-kind observation became model-free implementer authorship plus the host adapter on a gate record.
+  - path: templates/charter.example.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The example charter's denied actions now exercises the protected money-movement action.
+  - path: templates/charter.amendment.example.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The amended charter fixture retains the protected money-movement action in its denied set.
+  - path: tests/charter-constraints.test.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
+    rationale: The charter schema fixture exercises money movement as a sensitive action.
+  - path: tests/lifecycle/check.test.ts
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
+    rationale: The lifecycle test proves gate records persist author kind and host without naming a model.
+  - path: tests/delegation.test.ts
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: Boundary tests exercise every class and the inverse verification contribution at project-selected cut points.
+  - path: tests/delegation-schemas.test.ts
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
+    rationale: Schema tests exercise readiness evidence, assumptions and invalid delegation shapes against the shipped schemas.
+  - path: tests/fixtures/delegation/valid.ticket.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The valid ticket fixture exercises all factor scores, evidence, class, floor and lowering fields.
+  - path: tests/fixtures/delegation/valid.project.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
+    rationale: The valid project fixture exercises delegation guidance plus all six diff-scoped command kinds and protected tests.
+  - path: tests/fixtures/delegation/invalid/class-outside-enum.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The invalid fixture proves the four-class vocabulary is closed.
+  - path: tests/fixtures/delegation/invalid/lowered-without-human-or-reason.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: The invalid fixture proves lowering requires a named human and recorded reason.
+  - path: tests/fixtures/delegation/invalid/readiness-above-two.json
+    source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-119
+    rationale: The invalid fixture proves each readiness criterion stays on its zero-through-two scale.
+  - path: tests/fixtures/delegation/invalid/factor-without-evidence.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The invalid fixture proves every factor score cites non-empty evidence.
+  - path: tests/data/delegation/tier-key.yaml
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
+    rationale: The invalid fixture proves the report's ladder vocabulary is translated into the repository's class key rather than copied into catalog content.

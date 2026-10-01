@@ -61,10 +61,10 @@
     }
   ],
   "charter": {
-    "hash": "sha256:087fa6ce77f5aa9fc10c1470d692933d2ebd1ee25816a53da9faa016b3c2bb22",
+    "hash": "sha256:e6f406e2d0f6c1edf020086ddddfbc3fe270d17bee32d0bd5a1a2eccadd822e3",
     "rule": "charter:checkpoints/ticket-approval",
     "grant": {
-      "charter_hash": "sha256:dc3df18744b1406b790268348f791d8757665c0e89c84d56a98d361041851d1f",
+      "charter_hash": "sha256:7d0deafe9af85cf17bf2721ad6588d7db4fb09f682693db10535e3a9235f0947",
       "covers": "approve-ticket",
       "decision": "example-decision-2"
     }
@@ -140,7 +140,7 @@
       {
         "ref": "projects/example-project/runs/example-run-1/charter.json",
         "kind": "artifact",
-        "hash": "sha256:dc3df18744b1406b790268348f791d8757665c0e89c84d56a98d361041851d1f"
+        "hash": "sha256:7d0deafe9af85cf17bf2721ad6588d7db4fb09f682693db10535e3a9235f0947"
       },
       {
         "ref": "projects/example-project/runs/example-run-1/review.json",
@@ -181,7 +181,7 @@
         {
           "ref": "projects/example-project/runs/example-run-1/charter.json",
           "kind": "artifact",
-          "hash": "sha256:dc3df18744b1406b790268348f791d8757665c0e89c84d56a98d361041851d1f"
+          "hash": "sha256:7d0deafe9af85cf17bf2721ad6588d7db4fb09f682693db10535e3a9235f0947"
         },
         {
           "ref": "projects/example-project/runs/example-run-1/review.json",

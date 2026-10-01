@@ -93,7 +93,7 @@ const BASE = {
   artifact_destinations: { kb_root: "demo/kb", runs_path: "projects/demo/runs", project: "demo" },
   allowed_capabilities: ["repository-read", "repository-write", "artifact-write"],
   default_grants: ["approve-ticket"],
-  denied_actions: ["merge", "deploy", "force-push"],
+  denied_actions: ["merge", "deploy", "money-movement", "force-push"],
   checkpoints: ["ticket-approval"],
   limits: {
     fix_cycles: 2,

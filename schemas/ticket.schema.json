@@ -132,6 +132,96 @@
         }
       }
     },
+    "delegation": {
+      "description": "The evidenced delegation assessment at ticket time or merge time. The class governs which checkpoints a charter may delegate; it is not a finding. Numeric guidance may raise it, while only a named human may lower it and no lowering may cross the sensitive-surface floor (rulings `delegation-class-is-authority-not-finding` and `sensitive-surface-sets-the-floor`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "stage", "floor", "factors", "lowered_by"],
+      "properties": {
+        "class": { "enum": ["green", "yellow-agent", "yellow-owner", "red"] },
+        "stage": { "enum": ["ticket", "merge"] },
+        "floor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["packs", "sensitive_actions"],
+          "properties": {
+            "packs": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/pack_id" }
+            },
+            "sensitive_actions": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "common.schema.json#/$defs/sensitive_action" }
+            }
+          }
+        },
+        "factors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reversibility", "size", "complexity", "spec", "verification"],
+          "properties": {
+            "reversibility": { "$ref": "#/$defs/delegation_factor" },
+            "size": { "$ref": "#/$defs/delegation_factor" },
+            "complexity": { "$ref": "#/$defs/delegation_factor" },
+            "spec": { "$ref": "#/$defs/delegation_factor" },
+            "verification": { "$ref": "#/$defs/delegation_factor" }
+          }
+        },
+        "lowered_by": {
+          "description": "Null unless a person lowered the otherwise computed class. The person's name, reason and timestamp make the lowering auditable.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["human", "reason", "at"],
+              "properties": {
+                "human": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+                "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "readiness": {
+      "description": "Six specification-readiness criteria, each with its own evidence, plus the deterministic vague-term pass. Scores are project guidance and never findings by themselves.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptance_criteria",
+        "interfaces",
+        "examples",
+        "non_goals",
+        "existing_pattern",
+        "verification_path",
+        "vague_terms"
+      ],
+      "properties": {
+        "acceptance_criteria": { "$ref": "#/$defs/readiness_criterion" },
+        "interfaces": { "$ref": "#/$defs/readiness_criterion" },
+        "examples": { "$ref": "#/$defs/readiness_criterion" },
+        "non_goals": { "$ref": "#/$defs/readiness_criterion" },
+        "existing_pattern": { "$ref": "#/$defs/readiness_criterion" },
+        "verification_path": { "$ref": "#/$defs/readiness_criterion" },
+        "vague_terms": { "$ref": "common.schema.json#/$defs/string_list" }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "resolved_as"],
+        "properties": {
+          "text": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+          "resolved_as": { "enum": ["criterion", "non-goal", "open"] }
+        }
+      }
+    },
     "decision": {
       "description": "Present only on decision tickets.",
       "type": "object",
@@ -147,6 +237,34 @@
         "answer": {
           "description": "Recorded on resolution.",
           "type": ["string", "null"]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "delegation_factor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "evidence"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
+        }
+      }
+    },
+    "readiness_criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "evidence"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 2 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "common.schema.json#/$defs/nonempty_string" }
         }
       }
     }

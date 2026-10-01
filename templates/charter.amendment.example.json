@@ -20,7 +20,7 @@
   "immutability": {
     "immutable": true,
     "worker_writable": false,
-    "hash": "sha256:fd1d73c884f27268954704a9a1a850929e58c50c9ba5f32f99bd5b8c076c50c0",
+    "hash": "sha256:a0ccdf313b7c0c590625a0ca2fd02f09505e2afc558994d4c6f83a30e065f711",
     "location": "example-org/example-knowledgebase/projects/example-project/runs/example-run-1/charter-2.json"
   },
   "work_source": {
@@ -63,7 +63,7 @@
     "publish-lesson",
     "start-implementation-ticket"
   ],
-  "denied_actions": ["deploy", "force-push", "history-rewrite", "merge", "production-credentials"],
+  "denied_actions": ["deploy", "force-push", "history-rewrite", "merge", "money-movement", "production-credentials"],
   "checkpoints": ["ticket-approval", "finding-adjudication", "lesson-publication", "ci-repair"],
   "limits": {
     "fix_cycles": 2,
@@ -117,11 +117,11 @@
   "supersedes": {
     "id": "example-charter-1",
     "schema": "charter",
-    "hash": "sha256:087fa6ce77f5aa9fc10c1470d692933d2ebd1ee25816a53da9faa016b3c2bb22"
+    "hash": "sha256:e6f406e2d0f6c1edf020086ddddfbc3fe270d17bee32d0bd5a1a2eccadd822e3"
   },
   "approvals": [
     {
-      "artifact_hash": "sha256:f3997ae1edfe6473d77c4cb8ee42484ca1d66316c15a0fc4a57160749d159c84",
+      "artifact_hash": "sha256:9cbd02bdfab5e8418738aec237ba8bbae5b2dc1fc68eee431cae7429c991292b",
       "by": "human",
       "authority": "explicit",
       "at": "2026-09-19T09:00:00Z",
