@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -235,14 +235,25 @@ describe("runner guards", () => {
     const verifyConfig = join(f.privateDir, "verify.json");
     const effectConfig = join(f.privateDir, "effects.json");
     const remote = join(f.privateDir, "remote-pr.txt");
+    const launches = join(f.privateDir, "launches.txt");
     const judgeScript =
-      "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); if (!packet.diff_hash) process.exit(4); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
+      "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); if (!packet.diff_hash) process.exit(4); const fs = require('node:fs'); fs.appendFileSync(process.argv[1], packet.card.id + '\\n'); if (packet.card.id === 'align') await Bun.sleep(300); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
     writeFileSync(
       seatConfig,
       JSON.stringify({
         launchers: [
-          { seat: "seat-a", actor: "supervisor-1", lineage: ["supervisor-1"], command: ["bun", "-e", judgeScript] },
-          { seat: "seat-b", actor: "supervisor-2", lineage: ["supervisor-2"], command: ["bun", "-e", judgeScript] },
+          {
+            seat: "seat-a",
+            actor: "supervisor-1",
+            lineage: ["supervisor-1"],
+            command: ["bun", "-e", judgeScript, launches],
+          },
+          {
+            seat: "seat-b",
+            actor: "supervisor-2",
+            lineage: ["supervisor-2"],
+            command: ["bun", "-e", judgeScript, launches],
+          },
         ],
       }),
     );
@@ -368,9 +379,19 @@ describe("runner guards", () => {
       expect(packet.exitCode).toBe(0);
       expect(packet.stdout.toString()).toContain('"charter_hash"');
       expect(packet.stdout.toString()).not.toContain('"judgments"');
-      const decision = call("decide", workerToken);
-      expect(decision.exitCode).toBe(0);
-      expect(decision.stdout.toString()).toContain('"status": "complete"');
+      const decideAsync = () =>
+        Bun.spawn(["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket], {
+          cwd: root,
+          env: { ...process.env, AK_RUNNER_TOKEN: workerToken },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+      const overlapping = [decideAsync(), decideAsync()];
+      for (const decision of overlapping) {
+        expect(await decision.exited).toBe(0);
+        expect(await new Response(decision.stdout).text()).toContain('"status": "complete"');
+      }
+      expect(readFileSync(launches, "utf8").trim().split("\n")).toEqual(["align", "align"]);
       transcript.push(
         "`call prepare` + `call decide` on `align.run`, grant `align-answer` → complete; seat-a and seat-b launched separately.",
       );
@@ -485,7 +506,7 @@ describe("runner guards", () => {
       server.kill();
       await server.exited;
     }
-  }, 15_000);
+  }, 30_000);
 
   test("a forged or unbound grant refuses before a phase runs", () => {
     const f = ready();

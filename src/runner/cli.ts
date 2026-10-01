@@ -118,6 +118,21 @@ async function dispatchSeat(runner: Runner, runId: string, cardId: string, launc
   );
 }
 
+async function decideCard(runner: Runner, runId: string, cardId: string, launchers: SeatLauncher[]) {
+  const early = runner.authorize(runId, cardId);
+  if (early !== null) return early;
+  const failures: string[] = [];
+  for (const launcher of launchers) {
+    try {
+      await dispatchSeat(runner, runId, cardId, launcher);
+    } catch (cause) {
+      failures.push(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+  if (failures.length > 0) throw new Error(`seat dispatch failed; retry decide: ${failures.join("; ")}`);
+  return runner.decide(runId, cardId);
+}
+
 async function execute(
   runner: Runner,
   request: Request,
@@ -127,6 +142,7 @@ async function execute(
   launchers: SeatLauncher[],
   verifyCommand: string[] | null,
   effectAdapters: Map<string, EffectAdapter>,
+  decisions: Map<string, Promise<unknown>>,
 ) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
@@ -218,20 +234,12 @@ async function execute(
       return runner.prepare(str(a, "run"), a.card);
     }
     case "decide": {
-      const runId = str(a, "run");
       const cardId = str(a, "card_id");
-      const early = runner.authorize(runId, cardId);
-      if (early !== null) return early;
-      const failures: string[] = [];
-      for (const launcher of launchers) {
-        try {
-          await dispatchSeat(runner, runId, cardId, launcher);
-        } catch (cause) {
-          failures.push(cause instanceof Error ? cause.message : String(cause));
-        }
-      }
-      if (failures.length > 0) throw new Error(`seat dispatch failed; retry decide: ${failures.join("; ")}`);
-      return runner.decide(runId, cardId);
+      const pending =
+        decisions.get(cardId) ??
+        decideCard(runner, str(a, "run"), cardId, launchers).finally(() => decisions.delete(cardId));
+      decisions.set(cardId, pending);
+      return pending;
     }
     default:
       throw new Error("unknown runner verb");
@@ -328,6 +336,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       effectAdapters.set(adapter.effect, adapter);
     }
   }
+  const decisions = new Map<string, Promise<unknown>>();
   const server = createServer((connection) => {
     let body = "";
     let handled = false;
@@ -344,7 +353,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         connection.end(
-          `${JSON.stringify({ ok: true, result: await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters) })}\n`,
+          `${JSON.stringify({ ok: true, result: await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters, decisions) })}\n`,
         );
       } catch (cause) {
         connection.end(
