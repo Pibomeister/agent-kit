@@ -145,7 +145,9 @@ engineering lifecycle (pinned 2026-09-18): `EveryInc/compound-engineering-plugin
 what was changed.
 
 Every adapted file records its `donor@commit:path` in `provenance/adaptations.yaml`, and that path is
-verified to exist at the pin. Capabilities that came from the design conversation rather than a donor
+verified to exist at the pin. Material adapted from a research report checked in under
+`research/sources/` records a digest-anchored `local:` source instead (`AUTHORING.md` §5).
+Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
 

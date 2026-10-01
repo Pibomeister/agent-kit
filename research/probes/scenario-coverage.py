@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Which of plan §10's release scenarios each index names, and which it does not.
 
-Two indexes cover the same 24 scenarios from different directions.
+Two indexes cover the same scenarios from different directions.
 `policies/resolved-conflicts.yaml` names one in a ruling's `scenario:` field when a
 tension had to be resolved; `provenance/conversation-map.yaml` names one in a row's
 `acceptance_test` when a capability is what the scenario tests. A scenario with no
