@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: changed-evidence-resurfaces-a-rejected-finding
+tags: [positive, scenario-12]
+execution:
+  prompt: >-
+    Round two on the search migration plan at skills/doc-review/tests/search-migration-plan.md,
+    with round one's dispositions at skills/doc-review/tests/round-1-dispositions.yaml. The plan
+    document has not been edited at all since round one. One thing did change outside it, recorded
+    at skills/doc-review/tests/constraint-change.md. Review it again.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: finding-resurfaces
+    type: llm
+    weight: 1
+    criteria: >-
+      The concern about cutting the largest tenants over last is raised again rather than
+      suppressed, because the constraint the round-one rejection rested on was withdrawn.
+  - name: names-the-changed-evidence
+    type: llm
+    weight: 1
+    criteria: >-
+      The response names the withdrawn contract-end constraint as the reason the finding is being
+      asked again, and states that the document's unchanged wording does not establish unchanged
+      evidence.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?doc-review"'
+    arm: with-only
+    weight: 1

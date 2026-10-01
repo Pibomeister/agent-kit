@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: super-build-still-dispatches-genuinely-independent-tickets-together
+tags: [positive, scenario-13]
+execution:
+  prompt: >-
+    Tickets AK-420 and AK-421 are both approved. AK-420 changes the email templating module and its
+    tests; AK-421 changes the CSV export module and its tests. Different directories, no shared
+    generated artifact, no migration, no shared exported interface. Start the layer.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: dispatches-in-parallel
+    type: llm
+    weight: 3
+    criteria: >-
+      The two tickets are dispatched together rather than run one after the other. The response does
+      not serialize them on a general caution about concurrency or on the possibility of unknown
+      contention.
+  - name: says-what-it-inspected
+    type: llm
+    weight: 2
+    criteria: >-
+      The response names the surfaces it checked to reach independence — declared files, generated
+      artifacts, migrations, exported interfaces — rather than asserting independence because the
+      prompt described the tickets as separate.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    arm: with-only
+    weight: 1

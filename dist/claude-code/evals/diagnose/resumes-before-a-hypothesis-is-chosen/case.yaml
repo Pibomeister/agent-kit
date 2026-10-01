@@ -1,0 +1,40 @@
+schema_version: "1.1"
+name: diagnose-resumes-from-the-loop-it-already-built
+tags: [resumability, needs-fixture]
+execution:
+  prompt: >-
+    Resume the diagnosis of the duplicate-webhook bug. The previous run recorded a command that goes
+    red on it and a minimised reproduction of four steps, and it was interrupted before any
+    hypothesis was written. The publish of the run artifact may or may not have landed.
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+# The republish grader assumes the knowledgebase publish tool the fixture will grant: nothing in
+# allowed_tools can publish a record. Rebuilding the loop is a Bash or Write call (AUTHORING.md
+# §9).
+graders:
+  - name: reuses-the-recorded-loop
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The recorded command and the four-step minimised reproduction are read and used. The run does
+      not rebuild the loop or re-minimise from the original report, and it confirms the recorded
+      loop still goes red rather than assuming it.
+  - name: continues-at-the-hypotheses
+    type: llm
+    weight: 3
+    criteria: >-
+      The run picks up where it stopped: three to five ranked hypotheses with their predictions,
+      written before any is tested.
+  - name: republish-is-idempotent
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The existing record is returned rather than a second one being created. The run does not
+      create a duplicate artifact to be safe.
+  - name: republishes-under-the-same-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The publish is retried with an idempotency key derived from the artifact's content hash.

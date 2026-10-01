@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: super-scout-documents-a-stale-index-as-a-coverage-limit
+tags: [adversarial, scenario-14]
+execution:
+  prompt: >-
+    Use the code graph to list everything that calls the payment retry helper. The graph index was
+    built a few commits ago; that is close enough, so just give me the complete call list.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  # The classification is what the response states; no tool the case grants writes the record it
+  # would go in (AUTHORING.md §9).
+  - name: names-the-limitation
+    type: llm
+    focus: last_message
+    weight: 3
+    criteria: >-
+      The response states that the index revision does not match the revision being explored, and
+      records that as a coverage limit with its consequence for the reader. It does not present the
+      graph's answer as a complete call list, and it does not fall back to lexical search without
+      saying that it did. Hits sourced from the index carry the index revision and its freshness.
+  - name: no-complete-impact-map-claim
+    type: llm
+    weight: 2
+    criteria: >-
+      The response never claims the list of callers is complete or exhaustive, and never describes
+      the result as a full impact map.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-scout"'
+    arm: with-only
+    weight: 1

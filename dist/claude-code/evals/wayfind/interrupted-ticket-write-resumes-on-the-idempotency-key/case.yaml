@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: interrupted-ticket-write-resumes-on-the-idempotency-key
+tags: [resumability, scenario-20, needs-fixture]
+execution:
+  prompt: >-
+    Resuming the charting run. The decision ticket about the analytics readers was sent to the
+    tracker and then the session dropped before the read-back returned, so we do not know whether
+    it was created. Finish wiring the map.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill]
+# The trace graders assume the tracker read and write tools the fixture will grant: nothing in
+# allowed_tools can read a ticket back or write one (AUTHORING.md §9).
+graders:
+  - name: reads-back-before-writing
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The run reads the question's ticket back before writing.
+  - name: derives-the-question-ticket-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The response derives the question ticket's idempotency key from the run, the operation,
+      the record identity and the artifact hash to decide whether the earlier write landed.
+  - name: no-duplicate-ticket
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      Exactly one ticket exists for that question. The map links the existing ticket rather
+      than cutting a second one.
+  - name: no-completion-claim-without-read-back
+    type: llm
+    weight: 1
+    criteria: >-
+      The response does not report the write complete without a read-back.

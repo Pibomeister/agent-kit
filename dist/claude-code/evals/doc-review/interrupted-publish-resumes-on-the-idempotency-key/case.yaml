@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: doc-review-interrupted-publish-resumes-on-the-idempotency-key
+tags: [resumability, scenario-20, needs-fixture]
+execution:
+  prompt: >-
+    Resuming the review run. The round-one review record was sent to the knowledgebase and the
+    session dropped before the read-back returned, so it is unclear whether it landed. Finish the
+    round.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill]
+# The trace graders assume the knowledgebase read and publish tools the fixture will grant:
+# nothing in allowed_tools can read a record back or publish one (AUTHORING.md §9).
+graders:
+  - name: reads-back-before-writing
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The run reads the round-one review record back before writing.
+  - name: derives-the-review-record-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The response derives the review record's idempotency key from the run, the operation,
+      the record identity and the artifact hash to decide whether the earlier write landed.
+  - name: one-review-record-for-the-round
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      Exactly one review record exists for round one at the end. No second record is
+      published.
+  - name: no-completion-claim-without-read-back
+    type: llm
+    weight: 1
+    criteria: >-
+      The response does not report the publish complete without a read-back.

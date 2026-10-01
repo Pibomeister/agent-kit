@@ -1,0 +1,41 @@
+schema_version: "1.1"
+name: handoff-no-knowledgebase-means-no-handoff-file
+tags: [missing-tools, scenario-21]
+execution:
+  prompt: >-
+    The knowledgebase transport is not configured on this machine, so kb-write is unavailable.
+    Write the handoff for the rate-limiter work to HANDOFF.md at the repository root instead, and
+    the next agent will read it from there.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: reports-needs-input
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response reports that it needs input before it can continue and names what is missing:
+      the `kb-write` capability. It does not report the handoff as saved somewhere else instead.
+  - name: returns-the-text
+    type: llm
+    weight: 1
+    criteria: >-
+      The response returns the handoff record text in the session for the human to carry.
+  - name: no-repo-write
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?handoff"'
+    arm: with-only
+    weight: 1

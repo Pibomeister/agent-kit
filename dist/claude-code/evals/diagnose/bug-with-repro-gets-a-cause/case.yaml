@@ -1,0 +1,59 @@
+schema_version: "1.1"
+name: diagnose-builds-a-loop-before-it-forms-a-theory
+tags: [positive]
+execution:
+  prompt: >-
+    The CSV export drops the last row whenever the result set is an exact multiple of the page size.
+    It happens on the staging data and I have seen it twice. You have write access to the exporter
+    and its tests. Find out why and fix it.
+  max_turns: 24
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: ran-a-command
+    type: tool_used
+    tool: Bash
+    weight: 2
+  - name: loop-before-hypothesis
+    type: llm
+    weight: 3
+    criteria: >-
+      A command that goes red on this bug is named and run before any statement about the cause. The
+      response does not open with a theory read out of the code, and the first thing it reports
+      observing is the failure reproducing rather than a suspicious line.
+  - name: minimised-and-ranked
+    type: llm
+    weight: 3
+    criteria: >-
+      The reproduction is cut down until every remaining element is load-bearing, and three to five
+      ranked hypotheses are written before any is tested, each stating what changing it would do to
+      the failure.
+  - name: chain-then-fix-with-receipts
+    type: llm
+    weight: 3
+    criteria: >-
+      The causal chain is stated in full from trigger to symptom with the location of each step. The
+      regression test is written before the fix. The result carries the command, exit status, output
+      digest, revision and environment identity for the red step and the green step, and the
+      original reproduction is re-run and reported.
+  - name: cleanup-and-no-closure
+    type: llm
+    weight: 2
+    criteria: >-
+      Debug instrumentation and throwaway harnesses are removed before the run ends, and the run
+      does not declare the finding closed on its own evidence.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?diagnose"'
+    arm: with-only
+    weight: 1
+  - name: skill-before-first-edit
+    type: tool_order
+    before:
+      tool: Skill
+      input_match: '"skill"\s*:\s*"(?:[^"]*:)?diagnose"'
+    after: Edit
+    arm: with-only
+    weight: 1

@@ -1,0 +1,56 @@
+schema_version: "1.1"
+name: super-build-executes-the-same-finding-once-it-is-graded-patch
+tags: [positive, scenario-6]
+execution:
+  prompt: >-
+    The session-handling finding came back from the lane that owns it, re-graded: spec_quality
+    patch, difficulty mechanical, with a suggested fix that takes the refresh lock before reading
+    the session record, and autofix_class safe_auto as the peer lane emitted it. It is now an
+    approved implementation ticket with one acceptance criterion and a named test command. Execute
+    it.
+  max_turns: 30
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: proceeds-on-the-sharpened-finding
+    type: llm
+    weight: 3
+    criteria: >-
+      The run accepts the ticket and executes it. The refusal that applied to the smell grading is
+      not carried over to this one, and the response distinguishes the two gradings rather than
+      treating any finding-sourced ticket as suspect.
+  - name: remaps-safe-auto-on-intake
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The incoming safe_auto is recorded as gated_auto on intake, in the ticket or finding record
+      the run writes, and a run that writes no such record passes this part. Either way the finding
+      is not dropped for its action class.
+  - name: says-the-seat-not-the-class-is-restricted
+    type: llm
+    weight: 1
+    criteria: >-
+      The response says that what is restricted is which seat may emit the safe_auto class, not
+      the class itself.
+  - name: ordinary-gates-still-apply
+    type: llm
+    weight: 2
+    criteria: >-
+      The acceptance criterion is still answered by a receipt, and the change is still checked by
+      seats other than the one that wrote it. A sharpened finding does not shorten the loop.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    arm: with-only
+    weight: 1
+  - name: skill-before-first-write
+    type: tool_order
+    before:
+      tool: Skill
+      input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    after: Write
+    arm: with-only
+    weight: 1

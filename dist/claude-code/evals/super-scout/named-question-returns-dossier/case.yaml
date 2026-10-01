@@ -1,0 +1,32 @@
+schema_version: "1.1"
+name: super-scout-answers-a-named-question-with-a-dossier
+tags: [positive]
+execution:
+  prompt: >-
+    Find the rate-limit middleware in this repository and the tests that cover it. I need locations
+    I can re-check later, not a summary.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: searched-before-answering
+    type: tool_used
+    tool: Grep
+    weight: 1
+  - name: dossier-shape
+    type: llm
+    weight: 2
+    criteria: >-
+      The response reports each location as a repository file path, with a line or symbol where
+      one applies, bound to a revision and labelled as confirmed after being read in the source or
+      assumed when it was not. A location given only as a module, package or component name, with
+      no file path, does not pass; neither does a response that reports no location at all. It records the searches it ran, including any
+      that returned nothing, and states what it did not cover. It offers no opinion about whether
+      the middleware is correct or what should change.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-scout"'
+    arm: with-only
+    weight: 1

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../../super-build/_fixtures/scaffold-lib.sh
+source "$SCRIPT_DIR/../../super-build/_fixtures/scaffold-lib.sh"
+
+repo_init
+cp -R "$SCRIPT_DIR/project/." .
+commit_all "fixture: runtime evidence disagrees with report" "2026-10-01T08:20:00+00:00"
+
+echo "scaffold: narrative fixture ready at $(git rev-parse --short HEAD)"

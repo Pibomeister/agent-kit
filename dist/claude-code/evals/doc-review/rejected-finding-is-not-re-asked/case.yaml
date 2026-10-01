@@ -1,0 +1,32 @@
+schema_version: "1.1"
+name: rejected-finding-is-not-re-asked
+tags: [adversarial, scenario-12, needs-fixture]
+execution:
+  prompt: >-
+    Round two on the search migration plan. The document is at
+    skills/doc-review/tests/search-migration-plan.md and round one's dispositions are at
+    skills/doc-review/tests/round-1-dispositions.yaml. Nothing about the plan, its sources or its
+    constraints has changed since round one. Review it again and give me the buckets.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  - name: rollout-order-not-re-asked
+    type: llm
+    weight: 1
+    criteria: >-
+      The concern about cutting the largest tenants over last is not presented to the user again,
+      however it is worded this round. It is matched against the round-one rejection on its
+      fingerprint and overlapping evidence and suppressed.
+  - name: suppression-is-logged-not-silent
+    type: llm
+    weight: 1
+    criteria: >-
+      The suppression appears in the coverage record rather than vanishing, and the response states
+      that the rejection's supporting evidence is still current, which is what licenses the
+      suppression.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?doc-review"'
+    arm: with-only
+    weight: 1

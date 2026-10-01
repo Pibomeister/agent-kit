@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: wait-what-jargon-heavy-proposal-is-re-pitched
+tags: [positive]
+execution:
+  prompt: >-
+    Your last message said: "Proposal: move the webhook fan-out behind a transactional outbox. The
+    handler writes an outbox row in the same txn as the order mutation, a relay drains it with
+    at-least-once semantics, and consumers dedupe on the idempotency key, so we drop the 2PC-ish
+    dual write. Caveat: relay lag bounds freshness, p99 is about 2s." Wait, what? I don't follow
+    where you've got to.
+  max_turns: 8
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: premise-first-same-proposal
+    type: llm
+    weight: 2
+    criteria: >-
+      The response explains the missing premise first: what goes wrong today when the order is
+      saved and the webhook is sent as two separate writes. It then restates the same proposal in
+      short plain sentences. It proposes nothing different and offers no alternatives.
+  - name: caveat-kept
+    type: llm
+    weight: 1
+    criteria: >-
+      The response keeps the caveat that webhooks can arrive up to about two seconds late, stated
+      in plain words, and makes no claim the original message did not rest on.
+  - name: no-file-written
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?wait-what"'
+    arm: with-only
+    weight: 1

@@ -1,0 +1,11 @@
+{
+  "name": "tiny-service",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Account, billing and export service.",
+  "type": "commonjs",
+  "scripts": {
+    "check": "node --test",
+    "lint": "node scripts/lint.js"
+  }
+}

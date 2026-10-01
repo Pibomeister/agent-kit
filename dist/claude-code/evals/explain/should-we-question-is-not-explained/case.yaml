@@ -1,0 +1,42 @@
+schema_version: "1.1"
+name: explain-should-we-question-is-not-explained
+tags: [negative]
+execution:
+  prompt: >-
+    Use the explain skill on this one: should we switch the job scheduler from catching up on missed
+    runs to skipping them? I need a yes or no for planning.
+  max_turns: 8
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 2
+    focus: trace
+    arm: with-only
+    criteria: >-
+      The session does not carry out the explain workflow: it does not sweep the repository or the
+      knowledgebase for scheduler evidence to build a traced explanation, and no file is written.
+      Loading the explain skill and then stopping at its authority step, with needs-input or with a
+      refusal, passes, and so does never loading it.
+  - name: names-the-right-command
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response treats the question as a judgment about adopting a change rather than a request
+      for a description. It names /ak:pov as the command for that judgment, or names /ak:explain as
+      the command the human would type for a description of the current behavior.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

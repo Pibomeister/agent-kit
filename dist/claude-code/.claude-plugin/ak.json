@@ -1,0 +1,111 @@
+{
+  "profile": "core",
+  "install": {
+    "file": null,
+    "attached": [
+      "runner-contract",
+      "knowledgebase",
+      "firstmate",
+      "tracker"
+    ],
+    "backends": {}
+  },
+  "excluded": [],
+  "host": {
+    "id": "claude-code",
+    "enforces": [],
+    "notes": [
+      "disable-model-invocation is honored by the host, but this package does not emit it (docs/decisions/0003-model-invocation.md), so no-model-invocation is NOT claimed.",
+      "allowed-tools is a pre-approval mechanism, not a sandbox; tool-allowlist-enforced is NOT claimed.",
+      "No filesystem, network or process confinement is claimed.",
+      "Source: built-in default; no adapter declaration found."
+    ]
+  },
+  "modes": [
+    {
+      "skill": "super-align",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-bound",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-scout",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "super-build",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "super-verify",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "super-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-ship",
+      "mode": "manual"
+    },
+    {
+      "skill": "verify",
+      "mode": "manual"
+    },
+    {
+      "skill": "compound",
+      "mode": "manual"
+    },
+    {
+      "skill": "doc-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "receiving-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "diagnose",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "doubt-driven",
+      "mode": "manual"
+    },
+    {
+      "skill": "simplify",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "research",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "source-driven",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "explain",
+      "mode": "manual"
+    },
+    {
+      "skill": "prototype",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "handoff",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "wait-what",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "wayfind",
+      "mode": "manual"
+    }
+  ],
+  "autonomy_rejected": []
+}

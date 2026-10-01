@@ -1,0 +1,31 @@
+schema_version: "1.1"
+name: a-moved-line-neither-duplicates-nor-suppresses-a-finding
+tags: [positive, scenario-9]
+execution:
+  prompt: >-
+    /ak:receiving-review Half the threads on PR 812 are marked outdated because the file was reformatted and everything
+    shifted by about forty lines. Sort out which ones still apply.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  # gh is not available in the workspace; the scaffold supplies PR 812 as local files under pr-812/.
+  scaffold_script: scaffold.sh
+graders:
+  - name: decides-by-fingerprint-not-line-number
+    type: llm
+    weight: 3
+    criteria: >-
+      Each outdated thread is resolved by searching for its anchor — the rule or cause plus the
+      location or symbol plus the evidence — rather than by the line number it was filed against.
+  - name: still-applicable-threads-are-kept
+    type: llm
+    weight: 3
+    criteria: >-
+      A thread whose underlying issue is still present is treated as live even though the platform
+      marked it outdated, and is not dismissed as stale.
+  - name: no-duplicates-are-created
+    type: llm
+    weight: 2
+    criteria: >-
+      A finding that moved is recognised as the same finding rather than raised a second time at its
+      new position.

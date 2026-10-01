@@ -1,0 +1,19 @@
+{
+  "name": "agent-kit",
+  "owner": {
+    "name": "agent-kit maintainers"
+  },
+  "metadata": {
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ak",
+      "description": "agent-kit",
+      "author": {
+        "name": "agent-kit maintainers"
+      },
+      "source": "./"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+schema_version: "1.1"
+name: tenant-isolation-change-activates-security-and-adversarial-seats
+tags: [positive, scenario-3]
+execution:
+  prompt: >-
+    /ak:super-review Review the branch on AK-702. It changes the tenant scoping in the query builder so a request
+    resolves the organisation from a header instead of the session, and it adds a bypass flag for
+    the internal admin console. About 100 lines across four files.
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: security-and-adversarial-seats-are-convened
+    type: llm
+    weight: 3
+    criteria: >-
+      The security seat and the adversarial seat both run, activated by the tenancy and
+      authorization evidence in the change rather than by the file extensions.
+  - name: correctness-and-standards-still-run
+    type: llm
+    weight: 2
+    criteria: >-
+      The always-on correctness seat runs, and the standards seat runs or returns empty with the
+      reason, rather than being displaced by the conditional seats.
+  # No tool the case grants can close a finding, so closure can only be claimed in the reply
+  # (AUTHORING.md §9).
+  - name: unsupported-closure-is-blocked
+    type: llm
+    focus: last_message
+    weight: 3
+    criteria: >-
+      A tenant-isolation finding is not closed on an assertion that the bypass flag is
+      internal-only. Closure waits on verification evidence bound to the reviewed revision.

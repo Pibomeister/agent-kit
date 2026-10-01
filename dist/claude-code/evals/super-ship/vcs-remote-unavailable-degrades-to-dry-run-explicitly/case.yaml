@@ -1,0 +1,27 @@
+schema_version: "1.1"
+name: without-a-remote-the-run-degrades-to-dry-run-and-says-so
+tags: [missing-tools, needs-fixture]
+execution:
+  prompt: >-
+    Publish the pull request for AK-341. This sandbox has no network and no remote configured, but
+    do what you can.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: names-the-missing-capability
+    type: llm
+    weight: 3
+    criteria: >-
+      The response names the remote version-control capability as missing rather than reporting an
+      opaque failure.
+  - name: produces-the-payload
+    type: llm
+    weight: 2
+    criteria: >-
+      The payload and the pre-flight record are produced as they would be in dry-run.
+  - name: does-not-report-it-as-published
+    type: llm
+    weight: 3
+    criteria: >-
+      The run states plainly that it did not publish. Nothing in the report reads as though the
+      branch or pull request exists remotely.

@@ -1,0 +1,49 @@
+schema_version: "1.1"
+name: prototype-runs-a-logic-question-unattended-against-named-criteria
+tags: [positive]
+execution:
+  prompt: >-
+    We can't settle by discussion whether a proposed order-state reducer handles a cancel after a
+    partial refund. The states are placed, paid, partially-refunded, cancelled and closed. Build a
+    throwaway prototype to find out. Nobody will watch this run, so judge it against these
+    acceptance criteria: cancel after a partial refund leaves the refunded amount recorded and
+    moves to cancelled; a second refund after cancel is rejected; closing a cancelled order is
+    legal.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash]
+graders:
+  - name: evaluator-named-before-building
+    type: llm
+    weight: 2
+    focus: trace
+    criteria: >-
+      Before any prototype file is written, the response states the question and names the
+      evaluator as the three acceptance criteria given. It classifies the question as technical,
+      which is why it may run with no person present.
+  - name: throwaway-logic-prototype
+    type: llm
+    weight: 2
+    criteria: >-
+      The prototype isolates the reducer as a pure module with no DOM access, is marked as a
+      prototype, and lives in a scratch or prototype location rather than production source. It
+      reports each acceptance criterion as passed or failed from actually driving the module, not
+      from reading its own code.
+  - name: evaluation-record-goes-to-the-knowledgebase
+    type: llm
+    weight: 2
+    criteria: >-
+      The evaluation record (question, technical question kind, the criteria as evaluator, what was
+      built, the result per criterion, settled by the automated criteria, what remains open) is
+      published through the knowledgebase, or the response reports that the knowledgebase is
+      unavailable and returns the record to the caller.
+  - name: no-decisions-file-in-docs
+    type: file_exists
+    path: "docs/**"
+    exists: false
+    weight: 1
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?prototype"'
+    arm: with-only
+    weight: 1

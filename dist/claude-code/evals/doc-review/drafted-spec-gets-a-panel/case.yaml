@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: drafted-spec-gets-a-panel
+tags: [positive, scenario-1]
+execution:
+  prompt: >-
+    Before I cut tickets from this, review the payments settlement plan at
+    kb://plans/settlement-v2. It changes who can read the settlement ledger, it introduces a new
+    reconciliation abstraction we have not used before, and it has a stretch section at the bottom.
+    Origin is the approved requirements page for settlement.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: layered-panel-with-reasons
+    type: llm
+    weight: 1
+    criteria: >-
+      The response classifies the document as a plan from its content, runs the two always-on seats,
+      and activates the conditional seats the document's own evidence earns, including the security
+      lens for the change to who can read the ledger, the adversarial seat for the new abstraction
+      and the scope guardian for the stretch section. Every seat it did not run is listed with the
+      reason it did not activate, rather than being left out silently.
+  - name: forks-returned-as-decisions
+    type: llm
+    weight: 1
+    criteria: >-
+      Findings are presented in the four buckets, and anything the document does not itself resolve
+      appears as a Decision with one question, not as an applied correction.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?doc-review"'
+    arm: with-only
+    weight: 1

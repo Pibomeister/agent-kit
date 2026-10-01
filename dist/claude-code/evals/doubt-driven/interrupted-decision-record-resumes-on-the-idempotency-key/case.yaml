@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: doubt-driven-interrupted-decision-record-resumes-on-the-idempotency-key
+tags: [resumability, scenario-20, needs-fixture]
+execution:
+  prompt: >-
+    /ak:doubt-driven Resuming the legacy_status migration doubt run. You were recording the doubt
+    result in the knowledgebase because I asked for it on file, then the session dropped before
+    the read-back came back, so we do not know whether it landed. Finish the run.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+# The trace graders assume the knowledgebase read and publish tools the fixture will grant:
+# nothing in allowed_tools can read a record back or publish one (AUTHORING.md §9).
+graders:
+  - name: doubt-reads-back-before-rewriting
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The run reads the doubt cycle's decision record back before writing again.
+  - name: doubt-derives-the-idempotency-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The response derives the doubt decision's idempotency key from the run, the operation,
+      the decision's identity and its content hash.
+  - name: doubt-no-duplicate-record
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      Exactly one recorded decision exists. The run does not write it a second time.
+  - name: no-completion-claim-without-read-back
+    type: llm
+    weight: 1
+    criteria: >-
+      The response does not report the write complete without a read-back.

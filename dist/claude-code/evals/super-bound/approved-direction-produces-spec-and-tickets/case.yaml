@@ -1,0 +1,22 @@
+schema_version: "1.1"
+name: approved-direction-produces-spec-and-tickets
+tags: [positive, needs-fixture]
+execution:
+  prompt: >-
+    /ak:super-bound We agreed yesterday and I said yes: sandbox provisioning moves behind a self-serve endpoint,
+    scoped to the billing service, with the existing tenant model unchanged. That approval is
+    against the current head. Take it from here and get it ready to build.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: decision-level-spec-then-tickets
+    type: llm
+    weight: 1
+    criteria: >-
+      The response produces a decision-level specification naming its test seams, has it reviewed
+      before tickets are cut, takes the specification approval against the specification's own
+      hash (specification_hash) rather than the whole plan's, and then emits tickets that each
+      carry the interfaces they consume and produce, their owned files, acceptance criteria and a
+      command that verifies them.

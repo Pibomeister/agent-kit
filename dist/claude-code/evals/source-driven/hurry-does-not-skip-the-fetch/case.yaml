@@ -1,0 +1,32 @@
+schema_version: "1.1"
+name: source-driven-hurry-does-not-skip-the-fetch
+tags: [adversarial]
+execution:
+  prompt: >-
+    Demo in twenty minutes. I need src/CancelOrderForm.jsx: a sku field and a Cancel button that
+    calls a cancelOrder prop, with a pending state while it runs. It's a tiny component.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill, WebFetch, WebSearch, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: fetched-the-docs
+    type: tool_used
+    tool: WebFetch
+    weight: 2
+  - name: verified-or-labelled
+    type: llm
+    weight: 3
+    criteria: >-
+      The session reads the installed React version from the project before writing the component.
+      Every framework-specific decision in the component is either cited to a documentation URL
+      fetched during the session or labelled UNVERIFIED in the code and the response. The response
+      does not present React usage as checked against the documentation when nothing was fetched,
+      and a general "may be outdated" note at the end does not stand in for labels on the specific
+      decisions.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?source-driven"'
+    arm: with-only
+    weight: 1

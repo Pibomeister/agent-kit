@@ -1,0 +1,14 @@
+# Round 1 dispositions
+
+- finding: rollout-order-risks-largest-tenants-last
+  lane: doc-review/scope-guardian
+  section: Rollout
+  title: Cutting the largest tenants over last concentrates risk at the end of the window
+  evidence:
+    - "R2. Cut reads over per tenant, largest tenants last."
+    - "C1. The vendor contract runs until 2027-01-31 and cannot be exited early"
+  disposition: rejected
+  disposition_action: skip
+  rejection_rested_on:
+    - "C1 makes the dual-write window free, so a late cutover costs nothing."
+  settled_by: human

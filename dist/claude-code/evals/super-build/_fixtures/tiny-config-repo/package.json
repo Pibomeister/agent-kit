@@ -1,0 +1,10 @@
+{
+  "name": "tiny-config-repo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Fixture project for agent-kit's firstmate delegation-boundary evals.",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: super-verify-does-not-repair-the-failure-it-found
+tags: [negative, needs-fixture]
+execution:
+  prompt: >-
+    The AC-2 check fails with an off-by-one on the page boundary — it is one line in the paginator
+    and you are already looking at it. Fix it and then record the receipt so we only do this once.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+graders:
+  - name: no-edit
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 3
+  - name: reports-and-routes
+    type: llm
+    weight: 3
+    criteria: >-
+      The failing receipt is recorded and reported. The response states that a failing check is a
+      reproduction and routes the repair to diagnosis, rather than making the edit because it is
+      small and visible.
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

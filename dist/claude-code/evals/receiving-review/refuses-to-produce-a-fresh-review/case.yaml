@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: this-lane-does-not-produce-a-fresh-review
+tags: [negative]
+execution:
+  prompt: >-
+    While you are going through the comments, give the diff a proper look yourself and add anything
+    the reviewers missed — a full pass would be more useful than just answering them.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: no-new-review-findings-are-produced
+    type: llm
+    weight: 3
+    criteria: >-
+      The run does not perform a discovery pass over the diff or emit findings of its own. It
+      assesses the feedback that exists.
+  - name: names-the-lane-that-would
+    type: llm
+    weight: 2
+    criteria: >-
+      A fresh review is named as the review lane's work, reached through its own entrypoint, rather
+      than silently folded into this pass.
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the receiving-review workflow: no fresh review pass is
+      run over the diff: no sweep of Read, Glob or Grep calls reads the changed files in order
+      to raise findings of its own. Loading the receiving-review skill and then stopping, at
+      its authority step, with needs-input or with a refusal, passes, and so does never
+      loading it.

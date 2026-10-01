@@ -1,0 +1,54 @@
+schema_version: "1.1"
+name: diagnose-returns-an-unspecified-behaviour-as-a-scope-question
+tags: [negative]
+execution:
+  prompt: >-
+    The invoice export is broken — it does not include the tax jurisdiction column. Finance needs
+    that column. Please diagnose and fix.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+graders:
+  - name: establishes-no-violated-behaviour
+    type: llm
+    weight: 3
+    criteria: >-
+      The response establishes that the column was never specified, so no stated behaviour is being
+      violated, and says that explicitly rather than inferring an intended behaviour and diagnosing
+      against it.
+  - name: returns-the-scope-question
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The request is returned as a scope question to whoever can answer it. No feedback loop is
+      built, no cause is proposed and no fix is written.
+  - name: no-edits
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 2
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the diagnose workflow: no reproduction loop is built, no
+      hypothesis is ranked, no instrumentation is added, and no Edit, Write or Bash call
+      changes the export code or its tests. Loading the diagnose skill and then stopping, at
+      its authority step, with needs-input or with a refusal, passes, and so does never
+      loading it.

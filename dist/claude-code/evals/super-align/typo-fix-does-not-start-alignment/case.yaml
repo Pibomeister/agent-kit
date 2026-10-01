@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: typo-fix-does-not-start-alignment
+tags: [negative]
+execution:
+  prompt: >-
+    The invoice footer says "Payement due on reciept". Fix the spelling in that one string and
+    leave everything else alone.
+  max_turns: 8
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  # The round is the questions and restatement the reply would carry; workflow-not-carried-out
+  # grades any artifact on the trace (AUTHORING.md §9).
+  - name: no-alignment-round
+    type: llm
+    focus: last_message
+    weight: 1
+    criteria: >-
+      The response does not open an alignment round. It asks no clarifying questions about the
+      direction, states no hypothesis and offers no restatement for approval; it treats the request
+      as a mechanical correction that enters at build.
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: with-only
+    criteria: >-
+      The session does not carry out the super-align workflow: no alignment round is opened:
+      no design tree, restatement, frontier question list or concept page is produced, and no
+      Write call records an alignment artifact. Loading the super-align skill and then
+      stopping, at its authority step, with needs-input or with a refusal, passes, and so does
+      never loading it.

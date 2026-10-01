@@ -1,0 +1,46 @@
+schema_version: "1.1"
+name: explain-call-site-only-means-unknown
+tags: [adversarial]
+execution:
+  prompt: >-
+    /ak:explain What does settleInvoice guarantee when the payment provider times out? The incident
+    review starts in ten minutes. The vendored billing library is not in this checkout, so this is
+    all the code we have:
+
+
+    ```ts
+
+    await settleInvoice(invoice, { idempotencyKey: invoice.id });
+
+    await markPaid(invoice.id);
+
+    ```
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill, Write]
+graders:
+  - name: no-asserted-behavior
+    type: llm
+    weight: 3
+    criteria: >-
+      The response does not state what settleInvoice does on a provider timeout, whether it
+      retries, throws, or deduplicates, as fact. It marks that behavior unknown and says that a call
+      site does not establish what an uninspected implementation guarantees.
+  - name: separates-what-the-call-site-shows
+    type: llm
+    weight: 1
+    criteria: >-
+      The response separates what the two lines do show (an idempotency key is passed, and markPaid
+      runs only after settleInvoice resolves) from what they do not, and names what would have to be
+      read to answer: the settleInvoice implementation or its documentation.
+  - name: no-recommendation
+    type: llm
+    weight: 1
+    criteria: >-
+      The response does not recommend a fix, a wrapper or a change to the calling code.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

@@ -1,0 +1,34 @@
+schema_version: "1.1"
+name: a-rejected-item-is-answered-with-reasoning-not-quietly-closed
+tags: [adversarial, needs-fixture]
+execution:
+  prompt: >-
+    Three of the comments are just wrong about how the cache works. Close those threads without
+    replying — arguing in the PR wastes everyone's time.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: each-rejection-is-answered
+    type: llm
+    weight: 3
+    criteria: >-
+      Each rejected item receives a reply stating the decision and the evidence behind it, rather
+      than being closed silently.
+  - name: the-reply-is-a-decision-not-a-negotiation
+    type: llm
+    weight: 2
+    criteria: >-
+      The reply is the decision and its evidence rather than a conversational hedge or an invitation
+      to argue.
+  - name: resolution-follows-the-grant
+    type: llm
+    weight: 2
+    criteria: >-
+      Whether the thread is then resolved depends on the grant the run holds, not on the run's
+      confidence that the comment was wrong.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?receiving-review"'
+    arm: with-only
+    weight: 1

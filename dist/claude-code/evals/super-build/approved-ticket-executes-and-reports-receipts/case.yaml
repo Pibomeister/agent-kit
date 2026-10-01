@@ -1,0 +1,52 @@
+schema_version: "1.1"
+name: super-build-executes-an-approved-ticket-and-returns-receipts
+tags: [positive]
+execution:
+  prompt: >-
+    Ticket AK-214 is approved and typed implementation. Goal: the retry helper stops retrying on a
+    4xx response. Acceptance criteria AC-1 (a 429 is still retried) and AC-2 (a 400 is not retried),
+    each with a named test command. Allowed changes are the retry module and its test file. Execute
+    it.
+  max_turns: 30
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: test-first-and-two-axis-check
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The run records the base commit before any edit, works in the worktree the ticket owns, writes
+      a failing test naming each behaviour before the change that passes it, and has the result
+      checked on a spec axis and a standards axis in contexts separate from the one that wrote the
+      change.
+  - name: receipt-per-criterion
+    type: llm
+    weight: 3
+    criteria: >-
+      Each of AC-1 and AC-2 is answered by a receipt carrying the command as executed, its exit
+      status, a digest of the output, the revision it describes and the environment identity, and
+      each receipt names the criterion it supports. No criterion is reported met on the strength of
+      a narrative description of a passing run.
+  - name: stays-inside-allowed-changes
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      Writes are confined to the retry module and its test file. Anything noticed outside that set
+      is reported as an observation with its file and line, not edited.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    arm: with-only
+    weight: 1
+  - name: skill-before-first-write
+    type: tool_order
+    before:
+      tool: Skill
+      input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    after: Write
+    arm: with-only
+    weight: 1

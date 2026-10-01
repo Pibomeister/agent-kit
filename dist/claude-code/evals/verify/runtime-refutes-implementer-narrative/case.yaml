@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: verify-runtime-refutes-implementer-narrative
+tags: [adversarial, scenario-10]
+execution:
+  prompt: >-
+    /ak:verify Verify AC-3 on ticket AK-903 at the current head using the project's declared
+    verification facilities.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-declared-check
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The run executes scripts/check-retry.mjs from the project declaration and reads its observed
+      retry count instead of accepting the implementer report.
+  - name: runtime-determines-the-receipt
+    type: llm
+    weight: 4
+    criteria: >-
+      AC-3 receives a failed receipt with the command result, output digest, snapshot and environment;
+      the observed retry count refutes the criterion. With no knowledgebase available, the receipt
+      and matrix are returned and named as unpublished.
+  - name: narrative-is-not-evidence
+    type: llm
+    weight: 3
+    criteria: >-
+      The implementer report is treated only as an untrusted claim and is not quoted or restated as
+      evidence of success.
+  - name: no-verify-gate
+    type: llm
+    focus: trace
+    criteria: >-
+      No verify gate is recorded after the runtime observation refutes AC-3.
+    weight: 2

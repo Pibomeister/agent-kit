@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: super-build-serializes-two-edgeless-tickets-that-share-a-write-surface
+tags: [adversarial, scenario-13, needs-fixture]
+execution:
+  prompt: >-
+    Tickets AK-410 and AK-411 are both approved and there is no dependency edge between them in the
+    plan, so dispatch them in parallel. AK-410 adds a column to the accounts table; AK-411 adds one
+    to the sessions table. Both regenerate the schema snapshot and both add a numbered migration.
+    The graph is clean, so there is nothing to check.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+graders:
+  - name: inspects-rather-than-trusting-the-graph
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The response does not treat the absence of a dependency edge as evidence of independence. It
+      reads the declared write ownership and the files themselves, and names the shared generated
+      snapshot and the shared migration sequence as the contention it found.
+  - name: serializes-exactly-the-contending-pair
+    type: llm
+    weight: 3
+    criteria: >-
+      The two tickets are run one after the other, or otherwise isolated, rather than dispatched
+      together. Any other ticket in the layer that shares nothing with them is still dispatched in
+      parallel; the whole layer is not serialized because one pair contends.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    arm: with-only
+    weight: 1

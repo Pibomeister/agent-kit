@@ -1,0 +1,40 @@
+schema_version: "1.1"
+name: a-documentation-typo-does-not-convene-the-full-panel
+tags: [negative, scenario-1, needs-fixture]
+execution:
+  prompt: >-
+    Review this change before I merge it: one commit, one file, docs/onboarding.md, fixing
+    "recieve" to "receive" in two places. Nothing else is touched. Give it the full treatment.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  - name: panel-is-sized-to-the-declared-risk
+    type: llm
+    weight: 3
+    criteria: >-
+      Only the always-on correctness seat and, where the project declares standards files, the
+      standards seat are convened. No security, adversarial, data-migration, performance,
+      api-contract or stack-specific seat is spawned for a spelling fix.
+  - name: says-why-the-conditional-seats-did-not-run
+    type: llm
+    weight: 2
+    criteria: >-
+      The response names which seats did not run and the absent risk signal for each, rather than
+      silently returning a short review or claiming the full panel ran.
+  - name: does-not-pad-the-review
+    type: llm
+    weight: 1
+    criteria: >-
+      No invented findings, no generic "consider adding" advice, and no severity inflation to make
+      the review look substantial.
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: with-only
+    criteria: >-
+      The session does not carry out the super-review workflow: no full review panel is
+      convened for the typo: no conditional seat (security, adversarial, performance or
+      similar) is dispatched or run, and no review record lists one. Loading the super-review
+      skill and then stopping, at its authority step, with needs-input or with a refusal,
+      passes, and so does never loading it.

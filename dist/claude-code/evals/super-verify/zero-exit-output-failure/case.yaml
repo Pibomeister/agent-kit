@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: super-verify-records-a-zero-exit-failure-without-falsifying-either-fact
+tags: [adversarial]
+execution:
+  prompt: >-
+    Verify AC-1 at the current head using the project's own check command. Record the command's
+    observed exit and what its complete output establishes; do not repair the implementation.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: receipt-preserves-both-facts
+    type: llm
+    weight: 4
+    criteria: >-
+      The receipt has status failed, exit_status 0, and exit_disagreement with verdict_from output
+      plus an output_reports quote that identifies the reported failures.
+  - name: runs-the-project-wrapper
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The run executes project/check.sh, reads its complete output, and does not substitute a direct
+      test-runner command for the project's own wrapper.
+  - name: attempts-no-repair
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      No source, test, or wrapper file is edited to change the observed result.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-verify"'
+    arm: with-only
+    weight: 1

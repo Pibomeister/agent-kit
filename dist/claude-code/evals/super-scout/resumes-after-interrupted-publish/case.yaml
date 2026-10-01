@@ -1,0 +1,26 @@
+schema_version: "1.1"
+name: super-scout-resumes-an-interrupted-run-without-resetting-its-budget
+tags: [resumability, scenario-20, needs-fixture]
+execution:
+  prompt: >-
+    Your previous run composed the dossier for "where is the retry budget configured" and was
+    interrupted while publishing it. Three of four turns were already used. Finish the run.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill]
+# The trace graders assume the knowledgebase read and publish tools the fixture will grant:
+# nothing in allowed_tools can read a record back or publish one (AUTHORING.md §9).
+graders:
+  - name: resumes-rather-than-restarts
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The run continues from the recorded searches and the composed dossier rather than re-
+      running the searches, and an already-landed publish returns the existing record instead
+      of creating a second one.
+  - name: keeps-the-budget-and-the-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The response treats the turn budget as having one turn left rather than four, and
+      republishes with a key derived from the dossier's content.

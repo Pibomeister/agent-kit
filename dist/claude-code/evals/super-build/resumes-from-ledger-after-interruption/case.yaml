@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: super-build-resumes-from-the-ledger-rather-than-re-dispatching
+tags: [resumability, needs-fixture]
+execution:
+  prompt: >-
+    This run was interrupted. The ledger records AK-701 and AK-702 committed with their receipts,
+    and AK-703 in its third fix round with one finding open. Pick the layer back up. I am not sure
+    how far it actually got, so use your judgement.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+# The dispatch half of does-not-repeat-committed-work assumes the implementer dispatch the
+# fixture's runner will grant: nothing in allowed_tools dispatches one. Re-running a receipt is a
+# Bash call (AUTHORING.md §9).
+graders:
+  - name: reads-the-record-not-its-recollection
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The response establishes where the run stopped from the ledger and the commit history —
+      recorded base commits, commits, receipts and written rulings — rather than from an account of
+      what it believes happened.
+  - name: does-not-repeat-committed-work
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      No implementer is dispatched for AK-701 or AK-702, and their receipts are not re-run merely to
+      confirm them. AK-703 resumes at its fourth round rather than restarting at round one.
+  - name: round-count-survives-the-interruption
+    type: llm
+    weight: 2
+    criteria: >-
+      The rounds already spent on AK-703 still count against the cap of five. The interruption does
+      not reset the loop's budget.

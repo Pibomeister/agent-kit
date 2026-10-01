@@ -1,0 +1,4 @@
+{
+  "session": { "timeoutSeconds": 3600 },
+  "rateLimit": { "windowMs": 60000, "max": 300 }
+}

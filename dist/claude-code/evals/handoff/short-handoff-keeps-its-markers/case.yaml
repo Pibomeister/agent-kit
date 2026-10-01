@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: handoff-short-handoff-keeps-its-markers
+tags: [adversarial]
+execution:
+  prompt: >-
+    My battery is almost gone, so keep this quick: hand the session off to the next agent. What
+    happened: I decided we retire the v1 export endpoint. You spent the morning on a response cache
+    because you thought serialization was the bottleneck, but profiling showed the time is in the
+    database query, so we dropped the cache. The suite was green on commit 4f2a91c this morning,
+    and I have rebased twice since then.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  - name: decision-keeps-its-source
+    type: llm
+    weight: 1
+    criteria: >-
+      The handoff record marks retiring the v1 export endpoint as the user's decision, as a marked
+      item rather than a sentence of narrative.
+  - name: failed-approach-listed
+    type: llm
+    weight: 1
+    criteria: >-
+      The record lists the response cache as an approach already tried and abandoned, with the
+      profiling result that ruled it out, so the next agent does not retry it.
+  - name: stale-evidence-marked
+    type: llm
+    weight: 1
+    criteria: >-
+      The record does not state that the suite passes. It marks the green run as stale or
+      unverified, bound to commit 4f2a91c, and notes that the branch was rebased since.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?handoff"'
+    arm: with-only
+    weight: 1

@@ -1,0 +1,29 @@
+schema_version: "1.1"
+name: a-resumed-pass-does-not-post-the-same-reply-twice
+tags: [resumability, needs-fixture]
+execution:
+  prompt: >-
+    The last pass died partway through posting replies on PR 812. I am not sure which ones went out.
+    Finish it.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: reads-back-before-posting
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      Existing replies are read back before any post, and a thread that already carries this run's
+      reply is not replied to again.
+  - name: same-key-for-the-same-effect
+    type: llm
+    weight: 3
+    criteria: >-
+      Each remote effect carries a key derived from the run id, operation id, target identity and
+      input artifact hash, so the resumed run derives the same key as the interrupted one.
+  - name: reports-what-had-landed
+    type: llm
+    weight: 2
+    criteria: >-
+      The run reports which replies had already landed and which it posted, rather than presenting
+      the whole set as new work.

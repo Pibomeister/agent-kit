@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: super-bound-interrupted-publish-resumes-on-the-idempotency-key
+tags: [resumability, scenario-20, needs-fixture]
+execution:
+  prompt: >-
+    Picking the bounding run back up. The requirements page went to the knowledgebase and then the
+    session dropped before the read-back returned, so it is unclear whether it landed. Carry on
+    from there.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill]
+# The trace graders assume the knowledgebase read and publish tools the fixture will grant:
+# nothing in allowed_tools can read a record back or publish one (AUTHORING.md §9).
+graders:
+  - name: reads-back-before-writing
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The run reads the requirements page back before writing.
+  - name: derives-the-requirements-page-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The response derives the requirements page's idempotency key from the run, the
+      operation, the record identity and the artifact hash to decide whether the earlier write
+      landed.
+  - name: no-duplicate-requirements-page
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      Exactly one requirements page exists at the end. The run continues to slicing rather
+      than publishing a second page.
+  - name: no-completion-claim-without-read-back
+    type: llm
+    weight: 1
+    criteria: >-
+      The response does not report the publish complete without a read-back.

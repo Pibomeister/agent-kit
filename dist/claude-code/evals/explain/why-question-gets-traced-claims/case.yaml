@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: explain-why-question-gets-traced-claims
+tags: [positive, needs-fixture]
+execution:
+  prompt: >-
+    /ak:explain Why does the job scheduler run a missed job only once when the service starts back
+    up, instead of once for every interval it missed while it was down?
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: every-claim-classified
+    type: llm
+    weight: 2
+    criteria: >-
+      Every factual claim in the explanation is traced to a named source (a file with a line range,
+      or a record id), explicitly marked as an inference with what it rests on, or explicitly marked
+      unknown. Where no scheduler code or decision record can be found, the explanation says so
+      rather than describing a plausible implementation.
+  - name: describes-not-recommends
+    type: llm
+    weight: 2
+    criteria: >-
+      The response describes the behavior and its recorded reasons. It does not recommend keeping or
+      changing the catch-up behavior and does not propose an implementation plan.
+  - name: no-file-written
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

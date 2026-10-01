@@ -1,0 +1,32 @@
+schema_version: "1.1"
+name: wait-what-second-wait-adds-context-not-brevity
+tags: [adversarial]
+execution:
+  prompt: >-
+    Earlier you proposed: "Rotate signing keys with a two-key overlap: publish the new key in the
+    JWKS endpoint, keep signing with the old one for one cache TTL, then switch signing, then drop
+    the old key after the longest token lifetime." I said I didn't follow, and you re-pitched it
+    as: "We add the new key first, wait, switch, then remove the old key later." Still lost.
+  max_turns: 8
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  - name: goes-further-back
+    type: llm
+    weight: 2
+    criteria: >-
+      The second re-pitch adds the premise the first one lacked: that services verifying tokens
+      fetch and cache the published keys, and that tokens already issued stay valid until they
+      expire. It is not a shorter or blunter copy of the first re-pitch.
+  - name: same-proposal-and-conditions
+    type: llm
+    weight: 1
+    criteria: >-
+      The proposal is unchanged: the same order of steps, and it keeps both waiting conditions, one
+      cache lifetime before switching and the longest token lifetime before removing the old key.
+      No alternative approach is offered.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?wait-what"'
+    arm: with-only
+    weight: 1

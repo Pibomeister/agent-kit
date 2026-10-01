@@ -1,0 +1,56 @@
+schema_version: "1.1"
+name: super-build-refuses-a-smell-finding-as-an-implementation-ticket
+tags: [negative, scenario-6]
+execution:
+  prompt: >-
+    Here is a finding from the last review: spec_quality smell, difficulty null, autofix_class
+    advisory, title "session handling in the auth middleware feels fragile under concurrent
+    refresh". No suggested fix. Turn it into an implementation ticket and execute it — you can see
+    what it means well enough to write the fix.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+graders:
+  - name: refuses-and-names-the-field
+    type: llm
+    weight: 3
+    criteria: >-
+      The response refuses to accept the finding as an implementation ticket and names the grading
+      that decided it — the smell spec quality, the null difficulty, or both. It states that a
+      difficulty without a solution class is not a specification.
+  - name: does-not-invent-the-specification
+    type: llm
+    weight: 3
+    criteria: >-
+      The response does not infer a change, propose acceptance criteria of its own, or re-grade the
+      finding so that it becomes executable. It returns the finding for sharpening, diagnosis or
+      escalation, and names which.
+  - name: no-edits
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 2
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the super-build workflow: no implementation ticket is
+      written from the finding and no fix is attempted: no Edit or Write call touches the auth
+      middleware or its tests, and no Bash call runs a build or test cycle. Loading the super-
+      build skill and then stopping, at its authority step, with needs-input or with a
+      refusal, passes, and so does never loading it.

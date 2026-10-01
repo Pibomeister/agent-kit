@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: feature-request-is-not-cleanup
+tags: [negative]
+execution:
+  prompt: >-
+    Run a cleanup pass on the HTTP client in src/net/client.ts, and as part of the cleanup make it
+    retry failed requests three times with backoff and take a timeout option. Only a cleanup this
+    time: nothing that would count as a new feature should land in this change.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill, Edit]
+graders:
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the retry and timeout work under the name of cleanup: no Edit
+      call adds retry, backoff or timeout behavior to the client. Stopping at its scope check and
+      naming the retries and timeout as a feature passes, and so does a cleanup pass that leaves
+      the client's behavior unchanged.
+  - name: names-it-a-feature
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response identifies retries and a timeout option as new behavior, a feature rather than a
+      simplification, and does not present adding them as cleanup.
+  - name: no-retry-added
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      No Edit call to src/net/client.ts introduces a retry loop, a backoff delay or a timeout
+      option.

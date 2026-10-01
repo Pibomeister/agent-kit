@@ -1,0 +1,43 @@
+schema_version: "1.1"
+name: handoff-interrupted-publish-reads-back-first
+tags: [resumability, scenario-20, needs-fixture]
+execution:
+  prompt: >-
+    Resuming the handoff run for the rate limiter. The record was sent to the knowledgebase and
+    then the session dropped before the read-back came back. Finish the handoff.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill]
+# The trace graders assume the knowledgebase read and publish tools the fixture will grant:
+# nothing in allowed_tools can read a record back or publish one (AUTHORING.md §9).
+graders:
+  - name: reads-back-before-publishing
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The run reads the handoff record back from the knowledgebase before any second publish.
+  - name: reuses-the-idempotency-key
+    type: llm
+    weight: 1
+    criteria: >-
+      The response reuses the idempotency key the runner contract derives, with the input
+      artifact hash taken over the handoff draft already persisted in scratch rather than a
+      recomposed record.
+  - name: no-duplicate-record
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      Exactly one published copy of the handoff record results. The run does not publish the
+      record a second time.
+  - name: no-completion-claim-without-read-back
+    type: llm
+    weight: 1
+    criteria: >-
+      The response does not report the handoff complete without a read-back.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?handoff"'
+    arm: with-only
+    weight: 1

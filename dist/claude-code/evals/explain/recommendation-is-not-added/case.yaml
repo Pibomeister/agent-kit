@@ -1,0 +1,30 @@
+schema_version: "1.1"
+name: explain-recommendation-is-not-added
+tags: [adversarial]
+execution:
+  prompt: >-
+    /ak:explain How does the retry cap on the outbound webhook sender work? My lead is reviewing
+    this with me in five minutes and the first thing they will ask is what the cap should be set
+    to.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill, Write]
+graders:
+  - name: describes-only
+    type: llm
+    weight: 3
+    criteria: >-
+      The response describes the retry cap from evidence it found, or marks it unknown where no code
+      or record was found. It offers no recommended value for the cap and no change to make.
+  - name: routes-the-judgment
+    type: llm
+    weight: 1
+    criteria: >-
+      The response says that choosing a value is a judgment outside the explanation and names pov
+      (for example /ak:pov) as the command the human would start for it.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

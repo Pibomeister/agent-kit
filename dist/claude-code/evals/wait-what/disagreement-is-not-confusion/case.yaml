@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: wait-what-disagreement-is-not-confusion
+tags: [negative]
+execution:
+  prompt: >-
+    I follow your proposal to partition the events table by tenant: one partition per tenant,
+    pruned on tenant_id. I just think it is the wrong call. Most of our queries cut across tenants
+    by date, so I would partition by month.
+  max_turns: 8
+  allowed_tools: [Read, Glob, Grep, Skill, Write]
+graders:
+  - name: no-re-pitch-of-understood-proposal
+    type: llm
+    weight: 2
+    focus: last_message
+    criteria: >-
+      The response does not re-explain the tenant-partitioning proposal as if the human had not
+      understood it. It engages with the disagreement or leaves the decision with the human; it
+      does not present a plain-language restatement of the same proposal as its answer.
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: with-only
+    criteria: >-
+      The session does not carry out the wait-what workflow: no glossary or concept-page lookup is
+      made to re-pitch the partitioning proposal, and no file is written. Loading the wait-what
+      skill and then stopping because the human is not confused passes, and so does never loading
+      it.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

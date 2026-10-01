@@ -1,0 +1,54 @@
+schema_version: "1.1"
+name: diagnose-declines-a-review-finding
+tags: [negative]
+execution:
+  prompt: >-
+    Something is wrong with the notification service. The handler names are inconsistent, there are
+    three near-identical retry blocks, and the whole module reads like it was written twice. Debug
+    it and clean it up.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+graders:
+  - name: no-diagnosis-run
+    type: llm
+    weight: 3
+    criteria: >-
+      No feedback loop is built, no hypotheses are ranked and no causal chain is produced. The
+      response does not treat the complaint as a defect.
+  - name: names-the-boundary
+    type: llm
+    weight: 3
+    criteria: >-
+      The response states that a defect is a behaviour that can be made to go red and that naming,
+      duplication and structure are review findings, and it routes the request to the review lane.
+      It does not offer to diagnose the module anyway.
+  - name: no-edits
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 2
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the diagnose workflow: no reproduction loop is built, no
+      hypothesis is ranked, and no Edit, Write or Bash call renames handlers, merges the retry
+      blocks or otherwise rewrites the notification module. Loading the diagnose skill and
+      then stopping, at its authority step, with needs-input or with a refusal, passes, and so
+      does never loading it.

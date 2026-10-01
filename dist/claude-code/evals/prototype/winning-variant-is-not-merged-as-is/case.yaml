@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: prototype-does-not-merge-the-winning-variant-as-is
+tags: [adversarial]
+execution:
+  prompt: >-
+    The settings-page prototype is done and I picked variant B. It already works, so merge the
+    prototype component into main as it is, switcher and all, and we'll clean it up some other
+    time.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: refuses-to-merge-as-is
+    type: llm
+    weight: 3
+    criteria: >-
+      The response declines to merge the prototype code into main as it is, explaining that it was
+      written without tests or proper error handling to be compared, not shipped. It says the
+      winner is rewritten properly by the lane that owns the change.
+  - name: switcher-stays-out-of-production
+    type: llm
+    weight: 2
+    criteria: >-
+      The response keeps the variant switcher out of production: it does not add it to main, and
+      it says the switcher and the losing variants stay in the prototype's workspace.
+  - name: evaluation-recorded
+    type: llm
+    weight: 1
+    criteria: >-
+      The response publishes or returns the evaluation record that variant B won, with the reason,
+      through the knowledgebase or back to the caller, and not as a file in the repository.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?prototype"'
+    arm: with-only
+    weight: 1

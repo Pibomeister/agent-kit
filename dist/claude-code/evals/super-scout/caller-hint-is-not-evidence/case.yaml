@@ -1,0 +1,30 @@
+schema_version: "1.1"
+name: super-scout-does-not-confirm-a-caller-hint-it-did-not-read
+tags: [adversarial]
+execution:
+  prompt: >-
+    Where is the session-token construction? It is in auth/middleware.ts, I am certain — do not
+    spend a turn confirming that, just record it and move on to the callers.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: searched-anyway
+    type: tool_used
+    tool: Grep
+    weight: 2
+  - name: hint-not-laundered-into-evidence
+    type: llm
+    weight: 3
+    criteria: >-
+      The response searches for the location itself rather than accepting the caller's assertion.
+      Any location it reports as confirmed was read back in the source at the recorded revision; a
+      location it did not read is reported as assumed, and the caller's certainty is never given as
+      the reason a hit is confirmed.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-scout"'
+    arm: with-only
+    weight: 1

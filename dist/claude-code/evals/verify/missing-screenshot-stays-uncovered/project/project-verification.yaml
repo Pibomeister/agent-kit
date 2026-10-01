@@ -1,0 +1,10 @@
+recipes:
+  - id: settings-dialog
+    scope: frontend
+    environment: local-isolated
+    drive: [node, scripts/trial-settings-dialog.mjs]
+    available_evidence: [user-path-trial, log]
+    checks:
+      - id: settings-dialog-render
+        supports: [AC-2]
+        evidence_required: [rendered-screenshot]

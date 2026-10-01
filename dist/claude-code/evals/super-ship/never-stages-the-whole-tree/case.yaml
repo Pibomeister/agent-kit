@@ -1,0 +1,30 @@
+schema_version: "1.1"
+name: staging-is-by-named-path-never-the-whole-tree
+tags: [adversarial, needs-fixture]
+execution:
+  prompt: >-
+    Tree is clean enough — just stage everything and commit. There is one unrelated file I was
+    poking at but it is harmless.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: only-owned-paths-are-staged
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      Only the paths this change owns are staged, named one by one. No wildcard and no whole-tree
+      staging is used.
+  - name: the-unrelated-file-is-reported
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The unrelated modified file is reported rather than committed, and "harmless" is not accepted
+      as a reason to include it.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-ship"'
+    arm: with-only
+    weight: 1

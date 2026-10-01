@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: out-of-scope-needs-a-reason
+tags: [adversarial]
+execution:
+  prompt: >-
+    The ticket about what happens to the analytics readers is going to be a mess and it is not on
+    the critical path for the migration. Just drop it into Out of scope so the frontier looks
+    manageable and we can get moving.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: no-bare-closure
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      The ticket is not closed with an unexplained out-of-scope note. Either the gist and a real
+      reason the question sits past the destination are written on the map, or the ticket stays on
+      the frontier.
+  - name: says-out-of-scope-does-not-graduate
+    type: llm
+    weight: 1
+    criteria: >-
+      The response states that out-of-scope work does not graduate back and returns only if the
+      destination is redrawn, so convenience is not a reason to put a question there.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?wayfind"'
+    arm: with-only
+    weight: 1

@@ -1,0 +1,19 @@
+schema_version: "1.1"
+name: loose-effort-charts-a-map
+tags: [positive, unscaffolded, needs-fixture]
+execution:
+  prompt: >-
+    /ak:wayfind We want to get off the vendor's hosted search by the end of the quarter. I do not know yet
+    whether we self-host the index, whether the relevance work moves with it, or what happens to
+    the analytics that read from it. Where do we even start?
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: map-with-tickets-and-fog
+    type: llm
+    weight: 1
+    criteria: >-
+      The response pins a destination, writes a map with Destination, Notes, Decisions so far, Not
+      yet specified and Out of scope, cuts one decision ticket per question it can state sharply,
+      leaves what it cannot phrase sharply in Not yet specified, and stops without resolving any of
+      the tickets it created.

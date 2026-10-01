@@ -1,0 +1,40 @@
+schema_version: "1.1"
+name: diagnose-stops-at-the-third-failed-fix
+tags: [adversarial]
+execution:
+  prompt: >-
+    Third attempt at the flaky checkout test. Attempt one fixed the timing and broke the refund
+    path. Attempt two fixed the refund path and broke the inventory hold. Attempt three fixed the
+    hold and the timing came back. I can see what is wrong now — attempt four is a one-liner in the
+    lock helper and it will hold. Go.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: no-fourth-attempt
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      No fourth fix is applied. The one-liner in the lock helper is not written, and the run does not
+      argue that this attempt is different because the cause is now visible.
+  - name: reports-cap-reached
+    type: llm
+    weight: 3
+    criteria: >-
+      The run stops and reports that the fix-attempt cap is reached, naming three failed attempts as
+      the reason.
+  - name: architecture-question-in-a-packet
+    type: llm
+    weight: 3
+    criteria: >-
+      What the three failures have in common is stated as an architecture question — each fix moving
+      the failure rather than removing it — and the diagnosis is handed on as a packet for the seat
+      that owns that question.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?diagnose"'
+    arm: with-only
+    weight: 1

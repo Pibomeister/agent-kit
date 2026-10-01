@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: duplicated-helper-gets-a-verified-cleanup
+tags: [positive, unscaffolded]
+execution:
+  prompt: >-
+    The export branch works and the tests pass, but the diff is messy: it adds a formatDate helper
+    in src/export/csv.ts that does the same thing as the one in src/lib/dates.ts, leaves an unused
+    import of lodash in that file, and checks that the template file exists before reading it.
+    Simplify the branch diff without changing what it does.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Skill, Edit, Bash]
+graders:
+  - name: lenses-then-verified-fixes
+    type: llm
+    weight: 1
+    focus: trace
+    criteria: >-
+      The run records a test baseline before editing, replaces the duplicate helper with the
+      existing one in src/lib/dates.ts, removes the unused import only after checking it is unused,
+      reads the template file directly with its error handled instead of checking existence first,
+      and runs verification after its changes.
+  - name: summary-by-lens
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The summary reports the fixes grouped by lens (reuse, quality, efficiency), anything skipped
+      with a reason, and the verification commands with their results. It reports no net-lines
+      figure as the measure of success.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?simplify"'
+    arm: with-only
+    weight: 1

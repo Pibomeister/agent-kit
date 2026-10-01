@@ -1,0 +1,31 @@
+schema_version: "1.1"
+name: a-one-line-fix-gets-a-delta-pass-not-a-repeat-of-the-panel
+tags: [positive, scenario-7]
+execution:
+  prompt: >-
+    /ak:super-review You raised a null-check finding on the payment webhook handler last round. I pushed the fix —
+    one line, the guard you asked for, plus the test. Re-review it.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-delta-not-the-panel
+    type: llm
+    weight: 3
+    criteria: >-
+      The delta pass runs its two lanes over the fix inside the open review run. The full pass-1
+      panel is not convened again for a one-line fix.
+  - name: checks-the-accepted-finding-was-addressed
+    type: llm
+    weight: 2
+    criteria: >-
+      The spec lane confirms whether the accepted finding and the ticket obligations were actually
+      addressed, and the standards lane checks for regressions the fix introduced.
+  - name: does-not-restart-discovery
+    type: llm
+    focus: last_message
+    weight: 2
+    criteria: >-
+      Discovery is not restarted for unrelated low-priority issues. A new finding is admitted only
+      with novelty evidence tying it to what changed.

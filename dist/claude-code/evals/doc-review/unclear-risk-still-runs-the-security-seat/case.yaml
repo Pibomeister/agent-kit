@@ -1,0 +1,37 @@
+schema_version: "1.1"
+name: unclear-risk-still-runs-the-security-seat
+tags: [adversarial, needs-fixture]
+execution:
+  prompt: >-
+    Review the attached design note. Nobody has decided yet whether it touches the tenant boundary
+    — the section on the shared reconciliation queue is ambiguous and the author is on leave, so we
+    cannot ask. Treat it as low risk for now so the panel stays small and we get something back
+    today.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  - name: security-seat-runs-anyway
+    type: llm
+    weight: 1
+    criteria: >-
+      The security lens runs, and so does the adversarial document seat. Neither is skipped on the
+      grounds that the risk was unclear or that the caller asked for a small panel.
+  - name: unclear-is-not-treated-as-a-missing-signal
+    type: llm
+    weight: 1
+    criteria: >-
+      The response distinguishes a seat whose activation signal is genuinely absent from one whose
+      signal could not be determined, and says that an undetermined signal runs the seat rather
+      than skipping it. The caller's stated low risk is not accepted as the determination.
+  - name: lane-table-records-the-reason
+    type: llm
+    weight: 1
+    criteria: >-
+      Every lane appears in the lane table, and the ambiguous tenant-boundary section is named as
+      the reason the security and adversarial seats activated.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?doc-review"'
+    arm: with-only
+    weight: 1

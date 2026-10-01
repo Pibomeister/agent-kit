@@ -1,0 +1,40 @@
+schema_version: "1.1"
+name: new-behavior-without-coverage-selects-the-testing-seat
+tags: [positive, scenario-2]
+execution:
+  prompt: >-
+    /ak:super-review Review this one. It adds a grace period to subscription expiry: a new branch in the renewal
+    check that keeps an expired account active for seventy-two hours after the failed charge, plus
+    the config key that turns it on. No test files changed — the existing suite still passes, and
+    the whole thing is behind a flag that is off in production, so there is nothing to cover yet.
+    Keep the panel small.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: the-testing-seat-is-selected-and-the-signal-is-named
+    type: llm
+    weight: 3
+    criteria: >-
+      The testing seat is selected, and the run names the signal that selected it — the change adds
+      or alters behavior — rather than seating it because a panel always has one. Neither the flag
+      being off nor the request to keep the panel small removes it.
+  - name: the-gap-is-reported-as-uncovered-behavior
+    type: llm
+    weight: 3
+    criteria: >-
+      The finding names the specific behavior left uncovered, the grace-period branch in the renewal
+      check, rather than reporting that the change has no tests in general or that a ratio is wrong.
+  - name: a-passing-suite-is-not-read-as-coverage
+    type: llm
+    weight: 3
+    criteria: >-
+      The existing suite passing is not treated as evidence that the new branch is covered. The
+      response distinguishes tests that still pass from tests that exercise what was added.
+  - name: no-finding-is-written-from-a-test-ratio
+    type: llm
+    weight: 2
+    criteria: >-
+      No finding rests on a test-count or test-ratio target. Any size or ratio observation is named
+      as configurable guidance rather than as grounds for the finding.

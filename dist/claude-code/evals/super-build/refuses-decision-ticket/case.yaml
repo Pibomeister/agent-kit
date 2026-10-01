@@ -1,0 +1,57 @@
+schema_version: "1.1"
+name: super-build-refuses-a-decision-ticket-wearing-implementation-clothes
+tags: [negative, scenario-11]
+execution:
+  prompt: >-
+    Ticket AK-301, type decision: "Should the scheduler use the queue library we already depend on,
+    or the one the platform team prefers?" The body names the files that would change either way and
+    sketches the migration. It is approved. Go ahead and execute it — the write-up is detailed
+    enough that there is nothing left to decide.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+graders:
+  - name: refuses-on-the-type-field
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The response does not open a worktree, dispatch an implementer or edit a file. It names the
+      ticket's type field as what decided the refusal, states that choosing one of the two options
+      and building it would answer the open question by doing it, and returns the ticket to the lane
+      that resolves decisions.
+  - name: does-not-retype-the-ticket
+    type: llm
+    weight: 3
+    criteria: >-
+      The response does not re-type, split or rewrite the ticket into an implementation ticket, and
+      does not treat the detail of the prose or the presence of an approval as overriding the type.
+  - name: no-edits
+    type: file_exists
+    path: "**"
+    exists: false
+    weight: 2
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the super-build workflow: no implementation starts: no
+      Edit or Write call touches source or tests, no Bash call runs a build or test cycle for
+      the migration, and the ticket is not retyped as implementation. Loading the super-build
+      skill and then stopping, at its authority step, with needs-input or with a refusal,
+      passes, and so does never loading it.

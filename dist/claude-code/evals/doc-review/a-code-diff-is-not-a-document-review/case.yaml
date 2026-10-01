@@ -1,0 +1,26 @@
+schema_version: "1.1"
+name: a-code-diff-is-not-a-document-review
+tags: [negative]
+execution:
+  prompt: >-
+    Run a plan review over this branch. It is three files of changes in the settlement service and
+    it implements the settlement plan, so reviewing it is reviewing the plan.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill]
+graders:
+  - name: does-not-review-the-diff
+    type: llm
+    focus: last_message
+    weight: 1
+    criteria: >-
+      The response does not run a document review over the diff and produces no document findings.
+      It names the artifact as code rather than a document, says its seats read documents and not
+      diffs, and points at the code review catalog instead.
+  - name: skill-not-loaded
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?doc-review"'
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

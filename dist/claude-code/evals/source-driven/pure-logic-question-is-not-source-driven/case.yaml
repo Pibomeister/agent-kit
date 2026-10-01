@@ -1,0 +1,64 @@
+schema_version: "1.1"
+name: source-driven-pure-logic-question-is-not-source-driven
+tags: [negative]
+execution:
+  prompt: |
+    Does this have an off-by-one? Just tell me, don't change anything.
+
+    function search(xs, target) {
+      let lo = 0, hi = xs.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (xs[mid] < target) lo = mid + 1; else hi = mid;
+      }
+      return lo < xs.length && xs[lo] === target ? lo : -1;
+    }
+  max_turns: 6
+  allowed_tools: [Read, Glob, Grep, Skill, WebFetch, WebSearch, Write, Edit]
+graders:
+  - name: answers-the-logic-question
+    type: llm
+    weight: 1
+    focus: last_message
+    criteria: >-
+      The response answers whether the function has an off-by-one error, reasoning about the loop
+      bounds directly. It does not frame the answer around a framework or library version.
+  - name: no-external-fetch
+    type: tool_used
+    tool: WebFetch
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the source-driven workflow: no dependency manifest is read
+      for a version, no documentation is fetched and no citation or UNVERIFIED list is produced.
+      Loading the source-driven skill and then stopping, at its authority step, with needs-input
+      or with a refusal, passes, and so does never loading it.
+  - name: skill-not-loaded
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?source-driven"'
+    min: 0
+    max: 0
+    arm: with-only
+    weight: 1

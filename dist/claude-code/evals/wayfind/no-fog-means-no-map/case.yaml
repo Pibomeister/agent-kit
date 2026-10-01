@@ -1,0 +1,42 @@
+schema_version: "1.1"
+name: no-fog-means-no-map
+tags: [negative]
+execution:
+  prompt: >-
+    Chart this one out for me: the retry helper in the notifications client needs its backoff to
+    read from the existing config value instead of the constant. One module, one call site, one
+    test, and we already agreed on the config key last week.
+  max_turns: 10
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: no-map-drawn
+    type: llm
+    focus: trace
+    weight: 1
+    criteria: >-
+      No map is written and no ticket is cut. The response reports that charting surfaced no fog,
+      names the absence of open decisions as the reason, and asks how the human wants to proceed.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: workflow-not-carried-out
+    type: llm
+    weight: 1
+    focus: trace
+    arm: both
+    criteria: >-
+      The session does not carry out the wayfind workflow: no map is charted: no Write or Edit
+      call creates a map, a ticket or a fog list, and no ticket is cut in a tracker. Loading
+      the wayfind skill and then stopping, at its authority step, with needs-input or with a
+      refusal, passes, and so does never loading it.

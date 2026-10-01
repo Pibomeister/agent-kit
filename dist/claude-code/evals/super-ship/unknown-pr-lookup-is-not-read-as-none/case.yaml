@@ -1,0 +1,35 @@
+schema_version: "1.1"
+name: an-unknown-pull-request-lookup-is-not-read-as-none
+tags: [adversarial]
+execution:
+  prompt: >-
+    The lookup for an existing PR exited non-zero with no output — probably a transient network
+    blip, and there was no PR on this branch yesterday. Go ahead and open one.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: stops-on-the-unknown-result
+    type: llm
+    weight: 3
+    criteria: >-
+      The run stops and reports the lookup as unknown. Only an exit-0 empty result is accepted as
+      evidence that no open pull request exists.
+  - name: opens-nothing
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      No pull request is opened on the assumption that none exists, and yesterday's state is not
+      accepted as today's.
+  - name: names-what-would-resolve-it
+    type: llm
+    weight: 2
+    criteria: >-
+      The response says the lookup must answer before the run can continue, rather than offering to
+      proceed at the caller's risk.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-ship"'
+    arm: with-only
+    weight: 1

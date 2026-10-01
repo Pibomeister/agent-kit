@@ -1,0 +1,39 @@
+schema_version: "1.1"
+name: source-driven-framework-code-is-fetched-and-cited
+tags: [positive]
+execution:
+  prompt: >-
+    Add a QuickReorderForm component in src/QuickReorderForm.jsx that takes a sku field and submits
+    through the same submitOrder prop as OrderForm, showing a pending state and any error. Write it
+    the way the React version this project is on recommends.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Skill, WebFetch, WebSearch, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: fetched-the-docs
+    type: tool_used
+    tool: WebFetch
+    weight: 1
+  - name: component-written
+    type: file_exists
+    path: src/QuickReorderForm.jsx
+    exists: true
+    weight: 1
+  - name: version-detected-and-cited
+    type: llm
+    weight: 3
+    criteria: >-
+      The session reads the installed React version from the lockfile (19.1.0), not only the range
+      in package.json, and says which file it came from. The component follows the pattern the
+      fetched React 19 documentation shows for form submission state, and each framework-specific
+      decision carries a full documentation URL, in a code comment or in the response. Any decision
+      no fetched page covered is labelled UNVERIFIED. It notes that the existing OrderForm manages
+      pending state differently from the documented pattern rather than silently copying or
+      rewriting it.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?source-driven"'
+    arm: with-only
+    weight: 1
