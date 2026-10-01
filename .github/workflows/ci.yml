@@ -36,3 +36,10 @@ jobs:
       - run: bun test
       - run: bun run validate
       - run: bun run build
+      # The publish job refuses the same thing after merge; this refuses it while the PR can still change.
+      - name: Refuse a bundle change without a version bump
+        run: |
+          set -eu
+          published="$(mktemp -d)"
+          if git fetch origin published; then git archive FETCH_HEAD dist | tar -x -C "$published"; fi
+          tools/publish/version-gate.sh "$published/dist" dist
