@@ -36,7 +36,9 @@ prerequisites:
   - kind: run-state
     ref: >-
       A run opened with a JSON ticket, for a gate record that carries receipts. This skill never
-      opens one. In order: a markdown or absent ticket gets receipts and no gate record; a JSON
+      opens one. It is opened when the branch pointer under the git common directory's
+      agent-kit/evidence/branches/ names a runs/<run_id>/run.json; no pointer means never opened.
+      In order: a markdown or absent ticket gets receipts and no gate record; a JSON
       ticket whose run was never opened gets the marker-only record, which is history, not proof.
     optional: true
   - kind: capability
@@ -87,7 +89,8 @@ outputs:
     summary: >-
       At least one schema-valid receipt per criterion, including explicit non-pass receipts for
       declared evidence kinds that cannot be obtained. Each lists its output log under artifacts
-      with the output digest and, for an opened run, carries run_id, check and the ticket ref.
+      with the output digest and, for an opened run, carries run_id, check and the ticket ref
+      read from that run record.
       Receipts, logs, matrix and an unpublished recipe are written to runner scratch outside the
       checkout, each log beside its receipt, so they do not move the verified snapshot.
   - id: acceptance-evidence-matrix

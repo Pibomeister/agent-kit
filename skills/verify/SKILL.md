@@ -74,10 +74,11 @@ can start it under a grant. Started any other way, it stops at step 1 and names 
 
 6. Emit at least one `schemas/verification.schema.json` receipt per criterion: the command or probe,
    raw outcome, snapshot, environment, supporting criterion, and the output log under `artifacts[]`
-   with the receipt's `output_digest`. For an opened run add its `run_id`, the ticket verification
-   id as `check`, and the ticket ref `{id, hash}` from the run record. Put the recipe and
-   seat-attestation content hashes in `inputs`. A missing declared kind produces `not-run` or
-   `inconclusive` with the kind and reason; it never produces `passed`.
+   with the receipt's `output_digest`. A run is opened when `<git-common-dir>/agent-kit/evidence/`
+   holds the branch's pointer in `branches/` naming `runs/<run_id>/run.json`; otherwise it never was.
+   Opened, add its `run_id`, the ticket verification id as `check` and that record's ticket ref
+   `{id, hash}`. Put the recipe and seat-attestation content hashes in `inputs`. A missing declared
+   kind produces `not-run` or `inconclusive` with the kind and reason; it never produces `passed`.
 7. Assemble the criterion-to-receipt matrix with the host capability level beside each receipt. Read
    output even when the process exits zero; a refuting result stays refuting. An implementer's
    narrative is untrusted input, never a receipt (ruling `closure-requires-independent-verification`).
@@ -86,10 +87,9 @@ can start it under a grant. Started any other way, it stops at step 1 and names 
    content-addressed, never a host-specific project path (ruling `central-kb-owns-project-artifacts`).
 9. Only when every criterion passed with every declared kind, record the gate from the project
    checkout; this command never opens a run. In order: a markdown or absent ticket returns receipts
-   and says no gate. A JSON ticket whose run was never opened has no task record, so retain its
-   compatible marker-only call, `node <skill-dir>/../../bin/ak-gate.mjs record --gate verify`:
-   history, not proof. On the branch's opened run add `--receipt <file>` per receipt file; if the
-   gate notes a receipt as skipped, report that no gate was recorded.
+   and says no gate. A JSON ticket with no such run record keeps the compatible marker-only call,
+   `node <skill-dir>/../../bin/ak-gate.mjs record --gate verify`: history, not proof. An opened run
+   adds `--receipt <file>` per receipt; if the gate notes one as skipped, report no gate recorded.
 
 ## Hard gates
 
