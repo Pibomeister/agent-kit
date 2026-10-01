@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { DIRECTORY_SECTIONS, entryDir } from "../catalog/layout.ts";
@@ -250,19 +251,33 @@ interface LocalSource {
   lines: number;
 }
 
+/** An anchored `local_sources:` entry as `upstream.lock.yaml` writes it. */
+interface LocalSourceEntry {
+  id: string;
+  working_copy: string;
+  sha256: string;
+  lines: number;
+}
+
+const isLocalSourceEntry = new Ajv2020({ strict: false }).compile<LocalSourceEntry>({
+  type: "object",
+  required: ["id", "working_copy", "sha256", "lines"],
+  properties: {
+    id: { type: "string" },
+    working_copy: { type: "string" },
+    sha256: { type: "string" },
+    lines: { type: "integer", minimum: 0 },
+  },
+});
+
 function loadLocalSourceRecords(root: string): Map<string, LocalSource> {
   const sources = new Map<string, LocalSource>();
   const doc = readYaml(root, LOCK);
   if (doc === null || "error" in doc) return sources;
 
   for (const entry of listOf(doc.value, ["local_sources"])) {
-    const id = entry["id"];
-    const workingCopy = entry["working_copy"];
-    const sha256 = entry["sha256"];
-    const lines = entry["lines"];
-    if (typeof id !== "string" || typeof workingCopy !== "string" || typeof sha256 !== "string") continue;
-    if (typeof lines !== "number" || !Number.isSafeInteger(lines) || lines < 0) continue;
-    sources.set(id, { workingCopy, sha256, lines });
+    if (!isLocalSourceEntry(entry) || !Number.isSafeInteger(entry.lines)) continue;
+    sources.set(entry.id, { workingCopy: entry.working_copy, sha256: entry.sha256, lines: entry.lines });
   }
   return sources;
 }
