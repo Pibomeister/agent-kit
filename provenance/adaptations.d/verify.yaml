@@ -1,0 +1,36 @@
+adaptations:
+  - path: README.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: >-
+      The catalog census and standalone roster now include the public verify command adapted from
+      the report's running-application behavior.
+  - path: provenance/conversation-map.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: >-
+      The behavior map grounds the retained running-application verification capability and records
+      the boundary from the existing evidence phase.
+  - path: skills/verify/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-256
+    rationale: >-
+      The documented launch-and-drive behavior, host-neutral recipe, surface evidence vocabulary,
+      independent-context packet and truly-done predicate are adapted into the public workflow.
+  - path: skills/verify/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-256
+    rationale: >-
+      The execution contract mirrors the report-derived workflow, evidence gaps, recipe output and
+      structural seat-attestation behavior without introducing schema changes.
+  - path: evals/verify/backend-runtime-produces-receipts-and-recipe/case.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-256
+    rationale: >-
+      The backend API-response and smoke-test evidence requirements become an executable case with
+      graders for status, body digest, recipe publication and gate recording.
+  - path: evals/verify/missing-screenshot-stays-uncovered/case.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: >-
+      The declared-but-unavailable screenshot condition becomes a case that refuses substitute
+      evidence and keeps the frontend criterion uncovered.
+  - path: evals/verify/runtime-refutes-implementer-narrative/case.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: >-
+      The evidence-not-assertion behavior becomes an adversarial case where the runtime observation,
+      rather than the implementer's account, determines the receipt.

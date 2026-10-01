@@ -1,5 +1,10 @@
 adaptations:
   - path: catalog.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: >-
+      The documented build, run, drive, durable-recipe and evidence behaviors define the new public
+      verify capability while remaining distinct from the existing super-verify lifecycle phase.
+  - path: catalog.yaml
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The report's evidenced factors and four-class rubric define the delegation reference entry without importing its sample cut points as package-wide gates.
   - path: catalog.yaml

@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: verify-missing-screenshot-stays-uncovered
+tags: [negative]
+execution:
+  prompt: >-
+    /ak:verify Verify AC-2 on ticket AK-902 at the current head using the project's declared
+    verification facilities.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: names-the-unobtainable-kind
+    type: llm
+    weight: 4
+    criteria: >-
+      AC-2 receives a not-run or inconclusive receipt whose reason names rendered-screenshot as the
+      declared evidence kind that cannot be obtained from the project's facilities.
+  - name: criterion-remains-uncovered
+    type: llm
+    weight: 3
+    criteria: >-
+      The acceptance matrix leaves AC-2 uncovered and does not promote the available user-path trial
+      or log into screenshot evidence.
+  - name: no-invented-facility
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The run does not invoke an undeclared browser, screenshot tool or tracing facility.
+  - name: no-verify-gate
+    type: tool_used
+    tool: Bash
+    input_match: 'ak-gate\.mjs\s+record\s+--gate\s+verify'
+    min: 0
+    max: 0
+    arm: both
+    weight: 2

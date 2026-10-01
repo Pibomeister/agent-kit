@@ -1,0 +1,10 @@
+recipes:
+  - id: client-error-retry
+    scope: backend
+    environment: local-isolated
+    drive: [node, scripts/check-retry.mjs]
+    available_evidence: [smoke-test, log]
+    checks:
+      - id: client-error-is-not-retried
+        supports: [AC-3]
+        evidence_required: [smoke-test]

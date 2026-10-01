@@ -20,6 +20,18 @@ adaptations:
   - path: catalog.yaml
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
     rationale: The report's diff-scoped complexity, duplication, dead-code and boundary checks define the structural-checks reference entry.
+  - path: catalog.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: The documented build, run, drive, durable-recipe and evidence behaviors define the new public verify capability while remaining distinct from the existing super-verify lifecycle phase.
+  - path: evals/verify/backend-runtime-produces-receipts-and-recipe/case.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-256
+    rationale: The backend API-response and smoke-test evidence requirements become an executable case with graders for status, body digest, recipe publication and gate recording.
+  - path: evals/verify/missing-screenshot-stays-uncovered/case.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: The declared-but-unavailable screenshot condition becomes a case that refuses substitute evidence and keeps the frontend criterion uncovered.
+  - path: evals/verify/runtime-refutes-implementer-narrative/case.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: The evidence-not-assertion behavior becomes an adversarial case where the runtime observation, rather than the implementer's account, determines the receipt.
   - path: packs/pack-api/PACK.md
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/api-and-interface-design/SKILL.md
     rationale: Hyrum's Law, the One-Version Rule, contract-first and boundary validation became checkable constraints, and the tests-are-not-enough caveat became the limit on the contract-tested constraint; the idempotency section moved to references/idempotency.md; the two-column rationalization table gained a third column.
@@ -188,6 +200,12 @@ adaptations:
   - path: protocols/worktree-ownership/PROTOCOL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/using-git-worktrees/SKILL.md
     rationale: Detect existing isolation by comparing resolved git dir against resolved common git dir with a superproject guard; prefer the native worktree capability; verify the gitignore entry; the rationalization rows behind this protocol's Hard gates table. Deliberate divergence on the gitignore probe. The donor runs `git check-ignore -q` on the bare directory name, which is correct for its own ordering because it verifies a directory that already exists. This protocol probes before creating anything, so it uses the trailing-slash form. The two forms agree in every case but one, a directory-only rule probed before the directory exists, where git tests the bare name as a file and returns a false negative. The donor is authority for what the donor does, not for what is correct under a different ordering.
+  - path: provenance/conversation-map.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: The behavior map grounds the retained running-application verification capability and records the boundary from the existing evidence phase.
+  - path: README.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
+    rationale: The catalog census and standalone roster now include the public verify command adapted from the report's running-application behavior.
   - path: references/codebase-design/DEEPENING.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/codebase-design/DEEPENING.md
     rationale: The deepening procedure and the dependency categories, kept as a separate file because one of this pack's two loaders needs the procedure and the other needs only the vocabulary.
@@ -1037,6 +1055,12 @@ adaptations:
   - path: skills/ultraqa/skill.yaml
     source: omx@cb955b0d5becbef76d2c1f0096b6e1f238e1e7f7:skills/ultraqa/SKILL.md
     rationale: The declaration's limits are the donor's two caps made machine-checkable, and its outputs are the donor's report shape expressed as artifacts, with the evidence-invalidation notice added for the rule no donor states.
+  - path: skills/verify/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-256
+    rationale: The documented launch-and-drive behavior, host-neutral recipe, surface evidence vocabulary, independent-context packet and truly-done predicate are adapted into the public workflow.
+  - path: skills/verify/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-256
+    rationale: The execution contract mirrors the report-derived workflow, evidence gaps, recipe output and structural seat-attestation behavior without introducing schema changes.
   - path: skills/wait-what/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/wtf/SKILL.md
     rationale: Target resolution with one short question, keeping everything that changes what the reader would do, no claim beyond the source, and a marked correction when the original was wrong. The general explain-any-artifact scope is left to explain.

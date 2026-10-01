@@ -145,6 +145,24 @@ capabilities:
       A criterion with no receipt is reported as not-run rather than passed; a later code change
       invalidates the older green receipts bound to the previous revision (release scenario 10).
 
+  - id: verify
+    capability: >-
+      Human-started running-application verification that replays a project-declared recipe,
+      publishes criterion receipts and records the verify gate only for complete runtime evidence
+    disposition: retained
+    destination: skills/verify
+    locator: G:L1737-1743; plan §5.6; plan §8
+    origin: conversation
+    acceptance_test: >-
+      An explicit `/ak:verify` run builds, launches and drives only declared facilities, leaves a
+      criterion uncovered when a required kind is unavailable, and publishes its successful recipe
+      through the knowledgebase rather than a host-specific project path.
+    note: >-
+      The public entrypoint and host-neutral recipe are commissioned adaptations beyond the original
+      super-verify phase. Exact behavior and documentation sources are anchored in
+      research/sources/verifier-seat-design-report.md and attributed per file in
+      provenance/adaptations.d/verify.yaml.
+
   - id: super-review
     capability: A first-pass specialist panel over an immutable snapshot, a narrow delta pass over a fix, and reviewers who cannot edit
     disposition: retained

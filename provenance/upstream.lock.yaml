@@ -276,3 +276,15 @@ local_sources:
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
     cited_in_adaptations: false
+  - id: verifier-seat-design-report
+    description: >-
+      The verifier-seat design report commissioned for agent-kit. It records the documented
+      running-application behavior, the official documentation URLs, the host-neutral recipe
+      adaptation, surface-specific evidence vocabulary and the truly-done predicate.
+    original_path: ~/orca/projects/firstmate/data/agent-kit-verifier-seat-design/report.md
+    working_copy: research/sources/verifier-seat-design-report.md
+    sha256: 19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea
+    lines: 568
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    cited_in_adaptations: true

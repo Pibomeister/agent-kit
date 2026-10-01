@@ -38,7 +38,7 @@ package:
   license: MIT
 
 # ---------------------------------------------------------------------------
-# Skills — 33 public entrypoints
+# Skills — 34 public entrypoints
 # ---------------------------------------------------------------------------
 skills:
 
@@ -145,6 +145,17 @@ skills:
       authority.
 
   # --- Standalone supporting skills (arch 2.3) ------------------------------
+  - id: verify
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 12
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Build, run and drive the project against named acceptance criteria, publish runtime receipts and
+      a reusable host-neutral recipe, and record the verify gate only when every declared kind passes.
+
   - id: compound
     kind: standalone
     invocation: U

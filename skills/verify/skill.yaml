@@ -1,0 +1,200 @@
+# Execution contract for verify (schemas/skill.schema.json).
+# Prose mirror: skills/verify/SKILL.md. The two are one statement in two forms.
+id: verify
+version: 0.1.0
+kind: standalone
+invocation: U
+summary: >-
+  Build, run and drive the project against named acceptance criteria, publish runtime receipts and
+  a reusable host-neutral recipe, and record the verify gate only when every declared kind passes.
+
+triggers:
+  - A human explicitly asks to confirm a named acceptance criterion against the running application.
+  - A change needs reproducible runtime receipts before it can be called done.
+
+non_triggers:
+  - Code-quality judgment; review owns that question.
+  - Repairing a failure found during verification.
+  - A claim with no acceptance criterion id or project-declared exercise path.
+  - Replacing runtime evidence with tests, type checks or a build.
+
+prerequisites:
+  - kind: artifact
+    ref: The completion claim and acceptance criteria by id, from a ticket or the human.
+  - kind: environment
+    ref: The repository readable at a named revision and working-tree diff hash.
+  - kind: artifact
+    ref: >-
+      Project-declared recipe, permitted commands, runtime facilities and evidence kinds. Missing
+      declarations produce needs-input; no facility is inferred from an ecosystem convention.
+  - kind: capability
+    ref: knowledgebase kb-write, for receipts, matrix and a successful discovered recipe.
+  - kind: capability
+    ref: >-
+      independent-context, optional. When declared, a fresh seat receives the frozen packet and
+      the receipt binds its inputs to the host's seat-attestation level.
+    optional: true
+
+entrypoints:
+  verify:
+    invocation: U
+    authority: explicit
+    summary: >-
+      The only entrypoint, started by a human with the slash command. No phase operation exposes
+      this skill, so no controller can start it under a grant.
+
+requires:
+  - repository-read
+  - process-exec
+  - artifact-write
+  - kb-write
+  - human-channel
+
+inputs:
+  - id: claim-and-criteria
+    required: true
+    summary: The completion claim and acceptance criteria by id.
+  - id: source-snapshot
+    required: true
+    summary: The revision and working-tree diff hash every receipt describes.
+  - id: project-verification-declaration
+    required: true
+    summary: >-
+      Recipe, permitted commands, runtime facilities and evidence kinds declared by the project.
+  - id: environment-identity
+    required: true
+    summary: The environment recorded on every receipt.
+  - id: seat-attestation
+    required: false
+    summary: >-
+      When independent-context is declared, a content-addressed runner-attested or host-unattested
+      seat record bound into each receipt's inputs.
+
+outputs:
+  - id: verification-receipts
+    schema: verification
+    summary: >-
+      At least one schema-valid receipt per criterion, including explicit non-pass receipts for
+      declared evidence kinds that cannot be obtained.
+  - id: acceptance-evidence-matrix
+    summary: Every criterion mapped to its receipts and declared evidence kinds.
+  - id: verification-recipe
+    placement: kb-document
+    kb_kind: sop
+    summary: >-
+      A host-neutral, content-addressed setup, build, launch, readiness, drive and cleanup recipe,
+      published only after the complete path succeeds; it never becomes application-local project
+      documentation (ruling `central-kb-owns-project-artifacts`).
+  - id: verify-gate
+    summary: >-
+      The gate record created by ak-gate.mjs only when every criterion and declared runtime evidence
+      kind passed at the frozen snapshot.
+
+side_effects: [process-exec, scratch-write, artifact-write, kb-publish]
+
+constraints:
+  prose-may-substitute-for-runtime-evidence: false
+  undeclared-facility-may-be-invented: false
+  test-or-typecheck-may-substitute-for-runtime-evidence: false
+  implementer-narrative-may-be-a-receipt: false
+  uncovered-criterion-may-record-the-verify-gate: false
+  recipe-may-use-a-host-specific-project-path: false
+
+hard_gates:
+  - A runnable criterion is not passed by tests, type checks or a build alone.
+  - An undeclared or unavailable runtime facility is reported by its required evidence kind; no
+    proxy is substituted and the criterion remains uncovered.
+  - Every receipt validates against verification.schema.json and binds its recipe and any seat
+    attestation through content-addressed inputs; narrative never substitutes for the receipt
+    (ruling `closure-requires-independent-verification`).
+  - When independent-context is declared, a missing fresh seat is unavailable and blocks the
+    criterion; it is never backfilled by the implementer, author, spec approver or another seat
+    (ruling `missing-supervisor-never-implementer`).
+  - The verify gate is recorded only when every criterion passed with every declared runtime kind.
+
+stop_conditions:
+  - complete when every criterion has a receipt and matrix outcome; the gate is optional and exists
+    only for fully covered criteria.
+  - needs-input when invocation, criterion, project declaration or required seat context is missing.
+
+failure_outcomes:
+  - status: needs-input
+    meaning: >-
+      No explicit invocation, no criterion id, a missing project declaration, or an unavailable
+      fresh seat required by the host declaration.
+    next_permitted_action: Re-invoke with the missing criterion, declaration, facility or attestation.
+  - status: failed
+    meaning: >-
+      The revision is unreadable, a declared recipe cannot run, or the knowledgebase refuses the
+      artifact publication. Observed receipts are returned without approval.
+    next_permitted_action: Restore the declared facility or artifact sink, then start a fresh run.
+  - status: cancelled
+    meaning: The human cancelled; completed receipts remain evidence of the checks that ran.
+    next_permitted_action: null
+
+limits:
+  uncovered-criteria: 0
+  undeclared-facilities: 0
+
+budget:
+  provided_by: runner
+  enforces:
+    - uncovered-criteria
+    - undeclared-facilities
+
+packaging:
+  generated_frontmatter:
+    disable-model-invocation: true
+  hosts:
+    - adapter: claude-code
+      mode: manual
+      unsupported:
+        - >-
+          independent-context creates a fresh context but host-only evidence is not a runner
+          attestation; receipts mark that seat host-unattested.
+    - adapter: codex
+      mode: manual
+      unsupported:
+        - suppression of model invocation, which this host cannot express
+        - >-
+          independent-context creates a fresh context but host-only evidence is not a runner
+          attestation; receipts mark that seat host-unattested.
+
+provenance:
+  origin: conversation
+  conversation_locators:
+    - G:L1737-1743
+  resolved_conflicts:
+    - central-kb-owns-project-artifacts
+    - closure-requires-independent-verification
+    - missing-supervisor-never-implementer
+
+tests:
+  - id: backend-runtime-produces-receipts-and-recipe
+    kind: positive
+    given: >-
+      A backend criterion and project declaration name a running-service smoke command and API
+      probe; the declared path succeeds.
+    expect: >-
+      The command runs, the criterion receives a passed receipt with response status and body
+      digest, a host-neutral recipe artifact is recorded, and the verify gate is recorded.
+  - id: missing-screenshot-stays-uncovered
+    kind: negative
+    given: >-
+      A frontend criterion requires rendered-screenshot evidence, while the project declares no
+      screenshot facility.
+    expect: >-
+      The receipt names rendered-screenshot as declared but unobtainable, the matrix leaves the
+      criterion uncovered, and no verify gate is recorded.
+  - id: runtime-refutes-implementer-narrative
+    kind: adversarial
+    given: >-
+      The repository contains an implementer narrative claiming the criterion passed, while the
+      project-declared runtime command refutes it.
+    expect: >-
+      The command runs and its result determines a failed receipt; the narrative is not restated as
+      evidence and no verify gate is recorded.
+
+body:
+  line_budget: 150
+  hard_cap: 300

@@ -1,0 +1,42 @@
+schema_version: "1.1"
+name: verify-backend-runtime-produces-receipts-and-recipe
+tags: [positive, scenario-10]
+execution:
+  prompt: >-
+    /ak:verify Verify AC-1 on ticket AK-901 at the current head using the project's declared
+    verification facilities.
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-declared-runtime-command
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The run executes the backend recipe declared in project-verification.yaml, including its
+      running-service probe, rather than substituting a test or type-check command.
+  - name: receipt-carries-api-evidence
+    type: llm
+    weight: 4
+    criteria: >-
+      AC-1 receives a passed verification receipt with the executed probe, status 200, the observed
+      response body digest, output digest, source snapshot and environment identity.
+  - name: recipe-is-recorded-for-replay
+    type: llm
+    weight: 3
+    criteria: >-
+      The result includes a content-addressed, host-neutral verification-recipe artifact containing
+      the successful build, launch, readiness, probe and cleanup path for later runs.
+  - name: gate-record-follows-receipts
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The verify gate is recorded only after the passed receipt exists, with that receipt supplied
+      to the gate command.
+  - name: ran-a-project-command
+    type: tool_used
+    tool: Bash
+    weight: 1

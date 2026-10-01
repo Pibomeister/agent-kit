@@ -1,0 +1,15 @@
+recipes:
+  - id: health-endpoint
+    scope: backend
+    environment: local-isolated
+    build: [node, --check, server.mjs]
+    launch: [node, server.mjs]
+    readiness:
+      request: GET /health
+      expect_status: 200
+    drive: [node, scripts/verify-backend.mjs]
+    cleanup: terminate-launched-process
+    checks:
+      - id: health-api
+        supports: [AC-1]
+        evidence_required: [smoke-test, api-response]
