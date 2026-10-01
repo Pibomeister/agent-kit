@@ -358,14 +358,15 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(record("review-full").code).toBe(0);
     expect(check("super-ship").code).toBe(0);
     expect(record("ship-preflight").code).toBe(0);
-    const entry = JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"));
-    expect(entry.runs).toEqual(["task", run]);
+    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"))).toMatchObject({
+      runs: ["task", run],
+    });
   });
 
   test("a phase-less check is a read-only probe and logs no run", () => {
     const { worktree, ledger, grantPath } = granted();
     expect(ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1").code).toBe(0);
-    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8")).runs).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"))).not.toHaveProperty("runs");
     expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
   });
 });

@@ -1357,7 +1357,7 @@ export function checkBypass(
       grant: at,
       grant_sha256: hash,
       authorized_by: String(g.authorized_by),
-      task_id: String(g.task_id),
+      task_id: g.task_id,
     },
   };
 }
