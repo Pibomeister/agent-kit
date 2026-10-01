@@ -29,6 +29,26 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const req: SessionRequest = { prompt: "Load the greet skill.", cwd: "/scratch/repo", env: {}, timeoutMs: 1000 };
 
+// Grok's documented grammar: a segment runs when some allow glob matches it whole and no deny glob does.
+const admits = (segment: string) => {
+  const argv = grok.command(req, undefined);
+  const matching = (flag: string) =>
+    argv
+      .flatMap((value, index) => {
+        const rule = argv[index + 1];
+        return value === flag && rule?.startsWith("Bash(") ? [rule.slice(5, -1)] : [];
+      })
+      .some((glob) =>
+        new RegExp(
+          `^${glob
+            .split("*")
+            .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+            .join(".*")}$`,
+        ).test(segment),
+      );
+  return matching("--allow") && !matching("--deny");
+};
+
 describe("claude", () => {
   test("a live session: the Skill call, the reply, cost and turns", () => {
     const parsed = claude.parse(fixture("claude-skill.jsonl"));
@@ -188,24 +208,6 @@ describe("grok", () => {
     expect(parsed.reply).toBe("");
     expect(parsed.stopReason).toBe("cancelled");
   });
-
-  // Grok's documented grammar: a segment runs when some allow glob matches it whole and no deny glob does.
-  const admits = (segment: string) => {
-    const argv = grok.command(req, undefined);
-    const matching = (flag: string) =>
-      argv
-        .flatMap((value, index) => (value === flag ? [argv[index + 1]!] : []))
-        .flatMap((rule) => (rule.startsWith("Bash(") ? [rule.slice(5, -1)] : []))
-        .some((glob) =>
-          new RegExp(
-            `^${glob
-              .split("*")
-              .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-              .join(".*")}$`,
-          ).test(segment),
-        );
-    return matching("--allow") && !matching("--deny");
-  };
 
   test("every segment of an archived read-only chain Grok refused is now admitted", () => {
     const parsed = grok.parse(fixture("grok-cancelled-read.jsonl"));

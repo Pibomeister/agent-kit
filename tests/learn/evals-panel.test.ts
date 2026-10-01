@@ -101,8 +101,9 @@ describe("matrix", () => {
     expect(effectiveMaxTurns({ id: "s-c", host: "claude", model: undefined, maxTurns: 20 })).toBe(20);
     expect(effectiveMaxTurns({ id: "s-d", host: "codex", model: undefined, maxTurns: null })).toBeUndefined();
     const [unbound] = loadMatrix(join(scratch, "absent.yaml")).subjects;
-    expect(effectiveMaxTurns(unbound!)).toBe(20);
-    expect(effectiveMaxTurns(unbound!, 15)).toBe(15);
+    if (!unbound) throw new Error("the default matrix has no subject");
+    expect(effectiveMaxTurns(unbound)).toBe(20);
+    expect(effectiveMaxTurns(unbound, 15)).toBe(15);
   });
 
   test("the receipt records each subject's effective cap, including no cap", () => {

@@ -46,6 +46,8 @@ import {
 const tool = (name: string, input: Record<string, unknown>): ToolEvent => ({ kind: "tool", name, raw: name, input });
 const say = (text: string): SessionEvent => ({ kind: "message", text });
 const skill = (id: string) => tool("Skill", { skill: `ak:${id}` });
+const grokCall = (command: string) =>
+  JSON.stringify({ type: "tool_call", toolName: "run_terminal_command", rawInput: { command } });
 
 const U = new Set(["super-align", "super-ship", "compound"]);
 const natural: ScoreOptions = { arm: "natural", userInvoked: U };
@@ -1262,16 +1264,16 @@ describe("invalid sessions and the no-op floor", () => {
   });
 
   test("the reads an adapter derives from a shell call are neither the refused call nor counted against the cap", () => {
-    const call = (command: string) =>
-      JSON.stringify({ type: "tool_call", toolName: "run_terminal_command", rawInput: { command } });
     const refused = grok.parse(
-      [call("cat README.md 2>/dev/null; ls -la"), JSON.stringify({ type: "end", stopReason: "cancelled" })].join("\n"),
+      [grokCall("cat README.md 2>/dev/null; ls -la"), JSON.stringify({ type: "end", stopReason: "cancelled" })].join(
+        "\n",
+      ),
     );
     expect(refused.events).toHaveLength(2);
     expect(invalidSession({ ...refused, exitCode: 0, timedOut: false }, 20)).toBe(
       "host cancelled refused Bash call: cat README.md 2>/dev/null; ls -la",
     );
-    const reads = grok.parse([call("cat a.md"), call("cat b.md")].join("\n"));
+    const reads = grok.parse([grokCall("cat a.md"), grokCall("cat b.md")].join("\n"));
     expect(reads.events).toHaveLength(4);
     expect(invalidSession({ ...reads, exitCode: 1, timedOut: false }, 4)).toBe("exit 1");
     expect(invalidSession({ ...reads, exitCode: 1, timedOut: false }, 2)).toBe(
