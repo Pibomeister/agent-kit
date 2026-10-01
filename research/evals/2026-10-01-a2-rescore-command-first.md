@@ -2,19 +2,22 @@
 
 This is the free rescore requested by the A3 follow-up. It changes the scorer only: no session was
 rerun, no host CLI was invoked, and no paid call was made. The scorer fix is commit
-`f5d0eb0d8a216e51942edd0bfaec9ae109b2f484`.
+`f5d0eb0d8a216e51942edd0bfaec9ae109b2f484`, narrowed by commit
+`695fe69a72d897a9fb392c9778b227bb4af74554`, which is the scorer measured here.
 
 The fix keeps the existing short-span verb-first ask rule and adds two bounded forms: an exact
-command followed by an imperative that refers back to it, and an instruction immediately followed
-by a complete fenced or inline-code command. A bare command mention still does not ask the human to
-type it. `git count-objects` also joins the read-only Git subcommand set.
+command followed by an imperative that refers back to it as “it” or “that command”, and an
+instruction immediately followed by the command in a code fence or as an inline-code line of its
+own. A bare command mention still does not ask the human to type it, and neither does a later
+imperative about something else (“Run that test again”) or a paragraph that opens with the command.
+`git count-objects` also joins the read-only Git subcommand set.
 
 ## Instrument
 
 | Item | Value |
 |---|---|
 | Before scorer | Merge base with `main`, `5b0522705dd4cb8b8245a17e0a81875531d5bd8d`, extracted with `git archive` |
-| After scorer | Fix commit `f5d0eb0d8a216e51942edd0bfaec9ae109b2f484`, extracted with `git archive` |
+| After scorer | Narrowed fix commit `695fe69a72d897a9fb392c9778b227bb4af74554`, extracted with `git archive`. The unnarrowed fix `f5d0eb0d8a216e51942edd0bfaec9ae109b2f484` produces the same output digest: the narrowing changes no stored A2 row |
 | Historical control | `67e61e9c61f334fcae78bc8429aacc798447097b`, extracted read-only from `/Users/eduardopicazo/Documents/agent-kit` |
 | Stored input | Copied read-only from `/Users/eduardopicazo/Documents/agent-kit/.work/archive/xmodel-cases/xmodel-2026-09-28/` into this worktree's `.work/xmodel-2026-09-28/`; 667 files |
 | Probe | `BASE_TREE=<67e61e9 extract> bun research/probes/a2-rescore.ts <scorer extract> .work/xmodel-2026-09-28 <output>` |
