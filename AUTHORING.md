@@ -998,9 +998,10 @@ safe. Into a **donor pin** it cannot: `donor@<sha>:path` names bytes and the sha
 the only anchor in this package that does, and it is why §5 sends every claim it can to the pin.
 `research/sources/` is now a second one, and was not when this section was first written.
 `provenance.local-source-modified` (`src/validation/provenance.ts`) recomputes the sha256 and the
-line count of both files in `research/sources/` on every run and fails on a mismatch. It needs no
-donor clone, so unlike the donor-pin check it never skips. Editing either file fails the build until
-the locators citing it are re-derived in the same commit. What that replaced is worth keeping: the
+line count of every registered file in `research/sources/` on every run and fails on a mismatch. It
+needs no donor clone, so unlike the donor-pin check it never skips. Editing any of them fails the
+build until the locators citing it are re-derived in the same commit. What that replaced is worth
+keeping: the
 safety of a `G:L` range used to rest on nothing having happened to edit the file, with
 `git log -- research/sources/` as its falsifier, and §5 records what that was worth — ranges carried
 from a recovered copy into the pin's numbering, landing on real text saying something else,

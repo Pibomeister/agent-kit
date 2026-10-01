@@ -240,3 +240,44 @@ local_sources:
     # No upstream author whose licence governs the copy, and no adaptations row cites it: nothing
     # in the catalog is adapted from its text, only designed after the structure it describes.
     cited_in_adaptations: false
+  - id: delegation-rubric-red-yellow-green
+    description: >-
+      Report 1 of the "Risk Tiering and Slop Avoidance" mission, "Scoring Work Items Red, Yellow, or
+      Green for AI Coding Agents: A Rubric for Ticket Triage and Merge Readiness". A captain-owned
+      document supplied for this repository as a markdown export and reproduced byte-for-byte.
+      research/dossiers/delegation.md cites it as D:L<start>-<end>.
+    original_path: ~/orca/projects/firstmate/data/agent-kit-delegation-research/inputs/report-1-delegation-rubric.md
+    working_copy: research/sources/delegation-rubric-red-yellow-green.md
+    sha256: 8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1
+    lines: 403
+    # The repository's own licence and owner: no pinned donor governs this file, so there is no
+    # `attribution_donor`.
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    # No adaptations row cites it. Only the dossier does.
+    cited_in_adaptations: false
+  - id: slop-avoidance-agent-prs
+    description: >-
+      Report 2 of the same mission, "Slop Avoidance for Agent-Authored PRs: Detection, Prevention,
+      and a Minimal Reference Setup". A captain-owned document supplied for this repository as a
+      markdown export and reproduced byte-for-byte. research/dossiers/delegation.md cites it as
+      S:L<start>-<end>.
+    original_path: ~/orca/projects/firstmate/data/agent-kit-delegation-research/inputs/report-2-slop-avoidance-setup.md
+    working_copy: research/sources/slop-avoidance-agent-prs.md
+    sha256: 6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b
+    lines: 310
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    cited_in_adaptations: false
+  - id: mission-brief-risk-tiering-and-slop-avoidance
+    description: >-
+      The captain-written mission brief "Risk Tiering and Slop Avoidance", reproduced byte-for-byte.
+      It sets the requirement boundaries and dispositions research/dossiers/delegation.md records,
+      which cites it as B:L<start>-<end>.
+    original_path: ~/orca/projects/firstmate/data/agent-kit-delegation-research/inputs/mission-brief.md
+    working_copy: research/sources/mission-brief-risk-tiering-and-slop-avoidance.md
+    sha256: 90abd48e019f09ea3d58c11028148fc971dbefe145c70c0822364f15b1729b38
+    lines: 231
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    cited_in_adaptations: false
