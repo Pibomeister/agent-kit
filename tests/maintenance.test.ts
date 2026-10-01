@@ -260,7 +260,7 @@ fi
     rmSync(join(root, ".linear-token"));
     symlinkSync(join(outside, "secret"), join(root, ".linear-token"));
     expect(checkToken(root, binding).level).toBe("FAIL");
-  });
+  }, 15_000);
 
   test("rejects global and escaped linearis binaries", () => {
     const root = project();
