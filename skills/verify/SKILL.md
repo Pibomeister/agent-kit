@@ -126,11 +126,11 @@ runner-enforced path a receipt claiming independence without runner attestation 
 
 ## Side effects
 
-`process-exec`, `scratch-write`, `artifact-write`, `kb-publish`.
+`process-exec`, `scratch-write`, `artifact-write`, `kb-publish`. No `workspace-write` or `local-commit`.
 
-`kb-publish` happens only where the host provides `kb-write`, keyed by the artifact content hash.
-Receipts, logs, matrix and an unpublished recipe go to runner scratch outside the checkout, each log
-beside its receipt, so they do not move the verified snapshot. No `workspace-write` or `local-commit`.
+`kb-publish` happens only where the host provides `kb-write`: the content hash is its idempotency key
+and the returned reference is read back before completion. Receipts, logs, matrix and an unpublished
+recipe go to runner scratch outside the checkout, log beside receipt, so the verified snapshot holds.
 
 ## Stop conditions
 
@@ -139,7 +139,7 @@ beside its receipt, so they do not move the verified snapshot. No `workspace-wri
 - `needs-input`: the command was not explicitly invoked, a criterion or declaration is missing, or
   a required fresh seat is unavailable. Return the exact missing id, kind, facility or attestation.
 - `failed`: the revision cannot be read, the declared recipe cannot run, or a host that provides
-  `kb-write` refuses the write. Return the receipts already observed, never as approval.
+  `kb-write` refuses the write or its read-back. Return the receipts already observed, never as approval.
 - `cancelled`: preserve completed receipts as evidence of what ran and stop before the next action.
 
 ## Limits

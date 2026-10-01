@@ -31,7 +31,8 @@ prerequisites:
     ref: >-
       knowledgebase kb-write, for publishing receipts, matrix and a successful discovered recipe.
       Absent, they are returned unpublished and named as such, and the gate may still be recorded
-      from the receipt files.
+      from the receipt files. Present, each publish uses the artifact content hash as its
+      idempotency key and reads the returned reference back before completion.
     optional: true
   - kind: run-state
     ref: >-
@@ -59,6 +60,9 @@ requires:
   - repository-read
   - process-exec
   - artifact-write
+  # Declared because kb-publish is a remote effect, not because the skill cannot run without it.
+  # Absent, receipts, matrix and recipe are returned unpublished and the gate may still be recorded
+  # from the receipt files; only a refused write or read-back on a host that provides it is failed.
   - kb-write
   - human-channel
 
@@ -154,7 +158,8 @@ failure_outcomes:
   - status: failed
     meaning: >-
       The revision is unreadable, a declared recipe cannot run, or a host that provides kb-write
-      refuses the artifact publication. Observed receipts are returned without approval.
+      refuses the artifact publication or its read-back. Observed receipts are returned without
+      approval.
     next_permitted_action: Restore the declared facility or artifact sink, then start a fresh run.
   - status: cancelled
     meaning: The human cancelled; completed receipts remain evidence of the checks that ran.
