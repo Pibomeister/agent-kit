@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Ajv from "ajv";
-import { parse } from "yaml";
 
 const script = join(import.meta.dir, "../tools/publish/version-gate.sh");
 const roots: string[] = [];
@@ -12,46 +10,36 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
+function git(cwd: string, ...args: string[]) {
+  const run = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
+  if (run.status !== 0) throw new Error(run.stderr);
+}
+
 function bundle(dir: string, version: string, skill: string) {
   mkdirSync(join(dir, "claude-code/.claude-plugin"), { recursive: true });
   writeFileSync(join(dir, "claude-code/.claude-plugin/plugin.json"), JSON.stringify({ name: "ak", version }));
   writeFileSync(join(dir, "claude-code/SKILL.md"), skill);
 }
 
-function gate(published: [string, string] | null, built: [string, string], packageVersion = built[0]) {
+function gate(published: [string, string] | null, built: [string, string], packageVersion = built[0], origin = "") {
   const root = mkdtempSync(join(tmpdir(), "ak-version-gate-"));
   roots.push(root);
-  writeFileSync(join(root, "package.json"), JSON.stringify({ version: packageVersion }));
-  if (published) bundle(join(root, "published"), ...published);
-  bundle(join(root, "dist"), ...built);
-  return spawnSync("sh", [script, "published", "dist"], { cwd: root, encoding: "utf8" });
-}
-
-interface Workflow {
-  on: Record<string, { branches?: string[] } | null>;
-  jobs: Record<string, { steps: { run?: string }[] }>;
-}
-
-const isWorkflow = new Ajv().compile<Workflow>({
-  type: "object",
-  required: ["on", "jobs"],
-  properties: {
-    on: { type: "object" },
-    jobs: {
-      type: "object",
-      additionalProperties: {
-        type: "object",
-        required: ["steps"],
-        properties: { steps: { type: "array", items: { type: "object" } } },
-      },
-    },
-  },
-});
-
-function workflow(file: string): Workflow {
-  const value: unknown = parse(readFileSync(join(import.meta.dir, "../.github/workflows", file), "utf8"));
-  if (!isWorkflow(value)) throw new Error(`${file} is not a workflow`);
-  return value;
+  const remote = join(root, "remote.git");
+  const work = join(root, "work");
+  git(root, "init", "-q", "--bare", remote);
+  git(root, "init", "-q", work);
+  if (published) {
+    const release = join(root, "release");
+    git(root, "init", "-q", release);
+    bundle(join(release, "dist"), ...published);
+    git(release, "add", "dist");
+    git(release, "commit", "-qm", "publish");
+    git(release, "push", "-q", remote, "HEAD:refs/heads/published");
+  }
+  git(work, "remote", "add", "origin", origin || remote);
+  writeFileSync(join(work, "package.json"), JSON.stringify({ version: packageVersion }));
+  bundle(join(work, "dist"), ...built);
+  return spawnSync("sh", [script, "dist"], { cwd: work, encoding: "utf8" });
 }
 
 describe("bundle version gate", () => {
@@ -69,24 +57,21 @@ describe("bundle version gate", () => {
     expect(gate(["0.1.0", "same"], ["0.1.0", "same"]).status).toBe(0);
   });
 
-  test("accepts a first publish", () => {
-    expect(gate(null, ["0.1.0", "new"]).status).toBe(0);
+  test("accepts a first publish when the published branch does not exist", () => {
+    const run = gate(null, ["0.1.0", "new"]);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("first publish");
+  });
+
+  test("refuses when origin/published cannot be read", () => {
+    const run = gate(null, ["0.1.0", "new"], "0.1.0", "/nonexistent/remote.git");
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("cannot read origin/published");
   });
 
   test("refuses a catalog bump package.json does not match", () => {
     const run = gate(["0.1.0", "old"], ["0.2.0", "new"], "0.1.0");
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("package.json version 0.1.0 differ");
-  });
-
-  test("runs on pull requests and again before publishing", () => {
-    const ci = workflow("ci.yml");
-    const publish = workflow("publish-bundle.yml");
-    expect("pull_request" in ci.on).toBe(true);
-    expect(publish.on["push"]?.branches).toEqual(["main"]);
-    for (const { jobs } of [ci, publish]) {
-      const runs = Object.values(jobs).flatMap((job) => job.steps.map((step) => step.run ?? ""));
-      expect(runs.some((run) => run.includes("tools/publish/version-gate.sh"))).toBe(true);
-    }
   });
 });

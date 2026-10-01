@@ -38,15 +38,4 @@ jobs:
       - run: bun run build
       # The publish job refuses the same thing after merge; this refuses it while the PR can still change.
       - name: Refuse a bundle change without a version bump
-        run: |
-          set -euo pipefail
-          published="$(mktemp -d)"
-          found=0
-          git ls-remote --exit-code --heads origin published >/dev/null || found=$?
-          if [ "$found" -eq 0 ]; then
-            git fetch origin published
-            git archive FETCH_HEAD dist | tar -x -C "$published"
-          elif [ "$found" -ne 2 ]; then
-            exit "$found"
-          fi
-          tools/publish/version-gate.sh "$published/dist" dist
+        run: tools/publish/version-gate.sh dist
