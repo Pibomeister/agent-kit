@@ -198,7 +198,7 @@ Tests this adapter owns, in `tests/adapters/`:
    appearing in the other's bundle is a failure.
 4. **Non-trigger corpus completeness** — every U skill in the codex bundle has a non-trigger eval
    case, and every such case's prompt is drawn from that skill's `## Not for` section.
-5. **Install smoke test** — the bundle now carries the marketplace manifest required by
+5. **Install smoke test** — the bundle carries the marketplace manifest required by
    `codex plugin marketplace add <dist/codex>`; follow it with `codex plugin add ak@agent-kit`, then
    confirm the skills are listed. Run manually against the pinned CLI version at release time and
    record it as a receipt; it is not a CI gate because it requires a host install.
