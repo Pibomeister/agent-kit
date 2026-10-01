@@ -53,7 +53,7 @@ rather than answering (ruling `entrypoint-phase-operation-split`). No skill star
 directly.
 
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
-task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
+task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
 --phase super-align` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
 `needs-decision`. The grant starts the interview and nothing else. The explicit yes at step 11 still
 comes from the supervisor through `needs-decision`; the worker never approves its own direction.

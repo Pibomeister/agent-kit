@@ -102,6 +102,8 @@ function granted() {
     s.grantPath,
     "--project",
     s.project,
+    "--worktree",
+    s.worktree,
   );
   expect(r).toMatchObject({ code: 0 });
   return { ...s, brief: r.out };
@@ -227,6 +229,8 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
         s.grantPath,
         "--project",
         s.project,
+        "--worktree",
+        s.worktree,
         "--hours",
         "1",
       ).code,
@@ -235,7 +239,6 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     const r = checkBypass({
       grant: s.grantPath,
       task: "T-1",
-      run: "task",
       phase: "super-align",
       project: s.worktree,
       ledger: s.ledger,
@@ -274,7 +277,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
   });
 });
 
-describe("one task, one run: the grant binds to the task it names and the run that first uses it", () => {
+describe("one task: the grant binds to the task it names and that task's worktree, not to a run", () => {
   test("another task's grant is refused at check, and no use record is written", () => {
     const { worktree, ledger, grantPath } = granted();
     const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-2", "--phase", "super-align");
@@ -298,46 +301,72 @@ describe("one task, one run: the grant binds to the task it names and the run th
     expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
   });
 
-  test("a second run on the same task's grant is refused at check and at record --bypass", () => {
-    const { worktree, ledger, grantPath } = granted();
-    const check = (run: string) =>
-      ak(
-        worktree,
-        ledger,
-        "bypass",
-        "check",
-        "--grant",
-        grantPath,
-        "--task",
-        "T-1",
-        "--phase",
-        "super-align",
-        "--run",
-        run,
-      );
-    expect(check("run-a").code).toBe(0);
-    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"))).toMatchObject({
-      run_id: "run-a",
-    });
-    expect(check("run-a").code).toBe(0);
-    const second = check("run-b");
-    expect(second.code).toBe(1);
-    expect(second.err).toContain("is bound to run run-a, not run-b");
+  test("another task's worktree of the same repository is refused at check and record --bypass, even with the right --task", () => {
+    const { project, ledger, grantPath } = granted();
+    const other = join(dir("ak-bypass-wt-"), "other");
+    git(project, "worktree", "add", "-q", "-b", "other", other);
+    const r = ak(other, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is for worktree");
+    expect(existsSync(join(defaultEvidenceDir(other), "other", "bypass"))).toBe(false);
+    const rec = ak(other, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-1");
+    expect(rec.code).toBe(1);
+    expect(rec.err).toContain("is for worktree");
+    expect(readRecords(defaultEvidenceDir(other), "other", "review-full")).toEqual([]);
+  });
+
+  test("grant refuses a worktree that is not one of the repository's", () => {
+    const s = setup();
     const r = ak(
-      worktree,
-      ledger,
-      "record",
-      "--gate",
-      "review-full",
-      "--bypass",
-      grantPath,
+      s.home,
+      s.ledger,
+      "bypass",
+      "grant",
       "--task",
       "T-1",
-      "--run",
-      "run-b",
+      "--by",
+      "captain",
+      "--reason",
+      "r",
+      "--out",
+      s.grantPath,
+      "--project",
+      s.project,
+      "--worktree",
+      s.home,
     );
     expect(r.code).toBe(1);
-    expect(readRecords(defaultEvidenceDir(worktree), "run-b", "review-full")).toEqual([]);
+    expect(r.err).toContain("is not one of the worktrees");
+    expect(existsSync(s.grantPath)).toBe(false);
+  });
+
+  test("one grant carries the task from align through ship across the run super-build opens", () => {
+    const { worktree, ledger, grantPath, home } = granted();
+    const check = (phase: string) =>
+      ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", phase);
+    expect(check("super-align").code).toBe(0);
+    expect(check("super-bound").code).toBe(0);
+    const ticketPath = join(home, "ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+    const opened = ak(worktree, ledger, "open", "--ticket", ticketPath);
+    expect(opened.code).toBe(0);
+    const run = opened.out.replace(/^opened run /, "");
+    expect(run).not.toBe("task");
+    expect(check("super-review:full").code).toBe(0);
+    const record = (gate: string) =>
+      ak(worktree, ledger, "record", "--gate", gate, "--bypass", grantPath, "--task", "T-1");
+    expect(record("review-full").code).toBe(0);
+    expect(check("super-ship").code).toBe(0);
+    expect(record("ship-preflight").code).toBe(0);
+    const entry = JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"));
+    expect(entry.runs).toEqual(["task", run]);
+  });
+
+  test("a phase-less check is a read-only probe and logs no run", () => {
+    const { worktree, ledger, grantPath } = granted();
+    expect(ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1").code).toBe(0);
+    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8")).runs).toBeUndefined();
+    expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
   });
 });
 
@@ -359,6 +388,8 @@ describe("a worker-authored grant is rejected", () => {
       s.grantPath,
       "--project",
       s.project,
+      "--worktree",
+      s.worktree,
     );
     expect(r.code).toBe(1);
     expect(r.err).toContain("run it from outside the repository");
@@ -387,6 +418,8 @@ describe("a worker-authored grant is rejected", () => {
         out,
         "--project",
         s.project,
+        "--worktree",
+        s.worktree,
       );
       expect(r.code).toBe(1);
       expect(r.err).toContain("which a worker in that repository can write");

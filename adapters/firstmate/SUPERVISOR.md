@@ -84,11 +84,11 @@ the home, not from the task's worktree, and paste the section it prints into the
 
 ```
 ak lifecycle bypass grant --task <task-id> --by <who authorized it> --reason <why> \
-  --out data/<task-id>/bypass.json --project <repo> [--hours <n>]
+  --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree> [--hours <n>]
 ```
 
 The section tells the worker to pass `--task <task-id>` to every check and to `record --bypass`;
-a check for another task, or from a run other than the first one to use the grant, is refused.
+a check for another task, or from any worktree but the task's, is refused.
 It starts super-align, super-bound, super-review full and readiness, and super-ship for that task
 only, until it expires (24 hours by default). It starts phases only: the worker still sends you
 `needs-decision` for every approval inside them — the design yes, the specification and ticket
