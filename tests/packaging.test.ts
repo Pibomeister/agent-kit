@@ -91,15 +91,6 @@ const packageJson = (doc: Record<string, unknown>) => `${JSON.stringify(doc, nul
 
 const BASE: Record<string, string> = {
   "catalog.yaml": CATALOG,
-  ".claude-plugin/marketplace.json": `${JSON.stringify(
-    {
-      name: "agent-kit",
-      owner: { name: "marketplace owner" },
-      plugins: [{ name: "ak", homepage: "https://example.test/agent-kit" }],
-    },
-    null,
-    2,
-  )}\n`,
   // In every fixture because it is in every real tree: `ak` runs from a package
   // root. A plan with no package.json to agree with is not a plan with nothing
   // to check -- it is the manifests sitting in front of the check with no
@@ -883,7 +874,6 @@ describe("the marketplace entry each host bundle carries", () => {
     plugins: [
       {
         name: string;
-        version: string;
         description: string;
         source: string;
         author?: { name: string };
@@ -971,48 +961,64 @@ describe("the marketplace entry each host bundle carries", () => {
     const plan = planBundle(ctx, "claude-code", {});
     const manifest = manifestIn(plan, ".claude-plugin/plugin.json");
     const market = marketplaceIn(plan);
-    expect(market.owner).toEqual({ name: "marketplace owner" });
+    expect(market.owner).toEqual(manifest.author);
     expect(market.plugins[0].author).toEqual(manifest.author);
-    expect(market.plugins[0].homepage).toBe("https://example.test/agent-kit");
     expect(market.metadata.version).toBe(manifest.version);
     expect(market.plugins[0].name).toBe(manifest.name);
   });
 
   test("the codex marketplace plugin agrees with the codex plugin manifest", () => {
-    const plan = planBundle(ctxFor(), "codex", {});
+    const plan = planBundle(
+      ctxFor({
+        "catalog.yaml": CATALOG.replace("  version: 0.1.0\n", "  version: 9.9.9\n").replace(
+          "  id: ak\n",
+          "  id: not-ak\n",
+        ),
+      }),
+      "codex",
+      {},
+    );
     const manifest = manifestIn(plan, ".codex-plugin/plugin.json");
     const market = marketplaceIn(plan);
     expect(market.name).toBe("agent-kit");
     expect(market.plugins).toHaveLength(1);
     expect(market.plugins[0].source).toBe("./");
-    expect([market.plugins[0].name, market.plugins[0].version, market.plugins[0].description]).toEqual([
-      manifest.name,
-      manifest.version,
-      manifest.description,
-    ]);
+    expect(market.plugins[0].name).toBe(manifest.name);
+    expect(market.metadata.version).toBe(manifest.version);
+    expect(market.plugins[0].description).toBe(market.name);
   });
 
-  test("it carries no optional field this tree has no value for", () => {
-    // The donor carries `tags` and a `metadata.description`. This tree states
-    // neither, and emitting a plausible one is how a manifest ends up asserting
-    // something nobody checked. Absence is the honest answer until a value
-    // exists, and this test is what stops one being invented later without a
-    // source. `homepage` is not in this list: the root marketplace states it.
+  test("it carries no field this tree has no value for", () => {
+    // The donor carries `homepage`, `tags` and a `metadata.description`. This
+    // tree states none of them, and emitting a plausible one is how a manifest
+    // ends up asserting something nobody checked. Absence is the honest answer
+    // until a value exists, and this test is what stops one being invented
+    // later without a source.
     const market = marketplaceIn(planBundle(ctxFor(), "claude-code", {}));
+    expect("homepage" in market.plugins[0]).toBe(false);
     expect("tags" in market.plugins[0]).toBe(false);
     expect("description" in market.metadata).toBe(false);
   });
 
-  test("a catalog with no usable author still fails the plugin manifest", () => {
+  test("a catalog with no usable author fails rather than shipping an unowned marketplace", () => {
+    // `owner` is an ownership claim in a distributed file. With no author
+    // declared there is nothing to derive it from, and an empty owner is worse
+    // than a failed build.
+    //
+    // Blank as well as absent, at this emit site and not only at the manifest's:
+    // they are two guarded lines, and `{ "name": "" }` in a file that says who
+    // owns a published plugin is the shape that looks answered and is not.
     for (const catalog of [
       CATALOG.replace("  author: agent-kit maintainers\n", ""),
       CATALOG.replace("author: agent-kit maintainers", 'author: ""'),
     ]) {
-      const plan = planBundle(ctxFor({ "catalog.yaml": catalog }), "claude-code", {});
-      expect(plan.issues.some((i) => i.rule === "packaging.manifest-identity-missing")).toBe(true);
-      const market = marketplaceIn(plan);
-      expect(market.owner).toEqual({ name: "marketplace owner" });
-      expect("author" in market.plugins[0]).toBe(false);
+      for (const host of ["claude-code", "codex"] as const) {
+        const plan = planBundle(ctxFor({ "catalog.yaml": catalog }), host, {});
+        expect(plan.issues.some((i) => i.rule === "packaging.manifest-identity-missing")).toBe(true);
+        const market = marketplaceIn(plan);
+        expect("owner" in market).toBe(false);
+        expect("author" in market.plugins[0]).toBe(false);
+      }
     }
   });
 });

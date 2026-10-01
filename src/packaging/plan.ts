@@ -1,5 +1,4 @@
 import { join, posix } from "node:path";
-import Ajv2020 from "ajv/dist/2020.js";
 
 import { entryBodyPath } from "../catalog/layout.ts";
 import { listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
@@ -112,42 +111,6 @@ interface HostManifest {
   skills?: string | string[];
   experimental?: { evals: string };
 }
-
-interface RootMarketplace {
-  owner?: { name: string };
-  plugins?: Array<{ name: string; homepage?: string }>;
-}
-
-interface MarketplaceEntry {
-  name: string;
-  version: string;
-  description?: string;
-  author?: { name: string };
-  homepage?: string;
-  source: string;
-}
-
-interface MarketplaceDocument {
-  name: string;
-  owner?: { name: string };
-  metadata: { version: string };
-  plugins: MarketplaceEntry[];
-}
-
-const isRootMarketplace = new Ajv2020({ strict: false }).compile<RootMarketplace>({
-  type: "object",
-  properties: {
-    owner: { type: "object", required: ["name"], properties: { name: { type: "string" } } },
-    plugins: {
-      type: "array",
-      items: {
-        type: "object",
-        required: ["name"],
-        properties: { name: { type: "string" }, homepage: { type: "string" } },
-      },
-    },
-  },
-});
 
 /**
  * The field list as the messages spell it, derived rather than written out.
@@ -763,7 +726,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     path: HOST_MANIFEST_FILE[host],
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
-  files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx, manifest) });
+  files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
   files.set(BUILD_RECORD_FILE[host], {
     path: BUILD_RECORD_FILE[host],
     contents: buildRecord(
@@ -954,30 +917,26 @@ function checkManifestParity(root: string, manifest: HostManifest): Issue[] {
  * recalled: `name`, `owner`, `metadata`, and one `plugins[]` entry whose
  * `source` is `"./"`.
  *
- * The plugin identity comes from the generated host manifest. Marketplace
- * ownership and homepage come from the repository-root marketplace manifest,
- * the existing publication authority for those fields, so the bundle does not
- * hand-copy or invent either value.
+ * `owner` is the catalog's `author`, not a second identity. The contract states
+ * one identity for this package and the donor uses the same string in both
+ * places; deriving it here means the two cannot disagree, and it avoids
+ * inventing an owner, which would be a claim about a real party in a file that
+ * gets distributed.
+ *
+ * The donor's `homepage`, `tags` and `metadata.description` are not emitted.
+ * This tree states no value for any of them, and the failure this package has
+ * already produced once is a plausible value nobody checked -- so the fields
+ * are absent until something in the tree says what they are.
  */
-function marketplace(ctx: CheckContext, manifest: HostManifest): string {
+function marketplace(ctx: CheckContext): string {
   const pkg = ctx.catalog.package;
-  const parsedRootMarketplace: unknown = JSON.parse(readTextIfPresent(join(ctx.root, MARKETPLACE_FILE)) ?? "{}");
-  const rootMarketplace = isRootMarketplace(parsedRootMarketplace) ? parsedRootMarketplace : {};
-  const rootPlugin = rootMarketplace.plugins?.[0];
-  const entry: MarketplaceEntry = {
-    name: manifest.name,
-    version: manifest.version,
-    description: manifest.description,
-    source: "./",
-  };
-  if (declared(pkg.author)) entry.author = { name: pkg.author };
-  if (rootPlugin?.homepage !== undefined) entry.homepage = rootPlugin.homepage;
-  const doc: MarketplaceDocument = {
+  const author = declared(pkg.author) ? { name: pkg.author } : undefined;
+  const doc = {
     name: pkg.name,
+    owner: author,
     metadata: { version: pkg.version },
-    plugins: [entry],
+    plugins: [{ name: pkg.id, description: pkg.name, author, source: "./" }],
   };
-  if (rootMarketplace.owner !== undefined) doc.owner = rootMarketplace.owner;
   return `${JSON.stringify(doc, null, 2)}\n`;
 }
 

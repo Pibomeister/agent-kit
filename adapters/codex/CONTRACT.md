@@ -191,7 +191,7 @@ Tests this adapter owns, in `tests/adapters/`:
    `license` key at all. The `license` clause is therefore this package's own release condition,
    `origin: conversation`, and is marked as such rather than attributed upstream.
 
-   The Codex marketplace entry's plugin `name`, `version`, and `description` agree with
+   The Codex marketplace's plugin `name` and `metadata.version` agree with
    `dist/codex/.codex-plugin/plugin.json`.
 3. **No leaked host keys** — the codex bundle contains no `disable-model-invocation` and no
    `allowed-tools`; the claude-code bundle contains both where required. A key from one host's set
