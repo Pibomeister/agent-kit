@@ -14,9 +14,7 @@
       "id": "health-api",
       "check": "Drive the health-endpoint recipe in project-verification.yaml against the running service.",
       "kind": "probe",
-      "supports": [
-        "AC-1"
-      ]
+      "supports": ["AC-1"]
     }
   ]
 }
