@@ -124,8 +124,8 @@ hard_gates:
     persistence.
   - A direction spanning independently deployable stack phases is split in order with schema
     contract separate; refusal emits a decision ticket rather than one zero-context failure.
-  - Required advisor consultation on a supporting host must have evidence before ticket approval;
-    an unsupported host remains valid and records no invented evidence.
+  - On a supporting host, a ticket whose class requires consultation is not approved until its
+    kb_refs cites the consultation artifact; an unsupported host remains valid and cites none.
   - Approval binds to the specification's hash, not the whole plan's; a changed specification does
     not inherit the old approval.
   - No ticket ships with an unfinished-content marker, with a vague error-handling instruction in

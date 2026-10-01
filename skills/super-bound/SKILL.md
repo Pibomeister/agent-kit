@@ -116,8 +116,9 @@ or scorer failure stops it; no total, hand-derived class or request to delegate 
 Gate: a direction spanning independently deployable stack phases is split in the reference's order,
 with schema contract separate. Refusal to split emits a decision ticket; size alone is guidance.
 
-Gate: missing advisor evidence required by the delegation reference blocks ticket approval on a
-supporting host; an unsupported host records none (ruling `advisor-consultation-follows-class`).
+Gate: on a supporting host, a ticket whose class requires consultation is not approved until its
+`kb_refs` cites the consultation artifact as the delegation reference defines; an unsupported host
+cites none (ruling `advisor-consultation-follows-class`).
 
 Gate: approval binds to the specification's hash, not the whole plan's. A changed specification
 does not inherit the old approval; take it again.
@@ -141,7 +142,8 @@ skill enters, not a skill it starts:
 | "This ticket is basically the earlier one — I'll say 'similar to' and save the repetition." | A pointer to another ticket is context the implementer's window does not contain. | Repeat the specifics in full in this ticket. |
 | "I'll put the file paths in the specification so nobody has to guess." | A path in the specification settles an implementation decision the specification has not made, and the first refactor makes it wrong while it still reads authoritative. | Keep the specification at decision level; paths belong in the ticket, and only where a prototype settled them. |
 | "New evidence contradicts what we settled an hour ago — I'll just take the better answer." | A decision settled earlier in the session is not the planner's to overturn quietly; the human who settled it is not in the write. | Stop the write and return a blocked-or-replan result naming the settled decision and the evidence against it. |
-| "This is about nine hundred lines, but they insist on one ticket, so I'll keep it together." | Size is guidance, but refactor, expand, flagged behavior, consumer, backfill and contract are independent delivery boundaries; a request cannot collapse them (ruling `numeric-heuristics-are-guidance`). | Order the stack with contract separate, or emit a decision ticket naming the refusal when the zero-context gate cannot pass. |
+| "Their guidance is about a hundred lines a change, so this has to become three tickets." | Change size is a configurable starting point, not a gate, and neither it nor the test split is grounds for a finding on its own (ruling `numeric-heuristics-are-guidance`). | Slice on verifiable behavior. Where the natural slice exceeds the project's own guidance, record the exception in the project record. |
+| "They insist on one ticket for the whole migration, so I'll keep it together." | Refactor, expand, flagged behavior, consumer, backfill and contract are independently deployable delivery boundaries; a request cannot collapse them. | Order the stack with contract separate, or emit a decision ticket naming the refusal when the zero-context gate cannot pass. |
 
 ## Outputs
 

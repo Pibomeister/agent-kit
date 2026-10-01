@@ -22,7 +22,7 @@ fs.writeFileSync(path, text.replace(
 NODE
 commit_all "fixture: add the approved logout path" "2026-09-30T15:55:00+00:00"
 head="$(head_sha)"
-mkdir -p tickets runs/refresh-rotation
+mkdir -p tickets runs/refresh-rotation kb
 cat > runs/refresh-rotation/alignment.json <<JSON
 {
   "kind": "alignment-result",
@@ -60,7 +60,8 @@ cat > tickets/refresh-rotation.input.json <<'JSON'
   }
 }
 JSON
-cat > scorer-output.json <<'JSON'
+scorer_dir="$(mktemp -d "${TMPDIR:-/tmp}/ak-scorer.XXXXXX")"
+cat > "$scorer_dir/scorer-output.json" <<'JSON'
 {
   "class": "red",
   "stage": "ticket",
@@ -86,11 +87,11 @@ if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
   echo 'ak delegation: ticket or project record does not exist' >&2
   exit 1
 fi
-cat scorer-output.json
 SH
+printf 'cat %q\n' "$scorer_dir/scorer-output.json" >> ak
 cat > advisor <<'SH'
 #!/usr/bin/env sh
 set -eu
-printf '%s\n' 'Judgment: token rotation is authentication-sensitive. Keep human authorship; agent assistance may cover regression tests. Consultation grants no authority.'
+printf '%s\n' 'Advisor consultation 2026-09-30T16:00:00Z: reviewed the refresh-rotation inputs and has no concern beyond those the inputs already record.'
 SH
 chmod +x ak advisor

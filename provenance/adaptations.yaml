@@ -919,13 +919,13 @@ adaptations:
     rationale: The hard gates and stop conditions derived from the donor's Red Flags, declared as this skill's gates rather than as advice.
   - path: skills/super-bound/SKILL.md
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/constraint-driven-development/SKILL.md
-    rationale: Detect-before-asking survives while repository-local constraints and package-wide thresholds do not.
+    rationale: The detect-before-you-ask step only, scoped to reading the repository's own configuration. The donor's written constraints file is a repository-local project artifact and does not survive, and its thresholds belong to the packs rather than here.
   - path: skills/super-bound/SKILL.md
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/spec-driven-development/SKILL.md
-    rationale: The gated capability map with stable module ids survives as the pre-specification boundary.
+    rationale: The capability map with stable kebab-case module ids, and the rule that the map is gated before any module's specification is written.
   - path: skills/super-bound/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-plan/SKILL.md
-    rationale: The specify-then-plan split, document review before slicing and stop on invalidated decisions survive without donor-specific artifact roots.
+    rationale: The specify-then-plan split, the mandatory document review before tickets are cut, and the stop on evidence that invalidates a decision settled earlier in the session. The donor's artifact-root resolution and rendering options are dropped.
   - path: skills/super-bound/SKILL.md
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
     rationale: The readiness and assumption procedures became a per-ticket workflow hook, with shared criteria deferred to the delegation reference.
@@ -934,34 +934,34 @@ adaptations:
     rationale: The reversible stack order became the slicing sequence, with schema contract isolated as its own ticket and numeric size guidance left advisory.
   - path: skills/super-bound/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-spec/SKILL.md
-    rationale: The decision-level specification sections, seams-first rule and prototype-settled fragment survive while repository-local writes become knowledgebase publication.
+    rationale: The decision-level specification sections, the seams-first rule and the carve-out that admits a prototype-settled fragment. Section names are aligned to this package's acceptance and verification vocabulary and the donor's file write becomes a knowledgebase publish.
   - path: skills/super-bound/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
-    rationale: Vertical slicing, blocking edges and the wide-refactor carve-out survive with parallel safety widened to shared artifacts and file ownership.
+    rationale: Vertical-slice rules, blocking edges and the wide-refactor carve-out. The donor's split between a local issue directory and a real tracker becomes the knowledgebase adapter, and parallel-safety is widened past edges to shared generated artifacts and file ownership.
   - path: skills/super-bound/SKILL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-plans/SKILL.md
-    rationale: Zero-context calibration, interface contracts, right-sizing and self-review survive; unfinished-content phrasing remains a hard gate.
+    rationale: Zero-context calibration, the consumed and produced interfaces block, task right-sizing and the planner's own self-review. The donor's list of banned unfinished-content phrasings becomes a hard gate, and its cross-reference to a donor-specific execution skill is dropped.
   - path: skills/super-bound/skill.yaml
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/constraint-driven-development/SKILL.md
-    rationale: Project guidance remains a declared input and now fails closed when delegation guidance needed by the scorer is absent.
+    rationale: The project-guidance input the detect-before-you-ask step reads. The project record is now a required input because the delegation scorer never invents its guidance, while the size and test-shape starting points it carries stay advisory.
   - path: skills/super-bound/skill.yaml
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/spec-driven-development/SKILL.md
-    rationale: The capability-map trigger remains declared for approved directions spanning modules.
+    rationale: The trigger for an approved direction spanning several modules with no capability map drawn.
   - path: skills/super-bound/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-plan/SKILL.md
-    rationale: The document-review child skill and invalidated-decision stop remain declared.
+    rationale: The child_skills declaration of the document review, and the stop condition for evidence that invalidates a decision settled earlier in the session.
   - path: skills/super-bound/skill.yaml
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-150
     rationale: The execution contract mirrors the body's readiness, assumption and ordered-stack obligations without reproducing their shared rubric.
   - path: skills/super-bound/skill.yaml
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-spec/SKILL.md
-    rationale: The approved-direction trigger and decision-level specification gate remain in the execution contract.
+    rationale: The trigger conditions for an approved direction that needs a specification, and the gate that keeps the specification decision-level.
   - path: skills/super-bound/skill.yaml
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
-    rationale: The implementation-ticket and decision-ticket outputs remain declared against the shared ticket schema.
+    rationale: The implementation-ticket and decision-ticket outputs and their id shapes, declared against this package's shared ticket schema rather than the donor's two vocabularies.
   - path: skills/super-bound/skill.yaml
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-plans/SKILL.md
-    rationale: The zero-context and unfinished-content gates remain mirrored in the machine contract.
+    rationale: The hard gate against unfinished-content markers and vague instructions in a shipped ticket, and the behavioral case that exercises the zero-context check.
   - path: skills/super-build/SKILL.md
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/incremental-implementation/SKILL.md
     rationale: "The donor's scope-discipline reporting block becomes this skill's handling of an out-of-scope observation: file and line, what was noticed, why it is out of scope, routed to a candidate ticket instead of an in-place edit. The donor's numbered rule ordering is not carried, since the rules land here as gates rather than as a sequence."

@@ -1,87 +1,74 @@
 # Delegation vertical slice across model families, 2026-10-01
 
-Three `super-bound` cases were iterated to a pass, then exercised on subjects from three model
-families. The final result is 3/3 on each subject.
+The delegation slice adds three adversarial `super-bound` cases and extends the positive one. This
+note records what has been measured, what has not, and what it cost.
 
-## Instrument
+The short answer: **the cross-family proof is still owed.** No run has yet been graded by the
+committed graders at a committed revision on all three families, so this note claims no pass.
 
-| Item | Value |
+## Cases
+
+| Case | Path |
 | --- | --- |
-| Tree | `5b0522705dd4cb8b8245a17e0a81875531d5bd8d` plus the dirty vertical-slice worktree |
-| Bundle | `bun run ak build --profile all`; final Claude receipt records sha256 prefix `947f908f3a1e`, fresh sources, default install and no `.donors/` |
-| Cases | `super-bound-delegated-refresh-token-rotation`, `super-bound-vague-checkout-speed-criterion`, `super-bound-refused-oversized-change-split` |
-| Claude subject | Claude Code 2.1.286, observed `claude-opus-5-5`; native plugin evaluator, one arm, one run per case |
-| Codex subject | Codex CLI 0.159.2, requested `gpt-6.1-sol`; isolated home and `workspace-write` sandbox through the repository subject adapter |
-| Grok subject | Grok 1.0.46, requested through the available `grok-4.7` alias and observed as `grok-4.7-build`; isolated home, subagents disabled and permission bypass inside disposable fixtures |
-| Budget | Every native invocation passed `--max-cost-usd 3`. Codex reports no cost. Grok receipts report their own cost. |
+| Refresh-token floor | `evals/super-bound/delegated-refresh-token-rotation/case.yaml` |
+| Vague checkout criterion | `evals/super-bound/vague-checkout-speed-criterion/case.yaml` |
+| Refused large split | `evals/super-bound/refused-oversized-change-split/case.yaml` |
+| Approved direction (extended) | `evals/super-bound/approved-direction-produces-spec-and-tickets/case.yaml` |
 
-The Codex and Grok receipts were produced by a disposable runner under `.work/` using the repository's
-existing subject adapters. It copied the built skills plus shared references into each private host
-home, scaffolded each case in a fresh temporary repository, and scored the persisted ticket. Common
-checks required a ticket, the exact scorer class/stage record, all six readiness criteria plus
-`vague_terms`, and assumptions. Case checks then required the auth floor and human ownership, the
-vague-term frontier question, or the ordered migration decision respectively.
+## What was measured, and why it is not a receipt
 
-Two cross-host receipts were regraded without rerunning the subject. In each, the first predicate
-looked in too narrow an evidence surface: the Codex auth case linked its advisor receipt from the
-ticket, and the large-change cases expressed the ordered stack with the case's own vocabulary. The
-regraded JSON retains the original receipt path, reason and complete subject output.
+An earlier pass on this branch ran the three new cases on a Claude, a Codex and a Grok subject and
+reported 3/3 on each. Those figures are withdrawn:
 
-## Final results
+- The tree was `5b0522705dd4cb8b8245a17e0a81875531d5bd8d` plus uncommitted changes. Nobody can
+  rebuild it.
+- The Codex and Grok runs were scored by a throwaway runner with its own predicates, not by the
+  graders in the case files. Two of its results were regraded without a rerun.
+- The receipts sat in temporary and gitignored directories. None is committed.
+- The fixtures have changed since. The advisor stub and the factor evidence no longer state the
+  graded answer, the scorer output no longer sits in the repository the subject reads, and the
+  advisor grader now reads the `kb_refs` citation.
 
-| Subject | Refresh-token floor | Vague checkout criterion | Refused large split | Result |
-| --- | --- | --- | --- | --- |
-| Claude / `claude-opus-5-5` | pass | pass | pass | 3/3 |
-| Codex / `gpt-6.1-sol` | pass | pass | pass | 3/3 |
-| Grok / `grok-4.7` | pass | pass | pass | 3/3 |
+## Spend
 
-Claude's consolidated run scored every case 1/1 with overall score 1.0. Codex emitted schema-shaped
-decision tickets for the vague and split-refusal cases and a human-owned `red` ticket for the auth
-case. Grok did the same; its cases were slower but completed with persisted artifacts.
+| Runs | Reported cost |
+| --- | ---: |
+| Earlier Claude-host iterations and the withdrawn consolidated run | $11.194 |
+| Earlier Grok attempts, including cancelled and timed-out ones | $1.172 |
+| Earlier Codex attempts | not reported by the host |
+| Rerun authorized at an $8 cap | $0.000, not started |
+| Cumulative | $12.366 |
 
-## Final receipt paths
+## Why the rerun has not happened
 
-### Claude
+The rerun was authorized for all four cases on Claude, Codex and Grok, against the committed
+graders at the committed revision. It was not started, for three reasons:
 
-- Consolidated 3/3 receipt:
-  `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.ObkcoO/result.receipt.json`
-- Full result:
-  `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.ObkcoO/result.json`
+1. **No committed revision yet.** The fixture and grader changes above ship in the same commit as
+   this note. A receipt has to name the revision it measured, so the run comes after that commit.
+2. **The case-grader path changes user state.** `scripts/eval-local.sh` is the repository's path
+   for running a case file's graders. It moves `~/.docker/cli-plugins` and `~/.docker/bin` aside
+   for the run, and its header says to run it only by hand. The gate step that made these changes
+   may not touch files outside its worktree, and both directories exist on the operator's machine.
+3. **Codex and Grok cannot execute the committed graders.** The cross-model path in
+   `research/evals/2026-09-28-a2-cross-model.md` is `tests/learn/evals/trigger-eval.ts` with the
+   subject adapters under `tests/learn/evals/subjects/`. It scores routing over a prompt set. It
+   does not read a case file, run its scaffold, or evaluate `llm` and `tool_used` graders. Only
+   the Claude host's plugin evaluator does that. This is why the earlier pass fell back to a
+   throwaway runner.
 
-### Codex
+## Follow-ups
 
-- Refresh-token floor: `.work/delegation-xmodel/codex-refresh-regraded.json`
-- Vague checkout criterion: `.work/delegation-xmodel/codex-vague-regraded.json`
-- Refused large split: `.work/delegation-xmodel/codex-large-regraded.json`
+- Run the four cases with `scripts/eval-local.sh` by hand at the commit that carries this note,
+  and commit a compact receipt summary under `research/evals/` in the shape of
+  `research/evals/2026-09-25-results/`.
+- Decide how Codex and Grok get graded: either a repository runner that executes case-file graders
+  on those hosts, or an accepted narrower proof. Until then the three-family criterion is open.
+- One scaffold detail is unverified until a paid run: the scorer stub reads its output from a
+  directory under `TMPDIR`, outside the workspace, and the eval sandbox has to allow that read.
 
-### Grok
+## Out of scope
 
-- Refresh-token floor: `.work/delegation-xmodel/grok-refresh.json`
-- Vague checkout criterion: `.work/delegation-xmodel/grok-vague-r5.json`
-- Refused large split: `.work/delegation-xmodel/grok-large-regraded.json`
-
-## Iteration receipts and spend
-
-| Run | Receipt | Result | Reported cost |
-| --- | --- | --- | ---: |
-| Initial three-case ablation | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.lCNU9l/result.receipt.json` | 0/3 | $1.554 |
-| Corrected three-case ablation | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.UrrEy8/result.receipt.json` | two failed, one budget-ungraded; in-flight work exceeded the supplied cap | $3.044 |
-| Refresh-token focused failure | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.8g1qFF/result.receipt.json` | fail | $1.133 |
-| Refresh-token focused pass | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.aZtFEf/result.receipt.json` | pass | $1.526 |
-| Large-split focused failure | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.BuWYl2/result.receipt.json` | fail | $0.409 |
-| Large-split focused pass | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.ZNGxZR/result.receipt.json` | pass | $0.314 |
-| Vague-criterion focused failure | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.H4MwiW/result.receipt.json` | fail | $0.299 |
-| Vague-criterion focused pass | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.QrqJIK/result.receipt.json` | pass | $0.298 |
-| Final consolidated Claude proof | `/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-eval.ObkcoO/result.receipt.json` | 3/3 | $2.617 |
-
-The Claude evaluator reported $11.194 across those invocations. Grok reported $1.172 across its
-current-model attempts, including cancelled or timed-out diagnostic attempts. Total reported spend
-was $12.366; Codex cost was not reported by its host.
-
-The historical explicit `grok-4.7-build` binding did not start because Grok 1.0.46 no longer lists
-it as a selectable id. `grok models` listed `grok-4.7` as the current default alias; that alias was
-used for the successful proof and the session receipts reported the served model as
-`grok-4.7-build`.
-One `dontAsk` attempt ended with `stopReason: cancelled` after a refused call, matching the host
-limitation recorded in the earlier A2 note. The successful sessions used permission bypass only
-inside their disposable fixture repositories.
+- The independent-oracle requirement for unreviewed work is deferred to `protocols/tdd`, which this
+  slice names out of scope. The delegation reference and `super-bound` do not restate it (ruling
+  `unreviewed-work-needs-independent-oracle`).

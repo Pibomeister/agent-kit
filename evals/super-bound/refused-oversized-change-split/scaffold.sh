@@ -35,27 +35,28 @@ cat > tickets/order-ledger.input.json <<'JSON'
     "stage": "ticket",
     "floor": {"packs": ["pack-data"], "sensitive_actions": []},
     "factors": {
-      "reversibility": {"score": 2, "evidence": ["The stack uses expand, flags, backfill and later contract."]},
+      "reversibility": {"score": 2, "evidence": ["The old columns stay in place until a later removal."]},
       "size": {"score": 3, "evidence": ["The estimate is nine hundred changed lines across schema, behavior, consumer and backfill."]},
       "complexity": {"score": 2, "evidence": ["The change coordinates dual writes, a consumer transition and data movement."]},
       "spec": {"score": 0, "evidence": ["The approved direction names every delivery phase."]},
-      "verification": {"score": 1, "evidence": ["Each phase requires its own acceptance check."]}
+      "verification": {"score": 1, "evidence": ["Acceptance checks exist for part of the change."]}
     },
     "lowered_by": null
   }
 }
 JSON
-cat > scorer-output.json <<'JSON'
+scorer_dir="$(mktemp -d "${TMPDIR:-/tmp}/ak-scorer.XXXXXX")"
+cat > "$scorer_dir/scorer-output.json" <<'JSON'
 {
   "class": "yellow-owner",
   "stage": "ticket",
   "floor": {"packs": ["pack-data"], "sensitive_actions": []},
   "factors": {
-    "reversibility": {"score": 2, "evidence": ["The stack uses expand, flags, backfill and later contract."]},
+    "reversibility": {"score": 2, "evidence": ["The old columns stay in place until a later removal."]},
     "size": {"score": 3, "evidence": ["The estimate is nine hundred changed lines across schema, behavior, consumer and backfill."]},
     "complexity": {"score": 2, "evidence": ["The change coordinates dual writes, a consumer transition and data movement."]},
     "spec": {"score": 0, "evidence": ["The approved direction names every delivery phase."]},
-    "verification": {"score": 1, "evidence": ["Each phase requires its own acceptance check."]}
+    "verification": {"score": 1, "evidence": ["Acceptance checks exist for part of the change."]}
   },
   "lowered_by": null
 }
@@ -71,6 +72,6 @@ if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
   echo 'ak delegation: ticket or project record does not exist' >&2
   exit 1
 fi
-cat scorer-output.json
 SH
+printf 'cat %q\n' "$scorer_dir/scorer-output.json" >> ak
 chmod +x ak

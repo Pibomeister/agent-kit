@@ -38,14 +38,15 @@ cat > tickets/checkout-performance.input.json <<'JSON'
       "reversibility": {"score": 0, "evidence": ["No irreversible action is specified."]},
       "size": {"score": 0, "evidence": ["Size is unknown until the checkout path is named."]},
       "complexity": {"score": 1, "evidence": ["Performance work may affect a request path."]},
-      "spec": {"score": 3, "evidence": ["The only criterion uses the vague term faster."]},
-      "verification": {"score": 0, "evidence": ["No metric, baseline, target or command is named."]}
+      "spec": {"score": 3, "evidence": ["The approved direction carries a single acceptance criterion."]},
+      "verification": {"score": 0, "evidence": ["The alignment result is the only verification evidence supplied."]}
     },
     "lowered_by": null
   }
 }
 JSON
-cat > scorer-output.json <<'JSON'
+scorer_dir="$(mktemp -d "${TMPDIR:-/tmp}/ak-scorer.XXXXXX")"
+cat > "$scorer_dir/scorer-output.json" <<'JSON'
 {
   "class": "yellow-owner",
   "stage": "ticket",
@@ -54,8 +55,8 @@ cat > scorer-output.json <<'JSON'
     "reversibility": {"score": 0, "evidence": ["No irreversible action is specified."]},
     "size": {"score": 0, "evidence": ["Size is unknown until the checkout path is named."]},
     "complexity": {"score": 1, "evidence": ["Performance work may affect a request path."]},
-    "spec": {"score": 3, "evidence": ["The only criterion uses the vague term faster."]},
-    "verification": {"score": 0, "evidence": ["No metric, baseline, target or command is named."]}
+    "spec": {"score": 3, "evidence": ["The approved direction carries a single acceptance criterion."]},
+    "verification": {"score": 0, "evidence": ["The alignment result is the only verification evidence supplied."]}
   },
   "lowered_by": null
 }
@@ -71,6 +72,6 @@ if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
   echo 'ak delegation: ticket or project record does not exist' >&2
   exit 1
 fi
-cat scorer-output.json
 SH
+printf 'cat %q\n' "$scorer_dir/scorer-output.json" >> ak
 chmod +x ak

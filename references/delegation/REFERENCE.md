@@ -119,11 +119,13 @@ erase the draft or reduce the result to prose.
 
 ## Stack construction
 
-Slice on independently verifiable behavior, not on a universal line count. Order a stack as pure
-refactor, additive schema expand, behavior behind a flag, consumer, backfill, then schema contract.
-The schema-contract change is a separate ticket. For a wide mechanical refactor that cannot land as
-a vertical slice, expand first, migrate call sites in independently verified batches, and contract
-only after every batch. Each ticket names its criteria, interfaces, ownership and verification.
+Slice on independently verifiable behavior, not on a universal line count. Each slice is a narrow
+but complete path through every layer, independently verifiable and sized for one fresh context
+window. Order a stack as pure refactor, additive schema expand, behavior behind a flag, consumer,
+backfill, then schema contract. The schema-contract change is a separate ticket. For a wide
+mechanical refactor that cannot land as a vertical slice, expand first, migrate call sites in
+independently verified batches, and contract only after every batch. Each ticket names its
+criteria, interfaces, ownership and verification.
 When the direction already spans these independently deployable phases, their boundaries require
 the ordered stack. A request to keep them in one ticket becomes an open decision; it does not erase
 the boundaries.
@@ -132,6 +134,9 @@ the boundaries.
 
 On a host that offers an advisor facility, consultation is required and recorded as judgment
 evidence for `yellow-owner` and `red`, recommended for `yellow-agent`, and silent for `green`.
+The record surface is the knowledgebase consultation artifact: store the advisor's result there, and
+cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt` whose
+`note` names it judgment evidence. The ticket carries the citation, never the consultation itself.
 Consultation adds judgment evidence only: it never lowers `delegation.class`, authorizes a sensitive
 action, closes a finding or substitutes for a required independent lane. A host without the
 facility remains valid and records no invented consultation evidence (ruling

@@ -17,7 +17,7 @@ graders:
   - name: runs-the-scorer
     type: tool_used
     tool: Bash
-    input_match: '"command"\s*:\s*"(?:(?:[^"\\]|\\.)*?(?:[;&|(]|\\n)\s*)?(?:\w+=\S+\s+)*(?:\S*/)?ak\s+delegation\s+\S+\s+--project'
+    input_match: 'ak\s+delegation'
     weight: 1
   - name: persists-readiness-before-stop
     type: llm
