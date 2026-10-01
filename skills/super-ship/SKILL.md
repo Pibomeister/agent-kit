@@ -66,11 +66,11 @@ prints in the ship record. A refusal means stop and report `needs-decision` to F
 covers the binding's delivery action and nothing more; merge is never on it (ADR-0004).
 
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
-task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --phase
-super-ship` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
+task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
+--phase super-ship` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
 `needs-decision`. The grant starts the ship and nothing else: it runs as the explicit form up to the
 first remote call, as in `dry-run`, and every remote effect waits for the supervisor's answer to a
-`needs-decision`. Record `ship-preflight` with `--bypass <path>`. Merge and deploy are never on it.
+`needs-decision`. Record `ship-preflight` with `--bypass <path> --task <id>`. Merge and deploy are never on it.
 
 For the autonomous form, `ship.prepare` delegated under a grant, exit 0 is necessary and not
 sufficient. That form also needs trusted evidence: gate evidence the runner recorded into the run's

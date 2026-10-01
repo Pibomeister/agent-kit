@@ -1196,6 +1196,8 @@ interface BypassLedgerRecord {
   grant_id: string;
   grant_path: string;
   grant_sha256: string;
+  /** The run the grant was first used by; every later use must come from the same run. */
+  run_id?: string;
 }
 
 /** Resolved from the account's home directory, never from `HOME` or another variable a worker could set. */
@@ -1294,6 +1296,10 @@ export function grantBypass(
 
 export interface BypassCheckArgs {
   grant: string;
+  /** The task the worker was briefed on; the grant must name the same one. */
+  task: string;
+  /** The run using the grant; the first use binds the grant to it. */
+  run: string;
   /** The phase to start, or undefined to check only that the grant still holds. */
   phase?: string;
   project: string;
@@ -1333,6 +1339,10 @@ export function checkBypass(
     return no(`bypass grant ${id} expired at ${expires}`);
   if (a.phase !== undefined && !(Array.isArray(g.covers) && g.covers.includes(a.phase)))
     return no(`bypass grant ${id} does not cover ${a.phase}`);
+  if (g.task_id !== a.task) return no(`bypass grant ${id} is for task ${String(g.task_id)}, not ${a.task}`);
+  if (entry.run_id !== undefined && entry.run_id !== a.run)
+    return no(`bypass grant ${id} is bound to run ${String(entry.run_id)}, not ${a.run}`);
+  if (entry.run_id === undefined) atomicJson(join(a.ledger, `${safeRunId(id)}.json`), { ...entry, run_id: a.run });
   return {
     ok: true,
     attribution: {
@@ -1353,11 +1363,12 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "",
     `Bypass grant: \`${path}\`, authorized by ${grant.authorized_by} for task ${grant.task_id} until ${grant.expires_at}.`,
     "It stands in for the typed command of super-align, super-bound, super-review full and readiness, and",
-    `super-ship. Before starting one, run \`ak lifecycle bypass check --grant ${path} --phase <phase>\` (or`,
-    "`node <bundle>/bin/ak-gate.mjs bypass check …`); exit 0 is the start, anything else is a stop.",
+    `super-ship. Before starting one, run \`ak lifecycle bypass check --grant ${path} --task ${grant.task_id} --phase <phase>\``,
+    "(or `node <bundle>/bin/ak-gate.mjs bypass check …`); exit 0 is the start, anything else is a stop.",
+    "The first check binds the grant to your run; a check from any other run is refused.",
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
-    "Pass `--bypass <path>` when you record review-full, review-readiness or ship-preflight.",
+    `Pass \`--bypass ${path} --task ${grant.task_id}\` when you record review-full, review-readiness or ship-preflight.`,
   ].join("\n");
 }
 
@@ -1370,17 +1381,18 @@ export const LIFECYCLE_USAGE = [
   "ak lifecycle — the gate records each lifecycle phase leaves, and the check super-ship runs first",
   "",
   "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> [--hours <n>]",
-  "  ak lifecycle bypass check --grant <file> [--phase <phase>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
   `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant from outside the repository; the worker`,
-  "  runs check before each phase and passes --bypass <file> to record. Start only: approvals still stop.",
+  "  runs check before each phase and passes --bypass <file> --task <id> to record. The first use binds the",
+  "  grant to that run. Start only: approvals still stop.",
   "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
   "",
   "Exit 0 when the record was written or every gate is current, 1 when refused, 2 on bad usage.",
@@ -1388,10 +1400,10 @@ export const LIFECYCLE_USAGE = [
 
 const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "dir", "project"],
-  record: ["gate", "receipt", "class", "author-kind", "host", "bypass", "run", "dir", "project"],
+  record: ["gate", "receipt", "class", "author-kind", "host", "bypass", "task", "run", "dir", "project"],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project"],
-  "bypass check": ["grant", "phase", "run", "dir", "project"],
+  "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
 };
 
 export function main(
@@ -1511,12 +1523,13 @@ export function main(
 
   if (sub === "bypass check") {
     const grantPath = str("grant");
-    if (grantPath === undefined) {
-      io.err("ak lifecycle bypass check: --grant is required");
+    const task = str("task");
+    if (grantPath === undefined || task === undefined) {
+      io.err("ak lifecycle bypass check: --grant and --task are required");
       return 2;
     }
     const phase = str("phase");
-    const checked = checkBypass({ grant: resolve(cwd, grantPath), phase, project, ledger: bypassLedger });
+    const checked = checkBypass({ grant: resolve(cwd, grantPath), task, run, phase, project, ledger: bypassLedger });
     if (!checked.ok) {
       io.err(`ak lifecycle bypass check: refused: ${checked.reason}`);
       io.err("hint: stop and report needs-decision; the phase needs its typed command");
@@ -1535,10 +1548,17 @@ export function main(
       return 2;
     }
     const bypassPath = str("bypass");
+    const task = str("task");
+    if ((bypassPath === undefined) !== (task === undefined)) {
+      io.err("ak lifecycle record: --bypass and --task must be supplied together");
+      return 2;
+    }
     let bypass: BypassAttribution | undefined;
-    if (bypassPath !== undefined) {
+    if (bypassPath !== undefined && task !== undefined) {
       const checked = checkBypass({
         grant: resolve(cwd, bypassPath),
+        task,
+        run,
         phase: BYPASS_GATE_PHASE[gate],
         project,
         ledger: bypassLedger,

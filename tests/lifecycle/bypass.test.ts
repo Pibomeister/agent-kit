@@ -118,14 +118,14 @@ describe("bypass granted: phases start without a typed command", () => {
       grant_id: grantId(ledger),
     });
     expect(readdirSync(ledger)).toHaveLength(1);
-    expect(brief).toContain(`bypass check --grant ${realpathSync(grantPath)} --phase`);
+    expect(brief).toContain(`bypass check --grant ${realpathSync(grantPath)} --task T-1 --phase`);
     expect(brief).toContain("Every approval inside a phase stops with needs-decision");
   });
 
   test("the worker's check passes for every phase and leaves a use record naming who authorized it", () => {
     const { worktree, ledger, grantPath } = granted();
     for (const phase of BYPASS_PHASES) {
-      const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--phase", phase);
+      const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", phase);
       expect(r.code).toBe(0);
       expect(JSON.parse(r.out)).toMatchObject({ mode: "bypass", authorized_by: "captain", task_id: "T-1", phase });
     }
@@ -135,7 +135,9 @@ describe("bypass granted: phases start without a typed command", () => {
 
   test("a gate recorded with --bypass carries the attribution; one recorded without it does not", () => {
     const { worktree, ledger, grantPath } = granted();
-    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath).code).toBe(0);
+    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-1").code).toBe(
+      0,
+    );
     expect(ak(worktree, ledger, "record", "--gate", "build-checks").code).toBe(0);
     const evidence = defaultEvidenceDir(worktree);
     const full = only(readRecords(evidence, "task", "review-full"));
@@ -150,7 +152,7 @@ describe("start only: approvals, merge and deploy are never covered", () => {
     "%s is refused with a needs-decision hint",
     (phase) => {
       const { worktree, ledger, grantPath } = granted();
-      const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--phase", phase);
+      const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", phase);
       expect(r.code).toBe(1);
       expect(r.err).toContain("not a phase a bypass grant starts");
       expect(r.err).toContain("needs-decision");
@@ -161,7 +163,18 @@ describe("start only: approvals, merge and deploy are never covered", () => {
 describe("bypass absent or forged: the refusal is unchanged", () => {
   test("no grant file: refused, and no use record is written", () => {
     const s = setup();
-    const r = ak(s.worktree, s.ledger, "bypass", "check", "--grant", s.grantPath, "--phase", "super-align");
+    const r = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-align",
+    );
     expect(r.code).toBe(1);
     expect(r.err).toContain("does not exist");
     expect(existsSync(join(defaultEvidenceDir(s.worktree), "task", "bypass"))).toBe(false);
@@ -171,7 +184,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     const { worktree, ledger, grantPath } = granted();
     const text = readFileSync(grantPath, "utf8");
     writeFileSync(grantPath, text.replace('"authorized_by": "captain"', '"authorized_by": "someone else"'));
-    const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--phase", "super-align");
+    const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-align");
     expect(r.code).toBe(1);
     expect(r.err).toContain("not the sha256:");
   });
@@ -180,7 +193,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     const { worktree, ledger, grantPath, home } = granted();
     const copy = join(home, "copy.json");
     copyFileSync(grantPath, copy);
-    const r = ak(worktree, ledger, "bypass", "check", "--grant", copy, "--phase", "super-align");
+    const r = ak(worktree, ledger, "bypass", "check", "--grant", copy, "--task", "T-1", "--phase", "super-align");
     expect(r.code).toBe(1);
     expect(r.err).toContain("that was registered");
   });
@@ -191,7 +204,7 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     mkdirSync(join(s.home, "data"), { recursive: true });
     const forged = join(s.home, "data", "forged.json");
     copyFileSync(grantPath, forged);
-    const r = ak(s.worktree, s.ledger, "bypass", "check", "--grant", forged, "--phase", "super-align");
+    const r = ak(s.worktree, s.ledger, "bypass", "check", "--grant", forged, "--task", "T-1", "--phase", "super-align");
     expect(r.code).toBe(1);
     expect(r.err).toContain("was never registered");
   });
@@ -221,6 +234,8 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     const later = new Date(Date.now() + 3_600_001);
     const r = checkBypass({
       grant: s.grantPath,
+      task: "T-1",
+      run: "task",
       phase: "super-align",
       project: s.worktree,
       ledger: s.ledger,
@@ -233,7 +248,18 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
   test("a grant for another repository is refused", () => {
     const { ledger, grantPath } = granted();
     const other = setup();
-    const r = ak(other.worktree, ledger, "bypass", "check", "--grant", grantPath, "--phase", "super-align");
+    const r = ak(
+      other.worktree,
+      ledger,
+      "bypass",
+      "check",
+      "--grant",
+      grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-align",
+    );
     expect(r.code).toBe(1);
     expect(r.err).toContain("is for");
   });
@@ -241,8 +267,77 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
   test("record --bypass with a forged grant writes no record", () => {
     const { worktree, ledger, grantPath } = granted();
     writeFileSync(grantPath, readFileSync(grantPath, "utf8").replace("captain", "captain2"));
-    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath).code).toBe(1);
+    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-1").code).toBe(
+      1,
+    );
     expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
+  });
+});
+
+describe("one task, one run: the grant binds to the task it names and the run that first uses it", () => {
+  test("another task's grant is refused at check, and no use record is written", () => {
+    const { worktree, ledger, grantPath } = granted();
+    const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-2", "--phase", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is for task T-1, not T-2");
+    expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
+  });
+
+  test("another task's grant is refused at record --bypass, and no gate record is written", () => {
+    const { worktree, ledger, grantPath } = granted();
+    const r = ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-2");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is for task T-1, not T-2");
+    expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
+  });
+
+  test("check and record --bypass without --task are usage errors", () => {
+    const { worktree, ledger, grantPath } = granted();
+    expect(ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--phase", "super-align").code).toBe(2);
+    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath).code).toBe(2);
+    expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
+  });
+
+  test("a second run on the same task's grant is refused at check and at record --bypass", () => {
+    const { worktree, ledger, grantPath } = granted();
+    const check = (run: string) =>
+      ak(
+        worktree,
+        ledger,
+        "bypass",
+        "check",
+        "--grant",
+        grantPath,
+        "--task",
+        "T-1",
+        "--phase",
+        "super-align",
+        "--run",
+        run,
+      );
+    expect(check("run-a").code).toBe(0);
+    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"))).toMatchObject({
+      run_id: "run-a",
+    });
+    expect(check("run-a").code).toBe(0);
+    const second = check("run-b");
+    expect(second.code).toBe(1);
+    expect(second.err).toContain("is bound to run run-a, not run-b");
+    const r = ak(
+      worktree,
+      ledger,
+      "record",
+      "--gate",
+      "review-full",
+      "--bypass",
+      grantPath,
+      "--task",
+      "T-1",
+      "--run",
+      "run-b",
+    );
+    expect(r.code).toBe(1);
+    expect(readRecords(defaultEvidenceDir(worktree), "run-b", "review-full")).toEqual([]);
   });
 });
 
@@ -309,7 +404,7 @@ describe("a worker-authored grant is rejected", () => {
       join(ledger, `${id}.json`),
       JSON.stringify({ grant_id: id, grant_path: realpathSync(inside), grant_sha256: sha }),
     );
-    const r = ak(worktree, ledger, "bypass", "check", "--grant", inside, "--phase", "super-align");
+    const r = ak(worktree, ledger, "bypass", "check", "--grant", inside, "--task", "T-1", "--phase", "super-align");
     expect(r.code).toBe(1);
     expect(r.err).toContain("which the worker can write");
   });
@@ -327,7 +422,7 @@ test(`the bundled ${GATE_FILE} carries bypass and refuses an absent grant under 
   // The bundle resolves the account's real ledger, so nothing here runs `grant`: a regression in its
   // guards would write there. The grant itself is exercised above against a temp ledger.
   expect(node().stderr.toString()).toContain("ak lifecycle bypass grant");
-  const missing = node("bypass", "check", "--grant", s.grantPath, "--phase", "super-align");
+  const missing = node("bypass", "check", "--grant", s.grantPath, "--task", "T-1", "--phase", "super-align");
   expect(missing.exitCode).toBe(1);
   expect(missing.stderr.toString()).toContain("does not exist");
 });
