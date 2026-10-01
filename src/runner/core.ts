@@ -72,6 +72,7 @@ const EFFECT_ACTION = new Map([
   ["branch-create", "local-commit"],
 ]);
 const STOPPED = new Set(["needs-input", "cap-reached", "failed", "cancelled", "complete"]);
+const RUNTIME_SCRATCH_DIRS = [".omc", ".omx"] as const;
 const ACTION_FOR = new Map([
   ["spec-approval", "approve-spec"],
   ["ticket-approval", "approve-ticket"],
@@ -240,7 +241,7 @@ export class Runner {
 
   private observedSnapshot(): Snapshot | null {
     if (!this.enforceSnapshot) return null;
-    const snapshot = takeSnapshot(this.workerRoot);
+    const snapshot = takeSnapshot(this.workerRoot, { ignoreUntrackedDirs: RUNTIME_SCRATCH_DIRS });
     if (snapshot instanceof Object) return snapshot;
     throw new Error(`runner cannot observe worker revision: ${snapshot}`);
   }
@@ -419,6 +420,25 @@ export class Runner {
     const value: unknown = JSON.parse(readFileSync(join(this.stateDir, `${id}.ledger.json`), "utf8"));
     if (!this.ledgerSchema(value)) throw new Error("runner ledger no longer validates");
     return value;
+  }
+
+  packet(id: string, cardId: string) {
+    const run = this.load(id);
+    const card = run.cards[cardId];
+    if (card === undefined) throw new Error("unknown checkpoint card");
+    return {
+      run: run.id,
+      charter_hash: run.charter_hash,
+      revision: run.revision,
+      diff_hash: run.diff_hash,
+      card: {
+        id: card.id,
+        question: card.question,
+        options: card.options,
+        artifact_hash: card.artifact_hash,
+        evidence: card.evidence.map((evidenceId) => ({ id: evidenceId, hash: run.evidence[evidenceId]?.hash ?? null })),
+      },
+    };
   }
 
   start(
@@ -606,9 +626,22 @@ export class Runner {
     rationale = "Independent supervisor judgment",
   ): Card {
     const run = this.load(id);
-    if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new judgment can be submitted");
     const card = run.cards[cardId];
     if (card === undefined) throw new Error("unknown checkpoint card");
+    const prior = card.judgments.find((judgment) => judgment.seat === seat);
+    if (prior !== undefined) {
+      if (
+        prior.actor === actor &&
+        prior.dispatch === dispatch &&
+        prior.choice === choice &&
+        prior.rationale === rationale &&
+        JSON.stringify(prior.lineage) === JSON.stringify(lineage) &&
+        JSON.stringify(prior.input_dispatches) === JSON.stringify(inputDispatches)
+      )
+        return card;
+      throw new Error("seat judgment changed after first submission");
+    }
+    if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new judgment can be submitted");
     const seats = run.charter.supervisors.seats.map((s) => s.id);
     if (
       !seats.includes(seat) ||

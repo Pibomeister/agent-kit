@@ -21,6 +21,7 @@ must be supervisor-owned; a worker-authored file never supplies effect commands.
 |---|---|---|
 | `start` | Firstmate | `{"run":"r","charter":"/private/charter.json","implementer":"actor-id","revision":"<full-git-sha>","standing_grant":{"charter_hash":"sha256:<digest>","covers":"autopilot.start","controller":"firstmate","run_id":"r"},"excluded_actors":["author-id"]}` |
 | `status`, `ledger` | Worker | `{"run":"r"}` |
+| `packet` | Worker or Firstmate | `{"run":"r","card_id":"align-1"}`; returns a frozen card and evidence hashes without either seat's judgment |
 | `collect` | Firstmate | `{"run":"r","id":"receipt-id","source":"/private/receipt","revision":"<full-git-sha>","kind":"source"}` |
 | `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","no"],"evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}` |
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
@@ -38,8 +39,22 @@ effect config is `{"adapters":[{"effect":"pr-open","read_back":["..."],"perform"
 `{target}` and `{input_hash}` in an argv element are replaced by the runner. A request cannot
 carry either command array.
 
+On stock Firstmate, `ak firstmate seat-launch` accepts the runner's `packet` JSON, a private
+evidence directory, the captain's intent file and the implementer worktree. It registers a new
+task, runs stock `fm-brief.sh --scout`, fills its brief with the frozen packet and hash-checked
+evidence, and runs stock `fm-spawn.sh --scout`. After that crewmate writes its normal report,
+`ak firstmate seat-judge` reads the final `{"choice":"...","rationale":"..."}` line, checks
+Firstmate's scout task metadata and submits `judge` with the supervisor token. Use distinct task
+ids and worktrees for the two seats. Firstmate owns their normal status and teardown lifecycle.
+
 A refusal is an operation result or CLI error. A `needs-input` result contains one six-field
 escalation; the crewmate reports it through its normal Firstmate status and inbox rather than
 polling. A changed worktree makes old evidence stale. After normal delivery changes the head,
 `sync`, `run-verify`, review and ship must run again before `complete` can succeed. Merge and deploy
 are never granted by these commands.
+
+For worker-authored checkpoint evidence, the worker writes a file, calls `sync`, and reports its
+path, proposed id and kind to Firstmate. The supervisor copies it into private runner intake and
+calls `collect` with the admin token. Firstmate returns the accepted id and hash through the task
+inbox. Only then does the worker name that evidence id on a prepared card. The file the worker
+wrote is a proposal, never the runner's trusted gate record.

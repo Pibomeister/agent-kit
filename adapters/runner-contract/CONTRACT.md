@@ -353,6 +353,10 @@ card and ask `decide` to apply the next validated grant. `sync` observes the wor
 revision and diff; `run-verify` executes only the supervisor-configured command and stores its
 output privately.
 
+The runner's Git snapshot omits **untracked** `.omc/` and `.omx/` harness scratch. Tracked files in
+those paths and every other untracked source file still affect the diff hash. Standalone lifecycle
+snapshots retain their original all-untracked behavior; this exception is confined to the runner.
+
 At `decide`, the service checks the charter, grant, current state, evidence and cap before invoking
 the two configured launchers. It sends each launcher the same frozen question, option ids and
 evidence hashes on stdin, without either judgment. Under stock Firstmate, the launchers dispatch

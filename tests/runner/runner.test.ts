@@ -7,6 +7,7 @@ import { Runner } from "../../src/runner/core.ts";
 import type { EvidenceStore } from "../../src/runner/evidence.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
+import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 
 const root = join(import.meta.dir, "..", "..");
@@ -15,7 +16,7 @@ const transcript: string[] = [
   "",
   "Instrument: `AK_RUNNER_TRANSCRIPT=research/probes/runner-toy-transcript.md bun test tests/runner/runner.test.ts`.",
   "The test creates a scratch git repository, an active human-approved charter outside its worker root, and a live `ak runner serve` process. It launches two separate seat processes per checkpoint.",
-  "The seat processes are toy launchers. A normal Firstmate crewmate spawn with two Firstmate-dispatched seat crewmates remains a separate live smoke gate.",
+  "The seat processes here are toy launchers. The separate normal-crewmate live smoke is recorded in stock-firstmate-live-smoke.md.",
   "",
 ];
 afterAll(() => {
@@ -363,6 +364,10 @@ describe("runner guards", () => {
       );
       expect(call("prepare", workerToken).exitCode).toBe(0);
       writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "align" }));
+      const packet = call("packet", workerToken);
+      expect(packet.exitCode).toBe(0);
+      expect(packet.stdout.toString()).toContain('"charter_hash"');
+      expect(packet.stdout.toString()).not.toContain('"judgments"');
       const decision = call("decide", workerToken);
       expect(decision.exitCode).toBe(0);
       expect(decision.stdout.toString()).toContain('"status": "complete"');
@@ -526,6 +531,9 @@ describe("runner guards", () => {
       artifact_hash: `sha256:${"b".repeat(64)}`,
     });
     f.runner.judge("toy-run", "card", "seat-a", "supervisor-1", "dispatch-a", "yes", []);
+    expect(f.runner.judge("toy-run", "card", "seat-a", "supervisor-1", "dispatch-a", "yes", []).judgments).toHaveLength(
+      1,
+    );
     expect(() => f.runner.judge("toy-run", "card", "seat-b", "supervisor-1", "dispatch-b", "yes", [])).toThrow();
     expect(() =>
       f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-b", "yes", ["dispatch-a"]),
@@ -543,6 +551,9 @@ describe("runner guards", () => {
       ),
     ).toThrow();
     expect(f.runner.decide("toy-run", "card").escalation?.charter_rule).toBe("runner:seat-independence");
+    expect(f.runner.judge("toy-run", "card", "seat-a", "supervisor-1", "dispatch-a", "yes", []).judgments).toHaveLength(
+      1,
+    );
     transcript.push(
       "Refusal: same actor in both seats and a seat input containing the other dispatch → rejected before judgment.",
     );
@@ -587,6 +598,28 @@ describe("runner guards", () => {
     transcript.push(
       "Refusal: human-experience question → named-human escalation; tracked worktree edit after receipt → stale-evidence escalation.",
     );
+  });
+
+  test("untracked harness scratch does not stale runner evidence, but untracked source does", () => {
+    const f = fixture();
+    const baseline = takeSnapshot(f.worker);
+    if (!(baseline instanceof Object)) throw new Error(baseline);
+    const runner = new Runner(f.privateDir, f.worker, root, true);
+    runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "receipt.txt");
+    writeFileSync(receipt, "independent observation");
+    runner.collect("toy-run", "before", receipt, f.revision, "source");
+    mkdirSync(join(f.worker, ".omc"));
+    writeFileSync(join(f.worker, ".omc", "session.json"), "{}");
+    mkdirSync(join(f.worker, ".omx"));
+    writeFileSync(join(f.worker, ".omx", "state.json"), "{}");
+    const standalone = takeSnapshot(f.worker);
+    if (!(standalone instanceof Object)) throw new Error(standalone);
+    expect(standalone.diff_hash).not.toBe(baseline.diff_hash);
+    expect(runner.collect("toy-run", "after-harness", receipt, f.revision, "source").id).toBe("after-harness");
+    mkdirSync(join(f.worker, "src"));
+    writeFileSync(join(f.worker, "src", "new.ts"), "export const changed = true;\n");
+    expect(() => runner.collect("toy-run", "after-source", receipt, f.revision, "source")).toThrow("stale");
   });
 
   test("each remote effect reads back once and events deduplicate", () => {

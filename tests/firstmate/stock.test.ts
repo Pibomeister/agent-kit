@@ -6,7 +6,11 @@ import { makeTree } from "../helpers/tree.ts";
 import { makeBundle, makeProject, REPO } from "./fixture.ts";
 
 function stockHome() {
-  return makeTree({ "bin/fm-brief.sh": "#!/bin/sh\n", "bin/fm-spawn.sh": "#!/bin/sh\n" });
+  return makeTree({
+    "bin/fm-brief.sh": "#!/bin/sh\n",
+    "bin/fm-spawn.sh": "#!/bin/sh\n",
+    "bin/fm-tasks-axi.sh": "#!/bin/sh\n",
+  });
 }
 
 describe("stock Firstmate adapter", () => {
@@ -48,6 +52,8 @@ describe("stock Firstmate adapter", () => {
       delivery: "no-mistakes",
     });
     expect(rendered).toContain("start_authority.kind is standing-grant");
+    expect(rendered).toContain("Firstmate copies the");
+    expect(rendered).toContain("Your worker token cannot call collect");
     expect(rendered).toContain("existing status file");
     expect(rendered).toContain("no-mistakes delivery contract");
     expect(rendered).not.toContain("--mode agent-kit");

@@ -20,7 +20,7 @@ export function preflightStock(
   bundleDir: string,
   socket?: string,
 ): StockPreflight {
-  const scripts = ["fm-brief.sh", "fm-spawn.sh"].map((name) => join(fmHome, "bin", name));
+  const scripts = ["fm-brief.sh", "fm-spawn.sh", "fm-tasks-axi.sh"].map((name) => join(fmHome, "bin", name));
   const home: Check = scripts.every(existsSync)
     ? {
         id: "stock-firstmate",
@@ -95,12 +95,22 @@ or mismatched attestation is needs-decision; no phase command runs. The runner v
 checkpoint grant and keeps evidence outside this worktree. Firstmate dispatches the two supervisor
 seats as separate ordinary crewmates, never your children. With configured seat launchers the
 runner asks Firstmate for them on decide; otherwise Firstmate submits both judgments before you
-call decide. Use the normal status and inbox handoff, not a polling loop.
+call decide, using the stock seat-launch and seat-judge commands. Use the normal status and inbox
+handoff, not a polling loop.
 
 Use ak runner call prepare and decide for checkpoints, sync after code changes, run-verify for
 runner-owned verification, and ledger for the handback. A refused card returns one escalation;
 report it through the normal Firstmate needs-decision status and inbox protocol. Use the task's
 normal delivery mode for push and pull request. If delivery changes the head, sync, verify and
 review again before reporting done. Never merge or deploy under this charter.
+
+Evidence handoff: when you create a spec, ticket, review note or other checkpoint evidence, write
+it in your worktree and call sync so the runner observes the current revision and diff. Report its
+path, proposed evidence id and kind to Firstmate in a working status line. Firstmate copies the
+bytes into its private runner evidence intake, calls collect with the supervisor token and current
+revision, then sends the accepted evidence id and hash through your inbox. Prepare the card with
+that id only after this receipt arrives. Your worker token cannot call collect, and a worker path
+or self-reported test result is not trusted gate evidence. Wait for Firstmate's separate seat
+judgments before calling decide; do not poll for them.
 `;
 }

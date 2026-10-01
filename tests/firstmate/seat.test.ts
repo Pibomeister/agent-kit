@@ -1,0 +1,189 @@
+import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { runFirstmate } from "../../src/firstmate/cli.ts";
+import { judgeSeat, launchSeat } from "../../src/firstmate/seat.ts";
+import { makeDir } from "./fixture.ts";
+
+function setup() {
+  const home = makeDir();
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  const scripts = {
+    "fm-tasks-axi.sh": '#!/bin/sh\nprintf "task %s\\n" "$*" >> "$PWD/calls.log"\n',
+    "fm-brief.sh":
+      '#!/bin/sh\nmkdir -p "$PWD/data/$1"\nprintf "# Task\\n{TASK}\\n## Firstmate spec\\n{FIRSTMATE_SPEC}\\n" > "$PWD/data/$1/brief.md"\nprintf "brief %s\\n" "$*" >> "$PWD/calls.log"\n',
+    "fm-spawn.sh":
+      '#!/bin/sh\nprintf "spawn %s\\n" "$*" >> "$PWD/calls.log"\nmkdir -p "$PWD/state"\nprintf "endpoint_task_id=%s\\nkind=scout\\nworktree=/scratch/%s\\n" "$1" "$1" > "$PWD/state/$1.meta"\necho "spawned $1"\n',
+  };
+  for (const [name, body] of Object.entries(scripts)) {
+    const path = join(bin, name);
+    writeFileSync(path, body);
+    chmodSync(path, 0o700);
+  }
+  const intake = join(home, "data", "runner-intake");
+  const evidence = join(intake, "evidence");
+  mkdirSync(evidence, { recursive: true });
+  const bytes = Buffer.from("trusted evidence for this card\n");
+  writeFileSync(join(evidence, "e1.txt"), bytes);
+  const packet = join(intake, "packet.json");
+  writeFileSync(
+    packet,
+    JSON.stringify({
+      run: "toy-run",
+      charter_hash: `sha256:${"a".repeat(64)}`,
+      revision: "1".repeat(40),
+      diff_hash: `sha256:${"b".repeat(64)}`,
+      card: {
+        id: "align-1",
+        question: "Approve the direction?",
+        options: ["approve", "hold"],
+        artifact_hash: `sha256:${"c".repeat(64)}`,
+        evidence: [{ id: "e1", hash: `sha256:${createHash("sha256").update(bytes).digest("hex")}` }],
+      },
+    }),
+  );
+  const captain = join(intake, "captain.txt");
+  writeFileSync(captain, "Run the toy charter on stock Firstmate.");
+  return { home, intake, evidence, packet, captain };
+}
+
+describe("stock Firstmate seat launcher", () => {
+  test("scaffolds and spawns separate scout crewmates from the same frozen packet", () => {
+    const f = setup();
+    const out: string[] = [];
+    const launch = (taskId: string) =>
+      runFirstmate(
+        [
+          "seat-launch",
+          "--fm-home",
+          f.home,
+          "--task-id",
+          taskId,
+          "--project-name",
+          "toy",
+          "--project-dir",
+          "projects/toy",
+          "--packet",
+          f.packet,
+          "--evidence-dir",
+          f.evidence,
+          "--captain-intent-file",
+          f.captain,
+          "--implementer-worktree",
+          "/scratch/implementer",
+          "--harness",
+          "codex",
+        ],
+        {
+          out: (line) => out.push(line),
+          err: (line) => {
+            throw new Error(line);
+          },
+        },
+      );
+    expect(launch("seat-a-align-1")).toBe(0);
+    expect(launch("seat-b-align-1")).toBe(0);
+    const a = readFileSync(join(f.home, "data", "seat-a-align-1", "brief.md"), "utf8");
+    const b = readFileSync(join(f.home, "data", "seat-b-align-1", "brief.md"), "utf8");
+    for (const brief of [a, b]) {
+      expect(brief).toContain("Run the toy charter on stock Firstmate.");
+      expect(brief).toContain("trusted evidence for this card");
+      expect(brief).toContain("Approve the direction?");
+      expect(brief).not.toContain("other seat's verdict");
+    }
+    const calls = readFileSync(join(f.home, "calls.log"), "utf8");
+    expect(calls).toContain("brief seat-a-align-1 toy --scout");
+    expect(calls).toContain("spawn seat-b-align-1 projects/toy --scout --harness codex");
+    expect(() =>
+      launchSeat({
+        fmHome: f.home,
+        taskId: "seat-a-align-1",
+        projectName: "toy",
+        projectDir: "projects/toy",
+        packetPath: f.packet,
+        evidenceDir: f.evidence,
+        captainIntentFile: f.captain,
+        implementerWorktree: "/scratch/implementer",
+      }),
+    ).toThrow("already exists");
+  });
+
+  test("refuses evidence whose private bytes do not match the runner packet", () => {
+    const f = setup();
+    writeFileSync(join(f.evidence, "e1.txt"), "changed");
+    expect(() =>
+      launchSeat({
+        fmHome: f.home,
+        taskId: "seat-a-align-1",
+        projectName: "toy",
+        projectDir: "projects/toy",
+        packetPath: f.packet,
+        evidenceDir: f.evidence,
+        captainIntentFile: f.captain,
+        implementerWorktree: "/scratch/implementer",
+      }),
+    ).toThrow("does not match");
+  });
+
+  test("submits the report's final bounded judgment with the supervisor token", () => {
+    const f = setup();
+    const taskId = "seat-a-align-1";
+    const task = join(f.home, "data", taskId);
+    mkdirSync(task);
+    mkdirSync(join(f.home, "state"));
+    writeFileSync(
+      join(f.home, "state", `${taskId}.meta`),
+      `endpoint_task_id=${taskId}\nkind=scout\nworktree=/scratch/${taskId}\n`,
+    );
+    writeFileSync(
+      join(task, "report.md"),
+      '# Seat report\nEvidence checked.\n{"choice":"approve","rationale":"The cited receipt supports approval."}\n',
+    );
+    const token = join(f.intake, "admin.token");
+    writeFileSync(token, `${"a".repeat(48)}\n`);
+    const akRoot = join(f.home, "fake-ak");
+    mkdirSync(join(akRoot, "src"), { recursive: true });
+    const submitted = join(f.home, "submitted.json");
+    writeFileSync(
+      join(akRoot, "src", "cli.ts"),
+      `if (process.env.AK_RUNNER_TOKEN !== ${JSON.stringify("a".repeat(48))}) process.exit(2); const at=process.argv.indexOf('--json'); await Bun.write(${JSON.stringify(submitted)}, await Bun.file(process.argv[at+1]).text()); console.log('accepted');`,
+    );
+    const result = judgeSeat({
+      fmHome: f.home,
+      taskId,
+      packetPath: f.packet,
+      seat: "seat-a",
+      actor: "supervisor-seat-a",
+      runnerSocket: join(f.intake, "runner.sock"),
+      adminTokenFile: token,
+      akRoot,
+    });
+    expect(result.result).toContain("accepted");
+    const request: unknown = JSON.parse(readFileSync(submitted, "utf8"));
+    expect(request).toMatchObject({
+      run: "toy-run",
+      card_id: "align-1",
+      seat: "seat-a",
+      dispatch: "fm-seat-a-align-1",
+      choice: "approve",
+      input_dispatches: [],
+    });
+    expect(statSync(join(task, "ak-judge-align-1.json")).mode & 0o777).toBe(0o600);
+    writeFileSync(join(task, "report.md"), '{"choice":"invented","rationale":"not an option"}\n');
+    expect(() =>
+      judgeSeat({
+        fmHome: f.home,
+        taskId,
+        packetPath: f.packet,
+        seat: "seat-a",
+        actor: "supervisor-seat-a",
+        runnerSocket: join(f.intake, "runner.sock"),
+        adminTokenFile: token,
+        akRoot,
+      }),
+    ).toThrow("declared option");
+  });
+});

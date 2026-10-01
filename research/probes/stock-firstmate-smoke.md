@@ -1,4 +1,4 @@
-# Stock Firstmate live smoke handoff
+# Stock Firstmate live smoke reproduction
 
 The runner test in `tests/runner/runner.test.ts` drives a charter-approved toy run through the
 live CLI and records its checkpoint ledger in `runner-toy-transcript.md`. With
@@ -6,8 +6,9 @@ live CLI and records its checkpoint ledger in `runner-toy-transcript.md`. With
 preflight against a live task runner socket. Its seat commands are toy processes, so this is not
 yet evidence that Firstmate dispatched crewmate seats.
 
-The remaining smoke belongs to the **Firstmate supervisor**, not to an implementing crewmate. Use
-stock Firstmate's ordinary brief, spawn, status and inbox commands:
+Firstmate completed this smoke as run `aks-1`; the observed results and D1–D4 are in
+`stock-firstmate-live-smoke.md`. To reproduce it, the **Firstmate supervisor** uses stock
+Firstmate's ordinary brief, spawn, status and inbox commands:
 
 1. Create a scratch Git project and a toy charter outside its worker worktree. Include a
    `standing_grants` entry for `autopilot.start` and a human approval bound to the active charter
@@ -30,7 +31,7 @@ stock Firstmate's ordinary brief, spawn, status and inbox commands:
    the final ledger, the read-back result and the refusal cases. State clearly that this was a
    scratch local-only run. A status `done` without a current runner ledger is a failure.
 
-The Firstmate home already passed stock preflight in guided mode. The test transcript also records
-`runner-candidate` preflight against its live socket. The real KB adapter is a follow-up and is
-not part of this smoke. The private file evidence store implements `src/runner/evidence.ts`'s
-interface so the later adapter can replace it without changing grant or checkpoint logic.
+The Firstmate home passed stock preflight in guided and runner-candidate modes. The real KB adapter
+is a follow-up and was not part of the smoke. The private file evidence store implements
+`src/runner/evidence.ts`'s interface so the later adapter can replace it without changing grant or
+checkpoint logic.

@@ -64,6 +64,11 @@ export interface Snapshot {
   diff_hash: string;
 }
 
+export interface SnapshotOptions {
+  /** Only runner-owned harness scratch directories are omitted; tracked files still count. */
+  ignoreUntrackedDirs?: readonly string[];
+}
+
 export interface GitResult {
   code: number;
   stdout: Uint8Array;
@@ -89,7 +94,7 @@ export function git(cwd: string, args: readonly string[], env?: Record<string, s
   };
 }
 
-export function takeSnapshot(project: string): Snapshot | string {
+export function takeSnapshot(project: string, options: SnapshotOptions = {}): Snapshot | string {
   const head = git(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
@@ -109,7 +114,12 @@ export function takeSnapshot(project: string): Snapshot | string {
     const env = { GIT_INDEX_FILE: temp };
     const untracked = git(project, ["ls-files", "--others", "--exclude-standard", "-z"], env);
     if (untracked.code !== 0) return `cannot list untracked files in ${project}: ${untracked.stderr}`;
-    const paths = untracked.text.split("\0").filter((p) => p !== "");
+    const paths = untracked.text
+      .split("\0")
+      .filter(
+        (path) =>
+          path !== "" && !(options.ignoreUntrackedDirs ?? []).some((dir) => path === dir || path.startsWith(`${dir}/`)),
+      );
     if (paths.length > 0) {
       const add = git(project, ["add", "--intent-to-add", "--", ...paths], env);
       if (add.code !== 0) return `cannot mark untracked files in ${project}: ${add.stderr}`;

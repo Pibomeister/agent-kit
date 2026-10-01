@@ -20,7 +20,7 @@ import {
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
 const ADMIN = new Set(["start", "collect", "revision", "judge", "verify", "event", "effect", "complete", "charge"]);
-const WORKER = new Set(["status", "ledger", "prepare", "decide", "sync", "run-verify"]);
+const WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
 type StringKey =
   | "run"
   | "charter"
@@ -218,6 +218,8 @@ function execute(
     }
     case "ledger":
       return runner.ledger(str(a, "run"));
+    case "packet":
+      return runner.packet(str(a, "run"), str(a, "card_id"));
     case "prepare": {
       if (a.card === undefined) throw new Error("card is required");
       return runner.prepare(str(a, "run"), a.card);

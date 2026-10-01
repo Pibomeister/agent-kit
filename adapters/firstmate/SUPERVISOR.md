@@ -26,6 +26,13 @@ inbox, recovery and merge policy remain authoritative. Dispatch both supervisor 
 ordinary crewmates, never as children of the implementing worker, and submit their judgments to
 the runner. A seat launcher may automate that dispatch through stock Firstmate commands.
 
+For each frozen card, obtain a peer-free packet with `ak runner call packet`, then call
+`ak firstmate seat-launch` once for each seat. It uses stock `fm-brief.sh --scout` and
+`fm-spawn.sh --scout`. After each seat's report arrives, call `ak firstmate seat-judge`; it checks
+the scout task record and submits the bounded verdict under the supervisor token. Steer the
+implementer to `decide` after both judgments are recorded. Request shapes are in
+`adapters/runner-contract/CLI.md`.
+
 No-mistakes auto-fix values need not be zero. If the pipeline changes the head, the runner
 invalidates prior verification and review evidence; sync, verify and review again before done.
 
