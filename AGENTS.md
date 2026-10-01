@@ -33,8 +33,15 @@ started without an explicit request or a validated grant it stops and says so.
 **Standing-start amendment (ADR-0007):** Firstmate may start `autopilot` for a crewmate only after
 the runner validates a standing grant for autopilot.start against a captain-approved immutable
 charter. The worker's brief, a prompt naming autopilot, and a phase grant do not start it. Every
-other U public entrypoint remains human-started by its slash command. Sensitive grants, merge,
+other U public entrypoint remains human-started by its slash command, save under the bypass grant
+below. Sensitive grants, merge,
 deploy and anything outside the charter remain human decisions.
+
+**A second standing exception to "only a human starts these"** is the bypass grant
+(`docs/decisions/0008-bypass-start-grant.md`, `policies/invocation.yaml` `bypass`). A supervisor
+writes it from outside the repository for one task, and it stands in for the typed command of
+super-align, super-bound, super-review `full` and `readiness`, and super-ship. It starts phases
+only: every approval inside them still goes to the supervisor, and merge and deploy are never on it.
 
 Source: `G:L1672–1676`. The elision in the fourth bullet drops a model-routing illustration that the
 content denylist forbids in this file; the unedited text is at

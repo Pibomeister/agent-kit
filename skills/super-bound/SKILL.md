@@ -48,6 +48,13 @@ stops for explicit invocation rather than approving on the controller's word (ru
 `entrypoint-phase-operation-split`). No skill starts this skill directly; it calls `doc-review`,
 which is model-invoked, and that direction is the legal one.
 
+Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
+task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --phase
+super-bound` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
+`needs-decision`. The grant starts the phase and nothing else. The specification approval at step 7
+and every ticket approval still come from the supervisor through `needs-decision`; the worker never
+approves its own specification or tickets.
+
 ## Inputs
 
 - An approved alignment result that binds to the current source revision. Absent, or bound to a
@@ -64,11 +71,11 @@ which is model-invoked, and that direction is the legal one.
 ## Workflow
 
 1. Check how this run was started, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:super-bound`, or when a controller started the
-   phase operation `bound.run` under a validated grant. A request in prose is not a start, even when
-   it names this skill or the command. With neither, stop here: make no tool call, say that this
-   command is human-started, and give the human the line to type, `/ak:super-bound` and their
-   request.
+   only when the human's message begins with `/ak:super-bound`, when a controller started the phase
+   operation `bound.run` under a validated grant, or when the bypass check in Authority exits 0. A
+   request in prose is not a start, even when it names this skill or the command. With neither, stop
+   here: make no tool call, say that this command is human-started, and give the human the line to
+   type, `/ak:super-bound` and their request.
 2. Detect before you ask. Read what the repository already states — its dependency manifest, its
    test runner, its lint configuration, its continuous-integration configuration — report what you
    found in two lines, and ask only what is left.
@@ -87,6 +94,8 @@ which is model-invoked, and that direction is the legal one.
    ticket.
 7. Take the specification approval. The plan record carries it as `specification_approval`, bound
    to the specification's own hash (`specification_hash`), so slicing afterwards does not void it.
+   Under a bypass grant, report `needs-decision` naming the specification hash and stop; only the
+   supervisor's answer is the approval.
 8. Slice into tickets. Each slice cuts a narrow but complete path through every layer, is demoable
    or verifiable on its own, and is sized to fit one fresh context window.
 9. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,

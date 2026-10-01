@@ -41,8 +41,8 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { tmpdir, userInfo } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // ── the snapshot ─────────────────────────────────────────────────────────────
@@ -189,6 +189,8 @@ export interface GateRecord {
   class?: DelegationClass;
   implementer?: { author_kind: AuthorKind; host: string };
   evidence?: ArtifactRef[];
+  /** Present when the phase was started under a bypass grant rather than a typed command (ADR-0008). */
+  authority?: BypassAttribution;
 }
 
 export interface ArtifactRef {
@@ -401,6 +403,7 @@ export interface RecordArgs {
   receipts?: readonly string[];
   delegationClass?: DelegationClass;
   implementer?: { author_kind: AuthorKind; host: string };
+  bypass?: BypassAttribution;
   now?: () => Date;
 }
 
@@ -494,6 +497,8 @@ export function recordGate(
     a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);
   if (recordedClass !== undefined) record.class = recordedClass;
   if (implementer !== undefined) record.implementer = implementer;
+  const authority = a.bypass ?? (bypassWellFormed(previous?.authority) ? previous?.authority : undefined);
+  if (authority !== undefined) record.authority = authority;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
     const recorded = new Set(refs.map((ref) => ref.id));
     const earlier = previous.evidence.filter((ref) => {
@@ -535,7 +540,8 @@ export function readRecords(dir: string, run: string, gate: Gate): GateRecord[] 
       typeof g.snapshot?.revision === "string" &&
       typeof g.snapshot?.diff_hash === "string" &&
       (g.class === undefined || DELEGATION_CLASSES.includes(g.class)) &&
-      implementerWellFormed(g.implementer)
+      implementerWellFormed(g.implementer) &&
+      bypassWellFormed(g.authority)
     ) {
       const evidenceValid =
         g.schema_version === 1 ||
@@ -1127,6 +1133,234 @@ export function checkGates(a: CheckArgs): CheckResult {
 
 // ── the command ──────────────────────────────────────────────────────────────
 
+// ── bypass ───────────────────────────────────────────────────────────────────
+
+/**
+ * A bypass grant (docs/decisions/0008-bypass-start-grant.md): a supervisor-held file that stands in for
+ * the typed command of the lifecycle's human-started phases for one task, so a worker starts them
+ * without a human typing each one. It starts phases and nothing else. Every approval inside a phase
+ * still stops with needs-decision for the supervisor, and merge and deploy are never on it.
+ *
+ * The grant is only as strong as where it lives. `grant` refuses to write it inside the repository's
+ * worktree or git directory and refuses to run from a checkout of that repository, and `check` refuses
+ * a file that is not the one `grant` registered, by real path and sha256, in a ledger under the
+ * account's home directory. A same-user process that runs `grant` from elsewhere still passes; that
+ * boundary is the host's write isolation, not this file's.
+ */
+export const BYPASS_PHASES = [
+  "super-align",
+  "super-bound",
+  "super-review:full",
+  "super-review:readiness",
+  "super-ship",
+] as const;
+export type BypassPhase = (typeof BYPASS_PHASES)[number];
+const isBypassPhase = (p: string): p is BypassPhase => BYPASS_PHASES.some((phase) => phase === p);
+
+/** The gates a bypassed phase leaves, and the phase each one needs the grant to cover. */
+const BYPASS_GATE_PHASE: Partial<Record<Gate, BypassPhase>> = {
+  "review-full": "super-review:full",
+  "review-readiness": "super-review:readiness",
+  "ship-preflight": "super-ship",
+};
+
+/** No grant may outlive a week, whatever `--hours` asks for. */
+const BYPASS_MAX_HOURS = 168;
+
+export interface BypassGrant {
+  schema: "bypass-grant";
+  schema_version: 1;
+  grant_id: string;
+  task_id: string;
+  /** The real path of the git common directory of the repository the grant is for. */
+  repo: string;
+  authorized_by: string;
+  reason: string;
+  covers: BypassPhase[];
+  /** Start only: who answers every approval inside a bypassed phase. */
+  approvals: "supervisor";
+  created_at: string;
+  expires_at: string;
+}
+
+export interface BypassAttribution {
+  mode: "bypass";
+  grant_id: string;
+  grant: string;
+  grant_sha256: string;
+  authorized_by: string;
+  task_id: string;
+}
+
+interface BypassLedgerRecord {
+  grant_id: string;
+  grant_path: string;
+  grant_sha256: string;
+}
+
+/** Resolved from the account's home directory, never from `HOME` or another variable a worker could set. */
+export function defaultBypassLedger(): string {
+  return join(userInfo().homedir, ".agent-kit", "bypass");
+}
+
+/** The real path, or for a file not written yet its real parent's, so `/var` and `/private/var` compare equal. */
+const realOr = (path: string): string => {
+  const at = resolve(path);
+  if (existsSync(at)) return realpathSync(at);
+  return dirname(at) === at ? at : join(realOr(dirname(at)), basename(at));
+};
+const within = (path: string, dir: string): boolean => {
+  const rel = relative(dir, path);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+};
+
+/** The repository's identity and the places a worker in it can write: its git directory and every worktree. */
+function repoOf(project: string): { common: string; writable: string[] } | undefined {
+  const common = git(project, ["rev-parse", "--git-common-dir"]);
+  const trees = git(project, ["worktree", "list", "--porcelain"]);
+  if (common.code !== 0 || trees.code !== 0 || common.text === "") return undefined;
+  const real = realOr(isAbsolute(common.text) ? common.text : join(project, common.text));
+  const worktrees = trees.text
+    .split("\n")
+    .flatMap((line) => (line.startsWith("worktree ") ? [realOr(line.slice(9))] : []));
+  return { common: real, writable: [real, ...worktrees] };
+}
+
+/** A gate record is worker-written, so its attribution is a claim; the use record and the grant are what a reviewer checks. */
+const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
+  authority === undefined || authority?.mode === "bypass";
+
+const refuse = (reason: string) => ({ ok: false as const, reason });
+
+export interface BypassGrantArgs {
+  task: string;
+  project: string;
+  by: string;
+  reason: string;
+  out: string;
+  hours: number;
+  /** Where `grant` is run from; a checkout of the granted repository is refused. */
+  cwd: string;
+  ledger: string;
+  now?: () => Date;
+}
+
+export function grantBypass(
+  a: BypassGrantArgs,
+): { ok: true; grant: BypassGrant; path: string } | { ok: false; reason: string } {
+  const no = refuse;
+  if (a.task.trim() === "" || a.by.trim() === "" || a.reason.trim() === "")
+    return no("--task, --by and --reason each need a non-empty value");
+  if (!Number.isInteger(a.hours) || a.hours < 1 || a.hours > BYPASS_MAX_HOURS)
+    return no(`--hours must be a whole number from 1 to ${BYPASS_MAX_HOURS}`);
+  const repo = repoOf(a.project);
+  if (repo === undefined) return no(`${a.project} is not a git checkout`);
+  if (repoOf(a.cwd)?.common === repo.common)
+    return no(
+      `run it from outside the repository it grants: ${a.cwd} is a checkout of ${repo.common}, where a worker grants itself`,
+    );
+  const out = realOr(a.out);
+  for (const dir of repo.writable)
+    if (within(out, dir)) return no(`${a.out} is inside ${dir}, which a worker in that repository can write`);
+
+  const now = (a.now ?? (() => new Date()))();
+  const created = now.toISOString();
+  const grant: BypassGrant = {
+    schema: "bypass-grant",
+    schema_version: 1,
+    grant_id: `bypass-${safeRunId(a.task)}-${sha256(`${a.task}\n${repo.common}\n${created}`).slice(7, 19)}`.slice(
+      0,
+      128,
+    ),
+    task_id: a.task,
+    repo: repo.common,
+    authorized_by: a.by,
+    reason: a.reason,
+    covers: [...BYPASS_PHASES],
+    approvals: "supervisor",
+    created_at: created,
+    expires_at: new Date(now.getTime() + a.hours * 3_600_000).toISOString(),
+  };
+  const text = `${JSON.stringify(grant, null, 2)}\n`;
+  atomicBytes(out, new TextEncoder().encode(text));
+  const ledgered: BypassLedgerRecord = {
+    grant_id: grant.grant_id,
+    grant_path: realpathSync(out),
+    grant_sha256: sha256(text),
+  };
+  atomicJson(join(a.ledger, `${grant.grant_id}.json`), ledgered);
+  return { ok: true, grant, path: realpathSync(out) };
+}
+
+export interface BypassCheckArgs {
+  grant: string;
+  /** The phase to start, or undefined to check only that the grant still holds. */
+  phase?: string;
+  project: string;
+  ledger: string;
+  now?: () => Date;
+}
+
+export function checkBypass(
+  a: BypassCheckArgs,
+): { ok: true; attribution: BypassAttribution } | { ok: false; reason: string } {
+  const no = refuse;
+  if (a.phase !== undefined && !isBypassPhase(a.phase))
+    return no(
+      `${a.phase} is not a phase a bypass grant starts; it starts only ${BYPASS_PHASES.join(", ")}. Approvals, merge and deploy stop with needs-decision for the supervisor`,
+    );
+  const path = resolve(a.grant);
+  if (!existsSync(path)) return no(`bypass grant ${path} does not exist`);
+  const g = readObject(path);
+  if (g === undefined || g.schema !== "bypass-grant") return no(`bypass grant ${path} is not a bypass-grant record`);
+  const id = String(g.grant_id);
+  const entry = readObject(join(a.ledger, `${safeRunId(id)}.json`));
+  if (entry === undefined) return no(`bypass grant ${id} was never registered in ${a.ledger}`);
+  const at = realpathSync(path);
+  const hash = sha256(readFileSync(path));
+  if (entry.grant_path !== at)
+    return no(`bypass grant ${path} is not the ${String(entry.grant_path)} that was registered`);
+  if (entry.grant_sha256 !== hash)
+    return no(`bypass grant ${path} hashes to ${hash}, not the ${String(entry.grant_sha256)} that was registered`);
+  // From here the file is byte-for-byte the one `grantBypass` wrote and registered.
+  const repo = repoOf(a.project);
+  if (repo === undefined) return no(`${a.project} is not a git checkout`);
+  if (g.repo !== repo.common) return no(`bypass grant ${id} is for ${String(g.repo)}, not ${repo.common}`);
+  for (const dir of repo.writable)
+    if (within(at, dir)) return no(`bypass grant ${path} is inside ${dir}, which the worker can write`);
+  const expires = String(g.expires_at);
+  if (!(Date.parse(expires) > (a.now ?? (() => new Date()))().getTime()))
+    return no(`bypass grant ${id} expired at ${expires}`);
+  if (a.phase !== undefined && !(Array.isArray(g.covers) && g.covers.includes(a.phase)))
+    return no(`bypass grant ${id} does not cover ${a.phase}`);
+  return {
+    ok: true,
+    attribution: {
+      mode: "bypass",
+      grant_id: id,
+      grant: at,
+      grant_sha256: hash,
+      authorized_by: String(g.authorized_by),
+      task_id: String(g.task_id),
+    },
+  };
+}
+
+/** The brief section a supervisor pastes into the task's brief: the one place the worker learns of the grant. */
+export function bypassBrief(grant: BypassGrant, path: string): string {
+  return [
+    "## agent-kit bypass",
+    "",
+    `Bypass grant: \`${path}\`, authorized by ${grant.authorized_by} for task ${grant.task_id} until ${grant.expires_at}.`,
+    "It stands in for the typed command of super-align, super-bound, super-review full and readiness, and",
+    `super-ship. Before starting one, run \`ak lifecycle bypass check --grant ${path} --phase <phase>\` (or`,
+    "`node <bundle>/bin/ak-gate.mjs bypass check …`); exit 0 is the start, anything else is a stop.",
+    "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
+    "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
+    "Pass `--bypass <path>` when you record review-full, review-readiness or ship-preflight.",
+  ].join("\n");
+}
+
 export interface Io {
   out: (line: string) => void;
   err: (line: string) => void;
@@ -1138,11 +1372,15 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
+  "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> [--hours <n>]",
+  "  ak lifecycle bypass check --grant <file> [--phase <phase>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
+  `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant from outside the repository; the worker`,
+  "  runs check before each phase and passes --bypass <file> to record. Start only: approvals still stop.",
   "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
   "",
   "Exit 0 when the record was written or every gate is current, 1 when refused, 2 on bad usage.",
@@ -1150,12 +1388,19 @@ export const LIFECYCLE_USAGE = [
 
 const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "dir", "project"],
-  record: ["gate", "receipt", "class", "author-kind", "host", "run", "dir", "project"],
+  record: ["gate", "receipt", "class", "author-kind", "host", "bypass", "run", "dir", "project"],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
+  "bypass grant": ["task", "by", "reason", "out", "hours", "project"],
+  "bypass check": ["grant", "phase", "run", "dir", "project"],
 };
 
-export function main(argv: readonly string[], io: Io, cwd: string = process.cwd()): number {
-  const sub = argv[0];
+export function main(
+  argv: readonly string[],
+  io: Io,
+  cwd: string = process.cwd(),
+  bypassLedger: string = defaultBypassLedger(),
+): number {
+  const sub = argv[0] === "bypass" && argv[1] !== undefined ? `bypass ${argv[1]}` : argv[0];
   if (sub === undefined || !(sub in FLAGS)) {
     if (sub !== undefined) io.err(`ak lifecycle: unknown subcommand ${sub}`);
     for (const line of LIFECYCLE_USAGE) io.err(line);
@@ -1164,7 +1409,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
   const allowed = new Set(FLAGS[sub]);
   const flags = new Map<string, string | true>();
   const receipts: string[] = [];
-  for (let i = 1; i < argv.length; i += 1) {
+  for (let i = sub.split(" ").length; i < argv.length; i += 1) {
     const token = argv[i]!;
     const [name, inline] = token.startsWith("--")
       ? (token.slice(2).split("=", 2) as [string, string | undefined])
@@ -1194,10 +1439,35 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
   const project = resolve(cwd, str("project") ?? ".");
   let dir: string;
   try {
-    dir = str("dir") !== undefined ? resolve(cwd, str("dir")!) : defaultEvidenceDir(project);
+    dir =
+      str("dir") !== undefined ? resolve(cwd, str("dir")!) : sub === "bypass grant" ? "" : defaultEvidenceDir(project);
   } catch (e) {
     io.err(`ak lifecycle ${sub}: ${(e as Error).message}`);
     return 1;
+  }
+
+  if (sub === "bypass grant") {
+    const [task, by, reason, out] = ["task", "by", "reason", "out"].map(str);
+    if (task === undefined || by === undefined || reason === undefined || out === undefined || !flags.has("project")) {
+      io.err("ak lifecycle bypass grant: --task, --by, --reason, --out and --project are required");
+      return 2;
+    }
+    const granted = grantBypass({
+      task,
+      project,
+      by,
+      reason,
+      out: resolve(cwd, out),
+      hours: Number(str("hours") ?? "24"),
+      cwd,
+      ledger: bypassLedger,
+    });
+    if (!granted.ok) {
+      io.err(`ak lifecycle bypass grant: ${granted.reason}`);
+      return 1;
+    }
+    io.out(bypassBrief(granted.grant, granted.path));
+    return 0;
   }
 
   if (sub === "open") {
@@ -1239,11 +1509,45 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
     return 2;
   }
 
+  if (sub === "bypass check") {
+    const grantPath = str("grant");
+    if (grantPath === undefined) {
+      io.err("ak lifecycle bypass check: --grant is required");
+      return 2;
+    }
+    const phase = str("phase");
+    const checked = checkBypass({ grant: resolve(cwd, grantPath), phase, project, ledger: bypassLedger });
+    if (!checked.ok) {
+      io.err(`ak lifecycle bypass check: refused: ${checked.reason}`);
+      io.err("hint: stop and report needs-decision; the phase needs its typed command");
+      return 1;
+    }
+    const used = { ...checked.attribution, phase: phase ?? null, run_id: run, checked_at: new Date().toISOString() };
+    if (phase !== undefined) atomicJson(join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`), used);
+    io.out(JSON.stringify(used, null, 2));
+    return 0;
+  }
+
   if (sub === "record") {
     const gate = str("gate");
     if (gate === undefined || !isGate(gate)) {
       io.err(`ak lifecycle record: --gate must be one of ${GATES.join(", ")}`);
       return 2;
+    }
+    const bypassPath = str("bypass");
+    let bypass: BypassAttribution | undefined;
+    if (bypassPath !== undefined) {
+      const checked = checkBypass({
+        grant: resolve(cwd, bypassPath),
+        phase: BYPASS_GATE_PHASE[gate],
+        project,
+        ledger: bypassLedger,
+      });
+      if (!checked.ok) {
+        io.err(`ak lifecycle record: refused: ${checked.reason}`);
+        return 1;
+      }
+      bypass = checked.attribution;
     }
     if (receipts.length > 0 && gate !== "verify") {
       io.err("ak lifecycle record: --receipt is only valid with --gate verify");
@@ -1292,6 +1596,7 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       receipts: receipts.map((path) => resolve(cwd, path)),
       delegationClass,
       implementer,
+      bypass,
     });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);

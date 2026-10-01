@@ -77,6 +77,22 @@ autopilot run, start the separate `ak runner` service with the charter, private 
 launchers and verification command before handing its worker token and socket to the crewmate.
 Without that live service, autonomous ship stops with trusted evidence unavailable.
 
+## Granting bypass for one task
+
+When the captain authorizes a task to run without typed phase commands, write a bypass grant from
+the home, not from the task's worktree, and paste the section it prints into the brief:
+
+```
+ak lifecycle bypass grant --task <task-id> --by <who authorized it> --reason <why> \
+  --out data/<task-id>/bypass.json --project <repo> [--hours <n>]
+```
+
+It starts super-align, super-bound, super-review full and readiness, and super-ship for that task
+only, until it expires (24 hours by default). It starts phases only: the worker still sends you
+`needs-decision` for every approval inside them — the design yes, the specification and ticket
+approvals, and every push, pull request or publish — and you answer each one. It never covers merge
+or deploy. Delete the file to revoke it. ADR-0008 has the design and its trust limit.
+
 ## What the worker sends back
 
 One status line at a time (CONTRACT.md §4):

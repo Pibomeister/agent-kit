@@ -68,6 +68,13 @@ Under a Firstmate binding, Firstmate is the delegated controller and the host va
 grant: cite the record it prints on the review. A refusal means stop and report `needs-decision` to
 Firstmate (ADR-0004).
 
+Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
+task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --phase
+super-review:full` (or `super-review:readiness`): exit 0 is the start, and a refusal is a stop with
+`needs-decision`. The grant starts the review and nothing else; a decision a human would make inside
+it still goes to the supervisor through `needs-decision`. Record the gate with `--bypass <path>` so
+it carries the attribution.
+
 `review.delta` does not open a review run. Invoked where none is open, it stops with `needs-input`
 naming `super-review full` as the next permitted action.
 
@@ -95,10 +102,11 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    check. `full` and `readiness` are started only when the human's message begins with
    `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
    validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
-   Authority, and a refusal is a stop. A request in prose is not a start, even when it names this
-   skill or the command. With neither, stop here: make no other tool call, say that this command is
-   human-started, and give the human the line to type, `/ak:super-review` and their request. For
-   `delta`, confirm a review run is open; if not, stop with `needs-input`.
+   Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
+   in prose is not a start, even when it names this skill or the command. With neither, stop here:
+   make no other tool call, say that this command is human-started, and give the human the line to
+   type, `/ak:super-review` and their request. For `delta`, confirm a review run is open; if not,
+   stop with `needs-input`.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only

@@ -52,6 +52,12 @@ source. Where the host cannot validate that grant, the operation stops for expli
 rather than answering (ruling `entrypoint-phase-operation-split`). No skill starts this skill
 directly.
 
+Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
+task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --phase
+super-align` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
+`needs-decision`. The grant starts the interview and nothing else. The explicit yes at step 11 still
+comes from the supervisor through `needs-decision`; the worker never approves its own direction.
+
 ## Inputs
 
 - The request, as prose from the human. Absent: return `needs-input` and ask for one. A request
@@ -71,11 +77,11 @@ directly.
 ## Workflow
 
 1. Check how this run was started, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:super-align`, or when a controller started the
-   phase operation `align.run` under a validated grant. A request in prose is not a start, even when
-   it names this skill or the command. With neither, stop here: make no tool call, say that this
-   command is human-started, and give the human the line to type, `/ak:super-align` and their
-   request.
+   only when the human's message begins with `/ak:super-align`, when a controller started the phase
+   operation `align.run` under a validated grant, or when the bypass check in Authority exits 0. A
+   request in prose is not a start, even when it names this skill or the command. With neither, stop
+   here: make no tool call, say that this command is human-started, and give the human the line to
+   type, `/ak:super-align` and their request.
 2. Classify the work as **bounded**, **standard** or **architectural** from its ambiguity and how
    far it cuts across the system. Say which and why in one line. Uncertain lands on the heavier
    classification.
@@ -99,7 +105,8 @@ directly.
 10. Present two or three approaches with their trade-offs, leading with the one you recommend and
     why. A single option is not a choice; name what you rejected and on what grounds.
 11. Restate the direction in six fields — Outcome, User, Why now, Success, Constraint, Out of scope
-    — and ask for approval. Out of scope is never omitted.
+    — and ask for approval. Out of scope is never omitted. Under a bypass grant, ask by reporting
+    `needs-decision` with the restatement and stop; only the supervisor's answer is a yes.
 12. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
     ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish
