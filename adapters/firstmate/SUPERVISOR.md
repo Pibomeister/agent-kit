@@ -29,7 +29,10 @@ the runner. A seat launcher may automate that dispatch through stock Firstmate c
 For each frozen card, obtain a peer-free packet with `ak runner call packet`, then call
 `ak firstmate seat-launch` once for each seat. It uses stock `fm-brief.sh --scout` and
 `fm-spawn.sh --scout`. After each seat's report arrives, call `ak firstmate seat-judge`; it checks
-the scout task record and submits the bounded verdict under the supervisor token. Steer the
+the scout task record and submits the bounded verdict under the supervisor token. Keep that token
+in a mode-0600 file outside this home, the worktree and any git checkout (default
+`~/.config/agent-kit/runner/<run>/admin.token`) and never name its path in a brief; on a same-user
+install this guards against accidents, not against a deliberately adversarial worker. Steer the
 implementer to `decide` after both judgments are recorded. Request shapes are in
 `adapters/runner-contract/CLI.md`.
 
@@ -43,8 +46,9 @@ invalidates prior verification and review evidence; sync, verify and review agai
 | Intake, dispatch, worktree, steering, recovery, PR watch, merge where yolo allows it, teardown | Scout, build, verify, review, fixes, delta review, the fix-cycle cap, the ship decision | Re-running test and lint on the shipped head, push, pull request, CI |
 
 The runner decides checkpoints from two independent supervisor judgments and charter evidence.
-The implementer does not review its own patch. A missing seat or disagreement is one escalation
-through Firstmate's normal needs-decision protocol.
+The implementer does not review its own patch. A missing seat, a failed seat launcher or disagreement is one
+escalation through Firstmate's normal needs-decision protocol; relay the human's ruling with
+`ak runner call answer`, after which the worker prepares a new card.
 
 ## Legacy patched binding
 

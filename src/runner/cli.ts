@@ -4,6 +4,7 @@ import { createConnection, createServer } from "node:net";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { Runner } from "./core.ts";
+import { readAdminToken } from "./token.ts";
 import {
   isArgs,
   isEffectConfig,
@@ -19,7 +20,18 @@ import {
 } from "./wire.ts";
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
-const ADMIN = new Set(["start", "collect", "revision", "judge", "verify", "event", "effect", "complete", "charge"]);
+const ADMIN = new Set([
+  "start",
+  "collect",
+  "revision",
+  "judge",
+  "answer",
+  "verify",
+  "event",
+  "effect",
+  "complete",
+  "charge",
+]);
 const WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
 type StringKey =
   | "run"
@@ -102,9 +114,9 @@ async function dispatchSeat(runner: Runner, runId: string, cardId: string, launc
   if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
   const packet = runner.packet(runId, cardId);
   const child = await spawnPiped(launcher.command, runner.workerRoot, JSON.stringify(packet));
-  if (child.exitCode !== 0) throw new Error(`seat ${launcher.seat} failed: ${child.stderr.toString().trim()}`);
+  if (child.exitCode !== 0) throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
   const answerValue: unknown = JSON.parse(child.stdout.toString());
-  if (!isSeatAnswer(answerValue)) throw new Error(`seat ${launcher.seat} returned an invalid judgment`);
+  if (!isSeatAnswer(answerValue)) throw new Error("launcher returned an invalid judgment");
   runner.judge(
     runId,
     cardId,
@@ -126,11 +138,10 @@ async function decideCard(runner: Runner, runId: string, cardId: string, launche
     try {
       await dispatchSeat(runner, runId, cardId, launcher);
     } catch (cause) {
-      failures.push(cause instanceof Error ? cause.message : String(cause));
+      failures.push(`seat ${launcher.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
-  if (failures.length > 0) throw new Error(`seat dispatch failed; retry decide: ${failures.join("; ")}`);
-  return runner.decide(runId, cardId);
+  return runner.decide(runId, cardId, failures);
 }
 
 async function execute(
@@ -178,6 +189,8 @@ async function execute(
         strings(a, "lineage"),
         str(a, "rationale"),
       );
+    case "answer":
+      return runner.answer(str(a, "run"), str(a, "choice"), str(a, "actor"), str(a, "rationale"));
     case "verify":
       return runner.verify(str(a, "run"), str(a, "evidence"));
     case "event":
@@ -260,20 +273,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const seatConfigPath = flag(argv, "seat-config");
   const verifyConfigPath = flag(argv, "verify-config");
   const effectConfigPath = flag(argv, "effect-config");
-  const adminToken = process.env["AK_RUNNER_ADMIN_TOKEN"] ?? "";
+  const adminTokenFile = flag(argv, "admin-token-file");
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
-  if (
-    !socket ||
-    !state ||
-    !worker ||
-    !runId ||
-    adminToken.length < 32 ||
-    workerToken.length < 32 ||
-    adminToken === workerToken ||
-    !/^(600|660)$/.test(mode)
-  )
+  if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error(
-      "serve needs --socket, --state-dir, --worker-root, --run-id, distinct 32+ character tokens, and socket mode 600 or 660",
+      "serve needs --socket, --state-dir, --worker-root, --run-id, --admin-token-file, a 32+ character AK_RUNNER_WORKER_TOKEN, and socket mode 600 or 660",
     );
   const workerRoot = realpathSync(worker);
   const socketPath = resolve(socket);
@@ -301,6 +305,9 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     throw new Error("runner socket parent resolves inside worker root");
   const runner = new Runner(state, workerRoot, resolve(import.meta.dir, "..", ".."), true);
   runner.assertPrivatePath(socketPath);
+  runner.assertPrivatePath(adminTokenFile);
+  const adminToken = readAdminToken(adminTokenFile, [workerRoot]);
+  if (adminToken === workerToken) throw new Error("admin and worker tokens must differ");
   let launchers: SeatLauncher[] = [];
   if (seatConfigPath !== undefined) {
     const configPath = realpathSync(seatConfigPath);
@@ -424,7 +431,7 @@ export async function runRunner(argv: readonly string[], io: Io): Promise<number
     if (argv[0] === "serve") return await serve(argv.slice(1), io);
     if (argv[0] === "call") return call(argv.slice(1), io);
     io.err(
-      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--socket-mode 600|660]",
+      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--socket-mode 600|660]",
     );
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;

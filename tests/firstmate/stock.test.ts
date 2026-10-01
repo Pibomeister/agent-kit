@@ -27,6 +27,7 @@ describe("stock Firstmate adapter", () => {
       "host-capabilities",
       "skill-bundle",
       "runner",
+      "supervisor-token",
       "delivery",
     ]);
     const out: string[] = [];

@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFi
 import { isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { readAdminToken } from "../runner/token.ts";
+
 interface SeatPacket {
   run: string;
   charter_hash: string;
@@ -188,8 +190,7 @@ export function judgeSeat(args: SeatJudgeArgs) {
   const value: unknown = JSON.parse(last);
   if (!seatAnswer(value) || !packet.card.options.includes(value.choice))
     throw new Error("seat report ends without a declared option and rationale");
-  const token = readFileSync(privateFile(home, args.adminTokenFile), "utf8").trim();
-  if (token.length < 32) throw new Error("runner admin token is unavailable");
+  const token = readAdminToken(args.adminTokenFile, [home]);
   const request = join(home, "data", args.taskId, `ak-judge-${packet.card.id}.json`);
   const body = {
     run: packet.run,

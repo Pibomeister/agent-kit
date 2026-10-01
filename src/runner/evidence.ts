@@ -1,13 +1,7 @@
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 
-/** The runner calls this interface; a later central KB adapter can provide its own refs. */
-export interface EvidenceStore {
-  put(runId: string, evidenceId: string, bytes: Buffer): string;
-  read(ref: string): Buffer;
-}
-
-export class PrivateFileEvidenceStore implements EvidenceStore {
+export class PrivateFileEvidenceStore {
   readonly root: string;
 
   constructor(stateDir: string) {

@@ -47,6 +47,12 @@ export function preflightStock(
             detail: "runner socket exists; each run still validates its standing grant and trusted evidence",
           }
         : { id: "runner", ok: false, detail: `${socket} is not a live runner socket` };
+  const token: Check = {
+    id: "supervisor-token",
+    ok: true,
+    detail:
+      "keep the runner admin token in a 0600 file outside the Firstmate home, the worker root and any git checkout, such as ~/.config/agent-kit/runner/<run>/admin.token; on a same-user install a deliberately adversarial worker can still read it, so this guards against accidents and is not isolation",
+  };
   const delivery: Check = {
     id: "delivery",
     ok: true,
@@ -58,7 +64,7 @@ export function preflightStock(
     socket !== undefined && bundle.ok && !existsSync(join(bundleDir, "skills", "autopilot", "SKILL.md"))
       ? { id: "skill-bundle", ok: false, detail: `${bundleDir} lacks autopilot; run ak build --profile all` }
       : bundle;
-  const checks = [home, repository, checkHost(akRoot, host), readyBundle, runner, delivery];
+  const checks = [home, repository, checkHost(akRoot, host), readyBundle, runner, token, delivery];
   return { ok: checks.every((check) => check.ok), mode: socket === undefined ? "guided" : "runner-candidate", checks };
 }
 

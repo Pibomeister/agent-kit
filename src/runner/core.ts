@@ -8,7 +8,7 @@ import type { ValidateFunction } from "ajv";
 import { artifactHash, sha256Hex } from "../util/hash.ts";
 import { git, takeSnapshot, type Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
-import { PrivateFileEvidenceStore, type EvidenceStore } from "./evidence.ts";
+import { PrivateFileEvidenceStore } from "./evidence.ts";
 import type {
   Card,
   CardInput,
@@ -117,15 +117,9 @@ export class Runner {
   private readonly validateCharter: ValidateFunction<Charter>;
   private readonly enforceSnapshot: boolean;
   private readonly sharedGitDir: string | null;
-  private readonly evidenceStore: EvidenceStore;
+  private readonly evidenceStore: PrivateFileEvidenceStore;
 
-  constructor(
-    stateDir: string,
-    workerRoot: string,
-    kitRoot: string,
-    enforceSnapshot = false,
-    evidenceStore?: EvidenceStore,
-  ) {
+  constructor(stateDir: string, workerRoot: string, kitRoot: string, enforceSnapshot = false) {
     const requestedStateDir = canonicalFuturePath(stateDir);
     this.workerRoot = realpathSync(workerRoot);
     this.enforceSnapshot = enforceSnapshot;
@@ -142,7 +136,7 @@ export class Runner {
     if (inside(this.stateDir, this.workerRoot)) throw new Error("runner state resolves into worker root");
     if (this.sharedGitDir !== null && inside(this.stateDir, this.sharedGitDir))
       throw new Error("runner state resolves into the shared git common directory");
-    this.evidenceStore = evidenceStore ?? new PrivateFileEvidenceStore(this.stateDir);
+    this.evidenceStore = new PrivateFileEvidenceStore(this.stateDir);
     const schemas = compileSchemas(kitRoot);
     if (schemas.issues.some((issue) => issue.severity === "error"))
       throw new Error("runner cannot compile charter schema");
@@ -279,7 +273,7 @@ export class Runner {
           why: "Independent seats agreed under a validated grant",
           cost_if_wrong: "The approved artifact would need correction",
         },
-        answered: false,
+        answered: decision.answer !== undefined,
       };
       if (outcome === "ruling")
         return { checkpoint: entry.checkpoint, decision: entry.decision, outcome: entry.outcome, ruling: entry.ruling };
@@ -680,6 +674,7 @@ export class Runner {
       next_permitted_action: null,
       escalation,
     };
+    run.resume = { run_state: run.run_state, next_permitted_action: run.next_permitted_action };
     run.run_state = "needs-input";
     run.next_permitted_action = null;
     run.open_escalation = escalation;
@@ -700,6 +695,7 @@ export class Runner {
     if (prior !== undefined) return prior.result;
     const card = run.cards[cardId];
     if (card === undefined) throw new Error("unknown checkpoint card");
+    if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new checkpoint can be decided");
     const step = STAGE.get(card.operation);
     const policy = this.covers.get(card.operation);
     if (
@@ -793,7 +789,7 @@ export class Runner {
     return null;
   }
 
-  decide(id: string, cardId: string): OperationResult {
+  decide(id: string, cardId: string, seatFailures: string[] = []): OperationResult {
     const early = this.authorize(id, cardId);
     if (early !== null) return early;
     const run = this.load(id);
@@ -801,6 +797,13 @@ export class Runner {
     if (card === undefined) throw new Error("unknown checkpoint card");
     const step = STAGE.get(card.operation);
     if (step === undefined) throw new Error("phase is not declared");
+    if (seatFailures.length > 0)
+      return this.refuse(
+        run,
+        card,
+        "runner:seat-independence",
+        `Supervisor seat dispatch failed: ${seatFailures.join("; ")}`.slice(0, 2000),
+      );
     const charter = run.charter;
     const seats = charter.supervisors.seats.map((s) => s.id);
     if (
@@ -840,6 +843,24 @@ export class Runner {
     run.next_permitted_action = step.next;
     this.save(run);
     return result;
+  }
+
+  answer(id: string, choice: string, by: string, rationale: string): Run {
+    const run = this.load(id);
+    const escalation = run.open_escalation;
+    const decision = run.decisions.findLast((d) => d.result.status === "needs-input" && d.answer === undefined);
+    if (run.run_state !== "needs-input" || escalation === null || decision === undefined || run.resume === undefined)
+      throw new Error("run has no open escalation to answer");
+    if (!escalation.options.some((option) => option.id === choice) || !ID.test(by) || !rationale.trim())
+      throw new Error("answer must name an escalation option, who answered and why");
+    if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot answer the escalation");
+    decision.answer = { by, choice, rationale, at: new Date().toISOString() };
+    run.run_state = run.resume.run_state;
+    run.next_permitted_action = run.resume.next_permitted_action;
+    run.open_escalation = null;
+    delete run.resume;
+    this.save(run);
+    return run;
   }
 
   private cap(run: Run, card: Card, limit: string, value: number): OperationResult {

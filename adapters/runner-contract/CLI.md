@@ -1,15 +1,21 @@
 # `ak runner` on stock Firstmate
 
-Firstmate owns one service per crewmate run. Start it with supervisor-held admin and task-specific
-worker tokens of at least 32 characters each:
+Firstmate owns one service per crewmate run. Start it with a supervisor-held admin token and a
+task-specific worker token of at least 32 characters each:
 
 ```text
-AK_RUNNER_ADMIN_TOKEN=<supervisor-token> AK_RUNNER_WORKER_TOKEN=<task-token> \
+AK_RUNNER_WORKER_TOKEN=<task-token> \
   ak runner serve --socket <private-socket> --state-dir <private-state> \
     --worker-root <task-worktree> --run-id <run-id> \
+    --admin-token-file ~/.config/agent-kit/runner/<run-id>/admin.token \
     --seat-config <private-seat-config> --verify-config <private-verification-config> \
     --effect-config <private-effect-config>
 ```
+
+The admin token file must be mode 0600 and sit outside the Firstmate home, the worker worktree and
+every git checkout or git directory; `serve` and `ak firstmate seat-judge` refuse it otherwise. Never
+write its path into a brief or another worker-visible file. On a same-user install a deliberately
+adversarial worker can still read it: these rules guard against accidents and are not isolation.
 
 The socket parent and configs must exist outside the worker worktree and shared Git common
 directory. The service holds its own state and evidence there. The worker receives only the socket
@@ -25,7 +31,8 @@ must be supervisor-owned; a worker-authored file never supplies effect commands.
 | `collect` | Firstmate | `{"run":"r","id":"receipt-id","source":"/private/receipt","revision":"<full-git-sha>","kind":"source"}` |
 | `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","no"],"evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}` |
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
-| `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision |
+| `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A launcher that fails or answers outside the options refuses the card with its error |
+| `answer` | Firstmate | `{"run":"r","choice":"yes","actor":"captain","rationale":"..."}`; rules on the open escalation and returns the run to its state before the refusal. The refused card stays settled; prepare a new card to retry |
 | `sync`, `run-verify` | Worker | `{"run":"r"}`; sync observes the current Git revision and diff, while verification executes only the private configured command |
 | `effect` | Firstmate | `{"run":"r","effect":"pr-open","target":"repo/pr-identity","input_hash":"sha256:<digest>"}` |
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |
@@ -44,12 +51,13 @@ evidence directory, the captain's intent file and the implementer worktree. It r
 task, runs stock `fm-brief.sh --scout`, fills its brief with the frozen packet and hash-checked
 evidence, and runs stock `fm-spawn.sh --scout`. After that crewmate writes its normal report,
 `ak firstmate seat-judge` reads the final `{"choice":"...","rationale":"..."}` line, checks
-Firstmate's scout task metadata and submits `judge` with the supervisor token. Use distinct task
+Firstmate's scout task metadata and submits `judge` with the supervisor token from
+`--admin-token-file`. Use distinct task
 ids and worktrees for the two seats. Firstmate owns their normal status and teardown lifecycle.
 
 A refusal is an operation result or CLI error. A `needs-input` result contains one six-field
 escalation; the crewmate reports it through its normal Firstmate status and inbox rather than
-polling. A changed worktree makes old evidence stale. After normal delivery changes the head,
+polling, and Firstmate relays the human's ruling with `answer`. A changed worktree makes old evidence stale. After normal delivery changes the head,
 `sync`, `run-verify`, review and ship must run again before `complete` can succeed. Merge and deploy
 are never granted by these commands.
 

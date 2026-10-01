@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runFirstmate } from "../../src/firstmate/cli.ts";
@@ -142,8 +142,10 @@ describe("stock Firstmate seat launcher", () => {
       join(task, "report.md"),
       '# Seat report\nEvidence checked.\n{"choice":"approve","rationale":"The cited receipt supports approval."}\n',
     );
-    const token = join(f.intake, "admin.token");
-    writeFileSync(token, `${"a".repeat(48)}\n`);
+    const underHome = join(f.intake, "admin.token");
+    writeFileSync(underHome, `${"a".repeat(48)}\n`, { mode: 0o600 });
+    const token = join(makeDir(), "admin.token");
+    writeFileSync(token, `${"a".repeat(48)}\n`, { mode: 0o600 });
     const akRoot = join(f.home, "fake-ak");
     mkdirSync(join(akRoot, "src"), { recursive: true });
     const submitted = join(f.home, "submitted.json");
@@ -151,16 +153,23 @@ describe("stock Firstmate seat launcher", () => {
       join(akRoot, "src", "cli.ts"),
       `if (process.env.AK_RUNNER_TOKEN !== ${JSON.stringify("a".repeat(48))}) process.exit(2); const at=process.argv.indexOf('--json'); await Bun.write(${JSON.stringify(submitted)}, await Bun.file(process.argv[at+1]).text()); console.log('accepted');`,
     );
-    const result = judgeSeat({
-      fmHome: f.home,
-      taskId,
-      packetPath: f.packet,
-      seat: "seat-a",
-      actor: "supervisor-seat-a",
-      runnerSocket: join(f.intake, "runner.sock"),
-      adminTokenFile: token,
-      akRoot,
-    });
+    const judge = (adminTokenFile: string) =>
+      judgeSeat({
+        fmHome: f.home,
+        taskId,
+        packetPath: f.packet,
+        seat: "seat-a",
+        actor: "supervisor-seat-a",
+        runnerSocket: join(f.intake, "runner.sock"),
+        adminTokenFile,
+        akRoot,
+      });
+    expect(() => judge(underHome)).toThrow("outside the Firstmate home");
+    expect(existsSync(submitted)).toBe(false);
+    chmodSync(token, 0o644);
+    expect(() => judge(token)).toThrow("mode 0600");
+    chmodSync(token, 0o600);
+    const result = judge(token);
     expect(result.result).toContain("accepted");
     const request: unknown = JSON.parse(readFileSync(submitted, "utf8"));
     expect(request).toMatchObject({
@@ -173,17 +182,6 @@ describe("stock Firstmate seat launcher", () => {
     });
     expect(statSync(join(task, "ak-judge-align-1.json")).mode & 0o777).toBe(0o600);
     writeFileSync(join(task, "report.md"), '{"choice":"invented","rationale":"not an option"}\n');
-    expect(() =>
-      judgeSeat({
-        fmHome: f.home,
-        taskId,
-        packetPath: f.packet,
-        seat: "seat-a",
-        actor: "supervisor-seat-a",
-        runnerSocket: join(f.intake, "runner.sock"),
-        adminTokenFile: token,
-        akRoot,
-      }),
-    ).toThrow("declared option");
+    expect(() => judge(token)).toThrow("declared option");
   });
 });

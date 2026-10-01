@@ -97,6 +97,7 @@ export interface Decision {
   at: string;
   revision: string;
   diff_hash: string;
+  answer?: { by: string; choice: string; rationale: string; at: string };
 }
 
 export interface Effect {
@@ -130,6 +131,7 @@ export interface Run {
   effects: Record<string, Effect>;
   events: Record<string, { payload_hash: string; received_at: string; acted: boolean }>;
   open_escalation: Escalation | null;
+  resume?: { run_state: string; next_permitted_action: string | null };
 }
 
 export interface RunLedger {

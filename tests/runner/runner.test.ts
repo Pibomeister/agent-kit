@@ -5,7 +5,6 @@ import { createConnection } from "node:net";
 import { join } from "node:path";
 
 import { Runner } from "../../src/runner/core.ts";
-import type { EvidenceStore } from "../../src/runner/evidence.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
@@ -278,6 +277,8 @@ describe("runner guards", () => {
     );
     const adminToken = "a".repeat(48);
     const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const launch = [
       "bun",
       "src/cli.ts",
@@ -291,6 +292,8 @@ describe("runner guards", () => {
       f.worker,
       "--run-id",
       "toy-run",
+      "--admin-token-file",
+      adminTokenFile,
       "--seat-config",
       seatConfig,
       "--verify-config",
@@ -885,16 +888,163 @@ describe("runner guards", () => {
     transcript.push("Refusal: worker-root file submitted as trusted gate evidence → rejected.");
   });
 
-  test("a pluggable evidence store must read back the bytes it accepted", () => {
-    const f = fixture();
-    const source = join(f.privateDir, "external-receipt.txt");
-    writeFileSync(source, "verified outside worker scope");
-    const corrupt: EvidenceStore = { put: () => "kb:receipt", read: () => Buffer.from("different bytes") };
-    const runner = new Runner(f.privateDir, f.worker, root, false, corrupt);
-    runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
-    expect(() => runner.collect("toy-run", "external", source, f.revision, "verify")).toThrow("read-back");
-    expect(Object.keys(runner.status("toy-run").evidence)).toHaveLength(0);
+  test("evidence altered in the private store after collection refuses the checkpoint", () => {
+    const f = ready();
+    const stored = f.runner.status("toy-run").evidence["e1"];
+    if (stored === undefined) throw new Error("toy evidence was not collected");
+    writeFileSync(stored.ref, "different bytes");
+    card(f);
+    expect(f.runner.decide("toy-run", "card-1").escalation?.charter_rule).toBe("runner:trusted-evidence");
   });
+
+  test("an answered escalation resumes the run, and a new card can then pass", () => {
+    const f = ready();
+    f.runner.prepare("toy-run", {
+      id: "split",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    f.runner.judge("toy-run", "split", "seat-a", "supervisor-1", "split-a", "yes", []);
+    f.runner.judge("toy-run", "split", "seat-b", "supervisor-2", "split-b", "no", []);
+    expect(f.runner.decide("toy-run", "split").escalation?.charter_rule).toBe("runner:supervisor-disagreement");
+    expect(() => card(f, "early")).toThrow("stopped");
+    expect(() => f.runner.answer("toy-run", "maybe", "captain", "not an option")).toThrow("escalation option");
+    expect(() => f.runner.answer("toy-run", "yes", "implementer-1", "self-approval")).toThrow("excluded actor");
+    const resumed = f.runner.answer("toy-run", "yes", "captain", "Seat a cited the receipt; proceed.");
+    expect(resumed).toMatchObject({ run_state: "created", next_permitted_action: "align.run", open_escalation: null });
+    expect(() => f.runner.answer("toy-run", "yes", "captain", "again")).toThrow("no open escalation");
+    expect(f.runner.ledger("toy-run").entries).toMatchObject([{ decision: { id: "split" }, answered: true }]);
+    expect(f.runner.decide("toy-run", "split").status).toBe("needs-input");
+    card(f, "retry");
+    expect(f.runner.decide("toy-run", "retry").status).toBe("complete");
+    expect(new Runner(f.privateDir, f.worker, root).status("toy-run").run_state).toBe("alignment");
+    const capped = ready(0);
+    card(capped);
+    expect(capped.runner.decide("toy-run", "card-1").status).toBe("cap-reached");
+    expect(() => capped.runner.answer("toy-run", "yes", "captain", "raise it")).toThrow("no open escalation");
+    transcript.push(
+      "Escalation: seat disagreement → `needs-input`; supervisor `answer` → ledger entry answered, run back to `created`; a new card then completed. A `cap-reached` run is not answerable.",
+    );
+  });
+
+  test("a failing seat launcher refuses with its error, and only the supervisor token can answer", async () => {
+    const f = fixture();
+    const socket = join(f.privateDir, "runner.sock");
+    const seatConfig = join(f.privateDir, "seats.json");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: [
+          {
+            seat: "seat-a",
+            actor: "supervisor-1",
+            lineage: ["supervisor-1"],
+            command: [
+              "bun",
+              "-e",
+              "await Bun.stdin.text(); console.log(JSON.stringify({choice:'yes',rationale:'ok'}));",
+            ],
+          },
+          {
+            seat: "seat-b",
+            actor: "supervisor-2",
+            lineage: ["supervisor-2"],
+            command: ["bun", "-e", "console.error('seat crashed'); process.exit(7);"],
+          },
+        ],
+      }),
+    );
+    const server = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--seat-config",
+        seatConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
+      const request = join(f.privateDir, "request.json");
+      const call = (verb: string, token: string, args: object) => {
+        writeFileSync(request, JSON.stringify(args));
+        return Bun.spawnSync(["bun", "src/cli.ts", "runner", "call", verb, "--json", request, "--socket", socket], {
+          cwd: root,
+          env: { ...process.env, AK_RUNNER_TOKEN: token },
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+      };
+      const run = { run: "toy-run" };
+      expect(
+        call("start", adminToken, {
+          ...run,
+          charter: f.path,
+          implementer: "implementer-1",
+          revision: f.revision,
+          standing_grant: standing(f),
+        }).exitCode,
+      ).toBe(0);
+      const receipt = join(f.privateDir, "receipt.txt");
+      writeFileSync(receipt, "trusted test output");
+      expect(
+        call("collect", adminToken, { ...run, id: "e1", source: receipt, revision: f.revision, kind: "source" })
+          .exitCode,
+      ).toBe(0);
+      const prepared = call("prepare", workerToken, {
+        ...run,
+        card: {
+          id: "align",
+          operation: "align.run",
+          grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+          question: "Proceed?",
+          options: ["yes", "no"],
+          evidence: ["e1"],
+          artifact_hash: `sha256:${"b".repeat(64)}`,
+        },
+      });
+      expect(prepared.exitCode).toBe(0);
+      const decided = call("decide", workerToken, { ...run, card_id: "align" });
+      expect(decided.exitCode).toBe(0);
+      const refusal: unknown = JSON.parse(decided.stdout.toString());
+      expect(refusal).toMatchObject({
+        status: "needs-input",
+        escalation: { charter_rule: "runner:seat-independence" },
+      });
+      expect(JSON.stringify(refusal)).toContain("seat seat-b: launcher exited 7: seat crashed");
+      const ruling = { ...run, choice: "yes", actor: "captain", rationale: "Seat b crashed; seat a's reading stands." };
+      expect(call("answer", workerToken, ruling).exitCode).toBe(1);
+      expect(call("answer", adminToken, ruling).exitCode).toBe(0);
+      const status: unknown = JSON.parse(call("status", workerToken, run).stdout.toString());
+      expect(status).toMatchObject({ run_state: "created", next_permitted_action: "align.run", open_escalation: null });
+      transcript.push(
+        "Seat launcher exit 7 → `decide` returned `needs-input` carrying the launcher error; worker `answer` refused (exit 1); supervisor `answer` resumed the run at `align.run`.",
+      );
+    } finally {
+      server.kill();
+      await server.exited;
+    }
+  }, 30_000);
 
   test("runner evidence cannot land in a linked worktree's shared git common directory", () => {
     const f = fixture();

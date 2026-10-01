@@ -45,7 +45,6 @@ The package computes no prices, selects nothing, and schedules nothing.
 |---|---|---|
 | `runner-grants` | `fails-closed` | `delegated-grant` operations are unavailable and the entrypoint stops for explicit invocation (§2, "With no runner attached") |
 | `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach (§2, "How a runner signals trusted evidence") |
-| `event-delivery` | `fails-closed` | Inbound events are unavailable until a supervisor delivers them to the durable runner queue (§6) |
 
 This table is read by `ak build` and `ak validate` (`loadAdapterSupplies` in
 `src/packaging/install.ts`). A row is a claim that an operation needing the capability refuses
@@ -53,8 +52,13 @@ when it is unconfigured rather than degrading, which is what lets an attached ad
 skill's mode ceiling on a host that does not provide the capability (ruling
 `fail-closed-adapter-lifts-ceiling`).
 
-The service now persists delivered events before any action, so `event-delivery` has an unconfigured
-refusal. `tracker-access` is not a row here because this contract does not supply it:
+`event-delivery` is deliberately **not** a row, although this contract owns it. It has no stated
+behavior for an unconfigured runner (§6 says what may be done on receipt, not what happens when
+nothing is delivered), so nothing here says its absence refuses. The local service (§9) stores a
+delivered `event` with its key, but nothing yet hands a stored event to the run; that consumer is
+the follow-up that would make this a row. A skill requiring it stays capped at `guided` on a host
+that lacks it, attached runner or not, and `profiles/autonomy` still does not install against a host
+on its own. `tracker-access` is not a row here because this contract does not supply it:
 `adapters/tracker/CONTRACT.md` §1 does, with the fallback it depends on stated beside it.
 
 ---
@@ -339,15 +343,18 @@ Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
 Request shapes and task setup are in `CLI.md`. This section states the trust boundary.
 
 `ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id>
---seat-config <path> --verify-config <path> --effect-config <path>` starts a task-scoped service. Firstmate owns the
-process, its two distinct 32-character-or-longer
-`AK_RUNNER_ADMIN_TOKEN` and `AK_RUNNER_WORKER_TOKEN` values, the active charter, the seat
-configuration and the state directory. The endpoint refuses another run id. Firstmate passes only `AK_RUNNER_SOCKET` and
+--admin-token-file <path> --seat-config <path> --verify-config <path> --effect-config <path>` starts a
+task-scoped service. Firstmate owns the process, two distinct 32-character-or-longer tokens, the
+active charter, the seat configuration and the state directory. The supervisor token lives in a
+mode-0600 file outside the Firstmate home, outside the worker root and outside every git checkout and
+git directory, by default `~/.config/agent-kit/runner/<run>/admin.token`; its path is never written
+into a brief or any other worker-visible file. `serve` and `ak firstmate seat-judge` refuse a token
+file that breaks any of these rules. The worker token comes from `AK_RUNNER_WORKER_TOKEN`. The endpoint refuses another run id. Firstmate passes only `AK_RUNNER_SOCKET` and
 `AK_RUNNER_TOKEN` (the worker token) to a Claude Code or Codex worker. Both use
 `ak runner call <verb> --json <request-file>`; the service checks the token and verb before
 touching run state. `start` first validates the autopilot.start standing grant against the
 captain-approved charter (ADR-0007) and records `start_authority` before any seat dispatch.
-`start`, `collect`, `revision`, `judge`, `verify`, `charge`, `effect`, `event` and
+`start`, `collect`, `revision`, `judge`, `answer`, `verify`, `charge`, `effect`, `event` and
 `complete` require the supervisor token. A worker can read `status` and `ledger`, freeze a `prepare`
 card and ask `decide` to apply the next validated grant. `sync` observes the worker's current Git
 revision and diff; `run-verify` executes only the supervisor-configured command and stores its
@@ -363,16 +370,23 @@ evidence hashes on stdin, without either judgment. Under stock Firstmate, the la
 separate ordinary crewmates through its normal brief/spawn path; the implementing worker never
 spawns them. Each launcher returns a JSON object containing
 `choice` and `rationale`. The service strips runner tokens from the launched environment, records
-distinct actors, dispatch ids and lineages, and refuses a missing or ineligible seat. These launchers
-must isolate the two agents from the runner store and from each other; a bare command under an
-unrestricted shared user account cannot provide that isolation. Without a seat configuration the
+distinct actors, dispatch ids and lineages, and refuses a missing or ineligible seat. A launcher that
+exits non-zero, prints unparseable output, or returns an invalid answer or a choice outside the card's
+options refuses the card: the run goes to `needs-input` with a `runner:seat-independence` escalation
+that carries each launcher's error, and the seat is not relaunched. Without a seat configuration the
 supervisor may submit separate judgments with `judge`, and a missing judgment blocks the card.
+
+`answer` records the human's or supervisor's ruling on the open escalation: a `choice` from its
+options, the `actor` who ruled and a `rationale`. An excluded actor cannot answer. The service marks
+that ledger entry answered, clears the escalation and returns the run to the state and next
+permitted action it had before the refusal. The answer settles the refused card, which is not
+re-dispatched; the worker prepares a new card to retry the phase. A `cap-reached` run is not
+answerable, because raising a cap needs a new human-approved charter.
 
 The service checks the active charter schema, recomputes its canonical hash, verifies its human
 approval and refuses any changed charter on resume. `collect` snapshots only files outside the
-worker root through `src/runner/evidence.ts`'s `EvidenceStore` interface. The private file store
-is the current backend; a later KB adapter can supply stable refs and read-back through that
-interface without making the worker an evidence writer. `verify` and autonomous ship consume the runner-owned snapshot at the current
+worker root into the private file store in `src/runner/evidence.ts`, and every consumer re-reads and
+re-hashes the stored bytes. A KB-backed store is a follow-up. `verify` and autonomous ship consume the runner-owned snapshot at the current
 revision. The service writes a decision artifact per checkpoint and a schema-checked run ledger
 beside the restart record. A restart reads the next permitted action and returns prior decisions
 without redispatching them. `effect` resolves its read-back and perform command arrays only from a
@@ -385,9 +399,9 @@ transitions it to `pr-open`. A changed head requires a new verification and revi
 
 The path checks reject a state, socket, charter, seat configuration or source gate record that
 resolves inside the worker root. The state check also rejects Git's common directory for a linked
-worktree, including the primary checkout's shared `.git/agent-kit/evidence` path. They do not
-prove operating-system write isolation outside those roots.
-Firstmate must put the service and these files beyond the worker's actual write permissions and
-keep the supervisor token out of worker sessions. Until then, the installation is guided and
-`runner-grants` plus `trusted-evidence` remain unavailable. A charter that omits either capability
-also cannot gain it merely because a service was started; a new human-approved charter is needed.
+worktree, including the primary checkout's shared `.git/agent-kit/evidence` path. These checks
+and the token-file rules guard against accidental exposure; they are not isolation. On a same-user
+install a deliberately adversarial worker can still read the token file, the state directory and the
+evidence store, because nothing here changes operating-system permissions. A charter that omits
+`runner-grants` or `trusted-evidence` cannot gain either merely because a service was started; a new
+human-approved charter is needed.
