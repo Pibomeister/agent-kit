@@ -13,7 +13,8 @@ metadata:
   ak_catalog_id: super-bound
 ---
 
-Produce the specification, plan and zero-context tickets. A decision ticket is never implementation.
+Requirements and specification, implementation plan, dependency graph, ownership boundaries,
+acceptance criteria and verification commands. A decision ticket is never an implementation ticket.
 
 ## When to use
 
@@ -38,11 +39,15 @@ Produce the specification, plan and zero-context tickets. A decision ticket is n
 
 ## Authority
 
-Authority: `explicit` at `/ak:super-bound`; prose is not a start. `bound.run` has
-`delegated-grant` authority and requires runner-validated `spec-approval`, plus `ticket-approval`
-when it emits implementation tickets (`adapters/runner-contract/CONTRACT.md`). A host that cannot
-validate the grant stops for explicit invocation (ruling `entrypoint-phase-operation-split`). No
-skill starts this one directly; its model-invoked child is `doc-review`.
+Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
+`bound.run`. A human starts the public entrypoint by typing `/ak:super-bound`. A request in prose
+is not a start, even when it names this skill or the command. A delegated controller starts
+`bound.run` only under a runner-validated grant covering `spec-approval`, and only with a second
+grant covering `ticket-approval` when the operation emits implementation tickets
+(`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate a grant, the operation
+stops for explicit invocation rather than approving on the controller's word (ruling
+`entrypoint-phase-operation-split`). No skill starts this skill directly; it calls `doc-review`,
+which is model-invoked, and that direction is the legal one.
 
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
 task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
@@ -53,33 +58,44 @@ approves its own specification or tickets.
 
 ## Inputs
 
-- An approved alignment result bound to the current source revision. Missing or stale:
-  `needs-input`; approval against other code does not transfer.
+- An approved alignment result that binds to the current source revision. Absent, or bound to a
+  different revision: return `needs-input`. A direction approved against other code is not an
+  approval of this one.
 - Recorded project context, read through the knowledgebase adapter's `readContext`: the `prd` in
-  scope, settled `adr` pages and glossary. Empty is a fact; unreachable is `failed`.
-- A project record (`schemas/project.schema.json`) with change, test and delegation guidance.
-  Missing delegation guidance is `needs-input`; scorer inputs are never invented.
+  scope, the settled `adr` pages, and the glossary the vocabulary was agreed in. An empty result is
+  a fact; an unreachable knowledgebase returns `failed`.
+- The project record's configured guidance (`schemas/project.schema.json`) for change size and test
+  shape. Absent: the starting points below are advisory and nothing enforces them.
+- Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are
+  never invented.
 - At `bound.run` only: a `charter` (`schemas/charter.schema.json`) listing `spec-approval`, and
   `ticket-approval` where tickets will be emitted. Absent: `needs-input`.
 
 ## Workflow
 
-1. Before any tool call, require `/ak:super-bound`, a validated grant for `bound.run`, or the
-   bypass check in Authority exiting 0. Otherwise stop, make no tool call, identify this as
-   human-started and return `/ak:super-bound <request>`.
-2. Detect before asking: read the dependency manifest, test runner, lint and CI configuration;
-   report the result in two lines and ask only what remains.
-3. For a multi-module direction, draw a reviewed capability map of stable kebab-case module ids,
-   responsibilities and dependencies before writing any module specification.
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:super-bound`, when a controller started the phase
+   operation `bound.run` under a validated grant, or when the bypass check in Authority exits 0. A
+   request in prose is not a start, even when it names this skill or the command. With neither, stop
+   here: make no tool call, say that this command is human-started, and give the human the line to
+   type, `/ak:super-bound` and their request.
+2. Detect before you ask. Read what the repository already states — its dependency manifest, its
+   test runner, its lint configuration, its continuous-integration configuration — report what you
+   found in two lines, and ask only what is left.
+3. When the approved direction spans more than one module, draw the capability map first: a table of
+   stable kebab-case module ids, each with its responsibility and what it depends on. The map is
+   gated like every other step; a human reviews it before any module's specification is written.
 4. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
    test seams, verification commands, out of scope. No file paths and no code, except a fragment a
    prototype already settled exactly — a state machine, a reducer, a schema, a type shape.
-5. Choose test seams before slices; name why the chosen, preferably single seam is the highest
-   available. Use the alignment vocabulary with
+5. Choose the test seams before the slices. The fewer seams the feature is verified across the
+   better, and the ideal number is one; name the seam you chose and why it is the highest one
+   available. Use the vocabulary the alignment run already established with
    [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) rather than
    renaming the same things here.
 6. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
-   ticket.
+   ticket. That review is a step in this run, not its end: once the verdict is in, continue through
+   approval and tickets.
 7. Take the specification approval. The plan record carries it as `specification_approval`, bound
    to the specification's own hash (`specification_hash`), so slicing afterwards does not void it.
    Under a bypass grant, report `needs-decision` naming the specification hash and stop; only the
@@ -89,10 +105,12 @@ approves its own specification or tickets.
 9. Run `ak delegation <ticket> --project <project-record>` after populating its floor and evidenced
    factors; persist its complete JSON with `readiness` and `assumptions` before returning, including
    on `needs-input`. Never derive the class in this body.
-10. Give every ticket exact consumed and produced interfaces. Write for a skilled implementer with
-    no context about this toolset or domain.
-11. Declare blocking edges, exclusive file ownership, shared generated artifacts and migration
-    numbering. Overlapping writers serialize even without a dependency edge.
+10. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
+    and what it produces that later tickets rely on with exact names, parameters and return types.
+    Write for a skilled developer who knows almost nothing about this toolset or problem domain.
+11. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
+    ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
+    with no edge between them are still unsafe in parallel when they write the same file.
 12. Type-check every ticket. An implementer opening it with an empty context window who still
     cannot do it is not holding an implementation ticket: reshape it, or reclassify it
     `type: decision` and send it back.

@@ -45,8 +45,26 @@ cat > tickets/order-ledger.input.json <<'JSON'
   }
 }
 JSON
-scorer_dir="$(mktemp -d "${TMPDIR:-/tmp}/ak-scorer.XXXXXX")"
-cat > "$scorer_dir/scorer-output.json" <<'JSON'
+cat > ak <<'SH'
+#!/usr/bin/env sh
+set -eu
+if [ "$#" -ne 4 ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ "$1" != delegation ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ "$3" != --project ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ ! -f "$2" ] || [ ! -f "$4" ]; then
+  echo 'ak delegation: ticket or project record does not exist' >&2
+  exit 1
+fi
+cat <<'JSON'
 {
   "class": "yellow-owner",
   "stage": "ticket",
@@ -61,17 +79,5 @@ cat > "$scorer_dir/scorer-output.json" <<'JSON'
   "lowered_by": null
 }
 JSON
-cat > ak <<'SH'
-#!/usr/bin/env sh
-set -eu
-if ! { [ "$#" -eq 4 ] && [ "$1" = delegation ] && [ "$3" = --project ]; }; then
-  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
-  exit 2
-fi
-if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
-  echo 'ak delegation: ticket or project record does not exist' >&2
-  exit 1
-fi
 SH
-printf 'cat %q\n' "$scorer_dir/scorer-output.json" >> ak
 chmod +x ak

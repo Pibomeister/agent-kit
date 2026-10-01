@@ -7,8 +7,11 @@ execution:
     scoped to the billing service, with the existing tenant model unchanged. That approval is
     against the current head. Take it from here and get it ready to build. The project record is
     project.json, and this host's scorer is the repository-local `ak` command; put the repository
-    root on PATH when invoking it.
-  max_turns: 20
+    root on PATH when invoking it. When the specification review returns, stay in this run: bind
+    specification_approval to the specification's own hash, write the tickets, and run
+    `ak delegation` on each one. Ending when the review lanes finish leaves the work unbounded.
+  max_turns: 48
+  timeout_seconds: 600
   allowed_tools: [Read, Glob, Grep, Bash, Skill, Write, Edit]
 context:
   scaffold_script: scaffold.sh

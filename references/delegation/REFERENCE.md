@@ -122,10 +122,11 @@ erase the draft or reduce the result to prose.
 Slice on independently verifiable behavior, not on a universal line count. Each slice is a narrow
 but complete path through every layer, independently verifiable and sized for one fresh context
 window. Order a stack as pure refactor, additive schema expand, behavior behind a flag, consumer,
-backfill, then schema contract. The schema-contract change is a separate ticket. For a wide
-mechanical refactor that cannot land as a vertical slice, expand first, migrate call sites in
-independently verified batches, and contract only after every batch. Each ticket names its
-criteria, interfaces, ownership and verification.
+backfill, then schema contract. The schema-contract change is a separate ticket. Where one
+mechanical change breaks call sites across the tree and no vertical slice can land green, use the
+wide-refactor shape instead: expand, then migrate in batches with each batch its own ticket blocked
+by the expand, then contract, blocked by every batch. Each ticket names its criteria, interfaces,
+ownership and verification.
 When the direction already spans these independently deployable phases, their boundaries require
 the ordered stack. A request to keep them in one ticket becomes an open decision; it does not erase
 the boundaries.

@@ -150,11 +150,19 @@ JSON
 cat > ak <<'SH'
 #!/usr/bin/env sh
 set -eu
-if ! { [ "$#" -eq 4 ] && [ "$1" = delegation ] && [ "$3" = --project ]; }; then
+if [ "$#" -ne 4 ]; then
   echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
   exit 2
 fi
-if ! { [ -f "$2" ] && [ -f "$4" ]; }; then
+if [ "$1" != delegation ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ "$3" != --project ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ ! -f "$2" ] || [ ! -f "$4" ]; then
   echo 'ak delegation: ticket or project record does not exist' >&2
   exit 1
 fi
