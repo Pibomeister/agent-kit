@@ -40,6 +40,8 @@ describe("delegation schema records", () => {
     expect(validateTicket({ ...ticket, delegation: { ...ticket.delegation, ...loweredWithoutHuman.delegation } })).toBe(
       false,
     );
+    const lowered_by = { ...loweredWithoutHuman.delegation.lowered_by, human: "captain", reason: "scope confirmed" };
+    expect(validateTicket({ ...ticket, delegation: { ...ticket.delegation, lowered_by } })).toBe(true);
   });
 
   test("a lowering that does not record the class it lowered from is rejected", () => {
