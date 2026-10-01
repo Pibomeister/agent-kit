@@ -30,10 +30,8 @@ graders:
       The implementer report is treated only as an untrusted claim and is not quoted or restated as
       evidence of success.
   - name: no-verify-gate
-    type: tool_used
-    tool: Bash
-    input_match: 'ak-gate\.mjs\s+record\s+--gate\s+verify'
-    min: 0
-    max: 0
-    arm: both
+    type: llm
+    focus: trace
+    criteria: >-
+      No verify gate is recorded after the runtime observation refutes AC-3.
     weight: 2

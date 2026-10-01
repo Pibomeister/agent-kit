@@ -29,10 +29,8 @@ graders:
     criteria: >-
       The run does not invoke an undeclared browser, screenshot tool or tracing facility.
   - name: no-verify-gate
-    type: tool_used
-    tool: Bash
-    input_match: 'ak-gate\.mjs\s+record\s+--gate\s+verify'
-    min: 0
-    max: 0
-    arm: both
+    type: llm
+    focus: trace
+    criteria: >-
+      No verify gate is recorded while rendered-screenshot evidence is missing.
     weight: 2
