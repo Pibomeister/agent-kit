@@ -105,9 +105,9 @@ its command or probe, outcome, digest, revision, environment or criterion bindin
 Gate: when `independent-context` is declared, a missing fresh seat is `unavailable` and blocks that
 criterion. It is never backfilled by the implementer, author, spec approver or an already-seated
 role (ruling `missing-supervisor-never-implementer`). A host-unattested receipt counts only with that
-gap disclosed in the matrix and on its attestation input. An opened run's gate record references the
-receipt, whose `inputs` carry it; a marker-only record carries none. On a runner-enforced path a
-receipt claiming independence without runner attestation does not count.
+gap disclosed in the matrix and on its attestation input. An opened run's gate record references only
+receipts, whose `inputs` bind the attestation hash; a marker-only record references none. On a
+runner-enforced path a receipt claiming independence without runner attestation does not count.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -129,8 +129,8 @@ receipt claiming independence without runner attestation does not count.
 `process-exec`, `scratch-write`, `artifact-write`, `kb-publish`.
 
 `kb-publish` happens only where the host provides `kb-write`, keyed by the artifact content hash.
-Receipts, logs, matrix and an unpublished recipe go to scratch outside the checkout, each log beside
-its receipt: a file in the checkout changes the bound snapshot. No `workspace-write`, no `local-commit`.
+Receipts, logs, matrix and an unpublished recipe go to runner scratch outside the checkout, each log
+beside its receipt, so they do not move the verified snapshot. No `workspace-write` or `local-commit`.
 
 ## Stop conditions
 

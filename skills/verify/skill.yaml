@@ -88,8 +88,8 @@ outputs:
       At least one schema-valid receipt per criterion, including explicit non-pass receipts for
       declared evidence kinds that cannot be obtained. Each lists its output log under artifacts
       with the output digest and, for an opened run, carries run_id, check and the ticket ref.
-      Receipts, logs, matrix and an unpublished recipe are written to scratch outside the checkout,
-      each log beside its receipt, so they do not change the snapshot the receipts are bound to.
+      Receipts, logs, matrix and an unpublished recipe are written to runner scratch outside the
+      checkout, each log beside its receipt, so they do not move the verified snapshot.
   - id: acceptance-evidence-matrix
     summary: >-
       Every criterion mapped to its receipts and declared evidence kinds, with the host capability
@@ -133,9 +133,9 @@ hard_gates:
     (ruling `missing-supervisor-never-implementer`).
   - The verify gate is recorded only when every criterion passed with every declared runtime kind.
   - A host-unattested receipt counts toward the gate only with that gap disclosed in the matrix and
-    on its attestation input. An opened run's gate record references the receipt, whose inputs
-    carry it; a marker-only record carries none. On a runner-enforced path a receipt claiming
-    independence without the runner's attestation does not count.
+    on its attestation input. An opened run's gate record references only receipts, whose inputs
+    bind the attestation hash; a marker-only record references none. On a runner-enforced path a
+    receipt claiming independence without the runner's attestation does not count.
 
 stop_conditions:
   - complete when every criterion has a receipt and matrix outcome, published or returned
