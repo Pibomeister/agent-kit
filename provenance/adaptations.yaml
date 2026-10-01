@@ -1124,6 +1124,9 @@ adaptations:
   - path: tests/fixtures/delegation/invalid/factor-without-evidence.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The invalid fixture proves every factor score cites non-empty evidence.
+  - path: tests/fixtures/delegation/invalid/lowered-without-from.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: The invalid fixture proves a lowering records the computed class it lowered, so a later assessment above it can raise again.
   - path: tests/fixtures/delegation/invalid/lowered-without-human-or-reason.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
     rationale: The invalid fixture proves lowering requires a named human and recorded reason.

@@ -107,6 +107,7 @@ describe("deterministic delegation scoring", () => {
           human: "Avery Owner",
           reason: "The measured blast radius is isolated by the existing flag.",
           at: "2026-09-30T12:00:00Z",
+          from: "red",
         },
       },
     );
@@ -117,21 +118,48 @@ describe("deterministic delegation scoring", () => {
       {},
       {
         floor: { packs: ["pack-secure"], sensitive_actions: [] },
-        lowered_by: { human: "Avery Owner", reason: "The pack matched a read-only path.", at: "2026-09-30T12:00:00Z" },
+        lowered_by: {
+          human: "Avery Owner",
+          reason: "The pack matched a read-only path.",
+          at: "2026-09-30T12:00:00Z",
+          from: "yellow-owner",
+        },
       },
     );
     expect(scoreDelegation(belowFloor, PROJECT).class).toBe("yellow-owner");
   });
 });
 
-test("ak delegation reads sibling ticket and project records and prints the ticket delegation shape", () => {
+test("a later assessment above the class a lowering started from supersedes the lowering", () => {
+  const lowering = {
+    human: "Avery Owner",
+    reason: "The change is behind a flag that stays off.",
+    at: "2026-09-30T12:00:00Z",
+    from: "yellow-owner",
+  } as const;
+  const atTicketTime = ticket("yellow-agent", { reversibility: 3, size: 3, complexity: 1 }, { lowered_by: lowering });
+  expect(scoreDelegation(atTicketTime, PROJECT)).toMatchObject({ class: "yellow-agent", lowered_by: lowering });
+
+  const atMergeTime = ticket(
+    "yellow-agent",
+    { reversibility: 3, size: 3, complexity: 3, spec: 1 },
+    { lowered_by: lowering },
+  );
+  const raised = scoreDelegation(atMergeTime, PROJECT);
+  expect(raised).toMatchObject({ class: "red", lowered_by: { ...lowering, superseded: true } });
+
+  const rescored = scoreDelegation({ delegation: { ...raised, factors: FACTORS } }, PROJECT);
+  expect(rescored).toMatchObject({ class: "red", lowered_by: { superseded: true } });
+});
+
+test("ak delegation reads the ticket and the named project record and prints the ticket delegation shape", () => {
   const root = makeTree({});
   mkdirSync(join(root, "work"), { recursive: true });
   writeFileSync(join(root, "work", "ticket.json"), readFileSync(join(FIXTURES, "valid.ticket.json")));
   writeFileSync(join(root, "work", "project.json"), readFileSync(join(FIXTURES, "valid.project.json")));
   const out: string[] = [];
   const err: string[] = [];
-  const code = runCli(["delegation", "work/ticket.json"], {
+  const code = runCli(["delegation", "work/ticket.json", "--project", "work/project.json"], {
     cwd: root,
     io: { out: (line) => out.push(line), err: (line) => err.push(line) },
   });
@@ -160,7 +188,11 @@ test("ak delegation names the block a record lacks", () => {
     const code = runCli(["delegation", ...argv], { cwd: root, io: { out: () => {}, err: (line) => err.push(line) } });
     return { code, err: err.join("\n") };
   };
-  expect(run("bare-ticket.json")).toEqual({ code: 1, err: "ak delegation: ticket has no delegation block to score" });
+  expect(run("bare-ticket.json", "--project", "project.json")).toEqual({
+    code: 1,
+    err: "ak delegation: ticket has no delegation block to score",
+  });
+  expect(run("ticket.json").code).toBe(2);
   expect(run("ticket.json", "--project", "bare-project.json")).toEqual({
     code: 1,
     err: "ak delegation: project has no guidance.delegation block (weights and cut points)",

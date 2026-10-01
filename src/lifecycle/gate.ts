@@ -43,7 +43,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // ── the snapshot ─────────────────────────────────────────────────────────────
 
@@ -145,6 +145,18 @@ export const DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red
 export type DelegationClass = (typeof DELEGATION_CLASSES)[number];
 export const AUTHOR_KINDS = ["human", "agent"] as const;
 export type AuthorKind = (typeof AUTHOR_KINDS)[number];
+
+const BUNDLED_ADAPTER_IDS: readonly string[] = [];
+
+/** The ids a gate record's host may carry: the directories under `adapters/`, which `ak build` writes into the bundled copy. */
+export function adapterIds(): readonly string[] {
+  if (BUNDLED_ADAPTER_IDS.length > 0) return BUNDLED_ADAPTER_IDS;
+  const at = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "adapters");
+  if (!existsSync(at)) return [];
+  return readdirSync(at, { withFileTypes: true })
+    .flatMap((entry) => (entry.isDirectory() ? [entry.name] : []))
+    .toSorted();
+}
 
 /** What super-ship checks before it starts: every phase before it. */
 export const PRE_SHIP_GATES: readonly Gate[] = ["build-checks", "verify", "review-full", "review-readiness"];
@@ -385,7 +397,7 @@ export interface RecordArgs {
 function implementerWellFormed(implementer: GateRecord["implementer"]): boolean {
   return (
     implementer === undefined ||
-    (AUTHOR_KINDS.includes(implementer?.author_kind) && Boolean(implementer?.host?.trim?.()))
+    (AUTHOR_KINDS.includes(implementer?.author_kind) && adapterIds().includes(implementer?.host))
   );
 }
 
@@ -393,7 +405,10 @@ export function recordGate(
   a: RecordArgs,
 ): { ok: true; path: string; record: GateRecord; skipped: string[] } | { ok: false; reason: string } {
   if (!implementerWellFormed(a.implementer)) {
-    return { ok: false, reason: "the implementer needs an author kind of human or agent and a non-blank host" };
+    return {
+      ok: false,
+      reason: `the implementer needs an author kind of human or agent and a host that is one of ${adapterIds().join(", ")}`,
+    };
   }
   const snapshot = takeSnapshot(a.project);
   if (typeof snapshot === "string") return { ok: false, reason: snapshot };
@@ -1242,8 +1257,8 @@ export function main(argv: readonly string[], io: Io, cwd: string = process.cwd(
       io.err(`ak lifecycle record: --author-kind must be one of ${AUTHOR_KINDS.join(", ")}`);
       return 2;
     }
-    if (host !== undefined && host.trim() === "") {
-      io.err("ak lifecycle record: --host needs a non-blank value");
+    if (host !== undefined && !adapterIds().includes(host)) {
+      io.err(`ak lifecycle record: --host must be one of ${adapterIds().join(", ")}`);
       return 2;
     }
     const opened = readRunRecord(dir, run);

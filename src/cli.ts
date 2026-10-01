@@ -52,7 +52,7 @@ const USAGE = [
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
   "  ak build [--check] [--profile <id>|all]    emit dist/claude-code and dist/codex",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
-  "  ak delegation <ticket> [--project <path>] compute the evidenced delegation record",
+  "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
   "  ak firstmate <subcommand> …                bind agent-kit to a patched Firstmate home (optional)",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
@@ -262,14 +262,14 @@ function attachCommand(parsed: Parsed, options: CliOptions): number {
 
 function delegationCommand(parsed: Parsed, options: CliOptions): number {
   const ticket = parsed.positional[0];
-  if (ticket === undefined || parsed.positional.length !== 1) {
-    options.io.err("ak delegation: needs exactly one ticket path");
+  const project = parsed.flags.get("project");
+  if (ticket === undefined || parsed.positional.length !== 1 || project === undefined || project === true) {
+    options.io.err("ak delegation: needs exactly one ticket path and --project <path>");
     for (const line of USAGE) options.io.err(line);
     return 2;
   }
-  const project = parsed.flags.get("project");
   try {
-    const record = scoreDelegationFiles(ticket, project === true ? undefined : project, options.cwd);
+    const record = scoreDelegationFiles(ticket, project, options.cwd);
     options.io.out(JSON.stringify(record, null, 2));
     return 0;
   } catch (cause) {

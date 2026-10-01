@@ -92,6 +92,9 @@ adaptations:
   - path: tests/fixtures/delegation/invalid/lowered-without-human-or-reason.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
     rationale: The invalid fixture proves lowering requires a named human and recorded reason.
+  - path: tests/fixtures/delegation/invalid/lowered-without-from.json
+    source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
+    rationale: The invalid fixture proves a lowering records the computed class it lowered, so a later assessment above it can raise again.
   - path: tests/fixtures/delegation/invalid/readiness-above-two.json
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-119
     rationale: The invalid fixture proves each readiness criterion stays on its zero-through-two scale.

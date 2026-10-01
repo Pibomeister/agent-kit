@@ -1,9 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, extname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { parse as parseYaml } from "yaml";
 
 import commonSchema from "../schemas/common.schema.json" with { type: "json" };
 import projectSchema from "../schemas/project.schema.json" with { type: "json" };
@@ -22,7 +21,7 @@ export interface DelegationRecord {
   stage: "ticket" | "merge";
   floor: { packs: string[]; sensitive_actions: string[] };
   factors: Record<DelegationFactorName, DelegationFactor>;
-  lowered_by: null | { human: string; reason: string; at: string };
+  lowered_by: null | { human: string; reason: string; at: string; from: DelegationClass; superseded?: true };
 }
 
 export interface DelegationTicket {
@@ -96,17 +95,19 @@ export function scoreDelegation(ticket: DelegationTicket, project: DelegationPro
     ) / 1e9;
   const scored: DelegationClass =
     total >= red ? "red" : total >= yellowOwner ? "yellow-owner" : total >= yellowAgent ? "yellow-agent" : "green";
-  const computed =
-    source.lowered_by === null
-      ? highest(source.class, scored, floorClass(source.floor))
-      : highest(source.class, floorClass(source.floor));
-
-  return { ...source, class: computed };
+  const floor = floorClass(source.floor);
+  const fresh = highest(scored, floor);
+  const lowering = source.lowered_by;
+  if (lowering === null) return { ...source, class: highest(source.class, fresh) };
+  if (lowering.superseded === true || highest(fresh, lowering.from) !== lowering.from) {
+    return { ...source, class: highest(source.class, fresh), lowered_by: { ...lowering, superseded: true } };
+  }
+  return { ...source, class: highest(source.class, floor) };
 }
 
 function readDocument<T>(path: string, validate: ValidateFunction<T>, label: string): T {
   const text = readFileSync(path, "utf8");
-  const parsed: unknown = extname(path).toLowerCase() === ".json" ? JSON.parse(text) : parseYaml(text);
+  const parsed: unknown = JSON.parse(text);
   if (!validate(parsed)) {
     const detail = (validate.errors ?? [])
       .slice(0, 4)
@@ -117,25 +118,15 @@ function readDocument<T>(path: string, validate: ValidateFunction<T>, label: str
   return parsed;
 }
 
-function siblingProject(ticketPath: string): string | undefined {
-  for (const name of ["project.json", "project.yaml", "project.yml"]) {
-    const candidate = resolve(dirname(ticketPath), name);
-    if (existsSync(candidate)) return candidate;
-  }
-  return undefined;
-}
-
 export function scoreDelegationFiles(
   ticketInput: string,
-  projectInput?: string,
+  projectInput: string,
   cwd: string = process.cwd(),
 ): DelegationRecord {
   const ticketPath = resolve(cwd, ticketInput);
-  const projectPath = projectInput === undefined ? siblingProject(ticketPath) : resolve(cwd, projectInput);
+  const projectPath = resolve(cwd, projectInput);
   if (!existsSync(ticketPath)) throw new Error(`ticket does not exist: ${ticketInput}`);
-  if (projectPath === undefined || !existsSync(projectPath)) {
-    throw new Error("project record not found; place project.json beside the ticket or pass --project <path>");
-  }
+  if (!existsSync(projectPath)) throw new Error(`project record does not exist: ${projectInput}`);
   const validation = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
   addFormats(validation);
   validation.addSchema(commonSchema);

@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import classOutside from "./fixtures/delegation/invalid/class-outside-enum.json" with { type: "json" };
 import factorWithoutEvidence from "./fixtures/delegation/invalid/factor-without-evidence.json" with { type: "json" };
+import loweredWithoutFrom from "./fixtures/delegation/invalid/lowered-without-from.json" with { type: "json" };
 import loweredWithoutHuman from "./fixtures/delegation/invalid/lowered-without-human-or-reason.json" with { type: "json" };
 import projectCheckKind from "./fixtures/delegation/invalid/project-check-kind-outside-enum.json" with { type: "json" };
 import projectCheckScope from "./fixtures/delegation/invalid/project-check-scope-not-diff.json" with { type: "json" };
@@ -39,6 +40,14 @@ describe("delegation schema records", () => {
     expect(validateTicket({ ...ticket, delegation: { ...ticket.delegation, ...loweredWithoutHuman.delegation } })).toBe(
       false,
     );
+  });
+
+  test("a lowering that does not record the class it lowered from is rejected", () => {
+    expect(validateTicket({ ...ticket, delegation: { ...ticket.delegation, ...loweredWithoutFrom.delegation } })).toBe(
+      false,
+    );
+    const lowered_by = { ...loweredWithoutFrom.delegation.lowered_by, from: "yellow-owner" };
+    expect(validateTicket({ ...ticket, delegation: { ...ticket.delegation, lowered_by } })).toBe(true);
   });
 
   test("a readiness score above two is rejected", () => {
@@ -84,6 +93,7 @@ describe("delegation schema records", () => {
     expect(readdirSync(join(FIXTURES, "invalid")).toSorted()).toEqual([
       "class-outside-enum.json",
       "factor-without-evidence.json",
+      "lowered-without-from.json",
       "lowered-without-human-or-reason.json",
       "project-check-kind-outside-enum.json",
       "project-check-scope-not-diff.json",

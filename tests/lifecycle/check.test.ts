@@ -194,13 +194,18 @@ describe("ak lifecycle check, standalone", () => {
     });
   });
 
-  test("a blank --host is refused before it can replace a readable record", () => {
+  test("a --host outside the shipped adapters is refused before it can replace a readable record", () => {
     const dir = repo();
     const identity = ["--class", "green", "--author-kind", "agent"];
     expect(ak(dir, "record", "--gate", "build-checks", ...identity, "--host", "codex").code).toBe(0);
     const blank = ak(dir, "record", "--gate", "build-checks", ...identity, "--host=");
     expect(blank.code).toBe(2);
-    expect(blank.err).toContain("--host needs a non-blank value");
+    expect(blank.err).toContain("--host must be one of claude-code, codex,");
+    const model = ak(dir, "record", "--gate", "build-checks", ...identity, "--host", "sonnet-4");
+    expect(model.code).toBe(2);
+    expect(model.err).toContain("--host must be one of claude-code, codex,");
+    expect(ak(dir, "record", "--gate", "build-checks", ...identity, "--host", "claude-code").code).toBe(0);
+    expect(ak(dir, "record", "--gate", "build-checks", ...identity, "--host", "codex").code).toBe(0);
     const records = readRecords(defaultEvidenceDir(dir), "feature", "build-checks");
     expect(records.map((entry) => entry.implementer)).toEqual([{ author_kind: "agent", host: "codex" }]);
     const programmatic = recordGate({
@@ -208,9 +213,19 @@ describe("ak lifecycle check, standalone", () => {
       run: "feature",
       gate: "build-checks",
       project: dir,
-      implementer: { author_kind: "agent", host: " " },
+      implementer: { author_kind: "agent", host: "sonnet-4" },
     });
     expect(programmatic.ok).toBe(false);
+    const gateDir = join(defaultEvidenceDir(dir), "feature", "build-checks");
+    const [recordFile] = readdirSync(gateDir);
+    if (recordFile === undefined) throw new Error("gate record was not written");
+    const path = join(gateDir, recordFile);
+    const written: unknown = JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(
+      path,
+      JSON.stringify(Object.assign({}, written, { implementer: { author_kind: "agent", host: "sonnet-4" } })),
+    );
+    expect(readRecords(defaultEvidenceDir(dir), "feature", "build-checks")).toEqual([]);
   });
 
   test("re-recording a snapshot without the identity flags keeps its class and implementer", () => {
@@ -947,7 +962,9 @@ describe("the gate a bundle carries", () => {
       const opened = node("open", "--ticket", ticketPath);
       expect(opened.exitCode).toBe(0);
       expect(opened.stdout.toString()).toMatch(/^opened run feature-[0-9a-f]{12}\n$/);
-      expect(node("record", "--gate", "verify", "--run", host).exitCode).toBe(0);
+      const identity = ["--class", "green", "--author-kind", "agent"];
+      expect(node("record", "--gate", "verify", "--run", host, ...identity, "--host", "sonnet-4").exitCode).toBe(2);
+      expect(node("record", "--gate", "verify", "--run", host, ...identity, "--host", host).exitCode).toBe(0);
       const ok = node("check", "--gates", "verify", "--run", host);
       expect(ok.stdout.toString()).toContain(`ok: run ${host} has current evidence for verify`);
       const refused = node("check", "--run", host);

@@ -170,14 +170,16 @@
           }
         },
         "lowered_by": {
-          "description": "Null unless a person lowered the otherwise computed class. The person's name, reason and timestamp make the lowering auditable.",
+          "description": "Null unless a person lowered the otherwise computed class. The person's name, reason and timestamp make the lowering auditable. `from` is the class computed when the person lowered it: the lowering holds only while a later computed class is not above it, and `superseded` marks a lowering a later assessment has outgrown (ruling `delegation-class-is-authority-not-finding`).",
           "oneOf": [
             { "type": "null" },
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["human", "reason", "at"],
+              "required": ["human", "reason", "at", "from"],
               "properties": {
+                "from": { "enum": ["green", "yellow-agent", "yellow-owner", "red"] },
+                "superseded": { "const": true },
                 "human": { "$ref": "common.schema.json#/$defs/nonempty_string" },
                 "reason": { "$ref": "common.schema.json#/$defs/nonempty_string" },
                 "at": { "$ref": "common.schema.json#/$defs/timestamp" }
