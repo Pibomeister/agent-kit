@@ -51,7 +51,17 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
+const maintenanceScripts = new Map<string, string | null>();
+
 function maintenanceScript(root: string): string | null {
+  const cached = maintenanceScripts.get(root);
+  if (cached !== undefined) return cached;
+  const script = buildMaintenanceScript(root);
+  maintenanceScripts.set(root, script);
+  return script;
+}
+
+function buildMaintenanceScript(root: string): string | null {
   const source = join(root, "src/maintenance/cli.ts");
   if (!existsSync(source)) return null;
   const scratch = join(root, ".work");
