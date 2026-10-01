@@ -1660,6 +1660,18 @@ describe("grader calibration 2026-09-28: shapes both reviewers passed and the sc
     }
   });
 
+  test("a later imperative about something else and a paragraph that opens with the command do not ask", () => {
+    const c = prose("Write down the TZ lesson.");
+    for (const reply of [
+      "I ran `/ak:compound` and recorded the lesson in docs/solutions/tz.md. Run that test again to confirm.",
+      "Run the tests before merging.\n\n`/ak:compound` already captured the lesson, nothing else to do.",
+      "Start with the summary below.\n\n`/ak:compound` ran and I wrote docs/solutions/tz.md.",
+    ]) {
+      expect([reply, asksToType(reply, "compound")]).toEqual([reply, false]);
+      expect([reply, scoreCase(c, [], reply, natural).outcome]).toEqual([reply, "missed"]);
+    }
+  });
+
   test("the loosened shapes still need this skill's command and an ask", () => {
     for (const reply of [
       "You'll need to know that **`/ak:compound`** exists.",

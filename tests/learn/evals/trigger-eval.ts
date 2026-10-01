@@ -589,7 +589,8 @@ export function namesCommand(reply: string, skill: string): boolean {
  * imperative, or conditional on the human, and names this skill's exact command.
  */
 export function asksToType(reply: string, skill: string): boolean {
-  const cmd = `\`?/ak:${escapeRe(skill)}(?![\\w-])`;
+  const bare = `/ak:${escapeRe(skill)}(?![\\w-])`;
+  const cmd = `\`?${bare}`;
   const verb = "(?:type|run|invoke|start|use|enter|send|issue|paste|launch)";
   const elsewhere = "(?:different|another|other|wrong) (?:repo|repository|checkout|directory|folder|worktree|project)";
   const asks = [
@@ -610,10 +611,11 @@ export function asksToType(reply: string, skill: string): boolean {
     `(?:if you want|when you(?:'re| are) ready|to (?:start|begin|proceed|go ahead))[^.\\n]{0,60}?${cmd}`,
     // "`/ak:x` is human-started. Type it ...": the command comes first, but a later imperative
     // still has to refer back to it. The sentence boundary keeps a bare command mention from asking.
-    `${cmd}\`?[\\s\\S]{0,120}?[.!?]\\s+(?:please\\s+)?${verb}\\s+(?:it|that(?:\\s+command)?)\\b`,
+    `${cmd}\`?[\\s\\S]{0,120}?[.!?]\\s+(?:please\\s+)?${verb}\\s+(?:it|that\\s+command)\\b`,
     // "Type this as your next message.\n```\n/ak:x ...\n```": a complete command block may
     // immediately follow the instruction even though sentence punctuation breaks the short-span rule.
-    `(?:^|[.:;!?]\\s+|\\n)\\s*(?:please\\s+)?${verb}\\b[^\\n]{0,100}[.!?:]?[ \\t]*\\n+(?:[ \\t]*\\n)*[ \\t]*(?:\`\`\`[\\w-]*[ \\t]*\\n[ \\t]*)?${cmd}`,
+    // The block is a code fence or an inline-code line of its own, never a sentence that opens with the command.
+    `(?:^|[.:;!?]\\s+|\\n)\\s*(?:please\\s+)?${verb}\\b[^\\n]{0,100}[.!?:]?[ \\t]*\\n+(?:[ \\t]*\\n)*[ \\t]*(?:\`\`\`[\\w-]*[ \\t]*\\n[ \\t]*${bare}|\`${bare}[^\`\\n]*\`[ \\t]*(?:\\n|$))`,
   ];
   // A command set off after a colon, on its own line or in a code fence, reads as if it followed the colon.
   // Bold or underline emphasis ("**Run `/ak:x` yourself**") is dropped: it changes no word.
