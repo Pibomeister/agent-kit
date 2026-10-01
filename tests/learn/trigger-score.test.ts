@@ -1261,6 +1261,24 @@ describe("invalid sessions and the no-op floor", () => {
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "", stopReason: "end_turn" })).toBe("empty reply");
   });
 
+  test("the reads an adapter derives from a shell call are neither the refused call nor counted against the cap", () => {
+    const call = (command: string) =>
+      JSON.stringify({ type: "tool_call", toolName: "run_terminal_command", rawInput: { command } });
+    const refused = grok.parse(
+      [call("cat README.md 2>/dev/null; ls -la"), JSON.stringify({ type: "end", stopReason: "cancelled" })].join("\n"),
+    );
+    expect(refused.events).toHaveLength(2);
+    expect(invalidSession({ ...refused, exitCode: 0, timedOut: false }, 20)).toBe(
+      "host cancelled refused Bash call: cat README.md 2>/dev/null; ls -la",
+    );
+    const reads = grok.parse([call("cat a.md"), call("cat b.md")].join("\n"));
+    expect(reads.events).toHaveLength(4);
+    expect(invalidSession({ ...reads, exitCode: 1, timedOut: false }, 4)).toBe("exit 1");
+    expect(invalidSession({ ...reads, exitCode: 1, timedOut: false }, 2)).toBe(
+      "turn cap 2 reached after 2 tool events",
+    );
+  });
+
   test("invalid cases are counted apart and left out of every rate", () => {
     const ok = scoreCase(pos("p1", "diagnose"), [skill("diagnose")], "done", natural);
     const bad: Scored = { ...scoreCase(pos("p2", "diagnose"), [], "", natural), invalid: "exit 1" };

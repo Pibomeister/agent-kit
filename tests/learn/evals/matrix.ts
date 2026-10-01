@@ -103,7 +103,7 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
  * `.work/eval-matrix.yaml` and bind it to run more.
  */
 export const DEFAULT_MATRIX: Matrix = {
-  subjects: [{ id: "subject-default", host: "claude", model: undefined, maxTurns: DEFAULT_MAX_TURNS }],
+  subjects: [{ id: "subject-default", host: "claude", model: undefined }],
   reviewers: [],
   panels: { "independent-of": "subject", "min-reviewers": 2 },
 };

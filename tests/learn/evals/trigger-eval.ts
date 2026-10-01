@@ -342,7 +342,7 @@ const DELEGATING = new Set(["Agent", "Task", "Skill"]);
 /** Programs that only look, whatever their arguments (subject to `WRITING_FLAGS`). `cd` moves, and changes nothing. */
 const LOOKING = new Set<string>(READ_ONLY_PROGRAMS);
 /** git subcommands that only look, whatever their flags. */
-const GIT_LOOKING = new Set<string>([...READ_ONLY_GIT, "count-objects"]);
+const GIT_LOOKING = new Set<string>(READ_ONLY_GIT);
 /** git subcommands that look only with one of these first operands (or none, where `""` is listed). */
 const GIT_LOOKING_ACTION = new Map(
   Object.entries(READ_ONLY_GIT_ACTIONS).map(([subcommand, actions]) => [subcommand, new Set(actions)]),
@@ -1083,14 +1083,17 @@ export function invalidSession(
   maxTurns?: number,
 ): string | null {
   if (session.timedOut) return "timeout";
+  const calls = (session.events ?? []).filter(
+    (event): event is ToolEvent => event.kind === "tool" && event.input.via !== "shell",
+  );
   if (session.stopReason === "cancelled") {
-    const call = (session.events ?? []).filter((event): event is ToolEvent => event.kind === "tool").at(-1);
+    const call = calls.at(-1);
     if (call === undefined) return "host cancelled a refused call";
     const shell = call.name === "Bash" ? shellCommand(call) : null;
     const command = shell === null ? "" : `: ${shell}`;
     return `host cancelled refused ${call.name} call${command}`;
   }
-  const toolEvents = (session.events ?? []).filter((event) => event.kind === "tool").length;
+  const toolEvents = calls.length;
   if (maxTurns !== undefined && session.reply.trim() === "" && (session.turns === maxTurns || toolEvents >= maxTurns))
     return `turn cap ${maxTurns} reached after ${toolEvents} tool events`;
   if (session.exitCode !== 0) return `exit ${session.exitCode}`;

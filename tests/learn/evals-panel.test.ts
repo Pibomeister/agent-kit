@@ -54,7 +54,7 @@ describe("matrix", () => {
 
   test("an absent matrix file falls back to one unbound claude subject and no reviewers", () => {
     const m = loadMatrix(join(scratch, "absent.yaml"));
-    expect(m.subjects).toEqual([{ id: "subject-default", host: "claude", model: undefined, maxTurns: 20 }]);
+    expect(m.subjects).toEqual([{ id: "subject-default", host: "claude", model: undefined }]);
     expect(m.reviewers).toEqual([]);
     m.subjects.push({ id: "subject-b", host: "codex", model: undefined });
     expect(DEFAULT_MATRIX.subjects).toHaveLength(1);
@@ -100,6 +100,9 @@ describe("matrix", () => {
     expect(effectiveMaxTurns({ id: "s-b", host: "grok", model: undefined, maxTurns: null })).toBeUndefined();
     expect(effectiveMaxTurns({ id: "s-c", host: "claude", model: undefined, maxTurns: 20 })).toBe(20);
     expect(effectiveMaxTurns({ id: "s-d", host: "codex", model: undefined, maxTurns: null })).toBeUndefined();
+    const [unbound] = loadMatrix(join(scratch, "absent.yaml")).subjects;
+    expect(effectiveMaxTurns(unbound!)).toBe(20);
+    expect(effectiveMaxTurns(unbound!, 15)).toBe(15);
   });
 
   test("the receipt records each subject's effective cap, including no cap", () => {

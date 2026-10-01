@@ -38,10 +38,13 @@ segment such as `git branch -vv`, `gh pr list`, or `echo ---` had no correspondi
 
 Grok's Bash rules are conjunctive across shell segments, so every segment of a read-only chain must
 be covered. Its glob grammar cannot express every semantic distinction the scorer makes. In
-particular, safe subsets of awk, curl, `gh api`, shell loops, arbitrary help/version calls, and a
-harmless output redirection need argument-aware parsing rather than a prefix glob; a deny that
-blocks `> file` also matches `2>/dev/null`. Those remain deliberate gaps: `dontAsk` still refuses
-them and the session remains invalid.
+particular, safe subsets of awk, sed, curl, `gh api`, shell loops, arbitrary help/version calls, and
+a harmless output redirection need argument-aware parsing rather than a prefix glob; a deny that
+blocks `> file` also matches `2>/dev/null`. The same holds for a `git branch` or `git tag` listing
+beyond its exact forms (a trailing glob also admits `-D` or a name to create), for a git option that
+takes a value before the subcommand (`git -C dir status`), and for the ship gate's `check`, whose
+script path a glob cannot pin to the first argument. Bare `env` has no rule either. Those remain
+deliberate gaps: `dontAsk` still refuses them and the session remains invalid.
 
 ### Change
 
@@ -49,15 +52,19 @@ The canonical read-only program, git-subcommand, git-action and gh-action tables
 `tests/learn/evals/subjects/shell.ts`. The scorer imports those tables for `readOnlyProgram`,
 `readOnlyGit` and `readOnlyGh`; the Grok adapter generates its narrow `--allow` rules from the same
 tables instead of copying a second list. Write-shaped forms covered by a broad read prefix have
-explicit `--deny` rules for output redirection, writing `find` flags, preprocessors, in-place
-editing, sort output, git output/ref mutation, and PR creation. Deny precedence keeps writes
-refused, and the adapter remains on `dontAsk`.
+explicit `--deny` rules for output redirection, writing `find` flags, preprocessors, sort output and
+git `--output`. Ref mutation and PR creation need no deny: `git branch` and `git tag` are allowed
+only in exact listing forms, and no rule covers `gh pr create`. Deny precedence keeps the guarded
+writes refused, and the adapter remains on `dontAsk`.
 
 The stored fixture `grok-cancelled-read.jsonl` carries an archived read-only chain that the old list
-did not cover. Its test proves every missing segment now has a narrow rule. A separate assertion
-keeps blanket Bash, mutable git-remote coverage and write tools out, and checks the write guards.
-When a refusal remains, `invalidSession` now names the final attempted tool and includes the shell
-command for Bash, instead of recording only `host cancelled a refused call`.
+did not cover. Its test matches each segment against the emitted rules under the documented grammar
+and proves every one is now admitted. A separate test proves that segments the scorer calls writes,
+among them ref-writing `git branch` and `git tag` forms, are admitted by no rule, and that blanket
+Bash stays out. When a refusal remains, `invalidSession` now names the final attempted tool and
+includes the shell command for Bash, instead of recording only `host cancelled a refused call`. The
+reads an adapter derives from a shell call are not host calls, so they are neither named as the
+refused call nor counted toward the turn cap.
 
 ### Still unproved
 

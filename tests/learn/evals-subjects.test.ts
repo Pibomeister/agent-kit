@@ -9,7 +9,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
-import { skillLoads } from "./evals/trigger-eval.ts";
+import { readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
@@ -189,30 +189,66 @@ describe("grok", () => {
     expect(parsed.stopReason).toBe("cancelled");
   });
 
-  test("an archived read-only chain has narrow allow rules for every segment Grok refused", () => {
+  // Grok's documented grammar: a segment runs when some allow glob matches it whole and no deny glob does.
+  const admits = (segment: string) => {
+    const argv = grok.command(req, undefined);
+    const matching = (flag: string) =>
+      argv
+        .flatMap((value, index) => (value === flag ? [argv[index + 1]!] : []))
+        .flatMap((rule) => (rule.startsWith("Bash(") ? [rule.slice(5, -1)] : []))
+        .some((glob) =>
+          new RegExp(
+            `^${glob
+              .split("*")
+              .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+              .join(".*")}$`,
+          ).test(segment),
+        );
+    return matching("--allow") && !matching("--deny");
+  };
+
+  test("every segment of an archived read-only chain Grok refused is now admitted", () => {
     const parsed = grok.parse(fixture("grok-cancelled-read.jsonl"));
     const command = String(tools(parsed.events).at(-1)?.input.command);
     expect(command).toBe(
       "git status -sb && git branch -vv && gh pr list --state open --json number,title,url; echo ---",
     );
-
-    const argv = grok.command(req, undefined);
-    const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
-    expect(allow).toContain("Bash(git branch -v*)");
-    expect(allow).toContain("Bash(gh pr list *)");
-    expect(allow).toContain("Bash(echo *)");
+    expect(readOnlyShell(command)).toBe(true);
+    for (const segment of command.split(/ && |; /)) expect([segment, admits(segment)]).toEqual([segment, true]);
   });
 
-  test("read-only allowances retain explicit guards for shell writes", () => {
-    const argv = grok.command(req, undefined);
-    const allow = argv.flatMap((value, index) => (value === "--allow" ? [argv[index + 1]] : []));
-    const deny = argv.flatMap((value, index) => (value === "--deny" ? [argv[index + 1]] : []));
-    expect(argv).not.toContain("Bash");
-    expect(allow).not.toContain("Bash(git remote *)");
-    expect(deny).toContain("Bash(*>*)");
-    expect(deny).toContain("Bash(find *-delete*)");
-    expect(deny).toContain("Bash(git branch -d*)");
-    expect(deny).toContain("Bash(gh pr create*)");
+  test("looks the scorer accepts are admitted in their common forms", () => {
+    for (const look of [
+      "git count-objects -v",
+      "git remote -v",
+      "git --no-pager log --oneline -5",
+      "git branch --show-current",
+      "git tag --list",
+      "bun run ak validate",
+    ]) {
+      expect([look, readOnlyShell(look)]).toEqual([look, true]);
+      expect([look, admits(look)]).toEqual([look, true]);
+    }
+  });
+
+  test("no rule admits a segment the scorer calls a write", () => {
+    for (const write of [
+      "git branch -v -D main",
+      "git branch -vv newname",
+      "git tag -l -d v1",
+      "git remote add origin url",
+      "git --no-pager diff --output=out.patch",
+      "node -e 'code' ak-gate.mjs check x",
+      "gh pr create --fill",
+      "find . -name x -delete",
+      "sort -o out.txt in.txt",
+      "ls > out.txt",
+    ]) {
+      expect([write, readOnlyShell(write)]).toEqual([write, false]);
+      expect([write, admits(write)]).toEqual([write, false]);
+    }
+    expect(admits("sed -n 'w out.txt' notes.md")).toBe(false);
+    expect(grok.command(req, undefined)).not.toContain("Bash");
   });
 
   test("a session that ends normally reports its stop reason", () => {

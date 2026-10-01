@@ -124,6 +124,7 @@ export const READ_ONLY_GIT = [
   "rev-list",
   "for-each-ref",
   "show-ref",
+  "count-objects",
 ] as const;
 
 /** Git subcommands the scorer accepts only for these first non-option actions. */
@@ -148,21 +149,24 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
 /**
  * Grok permission rules generated from the scorer's read-only tables. The host matches shell
  * segments by glob, so commands whose safe subset needs semantic parsing stay out: awk programs,
- * curl flags, gh api flags, shell loops, arbitrary help/version calls, and harmless output
- * redirections that the same glob used to deny writes would also match. `dontAsk` leaves those
- * visible as cancelled invalid sessions. Denies guard the write-shaped forms of broad safe-prefix
- * rules; deny wins over allow in Grok's grammar.
+ * sed scripts, curl flags, gh api flags, shell loops, arbitrary help/version calls, the ship
+ * gate's `check` behind a path, git options that take a value before the subcommand, and harmless
+ * output redirections that the same glob used to deny writes would also match. `git branch` and
+ * `git tag` are exact listing forms, because a trailing glob would also admit a ref-writing flag
+ * or a name to create. `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies
+ * guard the write-shaped forms of broad safe-prefix rules; deny wins over allow in Grok's grammar.
  */
 export function grokReadOnlyPermissionRules() {
   const grammarGaps = new Set(["awk", "["]);
   const allow = READ_ONLY_PROGRAMS.filter((program) => !grammarGaps.has(program)).flatMap(bashRules);
   allow.push("Bash(printenv)", "Bash(printenv *)", "Bash(command -v *)", "Bash(command -V *)");
-  allow.push("Bash(sed *)", "Bash(sort *)");
-  allow.push(...READ_ONLY_GIT.flatMap((subcommand) => bashRules(`git ${subcommand}`)));
+  allow.push("Bash(sort *)");
+  for (const git of ["git", "git --no-pager"])
+    allow.push(...READ_ONLY_GIT.flatMap((subcommand) => bashRules(`${git} ${subcommand}`)));
   for (const [subcommand, actions] of Object.entries(READ_ONLY_GIT_ACTIONS)) {
     for (const action of actions) {
       const prefix = ["git", subcommand, action].filter(Boolean).join(" ");
-      allow.push(...(action === "" ? [`Bash(${prefix})`] : bashRules(prefix)));
+      allow.push(...(action === "" ? [`Bash(${prefix})`, `Bash(${prefix} -v)`] : bashRules(prefix)));
     }
   }
   allow.push("Bash(git reflog)", "Bash(git reflog show *)");
@@ -173,14 +177,17 @@ export function grokReadOnlyPermissionRules() {
     "Bash(git config --list*)",
     "Bash(git config -l*)",
     "Bash(git branch)",
-    "Bash(git branch -a*)",
-    "Bash(git branch -r*)",
-    "Bash(git branch -v*)",
-    "Bash(git branch --list*)",
-    "Bash(git branch --show-current*)",
+    "Bash(git branch -a)",
+    "Bash(git branch -r)",
+    "Bash(git branch -v)",
+    "Bash(git branch -vv)",
+    "Bash(git branch -avv)",
+    "Bash(git branch --all)",
+    "Bash(git branch --list)",
+    "Bash(git branch --show-current)",
     "Bash(git tag)",
-    "Bash(git tag -l*)",
-    "Bash(git tag --list*)",
+    "Bash(git tag -l)",
+    "Bash(git tag --list)",
   );
   for (const [group, actions] of Object.entries(READ_ONLY_GH_ACTIONS)) {
     for (const action of actions) allow.push(...bashRules(`gh ${group} ${action}`));
@@ -188,10 +195,8 @@ export function grokReadOnlyPermissionRules() {
   allow.push(
     "Bash(ak learn review report)",
     "Bash(ak learn memory show)",
-    "Bash(bun run ak validate *)",
-    "Bash(bun run ak status *)",
-    "Bash(node *ak-gate.mjs check *)",
-    "Bash(bun *ak-gate.mjs check *)",
+    ...bashRules("bun run ak validate"),
+    ...bashRules("bun run ak status"),
   );
 
   const deny = [
@@ -205,22 +210,8 @@ export function grokReadOnlyPermissionRules() {
     "Bash(find *-fprintf*)",
     "Bash(find *-fls*)",
     "Bash(rg *--pre*)",
-    "Bash(sed *-i*)",
-    "Bash(sed *--in-place*)",
     "Bash(sort *-o*)",
     "Bash(git *--output*)",
-    "Bash(git branch -d*)",
-    "Bash(git branch -D*)",
-    "Bash(git branch -m*)",
-    "Bash(git branch -M*)",
-    "Bash(git branch -c*)",
-    "Bash(git branch -C*)",
-    "Bash(git tag -d*)",
-    "Bash(git tag -a*)",
-    "Bash(git tag -s*)",
-    "Bash(git tag -m*)",
-    "Bash(git tag -F*)",
-    "Bash(gh pr create*)",
   ];
   return { allow: [...new Set(allow)], deny };
 }
