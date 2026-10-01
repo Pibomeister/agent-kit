@@ -1,0 +1,22 @@
+{
+  "schema": "ticket",
+  "schema_version": 1,
+  "id": "AK-901",
+  "title": "Health endpoint reports a healthy service",
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "text": "`GET /health` on the running service returns status 200 and a JSON body whose `status` is `healthy`."
+    }
+  ],
+  "verification": [
+    {
+      "id": "health-api",
+      "check": "Drive the health-endpoint recipe in project-verification.yaml against the running service.",
+      "kind": "probe",
+      "supports": [
+        "AC-1"
+      ]
+    }
+  ]
+}

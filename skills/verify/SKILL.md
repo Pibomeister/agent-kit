@@ -38,9 +38,9 @@ command.
 - The project's declared verification recipe, commands, runtime facilities and required evidence
   kinds. Undeclared facilities are unavailable; the command never assumes a browser, service or
   tracing facility.
-- An identified environment and knowledgebase `publishArtifact` access. No KB write: return the
-  artifacts unpublished; never write project documentation into the application repository
-  (ruling `central-kb-owns-project-artifacts`).
+- An identified environment. Knowledgebase `publishArtifact` access is optional: without `kb-write`
+  the artifacts are returned unpublished and named as such, never written into the application
+  repository as project documentation (ruling `central-kb-owns-project-artifacts`).
 - Optional `independent-context`. When declared, the host supplies a fresh seat and its capability
   level; an unfillable seat is `unavailable`, never replaced by the implementer (ruling
   `missing-supervisor-never-implementer`).
@@ -52,11 +52,11 @@ command.
    not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
    call, say that this command is human-started, and give the human the line to type, `/ak:verify`
    and their request.
-2. Freeze the claim, criterion ids, revision, recipe, declared evidence kinds and permitted
-   commands. Exclude the implementer's narrative, claimed result and review verdict. If
-   `independent-context` is declared, hand only that packet to a fresh seat and bind the receipt's
-   `inputs` to the seat-attestation artifact: runner-attested when supplied by the runner,
-   otherwise host-unattested.
+2. Freeze the claim, criterion ids, revision, recipe, environment, declared evidence kinds and
+   permitted commands. Exclude the implementer's narrative, claimed result and review verdict. If
+   `independent-context` is declared, hand only that packet to a fresh seat. The seat-attestation
+   artifact records the host's capability level: runner-attested only when the runner supplied the
+   attestation, otherwise host-unattested. Never claim an attestation the runner did not give.
 3. Resolve a content-addressed recipe already published for this scope. If none exists, discover a
    candidate only from project-declared setup, build, launch, readiness, drive and cleanup
    facilities. Publish it only after that complete path succeeds.
@@ -75,20 +75,23 @@ command.
    | backend | `dry-run` | command or probe plus complete output digest |
    | backend | `smoke-test` | command or probe plus output digest against the running service |
 
-6. Emit at least one `schemas/verification.schema.json` receipt per criterion. Record the command
-   or probe, raw outcome, output digest, snapshot, environment and supporting criterion. Put the
-   recipe and seat-attestation content hashes in `inputs`. A missing declared kind produces
-   `not-run` or `inconclusive` with the kind and reason; it never produces `passed`.
-7. Assemble the criterion-to-receipt matrix. Read executed output even when the process exits zero;
-   a refuting result remains refuting evidence. An implementer's narrative is only an untrusted
-   input, never a receipt (ruling `closure-requires-independent-verification`).
-8. Publish receipts, matrix and any successful newly discovered recipe through `publishArtifact`.
-   The recipe is a host-neutral, content-addressed KB artifact for later hosts to replay; no
-   host-specific project path is written (ruling `central-kb-owns-project-artifacts`).
+6. Emit at least one `schemas/verification.schema.json` receipt per criterion: the command or probe,
+   raw outcome, snapshot, environment, supporting criterion, and the output log under `artifacts[]`
+   with the receipt's `output_digest`. For an opened run add its `run_id`, the ticket verification
+   id as `check`, and the ticket ref `{id, hash}` from the run record. Put the recipe and
+   seat-attestation content hashes in `inputs`. A missing declared kind produces `not-run` or
+   `inconclusive` with the kind and reason; it never produces `passed`.
+7. Assemble the criterion-to-receipt matrix with the host capability level beside each receipt. Read
+   output even when the process exits zero; a refuting result stays refuting. An implementer's
+   narrative is untrusted input, never a receipt (ruling `closure-requires-independent-verification`).
+8. Where the host provides `kb-write`, publish receipts, matrix and any new successful recipe through
+   `publishArtifact`; otherwise return them unpublished and say so. The recipe is host-neutral and
+   content-addressed, never a host-specific project path (ruling `central-kb-owns-project-artifacts`).
 9. Only when every criterion passed with every declared kind, record the gate from the project
    checkout: `node <skill-dir>/../../bin/ak-gate.mjs record --gate verify --receipt <file>`, repeating
-   `--receipt` for every receipt. Return the artifacts and per-criterion outcomes, never prose
-   approval over them.
+   `--receipt` per receipt file. The run is the branch's opened-run pointer; this command never opens
+   one. A never-opened run has no task record, so retain its compatible marker-only call without
+   `--receipt`: history, not proof. A markdown or absent ticket returns receipts and says no gate.
 
 ## Hard gates
 
@@ -103,7 +106,9 @@ its command or probe, outcome, digest, revision, environment or criterion bindin
 
 Gate: when `independent-context` is declared, a missing fresh seat is `unavailable` and blocks that
 criterion. It is never backfilled by the implementer, author, spec approver or an already-seated
-role (ruling `missing-supervisor-never-implementer`).
+role (ruling `missing-supervisor-never-implementer`). A host-unattested receipt counts only with that
+gap disclosed on its attestation input and in the matrix, which the gate record references; on a
+runner-enforced path a receipt claiming independence without runner attestation does not count.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -115,17 +120,17 @@ role (ruling `missing-supervisor-never-implementer`).
 ## Outputs
 
 - Verification receipts (`schemas/verification.schema.json`) and a complete criterion matrix,
-  published through `publishArtifact` with run-artifact placement.
-- A successful discovered recipe, published through `publishArtifact` as a content-addressed
-  `sop` KB document. Later runs replay it and invalidate it when its hash or declaration changes.
-- The exact `verify` gate record when every criterion is covered. No prose approval.
+  published through `publishArtifact` with run-artifact placement, or returned unpublished.
+- A successful discovered recipe, content-addressed; published as a `sop` KB document where
+  `kb-write` exists. Later runs replay it and invalidate it when its hash or declaration changes.
+- The `verify` gate record when every criterion is covered and a run is open. No prose approval.
 
 ## Side effects
 
 `process-exec`, `scratch-write`, `artifact-write`, `kb-publish`.
 
-`kb-publish` uses the artifact content hash as its idempotency key and reads the returned reference
-back before completion. No `workspace-write` and no `local-commit`.
+`kb-publish` happens only where the host provides `kb-write`; it uses the artifact content hash as
+its idempotency key and reads the returned reference back. No `workspace-write`, no `local-commit`.
 
 ## Stop conditions
 
@@ -133,8 +138,8 @@ back before completion. No `workspace-write` and no `local-commit`.
   when all declared runtime evidence passed.
 - `needs-input`: the command was not explicitly invoked, a criterion or declaration is missing, or
   a required fresh seat is unavailable. Return the exact missing id, kind, facility or attestation.
-- `failed`: the revision cannot be read, the declared recipe cannot run, or artifacts cannot be
-  published. Return the receipts already observed without turning them into approval.
+- `failed`: the revision cannot be read, the declared recipe cannot run, or a host that provides
+  `kb-write` refuses the write. Return the receipts already observed, never as approval.
 - `cancelled`: preserve completed receipts as evidence of what ran and stop before the next action.
 
 ## Limits

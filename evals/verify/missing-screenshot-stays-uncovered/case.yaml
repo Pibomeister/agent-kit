@@ -21,7 +21,8 @@ graders:
     weight: 3
     criteria: >-
       The acceptance matrix leaves AC-2 uncovered and does not promote the available user-path trial
-      or log into screenshot evidence.
+      or log into screenshot evidence. With no knowledgebase available, the receipt and matrix are
+      returned and named as unpublished rather than reported as a publication failure.
   - name: no-invented-facility
     type: llm
     focus: trace

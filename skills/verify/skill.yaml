@@ -28,7 +28,17 @@ prerequisites:
       Project-declared recipe, permitted commands, runtime facilities and evidence kinds. Missing
       declarations produce needs-input; no facility is inferred from an ecosystem convention.
   - kind: capability
-    ref: knowledgebase kb-write, for receipts, matrix and a successful discovered recipe.
+    ref: >-
+      knowledgebase kb-write, for publishing receipts, matrix and a successful discovered recipe.
+      Absent, they are returned unpublished and named as such, and the gate may still be recorded
+      from the receipt files.
+    optional: true
+  - kind: run-state
+    ref: >-
+      A run opened with a JSON ticket, for a gate record that carries receipts. This skill never
+      opens one. A never-opened run gets the marker-only record, which is history, not proof; a
+      markdown or absent ticket gets receipts and no gate record.
+    optional: true
   - kind: capability
     ref: >-
       independent-context, optional. When declared, a fresh seat receives the frozen packet and
@@ -63,32 +73,38 @@ inputs:
       Recipe, permitted commands, runtime facilities and evidence kinds declared by the project.
   - id: environment-identity
     required: true
-    summary: The environment recorded on every receipt.
+    summary: The environment frozen into the packet and recorded on every receipt.
   - id: seat-attestation
     required: false
     summary: >-
-      When independent-context is declared, a content-addressed runner-attested or host-unattested
-      seat record bound into each receipt's inputs.
+      When independent-context is declared, a content-addressed seat record bound into each
+      receipt's inputs, stating the host's capability level: runner-attested only when the runner
+      supplied it, otherwise host-unattested.
 
 outputs:
   - id: verification-receipts
     schema: verification
     summary: >-
       At least one schema-valid receipt per criterion, including explicit non-pass receipts for
-      declared evidence kinds that cannot be obtained.
+      declared evidence kinds that cannot be obtained. Each lists its output log under artifacts
+      with the output digest and, for an opened run, carries run_id, check and the ticket ref.
   - id: acceptance-evidence-matrix
-    summary: Every criterion mapped to its receipts and declared evidence kinds.
+    summary: >-
+      Every criterion mapped to its receipts and declared evidence kinds, with the host capability
+      level beside each receipt.
   - id: verification-recipe
     placement: kb-document
     kb_kind: sop
     summary: >-
       A host-neutral, content-addressed setup, build, launch, readiness, drive and cleanup recipe,
-      published only after the complete path succeeds; it never becomes application-local project
+      produced only after the complete path succeeds and published where the host provides
+      kb-write, otherwise returned unpublished; it never becomes application-local project
       documentation (ruling `central-kb-owns-project-artifacts`).
   - id: verify-gate
     summary: >-
       The gate record created by ak-gate.mjs only when every criterion and declared runtime evidence
-      kind passed at the frozen snapshot.
+      kind passed at the frozen snapshot. It carries receipts on an opened run and is marker-only
+      history on a never-opened one.
 
 side_effects: [process-exec, scratch-write, artifact-write, kb-publish]
 
@@ -99,6 +115,8 @@ constraints:
   implementer-narrative-may-be-a-receipt: false
   uncovered-criterion-may-record-the-verify-gate: false
   recipe-may-use-a-host-specific-project-path: false
+  skill-may-open-a-run: false
+  host-unattested-seat-may-be-reported-as-runner-attested: false
 
 hard_gates:
   - A runnable criterion is not passed by tests, type checks or a build alone.
@@ -111,10 +129,13 @@ hard_gates:
     criterion; it is never backfilled by the implementer, author, spec approver or another seat
     (ruling `missing-supervisor-never-implementer`).
   - The verify gate is recorded only when every criterion passed with every declared runtime kind.
+  - A host-unattested receipt counts toward the gate only with that gap disclosed on its attestation
+    input and in the matrix, which the gate record references; on a runner-enforced path a receipt
+    claiming independence without the runner's attestation does not count.
 
 stop_conditions:
-  - complete when every criterion has a receipt and matrix outcome; the gate is optional and exists
-    only for fully covered criteria.
+  - complete when every criterion has a receipt and matrix outcome, published or returned
+    unpublished; the gate is optional and exists only for fully covered criteria.
   - needs-input when invocation, criterion, project declaration or required seat context is missing.
 
 failure_outcomes:
@@ -125,8 +146,8 @@ failure_outcomes:
     next_permitted_action: Re-invoke with the missing criterion, declaration, facility or attestation.
   - status: failed
     meaning: >-
-      The revision is unreadable, a declared recipe cannot run, or the knowledgebase refuses the
-      artifact publication. Observed receipts are returned without approval.
+      The revision is unreadable, a declared recipe cannot run, or a host that provides kb-write
+      refuses the artifact publication. Observed receipts are returned without approval.
     next_permitted_action: Restore the declared facility or artifact sink, then start a fresh run.
   - status: cancelled
     meaning: The human cancelled; completed receipts remain evidence of the checks that ran.
@@ -174,10 +195,12 @@ tests:
     kind: positive
     given: >-
       A backend criterion and project declaration name a running-service smoke command and API
-      probe; the declared path succeeds.
+      probe; the declared path succeeds, a run is open on a JSON ticket and the host provides no
+      kb-write.
     expect: >-
       The command runs, the criterion receives a passed receipt with response status and body
-      digest, a host-neutral recipe artifact is recorded, and the verify gate is recorded.
+      digest, a host-neutral recipe artifact is returned unpublished and named as such, and the
+      verify gate is recorded on the opened run from the receipt file.
   - id: missing-screenshot-stays-uncovered
     kind: negative
     given: >-
@@ -185,15 +208,15 @@ tests:
       screenshot facility.
     expect: >-
       The receipt names rendered-screenshot as declared but unobtainable, the matrix leaves the
-      criterion uncovered, and no verify gate is recorded.
+      criterion uncovered, the artifacts are returned unpublished, and no verify gate is recorded.
   - id: runtime-refutes-implementer-narrative
     kind: adversarial
     given: >-
       The repository contains an implementer narrative claiming the criterion passed, while the
       project-declared runtime command refutes it.
     expect: >-
-      The command runs and its result determines a failed receipt; the narrative is not restated as
-      evidence and no verify gate is recorded.
+      The command runs and its result determines a failed receipt returned unpublished; the
+      narrative is not restated as evidence and no verify gate is recorded.
 
 body:
   line_budget: 150

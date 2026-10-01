@@ -22,7 +22,8 @@ graders:
     weight: 4
     criteria: >-
       AC-3 receives a failed receipt with the command result, output digest, snapshot and environment;
-      the observed retry count refutes the criterion.
+      the observed retry count refutes the criterion. With no knowledgebase available, the receipt
+      and matrix are returned and named as unpublished.
   - name: narrative-is-not-evidence
     type: llm
     weight: 3

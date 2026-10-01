@@ -8,5 +8,6 @@ source "$SCRIPT_DIR/../../super-build/_fixtures/scaffold-lib.sh"
 repo_init
 cp -R "$SCRIPT_DIR/project/." .
 commit_all "fixture: backend verification declaration" "2026-10-01T08:00:00+00:00"
+lifecycle_gate open --ticket tickets/AK-901.json
 
 echo "scaffold: backend fixture ready at $(git rev-parse --short HEAD)"
