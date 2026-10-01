@@ -4,11 +4,11 @@ Sources:
 
 - `research/sources/delegation-rubric-red-yellow-green.md` — report 1, cited as `D:Lx-Ly`.
 - `research/sources/slop-avoidance-agent-prs.md` — report 2, cited as `S:Lx-Ly`.
-- Mission brief "Risk Tiering and Slop Avoidance" — supplied outside the repository, cited as
-  `B:Lx-Ly`. It sets this dossier's requirement boundaries and dispositions; it is not copied into
-  the repository by W1.
+- `research/sources/mission-brief-risk-tiering-and-slop-avoidance.md` — mission brief "Risk Tiering
+  and Slop Avoidance", cited as `B:Lx-Ly`. It sets this dossier's requirement boundaries and
+  dispositions.
 
-The two report copies are byte-identical to the supplied inputs. Their line ranges below are
+The three copies are byte-identical to the supplied inputs. Their line ranges below are
 1-based against those committed copies. The reports contain model names and routing comparisons;
 that material remains legal here because `research/` is denylist-exempt.
 
@@ -196,7 +196,7 @@ ticket surface; `roles/code-review/learnings/ROLE.md` is the existing historical
 surface.
 
 **Why excluded now.** Hotspot computation is named as a non-goal, and learned defect models require
-data this setup does not have (`B:L214-L220`). The report's top-decile, 6–12-month, and quarterly
+data this setup does not have (`B:L79-L79`; `B:L216-L216`). The report's top-decile, 6–12-month, and quarterly
 figures are project-calibration guidance. The brief further narrows authorship storage to class and
 host without naming a model (`B:L148-L148`); W2/W3 must settle that vocabulary rather than copying
 the report's model-specific examples.
@@ -308,7 +308,7 @@ is required. W1 records the choice without writing a ruling, schema, or skill bo
   `B:L227-L227`). A project can separately promote a named check to a mandatory constraint.
 - **No new public entrypoint.** The requirements fold into existing lifecycle skills, policies,
   packs, protocols, and new references; the brief explicitly rejects a second run-everything command
-  (`B:L219-L220`).
+  (`B:L219-L219`).
 - **No tool configuration.** agent-kit consumes project evidence; it does not ship Stryker, jscpd,
   or complexity configuration (`B:L210-L212`).
 - **No outcome system yet.** R6's ledger and calibration reporting are deferred; only future join
@@ -316,7 +316,7 @@ is required. W1 records the choice without writing a ruling, schema, or skill bo
 - **No probabilistic-review aggregation yet.** R8's multi-run aggregation and rule-acceptance pruning
   are deferred (`B:L218-L218`).
 - **No hotspot computation or learned model.** R9's factor may be described, but its computation,
-  learned defect models, and automated landing funnels are deferred (`B:L216-L220`).
+  learned defect models, and automated landing funnels are deferred (`B:L79-L79`; `B:L216-L216`).
 - **No automatic scorer yet.** The deterministic scorer waits until the delegation reference has
   been exercised on real tickets (`B:L99-L99`; `B:L220-L220`).
 - **No model-routing contract.** Report model names stay in research. Authorship evidence in catalog
