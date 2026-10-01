@@ -94,8 +94,8 @@
  * loaded, including one that then refused (M) or stopped (U), and `balanced_accuracy` is the mean
  * of `fire` and 1 - `false_fire`. So a router that loads the wrong M skill and refuses keeps the
  * case's no-side-effect pass (`negative_pass`) but still loses routing accuracy. A session that
- * timed out, exited non-zero or left an empty reply is not a trial: it is left out of every rate
- * and listed under `invalid`. A `proceed-unclear` case is left out the same way, listed under
+ * timed out, was cancelled on a refused call, hit its turn cap with no reply, exited non-zero or
+ * left an empty reply is not a trial: it is left out of every rate and listed under `invalid`. A `proceed-unclear` case is left out the same way, listed under
  * `unscored` and flagged, never passed; so is a recommend case's `loaded-unclear`. A borderline
  * authority result is never a pass on a positive; on a negative, a load that changed nothing holds.
  * The receipt's `noop_baseline` is the same summary for a subject that never loads anything; a
@@ -1073,9 +1073,12 @@ export function scoreCase(
 }
 
 /**
- * Why a session is not a trial: it timed out, the host exited non-zero, the host cancelled the turn
- * on a refused call (grok's `stopReason: cancelled`), or it left no reply. Null when it counts. The
- * scored outcome is kept beside the reason, so a cancelled session's loads can still be read.
+ * Why a session is not a trial: it timed out, the host cancelled the turn on a refused call (grok's
+ * `stopReason: cancelled`; the reason names the last attempted call, and the command when it is a
+ * shell call), it ended with no reply at the `maxTurns` cap, the host exited non-zero, or it left
+ * no reply. Null when it counts. The reads an adapter derives from a shell call are not host calls:
+ * they are neither named as the refused call nor counted toward the cap. The scored outcome is kept
+ * beside the reason, so a cancelled session's loads can still be read.
  */
 export function invalidSession(
   session: Pick<SessionResult, "exitCode" | "timedOut" | "reply" | "stopReason"> &

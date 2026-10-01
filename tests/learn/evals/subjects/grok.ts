@@ -1,8 +1,8 @@
 /**
  * Grok in headless mode. Not a test file.
  *
- *   grok -p PROMPT --output-format streaming-json --allow RULE... [-m M] [--max-turns N]
- *     --permission-mode dontAsk [--rules TEXT]
+ *   grok -p PROMPT --output-format streaming-json --allow RULE... --deny RULE... [-m M]
+ *     [--max-turns N] --permission-mode dontAsk [--rules TEXT]
  *
  * `--rules` appends to the system prompt. `dontAsk` refuses any call that would need approval
  * instead of waiting for one; a refused call ends the turn with `stopReason: cancelled` and no

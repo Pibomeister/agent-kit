@@ -1,6 +1,7 @@
 /**
  * Just enough shell parsing to see which files a command reads, for hosts whose only way to load
- * a skill is to read its SKILL.md through a shell. Pure. Not a test file.
+ * a skill is to read its SKILL.md through a shell, plus the read-only program, git and gh tables
+ * the scorer and the Grok permission rules share. Pure. Not a test file.
  */
 
 /** `/bin/zsh -lc '…'` and friends: the command a host wrapped in a login shell. */
