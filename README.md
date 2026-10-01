@@ -75,6 +75,11 @@ session that skipped `super-build`, or whose review went stale after an edit, is
 runs the same core check before it reports `done` (`adapters/firstmate/CONTRACT.md`). Nothing in core,
 its tests or CI needs Firstmate installed.
 
+**Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
+a grant from outside the repository with `ak lifecycle bypass grant`, and the worker checks it before
+each human-started phase. It starts phases only: approvals still go to the supervisor, and merge and
+deploy are never on it (`docs/decisions/0008-bypass-start-grant.md`).
+
 ## Catalog
 
 Every entry is declared in `catalog.yaml`. The validator fails on an entry with no directory and on a

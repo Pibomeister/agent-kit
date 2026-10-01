@@ -210,3 +210,19 @@ comparing each kept grant record's `binding_sha256` and `binding` path with the 
 worker that rewrites the ledger and the grant records consistently still passes. Preventing it needs the
 runner's validated grants (ADR-0004). Any other operation, merge and scope changes included, is
 refused. The worker then reports `needs-decision` and Firstmate decides or asks the captain.
+
+### Bypass, for one task
+
+A bypass grant is the other route, and it needs neither a binding nor the patches (ADR-0008).
+Firstmate writes it from its home with `ak lifecycle bypass grant --task <id> --by <who> --reason
+<why> --out data/<task-id>/bypass.json --project <repo>` and pastes the section it prints into the
+brief. The worker runs `ak lifecycle bypass check --grant <path> --phase <phase>` before
+super-align, super-bound, super-review `full` or `readiness`, and super-ship; exit 0 is the start.
+The grant is start-only: every approval inside those phases still reaches Firstmate as
+`needs-decision`, and merge and deploy are never on it. Gate records made with `--bypass <path>`
+carry `authority.mode: bypass` and who authorized it.
+
+`grant` refuses to run from a checkout of the repository or to write inside its worktrees or git
+directory, and `check` refuses a grant that is unregistered, copied, edited, expired, for another
+repository or inside a worktree. A same-user process running `grant` from outside the repository
+still passes; like the binding, the grant is only as strong as the host's write isolation.

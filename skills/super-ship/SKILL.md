@@ -65,6 +65,13 @@ Under a Firstmate binding, Firstmate is the delegated controller and the host va
 prints in the ship record. A refusal means stop and report `needs-decision` to Firstmate. The grant
 covers the binding's delivery action and nothing more; merge is never on it (ADR-0004).
 
+Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
+task. Run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --phase
+super-ship` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
+`needs-decision`. The grant starts the ship and nothing else: it runs as the explicit form up to the
+first remote call, as in `dry-run`, and every remote effect waits for the supervisor's answer to a
+`needs-decision`. Record `ship-preflight` with `--bypass <path>`. Merge and deploy are never on it.
+
 For the autonomous form, `ship.prepare` delegated under a grant, exit 0 is necessary and not
 sufficient. That form also needs trusted evidence: gate evidence the runner recorded into the run's
 evidence store, outside this worker's reach (`adapters/runner-contract/CONTRACT.md` §2). Gate records
@@ -94,10 +101,11 @@ The project's own release checks, discovered rather than assumed.
 1. Check how this run was started, before any other step and before any tool call but the grant
    check. It is started only when the human's message begins with `/ak:super-ship`, or when a
    controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
-   binding the grant check is the `ak firstmate grant` call in Authority, and a refusal is a stop. A
-   request in prose is not a start, even when it names this skill or the command. With neither, stop
-   here: make no other tool call, say that this command is human-started, and give the human the
-   line to type, `/ak:super-ship` and their request.
+   binding the grant check is the `ak firstmate grant` call in Authority, and under a bypass grant
+   it is the bypass check there; a refusal is a stop. A request in prose is not a start, even when
+   it names this skill or the command. With neither, stop here: make no other tool call, say that
+   this command is human-started, and give the human the line to type, `/ak:super-ship` and their
+   request.
 2. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
    `dry-run` stops there.
 3. Confirm the preconditions: receipts bind to the head, the review verdict binds to that head's

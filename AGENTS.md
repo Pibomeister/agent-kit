@@ -29,6 +29,12 @@ longer emits `disable-model-invocation`, so the model can load any skill. A U sk
 its description carries the non-trigger clause, its first workflow step is the authority check, and
 started without an explicit request or a validated grant it stops and says so.
 
+**One standing exception to "only a human starts these"** is the bypass grant
+(`docs/decisions/0008-bypass-start-grant.md`, `policies/invocation.yaml` `bypass`). A supervisor
+writes it from outside the repository for one task, and it stands in for the typed command of
+super-align, super-bound, super-review `full` and `readiness`, and super-ship. It starts phases
+only: every approval inside them still goes to the supervisor, and merge and deploy are never on it.
+
 Source: `G:L1672–1676`. The elision in the fourth bullet drops a model-routing illustration that the
 content denylist forbids in this file; the unedited text is at
 `research/sources/grok-transcript.md:1675`. The *rule* is reproduced exactly.
