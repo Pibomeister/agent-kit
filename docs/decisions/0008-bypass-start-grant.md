@@ -35,10 +35,10 @@ ak lifecycle bypass grant --task <id> --by <who authorized it> --reason <why> \
 ```
 
 It prints the brief section the supervisor pastes into the task's brief. Before each phase the worker
-runs `ak lifecycle bypass check --grant <file> --phase <phase>` (or the bundle's
+runs `ak lifecycle bypass check --grant <file> --task <id> --phase <phase>` (or the bundle's
 `bin/ak-gate.mjs bypass check`). Exit 0 is the start and leaves a use record under
 `<evidence>/<run>/bypass/`. A refusal is a stop with `needs-decision`. When the worker records
-`review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file>`, and the gate record
+`review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file> --task <id>`, and the gate record
 carries `authority: {mode: "bypass", grant_id, grant, grant_sha256, authorized_by, task_id}`.
 
 **Start only.** The grant starts phases and nothing else. Every approval inside a phase still stops
@@ -56,6 +56,10 @@ registers the file's real path and sha256 in a ledger under the account's home d
 (`~/.agent-kit/bypass/`, from the account record, not `HOME`). `check` refuses a file that is
 missing, malformed, unregistered, copied, edited, inside any worktree or the git directory, for
 another repository, or past `expires_at`, which defaults to 24 hours and is capped at 168.
+
+**One task, one run.** `check` and `record --bypass` take the task id from the brief as `--task`,
+never from the grant file, and refuse unless it equals the grant's `task_id`. The first successful
+use writes its run id into the grant's ledger entry, and every later use from another run is refused.
 
 ## Consequences
 

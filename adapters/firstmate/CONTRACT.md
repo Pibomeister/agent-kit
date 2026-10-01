@@ -216,11 +216,11 @@ refused. The worker then reports `needs-decision` and Firstmate decides or asks 
 A bypass grant is the other route, and it needs neither a binding nor the patches (ADR-0008).
 Firstmate writes it from its home with `ak lifecycle bypass grant --task <id> --by <who> --reason
 <why> --out data/<task-id>/bypass.json --project <repo>` and pastes the section it prints into the
-brief. The worker runs `ak lifecycle bypass check --grant <path> --phase <phase>` before
+brief. The worker runs `ak lifecycle bypass check --grant <path> --task <id> --phase <phase>` before
 super-align, super-bound, super-review `full` or `readiness`, and super-ship; exit 0 is the start.
 The grant is start-only: every approval inside those phases still reaches Firstmate as
-`needs-decision`, and merge and deploy are never on it. Gate records made with `--bypass <path>`
-carry `authority.mode: bypass` and who authorized it.
+`needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the first use binds the grant to
+that run. Gate records made with `--bypass <path> --task <id>` carry `authority.mode: bypass` and who authorized it.
 
 `grant` refuses to run from a checkout of the repository or to write inside its worktrees or git
 directory, and `check` refuses a grant that is unregistered, copied, edited, expired, for another
