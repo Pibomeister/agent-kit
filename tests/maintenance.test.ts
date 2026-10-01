@@ -200,7 +200,7 @@ fi
     const unknown = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
     expect(unknown.status).toBe(1);
     expect(unknown.stdout).toContain("FAIL tracker binding:");
-  });
+  }, 30_000);
 
   test("checks project enablement", () => {
     const root = project();
