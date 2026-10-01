@@ -382,6 +382,11 @@ words `human-started` (`invocation.description-omits-class`), or whose first wor
 name the command and say to stop (`invocation.first-step-not-stop`). The check reads the text;
 whether a session obeys it is what the skill's non-trigger eval case observes.
 
+ADR-0007 adds one narrow case: autopilot may start when Firstmate presents a runner-validated
+standing grant bound to the captain-approved charter. Its description names that route, and its
+first workflow step reads the runner's private start attestation before any phase work. A brief or
+prose mention alone still stops. Every other U skill keeps the slash-command start rule.
+
 ### 4.2 Fields with no prose mirror
 
 The §4.1 table is about **agreement, not completeness**. `skill.yaml` must satisfy
@@ -1302,8 +1307,9 @@ loaded, set that grader to `arm: with-only`, because the bare arm passes it by c
 deterministic no-side-effect graders beside it (`tool_used … max: 0` on the granted Write, Edit or
 Bash pattern). A Skill `max: 0` grader stays only on a model-invoked skill's negative.
 
-**A user-invoked skill's positive is a slash invocation.** Only `/ak:<id>` starts a user-invoked
-skill (AGENTS.md, "The invocation law"). A request that names the skill in prose does not. So a
+**A user-invoked skill's positive is a slash invocation.** Apart from autopilot's runner-validated
+Firstmate standing start (ADR-0007), only `/ak:<id>` starts a user-invoked skill (AGENTS.md,
+"The invocation law"). A request that names the skill in prose does not. So a
 user-invoked skill's `positive` prompt begins with `/ak:<id> ` followed by the request, and it is
 graded on doing the workflow: the invocation is explicit, so the authority step passes. A prompt
 that names a user-invoked skill in prose belongs in a negative. There, the session passes if it

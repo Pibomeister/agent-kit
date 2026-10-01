@@ -192,8 +192,27 @@
       }
     },
     "authority": {
-      "description": "explicit: a human asked for it in this session (for a user-only skill, only the slash command counts). explicit-or-delegated: explicit, or a runner-validated grant covers it. delegated-grant: only under a runner-validated grant. active-review-run: only inside a review run that is already open. model: the model or a parent skill may start it when its description matches.",
-      "enum": ["explicit", "explicit-or-delegated", "delegated-grant", "active-review-run", "model"]
+      "description": "explicit: a human asked for it in this session (for a user-only skill, only the slash command counts). explicit-or-standing: only autopilot, started by the human's slash command or by Firstmate after the runner validates a standing grant bound to the approved charter. explicit-or-delegated: explicit, or a runner-validated phase grant covers it. delegated-grant: only under a runner-validated phase grant. active-review-run: only inside a review run that is already open. model: the model or a parent skill may start it when its description matches.",
+      "enum": [
+        "explicit",
+        "explicit-or-standing",
+        "explicit-or-delegated",
+        "delegated-grant",
+        "active-review-run",
+        "model"
+      ]
+    },
+    "standing_grant_ref": {
+      "description": "Firstmate may start only autopilot for this approved run. The runner checks this ref against the immutable charter's standing_grants entry and explicit human approval; a worker cannot mint it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["charter_hash", "covers", "controller", "run_id"],
+      "properties": {
+        "charter_hash": { "$ref": "#/$defs/hash" },
+        "covers": { "const": "autopilot.start" },
+        "controller": { "const": "firstmate" },
+        "run_id": { "$ref": "#/$defs/artifact_id" }
+      }
     },
     "grant_ref": {
       "description": "A runner-issued grant: the charter hash plus the checkpoint category or grantable action it covers. Skills never issue grants.",

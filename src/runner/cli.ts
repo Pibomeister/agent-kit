@@ -1,0 +1,426 @@
+import { timingSafeEqual } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
+import { createConnection, createServer } from "node:net";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+
+import { Runner } from "./core.ts";
+import {
+  isArgs,
+  isEffectConfig,
+  isRequest,
+  isResponse,
+  isSeatAnswer,
+  isSeatConfig,
+  isVerifyConfig,
+  type Request,
+  type EffectAdapter,
+  type RunnerArgs,
+  type SeatLauncher,
+} from "./wire.ts";
+
+type Io = { out: (line: string) => void; err: (line: string) => void };
+const ADMIN = new Set(["start", "collect", "revision", "judge", "verify", "event", "effect", "complete", "charge"]);
+const WORKER = new Set(["status", "ledger", "prepare", "decide", "sync", "run-verify"]);
+type StringKey =
+  | "run"
+  | "charter"
+  | "implementer"
+  | "revision"
+  | "id"
+  | "source"
+  | "kind"
+  | "card_id"
+  | "seat"
+  | "actor"
+  | "dispatch"
+  | "choice"
+  | "rationale"
+  | "evidence"
+  | "key"
+  | "payload"
+  | "effect"
+  | "target"
+  | "input_hash"
+  | "limit";
+type ArrayKey = "excluded_actors" | "input_dispatches" | "lineage";
+
+function equal(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function str(args: RunnerArgs, name: StringKey): string {
+  const value = args[name];
+  if (value === undefined || value.length === 0) throw new Error(`${name} must be a nonempty string`);
+  return value;
+}
+
+function strings(args: RunnerArgs, name: ArrayKey): string[] {
+  const value = args[name];
+  if (value === undefined) throw new Error(`${name} must be a string array`);
+  return value;
+}
+
+function effectCommand(template: string[], target: string, inputHash: string): string[] {
+  return template.map((part) => part.replaceAll("{target}", target).replaceAll("{input_hash}", inputHash));
+}
+
+function runCommand(argv: string[]): string {
+  const result = Bun.spawnSync(argv, { env: childEnv(), stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(`trusted adapter command failed: ${result.stderr.toString().trim()}`);
+  return result.stdout.toString().trim();
+}
+
+function childEnv() {
+  const env = { ...process.env };
+  delete env["AK_RUNNER_ADMIN_TOKEN"];
+  delete env["AK_RUNNER_WORKER_TOKEN"];
+  delete env["AK_RUNNER_TOKEN"];
+  delete env["AK_RUNNER_SOCKET"];
+  return env;
+}
+
+function dispatchSeat(runner: Runner, runId: string, cardId: string, launcher: SeatLauncher): void {
+  const run = runner.status(runId);
+  const card = run.cards[cardId];
+  if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
+  const packet = {
+    run: runId,
+    charter_hash: run.charter_hash,
+    revision: run.revision,
+    card: {
+      id: card.id,
+      question: card.question,
+      options: card.options,
+      evidence: card.evidence.map((id) => ({ id, hash: run.evidence[id]?.hash ?? null })),
+      artifact_hash: card.artifact_hash,
+    },
+  };
+  const child = Bun.spawnSync(launcher.command, {
+    cwd: runner.workerRoot,
+    env: childEnv(),
+    stdin: Buffer.from(JSON.stringify(packet)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (child.exitCode !== 0) throw new Error(`seat ${launcher.seat} failed: ${child.stderr.toString().trim()}`);
+  const answerValue: unknown = JSON.parse(child.stdout.toString());
+  if (!isSeatAnswer(answerValue)) throw new Error(`seat ${launcher.seat} returned an invalid judgment`);
+  runner.judge(
+    runId,
+    cardId,
+    launcher.seat,
+    launcher.actor,
+    `${cardId}-${launcher.seat}`,
+    answerValue.choice,
+    [],
+    launcher.lineage,
+    answerValue.rationale,
+  );
+}
+
+function execute(
+  runner: Runner,
+  request: Request,
+  adminToken: string,
+  workerToken: string,
+  allowedRun: string,
+  launchers: SeatLauncher[],
+  verifyCommand: string[] | null,
+  effectAdapters: Map<string, EffectAdapter>,
+) {
+  const admin = equal(request.token, adminToken);
+  if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
+  if (!WORKER.has(request.verb) && !(admin && ADMIN.has(request.verb)))
+    throw new Error("runner verb unavailable to this token");
+  const a = request.args;
+  if (a.run !== allowedRun) throw new Error("run is outside this runner endpoint");
+  switch (request.verb) {
+    case "start":
+      if (a.standing_grant === undefined)
+        throw new Error("a runner-validated standing grant is required to start autopilot");
+      return runner.start(
+        str(a, "run"),
+        str(a, "charter"),
+        str(a, "implementer"),
+        str(a, "revision"),
+        a.standing_grant,
+        a.excluded_actors ?? [],
+      );
+    case "collect":
+      return runner.collect(str(a, "run"), str(a, "id"), str(a, "source"), str(a, "revision"), str(a, "kind"));
+    case "revision":
+      return runner.revision(str(a, "run"), str(a, "revision"));
+    case "judge":
+      return runner.judge(
+        str(a, "run"),
+        str(a, "card_id"),
+        str(a, "seat"),
+        str(a, "actor"),
+        str(a, "dispatch"),
+        str(a, "choice"),
+        strings(a, "input_dispatches"),
+        strings(a, "lineage"),
+        str(a, "rationale"),
+      );
+    case "verify":
+      return runner.verify(str(a, "run"), str(a, "evidence"));
+    case "event":
+      return runner.event(str(a, "run"), str(a, "key"), str(a, "payload"));
+    case "charge": {
+      if (a.amount === undefined) throw new Error("amount is required");
+      return runner.charge(str(a, "run"), str(a, "limit"), a.amount, a.subject);
+    }
+    case "effect": {
+      const effect = str(a, "effect");
+      const target = str(a, "target");
+      const inputHash = str(a, "input_hash");
+      const adapter = effectAdapters.get(effect);
+      if (adapter === undefined) throw new Error(`no supervisor-owned adapter for ${effect}`);
+      return runner.effect(
+        str(a, "run"),
+        effect,
+        target,
+        inputHash,
+        () => runCommand(effectCommand(adapter.read_back, target, inputHash)) || null,
+        () => {
+          runCommand(effectCommand(adapter.perform, target, inputHash));
+        },
+      );
+    }
+    case "complete":
+      return runner.complete(str(a, "run"));
+    case "status":
+      return runner.status(str(a, "run"));
+    case "sync":
+      return runner.syncRevision(str(a, "run"));
+    case "run-verify": {
+      if (verifyCommand === null) throw new Error("runner verification command is unconfigured");
+      const runId = str(a, "run");
+      const before = runner.syncRevision(runId);
+      if (before.next_permitted_action !== "verify.record")
+        throw new Error("verification is not the next permitted action");
+      const result = Bun.spawnSync(verifyCommand, {
+        cwd: runner.workerRoot,
+        env: childEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const after = runner.syncRevision(runId);
+      if (before.revision !== after.revision || before.diff_hash !== after.diff_hash)
+        throw new Error("verification changed the worker snapshot");
+      if (result.exitCode !== 0)
+        throw new Error(`verification failed (${result.exitCode}): ${result.stderr.toString().slice(0, 4000)}`);
+      const evidenceId = `verify-${after.revision.slice(0, 8)}-${after.diff_hash.slice(7, 15)}`;
+      runner.recordOutput(runId, evidenceId, Buffer.concat([result.stdout, result.stderr]), "verify");
+      return runner.verify(runId, evidenceId);
+    }
+    case "ledger":
+      return runner.ledger(str(a, "run"));
+    case "prepare": {
+      if (a.card === undefined) throw new Error("card is required");
+      return runner.prepare(str(a, "run"), a.card);
+    }
+    case "decide": {
+      const runId = str(a, "run");
+      const cardId = str(a, "card_id");
+      const early = runner.authorize(runId, cardId);
+      if (early !== null) return early;
+      for (const launcher of launchers) {
+        try {
+          dispatchSeat(runner, runId, cardId, launcher);
+        } catch {
+          break;
+        }
+      }
+      return runner.decide(runId, cardId);
+    }
+    default:
+      throw new Error("unknown runner verb");
+  }
+}
+
+function flag(argv: readonly string[], name: string): string | undefined {
+  const index = argv.indexOf(`--${name}`);
+  return index < 0 ? undefined : argv[index + 1];
+}
+
+async function serve(argv: readonly string[], io: Io): Promise<number> {
+  const socket = flag(argv, "socket");
+  const state = flag(argv, "state-dir");
+  const worker = flag(argv, "worker-root");
+  const runId = flag(argv, "run-id");
+  const mode = flag(argv, "socket-mode") ?? "600";
+  const seatConfigPath = flag(argv, "seat-config");
+  const verifyConfigPath = flag(argv, "verify-config");
+  const effectConfigPath = flag(argv, "effect-config");
+  const adminToken = process.env["AK_RUNNER_ADMIN_TOKEN"] ?? "";
+  const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
+  if (
+    !socket ||
+    !state ||
+    !worker ||
+    !runId ||
+    adminToken.length < 32 ||
+    workerToken.length < 32 ||
+    adminToken === workerToken ||
+    !/^(600|660)$/.test(mode)
+  )
+    throw new Error(
+      "serve needs --socket, --state-dir, --worker-root, --run-id, distinct 32+ character tokens, and socket mode 600 or 660",
+    );
+  const workerRoot = realpathSync(worker);
+  const socketPath = resolve(socket);
+  const relativeSocket = relative(workerRoot, socketPath);
+  if (relativeSocket === "" || (!relativeSocket.startsWith("..") && !isAbsolute(relativeSocket)))
+    throw new Error("runner socket is inside worker root");
+  if (existsSync(socketPath)) {
+    const live = await new Promise<boolean>((done, fail) => {
+      const probe = createConnection(socketPath);
+      probe.once("connect", () => {
+        probe.end();
+        done(true);
+      });
+      probe.once("error", (cause: NodeJS.ErrnoException) => {
+        if (cause.code === "ECONNREFUSED" || cause.code === "ENOENT") done(false);
+        else fail(cause);
+      });
+    });
+    if (live) throw new Error("runner socket already has a live service");
+    if (existsSync(socketPath)) unlinkSync(socketPath);
+  }
+  const socketParent = realpathSync(dirname(socketPath));
+  const relativeParent = relative(workerRoot, socketParent);
+  if (relativeParent === "" || (!relativeParent.startsWith("..") && !isAbsolute(relativeParent)))
+    throw new Error("runner socket parent resolves inside worker root");
+  const runner = new Runner(state, workerRoot, resolve(import.meta.dir, "..", ".."), true);
+  runner.assertPrivatePath(socketPath);
+  let launchers: SeatLauncher[] = [];
+  if (seatConfigPath !== undefined) {
+    const configPath = realpathSync(seatConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!isSeatConfig(configValue))
+      throw new Error(`invalid seat configuration: ${JSON.stringify(isSeatConfig.errors)}`);
+    launchers = configValue.launchers;
+    if (
+      new Set(launchers.map((launcher) => launcher.seat)).size !== 2 ||
+      new Set(launchers.map((launcher) => launcher.actor)).size !== 2
+    )
+      throw new Error("seat configuration must name two distinct seats and actors");
+  }
+  let verifyCommand: string[] | null = null;
+  if (verifyConfigPath !== undefined) {
+    const configPath = realpathSync(verifyConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!isVerifyConfig(configValue))
+      throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
+    verifyCommand = configValue.command;
+  }
+  const effectAdapters = new Map<string, EffectAdapter>();
+  if (effectConfigPath !== undefined) {
+    const configPath = realpathSync(effectConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!isEffectConfig(configValue))
+      throw new Error(`invalid effect configuration: ${JSON.stringify(isEffectConfig.errors)}`);
+    for (const adapter of configValue.adapters) {
+      if (effectAdapters.has(adapter.effect)) throw new Error(`duplicate effect adapter ${adapter.effect}`);
+      effectAdapters.set(adapter.effect, adapter);
+    }
+  }
+  const server = createServer((connection) => {
+    let body = "";
+    connection.setEncoding("utf8");
+    connection.on("data", (chunk: string) => {
+      body += chunk;
+      if (body.length > 1_000_000) connection.destroy(new Error("runner request too large"));
+      const newline = body.indexOf("\n");
+      if (newline < 0) return;
+      try {
+        const requestValue: unknown = JSON.parse(body.slice(0, newline));
+        if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
+        const request = requestValue;
+        connection.end(
+          `${JSON.stringify({ ok: true, result: execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters) })}\n`,
+        );
+      } catch (cause) {
+        connection.end(
+          `${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}\n`,
+        );
+      }
+    });
+  });
+  server.listen(socketPath, () => {
+    chmodSync(socketPath, Number.parseInt(mode, 8));
+    io.out(`ak runner: listening on ${socketPath}`);
+  });
+  const close = () => server.close();
+  process.once("SIGINT", close);
+  process.once("SIGTERM", close);
+  server.once("close", () => {
+    if (existsSync(socketPath)) unlinkSync(socketPath);
+    process.off("SIGINT", close);
+    process.off("SIGTERM", close);
+  });
+  return 0;
+}
+
+async function call(argv: readonly string[], io: Io): Promise<number> {
+  const socket = flag(argv, "socket") ?? process.env["AK_RUNNER_SOCKET"];
+  const token = process.env["AK_RUNNER_TOKEN"];
+  const verb = argv[0];
+  if (!socket || !token || !verb || verb.startsWith("--"))
+    throw new Error("call needs a verb, --socket or AK_RUNNER_SOCKET, and AK_RUNNER_TOKEN");
+  const source = flag(argv, "json");
+  if (source === undefined) throw new Error("call needs --json <request-file>");
+  const argsValue: unknown = await Bun.file(source).json();
+  if (!isArgs(argsValue)) throw new Error(`invalid request arguments: ${JSON.stringify(isArgs.errors)}`);
+  const args = argsValue;
+  return new Promise<number>((resolveCode) => {
+    const connection = createConnection(socket);
+    let response = "";
+    connection.on("connect", () => connection.write(`${JSON.stringify({ token, verb, args })}\n`));
+    connection.on("data", (chunk: Buffer) => {
+      response += chunk.toString();
+    });
+    connection.on("end", () => {
+      try {
+        const resultValue: unknown = JSON.parse(response);
+        if (!isResponse(resultValue)) throw new Error("invalid response envelope");
+        const result = resultValue;
+        if (!result.ok) {
+          io.err(`ak runner: ${result.error}`);
+          resolveCode(1);
+          return;
+        }
+        io.out(JSON.stringify(result.result, null, 2));
+        resolveCode(0);
+      } catch {
+        io.err("ak runner: invalid service response");
+        resolveCode(1);
+      }
+    });
+    connection.on("error", (cause) => {
+      io.err(`ak runner: ${cause.message}`);
+      resolveCode(1);
+    });
+  });
+}
+
+export async function runRunner(argv: readonly string[], io: Io): Promise<number> {
+  try {
+    if (argv[0] === "serve") return await serve(argv.slice(1), io);
+    if (argv[0] === "call") return call(argv.slice(1), io);
+    io.err(
+      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--socket-mode 600|660]",
+    );
+    io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
+    return 2;
+  } catch (cause) {
+    io.err(`ak runner: ${cause instanceof Error ? cause.message : String(cause)}`);
+    return 1;
+  }
+}

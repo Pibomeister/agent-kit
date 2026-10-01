@@ -1,6 +1,8 @@
 # adapters/runner-contract — host-neutral runner contract
 
-Contract only. No implementation lives here.
+The local implementation is `src/runner/`; this file remains the host-neutral contract. The
+implementation exposes a supervisor-owned service and a worker-facing `ak runner call` client.
+Its service must run with a state directory and charter outside the worker's writable scope.
 
 Neither coding-agent host this package targets can validate a delegated grant, attest that two seats
 were independent, deliver a durable event, or carry a run across a restart
@@ -43,6 +45,7 @@ The package computes no prices, selects nothing, and schedules nothing.
 |---|---|---|
 | `runner-grants` | `fails-closed` | `delegated-grant` operations are unavailable and the entrypoint stops for explicit invocation (§2, "With no runner attached") |
 | `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach (§2, "How a runner signals trusted evidence") |
+| `event-delivery` | `fails-closed` | Inbound events are unavailable until a supervisor delivers them to the durable runner queue (§6) |
 
 This table is read by `ak build` and `ak validate` (`loadAdapterSupplies` in
 `src/packaging/install.ts`). A row is a claim that an operation needing the capability refuses
@@ -50,12 +53,9 @@ when it is unconfigured rather than degrading, which is what lets an attached ad
 skill's mode ceiling on a host that does not provide the capability (ruling
 `fail-closed-adapter-lifts-ceiling`).
 
-`event-delivery` is deliberately **not** a row, although this contract owns it. It has no stated
-behavior for an unconfigured runner (§6 says what may be done on receipt, not what happens when
-nothing is delivered), so nothing here says its absence refuses. A skill requiring it stays capped at
-`guided` on a host that lacks it, attached runner or not, and `profiles/autonomy` still does not
-install against a host on its own. `tracker-access` is not a row here because this contract does not
-supply it: `adapters/tracker/CONTRACT.md` §1 does, with the fallback it depends on stated beside it.
+The service now persists delivered events before any action, so `event-delivery` has an unconfigured
+refusal. `tracker-access` is not a row here because this contract does not supply it:
+`adapters/tracker/CONTRACT.md` §1 does, with the fallback it depends on stated beside it.
 
 ---
 
@@ -64,6 +64,12 @@ supply it: `adapters/tracker/CONTRACT.md` §1 does, with the fallback it depends
 **Skills never issue their own grants.** No skill, protocol, role or phase operation in this catalog
 constructs, widens, infers or self-signs a grant. A skill presents a grant it was handed; the runner
 decides whether it is valid.
+
+ADR-0007 adds a separate standing **start** grant for autopilot only. It is
+`common#/$defs/standing_grant_ref`, not a phase `grant_ref`: Firstmate presents it before creating
+the run, and the runner matches its charter hash, run id, controller and cover against the active
+charter's `standing_grants` entry and human approval. It grants no checkpoint or sensitive action.
+Every later phase still follows the validation sequence below.
 
 A grant is `schemas/common.schema.json#/$defs/grant_ref`: a `charter_hash`, a `covers` value drawn
 from `checkpoint_category`, `grantable_action` or `sensitive_action`, and an optional `decision`
@@ -325,3 +331,59 @@ Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
 11. **Evidence freshness** — a code change invalidates older green receipts (scenario 10).
 12. **Transition prerequisites** — every illegal `run_state` edge is refused, with the failed check
     named.
+
+---
+
+## 9. Local service under Firstmate
+
+Request shapes and task setup are in `CLI.md`. This section states the trust boundary.
+
+`ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id>
+--seat-config <path> --verify-config <path> --effect-config <path>` starts a task-scoped service. Firstmate owns the
+process, its two distinct 32-character-or-longer
+`AK_RUNNER_ADMIN_TOKEN` and `AK_RUNNER_WORKER_TOKEN` values, the active charter, the seat
+configuration and the state directory. The endpoint refuses another run id. Firstmate passes only `AK_RUNNER_SOCKET` and
+`AK_RUNNER_TOKEN` (the worker token) to a Claude Code or Codex worker. Both use
+`ak runner call <verb> --json <request-file>`; the service checks the token and verb before
+touching run state. `start` first validates the autopilot.start standing grant against the
+captain-approved charter (ADR-0007) and records `start_authority` before any seat dispatch.
+`start`, `collect`, `revision`, `judge`, `verify`, `charge`, `effect`, `event` and
+`complete` require the supervisor token. A worker can read `status` and `ledger`, freeze a `prepare`
+card and ask `decide` to apply the next validated grant. `sync` observes the worker's current Git
+revision and diff; `run-verify` executes only the supervisor-configured command and stores its
+output privately.
+
+At `decide`, the service checks the charter, grant, current state, evidence and cap before invoking
+the two configured launchers. It sends each launcher the same frozen question, option ids and
+evidence hashes on stdin, without either judgment. Under stock Firstmate, the launchers dispatch
+separate ordinary crewmates through its normal brief/spawn path; the implementing worker never
+spawns them. Each launcher returns a JSON object containing
+`choice` and `rationale`. The service strips runner tokens from the launched environment, records
+distinct actors, dispatch ids and lineages, and refuses a missing or ineligible seat. These launchers
+must isolate the two agents from the runner store and from each other; a bare command under an
+unrestricted shared user account cannot provide that isolation. Without a seat configuration the
+supervisor may submit separate judgments with `judge`, and a missing judgment blocks the card.
+
+The service checks the active charter schema, recomputes its canonical hash, verifies its human
+approval and refuses any changed charter on resume. `collect` snapshots only files outside the
+worker root through `src/runner/evidence.ts`'s `EvidenceStore` interface. The private file store
+is the current backend; a later KB adapter can supply stable refs and read-back through that
+interface without making the worker an evidence writer. `verify` and autonomous ship consume the runner-owned snapshot at the current
+revision. The service writes a decision artifact per checkpoint and a schema-checked run ledger
+beside the restart record. A restart reads the next permitted action and returns prior decisions
+without redispatching them. `effect` resolves its read-back and perform command arrays only from a
+supervisor-owned service configuration, never from a request file: it reads before and after,
+persists its deterministic key before performing the effect, and never reports completion without
+matching read-back. The worker cannot supply these commands, even through an admin call that reads
+a worker-authored request file. Repository effects also refuse a target outside the charter's
+repository list. `ship.prepare` leaves the run `ready-to-ship`; only a confirmed PR-open read-back
+transitions it to `pr-open`. A changed head requires a new verification and review before completion.
+
+The path checks reject a state, socket, charter, seat configuration or source gate record that
+resolves inside the worker root. The state check also rejects Git's common directory for a linked
+worktree, including the primary checkout's shared `.git/agent-kit/evidence` path. They do not
+prove operating-system write isolation outside those roots.
+Firstmate must put the service and these files beyond the worker's actual write permissions and
+keep the supervisor token out of worker sessions. Until then, the installation is guided and
+`runner-grants` plus `trusted-evidence` remain unavailable. A charter that omits either capability
+also cannot gain it merely because a service was started; a new human-approved charter is needed.

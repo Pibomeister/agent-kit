@@ -122,6 +122,19 @@ export function checkHumanStart(ctx: CheckContext): Issue[] {
           ),
         );
       }
+      if (
+        entry.id === "autopilot" &&
+        (!/Firstmate-started/.test(description) || !/runner-validated standing\s+grant/i.test(description))
+      ) {
+        issues.push(
+          error(
+            "invocation.autopilot-description-omits-standing-start",
+            file,
+            "Autopilot's description must name Firstmate's runner-validated standing grant; prose naming the skill alone is not a start (ADR-0007).",
+            line,
+          ),
+        );
+      }
     }
 
     const workflow = splitSections(parsed.body).find((section) => section.heading === WORKFLOW_HEADING);
@@ -151,6 +164,19 @@ export function checkHumanStart(ctx: CheckContext): Issue[] {
           "invocation.first-step-not-stop",
           file,
           `The first step under ${WORKFLOW_HEADING} in user-invoked skill '${entry.id}' does not ${missing.join(" or ")}. A session that loads the body on a prose request reads this step first, and a first step that opens on the work starts the work. Make it the authority check: it names \`${command}\` and stops when the run was started by neither that command nor a validated grant (ruling \`entrypoint-phase-operation-split\`).`,
+          headingLine + step.line,
+        ),
+      );
+    }
+    if (
+      entry.id === "autopilot" &&
+      (!/Firstmate/.test(step.text) || !/start_authority\.kind/.test(step.text) || !/standing-grant/.test(step.text))
+    ) {
+      issues.push(
+        error(
+          "invocation.autopilot-first-step-omits-standing-check",
+          file,
+          "Autopilot's first step must read the runner's standing-grant start attestation before phase work (ADR-0007).",
           headingLine + step.line,
         ),
       );

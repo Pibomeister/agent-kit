@@ -135,12 +135,16 @@ skills:
   - id: autopilot
     kind: supervisor
     invocation: U
+    entrypoints:
+      run:
+        authority: explicit-or-standing
+        invocation: U
     profiles: [autonomy]
     batch: 10
     provenance_origin: donor
     status: authored
     summary: >-
-      A human-started supervisor pair exercising explicitly delegated checkpoint authority over
+      A human-started or Firstmate standing-grant-started supervisor pair exercising delegated checkpoint authority over
       the same lifecycle skills. Immutable charter; supervisors never implement. Agreement is not
       authority.
 

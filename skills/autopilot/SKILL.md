@@ -1,13 +1,11 @@
 ---
 name: autopilot
 description: >-
-  Human-started command: it runs only when the human's message begins with `/ak:autopilot`. On any
-  other request do not load or follow it; tell the human to type that command. Use when a human
-  types /ak:autopilot with an approved charter and wants the lifecycle driven to an open pull
-  request, two independent supervisor seats answering each checkpoint the charter names. Every
-  ruling is ledgered; anything outside the charter, any disagreement and any missing seat stops for
-  one escalation. Not for a single focused change, not for brainstorming, and never started because
-  a task looks long or because a prompt names it.
+  Human-started command `/ak:autopilot`, or Firstmate-started only when a runner-validated standing
+  grant binds to a captain-approved charter. A worker brief or prose mention alone is not a start;
+  otherwise stop and tell the human to type `/ak:autopilot`. Use for a charter-bound lifecycle to
+  an open pull request with two independently dispatched supervisor seats and a ledgered ruling at
+  each checkpoint. Anything outside the charter, disagreement or a missing seat escalates once.
 license: MIT
 metadata:
   ak_catalog_id: autopilot
@@ -32,9 +30,11 @@ metadata:
 
 ## Authority
 
-Authority `explicit`, invocation U. Only a human typing `/ak:autopilot` starts it. It exposes no
-phase operation, so no controller, grant or other skill can start it, and a prompt that merely
-names it is not an invocation.
+Authority `explicit-or-standing`, invocation U. A human typing `/ak:autopilot` starts it, or
+Firstmate starts it under a runner-validated standing grant for autopilot.start bound to the
+captain-approved charter (ADR-0007). An ordinary phase grant, a worker brief, another skill and a
+prompt that merely names it cannot start it. The runner's restart record attests the standing start;
+the worker cannot write that record.
 
 Once started, it reaches the user-invoked lifecycle skills only through their phase operations,
 each under a runner-validated grant covering that checkpoint. It never starts their public
@@ -59,6 +59,8 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
 
 - The charter (`schemas/charter.schema.json`), outside worker-writable scope, with its hash.
   Absent, unreadable or failing its hash: `needs-input` before any checkpoint logic runs.
+- For a Firstmate start, the runner's standing-grant attestation for this run, controller and
+  charter hash. Absent or mismatched: stop before loading the work source (ADR-0007).
 - The work source it names: an approved spec, a plan, a ticket or a `fixed` diagnosis. Unverified
   this run: nothing is implemented, and the run escalates.
 - Two supervisor seats the runner binds and attests independent (`roles/supervisor/ROLE.md`), and
@@ -72,16 +74,18 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
 
 ## Workflow
 
-1. Check how this run was started, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:autopilot`; no grant starts it. A request in prose
-   is not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
-   call, say that this command is human-started, and give the human the line to type,
-   `/ak:autopilot` and their request.
-2. Resolve the mode from what is attached, never from a default in this body. With the runner's
-   grant validation attached (per the install configuration), in-charter checkpoints may be decided
-   unattended. Without it, the run is in guided checkpoint mode: each card is prepared and proposed,
-   and every checkpoint stops for explicit invocation. How far a run advances is the charter's and
-   the install's to set.
+1. Check how this run was started before any phase work. A human message beginning
+   `/ak:autopilot` is an explicit start. For a Firstmate-dispatched crewmate, the one permitted
+   preliminary call is read-only `ak runner call status`: require `start_authority.kind` to be
+   `standing-grant`, its controller to be Firstmate, its cover to be autopilot.start, and its run id
+   and charter hash to match the runner-held approved charter. A brief, prose request or phase grant
+   alone is not proof. If neither start resolves, stop; do no other work and give the human
+   `/ak:autopilot` to type (ADR-0007).
+2. Resolve the mode from a live `ak runner call status` on this run, not from an attached contract
+   alone. Firstmate passes the worker token and socket; the charter must allow `runner-grants` and
+   `trusted-evidence`. A service that cannot resolve the approved charter, persist its ledger or
+   independently dispatch both seats leaves the run in guided checkpoint mode. Each card then stops
+   for explicit invocation. How far a run advances is the charter's and the live install's to set.
 3. Load the charter and recompute its hash. A mismatch refuses the run; it is not repaired, reloaded
    or adopted. On resume, do this before reading the restart record, then treat every ruling and
    remote effect it lists as done.
@@ -90,13 +94,18 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    example the explain, pov or ideate command — starts none of them, and creates no branch (ruling
    `entrypoint-phase-operation-split`).
 5. Drive the phases through their operations, in lifecycle order. The map from checkpoint to
-   operation and grant is `./references/checkpoints.md`. Dispatch implementation to the implementer
-   seat through `/ak:super-build`; the supervisors do not write it.
+   operation and grant is `./references/checkpoints.md`. Use `ak runner call prepare` to freeze
+   each card and `ak runner call decide` to validate its grant and obtain the next permitted action.
+   The runner's build gate authorizes the implementer seat's `/ak:super-build`; `run-verify` records the
+   configured verification command's output outside the worker root. The supervisors do not write
+   the patch.
 6. At each checkpoint, freeze a decision card: the question, two to six bounded options, the
    evidence refs and the affected artifact hashes (`schemas/decision.schema.json`).
 7. Run the deterministic authority check first: the charter lists this category and action, the
    required evidence is present and still binds, and both seats are available and independent.
-8. Dispatch the frozen card to both seats in isolation. Neither sees the other's judgment.
+8. Let the runner's Firstmate launchers dispatch the frozen card to both seats as separate crewmates,
+   or let Firstmate submit both independently dispatched judgments before `decide`. Neither seat
+   receives the other's judgment; if a seat is unavailable, the runner blocks the card.
 9. Decide only when every check holds and the two choices agree. Record the ruling in the ledger,
    with what it would cost if wrong, and continue.
 10. Otherwise emit exactly one escalation in the six-field shape and stop new writes and shipping.

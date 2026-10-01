@@ -571,11 +571,12 @@ describe("the ak firstmate command", () => {
     expect(r.err.join("\n")).toContain("ak firstmate preflight");
   });
 
-  test("preflight against a home without the real upstream commit refuses and exits 1", () => {
+  test("legacy patched preflight against a home without its upstream commit refuses", () => {
     const { home } = makeHome({ patched: true });
     const r = run([
       "firstmate",
       "preflight",
+      "--legacy-patched",
       "--fm-home",
       home,
       "--project",

@@ -102,7 +102,9 @@
           {
             "description": "A user-startable entrypoint cannot run on a grant alone; a grant-only entrypoint cannot be offered as a slash command.",
             "if": { "properties": { "invocation": { "const": "U" } }, "required": ["invocation"] },
-            "then": { "properties": { "authority": { "enum": ["explicit", "explicit-or-delegated"] } } },
+            "then": {
+              "properties": { "authority": { "enum": ["explicit", "explicit-or-standing", "explicit-or-delegated"] } }
+            },
             "else": {
               "properties": {
                 "authority": { "enum": ["explicit-or-delegated", "delegated-grant", "active-review-run", "model"] }
@@ -345,6 +347,19 @@
     }
   },
   "allOf": [
+    {
+      "description": "ADR-0007 reserves standing-start authority for autopilot alone.",
+      "if": { "properties": { "id": { "const": "autopilot" } }, "required": ["id"] },
+      "else": {
+        "properties": {
+          "entrypoints": {
+            "additionalProperties": {
+              "not": { "properties": { "authority": { "const": "explicit-or-standing" } }, "required": ["authority"] }
+            }
+          }
+        }
+      }
+    },
     {
       "description": "A user-invoked skill declares disable-model-invocation: true as the record of its class; a model-invoked skill never does (catalog.yaml field notes, AGENTS.md). The declaration is not emitted on any host (docs/decisions/0003-model-invocation.md).",
       "if": { "properties": { "invocation": { "const": "U" } }, "required": ["invocation"] },

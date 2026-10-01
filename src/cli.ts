@@ -14,6 +14,7 @@ import { scoreDelegationFiles } from "./delegation.ts";
 import { runFirstmate } from "./firstmate/cli.ts";
 import { main as runLifecycle } from "./lifecycle/gate.ts";
 import { runLearn } from "./learn/cli.ts";
+import { runRunner } from "./runner/cli.ts";
 import { loadCatalog } from "./catalog/load.ts";
 import type { BuildOptions } from "./packaging/build.ts";
 import { checkBundles, writeAdaptations, writeBundles } from "./packaging/build.ts";
@@ -57,6 +58,7 @@ const USAGE = [
   "  ak firstmate <subcommand> …                bind agent-kit to a patched Firstmate home (optional)",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
   "  ak learn <area> <verb> ...                 the opt-in learning runtime (`ak learn` for help)",
+  "  ak runner serve|call ...                   runner service and charter-bound requests",
   "",
   "Exit 0 when nothing failed, non-zero on any error.",
 ];
@@ -354,10 +356,10 @@ function readHookStdin(argv: readonly string[]): string | undefined {
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
-  const code = runCli(argv, {
-    cwd: process.cwd(),
-    io: { out: (line) => console.log(line), err: (line) => console.error(line) },
-    stdin: readHookStdin(argv),
-  });
-  process.exit(code);
+  const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+  const code =
+    argv[0] === "runner"
+      ? await runRunner(argv.slice(1), io)
+      : runCli(argv, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+  if (argv[0] !== "runner" || argv[1] !== "serve" || code !== 0) process.exit(code);
 }

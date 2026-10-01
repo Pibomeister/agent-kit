@@ -91,6 +91,28 @@ describe("the positive control", () => {
   });
 });
 
+describe("autopilot standing start", () => {
+  test("its description and first step must validate Firstmate's runner attestation", () => {
+    const files = {
+      "catalog.yaml": catalog([{ id: "autopilot", invocation: "U" }]),
+      "skills/autopilot/SKILL.md": body("autopilot", {
+        description: "Human-started command `/ak:autopilot`; on another request stop.",
+        firstStep: "1. Check `/ak:autopilot` and stop on any other request.",
+      }),
+    };
+    expect(issues(files).map((issue) => issue.rule)).toEqual([
+      "invocation.autopilot-description-omits-standing-start",
+      "invocation.autopilot-first-step-omits-standing-check",
+    ]);
+    files["skills/autopilot/SKILL.md"] = body("autopilot", {
+      description:
+        "Human-started `/ak:autopilot` or Firstmate-started with a runner-validated standing grant; otherwise stop.",
+      firstStep: "1. Check `/ak:autopilot` or Firstmate status start_authority.kind standing-grant; otherwise stop.",
+    });
+    expect(issues(files)).toEqual([]);
+  });
+});
+
 describe("the description", () => {
   test("must name the typed command", () => {
     const files = {

@@ -22,7 +22,14 @@ import { readTextIfPresent } from "../util/fs.ts";
 const POLICY_FILE = "policies/invocation.yaml";
 const OPERATION_ID = /^[a-z0-9]+(-[a-z0-9]+)*\.[a-z0-9]+(-[a-z0-9]+)*$/;
 
-const FALLBACK_AUTHORITY = ["explicit", "explicit-or-delegated", "delegated-grant", "active-review-run", "model"];
+const FALLBACK_AUTHORITY = [
+  "explicit",
+  "explicit-or-standing",
+  "explicit-or-delegated",
+  "delegated-grant",
+  "active-review-run",
+  "model",
+];
 const FALLBACK_REMOTE_SIDE_EFFECTS = [
   "remote-push",
   "pr-open",

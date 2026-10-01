@@ -33,8 +33,9 @@ The lifecycle is seven skills, not twenty. Each has one job, one required output
 | `super-review` | Specialist panel (full) or two-axis delta on a fix | Reviewers cannot edit |
 | `super-ship` | Release checks and PR preparation | Merge and deploy are separate capabilities |
 
-Plus `autopilot`: a human-started supervisor pair exercising explicitly delegated checkpoint authority
-over those same skills. It implements nothing itself.
+Plus `autopilot`: a human-started supervisor pair, or a Firstmate-started one under a
+runner-validated standing grant in a captain-approved charter. It exercises delegated checkpoint
+authority over those same skills and implements nothing itself.
 
 ## Two ways to run
 
@@ -45,9 +46,13 @@ session that skipped `super-build`, or whose review went stale after an edit, is
 `refused: gate <g> has no current evidence`. No supervisor is needed for that.
 
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
-`ak firstmate bind` hands a Firstmate worker the same lifecycle, and `ak firstmate status complete`
-runs the same core check before it reports `done` (`adapters/firstmate/CONTRACT.md`). Nothing in core,
-its tests or CI needs Firstmate installed.
+On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
+service, and add the section printed by `ak firstmate brief` to an ordinary crewmate brief. Use the
+task's existing no-mistakes or direct-PR delivery mode. The runner holds the charter, standing
+start, checkpoint ledger and trusted evidence outside the worker worktree. The older
+`ak firstmate bind` path remains for patched-home installations; it is not required for stock
+Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or CI needs Firstmate
+installed.
 
 ## Catalog
 
@@ -64,7 +69,8 @@ directory with no entry.
 | **Primitives** (4) | `prototype` M · `handoff` M · `wait-what` M · `wayfind` U |
 | **Operational** (2) | `babysit-pr` U · `ultraqa` U |
 
-**U** = user-invoked; only a human starts it. **M** = model-invoked. See the invocation law in
+**U** = user-invoked; only a human starts it except autopilot under Firstmate's runner-validated
+standing grant. **M** = model-invoked. See the invocation law in
 `AGENTS.md`.
 
 ### Packs (8)

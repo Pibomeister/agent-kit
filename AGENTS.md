@@ -16,7 +16,8 @@ never what either document claims about it, and never memory.
 
 ## The invocation law
 
-Non-negotiable. Written once, here, and enforced by `ak validate`'s invocation-graph check.
+Non-negotiable. The source rule is quoted here; ADR-0007 amends its start condition for autopilot
+alone. `ak validate` checks the invocation graph and the first-step authority gate.
 
 > - **User-invoked:** align, bound, wayfind, ship, compound. Only a human starts these.
 > - **Model-invoked:** scout, tdd, diagnose, standards-review, spec-review, prototype, attach-pack.
@@ -29,9 +30,16 @@ longer emits `disable-model-invocation`, so the model can load any skill. A U sk
 its description carries the non-trigger clause, its first workflow step is the authority check, and
 started without an explicit request or a validated grant it stops and says so.
 
+**Standing-start amendment (ADR-0007):** Firstmate may start `autopilot` for a crewmate only after
+the runner validates a standing grant for autopilot.start against a captain-approved immutable
+charter. The worker's brief, a prompt naming autopilot, and a phase grant do not start it. Every
+other U public entrypoint remains human-started by its slash command. Sensitive grants, merge,
+deploy and anything outside the charter remain human decisions.
+
 Source: `G:L1672–1676`. The elision in the fourth bullet drops a model-routing illustration that the
 content denylist forbids in this file; the unedited text is at
-`research/sources/grok-transcript.md:1675`. The *rule* is reproduced exactly.
+`research/sources/grok-transcript.md:1675`. The quote is reproduced exactly; ADR-0007 records the
+later explicit captain decision that narrows its first bullet for `autopilot`.
 
 **The quote uses the design brief's vocabulary, not this package's.** It names capabilities, and this
 package reclassified several of them: two became protocols and two became roles, none of which are
@@ -45,7 +53,7 @@ law above. No id is both a skill and a protocol, so this is reclassification, no
 | tdd, attach-pack | protocols, not skills | `protocols/<id>/PROTOCOL.md` |
 | standards-review, spec-review | `reviewer-standards`, `reviewer-spec` — roles, not skills | `roles/<id>/ROLE.md` |
 
-The law still binds each of them. A protocol or a role is not an entrypoint at all, which is a
+The amended law still binds each of them. A protocol or a role is not an entrypoint at all, which is a
 stricter position than the quote's model-invoked class, not a loophole in it.
 
 ### How the law is satisfied where skills legitimately need each other
@@ -56,18 +64,19 @@ skills, which the law forbids. The resolution (ruling `entrypoint-phase-operatio
 
 | Layer | Who may start it | Example |
 |---|---|---|
-| Public entrypoint | A human, explicitly. For a U skill only the slash command counts | `/ak:super-review` |
+| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant | `/ak:super-review` |
 | Phase operation | A delegated controller, **only** under a runner-validated grant | `review.delta` |
 
-A human invokes the entrypoint. A controller invokes the phase operation, and only when the runner
-validates a grant that covers it. **Ordinary workers cannot manufacture a grant or start a new gated
+A human invokes a public entrypoint, or Firstmate starts autopilot under the standing-start amendment.
+A controller invokes a phase operation only when the runner validates a grant that covers it.
+**Ordinary workers cannot manufacture a grant or start a new gated
 phase**, and public wrappers and the supervisor pair run the same protocol, so there is no second
 pipeline. Where a host cannot validate a grant, the skill **stops for explicit invocation** rather
 than reproducing a forbidden command's effect through a side door (ruling
 `entrypoint-phase-operation-split`).
 
 `authority` values live in `schemas/common.schema.json#/$defs/authority`:
-`explicit`, `explicit-or-delegated`, `delegated-grant`, `active-review-run`, `model`.
+`explicit`, `explicit-or-standing`, `explicit-or-delegated`, `delegated-grant`, `active-review-run`, `model`.
 
 ---
 
@@ -296,3 +305,10 @@ All changes ship through the no-mistakes gate:
 - Commit on a feature branch, then push with `git push no-mistakes <branch>`. Never push directly to `origin`.
 - no-mistakes runs review, test, lint and document checks, then pushes to origin and opens the PR. Follow progress with `no-mistakes status` or the `/no-mistakes` skill.
 - Per-repo gate commands live in `.no-mistakes.yaml`. It is only read from the default branch.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

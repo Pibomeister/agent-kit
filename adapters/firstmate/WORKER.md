@@ -1,7 +1,8 @@
-# agent-kit binding
+# agent-kit binding (legacy patched mode)
 
 This task runs the agent-kit lifecycle inside a Firstmate worker. Firstmate supervises; you judge the
-work with the lifecycle; no-mistakes delivers it. `ak firstmate bind` rendered this section from
+work with the lifecycle; no-mistakes delivers it. Stock Firstmate uses the normal brief section
+from `ak firstmate brief` instead. `ak firstmate bind` rendered this legacy section from
 `adapters/firstmate/WORKER.md`, and every value in it is also in the binding file, which you can read
 and cannot write.
 
@@ -67,8 +68,10 @@ Firstmate is your delegated controller, and this binding is the grant it gives y
 Exit 0 prints a grant record; cite it on the review or the ship record. A refusal means stop and report
 `needs-decision`. Nothing outside the binding is granted, merge included.
 
-The `ship.prepare` grant does not carry the ship through on this host. Step 3 of `super-ship` stops
-with `needs-input` naming trusted evidence as unavailable; report that stop rather than shipping.
+The binding grant alone does not carry autonomous ship through. If Firstmate supplied a live runner
+socket and worker token, use its current ledger and runner-collected verification evidence. Otherwise
+step 3 of `super-ship` stops with `needs-input` naming trusted evidence as unavailable; report that
+stop rather than shipping.
 
 ## How you ship
 

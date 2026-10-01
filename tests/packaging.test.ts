@@ -2209,7 +2209,7 @@ describe("the adapters an install attaches, and what they lift", () => {
     expect(byAdapter).toEqual({
       firstmate: ["firstmate-supervision"],
       knowledgebase: ["kb-write"],
-      "runner-contract": ["runner-grants", "trusted-evidence"],
+      "runner-contract": ["event-delivery", "runner-grants", "trusted-evidence"],
       tracker: ["tracker-access"],
     });
     // adapters/tracker/CONTRACT.md §1: with no backend its refusal is kb-write's.

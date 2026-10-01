@@ -1,8 +1,8 @@
 # policies/invocation.yaml — the invocation law in machine form.
 #
 # Authority: plan §7.1 (public entrypoint vs shared phase operation), plan §2.1–§2.5
-# (which capability is a public entrypoint at all), and the invocation law reproduced in
-# AGENTS.md from the design conversation at G:L1672-1676.
+# (which capability is a public entrypoint at all), the source law at G:L1672-1676,
+# and ADR-0007's later standing-start amendment for autopilot alone.
 #
 # Machine-read by `ak validate`, which builds the invocation graph from this file and fails on:
 #   - a skill whose `invocation` here disagrees with catalog.yaml
@@ -26,12 +26,14 @@ law:
   statements:
     - id: user-invoked-are-human-started
       rule: >-
-        A user-invoked (U) skill is started by a human only. On a host with a slash-command
-        surface, only the slash command counts as the human act.
+        A user-invoked (U) skill is started by a human's slash command. Autopilot alone may also
+        be started by Firstmate under a runner-validated standing grant bound to a captain-approved
+        immutable charter (ADR-0007). A worker prompt or phase grant is never a start.
       enforced_by: >-
         the skill's own text, which `ak validate` checks (`human-start`): the description names
         the typed command and the class, and the first workflow step names the command and stops;
-        no host flag is emitted (docs/decisions/0003-model-invocation.md)
+        autopilot also names Firstmate's standing grant and runner validation; no host flag is
+        emitted (docs/decisions/0003-model-invocation.md, ADR-0007)
     - id: u-may-call-m
       rule: A user-invoked skill may call model-invoked (M) skills directly.
     - id: u-may-not-call-u
@@ -99,6 +101,10 @@ entrypoints:
   # super-review is the one skill with named entrypoints (catalog.yaml `entrypoints`).
   # These values are authoritative and must match the catalog.
   per_entrypoint:
+    autopilot:
+      run:
+        invocation: U
+        authority: explicit-or-standing
     super-review:
       full:
         invocation: U

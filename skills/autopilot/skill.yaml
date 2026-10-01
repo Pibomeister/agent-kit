@@ -2,16 +2,17 @@
 # Prose mirror: skills/autopilot/SKILL.md (AUTHORING.md §4.1).
 
 id: autopilot
-version: 0.1.1
+version: 0.1.2
 kind: supervisor
 invocation: U
 summary: >-
-  A human-started supervisor pair exercising explicitly delegated checkpoint authority over the same
+  A human-started or Firstmate standing-grant-started supervisor pair exercising delegated checkpoint authority over the same
   lifecycle skills. Immutable charter; supervisors never implement. Agreement is not authority.
 
 triggers:
   - A human has approved a charter and wants the lifecycle driven to an open pull request, with the
     supervisor pair answering the checkpoints the charter names.
+  - Firstmate has a runner-validated standing grant for autopilot.start in a captain-approved charter.
   - A charter-bound run was cancelled or interrupted and has to resume from its restart record.
 
 non_triggers:
@@ -19,7 +20,7 @@ non_triggers:
   - Exploring options or brainstorming before a plan exists.
   - Implementing a ticket; the supervisors never write the patch under decision.
   - Merging or deploying a pull request.
-  - A prompt that names autopilot in prose rather than invoking it.
+  - A prompt that names autopilot in prose without a runner-validated standing start.
 
 prerequisites:
   - kind: artifact
@@ -39,7 +40,7 @@ prerequisites:
 
 entrypoints:
   run:
-    authority: explicit
+    authority: explicit-or-standing
     invocation: U
     summary: >-
       Load and hash-check the charter, verify the work source, and drive the phases through their
@@ -78,6 +79,11 @@ inputs:
     summary: >-
       The runner's grant validation, present when the install configuration attaches that adapter.
       Absent, the run is in guided checkpoint mode.
+  - id: standing-start
+    required: false
+    summary: >-
+      For Firstmate dispatch, the runner's private start record validating autopilot.start against
+      the captain-approved charter. A human slash invocation does not need this record.
   - id: budgets
     required: false
     summary: Caps the runner hands in. A cap not supplied is not enforced and not guessed.
