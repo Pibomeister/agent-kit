@@ -384,6 +384,7 @@ const GIT_LOOKING = new Set([
   "rev-list",
   "for-each-ref",
   "show-ref",
+  "count-objects",
 ]);
 /** git subcommands that look only with one of these first operands (or none, where `""` is listed). */
 const GIT_LOOKING_ACTION: Record<string, ReadonlySet<string>> = {
@@ -607,6 +608,12 @@ export function asksToType(reply: string, skill: string): boolean {
     `${cmd}\`?\\s+(?:yourself|explicitly)`,
     `${cmd}\`?[^.\\n]{0,40}?\\b(?:type|run|invoke|use|send) it\\b`,
     `(?:if you want|when you(?:'re| are) ready|to (?:start|begin|proceed|go ahead))[^.\\n]{0,60}?${cmd}`,
+    // "`/ak:x` is human-started. Type it ...": the command comes first, but a later imperative
+    // still has to refer back to it. The sentence boundary keeps a bare command mention from asking.
+    `${cmd}\`?[\\s\\S]{0,120}?[.!?]\\s+(?:please\\s+)?${verb}\\s+(?:it|that(?:\\s+command)?)\\b`,
+    // "Type this as your next message.\n```\n/ak:x ...\n```": a complete command block may
+    // immediately follow the instruction even though sentence punctuation breaks the short-span rule.
+    `(?:^|[.:;!?]\\s+|\\n)\\s*(?:please\\s+)?${verb}\\b[^\\n]{0,100}[.!?:]?[ \\t]*\\n+(?:[ \\t]*\\n)*[ \\t]*(?:\`\`\`[\\w-]*[ \\t]*\\n[ \\t]*)?${cmd}`,
   ];
   // A command set off after a colon, on its own line or in a code fence, reads as if it followed the colon.
   // Bold or underline emphasis ("**Run `/ak:x` yourself**") is dropped: it changes no word.
