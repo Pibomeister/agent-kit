@@ -19,6 +19,16 @@
 # resolves and adds them. `docs` names a decision record where one exists. The
 # plan itself (research/sources/) is never edited.
 
+skills:
+  baseline: 33
+  catalog: 34
+  expansions:
+    - ids: [verify]
+      reason: >-
+        Running-application verification needs a human-started, host-neutral command that records
+        runtime receipts and a reusable recipe without changing the existing super-verify phase.
+      commits: [3a6b18c]
+
 protocols:
   baseline: 7
   catalog: 8
