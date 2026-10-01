@@ -225,6 +225,11 @@ describe("grok", () => {
       "git branch --show-current",
       "git tag --list",
       "bun run ak validate",
+      "sort",
+      "sort -u",
+      "git reflog show",
+      "git --no-pager branch -vv",
+      "git --no-pager remote -v",
     ]) {
       expect([look, readOnlyShell(look)]).toEqual([look, true]);
       expect([look, admits(look)]).toEqual([look, true]);
@@ -242,6 +247,8 @@ describe("grok", () => {
       "gh pr create --fill",
       "find . -name x -delete",
       "sort -o out.txt in.txt",
+      "sort -ro out.txt in.txt",
+      "sort -uo out.txt in.txt",
       "ls > out.txt",
     ]) {
       expect([write, readOnlyShell(write)]).toEqual([write, false]);

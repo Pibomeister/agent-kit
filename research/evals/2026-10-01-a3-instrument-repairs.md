@@ -52,8 +52,9 @@ The canonical read-only program, git-subcommand, git-action and gh-action tables
 `tests/learn/evals/subjects/shell.ts`. The scorer imports those tables for `readOnlyProgram`,
 `readOnlyGit` and `readOnlyGh`; the Grok adapter generates its narrow `--allow` rules from the same
 tables instead of copying a second list. Write-shaped forms covered by a broad read prefix have
-explicit `--deny` rules for output redirection, writing `find` flags, preprocessors, sort output and
-git `--output`. Ref mutation and PR creation need no deny: `git branch` and `git tag` are allowed
+explicit `--deny` rules for output redirection, writing `find` flags, preprocessors and git
+`--output`. `sort` is allowed only bare or with exact ordering flags, so no rule reaches its `-o`,
+bundled or not; a `sort` with a key or a file operand stays refused. Ref mutation and PR creation need no deny: `git branch` and `git tag` are allowed
 only in exact listing forms, and no rule covers `gh pr create`. Deny precedence keeps the guarded
 writes refused, and the adapter remains on `dontAsk`.
 
