@@ -66,7 +66,8 @@ and CA variables) plus host-declared inputs and any names the operator lists in
 `AK_EVAL_PASS_ENV`. A `CLAUDE_CODE_*` or `EVAL_*` name cannot be opted in: the parent-session
 strip that runs before the host starts removes those prefixes, keeping only the three auth and
 provider-routing names. The Claude adapter declares the AWS and Vertex companion variables only
-while the caller has `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` set. Variable expansion and command substitution through admitted programs such as `echo` and
+while the caller has `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` set to `1`, `true`,
+`yes` or `on`. Variable expansion and command substitution through admitted programs such as `echo` and
 `test` (`echo $GH_TOKEN`, `test -n "$GH_TOKEN"`, `echo $(printenv)`) remain scored read-only, but
 caller values that are neither declared nor opted in are absent from the subject environment. The read-only gh commands and
 `git remote show` reach the network. Whether the live host expands variables before permission

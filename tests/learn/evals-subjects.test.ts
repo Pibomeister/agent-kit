@@ -594,14 +594,18 @@ describe("isolation", () => {
     withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: undefined, CLAUDE_CODE_USE_VERTEX: undefined }, () => {
       absent(cleanEnv(claude.env), { ...aws, ...vertex });
     });
-    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: "", CLAUDE_CODE_USE_VERTEX: undefined }, () => {
-      absent(cleanEnv(claude.env), { ...aws, ...vertex });
-    });
-    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: undefined }, () => {
-      const env = cleanEnv(claude.env);
-      expect(env).toMatchObject(aws);
-      absent(env, vertex);
-    });
+    for (const off of ["", "0", "false", "no", "off", "FALSE"]) {
+      withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: off, CLAUDE_CODE_USE_VERTEX: off }, () => {
+        absent(cleanEnv(claude.env), { ...aws, ...vertex });
+      });
+    }
+    for (const on of ["1", "true", "yes", "on", "TRUE"]) {
+      withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: on, CLAUDE_CODE_USE_VERTEX: undefined }, () => {
+        const env = cleanEnv(claude.env);
+        expect(env).toMatchObject(aws);
+        absent(env, vertex);
+      });
+    }
     withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: undefined, CLAUDE_CODE_USE_VERTEX: "1" }, () => {
       const env = cleanEnv(claude.env);
       expect(env).toMatchObject(vertex);
