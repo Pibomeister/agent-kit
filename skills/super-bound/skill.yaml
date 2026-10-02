@@ -142,8 +142,8 @@ stop_conditions:
   - needs-input when the run was started by neither the typed command nor a validated grant, there
     is no approved alignment result, the approval binds to a different revision, project guidance
     or a grant is missing, the scorer fails, readiness remains vague, an assumption remains open,
-    or new evidence invalidated a settled decision. A completed assessment persists its three
-    evidence blocks on the returned draft before this stop.
+    a document-review decision is left open, or new evidence invalidated a settled decision. A
+    completed assessment persists its three evidence blocks on the returned draft before this stop.
   - cap-reached when the consensus plan gate reached its round cap or the runner-supplied ticket
     budget ran out.
   - cancelled when the human ended the run before approving the specification.
@@ -153,8 +153,9 @@ failure_outcomes:
   - status: needs-input
     meaning: >-
       A prerequisite the run cannot supply itself: a start by the typed command or a validated
-      grant, an approved direction, an approval bound to this revision, a grant, or a settled
-      decision that new evidence has not invalidated.
+      grant, an approved direction, an approval bound to this revision, a grant, an answer to
+      every open document-review decision, or a settled decision that new evidence has not
+      invalidated.
     next_permitted_action: >-
       Return the blocking item; do not proceed on a substitute. For a start by neither the typed
       command nor a grant, return the command to type and nothing else.

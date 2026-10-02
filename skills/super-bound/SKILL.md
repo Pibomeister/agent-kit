@@ -203,7 +203,8 @@ performed is `failed`, never complete.
 - `needs-input` — a start by neither the typed command nor a validated grant, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different
   revision, missing project guidance or grant at `bound.run`, a failed scorer, an unresolved
-  assumption or vague criterion, or a settled decision that new evidence invalidated.
+  assumption or vague criterion, a document-review decision left open, or a settled decision that
+  new evidence invalidated.
   When assessment ran, the returned draft retains `delegation`, `readiness` and `assumptions`.
 - `cap-reached` — the consensus plan gate reached its round cap, or the runner-supplied ticket
   budget ran out. Returns the unresolved architectural question or the undecomposed remainder.

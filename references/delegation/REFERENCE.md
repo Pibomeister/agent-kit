@@ -70,7 +70,10 @@ failed scorer run leaves no delegation record and blocks the checkpoint.
 ## Factor evidence
 
 Every factor carries a project-guided score and at least one evidence string. The meanings are
-central; weights and cut points are project-configurable, advisory starting points.
+central; weights and cut points are project-configurable, advisory starting points. A score is an
+integer from 0 to 3. For `reversibility`, `size`, `complexity` and `spec` a higher score records
+more risk. `verification` records strength: a higher score means stronger verification, and a
+ticket with no tests scores 0.
 
 | Factor | Evidence expected at ticket time | Evidence expected at merge time |
 | --- | --- | --- |
@@ -86,7 +89,8 @@ absence is recorded; a body does not invent either measurement.
 ## Readiness and vague terms
 
 Every ticket records all six criteria separately. Each criterion carries its own score and evidence;
-a total never substitutes for a failed criterion.
+a total never substitutes for a failed criterion. A criterion score is an integer from 0 to 2, where
+a higher score means the criterion is more fully met and 0 means it is absent.
 
 | Criterion | Evidence expected |
 | --- | --- |
