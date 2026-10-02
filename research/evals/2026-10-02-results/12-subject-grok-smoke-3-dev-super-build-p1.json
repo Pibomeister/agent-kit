@@ -30,7 +30,7 @@
       "file_path": "[operator checkout]/evals"
     }
   },
-  "last_event_note": "The compact receipt substitutes [operator checkout] for the absolute path of the operator's own repository checkout, which lies outside the temporary eval repository and the subject scratch home the session ran in. The refused Grep therefore targeted the operator's checkout, not the eval repository. The raw transcript contains the full path and is retained uncommitted in gitignored .work/grok-smoke-3/.",
+  "last_event_note": "The compact receipt substitutes [operator checkout] for the absolute path of the operator's own repository checkout, which lies outside the temporary eval repository and the subject scratch home the session ran in. The refused Grep therefore targeted the operator's checkout, not the eval repository. The raw transcript contains the full path. Raw transcripts are retained privately by the operator outside the repository; they are not committed.",
   "outside_reach_note": "Nine retained calls addressed paths outside the eval repository and subject scratch home: two Bash calls listed the root of the user's temporary directory, and seven calls, the refused Grep among them, addressed the operator's own checkout. The transcript keeps no per-call result, so it does not show which of them the host allowed.",
   "timeline_note": "The committed entry point emitted no output until the session ended. Its parsed transcript retains the ordered events but no event or turn timestamps, so time within the 143-second interval cannot be attributed further.",
   "host_reported_cost_usd": 0.15062748
