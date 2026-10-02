@@ -779,6 +779,39 @@ describe("runner guards", () => {
     expect(existsSync(cleanLog)).toBe(false);
   });
 
+  test("runner snapshot follows submodules and embedded repositories", () => {
+    const f = fixture();
+    const git = (cwd: string, ...args: string[]) =>
+      expect(
+        Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Toy", "-c", "user.email=toy@example.invalid", ...args])
+          .exitCode,
+      ).toBe(0);
+    const nested = (name: string) => {
+      const at = join(f.worker, name);
+      mkdirSync(at);
+      git(at, "init", "-q");
+      writeFileSync(join(at, "lib.ts"), "export const v = 1;\n");
+      git(at, "add", ".");
+      git(at, "commit", "-qm", "nested");
+      return at;
+    };
+    const sub = nested("sub");
+    git(f.worker, "add", "sub");
+    git(f.worker, "commit", "-qm", "Add gitlink");
+    const other = nested("other");
+    const revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const runner = new Runner(f.privateDir, f.worker, root, true);
+    const before = runner.start("toy-run", f.path, "implementer-1", revision, standing(f)).diff_hash;
+    writeFileSync(join(sub, "lib.ts"), "export const v = 2;\n");
+    const subEdited = runner.syncRevision("toy-run").diff_hash;
+    expect(subEdited).not.toBe(before);
+    git(sub, "commit", "-qam", "bump");
+    const subCommitted = runner.syncRevision("toy-run").diff_hash;
+    expect(subCommitted).not.toBe(subEdited);
+    writeFileSync(join(other, "lib.ts"), "export const v = 3;\n");
+    expect(runner.syncRevision("toy-run").diff_hash).not.toBe(subCommitted);
+  });
+
   test("each remote effect reads back once and events deduplicate", () => {
     const f = ready();
     reachShipReady(f);

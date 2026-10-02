@@ -1,7 +1,7 @@
 /** Raw runner snapshots avoid worker-configured Git hooks, filters and text conversion. */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import type { GitResult, Snapshot } from "../lifecycle/gate.ts";
@@ -48,6 +48,11 @@ function rawFile(project: string, path: string): string {
     if (stat.isSymbolicLink()) return `link:${readlinkSync(at)}`;
     if (stat.isFile())
       return `file:${stat.mode & 0o111}:${createHash("sha256").update(readFileSync(at)).digest("hex")}`;
+    if (stat.isDirectory()) {
+      if (!existsSync(join(at, ".git"))) return "dir";
+      const nested = takeRunnerSnapshot(at);
+      return typeof nested === "string" ? `repo:${nested}` : `repo:${nested.revision}:${nested.diff_hash}`;
+    }
     throw new Error(`runner snapshot refuses a non-file worktree entry: ${path}`);
   } catch (cause) {
     if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return "missing";
