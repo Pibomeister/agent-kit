@@ -1657,7 +1657,7 @@ export function main(
   argv: readonly string[],
   io: Io,
   cwd: string = process.cwd(),
-  bypassLedger: string = defaultBypassLedger(),
+  bypassLedger?: string,
   now: () => Date = () => new Date(),
 ): number {
   const sub = argv[0] === "bypass" && argv[1] !== undefined ? `bypass ${argv[1]}` : argv[0];
@@ -1728,7 +1728,7 @@ export function main(
       out: resolve(cwd, out),
       hours: Number(str("hours") ?? "24"),
       cwd,
-      ledger: bypassLedger,
+      ledger: bypassLedger ?? defaultBypassLedger(),
       now,
     });
     if (!granted.ok) {
@@ -1798,7 +1798,7 @@ export function main(
       phase,
       cwd,
       project,
-      ledger: bypassLedger,
+      ledger: bypassLedger ?? defaultBypassLedger(),
       now,
     });
     const stop = (reason: string) => {
@@ -1854,7 +1854,7 @@ export function main(
         phase: covered,
         cwd,
         project,
-        ledger: bypassLedger,
+        ledger: bypassLedger ?? defaultBypassLedger(),
         now,
       });
       if (!checked.ok) {
