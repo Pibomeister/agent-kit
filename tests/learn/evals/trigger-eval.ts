@@ -112,7 +112,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join } from "node:path";
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { loadConfig } from "../../../src/learn/core/config.ts";
 import type { LearnContext } from "../../../src/learn/core/context.ts";
@@ -121,7 +121,7 @@ import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
 import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
-import { loadPriceTable } from "./pricing.ts";
+import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
@@ -134,7 +134,7 @@ import {
   unwrap,
   words,
 } from "./subjects/shell.ts";
-import type { SessionEvent, SessionRequest, SessionResult, TokenUsage, ToolEvent } from "./subjects/types.ts";
+import type { SessionEvent, SessionRequest, SessionResult, ToolEvent } from "./subjects/types.ts";
 
 export type Arm = "natural" | "nudged";
 export type Polarity = "positive" | "negative";
@@ -1407,34 +1407,9 @@ async function pool<T, R>(items: readonly T[], jobs: number, fn: (item: T) => Pr
   return out;
 }
 
-/** Receipt fragment summing the token totals of the sessions that reported usage. */
-export function usageReceipt(sessions: ReadonlyArray<Pick<SessionResult, "usage">>) {
-  const reported = sessions.flatMap((session) => (session.usage === undefined ? [] : [session.usage]));
-  const sum = (field: keyof TokenUsage) => reported.reduce((total, usage) => total + usage[field], 0);
-  return {
-    usage: {
-      input_tokens: sum("inputTokens"),
-      cached_input_tokens: sum("cachedInputTokens"),
-      cache_write_input_tokens: sum("cacheWriteInputTokens"),
-      output_tokens: sum("outputTokens"),
-      reasoning_output_tokens: sum("reasoningOutputTokens"),
-      total_tokens: sum("totalTokens"),
-    },
-    usage_sessions: reported.length,
-  };
-}
-
 function revision(): string {
   const result = run(["git", "rev-parse", "HEAD"], { cwd: PACKAGE_ROOT });
   return result.code === 0 ? result.stdout.trim() : "unknown";
-}
-
-function priceTableFile(path: string): string {
-  const file = resolve(PACKAGE_ROOT, path);
-  const fromRoot = relative(resolve(PACKAGE_ROOT, "research"), file);
-  if (fromRoot === "" || fromRoot.startsWith("..") || isAbsolute(fromRoot))
-    throw new Error(`price table must be a file under research/: ${path}`);
-  return file;
 }
 
 const VALUE_FLAGS: Record<string, readonly string[] | null> = {
@@ -1545,15 +1520,14 @@ async function main(argv: string[]): Promise<number> {
     console.error(`trigger-eval: no subject ${onlySubject ?? ""} in the eval matrix`);
     return 2;
   }
-  let prices: ReturnType<typeof loadPriceTable> | undefined;
-  if (matrix.priceTable !== undefined) {
-    try {
-      prices = loadPriceTable(priceTableFile(matrix.priceTable));
-    } catch (error) {
-      console.error(`trigger-eval: ${error instanceof Error ? error.message : String(error)}`);
-      return 2;
-    }
+  let priced: ReturnType<typeof matrixPrices>;
+  try {
+    priced = matrixPrices(matrix.priceTable);
+  } catch (error) {
+    console.error(`trigger-eval: ${error instanceof Error ? error.message : String(error)}`);
+    return 2;
   }
+  const { prices, price_table } = priced;
 
   const instrument = evalInstrument(PACKAGE_ROOT, revision());
   const ranSessions: SessionResult[] = [];
@@ -1591,10 +1565,7 @@ async function main(argv: string[]): Promise<number> {
           host: subject.host,
           injection: adapter.injection,
           ...turnCapReceipt(subject),
-          price_table:
-            matrix.priceTable === undefined || prices === undefined
-              ? null
-              : { path: matrix.priceTable, version: prices.version, as_of: prices.asOf },
+          price_table,
           cases: cases.length,
           command: adapter.command(request(cases[0]!), subject.model),
         }),
@@ -1701,10 +1672,7 @@ async function main(argv: string[]): Promise<number> {
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
     ...usageReceipt(ranSessions),
-    price_table:
-      matrix.priceTable === undefined || prices === undefined
-        ? null
-        : { path: matrix.priceTable, version: prices.version, as_of: prices.asOf },
+    price_table,
     argv: ["bun", "tests/learn/evals/trigger-eval.ts", ...argv],
     ...instrument,
     subjects: report.map((r) => ({

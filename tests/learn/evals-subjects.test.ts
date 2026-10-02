@@ -171,11 +171,13 @@ describe("codex", () => {
   test("absent or malformed completed-turn usage is ignored", () => {
     expect(codex.parse(fixture("codex-usage-absent.jsonl")).usage).toBeUndefined();
     expect(codex.parse(fixture("codex-usage-malformed.jsonl")).usage).toBeUndefined();
-    const turn = (usage: Record<string, unknown>) => JSON.stringify({ type: "turn.completed", usage });
     const reported = { input_tokens: 100, cached_input_tokens: 0, output_tokens: 10 };
-    expect(codex.parse(turn({ ...reported, reasoning_output_tokens: "unknown" })).usage).toBeUndefined();
-    expect(codex.parse(turn({ ...reported, cache_write_input_tokens: null })).usage).toBeUndefined();
-    expect(codex.parse(turn({ input_tokens: 100, output_tokens: 10 })).usage).toBeUndefined();
+    for (const usage of [
+      { ...reported, reasoning_output_tokens: "unknown" },
+      { ...reported, cache_write_input_tokens: null },
+      { input_tokens: 100, output_tokens: 10 },
+    ])
+      expect(codex.parse(JSON.stringify({ type: "turn.completed", usage })).usage).toBeUndefined();
   });
 
   test("a deleted file, or a change of a kind not listed, is a mutating tool", () => {

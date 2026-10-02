@@ -223,7 +223,7 @@ describe("grade", () => {
     async (reviewer, prompt) => {
       expect(prompt).toContain("[tool Skill]");
       expect(prompt).toContain("<criteria>");
-      return votes[reviewer.id]!;
+      return { reply: votes[reviewer.id]! };
     };
 
   test("unanimity is the verdict and nothing is queued", async () => {
@@ -267,6 +267,28 @@ describe("grade", () => {
     expect(g.verdict).toBe("needs-human");
     expect(g.reason).toBe("a reviewer gave no readable verdict");
     expect(readQueue(queue)).toHaveLength(1);
+  });
+
+  test("each reviewer's reported usage and cost are kept beside its vote", async () => {
+    const usage = {
+      inputTokens: 100,
+      cachedInputTokens: 40,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 2,
+      totalTokens: 110,
+    };
+    const g = await grade(panel, transcript, "c", {
+      item: "c-usage",
+      queue: join(scratch, "usage.jsonl"),
+      judge: async (reviewer) =>
+        reviewer.id === "reviewer-b"
+          ? { reply: '{"verdict":"PASS"}', usage, costUsd: 0.5 }
+          : { reply: '{"verdict":"PASS"}' },
+    });
+    expect(g.verdict).toBe("PASS");
+    expect(g.usage).toEqual({ "reviewer-b": usage });
+    expect(g.cost_usd).toEqual({ "reviewer-b": 0.5 });
   });
 
   test("an unavailable panel grades nothing and calls no judge", async () => {

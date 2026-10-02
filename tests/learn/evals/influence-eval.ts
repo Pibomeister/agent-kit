@@ -59,7 +59,9 @@
  * (stats.ts); `lift_vs_sham` subtracts the sham arm instead. Each receipt subject lists
  * `observed_models`, the distinct models its host reported serving the sessions (empty when the host
  * does not report one), and `max_turns`, the effective subject cap or null when that host runs
- * uncapped. The last stdout line is one JSON summary; `--json` writes the receipt, per-subject
+ * uncapped. Each case keeps the token usage its session reported, and the receipt sums it per
+ * subject and over the run beside the matrix's price table, from which a Codex session's `cost_usd`
+ * is derived. The last stdout line is one JSON summary; `--json` writes the receipt, per-subject
  * metrics and every case.
  */
 import { createHash } from "node:crypto";
@@ -112,10 +114,11 @@ import {
 } from "./influence/scenarios.ts";
 import { PREREGISTERED_KEPT } from "./influence/preregistered.ts";
 import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
+import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { cleanEnv, evalInstrument, option } from "./session.ts";
 import { type Interval, pairedBootstrap, wilson } from "./stats.ts";
 import { adapterFor, runSubject } from "./subjects/index.ts";
-import type { SessionEvent, SessionRequest } from "./subjects/types.ts";
+import type { SessionEvent, SessionRequest, SessionResult } from "./subjects/types.ts";
 
 export const ARMS = ["none", "correct", "sham", "crowded", "crowded-cap", "stale", ...MALICIOUS_ARMS] as const;
 export type Arm = (typeof ARMS)[number];
@@ -593,6 +596,7 @@ export interface CaseRecord extends Grade {
   /** Why the session that ran is no evidence (invalidity); such cases count in no rate. */
   invalid?: string;
   cost_usd?: number;
+  usage?: ReturnType<typeof usageReceipt>["usage"];
   turns?: number;
   exit_code?: number;
   timed_out?: boolean;
@@ -898,6 +902,14 @@ async function main(argv: string[]): Promise<number> {
     console.error(`influence-eval: no subject '${wanted ?? ""}' in the eval matrix`);
     return 2;
   }
+  let priced: ReturnType<typeof matrixPrices>;
+  try {
+    priced = matrixPrices(matrix.priceTable);
+  } catch (error) {
+    console.error(`influence-eval: ${error instanceof Error ? error.message : String(error)}`);
+    return 2;
+  }
+  const { prices, price_table } = priced;
   const cap = loadConfig(hookEnv(tmpdir())).memoryTokens;
   const out = option(argv, "--json");
   // Every session's events and reply are dumped here, one file per case/arm/run, so every verdict can be
@@ -935,6 +947,7 @@ async function main(argv: string[]): Promise<number> {
   const leaks = new Set<string>();
   // Per subject, the models its host reported serving the sessions: runtime data, never a binding.
   const observed = new Map<string, Set<string>>();
+  const ran = new Map<string, SessionResult[]>();
   const instrument = evalInstrument(PACKAGE_ROOT, revision());
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
@@ -979,7 +992,8 @@ async function main(argv: string[]): Promise<number> {
         };
         if (maxTurns !== undefined) request.maxTurns = maxTurns;
         if (p.block.trim() !== "") request.appendSystemPrompt = p.block;
-        const result = await runSubject(adapter, subject.id, subject.model, request);
+        const result = await runSubject(adapter, subject.id, subject.model, request, prices);
+        ran.set(subject.id, [...(ran.get(subject.id) ?? []), result]);
         for (const leak of result.leaks ?? []) leaks.add(leak);
         if (result.model !== undefined)
           observed.set(subject.id, (observed.get(subject.id) ?? new Set()).add(result.model));
@@ -1002,12 +1016,14 @@ async function main(argv: string[]): Promise<number> {
           after: Object.fromEntries(after),
         };
         const graded = invalid === null ? { grade: g, ...session } : { grade: g, invalid, ...session };
-        dump(result.costUsd === undefined ? graded : { ...graded, cost_usd: result.costUsd });
+        const usage = result.usage === undefined ? undefined : usageReceipt([result]).usage;
+        dump({ ...graded, cost_usd: result.costUsd, usage });
         const record: CaseRecord = { ...head, ...g };
         if (invalid !== null) record.invalid = invalid;
         record.exit_code = result.exitCode;
         record.timed_out = result.timedOut;
         if (result.costUsd !== undefined) record.cost_usd = result.costUsd;
+        if (usage !== undefined) record.usage = usage;
         if (result.turns !== undefined) record.turns = result.turns;
         return record;
       } finally {
@@ -1044,7 +1060,10 @@ async function main(argv: string[]): Promise<number> {
       injection: adapterFor(s.host).injection,
       ...turnCapReceipt(s, DEFAULT_MAX_TURNS),
       observed_models: [...(observed.get(s.id) ?? [])].sort(),
+      ...usageReceipt(ran.get(s.id) ?? []),
     })),
+    ...usageReceipt([...ran.values()].flat()),
+    price_table,
     memory_tokens: cap,
     cap_pressure_tokens: capForArm("crowded-cap", cap),
     runs,

@@ -72,8 +72,9 @@ import { run } from "../../../src/learn/core/proc.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { loadMatrix, MATRIX_FILE, type Matrix, type Seat, type Subject } from "./matrix.ts";
 import { buildPanel, grade, type Grade, type GradeOptions, type Judge, type Panel, type Vote } from "./panel.ts";
+import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { type KappaRow, kappaTable, rng } from "./stats.ts";
-import type { HostKind, SessionEvent } from "./subjects/types.ts";
+import type { HostKind, SessionEvent, TokenUsage } from "./subjects/types.ts";
 import {
   bodyFingerprint,
   bundleTargets,
@@ -137,6 +138,9 @@ export interface LabelItem {
   votes?: Record<string, Vote>;
   reasons?: Record<string, string>;
   panel_verdict?: Grade["verdict"];
+  /** By reviewer, the token usage and cost its latest judge session reported. */
+  usage?: Record<string, ReturnType<typeof usageReceipt>["usage"]>;
+  cost_usd?: Record<string, number>;
   /** The matrix subject the panel was seated against. */
   graded_as?: string;
 }
@@ -738,6 +742,12 @@ export interface GradeRun {
   graded: number;
   /** Items left ungraded because the next would have passed `maxCalls`. */
   deferred: number;
+  /** Token totals over the judge sessions of this run that reported usage. */
+  usage: ReturnType<typeof usageReceipt>["usage"];
+  usage_sessions: number;
+  /** Cost over the judge sessions of this run that carried one; null when none did. */
+  cost_usd: number | null;
+  price_table: ReturnType<typeof matrixPrices>["price_table"];
 }
 
 /**
@@ -760,7 +770,11 @@ export async function gradeLabels(
   const labels = readLabels(file);
   const retryInvalid = options.retryInvalid ?? false;
   const plan = planGrade(labels, options.matrix, options.subject, retryInvalid);
-  if (!options.spend) return { plan, spent: false, calls: 0, graded: 0, deferred: 0 };
+  const { prices, price_table } = matrixPrices(options.matrix.priceTable);
+  if (!options.spend)
+    return { plan, spent: false, calls: 0, graded: 0, deferred: 0, ...usageReceipt([]), cost_usd: null, price_table };
+  const judged: TokenUsage[] = [];
+  const costs: number[] = [];
   const queue = options.queue ?? join(dirname(file), "panel-queue.jsonl");
   const byItem = new Map(labels.items.map((i) => [i.id, i]));
   let calls = 0;
@@ -777,21 +791,41 @@ export async function gradeLabels(
       const retry = seats.length < panel.members.length;
       const gradeOptions: GradeOptions = { item: id, queue };
       if (options.judge !== undefined) gradeOptions.judge = options.judge;
+      if (prices !== undefined) gradeOptions.prices = prices;
       const result = await grade({ ...panel, members: seats }, item.transcript, labels.criteria, gradeOptions);
       calls += seats.length;
       graded++;
+      judged.push(...Object.values(result.usage));
+      costs.push(...Object.values(result.cost_usd));
+      const usage = Object.fromEntries(
+        Object.entries(result.usage).map(([reviewer, reported]) => [
+          reviewer,
+          usageReceipt([{ usage: reported }]).usage,
+        ]),
+      );
       const fresh = readLabels(file);
       const target = fresh.items.find((i) => i.id === id);
       if (target !== undefined) {
         target.votes = retry ? { ...target.votes, ...result.votes } : result.votes;
         target.reasons = retry ? { ...target.reasons, ...result.reasons } : result.reasons;
         target.panel_verdict = retry ? panelVerdict(panel, target.votes) : result.verdict;
+        target.usage = retry ? { ...target.usage, ...usage } : usage;
+        target.cost_usd = retry ? { ...target.cost_usd, ...result.cost_usd } : result.cost_usd;
         target.graded_as = panel.subject.id;
         writeLabels(file, fresh);
       }
     }
   }
-  return { plan, spent: true, calls, graded, deferred };
+  return {
+    plan,
+    spent: true,
+    calls,
+    graded,
+    deferred,
+    ...usageReceipt(judged.map((usage) => ({ usage }))),
+    cost_usd: costs.length === 0 ? null : Math.round(costs.reduce((a, b) => a + b, 0) * 10_000) / 10_000,
+    price_table,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -996,6 +1030,14 @@ export async function main(argv: string[], labelsFile = LABELS_FILE): Promise<nu
     }
     console.log(
       `graded ${result.graded} item(s) with ${result.calls} judge call(s); ${result.deferred} deferred by --max-calls`,
+    );
+    console.log(
+      JSON.stringify({
+        usage: result.usage,
+        usage_sessions: result.usage_sessions,
+        cost_usd: result.cost_usd,
+        price_table: result.price_table,
+      }),
     );
     return result.plan.panels.every((p) => p.status === "available") ? 0 : 1;
   }

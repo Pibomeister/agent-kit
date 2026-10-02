@@ -21,9 +21,10 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Matrix, Seat, Subject } from "./matrix.ts";
+import type { PriceTable } from "./pricing.ts";
 import { cleanEnv } from "./session.ts";
 import { type KappaRow, kappaTable } from "./stats.ts";
-import type { HostKind, SessionResult } from "./subjects/types.ts";
+import type { HostKind, SessionResult, TokenUsage } from "./subjects/types.ts";
 
 export type SeatStatus = "seated" | "unavailable" | "unused";
 
@@ -100,11 +101,15 @@ export interface Grade {
   verdict: "PASS" | "FAIL" | "needs-human" | "unavailable";
   votes: Record<string, Vote>;
   reasons: Record<string, string>;
+  /** By reviewer, the token usage its judge session reported; a reviewer whose host reported none has no entry. */
+  usage: Record<string, TokenUsage>;
+  /** By reviewer, the cost of its judge session, where the host reported one or the price table derived one. */
+  cost_usd: Record<string, number>;
   reason?: string;
 }
 
-/** Ask one reviewer one judge prompt and return its reply text. */
-export type Judge = (reviewer: Seat, prompt: string) => Promise<string>;
+/** Ask one reviewer one judge prompt and return its reply text with what the session reported spending. */
+export type Judge = (reviewer: Seat, prompt: string) => Promise<Pick<SessionResult, "reply" | "usage" | "costUsd">>;
 
 export interface GradeOptions {
   /** Identifies the graded item in the queue: case, subject and run. */
@@ -112,6 +117,8 @@ export interface GradeOptions {
   /** The human-label queue, JSON lines. */
   queue: string;
   judge?: Judge;
+  /** The matrix's price table, from which the default judge derives a Codex session's cost. */
+  prices?: PriceTable;
   /** Also queue every Nth unanimous item (by id hash), so κ is not measured on disagreements alone. */
   calibrateEvery?: number;
 }
@@ -175,22 +182,23 @@ export function parseVote(reply: string): { vote: Vote; reason: string } {
 }
 
 /** The default judge: one isolated, single-turn session on the reviewer's own host, in an empty directory. */
-export const hostJudge: Judge = async (reviewer, prompt) => {
-  const { adapterFor, runSubject } = await import("./subjects/index.ts");
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-judge-")));
-  try {
-    const result = await runSubject(adapterFor(reviewer.host), reviewer.id, reviewer.model, {
-      prompt,
-      cwd,
-      env: cleanEnv(),
-      timeoutMs: 180_000,
-      maxTurns: 1,
-    });
-    return result.reply;
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
-};
+export const hostJudge =
+  (prices?: PriceTable): Judge =>
+  async (reviewer, prompt) => {
+    const { adapterFor, runSubject } = await import("./subjects/index.ts");
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-judge-")));
+    try {
+      return await runSubject(
+        adapterFor(reviewer.host),
+        reviewer.id,
+        reviewer.model,
+        { prompt, cwd, env: cleanEnv(), timeoutMs: 180_000, maxTurns: 1 },
+        prices,
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  };
 
 function sampled(item: string, every: number | undefined): boolean {
   if (every === undefined || every < 1) return false;
@@ -209,17 +217,30 @@ export async function grade(
 ): Promise<Grade> {
   const base = { item: options.item, subject: panel.subject.id };
   if (panel.status === "unavailable")
-    return { ...base, verdict: "unavailable", votes: {}, reasons: {}, reason: panel.reason ?? "panel unavailable" };
+    return {
+      ...base,
+      verdict: "unavailable",
+      votes: {},
+      reasons: {},
+      usage: {},
+      cost_usd: {},
+      reason: panel.reason ?? "panel unavailable",
+    };
   const text = renderTranscript(transcript);
   const prompt = judgePrompt(text, criteria);
-  const judge = options.judge ?? hostJudge;
-  const replies = await Promise.all(panel.members.map((m) => judge(m, prompt)));
+  const judge = options.judge ?? hostJudge(options.prices);
+  const sessions = await Promise.all(panel.members.map((m) => judge(m, prompt)));
   const votes: Record<string, Vote> = {};
   const reasons: Record<string, string> = {};
+  const usage: Record<string, TokenUsage> = {};
+  const cost_usd: Record<string, number> = {};
   panel.members.forEach((m, i) => {
-    const parsed = parseVote(replies[i]!);
+    const session = sessions[i]!;
+    const parsed = parseVote(session.reply);
     votes[m.id] = parsed.vote;
     reasons[m.id] = parsed.reason;
+    if (session.usage !== undefined) usage[m.id] = session.usage;
+    if (session.costUsd !== undefined) cost_usd[m.id] = session.costUsd;
   });
   const distinct = new Set(Object.values(votes));
   const only = distinct.size === 1 ? [...distinct][0]! : undefined;
@@ -238,7 +259,7 @@ export async function grade(
     mkdirSync(dirname(options.queue), { recursive: true });
     appendFileSync(options.queue, `${JSON.stringify(row)}\n`);
   }
-  const result: Grade = { ...base, verdict, votes, reasons };
+  const result: Grade = { ...base, verdict, votes, reasons, usage, cost_usd };
   if (verdict === "needs-human")
     result.reason =
       only === "invalid" || distinct.has("invalid") ? "a reviewer gave no readable verdict" : "reviewers disagree";

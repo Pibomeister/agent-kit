@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { usageReceipt } from "./evals/pricing.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
@@ -40,7 +41,6 @@ import {
   stopsOnLaw,
   summarise,
   typedSkill,
-  usageReceipt,
   workflowCalls,
 } from "./evals/trigger-eval.ts";
 

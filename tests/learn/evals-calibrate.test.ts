@@ -529,7 +529,7 @@ describe("gradeLabels", () => {
     const calls: string[] = [];
     const judge: Judge = async (reviewer) => {
       calls.push(reviewer.id);
-      return '{"verdict":"PASS","reason":"stubbed"}';
+      return { reply: '{"verdict":"PASS","reason":"stubbed"}' };
     };
     return { calls, judge };
   };
@@ -585,6 +585,52 @@ describe("gradeLabels", () => {
     expect(after.items[2]!.votes).toBeUndefined();
     const again = await gradeLabels(file, { matrix, spend: false });
     expect(again.plan.pending).toEqual({ "subject-a": [after.items[2]!.id] });
+  });
+
+  test("a spend run keeps each reviewer's reported usage and cost on the item and totals them", async () => {
+    const file = join(scratch, "usage", "labels.json");
+    writeLabels(file, fileOf([item("1"), item("2")]));
+    const usage = {
+      inputTokens: 100,
+      cachedInputTokens: 40,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 2,
+      totalTokens: 110,
+    };
+    const reply = '{"verdict":"PASS","reason":"stubbed"}';
+    const judge: Judge = async (reviewer) =>
+      reviewer.id === "reviewer-b" ? { reply, usage, costUsd: 0.25 } : { reply };
+    const run = await gradeLabels(file, { matrix, spend: true, judge, queue: join(scratch, "usage", "q.jsonl") });
+    const reported = {
+      input_tokens: 100,
+      cached_input_tokens: 40,
+      cache_write_input_tokens: 0,
+      output_tokens: 10,
+      reasoning_output_tokens: 2,
+      total_tokens: 110,
+    };
+    expect(run).toMatchObject({
+      calls: 4,
+      usage: {
+        ...reported,
+        input_tokens: 200,
+        cached_input_tokens: 80,
+        output_tokens: 20,
+        reasoning_output_tokens: 4,
+        total_tokens: 220,
+      },
+      usage_sessions: 2,
+      cost_usd: 0.5,
+      price_table: null,
+    });
+    expect(readLabels(file).items.map((i) => [i.usage, i.cost_usd])).toEqual([
+      [{ "reviewer-b": reported }, { "reviewer-b": 0.25 }],
+      [{ "reviewer-b": reported }, { "reviewer-b": 0.25 }],
+    ]);
+
+    const dry = await gradeLabels(file, { matrix, spend: false });
+    expect(dry).toMatchObject({ usage_sessions: 0, cost_usd: null, price_table: null });
   });
 
   test("an invalid vote counts as graded unless --retry-invalid, which regrades only that seat, within max-calls", async () => {

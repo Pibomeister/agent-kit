@@ -1,7 +1,9 @@
 /** Versioned token prices used to estimate Codex session cost. Not a test file. */
 import { readFileSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
-import type { TokenUsage } from "./subjects/types.ts";
+import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
+import type { SessionResult, TokenUsage } from "./subjects/types.ts";
 
 export interface TokenPrice {
   inputPerMillionUsd: number;
@@ -85,4 +87,35 @@ export function costOf(usage: TokenUsage, price: TokenPrice | undefined): number
       usage.outputTokens * price.outputPerMillionUsd) /
     1_000_000
   );
+}
+
+/**
+ * The price table a matrix's `price-table` names, with the receipt fragment that records it.
+ * Throws when the path leaves research/ or the table is invalid, before any paid session starts.
+ */
+export function matrixPrices(path: string | undefined) {
+  if (path === undefined) return { prices: undefined, price_table: null };
+  const file = resolve(PACKAGE_ROOT, path);
+  const fromRoot = relative(resolve(PACKAGE_ROOT, "research"), file);
+  if (fromRoot === "" || fromRoot.startsWith("..") || isAbsolute(fromRoot))
+    throw new Error(`price table must be a file under research/: ${path}`);
+  const prices = loadPriceTable(file);
+  return { prices, price_table: { path, version: prices.version, as_of: prices.asOf } };
+}
+
+/** Receipt fragment summing the token totals of the sessions that reported usage. */
+export function usageReceipt(sessions: ReadonlyArray<Pick<SessionResult, "usage">>) {
+  const reported = sessions.flatMap((session) => (session.usage === undefined ? [] : [session.usage]));
+  const sum = (field: keyof TokenUsage) => reported.reduce((total, usage) => total + usage[field], 0);
+  return {
+    usage: {
+      input_tokens: sum("inputTokens"),
+      cached_input_tokens: sum("cachedInputTokens"),
+      cache_write_input_tokens: sum("cacheWriteInputTokens"),
+      output_tokens: sum("outputTokens"),
+      reasoning_output_tokens: sum("reasoningOutputTokens"),
+      total_tokens: sum("totalTokens"),
+    },
+    usage_sessions: reported.length,
+  };
 }
