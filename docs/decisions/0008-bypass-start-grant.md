@@ -77,14 +77,19 @@ not bound to a run: the lifecycle opens new runs after align, so any run under t
 Each phase check and `record --bypass` adds its run id to a `runs` list in the grant's ledger entry
 for audit; a check without `--phase` writes nothing.
 
-**A started phase.** A phase check leaves a use record under `<evidence>/<run>/bypass/`, and a gate
-recorded with `--bypass` carries the grant. Either marks the phase as started under that grant, and
-an expired grant cannot finish it. Two things continue it. A fresh grant that passes the check in
-full, for the same task and worktree as the grant that started the phase, records with its own
-attribution plus `superseded_grant_id` naming that grant. A typed record without `--bypass` ends the
-bypass for the phase and records `authority: {mode: explicit, superseded_grant_id}`, so a human
-finish after a bypassed start is visible rather than a silent strip. A grant for another task or
-another worktree is refused. The same rule holds when a gate is re-recorded at the same snapshot.
+**A started phase.** A phase check, or a gate recorded with `--bypass`, writes the run's use record
+for that phase under `<evidence>/<run>/bypass/`, and that record is the one place the start lives.
+An expired grant cannot finish the phase. Two things continue it. A fresh grant that passes the
+check in full, for the same task and worktree as the grant that started the phase, records with its
+own attribution plus `superseded_grant_id` naming that grant. A typed record without `--bypass`
+records `authority: {mode: explicit, superseded_grant_id}`, so a human finish after a bypassed start
+is visible rather than a silent strip, and it marks the use record ended (`ended_at`,
+`ended_by_snapshot`): the bypass is over for that phase in that run, at every later snapshot. After
+that the grant that was in use is refused at `check` and at `record --bypass`; only a fresh grant
+for the same task re-starts the phase, rewriting the use record with `superseded_grant_id`. A grant
+for another task or another worktree is refused. The mirror holds too: a gate recorded by hand at a
+snapshot, with no bypass started in the run, cannot be relabelled by re-recording that snapshot with
+`--bypass`.
 
 ## Consequences
 

@@ -547,12 +547,44 @@ describe("attribution: --bypass only where a phase covers the gate, and never op
     });
     const after = akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1"));
     expect(after.code).toBe(1);
-    expect(after.err).toContain("ended the bypass");
+    expect(after.err).toContain("ended by a typed record");
     expect(after.err).not.toContain("undefined");
     expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
       mode: "explicit",
       superseded_grant_id: first,
     });
+  });
+});
+
+describe("a typed record ends a bypassed phase for the run, and a hand-started phase stays typed", () => {
+  test("after a typed end, the original grant is refused at a later snapshot, and a fresh grant re-starts it", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    const evidence = defaultEvidenceDir(s.worktree);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 2;\n");
+    const again = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
+    expect(again.code).toBe(1);
+    expect(again.err).toContain("ended by a typed record");
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(1);
+    expect(readRecords(evidence, "task", "review-full")).toHaveLength(1);
+    const fresh = freshGrant(s, dayLater, "T-1");
+    expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
+    const records = readRecords(evidence, "task", "review-full");
+    expect(records).toHaveLength(2);
+    expect(records.map((r) => r.authority)).toContainEqual(
+      expect.objectContaining({ mode: "bypass", grant_id: fresh.id, superseded_grant_id: first }),
+    );
+  });
+
+  test("a phase recorded by hand cannot be relabelled with --bypass at the same snapshot", () => {
+    const s = granted();
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    const relabel = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
+    expect(relabel.code).toBe(1);
+    expect(relabel.err).toContain("record it with the typed command and no --bypass");
+    expect(only(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).authority).toBeUndefined();
   });
 });
 

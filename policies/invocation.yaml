@@ -429,12 +429,15 @@ bypass:
   attribution: >-
     Each check leaves a use record under `<evidence>/<run>/bypass/`, and a gate recorded with
     `--bypass <file> --task <id>` carries `authority.mode: bypass` with the grant's id, path,
-    sha256, task, worktree and who authorized it. A phase started under a grant, or a record at the
-    snapshot that names one, continues in exactly two ways: a fresh grant that passes the check for
-    the same task and worktree, whose record names the grant it supersedes in
-    `superseded_grant_id`, or a typed record without `--bypass`, which ends the bypass and records
-    `authority: {mode: explicit, superseded_grant_id}`. A grant for another task or worktree, or an
-    expired one, is refused; `--bypass` on a gate no bypass phase records is refused.
+    sha256, task, worktree and who authorized it. A check or `record --bypass` writes the run's use
+    record for the phase, and a phase started there continues in exactly two ways: a fresh grant
+    that passes the check for the same task and worktree, whose record names the grant it
+    supersedes in `superseded_grant_id`, or a typed record without `--bypass`, which records
+    `authority: {mode: explicit, superseded_grant_id}` and marks the use record ended, so the bypass
+    is over for that phase in that run at every later snapshot until a fresh grant for the same task
+    re-starts it. A grant for another task or worktree, an expired one, or the grant a typed record
+    ended is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
+    on a gate no bypass phase records is refused.
   trust: >-
     The grant lives outside every worktree and the git directory of its repository, and its real
     path and sha256 are registered in a ledger under the account's home directory, with the
