@@ -38,6 +38,12 @@ afterAll(() => {
   if (target !== undefined) writeFileSync(target, `${transcript.join("\n")}\n`);
 });
 
+function git(cwd: string, ...args: string[]) {
+  expect(
+    Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Toy", "-c", "user.email=toy@example.invalid", ...args]).exitCode,
+  ).toBe(0);
+}
+
 function fixture(limit = 3) {
   const dir = mkdtempSync(join(tmpdir(), "ak-runner-"));
   const worker = join(dir, "worker");
@@ -781,11 +787,6 @@ describe("runner guards", () => {
 
   test("runner snapshot follows submodules and embedded repositories", () => {
     const f = fixture();
-    const git = (cwd: string, ...args: string[]) =>
-      expect(
-        Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Toy", "-c", "user.email=toy@example.invalid", ...args])
-          .exitCode,
-      ).toBe(0);
     const nested = (name: string) => {
       const at = join(f.worker, name);
       mkdirSync(at);

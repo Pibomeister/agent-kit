@@ -51,7 +51,8 @@ function rawFile(project: string, path: string): string {
     if (stat.isDirectory()) {
       if (!existsSync(join(at, ".git"))) return "dir";
       const tree = treeHash(at, []);
-      if (typeof tree === "string") throw new Error(`runner snapshot cannot read embedded repository ${path}: ${tree}`);
+      if (!(tree instanceof Object))
+        throw new Error(`runner snapshot cannot read embedded repository ${path}: ${tree}`);
       const head = runnerGit(at, ["rev-parse", "--verify", "-q", "HEAD"]);
       return `repo:${head.code === 0 ? head.text : "unborn"}:${tree.hash}`;
     }
@@ -67,7 +68,7 @@ export function takeRunnerSnapshot(project: string, ignoreUntrackedDirs: readonl
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text))
     return `${project} has no committed revision: ${head.stderr || head.text}`;
   const tree = treeHash(project, ignoreUntrackedDirs);
-  if (typeof tree === "string") return tree;
+  if (!(tree instanceof Object)) return tree;
   const remote = runnerGit(project, ["config", "--get", "remote.origin.url"]);
   return {
     repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
