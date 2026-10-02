@@ -25,10 +25,12 @@
     "name": "Grep",
     "input": {
       "pattern": "Ticket 42|ticket 42",
-      "path": "evals",
-      "glob": "*.yaml"
+      "path": "[operator checkout]/evals",
+      "glob": "*.yaml",
+      "file_path": "[operator checkout]/evals"
     }
   },
+  "last_event_note": "The compact receipt substitutes [operator checkout] for the absolute path of the operator's own repository checkout, which lies outside the temporary eval repository and the subject scratch home the session ran in. The refused Grep therefore targeted the operator's checkout, not the eval repository. The raw transcript contains the full path and is retained uncommitted in gitignored .work/grok-smoke-3/.",
   "timeline_note": "The committed entry point emitted no output until the session ended. Its parsed transcript retains the ordered events but no event or turn timestamps, so time within the 143-second interval cannot be attributed further.",
   "host_reported_cost_usd": 0.15062748
 }
