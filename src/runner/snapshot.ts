@@ -50,8 +50,10 @@ function rawFile(project: string, path: string): string {
       return `file:${stat.mode & 0o111}:${createHash("sha256").update(readFileSync(at)).digest("hex")}`;
     if (stat.isDirectory()) {
       if (!existsSync(join(at, ".git"))) return "dir";
-      const nested = takeRunnerSnapshot(at);
-      return typeof nested === "string" ? `repo:${nested}` : `repo:${nested.revision}:${nested.diff_hash}`;
+      const tree = treeHash(at, []);
+      if (typeof tree === "string") throw new Error(`runner snapshot cannot read embedded repository ${path}: ${tree}`);
+      const head = runnerGit(at, ["rev-parse", "--verify", "-q", "HEAD"]);
+      return `repo:${head.code === 0 ? head.text : "unborn"}:${tree.hash}`;
     }
     throw new Error(`runner snapshot refuses a non-file worktree entry: ${path}`);
   } catch (cause) {
@@ -64,6 +66,17 @@ export function takeRunnerSnapshot(project: string, ignoreUntrackedDirs: readonl
   const head = runnerGit(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text))
     return `${project} has no committed revision: ${head.stderr || head.text}`;
+  const tree = treeHash(project, ignoreUntrackedDirs);
+  if (typeof tree === "string") return tree;
+  const remote = runnerGit(project, ["config", "--get", "remote.origin.url"]);
+  return {
+    repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
+    revision: head.text,
+    diff_hash: tree.hash,
+  };
+}
+
+function treeHash(project: string, ignoreUntrackedDirs: readonly string[]): { hash: string } | string {
   const tracked = runnerGit(project, ["ls-files", "--stage", "-z"]);
   if (tracked.code !== 0) return `cannot list tracked files: ${tracked.stderr}`;
   const untracked = runnerGit(project, ["ls-files", "--others", "--exclude-standard", "-z"]);
@@ -94,10 +107,5 @@ export function takeRunnerSnapshot(project: string, ignoreUntrackedDirs: readonl
     digest.update(JSON.stringify([path, paths.get(path)?.toSorted(), rawFile(project, path)]));
     digest.update("\n");
   }
-  const remote = runnerGit(project, ["config", "--get", "remote.origin.url"]);
-  return {
-    repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
-    revision: head.text,
-    diff_hash: `sha256:${digest.digest("hex")}`,
-  };
+  return { hash: `sha256:${digest.digest("hex")}` };
 }

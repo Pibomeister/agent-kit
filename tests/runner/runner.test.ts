@@ -809,7 +809,16 @@ describe("runner guards", () => {
     const subCommitted = runner.syncRevision("toy-run").diff_hash;
     expect(subCommitted).not.toBe(subEdited);
     writeFileSync(join(other, "lib.ts"), "export const v = 3;\n");
-    expect(runner.syncRevision("toy-run").diff_hash).not.toBe(subCommitted);
+    const otherEdited = runner.syncRevision("toy-run").diff_hash;
+    expect(otherEdited).not.toBe(subCommitted);
+    const scratch = join(f.worker, "scratch");
+    mkdirSync(scratch);
+    git(scratch, "init", "-q");
+    writeFileSync(join(scratch, "a.ts"), "export const v = 1;\n");
+    const scratchWritten = runner.syncRevision("toy-run").diff_hash;
+    expect(scratchWritten).not.toBe(otherEdited);
+    writeFileSync(join(scratch, "a.ts"), "export const v = 2;\n");
+    expect(runner.syncRevision("toy-run").diff_hash).not.toBe(scratchWritten);
   });
 
   test("each remote effect reads back once and events deduplicate", () => {
