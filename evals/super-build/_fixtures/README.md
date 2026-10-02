@@ -108,7 +108,8 @@ Cases scaffolded on these fixtures:
 | `super-review/risk-signals-select-the-conditional-seats` | tiny-service-repo, AK-702 |
 | `super-review/one-line-fix-gets-a-delta-not-a-second-panel` | tiny-service-repo |
 | `super-review/delta-reaches-an-untouched-affected-caller` | tiny-service-repo |
-| `super-bound/approved-direction-produces-spec-and-tickets` | tiny-service-repo, knowledgebase checkout |
+| `super-bound/approved-direction-stops-at-open-decisions` | tiny-service-repo, knowledgebase checkout |
+| `super-bound/approved-spec-produces-tickets` | tiny-service-repo, reviewed and approved specification |
 | `diagnose/no-grant-emits-a-packet-not-a-patch` | tiny-service-repo |
 | `diagnose/bug-with-repro-gets-a-cause` | tiny-service-repo |
 | `diagnose/third-failed-fix-stops-the-run` | tiny-service-repo |

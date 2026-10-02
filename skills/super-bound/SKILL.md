@@ -97,10 +97,11 @@ approves its own specification or tickets.
    `ak delegation` now. Persist the scorer output, readiness and assumptions on the evidence-bearing
    draft before document review; the draft is not an approved implementation ticket.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
-   ticket. That review is a step in this run, not its end: once the verdict is in, continue through
-   approval and tickets.
-8. Take the specification approval. The plan record carries it as `specification_approval`, bound
-   to the specification's own hash (`specification_hash`), so slicing afterwards does not void it.
+   ticket. A current review receipt bound to this specification with every decision answered
+   satisfies this step; otherwise open decisions return to the human and stop the run.
+8. Take the specification approval. A recorded human approval whose artifact hash equals the
+   current specification hash satisfies this step. Otherwise the plan record takes approval as
+   `specification_approval`, bound to `specification_hash`, so later slicing does not void it.
    Under a bypass grant, report `needs-decision` naming the specification hash and stop; only the
    supervisor's answer is the approval.
 9. Load [the delegation reference pack](../../references/delegation/REFERENCE.md) and follow its

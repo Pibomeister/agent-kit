@@ -248,16 +248,23 @@ provenance:
     - advisor-consultation-follows-class
 
 tests:
-  - id: approved-direction-produces-spec-and-tickets
-    kind: positive
+  - id: approved-direction-stops-at-open-decisions
+    kind: adversarial
     given: >-
       A human brings an approved direction for a bounded feature, bound to the current revision, with
       a project record carrying delegation guidance, and asks for the plan.
     expect: >-
-      The skill reads the repository's own configuration, writes a decision-level specification with
-      named test seams, runs the document review, takes an approval bound to the artifact hash, and
-      emits tickets each carrying consumed and produced signatures, a verification command, and the
-      ak delegation record, readiness and assumptions blocks.
+      The skill writes and reviews the decision-level specification, then stops at unresolved review
+      decisions and presents them to the human without binding approval or emitting executable work.
+  - id: approved-spec-produces-tickets
+    kind: positive
+    given: >-
+      A reviewed specification has every decision answered and a human approval bound to its current
+      hash, while slicing and ticket ownership remain unsettled.
+    expect: >-
+      The skill consumes the current review and approval, emits zero-context tickets with interfaces,
+      ownership, verification, delegation, readiness and assumptions, and runs ak delegation for
+      every implementation ticket.
   - id: reviewed-ticket-does-not-reopen-bounding
     kind: negative
     given: >-

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scaffold for evals/super-bound/approved-direction-produces-spec-and-tickets.
+# Scaffold for evals/super-bound/approved-direction-stops-at-open-decisions.
 #
 # tiny-service-repo, whose sandbox provisioning is operations-only today
 # (src/billing/sandbox.js, driven by scripts/provision-sandbox.js).
