@@ -154,9 +154,9 @@ failure_outcomes:
     meaning: >-
       A prerequisite the run cannot supply itself: a start by the typed command or a validated
       grant, an approved direction, an approval bound to this revision, project delegation
-      guidance, a grant, a scorer that returns its record, readiness free of vague terms, a
-      resolution for every open assumption, an answer to every open document-review decision, or
-      a settled decision that new evidence has not invalidated.
+      guidance, a grant, a current `ak` on `PATH`, a scorer that returns its record, readiness
+      free of vague terms, a resolution for every open assumption, an answer to every open
+      document-review decision, or a settled decision that new evidence has not invalidated.
     next_permitted_action: >-
       Return the blocking item; do not proceed on a substitute. For a start by neither the typed
       command nor a grant, return the command to type and nothing else.
@@ -207,9 +207,10 @@ provenance:
       path: skills/engineering/to-tickets/SKILL.md
       license: MIT
       adaptation: >-
-        Vertical-slice rules, blocking edges and the wide-refactor carve-out; the donor's split
-        between a local issue directory and a real tracker becomes the knowledgebase adapter, and
-        parallel-safety is widened past edges to shared generated artifacts and file ownership.
+        Blocking edges; the donor's split between a local issue directory and a real tracker
+        becomes the knowledgebase adapter, and parallel-safety is widened past edges to shared
+        generated artifacts and file ownership. The vertical-slice rule and the wide-refactor
+        carve-out from the same source are carried by the delegation reference.
     - donor: superpowers
       commit: b36e0829c6d0140e93cfef2ca599b1b07d4a7797
       path: skills/writing-plans/SKILL.md
