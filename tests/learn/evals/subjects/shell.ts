@@ -166,9 +166,9 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * --show-token` forms are looks to the scorer and have no rule here. Variable expansion and command
  * substitution through an admitted program such as `echo` or `test` remain admitted, so the
  * inherited environment still reaches the subject.
- * A plain assignment-only segment is also omitted. Grok strips leading assignments before allow
- * matching, leaving an empty command; the only matching rule, `Bash()`, is an empty prefix that
- * would admit every command.
+ * No rule covers a plain assignment whose variable a later `find` reads: the Grok 1.0.46 user guide
+ * (`22-permissions-and-safety.md`, Rule Matching Reference) honours an allow rule for a variable
+ * argument only as an `ls` or `rg` file operand, and other programs still prompt.
  * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
  * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
  * refuses every segment containing `>`, which no rule did before it.

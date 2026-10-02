@@ -29,30 +29,24 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const req: SessionRequest = { prompt: "Load the greet skill.", cwd: "/scratch/repo", env: {}, timeoutMs: 1000 };
 
-// Grok's documented grammar: leading assignments are stripped, then a segment runs when some
-// allow glob matches it whole and no deny glob matches either its raw or normalized form.
+// Grok's documented grammar: a segment runs when some allow glob matches it whole and no deny glob does.
 const admits = (segment: string) => {
   const argv = grok.command(req, undefined);
-  const parsed = words(segment);
-  let firstProgram = 0;
-  while (/^[A-Za-z_]\w*=/.test(parsed[firstProgram] ?? "")) firstProgram++;
-  const normalized = parsed.slice(firstProgram).join(" ");
-  const matching = (flag: string, candidates: readonly string[]) =>
+  const matching = (flag: string) =>
     argv
       .flatMap((value, index) => {
         const rule = argv[index + 1];
         return value === flag && rule?.startsWith("Bash(") ? [rule.slice(5, -1)] : [];
       })
-      .some((glob) => {
-        const re = new RegExp(
+      .some((glob) =>
+        new RegExp(
           `^${glob
             .split("*")
             .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
             .join(".*")}$`,
-        );
-        return candidates.some((candidate) => re.test(candidate));
-      });
-  return matching("--allow", [normalized]) && !matching("--deny", [segment, normalized]);
+        ).test(segment),
+      );
+  return matching("--allow") && !matching("--deny");
 };
 
 describe("claude", () => {
@@ -223,41 +217,6 @@ describe("grok", () => {
     );
     expect(readOnlyShell(command)).toBe(true);
     for (const segment of command.split(/ && |; /)) expect([segment, admits(segment)]).toEqual([segment, true]);
-  });
-
-  test("plain assignment discovery chains are scored as looks but remain a documented Grok grammar gap", () => {
-    const refusedDiscovery =
-      'SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
-    expect(readOnlyShell(refusedDiscovery)).toBe(true);
-    const segments = refusedDiscovery.split(/; | \| /);
-    expect(segments.map((segment) => [segment, admits(segment)])).toEqual([
-      ['SESSION="<SCRATCH>/sessions/<SESSION>"', false],
-      ['find "$SESSION" -maxdepth 3 -type d', true],
-      ["echo '=== FILES ==='", true],
-      ["find \"$SESSION\" -maxdepth 3 -type f -not -path '*/terminal/*'", true],
-      ["head -80", true],
-    ]);
-    const attempted = JSON.stringify({
-      type: "tool_call",
-      toolName: "run_terminal_command",
-      rawInput: { command: refusedDiscovery },
-    });
-    const cancelled = JSON.stringify({ type: "end", stopReason: "cancelled", num_turns: 1 });
-    const parsed = grok.parse(`${attempted}\n${cancelled}`);
-    expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBe(
-      `host cancelled refused Bash call: ${refusedDiscovery}`,
-    );
-
-    for (const [command, refused] of [
-      ['SESSION="$(find /tmp -type d)"; find "$SESSION" -maxdepth 3 -type d', 'SESSION="$(find /tmp -type d)"'],
-      ['export SESSION=/tmp/sessions; find "$SESSION" -maxdepth 3 -type d', "export SESSION=/tmp/sessions"],
-      ["SESSION=/tmp/sessions; echo changed > out.txt", "echo changed > out.txt"],
-    ] as const) {
-      expect([command, readOnlyShell(command)]).toEqual([command, false]);
-      expect(command.split("; ")).toContain(refused);
-      expect([refused, admits(refused)]).toEqual([refused, false]);
-    }
-    expect(admits("echo changed")).toBe(true);
   });
 
   test("looks the scorer accepts are admitted in their common forms", () => {

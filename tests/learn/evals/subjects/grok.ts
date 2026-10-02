@@ -17,10 +17,11 @@
  * and a `'=>'` pattern are refused now. Whether the earlier rules admitted them on the live host
  * is unverified. The direct `printenv`, `gh auth status --show-token` and `web_fetch` forms are
  * looks to the scorer and are refused here on purpose. That is not isolation: the inherited
- * environment reaches the subject. Plain assignment-only segments are another grammar gap: Grok
- * strips the assignment before allow matching, leaving an empty segment, while the only matching
- * rule (`Bash()`) is an empty prefix that would approve every command. The scorer classes a plain
- * assignment as read-only, but `dontAsk` therefore still cancels a chain containing one and the
+ * environment reaches the subject. A chain that assigns a variable and passes it to `find` is
+ * another gap, and no rule closes it: the Grok 1.0.46 user guide (`22-permissions-and-safety.md`,
+ * Rule Matching Reference) lets an allow rule cover a variable argument only as an `ls` or `rg`
+ * file operand, and says other programs still prompt, which `dontAsk` refuses. The scorer classes
+ * such a chain as read-only, so on this host it is a scorer look that still ends cancelled, and the
  * receipt names the refused call.
  * Variable expansion and command substitution through an
  * admitted program (`echo $VAR`, `test -n "$VAR"`, `echo $(printenv)`) remain admitted and scored
