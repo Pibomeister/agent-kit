@@ -72,17 +72,17 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 9. Pull the pending handoff and its revision through the editor's MCP connector or WebMCP, the
    channel that also takes the acknowledgment; nothing else pulls. A handoff the human supplies
    with its revision, already pulled through that channel, is applied and receipted without the
-   connector, which step 11 still requires to acknowledge. For a compiled route, locate and edit authored source through the coding agent.
-   A change beyond style, literal text or local layout stops for an approved ticket, then hands
-   the revision to `super-build`; do not partially apply it here.
-10. Read every target file before writing, apply the pending batch to source, and confirm the dev
-    server refreshes each affected route at its named viewport. A version conflict is re-read and
-    re-planned, never overwritten.
-11. Emit the receipt in Outputs, acknowledge the exact pending revision only after the source and
-    dev-server confirmation exist, then pull once more. A non-empty pull is another pending batch,
-    not evidence that acknowledgment failed. An acknowledgment the connector cannot take stops with
-    `missing-prerequisite:editor-connector`: the receipt stands and the revision stays pending, to
-    be acknowledged later and never applied twice.
+   connector, which step 11 still requires to acknowledge. For a compiled route, locate and edit
+   authored source through the coding agent. A change beyond style, literal text or local layout
+   stops for an approved ticket, then hands the revision to `super-build`; no partial apply here.
+10. A revision already receipted, its artifact digests still matching source, is never applied
+    again: go to step 11 and only acknowledge it. Otherwise read every target file before writing,
+    apply the batch to source, and confirm the dev server refreshes each affected route at its
+    named viewport. A version conflict is re-read and re-planned, never overwritten.
+11. Emit the receipt in Outputs unless it exists, acknowledge the exact pending revision only after
+    source and dev-server confirmation exist, then pull once more; a non-empty pull is another
+    batch, not a failed acknowledgment. An acknowledgment the connector cannot take stops with
+    `missing-prerequisite:editor-connector`; the receipt stands and the revision stays pending.
 12. When acceptance criteria were supplied, pass the receipt to `super-verify`; it decides whether
     the receipt covers them or whether another check is required.
 

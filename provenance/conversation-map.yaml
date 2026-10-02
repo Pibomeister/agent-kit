@@ -176,8 +176,9 @@ capabilities:
       source-backed code view before handoff; a compiled-route edit stays pending until the coding
       agent changes source, confirms the dev server and acknowledges the exact revision.
     note: >-
-      The plan establishes the retained standalone placement. The commissioned behavior is grounded
-      at the pinned donor and attributed per adapted file in
+      The plan section supplies the standalone category this skill is placed in; it does not name
+      visual-edit. The capability is a commissioned adaptation beyond the plan's list, grounded at
+      the pinned donor and attributed per adapted file in
       provenance/adaptations.d/visual-edit.yaml.
 
   - id: super-review

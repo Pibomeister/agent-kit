@@ -106,6 +106,7 @@ constraints:
   canvas-may-write-source-directly: false
   source-may-change-before-pre-handoff-verification: false
   pending-revision-may-be-acknowledged-before-confirmation: false
+  receipted-revision-may-be-applied-again: false
   compiled-route-may-bypass-the-coding-agent: false
   broader-change-may-bypass-super-build: false
 
@@ -136,12 +137,17 @@ failure_outcomes:
       is missing, a save or share was asked for without the account, or a broader change has no
       approved ticket. A supplied handoff is applied and receipted before a missing connector
       stops the acknowledgment; the receipt stands and the revision stays pending.
-    next_permitted_action: Supply the named prerequisite or approved ticket and invoke the command again.
+    next_permitted_action: >-
+      Supply the named prerequisite or approved ticket and invoke the command again. A revision
+      already receipted, its artifact digests still matching source, is then acknowledged only and
+      not applied again.
   - status: failed
     meaning: >-
       The editor or bridge rejected the connection, source conflicts could not be reconciled, the
       dev server did not reflect the write, or the receipt did not validate. The revision stays pending.
-    next_permitted_action: Restore the failed connection or source state, then resume from the pending revision.
+    next_permitted_action: >-
+      Restore the failed connection or source state, then resume from the pending revision; one
+      already receipted is acknowledged only.
   - status: cancelled
     meaning: The human cancelled; an unapplied revision stays pending and unacknowledged.
     next_permitted_action: null
