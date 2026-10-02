@@ -203,32 +203,33 @@ test("ak delegation names the block a record lacks", () => {
   });
 });
 
-test("the scorer command the packaged super-bound body names runs the bundle's bin/ak and scores as the repository CLI does", () => {
+test("the bare scorer command the packaged super-bound body names scores with a current ak on PATH and is absent without one", () => {
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
   const { files } = planBundle({ root: REPO, catalog }, "claude-code", {});
+  const skill = files.get("skills/super-bound/SKILL.md");
+  const script = files.get("bin/ak");
+  if (skill === undefined || script === undefined) throw new Error("the bundle lacks super-bound or bin/ak");
   const root = makeTree({});
-  for (const path of ["skills/super-bound/SKILL.md", "bin/ak"]) {
-    const file = files.get(path);
-    if (file === undefined) throw new Error(`no ${path} in the bundle`);
-    mkdirSync(dirname(join(root, "bundle", path)), { recursive: true });
-    writeFileSync(join(root, "bundle", path), file.contents);
-  }
+  mkdirSync(join(root, "path"));
+  writeFileSync(join(root, "path", "ak"), script.contents, { mode: 0o755 });
   writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
   writeFileSync(join(root, "project.json"), JSON.stringify(validProject));
 
   // The packaged body is the generated interface a host reads: every scorer command it prints must run.
-  const skillDir = join(root, "bundle", "skills", "super-bound");
-  const body = readFileSync(join(skillDir, "SKILL.md"), "utf8").replace(/\s+/g, " ");
+  const body = skill.contents.replace(/\s+/g, " ");
   const commands = [...body.matchAll(/`([^`]*\bdelegation <ticket> --project <project-record>)`/g)].map(
     (match) => match[1] ?? "",
   );
-  expect(commands.length).toBe(2);
-  const ak = (command: string, ticketPath: string, extra: string[] = ["--project", "project.json"]) => {
-    const [program, relative = ""] = command.replace("<this skill's directory>", ".").split(" ");
-    expect(program).toBe("bun");
-    const resolved = join(skillDir, relative);
-    return spawnSync(process.execPath, [resolved, "delegation", ticketPath, ...extra], { cwd: root, encoding: "utf8" });
+  expect(commands).toEqual(Array(2).fill("ak delegation <ticket> --project <project-record>"));
+  expect(body).toContain("A current `ak` on `PATH` is a prerequisite");
+  const bun = dirname(process.execPath);
+  const ak = (command: string, ticketPath: string, path = `${join(root, "path")}:${bun}`) => {
+    const [program = "", ...argv] = command
+      .replace("<ticket>", ticketPath)
+      .replace("<project-record>", "project.json")
+      .split(" ");
+    return spawnSync(program, argv, { cwd: root, encoding: "utf8", env: { PATH: path } });
   };
 
   const expected: string[] = [];
@@ -236,18 +237,16 @@ test("the scorer command the packaged super-bound body names runs the bundle's b
     cwd: root,
     io: { out: (line) => expected.push(line), err: () => {} },
   });
-  for (const command of commands) {
-    const scored = ak(command, "ticket.json");
-    expect({ status: scored.status, stderr: scored.stderr }).toEqual({ status: 0, stderr: "" });
-    expect(scored.stdout.trimEnd()).toBe(expected.join("\n"));
-  }
-
   const [command = ""] = commands;
+  const scored = ak(command, "ticket.json");
+  expect({ status: scored.status, stderr: scored.stderr }).toEqual({ status: 0, stderr: "" });
+  expect(scored.stdout.trimEnd()).toBe(expected.join("\n"));
+
   const missing = ak(command, "absent.json");
   expect({ status: missing.status, stderr: missing.stderr.trimEnd(), stdout: missing.stdout }).toEqual({
     status: 1,
     stderr: "ak delegation: ticket does not exist: absent.json",
     stdout: "",
   });
-  expect(ak(command, "ticket.json", []).status).toBe(2);
+  expect(ak(command, "ticket.json", bun).error).toMatchObject({ code: "ENOENT" });
 }, 60_000);

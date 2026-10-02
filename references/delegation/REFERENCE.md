@@ -61,11 +61,10 @@ not a judgment: a first ticket-time block seeds `class` at `green`, and a re-run
 the previous run persisted. When `lowered_by` records a named human's lowering, the seed is the
 class that person lowered to; the scorer still holds the floor and supersedes the lowering when a
 later computed class exceeds `from`. The scorer only raises the seed, so any seed outside these
-three cases is a hand-derived class. Then run the bundle's scorer, addressed from the directory of
-the skill that loaded this reference:
+three cases is a hand-derived class. Then run:
 
 ```text
-bun <the loading skill's directory>/../../bin/ak delegation <ticket> --project <project-record>
+ak delegation <ticket> --project <project-record>
 ```
 
 Persist the command's complete JSON output as the ticket's `delegation` block. Cite the ticket and
