@@ -421,8 +421,8 @@ bypass:
     A bypass grant stands in for the typed command of the phases listed here, for one task and
     one repository, until it expires. A supervisor (Firstmate or a human) writes it from outside
     the repository with `node <agent-kit bundle>/bin/ak-gate.mjs bypass grant`, run from its own
-    home and never through bun from a project directory; the worker runs `ak lifecycle bypass check
-    --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
+    home and never through bun from a project directory; the worker runs that script's `bypass
+    check --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
     must equal the grant's, and the check must run from inside the task's worktree the grant
     names; `--project` cannot substitute for that. Any run under that task may use it. The
     phase runs as its explicit form. It is not a phase operation, not a delegated grant and not
