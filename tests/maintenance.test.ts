@@ -362,7 +362,7 @@ fi
     expect(parseBinding(root).finding.level).toBe("FAIL");
   });
 
-  test("requires token mode 600, gitignore and untracked state", () => {
+  test("requires an owner-only token, gitignore and untracked state", () => {
     const root = project();
     const binding = { backend: "linear-linearis", token_file: ".linear-token", defaults: { team: "ENG" } };
     expect(checkToken(root, binding).level).toBe("FAIL");
@@ -376,9 +376,10 @@ fi
     spawnSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ignore token"]);
     expect(checkToken(root, binding).level).toBe("PASS");
     chmodSync(join(root, ".linear-token"), 0o400);
-    expect(checkToken(root, binding).level).toBe("FAIL");
+    expect(checkToken(root, binding).level).toBe("PASS");
     chmodSync(join(root, ".linear-token"), 0o640);
     expect(checkToken(root, binding).level).toBe("FAIL");
+    expect(checkToken(root, binding).detail).toContain("chmod 600 .linear-token");
     chmodSync(join(root, ".linear-token"), 0o600);
     writeFileSync(join(root, ".linear-token"), " \n");
     expect(checkToken(root, binding).level).toBe("FAIL");

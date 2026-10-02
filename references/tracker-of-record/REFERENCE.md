@@ -151,5 +151,6 @@ git --literal-pathspecs ls-files --error-unmatch -- "$f"            # exit 0: tr
 git --literal-pathspecs log --all --full-history --format=%h -1 -- "$f"   # any output: in history, rotate
 ```
 
-`--all` covers every commit reachable from a ref, not unreachable objects. The token file must have
-exact mode 600 (`chmod 600`), as checked by both `ak tracker check` and `ak doctor`.
+`--all` covers every commit reachable from a ref, not unreachable objects. The token file must be
+readable by its owner only (no group or other bits; `chmod 600` sets that), as checked by both
+`ak tracker check` and `ak doctor`.

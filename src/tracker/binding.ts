@@ -318,12 +318,12 @@ export function checkTrackerSecret(
     );
   }
   const mode = text === null ? null : statSync(path).mode & 0o777;
-  if (mode !== null && mode !== 0o600) {
+  if (mode !== null && (mode & 0o077) !== 0) {
     issues.push(
       error(
         "tracker.secret-mode",
         file,
-        `token_file mode ${mode.toString(8)}, expected 600. Run chmod 600 on the token file.`,
+        `token_file mode ${mode.toString(8)} lets someone other than the owner read it. Run chmod 600 ${file}`,
       ),
     );
   }

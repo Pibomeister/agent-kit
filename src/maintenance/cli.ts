@@ -362,7 +362,7 @@ export function checkToken(root: string | null, binding: TrackerBinding | null):
       return finding("FAIL", "tracker token", error.message, "Repair the token file, then run ak tracker check.");
     const warning = issues.find((issue) => issue.severity === "warning");
     if (warning) return finding("WARN", "tracker token", warning.message, "Run ak tracker check for details.");
-    return finding("PASS", "tracker token", "exists, mode 600, gitignored and untracked", "No action needed.");
+    return finding("PASS", "tracker token", "exists, owner-only, gitignored and untracked", "No action needed.");
   } catch (cause) {
     return finding(
       "FAIL",
