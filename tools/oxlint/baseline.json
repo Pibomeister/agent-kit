@@ -1112,7 +1112,6 @@
   "tests/verification-exit-disagreement.test.ts": {
     "anti-slop(no-known-value-widening)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "typescript(no-unsafe-type-assertion)": 1
   }
 }

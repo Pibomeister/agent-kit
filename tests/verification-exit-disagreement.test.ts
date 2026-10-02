@@ -15,8 +15,15 @@ const ROOT = join(import.meta.dir, "..");
 const FIXTURES = join(import.meta.dir, "fixtures", "verification-zero-exit");
 const SCHEMAS = join(ROOT, "schemas");
 
+function parseReceipt(source: string): Receipt {
+  // SAFETY: every source is a JSON object document from this repository: a
+  // fixture, a shipped template or a planned bundle file. The schema checks
+  // under test read each member as unknown and reject any other shape.
+  return JSON.parse(source) as Receipt;
+}
+
 function readJson(path: string): Receipt {
-  return JSON.parse(readFileSync(path, "utf8")) as Receipt;
+  return parseReceipt(readFileSync(path, "utf8"));
 }
 
 function fixture(name: string): Receipt {
@@ -138,11 +145,11 @@ describe("verification receipt without acceptance criteria", () => {
       const plan = planBundle({ root: ROOT, catalog }, host, {});
       const shipped = plan.files.get("skills/visual-edit/assets/receipt.example.json")?.contents;
       if (shipped === undefined) throw new Error(`${host} bundle carries no visual-edit receipt template`);
-      const template = JSON.parse(shipped) as Receipt;
+      const template = parseReceipt(shipped);
       expect(template.kind).toBe("probe");
       expectVerdict(template, true);
       const { no_criteria: stated, ...criteria } = template;
-      expect(typeof stated).toBe("string");
+      expect(stated).toBeString();
       expectVerdict({ ...criteria, supports }, true);
     }
     // This plans the repository's real bundle once per host and compiles every
