@@ -5,6 +5,7 @@
  * No host CLI runs here.
  */
 import { afterAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
+import { rewriteAssignmentReadChain } from "./evals/subjects/grok-mediator.ts";
 import { privateHome } from "./evals/subjects/home.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
@@ -219,6 +221,85 @@ describe("grok", () => {
     for (const segment of command.split(/ && |; /)) expect([segment, admits(segment)]).toEqual([segment, true]);
   });
 
+  test("the mediator turns an assignment read chain into literal commands the rules admit, and the session is valid", () => {
+    const discovery =
+      'SESSION="/scratch/sessions/s1"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
+    expect(readOnlyShell(discovery)).toBe(true);
+    expect(discovery.split(/; | \| /).every(admits)).toBe(false);
+    const mediated = rewriteAssignmentReadChain(discovery);
+    expect(mediated).toBe(
+      "find '/scratch/sessions/s1' '-maxdepth' '3' '-type' 'd' ; echo '=== FILES ===' ; find '/scratch/sessions/s1' '-maxdepth' '3' '-type' 'f' '-not' '-path' '*/terminal/*' | head '-80'",
+    );
+    for (const segment of String(mediated).split(/ ; | \| /))
+      expect([segment, admits(segment)]).toEqual([segment, true]);
+
+    const attempted = JSON.stringify({
+      type: "tool_call",
+      toolName: "run_terminal_command",
+      rawInput: { command: discovery },
+    });
+    const reply = JSON.stringify({ type: "text", data: "READ_CHAIN_OK" });
+    const ended = JSON.stringify({ type: "end", stopReason: "end_turn", num_turns: 2 });
+    const parsed = grok.parse(`${attempted}\n${reply}\n${ended}`);
+    expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBeNull();
+
+    for (const [command, rewritten] of [
+      ['SESSION=/scratch/s1 find "$SESSION" -type d', "find '/scratch/s1' '-type' 'd'"],
+      ["ROOT=/scratch; SESSION=$ROOT/s1; git -C . status; ls ${SESSION}", null],
+      ["ROOT=/scratch; SESSION=$ROOT/s1 && git status -sb | head -5", "git 'status' '-sb' | head '-5'"],
+      ["NAME='$HOME'; echo \"$NAME\"", "echo '$HOME'"],
+    ] as const)
+      expect([command, rewriteAssignmentReadChain(command)]).toEqual([command, rewritten]);
+  });
+
+  test("the mediator leaves writes and everything it cannot read as literal words to dontAsk and the denies", () => {
+    for (const command of [
+      'OUT=/scratch/out cp notes.md "$OUT"',
+      'OUT=/scratch/out; rm -rf "$OUT"',
+      'OUT=/scratch/out.txt; echo changed > "$OUT"',
+      'OUT=/scratch/out.txt; cat notes.md 2>/dev/null; ls "$OUT"',
+      'SESSION=/scratch/s1; find "$SESSION" -delete',
+      "FLAG=-delete; find /scratch/s1 $FLAG",
+      "TOOL=rm; $TOOL /scratch/s1",
+      'SESSION="$(mktemp -d)"; find "$SESSION" -type d',
+      'SESSION=`mktemp -d`; find "$SESSION" -type d',
+      'SESSION=/scratch/s1; (find "$SESSION" -type d)',
+      'SESSION=/scratch/s1; find "$SESSION" -type d & ls',
+      'SESSION=/scratch/s1; find "$SESSION -type d',
+      'SESSION=/scratch/s1; find "$OTHER" -type d',
+      "SESSION=/scratch/s1; ls $SESSION/*.md",
+      'SESSION="/scratch/s 1"; ls $SESSION',
+      'SESSION=/scratch/s1; find "$SESSION" -name a\\ b',
+      'export SESSION=/scratch/s1; find "$SESSION" -type d',
+      "1SESSION=/scratch/s1; ls",
+      "SESSION=/scratch/s1",
+      "find /scratch/s1 -type d; echo done",
+      'echo deliberate-control > "/scratch/write-control.txt"',
+    ])
+      expect([command, rewriteAssignmentReadChain(command)]).toEqual([command, null]);
+
+    for (const segment of [
+      'cp notes.md "$OUT"',
+      'rm -rf "$OUT"',
+      'echo changed > "$OUT"',
+      'find "$SESSION" -delete',
+      'echo deliberate-control > "/scratch/write-control.txt"',
+    ])
+      expect([segment, admits(segment)]).toEqual([segment, false]);
+
+    const control = 'echo deliberate-control > "/scratch/write-control.txt"';
+    const attempted = JSON.stringify({
+      type: "tool_call",
+      toolName: "run_terminal_command",
+      rawInput: { command: control },
+    });
+    const cancelled = JSON.stringify({ type: "end", stopReason: "cancelled", num_turns: 1 });
+    const parsed = grok.parse(`${attempted}\n${cancelled}`);
+    expect(invalidSession({ ...parsed, exitCode: 1, timedOut: false }, 20)).toBe(
+      `host cancelled refused Bash call: ${control}`,
+    );
+  });
+
   test("looks the scorer accepts are admitted in their common forms", () => {
     for (const look of [
       "git count-objects -v",
@@ -391,6 +472,41 @@ describe("isolation", () => {
     expect(existsSync(join(g.env.GROK_HOME!, "skills", "super-align", "SKILL.md"))).toBe(true);
     expect(g.env.GROK_CLAUDE_SKILLS_ENABLED).toBe("false");
     expect(g.env.GROK_MEMORY).toBe("0");
+
+    const hooks = join(String(g.env.GROK_HOME), "hooks");
+    const registered: unknown = JSON.parse(readFileSync(join(hooks, "assignment-read-chain.json"), "utf8"));
+    expect(registered).toEqual({
+      hooks: {
+        PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "assignment-read-chain.sh" }] }],
+      },
+    });
+    const hook = (stdin: string) => {
+      const ran = spawnSync(join(hooks, "assignment-read-chain.sh"), { input: stdin, encoding: "utf8" });
+      return [ran.status, ran.stdout];
+    };
+    const event = (command: string, toolInputTruncated = false) =>
+      JSON.stringify({
+        hook_event_name: "PreToolUse",
+        toolName: "run_terminal_command",
+        toolInput: { command, description: `List files under ${hooks}` },
+        toolInputTruncated,
+      });
+    const chain = 'SESSION="/scratch/s1"; find "$SESSION" -maxdepth 3 -type d | head -80';
+    const [status, stdout] = hook(event(chain));
+    expect(status).toBe(0);
+    expect(JSON.parse(String(stdout))).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: {
+          command: "find '/scratch/s1' '-maxdepth' '3' '-type' 'd' | head '-80'",
+          description: `List files under ${hooks}`,
+        },
+      },
+    });
+    expect(hook(event(chain, true))).toEqual([0, ""]);
+    expect(hook(event('OUT=/scratch/out.txt; echo changed > "$OUT"'))).toEqual([0, ""]);
+    expect(hook(JSON.stringify({ toolInput: { file_path: "a.md" } }))).toEqual([0, ""]);
+    expect(hook("not json")).toEqual([0, ""]);
 
     expect(claude.isolate!(scratch, req).env).toEqual({
       CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",

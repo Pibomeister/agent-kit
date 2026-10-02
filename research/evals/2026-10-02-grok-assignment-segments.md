@@ -28,41 +28,98 @@ path.
 The scorer now uses one shared plain-assignment classifier and accepts the exact discovery call.
 `tests/learn/trigger-score.test.ts` pins that positive together with command-substitution,
 declaration-command, and write-segment negatives. They failed on the exact call before the scorer
-change and pass after it; no live host was called.
+change and pass after it.
 
-## Status: blocked on the Grok host
+The scorer change alone does not keep a Grok subject from being cancelled: `dontAsk` cancels the
+session before scoring matters. The host half is a `PreToolUse` hook in the eval subject's private
+`GROK_HOME`, described below. It is part of the eval instrument only; no user-facing Grok adapter
+changed.
 
-The goal was that a subject writing this chain is not cancelled on Grok. The scorer change does not
-reach that: `dontAsk` cancels the session before scoring matters, and no permission rule this
-adapter can emit admits the chain. The evidence is the user guide shipped with the Grok 1.0.46 CLI,
+## Why no permission rule admits the chain
+
+The source is the user guide shipped with the Grok 1.0.46 CLI,
 `docs/user-guide/22-permissions-and-safety.md` under the Grok home, section "Rule Matching
-Reference", "Bash Rules". No live session was run.
+Reference", "Bash Rules":
 
-What it says about each way a rule could have admitted the chain:
+- "Each segment is normalized before rules are matched. Leading environment assignments such as
+  `RUST_LOG=debug` are stripped", and the example is an assignment in front of a program in the
+  same segment. The guide does not say what an assignment-only segment normalizes to.
+- "An `allow` rule can cover a quoted filename variable when it is an `ls` or `rg` file operand that
+  follows `--`, carries a literal `/` or `./` prefix, or was assigned a literal path earlier in the
+  same script; `echo`, `head`, and `tail` may appear alongside with literal arguments only, and
+  dynamic options, writes, other programs, and Read/Edit restrictions still prompt." The chain
+  passes `"$SESSION"` to `find`, one of the other programs, so it prompts whatever `Bash(find *)`
+  rule exists, and under `dontAsk` a prompt is a denial.
 
-- **Rules for the assignment-stripped command.** "Each segment is normalized before rules are
-  matched. Leading environment assignments such as `RUST_LOG=debug` are stripped", and the example
-  is an assignment in front of a program in the same segment. The guide does not say what an
-  assignment-only segment normalizes to.
-- **Rules for the variable argument.** "An `allow` rule can cover a quoted filename variable when it
-  is an `ls` or `rg` file operand that follows `--`, carries a literal `/` or `./` prefix, or was
-  assigned a literal path earlier in the same script; `echo`, `head`, and `tail` may appear alongside
-  with literal arguments only, and dynamic options, writes, other programs, and Read/Edit
-  restrictions still prompt." The chain passes `"$SESSION"` to `find`, which is one of the other
-  programs, so it prompts whatever `Bash(find *)` rule exists, and under `dontAsk` a prompt is a
-  denial ("a denial under `dontAsk`", same section).
-- **A rule for the raw assignment-prefixed form.** The same passage says matching sees the
-  normalized words, and the `find` segments carry no assignment to match.
+An earlier text of this note gave a different reason (an empty stripped segment that only `Bash()`
+could match). No source supports it, and it is withdrawn. A narrow rule candidate, `Bash(SESSION=*)`, was also tried
+live and did not admit the chain; its receipt is not copied here.
 
-So the documented grammar refuses this chain for its `find "$SESSION"` segments, and the one
-recorded run, the cancelled A3 smoke session, agrees with it. The earlier text of this note gave a
-different reason (an empty stripped segment that only `Bash()` could match); no source supports
-that, and it is withdrawn. The adapter emits no new rule, and its header and
-`grokReadOnlyPermissionRules` cite the passage above.
+## The mediator
 
-The same passage admits the equivalent chain written with `ls` or `rg` in place of `find`, which the
-existing `Bash(ls *)` and `Bash(rg *)` rules would cover. The adapter cannot make a subject choose
-that spelling. Closing the gap needs a decision outside this change: a Grok release whose grammar
-covers a variable operand to `find`, or a different permission mode for the eval. The passage also
-bears on the adapter header's older statement that `echo $VAR` and `test -n "$VAR"` remain
-admitted, which was already marked unverified.
+`tests/learn/evals/subjects/grok-mediator.ts` is registered by the Grok subject adapter's `isolate`
+as `hooks/assignment-read-chain.json` in the private home, matcher `Bash`. The mechanism is the
+documented one, in the same user guide:
+
+- `10-hooks.md:189-191`: every handler receives the model's original tool input, an `updatedInput`
+  is applied after all handlers finish, and a handler that times out, crashes or prints malformed
+  output never blocks the call.
+- `10-hooks.md:285-310`: `updatedInput` replaces the tool input before the permission checks and the
+  tool see it, silently, and must keep the tool's schema.
+- `22-permissions-and-safety.md:123-136`: hooks run before the permission rules, a hook that allows
+  a call skips none of the later checks, and the mode decides what no rule approved.
+
+The hook rewrites a Bash call only when the chain assigns at least one variable and every segment,
+after zero or more leading plain `NAME=value` words, is either a bare assignment or a command that
+`grokReadOnlyPermissionRules` admits once the assigned variables are replaced by their literal
+values. Bare assignment segments are dropped, only variables the chain assigned are substituted, and
+the output keeps every field of the original tool input (the description among them) and replaces
+`command` alone. It prints nothing, so `dontAsk` and the deny rules decide the original call, for a
+redirect, a command or process substitution, a backtick, a parenthesis, a backslash, a background
+`&`, an unclosed quote, an unassigned variable, an unquoted glob, brace or tilde, a command with no
+rule, and a truncated or unreadable event. The rewrite is not an approval: the host's own allow and
+deny rules still judge the rewritten call. The stream reports the call as the subject wrote it, so
+the scorer reads the original chain, which is why the scorer change above is still needed.
+
+`tests/learn/evals-subjects.test.ts` runs the rewrite on the exact chain, on assignment-prefixed
+reads, and on the refused forms, checks each rewritten segment against the emitted rules, and runs
+the registered hook script as a process on `PreToolUse` events.
+
+## Live evidence
+
+Two receipts, both measured at revision `988a88199ab4b177210343152b9e397247dbdb8c` without
+`.donors/`, default install. Compact copies are in `research/evals/2026-10-02-results/`; the
+per-session event lists and the served-model name are dropped, every other field is verbatim.
+
+| Receipt | Read chain | Deliberate write control |
+|---|---|---|
+| `grok-assignment-probe.json`, before the mediator | cancelled: `host cancelled refused Bash call` | cancelled, target file not created |
+| `grok-assignment-mediator-final.json`, with the mediator | completed: reply `READ_CHAIN_OK`, stop reason `end_turn` | cancelled, target file not created |
+
+The read chain is the smoke's chain with a probe session directory. The write control is
+`echo deliberate-control > "<SCRATCH>/write-control.txt"`.
+
+Guarded spend across the probes was 0.15461148 USD against a 1 USD cap. That figure includes a
+conservative 0.10 USD reserve for one attempt that ended in an assembly error and left no receipt.
+
+The live proof ran the prototype mediator (sha256
+`83412eac5917cd97331eb2f7e90c466bfbbbaa559e643a19602c68386282aa23`), not the file committed here. The
+committed mediator returns the same output as the prototype for both receipted commands: the same
+rewritten read chain, and no rewrite for the write control. It differs elsewhere, and none of these
+differences has run on the live host:
+
+- It refuses more: a backslash anywhere, and an unquoted glob, brace or tilde, which the prototype
+  would have quoted into a literal. A `$` inside single quotes stays literal instead of being
+  substituted.
+- It matches rules against the literal words joined by single spaces, the form the guide says the
+  host matches, where the prototype matched its own quoted output. Exact-form rules such as
+  `git status -sb` therefore admit a rewritten segment.
+- It is registered as a script beside the hook file, the layout of the guide's own example.
+
+No session was run for this revision.
+
+## Follow-up, not fixed here
+
+Both receipts carry the isolation leak the adapter already declares: "the host's bundled platform
+skills, fetched into the private home at start and advertised beside the bundle's". It is recorded
+as a finding for a later change.

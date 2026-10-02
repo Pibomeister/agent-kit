@@ -168,7 +168,9 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * inherited environment still reaches the subject.
  * No rule covers a plain assignment whose variable a later `find` reads: the Grok 1.0.46 user guide
  * (`22-permissions-and-safety.md`, Rule Matching Reference) honours an allow rule for a variable
- * argument only as an `ls` or `rg` file operand, and other programs still prompt.
+ * argument only as an `ls` or `rg` file operand, and other programs still prompt. The eval's
+ * `PreToolUse` hook (`grok-mediator.ts`) rewrites such a chain into literal commands and checks
+ * each against these same rules.
  * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
  * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
  * refuses every segment containing `>`, which no rule did before it.

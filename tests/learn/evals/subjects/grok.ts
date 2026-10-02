@@ -17,12 +17,13 @@
  * and a `'=>'` pattern are refused now. Whether the earlier rules admitted them on the live host
  * is unverified. The direct `printenv`, `gh auth status --show-token` and `web_fetch` forms are
  * looks to the scorer and are refused here on purpose. That is not isolation: the inherited
- * environment reaches the subject. A chain that assigns a variable and passes it to `find` is
- * another gap, and no rule closes it: the Grok 1.0.46 user guide (`22-permissions-and-safety.md`,
- * Rule Matching Reference) lets an allow rule cover a variable argument only as an `ls` or `rg`
- * file operand, and says other programs still prompt, which `dontAsk` refuses. The scorer classes
- * such a chain as read-only, so on this host it is a scorer look that still ends cancelled, and the
- * receipt names the refused call.
+ * environment reaches the subject. A chain that assigns a variable and passes it to `find` has no
+ * rule that covers it: the Grok 1.0.46 user guide (`22-permissions-and-safety.md`, Rule Matching
+ * Reference) lets an allow rule cover a variable argument only as an `ls` or `rg` file operand, and
+ * says other programs still prompt, which `dontAsk` refuses. The private home therefore carries one
+ * `PreToolUse` hook for Bash, `grok-mediator.ts`, which rewrites such a chain into the literal
+ * commands it stands for when these rules admit every one of them, and leaves every other call to
+ * `dontAsk` and the denies. The stream still reports the call as the subject wrote it.
  * Variable expansion and command substitution through an
  * admitted program (`echo $VAR`, `test -n "$VAR"`, `echo $(printenv)`) remain admitted and scored
  * read-only, and the read-only gh and `git remote` commands reach the network. Whether the live
@@ -36,9 +37,10 @@
  *
  * Grok loads a skill by reading its SKILL.md with `read_file`, which maps to Read.
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { shellQuote } from "./grok-mediator.ts";
 import { privateHome } from "./home.ts";
 import { grokReadOnlyPermissionRules, readsOf } from "./shell.ts";
 import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
@@ -70,6 +72,9 @@ interface Line {
 const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
   ["SKILLS", "RULES", "AGENTS", "MCPS", "HOOKS"].map((cell) => [`GROK_${vendor}_${cell}_ENABLED`, "false"] as const),
 );
+
+/** The hook script, named relative to the hook file that registers it. */
+const MEDIATOR_HOOK = "assignment-read-chain.sh";
 
 const READ_ONLY_RULES = grokReadOnlyPermissionRules();
 const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
@@ -156,6 +161,19 @@ export const grok: SubjectAdapter = {
       "skills",
     );
     mkdirSync(join(scratch, "home"), { recursive: true });
+    const hooks = join(home.dir, "hooks");
+    mkdirSync(hooks, { recursive: true });
+    writeFileSync(
+      join(hooks, MEDIATOR_HOOK),
+      `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(join(import.meta.dir, "grok-mediator.ts"))}\n`,
+      { mode: 0o755 },
+    );
+    writeFileSync(
+      join(hooks, "assignment-read-chain.json"),
+      JSON.stringify({
+        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: MEDIATOR_HOOK }] }] },
+      }),
+    );
     return {
       env: {
         GROK_HOME: home.dir,
