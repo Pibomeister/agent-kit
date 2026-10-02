@@ -1,0 +1,30 @@
+{
+  "case": "dev-diagnose-p1",
+  "subject": "subject-grok",
+  "status": "run",
+  "valid": false,
+  "invalid_reason": "host cancelled refused Bash call: env",
+  "scored_outcome": "loaded",
+  "host_cancelled": true,
+  "timed_out": false,
+  "turn_count": null,
+  "turn_count_note": "The committed trigger-eval entry point parsed but did not retain the host-reported turn count.",
+  "tool_event_count": 28,
+  "declared_cap": 20,
+  "duration_seconds": 158,
+  "wall_clock_start": "2026-10-02T22:21:31Z",
+  "wall_clock_end": "2026-10-02T22:24:09Z",
+  "load_average_start": [8.66, 12.75, 15.04],
+  "load_average_end": [9.24, 11.55, 14.18],
+  "first_evaluator_output": "2026-10-02T22:24:09Z",
+  "last_event": {
+    "kind": "tool",
+    "name": "Bash",
+    "input": {
+      "command": "env",
+      "description": "Print environment variable names and values"
+    }
+  },
+  "timeline_note": "The committed entry point emitted no output until the session ended. Its parsed transcript retains the ordered events but no event or turn timestamps, so time within the 158-second interval cannot be attributed further.",
+  "host_reported_cost_usd": 0.15982992
+}

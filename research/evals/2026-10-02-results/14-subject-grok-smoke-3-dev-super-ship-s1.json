@@ -1,0 +1,28 @@
+{
+  "case": "dev-super-ship-s1",
+  "subject": "subject-grok",
+  "status": "run",
+  "valid": false,
+  "invalid_reason": "host cancelled refused Bash call: ls -la [subject scratch home]/.local; echo \"==== which ====\"; command -v node; command -v ak; command -v git; echo \"==== sqlite worktrees ====\"; python3 -c [embedded Python body]",
+  "invalid_reason_note": "The compact receipt substitutes scratch paths and the embedded Python body; the raw result contains the full command and remains outside the repository.",
+  "scored_outcome": "proceeded",
+  "host_cancelled": true,
+  "timed_out": false,
+  "turn_count": null,
+  "turn_count_note": "The committed trigger-eval entry point parsed but did not retain the host-reported turn count.",
+  "tool_event_count": 18,
+  "declared_cap": 20,
+  "duration_seconds": 67,
+  "wall_clock_start": "2026-10-02T22:24:46Z",
+  "wall_clock_end": "2026-10-02T22:25:53Z",
+  "load_average_start": [10.36, 11.55, 14.06],
+  "load_average_end": [11.90, 11.80, 13.96],
+  "first_evaluator_output": "2026-10-02T22:25:53Z",
+  "last_event": {
+    "kind": "tool",
+    "name": "Bash",
+    "description": "Find ak binary and worktree database"
+  },
+  "timeline_note": "The committed entry point emitted no output until the session ended. Its parsed transcript retains the ordered events but no event or turn timestamps, so time within the 67-second interval cannot be attributed further.",
+  "host_reported_cost_usd": 0.08422344
+}

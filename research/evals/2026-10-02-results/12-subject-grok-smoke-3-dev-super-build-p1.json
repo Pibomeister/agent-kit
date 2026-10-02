@@ -1,0 +1,31 @@
+{
+  "case": "dev-super-build-p1",
+  "subject": "subject-grok",
+  "status": "run",
+  "valid": false,
+  "invalid_reason": "host cancelled refused Grep call",
+  "scored_outcome": "loaded",
+  "host_cancelled": true,
+  "timed_out": false,
+  "turn_count": null,
+  "turn_count_note": "The committed trigger-eval entry point parsed but did not retain the host-reported turn count.",
+  "tool_event_count": 38,
+  "declared_cap": 20,
+  "duration_seconds": 143,
+  "wall_clock_start": "2026-10-02T22:18:25Z",
+  "wall_clock_end": "2026-10-02T22:20:48Z",
+  "load_average_start": [8.68, 16.74, 16.75],
+  "load_average_end": [8.07, 13.38, 15.38],
+  "first_evaluator_output": "2026-10-02T22:20:48Z",
+  "last_event": {
+    "kind": "tool",
+    "name": "Grep",
+    "input": {
+      "pattern": "Ticket 42|ticket 42",
+      "path": "evals",
+      "glob": "*.yaml"
+    }
+  },
+  "timeline_note": "The committed entry point emitted no output until the session ended. Its parsed transcript retains the ordered events but no event or turn timestamps, so time within the 143-second interval cannot be attributed further.",
+  "host_reported_cost_usd": 0.15062748
+}
