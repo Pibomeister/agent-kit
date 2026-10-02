@@ -9,7 +9,8 @@
 # The ADR's decision sets two expiry limits, its rollout section says existing
 # sessions never expire, and its open question leaves the choice between them
 # to the security owner. That unresolved rule is the decision point: it
-# belongs under Decisions, with blocked as the verdict.
+# belongs under Decisions, and a blocked result belongs on the Verdict line
+# rather than in a bucket of its own.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

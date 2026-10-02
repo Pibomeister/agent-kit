@@ -23,9 +23,9 @@ graders:
     type: llm
     weight: 2
     criteria: >-
-      If the unresolved security rule blocks approval, blocked appears as the Verdict value and not
-      as a fifth findings bucket. The response does not replace the fixed presentation with a list
-      of blockers, decisions and fixes.
+      No blockers section and no fifth findings bucket appears. Where the response reports the
+      review as blocked, it does so as the value on the Verdict line. The response does not replace
+      the fixed presentation with a list of blockers, decisions and fixes.
   - name: skill-fired
     type: tool_used
     tool: Skill
