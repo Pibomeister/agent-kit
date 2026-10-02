@@ -37,6 +37,24 @@ function ratchet(root: string, ...flags: string[]) {
   return { status: run.status, out: `${run.stdout}${run.stderr}` };
 }
 
+// Starting nested Bun and importing Ajv took 6.12s beside another full suite. Run this real CLI
+// failure once at module load so scheduler delay cannot consume the timed assertion body.
+const missingOxlint = (() => {
+  const home = tree({ "tools/oxlint/ratchet.ts": "" });
+  copyFileSync(RATCHET, join(home, "tools", "oxlint", "ratchet.ts"));
+  mkdirSync(join(home, "node_modules"));
+  symlinkSync(join(REPO, "node_modules", "ajv"), join(home, "node_modules", "ajv"));
+  const root = tree({ ".oxlintrc.json": ONE_RULE, "src/a.ts": "export {};\n" });
+  const run = spawnSync("bun", [join(home, "tools", "oxlint", "ratchet.ts"), "--root", root, "src"], {
+    encoding: "utf8",
+  });
+  return {
+    status: run.status,
+    out: `${run.stdout}${run.stderr}`,
+    binary: join(home, "node_modules", ".bin", "oxlint"),
+  };
+})();
+
 /** The recorded baseline, read through the ratchet's own schema-checked parser. */
 const baseline = (root: string) =>
   Object.fromEntries([...readBaseline(root)].map(([file, rules]) => [file, Object.fromEntries(rules)]));
@@ -104,19 +122,10 @@ describe("lint ratchet", () => {
   });
 
   test("an oxlint binary that cannot be started names the missing path rather than printing null", () => {
-    const home = tree({ "tools/oxlint/ratchet.ts": "" });
-    copyFileSync(RATCHET, join(home, "tools", "oxlint", "ratchet.ts"));
-    mkdirSync(join(home, "node_modules"));
-    symlinkSync(join(REPO, "node_modules", "ajv"), join(home, "node_modules", "ajv"));
-    const root = tree({ ".oxlintrc.json": ONE_RULE, "src/a.ts": "export {};\n" });
-    const run = spawnSync("bun", [join(home, "tools", "oxlint", "ratchet.ts"), "--root", root, "src"], {
-      encoding: "utf8",
-    });
-    const out = `${run.stdout}${run.stderr}`;
-    expect(run.status).not.toBe(0);
-    expect(out).toContain("oxlint produced no report");
-    expect(out).toContain(join(home, "node_modules", ".bin", "oxlint"));
-    expect(out).not.toContain("nullnull");
+    expect(missingOxlint.status).not.toBe(0);
+    expect(missingOxlint.out).toContain("oxlint produced no report");
+    expect(missingOxlint.out).toContain(missingOxlint.binary);
+    expect(missingOxlint.out).not.toContain("nullnull");
   });
 });
 
