@@ -52,6 +52,23 @@ const admits = (segment: string) => {
   return matching("--allow") && !matching("--deny");
 };
 
+const denies = (segment: string) => {
+  const argv = grok.command(req, undefined);
+  return argv
+    .flatMap((value, index) => {
+      const rule = argv[index + 1];
+      return value === "--deny" && rule?.startsWith("Bash(") ? [rule.slice(5, -1)] : [];
+    })
+    .some((glob) =>
+      new RegExp(
+        `^${glob
+          .split("*")
+          .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+          .join(".*")}$`,
+      ).test(segment),
+    );
+};
+
 describe("claude", () => {
   test("a live session: the Skill call, the reply, cost and turns", () => {
     const parsed = claude.parse(fixture("claude-skill.jsonl"));
@@ -254,6 +271,21 @@ describe("grok", () => {
     );
     expect(readOnlyShell(command)).toBe(true);
     for (const segment of command.split(/ && |; /)) expect([segment, admits(segment)]).toEqual([segment, true]);
+  });
+
+  test("the smoke-3 environment inspection is admitted while embedded code is explicitly refused", () => {
+    const parsed = grok.parse(fixture("grok-smoke-3-env.doc-derived.jsonl"));
+    const command = String(tools(parsed.events).at(-1)?.input.command);
+    expect(command).toBe("env");
+    expect(parsed.stopReason).toBe("cancelled");
+    expect(parsed.turns).toBe(20);
+    expect(readOnlyShell(command)).toBe(true);
+    expect(admits(command)).toBe(true);
+
+    const embedded = "python3 -c code";
+    expect(readOnlyShell(embedded)).toBe(false);
+    expect(admits(embedded)).toBe(false);
+    expect(denies(embedded)).toBe(true);
   });
 
   test("the mediator turns an assignment read chain into literal commands the rules admit, and the session is valid", () => {

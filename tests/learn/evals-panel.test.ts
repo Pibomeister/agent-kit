@@ -32,7 +32,7 @@ describe("matrix", () => {
     const text = readFileSync(join(import.meta.dir, "evals", "eval-matrix.example.yaml"), "utf8");
     const m = parseMatrix(text);
     expect(m.subjects.map((s) => s.id)).toEqual(["subject-a", "subject-b", "subject-c"]);
-    expect(m.subjects.map((s) => s.maxTurns)).toEqual([20, null, 20]);
+    expect(m.subjects.map((s) => s.maxTurns)).toEqual([20, null, null]);
     expect(m.priceTable).toBe("research/evals/codex-token-prices-2026-10-02.json");
     if (m.priceTable === undefined) throw new Error("the example has no price table");
     const prices = loadPriceTable(join(import.meta.dir, "..", "..", m.priceTable));
@@ -92,6 +92,13 @@ describe("matrix", () => {
       ["s-b", null],
       ["s-c", undefined],
     ]);
+  });
+
+  test("the example leaves Grok uncapped because its cancellation stream cannot distinguish the cap from refusal", () => {
+    const example = parseMatrix(readFileSync(join(import.meta.dir, "evals", "eval-matrix.example.yaml"), "utf8"));
+    const subject = example.subjects.find(({ host }) => host === "grok");
+    expect(subject?.maxTurns).toBeNull();
+    expect(subject === undefined ? undefined : effectiveMaxTurns(subject)).toBeUndefined();
   });
 
   test("a numeric turn cap is refused for a host that cannot enforce one", () => {

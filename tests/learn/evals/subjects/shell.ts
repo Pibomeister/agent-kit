@@ -162,11 +162,11 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * gate's `check` behind a path, git options that take a value before the subcommand, and harmless
  * output redirections that the same glob used to deny writes would also match. `git branch`,
  * `git tag` and `sort` are exact forms, because a trailing glob would also admit a ref-writing
- * flag, a name to create, or a bundled `-o`. The direct `printenv` and `gh auth status
- * --show-token` forms are looks to the scorer and have no rule here. Variable expansion and command
- * substitution through an admitted program such as `echo` or `test` remain admitted and scored
- * read-only, but only the process basics, the adapter-declared variables and the names the
- * operator opted in are present in the subject's environment.
+ * flag, a name to create, or a bundled `-o`. Bare `env` is admitted because the subject environment
+ * has already been reduced to process basics, adapter-declared variables and operator opt-ins. The
+ * direct `printenv` and `gh auth status --show-token` forms remain refused. Variable expansion and
+ * command substitution through an admitted program such as `echo` or `test` remain admitted and
+ * scored read-only.
  * No rule covers a plain assignment whose variable a later `find` reads: the Grok 1.0.46 user guide
  * (`22-permissions-and-safety.md`, Rule Matching Reference) honours an allow rule for a variable
  * argument only as an `ls` or `rg` file operand, and other programs still prompt. The eval's
@@ -179,7 +179,7 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
 export function grokReadOnlyPermissionRules() {
   const grammarGaps = new Set(["awk", "["]);
   const allow = READ_ONLY_PROGRAMS.filter((program) => !grammarGaps.has(program)).flatMap(bashRules);
-  allow.push("Bash(command -v *)", "Bash(command -V *)");
+  allow.push("Bash(env)", "Bash(command -v *)", "Bash(command -V *)");
   allow.push(...["", " -u", " -r", " -n", " -rn", " -nr"].map((flags) => `Bash(sort${flags})`));
   const git = READ_ONLY_GIT.flatMap((subcommand): string[] => [subcommand, `${subcommand} *`]);
   for (const [subcommand, actions] of Object.entries(READ_ONLY_GIT_ACTIONS)) {
@@ -226,6 +226,7 @@ export function grokReadOnlyPermissionRules() {
 
   const deny = [
     "Bash(*>*)",
+    "Bash(python3 *)",
     "Bash(find *-delete*)",
     "Bash(find *-exec*)",
     "Bash(find *-ok*)",

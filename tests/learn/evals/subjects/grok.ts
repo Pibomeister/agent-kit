@@ -5,11 +5,11 @@
  *     [--max-turns N] --permission-mode dontAsk [--rules TEXT]
  *
  * `--rules` appends to the system prompt. `dontAsk` refuses any call that would need approval
- * instead of waiting for one; a refused call ends the turn with `stopReason: cancelled` and no
- * reply, so the attempt is still in the stream but the session is cut short. The adapter therefore
- * supplies `--allow` rules generated from the scorer's read-only program, git and gh tables, plus
- * matching denies for write-shaped flags and redirects; `dontAsk` continues to refuse every
- * unlisted call. Grok's glob grammar cannot safely express the scorer's semantic subsets for awk,
+ * instead of waiting for one. An explicit deny returns a tool failure the model can recover from,
+ * as the recorded redirect probe did; an unlisted call falls through to `dontAsk`. The adapter
+ * therefore supplies `--allow` rules generated from the scorer's read-only program, git and gh
+ * tables, plus matching denies for write-shaped flags and redirects; `dontAsk` continues to refuse
+ * every unlisted call. Grok's glob grammar cannot safely express the scorer's semantic subsets for awk,
  * sed, curl, gh api, shell loops, arbitrary help/version calls, the ship gate's `check`, a
  * `git branch` or `git tag` listing beyond its exact forms, or harmless output redirection without
  * also approving a writing redirect. The redirect deny is a new refusal relative to the earlier
@@ -26,8 +26,9 @@
  * `dontAsk` and the denies. The stream still reports the call as the subject wrote it, so `parse`
  * derives shell reads from the same rewrite, the command the host ran.
  * Variable expansion and command substitution through an admitted program remain scored
- * read-only. Whether the live host expands variables before permission matching is unverified.
- * A refused call leaves the session invalid, and the receipt names the attempted call. The
+ * read-only. Bare `env` is admitted only after the runner reduces the subject environment to its
+ * allowlist. Whether the live host expands variables before permission matching is unverified.
+ * A cancelled turn leaves the session invalid, and the receipt names the last attempted call. The
  * read-only sandbox
  * remains unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports `stopReason`. Isolation is a
  * private GROK_HOME and HOME with the Claude and Cursor compatibility scans and cross-session
