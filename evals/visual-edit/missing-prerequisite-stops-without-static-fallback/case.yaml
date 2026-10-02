@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: visual-edit-missing-prerequisite-stops-without-static-fallback
+tags: [negative]
+execution:
+  prompt: >-
+    /ak:visual-edit Open /account at desktop for visual editing.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Edit, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: names-the-missing-bridge-daemon
+    type: llm
+    weight: 4
+    criteria: >-
+      The response stops with needs-input and names missing-prerequisite:bridge-daemon after finding
+      that no bridge is listening at the declared address.
+  - name: no-static-fallback-is-created
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      The run does not create copied markup, a screenshot, a static canvas file or another fallback
+      representation of /account after the bridge prerequisite fails.
+  - name: source-is-unchanged
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 2
+  - name: no-new-project-file
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 2

@@ -1,7 +1,7 @@
 # agent-kit — maintainer guide
 
-This repository is a **catalog of engineering instructions**, not an application. It amalgamates eight
-donors — seven MIT, one Apache-2.0 (claude-mem, which feeds only the opt-in learning runtime) —
+This repository is a **catalog of engineering instructions**, not an application. It amalgamates nine
+donors — eight MIT, one Apache-2.0 (claude-mem, which feeds only the opt-in learning runtime) —
 into *one* lifecycle rather than shipping four plugins that fight over activation descriptions.
 Read this file before changing anything under `skills/`, `packs/`, `protocols/`, `roles/` or
 `references/`.

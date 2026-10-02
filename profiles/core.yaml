@@ -23,9 +23,9 @@ why_it_exists: >-
 
 includes:
   skills:
-    count: 21
+    count: 22
     lifecycle: [super-align, super-bound, super-scout, super-build, super-verify, super-review, super-ship]
-    standalone: [verify, compound, doc-review, receiving-review, diagnose, doubt-driven, simplify, research, source-driven, explain]
+    standalone: [verify, visual-edit, compound, doc-review, receiving-review, diagnose, doubt-driven, simplify, research, source-driven, explain]
     primitives: [prototype, handoff, wait-what, wayfind]
 
   packs:

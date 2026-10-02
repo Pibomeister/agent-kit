@@ -163,6 +163,23 @@ capabilities:
       research/sources/verifier-seat-design-report.md and attributed per file in
       provenance/adaptations.d/verify.yaml.
 
+  - id: visual-edit
+    capability: >-
+      Human-started visual editing of named routes from a running local app as URL-backed frames,
+      with pending revisions applied through source and retained as verification receipts
+    disposition: retained
+    destination: skills/visual-edit
+    locator: plan §2.3
+    origin: donor
+    acceptance_test: >-
+      An explicit `/ak:visual-edit` run verifies the local connection, requested route frames and
+      source-backed code view before handoff; a compiled-route edit stays pending until the coding
+      agent changes source, confirms the dev server and acknowledges the exact revision.
+    note: >-
+      The plan establishes the retained standalone placement. The commissioned behavior is grounded
+      at the pinned donor and attributed per adapted file in
+      provenance/adaptations.d/visual-edit.yaml.
+
   - id: super-review
     capability: A first-pass specialist panel over an immutable snapshot, a narrow delta pass over a fix, and reviewers who cannot edit
     disposition: retained

@@ -55,7 +55,7 @@ law:
 # ---------------------------------------------------------------------------
 entrypoints:
   user_invoked:
-    count: 23
+    count: 24
     authority: explicit
     skills:
       - super-align
@@ -63,6 +63,7 @@ entrypoints:
       - super-review        # per-entrypoint authority below overrides this default
       - super-ship
       - verify
+      - visual-edit
       - autopilot
       - compound
       - compound-refresh
@@ -371,7 +372,7 @@ no_operation_exposed:
     already invokes a model-invoked skill directly, which is what the M mode means, so there is
     no forbidden edge for an operation to open and nothing to withhold. A phase operation exists
     only where a human entrypoint would otherwise be the only way in. Read together, the two
-    lists account for every skill in catalog.yaml: 23 user-invoked, of which these 14 expose no
+    lists account for every skill in catalog.yaml: 24 user-invoked, of which these 15 expose no
     operation and the rest do, plus 11 model-invoked that need none.
   skills:
     - autopilot
@@ -388,6 +389,7 @@ no_operation_exposed:
     - product-pulse
     - writing-skills
     - verify
+    - visual-edit
 
 no_side_door:
   rule: >-

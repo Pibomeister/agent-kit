@@ -1,0 +1,13 @@
+{
+  "designId": "design-dashboard",
+  "revision": "revision-27",
+  "route": "/dashboard",
+  "viewport": "desktop",
+  "source": "src/dashboard.jsx",
+  "change": {
+    "target": "button.primary-action",
+    "property": "class",
+    "from": "primary-action compact",
+    "to": "primary-action spacious"
+  }
+}

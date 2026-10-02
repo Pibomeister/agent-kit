@@ -30,6 +30,15 @@ donors:
     license: MIT
     copyright: "Copyright (c) 2026 Matt Pocock"
     license_file: provenance/licenses/mattpocock_skills.LICENSE
+  - id: builderio-skills
+    repo: BuilderIO/skills
+    url: https://github.com/BuilderIO/skills
+    path: .donors/BuilderIO_skills
+    commit: eb07be67e6d924b958445f706f5ac386243df6b4
+    commit_date: "2026-09-30T21:32:10Z"
+    license: MIT
+    copyright: "Copyright (c) 2026 Builder.io"
+    license_file: provenance/licenses/BuilderIO_skills.LICENSE
   - id: addy
     repo: addyosmani/agent-skills
     url: https://github.com/addyosmani/agent-skills

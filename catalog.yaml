@@ -30,7 +30,7 @@ package:
   # different texts about different objects, and adapters/codex/CONTRACT.md §5.2
   # is what keeps them from being forced to agree. Stated verbatim by
   # adapters/claude-code/CONTRACT.md §1.
-  description: "One engineering lifecycle, amalgamated from eight donors: seven MIT, one Apache-2.0."
+  description: "One engineering lifecycle, amalgamated from nine donors: eight MIT, one Apache-2.0."
   # Emitted into both host manifests from here, so the two cannot drift apart or
   # drift from the catalog. Both values are specified verbatim by
   # adapters/claude-code/CONTRACT.md §1 and are not chosen here.
@@ -38,7 +38,7 @@ package:
   license: MIT
 
 # ---------------------------------------------------------------------------
-# Skills — 34 public entrypoints
+# Skills — 35 public entrypoints
 # ---------------------------------------------------------------------------
 skills:
 
@@ -159,6 +159,17 @@ skills:
     summary: >-
       Build, run and drive the project against named acceptance criteria, publish runtime receipts and
       a reusable host-neutral recipe, and record the verify gate only when every declared kind passes.
+
+  - id: visual-edit
+    kind: standalone
+    invocation: U
+    profiles: [core]
+    batch: 12
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Open named routes from a running local app as URL-backed frames for human visual edits,
+      apply pending revisions through source, and emit a verification receipt.
 
   - id: compound
     kind: standalone

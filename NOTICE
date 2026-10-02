@@ -1,7 +1,7 @@
 agent-kit
 Copyright (c) 2026 Eduardo Picazo
 
-This project adapts material from the following eight projects: seven under
+This project adapts material from the following nine projects: eight under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
 source and a note of what was changed. Full license texts are in
@@ -21,9 +21,11 @@ provenance/licenses/.
   https://github.com/Yeachan-Heo/oh-my-codex @ cb955b0d5becbef76d2c1f0096b6e1f238e1e7f7
 - claude-reflect — Copyright (c) 2025 Bayram Annakov
   https://github.com/BayramAnnakov/claude-reflect @ 2c892cab8fe1285d8116216ec18b6b7b44bcd394
+- BuilderIO/skills — Copyright (c) 2026 Builder.io
+  https://github.com/BuilderIO/skills @ eb07be67e6d924b958445f706f5ac386243df6b4
 
 The above copyright notices and the MIT permission notice apply to the
-substantial portions adapted from each of those seven projects.
+substantial portions adapted from each of those eight projects.
 
 - claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
   https://github.com/thedotmack/claude-mem @ 02cd0c9c47e38a849e764477290c571e84dfa043

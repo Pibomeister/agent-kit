@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: visual-edit-compares-two-routes-at-desktop-and-mobile
+tags: [positive]
+execution:
+  prompt: >-
+    /ak:visual-edit Compare /catalog and /checkout at desktop and mobile.
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: requested-routes-use-live-frames
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      The run opens exactly the requested route-and-viewport combinations as URL-backed frames from
+      the running local app. The frame plan keeps /catalog and /checkout distinct at desktop and
+      mobile and does not replace either route with copied markup or a static image.
+  - name: readiness-checks-precede-handoff
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      Before returning the canvas to the human, the run checks the matching bridge connection,
+      probes both route URLs, confirms each requested frame source and viewport, and confirms the
+      Code panel exposes the local source root and can open a source file.
+  - name: returned-session-excludes-secrets
+    type: llm
+    weight: 2
+    criteria: >-
+      The final handoff names the editor, design or connection identifiers, routes, viewports and
+      completed readiness checks without exposing the bridge token.

@@ -1,0 +1,212 @@
+# Execution contract for visual-edit (schemas/skill.schema.json).
+# Prose mirror: skills/visual-edit/SKILL.md. The two are one statement in two forms.
+id: visual-edit
+version: 0.1.0
+kind: standalone
+invocation: U
+summary: >-
+  Open named routes from a running local app as URL-backed frames for human visual edits, apply
+  pending revisions through source, and emit a verification receipt.
+
+triggers:
+  - A human explicitly asks to compare real routes or responsive states from a running local app.
+  - A human explicitly asks to make style, text or layout edits visually and apply them to source.
+
+non_triggers:
+  - Static mock-ups, copied markup or screenshots.
+  - Comparing product alternatives that have not been implemented in the running app.
+  - Behavior, state-model or cross-file changes that require an approved implementation ticket.
+  - Runtime verification with no visual editing session.
+
+prerequisites:
+  - kind: environment
+    ref: >-
+      A Design editor URL the operator runs or is given. A self-hosted editor is first class;
+      https://design.agent-native.com is one convenience value.
+  - kind: capability
+    ref: The @agent-native/core CLI available to connect the running app.
+  - kind: run-state
+    ref: >-
+      A bridge token minted through the selected editor's MCP connector or WebMCP and a matching
+      bridge daemon listening on 127.0.0.1:7331.
+  - kind: approval
+    ref: An account on the selected editor with permission to save the design.
+  - kind: environment
+    ref: A running local dev server whose requested routes respond.
+
+entrypoints:
+  visual-edit:
+    invocation: U
+    authority: explicit
+    summary: >-
+      Open and verify URL-backed route frames, hold visual changes pending, apply the selected batch
+      through source, confirm the running app and acknowledge the exact revision.
+
+requires:
+  - repository-read
+  - repository-write
+  - process-exec
+  - network-fetch
+  - human-channel
+  - artifact-write
+
+inputs:
+  - id: editor-connection
+    required: true
+    summary: >-
+      The selected editor URL, authenticated account, MCP or WebMCP connection, bridge token and
+      healthy matching daemon.
+  - id: running-app
+    required: true
+    summary: The repository root, dev-server URL and responding requested routes.
+  - id: route-set
+    required: true
+    summary: Ordered route paths, human labels and named viewports; routes are discovered only when absent.
+  - id: acceptance-criteria
+    required: false
+    summary: Named criteria the resulting receipt may support in super-verify's evidence matrix.
+  - id: approved-ticket
+    schema: ticket
+    required: false
+    summary: Required before a pending batch beyond style, literal text or local layout enters super-build.
+
+outputs:
+  - id: canvas-session
+    summary: >-
+      Editor URL, design and connection ids, ordered routes, named viewports and the completed
+      pre-handoff checklist. Secrets are excluded.
+  - id: applied-edit-receipt
+    schema: verification
+    summary: >-
+      A probe receipt per applied pending revision. Its parameters name route, viewport and visual
+      revision; artifacts name changed source files and digests; source_revision binds the code;
+      observed records the dev-server confirmation. It is consumable by super-verify.
+  - id: build-handoff
+    summary: >-
+      For a broader change, the unchanged pending visual revision plus the approved-ticket
+      requirement handed to super-build. No partial source edit is included.
+
+side_effects: [workspace-write, process-exec, artifact-write, external-fetch]
+
+child_skills:
+  - prototype
+  - super-build
+  - super-verify
+
+constraints:
+  static-output-may-replace-running-route: false
+  canvas-may-write-source-directly: false
+  source-may-change-before-pre-handoff-verification: false
+  pending-revision-may-be-acknowledged-before-confirmation: false
+  compiled-route-may-bypass-the-coding-agent: false
+  broader-change-may-bypass-super-build: false
+
+hard_gates:
+  - Any missing editor, account, CLI, token, daemon, dev server or route stops with its named
+    prerequisite; generated markup never substitutes.
+  - The running app is the source of truth. Requested screens are URL-backed frames at the named
+    viewports, never copied markup or static snapshots.
+  - The connection, requested frames and Code panel are verified before canvas handoff.
+  - Canvas changes remain pending. Compiled routes and source files change only through the coding
+    agent, and acknowledgment follows source application, receipt validation and dev-server confirmation.
+  - A change beyond style, literal text or local layout requires an approved ticket and super-build.
+  - An applied batch has a schema-valid receipt bound to source revision and environment before
+    acknowledgment (ruling `closure-requires-independent-verification`).
+
+stop_conditions:
+  - complete when the verified canvas is ready with no pending batch, or one pending batch is
+    applied, confirmed, receipted and acknowledged.
+  - needs-input when invocation or a named prerequisite is missing, or a broader change lacks an
+    approved implementation ticket.
+
+failure_outcomes:
+  - status: needs-input
+    meaning: >-
+      The command was not explicit, a named editor, account, bridge, server or route prerequisite
+      is missing, or a broader change has no approved ticket.
+    next_permitted_action: Supply the named prerequisite or approved ticket and invoke the command again.
+  - status: failed
+    meaning: >-
+      The editor or bridge rejected the connection, source conflicts could not be reconciled, the
+      dev server did not reflect the write, or the receipt did not validate. The revision stays pending.
+    next_permitted_action: Restore the failed connection or source state, then resume from the pending revision.
+  - status: cancelled
+    meaning: The human cancelled; an unapplied revision stays pending and unacknowledged.
+    next_permitted_action: null
+
+limits:
+  missing-prerequisites: 0
+
+budget:
+  provided_by: runner
+  enforces:
+    - missing-prerequisites
+
+packaging:
+  generated_frontmatter:
+    disable-model-invocation: true
+  hosts:
+    - adapter: claude-code
+      mode: manual
+      unsupported:
+        - >-
+          artifact-write is storage only: the host does not compute or check the receipt hash, so
+          envelope hash binding is this package's own work.
+    - adapter: codex
+      mode: manual
+      unsupported:
+        - suppression of model invocation, which this host cannot express
+        - >-
+          artifact-write is storage only: the host does not compute or check the receipt hash, so
+          envelope hash binding is this package's own work.
+
+provenance:
+  origin: donor
+  donor_sources:
+    - donor: builderio-skills
+      commit: eb07be67e6d924b958445f706f5ac386243df6b4
+      path: skills/visual-edit/SKILL.md
+      license: MIT
+      adaptation: >-
+        The running app and route URLs remain the source of truth; routes become URL-backed frames
+        at named viewports; visual changes stay pending until the coding agent applies source and
+        acknowledges the revision; compiled routes stay on that agent path. The connection, route
+        frames and code view are verified before handoff. The editor URL is generalized to include
+        a self-hosted editor while retaining the donor's hosted URL as a convenience.
+    - donor: builderio-skills
+      commit: eb07be67e6d924b958445f706f5ac386243df6b4
+      path: skills/visual-edit/README.md
+      license: MIT
+      adaptation: >-
+        Deliberate route and viewport selection plus the pending source-edit handoff become the
+        concise public workflow. Agent-kit adds named prerequisite failures, super-build boundaries
+        and a verification receipt consumable by super-verify.
+  resolved_conflicts:
+    - closure-requires-independent-verification
+
+tests:
+  - id: compares-two-routes-at-desktop-and-mobile
+    kind: positive
+    given: >-
+      A running app exposes two named routes, and the human asks to compare both at desktop and mobile.
+    expect: >-
+      Four URL-backed frames use the requested routes and named viewports, and the connection,
+      frames and Code panel are verified before the canvas is handed to the human.
+  - id: compiled-route-edit-applies-through-source
+    kind: adversarial
+    given: >-
+      A pending visual revision changes a compiled route's local styling while the canvas cannot
+      write the authored source safely.
+    expect: >-
+      The coding agent applies the revision to source, confirms the dev server, emits the receipt,
+      acknowledges that revision and pulls again; no direct canvas source apply occurs.
+  - id: missing-prerequisite-stops-without-static-fallback
+    kind: negative
+    given: The bridge daemon is absent while the human asks to open the running app for visual editing.
+    expect: >-
+      The skill returns needs-input naming missing-prerequisite:bridge-daemon and creates no
+      generated markup, screenshot or static canvas fallback.
+
+body:
+  line_budget: 150
+  hard_cap: 300
