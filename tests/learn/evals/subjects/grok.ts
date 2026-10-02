@@ -23,7 +23,8 @@
  * says other programs still prompt, which `dontAsk` refuses. The private home therefore carries one
  * `PreToolUse` hook for Bash, `grok-mediator.ts`, which rewrites such a chain into the literal
  * commands it stands for when these rules admit every one of them, and leaves every other call to
- * `dontAsk` and the denies. The stream still reports the call as the subject wrote it.
+ * `dontAsk` and the denies. The stream still reports the call as the subject wrote it, so `parse`
+ * derives shell reads from the same rewrite, the command the host ran.
  * Variable expansion and command substitution through an
  * admitted program (`echo $VAR`, `test -n "$VAR"`, `echo $(printenv)`) remain admitted and scored
  * read-only, and the read-only gh and `git remote` commands reach the network. Whether the live
@@ -42,6 +43,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { shellQuote } from "./grok-mediator.ts";
 import { privateHome } from "./home.ts";
+import { rewriteAssignmentReadChain } from "./grok-mediator.ts";
 import { grokReadOnlyPermissionRules, readsOf } from "./shell.ts";
 import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
 
@@ -130,7 +132,7 @@ export const grok: SubjectAdapter = {
           input: typeof file === "string" ? { ...rawInput, file_path: file } : rawInput,
         });
         if (name === "Bash" && typeof rawInput.command === "string") {
-          for (const file_path of readsOf(rawInput.command))
+          for (const file_path of readsOf(rewriteAssignmentReadChain(rawInput.command) ?? rawInput.command))
             events.push({ kind: "tool", name: "Read", raw: line.toolName, input: { file_path, via: "shell" } });
         }
       } else if (line.type === "end") {

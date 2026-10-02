@@ -243,10 +243,15 @@ describe("grok", () => {
     const parsed = grok.parse(`${attempted}\n${reply}\n${ended}`);
     expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBeNull();
 
+    const throughVariable = JSON.stringify({
+      type: "tool_call",
+      toolName: "run_terminal_command",
+      rawInput: { command: 'D=/home/skills/super-align; cat "$D/SKILL.md"' },
+    });
+    expect(skillLoads(grok.parse(throughVariable).events).map((l) => l.skill)).toEqual(["super-align"]);
+
     for (const [command, rewritten] of [
-      ["ROOT=/scratch; GIT_DIR=$ROOT/.git git log -3", "GIT_DIR='/scratch/.git' git 'log' '-3'"],
       ['ls /maybe; SESSION=/scratch/s1 && find "$SESSION" -type d', "ls '/maybe' ; find '/scratch/s1' '-type' 'd'"],
-      ['ROOT=/scratch; ROOT=/other ls "$ROOT"; ls "$ROOT"', "ROOT='/other' ls '/scratch' ; ls '/scratch'"],
       ["ROOT=/scratch; SESSION=$ROOT/s1; git -C . status; ls ${SESSION}", null],
       ["ROOT=/scratch; SESSION=$ROOT/s1 && git status -sb | head -5", "git 'status' '-sb' | head '-5'"],
       ["NAME='$HOME'; echo \"$NAME\"", "echo '$HOME'"],
@@ -257,6 +262,7 @@ describe("grok", () => {
   test("the mediator leaves writes and everything it cannot read as literal words to dontAsk and the denies", () => {
     for (const command of [
       'ROOT=/scratch; OUT=$ROOT/out cp notes.md "$ROOT"',
+      "ROOT=/scratch; GIT_DIR=$ROOT/.git git log -3",
       'SESSION=/scratch/s1 find "$SESSION" -type d',
       'SESSION=/scratch/s1 ls; find "$SESSION" -type d',
       "LC_ALL=C ls -la /scratch",

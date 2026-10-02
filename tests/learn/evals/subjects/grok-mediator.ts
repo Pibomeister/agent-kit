@@ -13,18 +13,17 @@
  * schema (`10-hooks.md:285-310`); hooks run before the permission rules, and `dontAsk` denies
  * whatever is left to prompt for (`22-permissions-and-safety.md:123-136`).
  *
- * A chain is rewritten only when a bare assignment segment assigns at least one variable and every
- * segment, after zero or more leading plain `NAME=value` words, is either nothing (a bare
- * assignment, dropped) or a command `grokReadOnlyPermissionRules` admits. Only variables a bare
- * assignment segment set are substituted. A command keeps its own leading assignments, written
- * out as literals, because they are its environment and the host strips them before matching. A
- * bare assignment is dropped only where it always runs and never decides what runs next: after the
+ * A chain is rewritten only when every segment is either a bare assignment of plain `NAME=value`
+ * words, which is dropped, or a command `grokReadOnlyPermissionRules` admits, and at least one
+ * segment is a bare assignment. Only variables a bare assignment set are substituted. A bare
+ * assignment is dropped only where it always runs and never decides what runs next: after the
  * chain start or `;`, and before `;` or `&&`, and only when it names a variable the hook's own
  * environment does not carry, since assigning an exported one changes what later commands see.
  * Anything else prints nothing, so the original call reaches `dontAsk` and the deny rules
- * unchanged: a redirect, a command or process substitution, a backtick, a parenthesis, a backslash, a background `&`, an unclosed quote, an unassigned variable,
- * an unquoted glob, brace or tilde, a bare assignment in any other position or to an environment
- * variable, and a command with no rule. An error in the hook also prints nothing.
+ * unchanged: a redirect, a command or process substitution, a backtick, a parenthesis, a
+ * backslash, a background `&`, an unclosed quote, an unassigned variable, an unquoted glob, brace
+ * or tilde, a bare assignment in any other position or to an environment variable, a command with
+ * a leading assignment, and a command with no rule. An error in the hook also prints nothing.
  */
 import { readFileSync } from "node:fs";
 import { grokReadOnlyPermissionRules } from "./shell.ts";
@@ -144,18 +143,13 @@ export function rewriteAssignmentReadChain(command: string): string | null {
   let afterDropped = false;
   for (const [index, segment] of chain.segments.entries()) {
     const assigned = new Map(values);
-    const environment: string[] = [];
     const literal: string[] = [];
     for (const word of segment) {
       const assignment = literal.length === 0 ? assignmentOf(word) : undefined;
       const text = expand(assignment?.value ?? word, assignment === undefined ? values : assigned);
       if (text === undefined) return null;
-      if (assignment === undefined) {
-        literal.push(text);
-      } else {
-        assigned.set(assignment.name, text);
-        environment.push(`${assignment.name}=${shellQuote(text)}`);
-      }
+      if (assignment === undefined) literal.push(text);
+      else assigned.set(assignment.name, text);
     }
     const before = index === 0 ? ";" : chain.operators[index - 1];
     const [program, ...args] = literal;
@@ -169,10 +163,10 @@ export function rewriteAssignmentReadChain(command: string): string | null {
       afterDropped = true;
       continue;
     }
-    if (!PROGRAM.test(program)) return null;
+    if (assigned.size !== values.size || !PROGRAM.test(program)) return null;
     const seen = literal.join(" ");
     if (!allow.some((pattern) => pattern.test(seen)) || deny.some((pattern) => pattern.test(seen))) return null;
-    const quoted = [...environment, program, ...args.map(shellQuote)].join(" ");
+    const quoted = [program, ...args.map(shellQuote)].join(" ");
     rewritten = rewritten === "" ? quoted : `${rewritten} ${afterDropped ? ";" : before} ${quoted}`;
     afterDropped = false;
   }
