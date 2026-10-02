@@ -43,7 +43,7 @@ Run the endpoint integration tests, the existing sandbox unit tests, the full te
 Sandbox deletion, resets, production-data copies and a new service.
 MD
 
-spec_hash="sha256:$(shasum -a 256 "$spec" | cut -d' ' -f1)"
+spec_hash="sha256:$(file_sha256 "$spec")"
 cat > runs/sandbox-self-serve/review.json <<JSON
 {
   "status": "approved",
