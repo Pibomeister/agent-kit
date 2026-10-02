@@ -40,8 +40,8 @@ node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <id> --by <who autho
 `node` loads nothing from the working directory. `bun` loads that directory's `bunfig.toml` preload and
 `.env` before the script runs, so running the grant through `bun` from a project directory or a task
 worktree would execute worker-written code inside the supervisor's grant; the supervisor never does.
-The installed `ak` on `PATH` is the maintenance CLI and has no `lifecycle` subcommand. It prints the brief section the supervisor pastes into the task's
-brief, naming that same script. Before each phase the worker runs `node <agent-kit bundle>/bin/ak-gate.mjs
+The installed `ak` on `PATH` is the maintenance CLI and has no `lifecycle` subcommand. The grant
+command prints the brief section the supervisor pastes into the task's brief, naming that same script. Before each phase the worker runs `node <agent-kit bundle>/bin/ak-gate.mjs
 bypass check --grant <file> --task <id> --phase <phase>`. Exit 0 is the start and leaves a use record under
 `<evidence>/<run>/bypass/`. A refusal is a stop with `needs-decision`. When the worker records
 `review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file> --task <id>`, and the
