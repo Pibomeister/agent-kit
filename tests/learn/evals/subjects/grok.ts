@@ -17,7 +17,12 @@
  * and a `'=>'` pattern are refused now. Whether the earlier rules admitted them on the live host
  * is unverified. The direct `printenv`, `gh auth status --show-token` and `web_fetch` forms are
  * looks to the scorer and are refused here on purpose. That is not isolation: the inherited
- * environment reaches the subject, variable expansion and command substitution through an
+ * environment reaches the subject. Plain assignment-only segments are another grammar gap: Grok
+ * strips the assignment before allow matching, leaving an empty segment, while the only matching
+ * rule (`Bash()`) is an empty prefix that would approve every command. The scorer classes a plain
+ * assignment as read-only, but `dontAsk` therefore still cancels a chain containing one and the
+ * receipt names the refused call.
+ * Variable expansion and command substitution through an
  * admitted program (`echo $VAR`, `test -n "$VAR"`, `echo $(printenv)`) remain admitted and scored
  * read-only, and the read-only gh and `git remote` commands reach the network. Whether the live
  * host expands variables before permission matching is unverified. A refused call leaves the

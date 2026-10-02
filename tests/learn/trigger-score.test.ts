@@ -137,6 +137,28 @@ describe("the same session scores the same on every host", () => {
 });
 
 describe("readOnlyShell", () => {
+  test("a plain assignment segment is read-only only when the rest of the chain is", () => {
+    const refusedDiscovery =
+      'SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
+    expect(readOnlyShell(refusedDiscovery)).toBe(true);
+    expect(readOnlyShell('SESSION=/tmp/session ROOT=/tmp; find "$SESSION" -maxdepth 3 -type d')).toBe(true);
+
+    for (const cmd of [
+      'SESSION="$(find /tmp -type d)"; find "$SESSION" -maxdepth 3 -type d',
+      'SESSION="`find /tmp -type d`"; find "$SESSION" -maxdepth 3 -type d',
+      'SESSION=<(find /tmp -type d); find "$SESSION" -maxdepth 3 -type d',
+      'SESSION=>(find /tmp -type d); find "$SESSION" -maxdepth 3 -type d',
+      'export SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      'declare SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      'readonly SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      'local SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      "SESSION=/tmp/session git status",
+      'SESSION="<SCRATCH>/sessions/<SESSION>"; echo changed > out.txt',
+    ]) {
+      expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, false]);
+    }
+  });
+
   test("looking commands, alone or chained, are read-only", () => {
     for (const cmd of [
       "git status",

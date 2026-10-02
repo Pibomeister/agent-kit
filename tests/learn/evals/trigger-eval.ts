@@ -127,6 +127,7 @@ import {
   READ_ONLY_GIT,
   READ_ONLY_GIT_ACTIONS,
   READ_ONLY_PROGRAMS,
+  plainAssignmentSegment,
   readsOf,
   unwrap,
   words,
@@ -646,7 +647,7 @@ export function readOnlyShell(command: string): boolean {
         redirect[2] === "<" || (redirect[3] === "&" ? /^(?:\d+|-)$/.test(target ?? "") : target === "/dev/null");
       if (!harmless) return false;
     }
-    return readOnlyProgram(program);
+    return plainAssignmentSegment(program) || readOnlyProgram(program);
   };
   const readOnlyFor = (start: number): number => {
     const header = commands[start]!;
