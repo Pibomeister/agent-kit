@@ -111,7 +111,8 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    with what it would cost if wrong, and continue.
 10. Otherwise emit exactly one escalation in the six-field shape and stop new writes and shipping.
     Scout and verify (`/ak:super-scout`, `/ak:super-verify`), which do not write the workspace, may
-    continue within budget. The human's answer settles the card; it is not re-dispatched.
+    continue within budget. The human's answer settles the card; it is not re-dispatched. After a
+    non-approving human answer, later cards for that operation still require a human ruling.
 11. Count fix cycles per finding. The third cycle on one finding is not authorized; that finding
     escalates as blocked-or-replan while other findings continue.
 12. End at an open pull request, with the ledger linked from the run report the runner holds, or at

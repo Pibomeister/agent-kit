@@ -79,6 +79,8 @@ export interface Escalation {
   options: { id: string; summary: string }[];
   tried: { ref: string; kind: "receipt" }[];
   default: string;
+  operation?: string;
+  approve?: string;
   charter_rule: string;
   blocked: string[];
 }

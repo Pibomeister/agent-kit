@@ -106,6 +106,18 @@ function approved(decision: Decision): boolean {
   return decision.result.status === "complete" && choice === decision.card.approve;
 }
 
+function optionsFor(card: Card) {
+  return card.options.map((option) => ({
+    id: option,
+    summary:
+      option === card.approve
+        ? `${option} (approves ${card.operation})`
+        : option === "retry"
+          ? `${option} (reopens ${card.operation})`
+          : `${option} (does not approve ${card.operation})`,
+  }));
+}
+
 function charterDigest(charter: Charter): string {
   const blanked = structuredClone(charter);
   blanked.immutability.hash = "";
@@ -353,11 +365,13 @@ export class Runner {
     const decided = result.status === "complete";
     const escalation = result.escalation ?? {
       need: "Runner cap was reached",
-      options: card.options.map((option) => ({ id: option, summary: option })),
+      options: optionsFor(card),
       tried: [{ ref: card.evidence[0] ?? run.charter_hash, kind: "receipt" as const }],
       default: card.options[0] ?? "stop",
       charter_rule: `runner:budget/${result.cap?.limit ?? "unknown"}`,
       blocked: [card.id],
+      operation: card.operation,
+      approve: card.approve,
     };
     const document = {
       schema: "decision",
@@ -440,8 +454,10 @@ export class Runner {
       diff_hash: run.diff_hash,
       card: {
         id: card.id,
+        operation: card.operation,
         question: card.question,
         options: card.options,
+        approve: card.approve,
         artifact_hash: card.artifact_hash,
         evidence: card.evidence.map((evidenceId) => ({ id: evidenceId, hash: run.evidence[evidenceId]?.hash ?? null })),
       },
@@ -479,12 +495,12 @@ export class Runner {
     }
     if (charter.run_id !== id) throw new Error("run id does not match charter");
     if (
-      !["runner-grants", "trusted-evidence", "independent-context", "event-delivery"].every((capability) =>
+      !["runner-grants", "trusted-evidence", "independent-context"].every((capability) =>
         charter.allowed_capabilities.includes(capability),
       )
     )
       throw new Error(
-        "standing start requires charter-approved runner grants, trusted evidence, independent context and event delivery",
+        "standing start requires charter-approved runner grants, trusted evidence and independent context",
       );
     if (
       standingGrant.charter_hash !== hash ||
@@ -619,8 +635,9 @@ export class Runner {
     if (
       run.decisions.some(
         (d) =>
-          d.answer !== undefined &&
-          d.answer.choice !== "retry" &&
+          d.result.status === "complete" &&
+          !approved(d) &&
+          d.answer?.choice !== "retry" &&
           d.card.operation === card.operation &&
           d.card.artifact_hash === card.artifact_hash &&
           d.revision === run.revision &&
@@ -628,7 +645,7 @@ export class Runner {
       )
     )
       throw new Error(
-        "a human ruling settled this card at this revision; revise its artifact before preparing another",
+        "a non-approving ruling settled this artifact at this revision; revise it before preparing another",
       );
     const prepared = { ...card, judgments: [] };
     run.cards[card.id] = prepared;
@@ -690,11 +707,13 @@ export class Runner {
     if (defaultOption === undefined) throw new Error("checkpoint has no default option");
     const escalation = {
       need: reason,
-      options: card.options.map((option) => ({ id: option, summary: option })),
+      options: optionsFor(card),
       tried: [{ ref: card.evidence[0] ?? run.charter_hash, kind: "receipt" as const }],
       default: defaultOption,
       charter_rule: rule,
       blocked: [card.id],
+      operation: card.operation,
+      approve: card.approve,
     };
     const result: OperationResult = {
       operation: card.operation,
@@ -801,7 +820,21 @@ export class Runner {
     if (card.operation === "ship.prepare" && !card.evidence.some((e) => run.evidence[e]?.kind === "verify"))
       return this.refuse(run, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
     const reached = this.capReached(run, step);
-    return reached === null ? null : this.cap(run, card, reached.limit, reached.value);
+    if (reached !== null) return this.cap(run, card, reached.limit, reached.value);
+    const lastHumanRuling = run.decisions.findLast(
+      (decision) =>
+        decision.card.operation === card.operation &&
+        decision.answer !== undefined &&
+        decision.answer.choice !== "retry",
+    );
+    if (lastHumanRuling?.answer !== undefined && lastHumanRuling.answer.choice !== lastHumanRuling.card.approve)
+      return this.refuse(
+        run,
+        card,
+        "runner:human-ruling",
+        "A previous human refusal keeps this operation human-gated until a human approves it",
+      );
+    return null;
   }
 
   private capReached(run: Run, step: StageStep): { limit: string; value: number } | null {
@@ -1048,16 +1081,20 @@ export class Runner {
     }
     if (old?.confirmed) return old;
     if (repoEffect) {
-      const ship = run.decisions.findLast(
-        (decision) => decision.card.operation === "ship.prepare" && approved(decision),
-      );
+      const ship = run.decisions.findLast((decision) => decision.card.operation === "ship.prepare");
       const permitted =
         operation === "pr-open"
           ? run.run_state === "ready-to-ship" && run.next_permitted_action === "pr-open"
           : operation === "remote-push"
             ? ["ready-to-ship", "pr-open"].includes(run.run_state)
             : ["pr-open", "complete"].includes(run.run_state);
-      if (!permitted || ship?.revision !== run.revision || ship.diff_hash !== run.diff_hash)
+      if (
+        !permitted ||
+        ship === undefined ||
+        !approved(ship) ||
+        ship.revision !== run.revision ||
+        ship.diff_hash !== run.diff_hash
+      )
         throw new Error("remote effect requires a current ship checkpoint");
     }
     if (["local-commit", "branch-create"].includes(operation) && !["building", "repairing"].includes(run.run_state))

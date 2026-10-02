@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { judgeSeat, launchSeat } from "../../src/firstmate/seat.ts";
@@ -38,8 +38,10 @@ function setup() {
       diff_hash: `sha256:${"b".repeat(64)}`,
       card: {
         id: "align-1",
+        operation: "align.run",
         question: "Approve the direction?",
         options: ["approve", "hold"],
+        approve: "approve",
         artifact_hash: `sha256:${"c".repeat(64)}`,
         evidence: [{ id: "e1", hash: `sha256:${createHash("sha256").update(bytes).digest("hex")}` }],
       },
@@ -169,6 +171,7 @@ describe("stock Firstmate seat launcher", () => {
     chmodSync(token, 0o644);
     expect(() => judge(token)).toThrow("mode 0600");
     chmodSync(token, 0o600);
+    writeFileSync(join(task, "ak-judge-align-1.json"), '{"choice":"invented"}');
     const result = judge(token);
     expect(result.result).toContain("accepted");
     const request: unknown = JSON.parse(readFileSync(submitted, "utf8"));
@@ -180,7 +183,7 @@ describe("stock Firstmate seat launcher", () => {
       choice: "approve",
       input_dispatches: [],
     });
-    expect(statSync(join(task, "ak-judge-align-1.json")).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dirname(token), "ak-judge-toy-run-align-1-seat-a.json")).mode & 0o777).toBe(0o600);
     writeFileSync(join(task, "report.md"), '{"choice":"invented","rationale":"not an option"}\n');
     expect(() => judge(token)).toThrow("declared option");
   });

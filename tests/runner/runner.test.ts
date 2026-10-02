@@ -1,5 +1,14 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
 import { join } from "node:path";
@@ -144,7 +153,13 @@ function standing(f: ReturnType<typeof fixture>): StandingGrant {
   };
 }
 
-function card(f: ReturnType<typeof ready>, id = "card-1", operation = "align.run", covers = "align-answer") {
+function card(
+  f: ReturnType<typeof ready>,
+  id = "card-1",
+  operation = "align.run",
+  covers = "align-answer",
+  hash = `sha256:${"b".repeat(64)}`,
+) {
   f.runner.prepare("toy-run", {
     id,
     operation,
@@ -153,7 +168,7 @@ function card(f: ReturnType<typeof ready>, id = "card-1", operation = "align.run
     options: ["yes", "no"],
     approve: "yes",
     evidence: ["e1"],
-    artifact_hash: `sha256:${"b".repeat(64)}`,
+    artifact_hash: hash,
   });
   f.runner.judge("toy-run", id, "seat-a", "supervisor-1", `${id}-dispatch-a`, "yes", []);
   f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-dispatch-b`, "yes", []);
@@ -257,6 +272,19 @@ describe("runner guards", () => {
     );
   });
 
+  test("standing start does not require event delivery the service does not supply", () => {
+    const f = fixture();
+    f.charter.allowed_capabilities = f.charter.allowed_capabilities.filter(
+      (capability) => capability !== "event-delivery",
+    );
+    f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+    const approval = f.charter.approvals[0];
+    if (approval === undefined) throw new Error("toy charter approval missing");
+    approval.artifact_hash = f.charter.immutability.hash;
+    writeFileSync(f.path, JSON.stringify(f.charter));
+    expect(f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f)).run_state).toBe("created");
+  });
+
   test("worker CLI cannot use supervisor verbs through the live service", async () => {
     const f = fixture();
     const socket = join(f.privateDir, "runner.sock");
@@ -265,6 +293,8 @@ describe("runner guards", () => {
     const effectConfig = join(f.privateDir, "effects.json");
     const remote = join(f.privateDir, "remote-pr.txt");
     const launches = join(f.privateDir, "launches.txt");
+    const workerBin = join(f.worker, "node_modules", ".bin");
+    mkdirSync(workerBin, { recursive: true });
     const judgeScript =
       "if (process.env.AK_RUNNER_ADMIN_TOKEN) process.exit(3); const packet = JSON.parse(await Bun.stdin.text()); if (!packet.diff_hash) process.exit(4); const fs = require('node:fs'); fs.appendFileSync(process.argv[1], packet.card.id + '\\n'); if (packet.card.id === 'align') while (!fs.existsSync(process.argv[1] + '.open')) await Bun.sleep(20); console.log(JSON.stringify({choice:packet.card.options[0], rationale:'separate process judgment'}));";
     writeFileSync(
@@ -332,7 +362,12 @@ describe("runner guards", () => {
     ];
     const serverOptions = {
       cwd: root,
-      env: { ...process.env, AK_RUNNER_ADMIN_TOKEN: adminToken, AK_RUNNER_WORKER_TOKEN: workerToken },
+      env: {
+        ...process.env,
+        PATH: `${workerBin}:${process.env["PATH"] ?? ""}`,
+        AK_RUNNER_ADMIN_TOKEN: adminToken,
+        AK_RUNNER_WORKER_TOKEN: workerToken,
+      },
       stdout: "pipe" as const,
       stderr: "pipe" as const,
     };
@@ -412,12 +447,15 @@ describe("runner guards", () => {
       const packet = call("packet", workerToken);
       expect(packet.exitCode).toBe(0);
       expect(packet.stdout.toString()).toContain('"charter_hash"');
+      expect(packet.stdout.toString()).toContain('"operation": "align.run"');
+      expect(packet.stdout.toString()).toContain('"approve": "yes"');
       expect(packet.stdout.toString()).not.toContain('"judgments"');
       const first = Bun.spawn(
         ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
         { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
       );
-      while (!existsSync(launches)) await Bun.sleep(20);
+      for (let attempt = 0; attempt < 250 && !existsSync(launches); attempt += 1) await Bun.sleep(20);
+      expect(existsSync(launches)).toBe(true);
       const second = await new Promise<{ response: Promise<string> }>((sent, failed) => {
         const connection = createConnection(socket);
         let response = "";
@@ -487,6 +525,18 @@ describe("runner guards", () => {
       phase("readiness", "review.readiness", "finding-adjudication", verifyEvidence.id);
       phase("ship", "ship.prepare", "ship-pr", verifyEvidence.id);
       expect(new Runner(f.privateDir, f.worker, root).status("toy-run").run_state).toBe("ready-to-ship");
+      const workerBunfig = join(f.worker, "bunfig.toml");
+      const workerHook = join(f.worker, ".seat-hook.ts");
+      const workerBun = join(workerBin, "bun");
+      writeFileSync(join(f.worker, ".git", "info", "exclude"), "bunfig.toml\n.seat-hook.ts\nnode_modules/\n");
+      writeFileSync(workerBunfig, 'preload = ["./.seat-hook.ts"]\n');
+      writeFileSync(workerHook, "process.exit(9);\n");
+      writeFileSync(workerBun, "#!/bin/sh\nexit 9\n");
+      chmodSync(workerBun, 0o755);
+      const beforeEffect = f.runner.status("toy-run").diff_hash;
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(call("sync", workerToken).exitCode).toBe(0);
+      expect(f.runner.status("toy-run").diff_hash).toBe(beforeEffect);
       const inputHash = `sha256:${"c".repeat(64)}`;
       writeFileSync(
         request,
@@ -513,6 +563,9 @@ describe("runner guards", () => {
       expect(call("effect", adminToken).exitCode).toBe(0);
       expect(new Runner(f.privateDir, f.worker, root).status("toy-run").run_state).toBe("pr-open");
       expect(call("effect", adminToken).exitCode).toBe(0);
+      unlinkSync(workerBunfig);
+      unlinkSync(workerHook);
+      unlinkSync(workerBun);
       transcript.push(
         "`call effect` `pr-open` twice → one read-back-confirmed remote write; second call returned the persisted result.",
       );
@@ -965,14 +1018,21 @@ describe("runner guards", () => {
     seats.runner.judge("toy-run", "nay", "seat-b", "supervisor-2", "nay-b", "no", []);
     expect(seats.runner.decide("toy-run", "nay").next_permitted_action).toBe("align.run");
     expect(stage(seats)).toEqual(["created", "align.run"]);
-    card(seats, "revised");
+    expect(() => card(seats, "reroll")).toThrow("non-approving ruling settled this artifact");
+    card(seats, "revised", "align.run", "align-answer", `sha256:${"c".repeat(64)}`);
     expect(seats.runner.decide("toy-run", "revised").next_permitted_action).toBe("bound.run");
     expect(stage(seats)).toEqual(["alignment", "bound.run"]);
   });
 
   test("a human answer settles the card: no keeps the stage and blocks a resubmission, yes advances", () => {
     const f = ready();
-    expect(split(f, "split", ["yes", "no"]).escalation?.charter_rule).toBe("runner:supervisor-disagreement");
+    const escalation = split(f, "split", ["yes", "no"]).escalation;
+    expect(escalation).toMatchObject({
+      charter_rule: "runner:supervisor-disagreement",
+      operation: "align.run",
+      approve: "yes",
+    });
+    expect(escalation?.options[0]).toEqual({ id: "yes", summary: "yes (approves align.run)" });
     expect(() => card(f, "early")).toThrow("stopped");
     expect(() => f.runner.answer("toy-run", "split", "maybe", "captain", "not an option")).toThrow("card's options");
     expect(() => f.runner.answer("toy-run", "split", "no", "implementer-1", "self-ruling")).toThrow("excluded actor");
@@ -989,7 +1049,7 @@ describe("runner guards", () => {
         answer: { choice: "no", by: "captain", rationale: "The receipt does not support this direction." },
       },
     ]);
-    expect(() => card(f, "flip")).toThrow("human ruling settled this card");
+    expect(() => card(f, "flip")).toThrow("non-approving ruling settled this artifact");
     f.runner.prepare("toy-run", {
       id: "rewrite",
       operation: "align.run",
@@ -1000,9 +1060,12 @@ describe("runner guards", () => {
       evidence: ["e1"],
       artifact_hash: `sha256:${"d".repeat(64)}`,
     });
-    f.runner.judge("toy-run", "rewrite", "seat-a", "supervisor-1", "rewrite-a", "yes", []);
-    f.runner.judge("toy-run", "rewrite", "seat-b", "supervisor-2", "rewrite-b", "yes", []);
-    expect(f.runner.decide("toy-run", "rewrite").next_permitted_action).toBe("bound.run");
+    expect(f.runner.decide("toy-run", "rewrite").escalation?.charter_rule).toBe("runner:human-ruling");
+    expect(f.runner.status("toy-run").cards["rewrite"]?.judgments).toEqual([]);
+    expect(f.runner.answer("toy-run", "rewrite", "yes", "captain", "The revision is now acceptable.")).toMatchObject({
+      status: "complete",
+      next_permitted_action: "bound.run",
+    });
 
     const yes = ready();
     expect(split(yes, "split", ["yes", "no"]).status).toBe("needs-input");
@@ -1094,9 +1157,212 @@ describe("runner guards", () => {
       ),
     ).toThrow("current ship checkpoint");
     transcript.push(
-      "Rulings: seats agreeing on a non-approving option and a human `no` both left the run at its stage, ledgered with actor and rationale; a resubmitted card was refused and a revised one advanced. A human `yes` advanced; `retry` reopened the checkpoint; a human `no` on ship left `pr-open` refused. A `cap-reached` run is not answerable.",
+      "Rulings: seats agreeing on a non-approving option and a human `no` both left the run at its stage, ledgered with actor and rationale; a resubmitted card was refused and a revised card escalated until a human approved. A human `yes` advanced; `retry` reopened the checkpoint; a human `no` on ship left `pr-open` refused. A `cap-reached` run is not answerable.",
     );
   });
+
+  test("relabeling a ship card cannot override a human no or open a PR", () => {
+    const f = ready();
+    reachShipReady(f, false);
+    expect(split(f, "ship-no", ["yes", "no"], "ship.prepare").status).toBe("needs-input");
+    f.runner.answer("toy-run", "ship-no", "no", "captain", "Do not open this PR.");
+    f.runner.prepare("toy-run", {
+      id: "ship-relabel",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open the same PR?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"c".repeat(64)}`,
+    });
+    f.runner.judge("toy-run", "ship-relabel", "seat-a", "supervisor-1", "relabel-a", "yes", []);
+    f.runner.judge("toy-run", "ship-relabel", "seat-b", "supervisor-2", "relabel-b", "yes", []);
+    const relabel = f.runner.decide("toy-run", "ship-relabel");
+    expect(relabel).toMatchObject({ status: "needs-input", escalation: { charter_rule: "runner:human-ruling" } });
+    const inputHash = `sha256:${"d".repeat(64)}`;
+    let remote: string | null = null;
+    const open = () =>
+      f.runner.effect(
+        "toy-run",
+        "pr-open",
+        "toy/pr",
+        inputHash,
+        () => remote,
+        () => {
+          remote = inputHash;
+        },
+      );
+    expect(open).toThrow("current ship checkpoint");
+    expect(remote).toBeNull();
+    expect(f.runner.answer("toy-run", "ship-relabel", "yes", "captain", "The revised PR is approved.")).toMatchObject({
+      status: "complete",
+      next_permitted_action: "pr-open",
+    });
+    expect(open().confirmed).toBe(true);
+  });
+
+  test("a later human ship refusal invalidates an older ship approval at the same snapshot", () => {
+    const f = ready();
+    reachShipReady(f);
+    f.runner.revision("toy-run", "a".repeat(40));
+    f.runner.revision("toy-run", f.revision);
+    const receipt = join(f.privateDir, "reverified.txt");
+    writeFileSync(receipt, "reverified original snapshot");
+    f.runner.collect("toy-run", "verify-new", receipt, f.revision, "verify");
+    f.runner.verify("toy-run", "verify-new");
+    card(f, "review-new", "review.full", "finding-adjudication");
+    expect(f.runner.decide("toy-run", "review-new").status).toBe("complete");
+    card(f, "readiness-new", "review.readiness", "finding-adjudication");
+    expect(f.runner.decide("toy-run", "readiness-new").status).toBe("complete");
+    expect(split(f, "ship-no", ["yes", "no"], "ship.prepare").status).toBe("needs-input");
+    f.runner.answer("toy-run", "ship-no", "no", "captain", "The refreshed review is not shippable.");
+    expect(() =>
+      f.runner.effect(
+        "toy-run",
+        "remote-push",
+        "toy/pr",
+        `sha256:${"c".repeat(64)}`,
+        () => null,
+        () => {
+          throw new Error("a stale ship approval pushed the branch");
+        },
+      ),
+    ).toThrow("current ship checkpoint");
+  });
+
+  test("worker bunfig and PATH cannot forge the two supervisor seats", async () => {
+    const f = fixture();
+    const socket = join(f.privateDir, "runner.sock");
+    const seatConfig = join(f.privateDir, "seats.json");
+    const seatScript = join(f.privateDir, "honest-seat.ts");
+    const honestLog = join(f.privateDir, "honest-seats.log");
+    const workerBin = join(f.worker, "node_modules", ".bin");
+    mkdirSync(workerBin, { recursive: true });
+    writeFileSync(
+      seatScript,
+      `const p=JSON.parse(await Bun.stdin.text());require('node:fs').appendFileSync(${JSON.stringify(honestLog)},process.argv[2]+' '+p.card.id+'\\n');console.log(JSON.stringify({choice:'no',rationale:'private seat'}));`,
+    );
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: ["seat-a", "seat-b"].map((seat) => ({
+          seat,
+          actor: `supervisor-${seat}`,
+          lineage: [`supervisor-${seat}`],
+          command: ["bun", seatScript, seat],
+        })),
+      }),
+    );
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    const server = Bun.spawn(
+      [
+        "bun",
+        join(root, "src", "cli.ts"),
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--seat-config",
+        seatConfig,
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, PATH: `${workerBin}:${process.env["PATH"] ?? ""}`, AK_RUNNER_WORKER_TOKEN: workerToken },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    try {
+      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
+      expect(existsSync(socket)).toBe(true);
+      const request = join(f.privateDir, "request.json");
+      const call = (verb: string, token: string, args: RunnerArgs) => {
+        writeFileSync(request, JSON.stringify(args));
+        return Bun.spawnSync(
+          ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
+          {
+            cwd: root,
+            env: { ...process.env, AK_RUNNER_TOKEN: token },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+      };
+      const run = { run: "toy-run" };
+      expect(
+        call("start", adminToken, {
+          ...run,
+          charter: f.path,
+          implementer: "implementer-1",
+          revision: f.revision,
+          standing_grant: standing(f),
+        }).exitCode,
+      ).toBe(0);
+      const receipt = join(f.privateDir, "receipt.txt");
+      writeFileSync(receipt, "independent receipt");
+      expect(
+        call("collect", adminToken, { ...run, id: "e1", source: receipt, revision: f.revision, kind: "source" })
+          .exitCode,
+      ).toBe(0);
+      const prepare = (id: string, label: string) =>
+        call("prepare", workerToken, {
+          ...run,
+          card: {
+            id,
+            operation: "align.run",
+            grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+            question: "Proceed?",
+            options: ["yes", "no"],
+            approve: "yes",
+            evidence: ["e1"],
+            artifact_hash: `sha256:${label.repeat(64)}`,
+          },
+        });
+      expect(prepare("honest", "b").exitCode).toBe(0);
+      const first = call("decide", workerToken, { ...run, card_id: "honest" });
+      expect(JSON.parse(first.stdout.toString())).toMatchObject({
+        status: "complete",
+        next_permitted_action: "align.run",
+      });
+      writeFileSync(join(f.worker, ".git", "info", "exclude"), "bunfig.toml\n.seat-hook.ts\nnode_modules/\n");
+      writeFileSync(join(f.worker, "bunfig.toml"), 'preload = ["./.seat-hook.ts"]\n');
+      writeFileSync(
+        join(f.worker, ".seat-hook.ts"),
+        'console.log(JSON.stringify({choice:"yes",rationale:"worker preload"}));process.exit(0);\n',
+      );
+      const fakeBun = join(workerBin, "bun");
+      writeFileSync(fakeBun, '#!/bin/sh\nprintf \'%s\\n\' \'{"choice":"yes","rationale":"worker path"}\'\n');
+      chmodSync(fakeBun, 0o755);
+      expect(Bun.spawnSync(["git", "-C", f.worker, "status", "--porcelain"]).stdout.toString()).toBe("");
+      expect(prepare("after-attack", "c").exitCode).toBe(0);
+      const second = call("decide", workerToken, { ...run, card_id: "after-attack" });
+      expect(JSON.parse(second.stdout.toString())).toMatchObject({
+        status: "complete",
+        next_permitted_action: "align.run",
+      });
+      expect(readFileSync(honestLog, "utf8").trim().split("\n")).toEqual([
+        "seat-a honest",
+        "seat-b honest",
+        "seat-a after-attack",
+        "seat-b after-attack",
+      ]);
+    } finally {
+      server.kill();
+      await server.exited;
+    }
+  }, 30_000);
 
   test("a failing seat launcher refuses with its error, and a supervisor answer settles the card", async () => {
     const f = fixture();

@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { createConnection, createServer } from "node:net";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { Runner } from "./core.ts";
 import { readAdminToken } from "./token.ts";
@@ -78,8 +78,13 @@ function effectCommand(template: string[], target: string, inputHash: string): s
   return template.map((part) => part.replaceAll("{target}", target).replaceAll("{input_hash}", inputHash));
 }
 
-function runCommand(argv: string[]): string {
-  const result = Bun.spawnSync(argv, { env: childEnv(), stdout: "pipe", stderr: "pipe" });
+function runCommand(argv: string[], runner: Runner): string {
+  const result = Bun.spawnSync(argv, {
+    cwd: runner.stateDir,
+    env: privateChildEnv(runner),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   if (result.exitCode !== 0) throw new Error(`trusted adapter command failed: ${result.stderr.toString().trim()}`);
   return result.stdout.toString().trim();
 }
@@ -93,10 +98,53 @@ function childEnv() {
   return env;
 }
 
-async function spawnPiped(argv: string[], cwd: string, stdin?: string) {
+function workerControlledPath(path: string, workerRoot: string): boolean {
+  if (!isAbsolute(path)) return true;
+  let existing = resolve(path);
+  for (;;) {
+    try {
+      lstatSync(existing);
+      break;
+    } catch (cause) {
+      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") return true;
+      const parent = dirname(existing);
+      if (parent === existing) return true;
+      existing = parent;
+    }
+  }
+  try {
+    const rel = relative(workerRoot, realpathSync(existing));
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  } catch {
+    return true;
+  }
+}
+
+function privateChildEnv(runner: Runner) {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(childEnv())) {
+    if (
+      !/^(BUN_|NODE_OPTIONS$|NODE_PATH$|NPM_CONFIG_|NPM_LIFECYCLE_|YARN_|PNPM_|COREPACK_|GIT_CONFIG_|PYTHONPATH$|PYTHONHOME$|RUBYOPT$|RUBYLIB$|PERL5LIB$|PERL5OPT$|INIT_CWD$|PWD$|OLDPWD$)/i.test(
+        key,
+      )
+    )
+      env[key] = value;
+  }
+  for (const key of ["HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "TMPDIR", "TMP", "TEMP"]) {
+    const value = env[key];
+    if (value !== undefined && workerControlledPath(value, runner.workerRoot)) env[key] = runner.stateDir;
+  }
+  const safePath = (env["PATH"] ?? "")
+    .split(delimiter)
+    .filter((path) => path.length > 0 && !workerControlledPath(path, runner.workerRoot));
+  env["PATH"] = safePath.length > 0 ? safePath.join(delimiter) : "/usr/bin:/bin";
+  return env;
+}
+
+async function spawnPiped(argv: string[], cwd: string, stdin?: string, env = childEnv()) {
   const child = Bun.spawn(argv, {
     cwd,
-    env: childEnv(),
+    env,
     stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
     stdout: "pipe",
     stderr: "pipe",
@@ -113,7 +161,7 @@ async function dispatchSeat(runner: Runner, runId: string, cardId: string, launc
   const card = runner.status(runId).cards[cardId];
   if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
   const packet = runner.packet(runId, cardId);
-  const child = await spawnPiped(launcher.command, runner.workerRoot, JSON.stringify(packet));
+  const child = await spawnPiped(launcher.command, runner.stateDir, JSON.stringify(packet), privateChildEnv(runner));
   if (child.exitCode !== 0) throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
   const answerValue: unknown = JSON.parse(child.stdout.toString());
   if (!isSeatAnswer(answerValue)) throw new Error("launcher returned an invalid judgment");
@@ -210,9 +258,9 @@ async function execute(
         effect,
         target,
         inputHash,
-        () => runCommand(effectCommand(adapter.read_back, target, inputHash)) || null,
+        () => runCommand(effectCommand(adapter.read_back, target, inputHash), runner) || null,
         () => {
-          runCommand(effectCommand(adapter.perform, target, inputHash));
+          runCommand(effectCommand(adapter.perform, target, inputHash), runner);
         },
       );
     }

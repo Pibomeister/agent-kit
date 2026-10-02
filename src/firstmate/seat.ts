@@ -1,7 +1,7 @@
 /** Stock Firstmate scout seats for one frozen runner checkpoint. */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { readAdminToken } from "../runner/token.ts";
@@ -13,8 +13,10 @@ interface SeatPacket {
   diff_hash: string;
   card: {
     id: string;
+    operation: string;
     question: string;
     options: string[];
+    approve: string;
     artifact_hash: string;
     evidence: { id: string; hash: string | null }[];
   };
@@ -36,11 +38,13 @@ const seatPacket = ajv.compile<SeatPacket>({
     diff_hash: { type: "string" },
     card: {
       type: "object",
-      required: ["id", "question", "options", "artifact_hash", "evidence"],
+      required: ["id", "operation", "question", "options", "approve", "artifact_hash", "evidence"],
       properties: {
         id: { type: "string" },
+        operation: { type: "string" },
         question: { type: "string" },
         options: { type: "array", minItems: 2, items: { type: "string" } },
+        approve: { type: "string" },
         artifact_hash: { type: "string" },
         evidence: {
           type: "array",
@@ -73,7 +77,12 @@ function privateFile(home: string, path: string): string {
 function packetFrom(home: string, path: string): SeatPacket {
   const value: unknown = JSON.parse(readFileSync(privateFile(home, path), "utf8"));
   if (!seatPacket(value)) throw new Error(`invalid frozen seat packet: ${JSON.stringify(seatPacket.errors)}`);
-  if (!ID.test(value.run) || !ID.test(value.card.id) || value.card.evidence.some((item) => item.hash === null))
+  if (
+    !ID.test(value.run) ||
+    !ID.test(value.card.id) ||
+    !value.card.options.includes(value.card.approve) ||
+    value.card.evidence.some((item) => item.hash === null)
+  )
     throw new Error("seat packet has an invalid id or uncollected evidence");
   return value;
 }
@@ -191,7 +200,10 @@ export function judgeSeat(args: SeatJudgeArgs) {
   if (!seatAnswer(value) || !packet.card.options.includes(value.choice))
     throw new Error("seat report ends without a declared option and rationale");
   const token = readAdminToken(args.adminTokenFile, [home]);
-  const request = join(home, "data", args.taskId, `ak-judge-${packet.card.id}.json`);
+  const request = join(
+    dirname(realpathSync(args.adminTokenFile)),
+    `ak-judge-${packet.run}-${packet.card.id}-${args.seat}.json`,
+  );
   const body = {
     run: packet.run,
     card_id: packet.card.id,
@@ -203,7 +215,6 @@ export function judgeSeat(args: SeatJudgeArgs) {
     input_dispatches: [],
     lineage: [args.actor],
   };
-  mkdirSync(join(home, "data", args.taskId), { recursive: true });
   if (existsSync(request) && readFileSync(request, "utf8") !== JSON.stringify(body))
     throw new Error("seat judgment changed after its first submission");
   if (!existsSync(request)) writeFileSync(request, JSON.stringify(body), { flag: "wx", mode: 0o600 });

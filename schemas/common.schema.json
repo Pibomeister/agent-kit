@@ -513,6 +513,8 @@
           "items": { "$ref": "#/$defs/evidence_ref" }
         },
         "default": { "$ref": "#/$defs/kebab_id" },
+        "operation": { "$ref": "#/$defs/nonempty_string" },
+        "approve": { "$ref": "#/$defs/kebab_id" },
         "charter_rule": {
           "description": "The charter or policy rule that triggered this, e.g. 'charter:sensitive_actions/merge' or 'policy:limits/fix_cycles'.",
           "$ref": "#/$defs/nonempty_string"

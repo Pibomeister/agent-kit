@@ -35,6 +35,8 @@ in a mode-0600 file outside this home, the worktree and any git checkout (defaul
 install this guards against accidents, not against a deliberately adversarial worker. Steer the
 implementer to `decide` after both judgments are recorded. Request shapes are in
 `adapters/runner-contract/CLI.md`.
+`seat-judge` writes its runner request beside that private token, not in the scout's writable
+`data/<task>/` directory.
 
 No-mistakes auto-fix values need not be zero. If the pipeline changes the head, the runner
 invalidates prior verification and review evidence; sync, verify and review again before done.

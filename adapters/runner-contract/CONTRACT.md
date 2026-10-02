@@ -366,7 +366,9 @@ snapshots retain their original all-untracked behavior; this exception is confin
 
 At `decide`, the service checks the charter, grant, current state, evidence and cap before invoking
 the two configured launchers. It sends each launcher the same frozen question, option ids and
-evidence hashes on stdin, without either judgment. Under stock Firstmate, the launchers dispatch
+evidence hashes, operation and approving option on stdin, without either judgment. The service runs
+seat launchers from its private state directory, with runner tokens, runtime preloads and worker-root
+`PATH` entries removed from their environment. Under stock Firstmate, the launchers dispatch
 separate ordinary crewmates through its normal brief/spawn path; the implementing worker never
 spawns them. Each launcher returns a JSON object containing
 `choice` and `rationale`. The service strips runner tokens from the launched environment, records
@@ -381,7 +383,9 @@ without it. Only that choice advances the run, whether two seats agree on it or 
 it. Any other choice (no, revise, hold, reject) is recorded as the ruling, leaves the run at the same
 stage with that operation as its next permitted action, issues no grant and authorizes no effect: a
 non-approving `ship.prepare` never unlocks `pr-open` or a push. The way forward is a revised card that
-an approving decision then settles.
+an approving decision then settles. The packet and escalation name both the operation and its
+approving option, so a seat or human can see which choice would advance. An identical artifact after
+a non-approving seat ruling is not re-dispatched; a revised artifact may return to the seats.
 
 `answer` settles the escalated card with the human's or supervisor's ruling: the `card_id`, a
 `choice` from the card's options, the `actor` who ruled and a `rationale`. An excluded actor cannot
@@ -389,8 +393,10 @@ answer. The card becomes decided with that choice, so `decide` replays the rulin
 relaunched, and the run moves exactly as an agreeing pair of seats with that choice would move it.
 The ledger entry is marked answered and carries the choice, actor, rationale and time; the card's
 decision artifact keeps the refusal, because a `decided` artifact needs two seat judgments. A
-resubmitted card cannot override the ruling: `prepare` refuses a card for the same operation and
-artifact at the same revision and diff, so only a revised artifact goes back to the seats. A `retry`
+resubmitted card cannot override the ruling: `prepare` refuses the same operation and artifact at
+the same revision and diff. After a human non-approving answer, even a revised artifact or changed
+worker revision remains human-gated for that operation until a human approves; `decide` escalates
+before launching seats. A `retry`
 option, when the card lists one, instead reopens the checkpoint as it stood before the refusal.
 `decide` rejects a card that is not the next permitted action with an error and leaves the run as it
 was, so no escalation is ever opened for a checkpoint the run has not reached and every escalation's
@@ -407,7 +413,10 @@ beside the restart record. A restart reads the next permitted action and returns
 without redispatching them. `effect` resolves its read-back and perform command arrays only from a
 supervisor-owned service configuration, never from a request file: it reads before and after,
 persists its deterministic key before performing the effect, and never reports completion without
-matching read-back. The worker cannot supply these commands, even through an admin call that reads
+matching read-back. Both commands run from the private state directory with the same sanitized
+environment as the seat launchers. A remote effect requires the most recent ship decision to approve
+the current snapshot; an older approval cannot outvote a later refusal. The worker cannot supply
+these commands, even through an admin call that reads
 a worker-authored request file. Repository effects also refuse a target outside the charter's
 repository list. `ship.prepare` leaves the run `ready-to-ship`; only a confirmed PR-open read-back
 transitions it to `pr-open`. A changed head requires a new verification and review before completion.
@@ -420,3 +429,8 @@ install a deliberately adversarial worker can still read the token file, the sta
 evidence store, because nothing here changes operating-system permissions. A charter that omits
 `runner-grants` or `trusted-evidence` cannot gain either merely because a service was started; a new
 human-approved charter is needed.
+
+`run-verify` is the deliberate exception to the private child directory: it runs the worker's own
+verification command from the worker root and strips runner tokens. The verifier therefore executes
+worker-controlled code under the service's OS identity; an adversarial deployment must isolate that
+identity from supervisor credentials and private files outside the process environment too.
