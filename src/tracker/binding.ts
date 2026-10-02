@@ -323,7 +323,7 @@ export function checkTrackerSecret(
       error(
         "tracker.secret-mode",
         file,
-        `token_file mode ${mode.toString(8)} lets someone other than the owner read it. Run chmod 600 ${file}`,
+        `token_file mode ${mode.toString(8)} grants access to someone other than the owner. Run chmod 600 ${file}`,
       ),
     );
   }
