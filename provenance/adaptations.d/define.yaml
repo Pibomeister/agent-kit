@@ -71,9 +71,10 @@ adaptations:
       publish.
   - path: skills/super-bound/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
-    rationale: Vertical-slice rules, blocking edges and the wide-refactor carve-out. The donor's
-      split between a local issue directory and a real tracker becomes the knowledgebase adapter,
-      and parallel-safety is widened past edges to shared generated artifacts and file ownership.
+    rationale: Blocking edges. The donor's split between a local issue directory and a real
+      tracker becomes the knowledgebase adapter, and parallel-safety is widened past edges to
+      shared generated artifacts and file ownership. The vertical-slice rule and the wide-refactor
+      carve-out from the same source are carried by references/delegation/REFERENCE.md.
   - path: skills/super-bound/SKILL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-plans/SKILL.md
     rationale: Zero-context calibration, the consumed and produced interfaces block, task

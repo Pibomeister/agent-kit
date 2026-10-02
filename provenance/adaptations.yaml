@@ -251,6 +251,9 @@ adaptations:
   - path: references/delegation/REFERENCE.md
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L82-98
     rationale: Transparent size, diffusion, hotspot and prior-fix inputs became optional complexity evidence rather than a learned or package-wide gate.
+  - path: references/delegation/REFERENCE.md
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
+    rationale: The vertical-slice rule and the wide-refactor carve-out moved here from the super-bound body, where they now sit beside the ordered stack that the reports supply.
   - path: references/domain-modeling/REFERENCE.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/domain-modeling/ADR-FORMAT.md
     rationale: The three-part test for whether a decision is worth recording, the list of what qualifies, and the minimal template. The donor's file-based decision log becomes a proposed decision record published through the knowledgebase.
@@ -937,7 +940,7 @@ adaptations:
     rationale: The decision-level specification sections, the seams-first rule and the carve-out that admits a prototype-settled fragment. Section names are aligned to this package's acceptance and verification vocabulary and the donor's file write becomes a knowledgebase publish.
   - path: skills/super-bound/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
-    rationale: Vertical-slice rules, blocking edges and the wide-refactor carve-out. The donor's split between a local issue directory and a real tracker becomes the knowledgebase adapter, and parallel-safety is widened past edges to shared generated artifacts and file ownership.
+    rationale: Blocking edges. The donor's split between a local issue directory and a real tracker becomes the knowledgebase adapter, and parallel-safety is widened past edges to shared generated artifacts and file ownership. The vertical-slice rule and the wide-refactor carve-out from the same source are carried by references/delegation/REFERENCE.md.
   - path: skills/super-bound/SKILL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/writing-plans/SKILL.md
     rationale: Zero-context calibration, the consumed and produced interfaces block, task right-sizing and the planner's own self-review. The donor's list of banned unfinished-content phrasings becomes a hard gate, and its cross-reference to a donor-specific execution skill is dropped.

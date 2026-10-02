@@ -153,9 +153,10 @@ failure_outcomes:
   - status: needs-input
     meaning: >-
       A prerequisite the run cannot supply itself: a start by the typed command or a validated
-      grant, an approved direction, an approval bound to this revision, a grant, an answer to
-      every open document-review decision, or a settled decision that new evidence has not
-      invalidated.
+      grant, an approved direction, an approval bound to this revision, project delegation
+      guidance, a grant, a scorer that returns its record, readiness free of vague terms, a
+      resolution for every open assumption, an answer to every open document-review decision, or
+      a settled decision that new evidence has not invalidated.
     next_permitted_action: >-
       Return the blocking item; do not proceed on a substitute. For a start by neither the typed
       command nor a grant, return the command to type and nothing else.

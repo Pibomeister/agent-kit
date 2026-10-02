@@ -14,6 +14,9 @@ adaptations:
   - path: references/delegation/REFERENCE.md
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
     rationale: The six readiness criteria, vague-term pass and assumption resolution became per-ticket evidence and frontier questions.
+  - path: references/delegation/REFERENCE.md
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
+    rationale: The vertical-slice rule and the wide-refactor carve-out moved here from the super-bound body, where they now sit beside the ordered stack that the reports supply.
   - path: policies/authority-defaults.yaml
     source: local:mission-brief-risk-tiering-and-slop-avoidance@sha256:90abd48e019f09ea3d58c11028148fc971dbefe145c70c0822364f15b1729b38#L150-159
     rationale: The captain's class-to-checkpoint table became the authoritative policy map while merge and deploy remain sensitive for every class.
