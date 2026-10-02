@@ -4,8 +4,8 @@ import { dirname, isAbsolute, relative } from "node:path";
 import { gitProcess, resolveRunnerGit } from "./snapshot.ts";
 
 /**
- * Reads the runner admin token from a supervisor-only file. The file may not sit under any of the
- * given root or inside a git checkout or git directory, and must be readable by its owner alone.
+ * Reads the runner admin token from a supervisor-only file. The file may not sit under the given
+ * root or inside a git checkout or git directory, and must be readable by its owner alone.
  * On a same-user install a deliberately adversarial worker can still read it: this guards against
  * accidental exposure and is not isolation.
  */
