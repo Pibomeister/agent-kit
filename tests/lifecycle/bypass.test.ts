@@ -635,6 +635,17 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(first).not.toBe(second.id);
   });
 
+  test("the use record lists every grant that has held the phase, the one in force included", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    const used = join(defaultEvidenceDir(s.worktree), "task", "bypass", "super-review-readiness.json");
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:readiness").code).toBe(0);
+    expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("held_grant_ids", [first]);
+    const second = freshGrant(s, () => new Date(), "T-1");
+    expect(checkPhase(s, second.path, "T-1", "super-review:readiness").code).toBe(0);
+    expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("held_grant_ids", [first, second.id]);
+  });
+
   test("a phase recorded by hand cannot be relabelled with --bypass at the same snapshot", () => {
     const s = granted();
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);

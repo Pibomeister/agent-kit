@@ -1321,7 +1321,7 @@ const useRecord = (
   run_id: run,
   checked_at: at,
   ended_grant_ids: endedGrants(started),
-  held_grant_ids: heldGrants(started),
+  held_grant_ids: [...new Set([...heldGrants(started), ...(authority?.mode === "bypass" ? [authority.grant_id] : [])])],
   restarted_after_end:
     started?.ended_at === undefined
       ? started?.restarted_after_end
