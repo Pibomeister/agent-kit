@@ -1,0 +1,41 @@
+schema_version: "1.1"
+name: missing-knowledgebase-does-not-preempt-questions
+tags: [missing-tools]
+execution:
+  prompt: >-
+    /ak:super-align We need a self-service recovery flow for locked customer accounts, but we have
+    not agreed who may unlock an account or what evidence is sufficient. The knowledgebase adapter
+    is unavailable here: there is no kb-read or kb-write capability.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
+graders:
+  - name: missing-knowledgebase-does-not-stop-the-interview
+    type: llm
+    weight: 3
+    criteria: >-
+      The response names missing kb-read as a coverage limit and still opens the alignment
+      interview. It classifies the work, states a hypothesis with confidence, and asks a numbered
+      frontier round with a recommended answer and reason for each question instead of stopping
+      with needs-input before asking anything.
+  - name: publication-boundary-is-preserved
+    type: llm
+    focus: last_message
+    weight: 2
+    criteria: >-
+      The response describes the knowledgebase adapter as unavailable rather than as failed or
+      broken. It does not say that the interview or its result was published, saved or recorded
+      anywhere, and it offers no repository file or other local substitute for the knowledgebase.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
