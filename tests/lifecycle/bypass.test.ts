@@ -21,6 +21,8 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { parse } from "yaml";
+
 import { loadCatalog } from "../../src/catalog/load.ts";
 import {
   BYPASS_PHASES,
@@ -221,6 +223,11 @@ describe("bypass granted: phases start without a typed command", () => {
 });
 
 describe("start only: approvals, merge and deploy are never covered", () => {
+  test("policies/invocation.yaml lists the same bypass phases the gate starts", () => {
+    const policy = parse(readFileSync(join(REPO, "policies", "invocation.yaml"), "utf8"));
+    expect(policy.bypass.phases).toEqual([...BYPASS_PHASES]);
+  });
+
   test.each(["align-answer", "spec-approval", "ticket-approval", "ship-pr", "merge", "deploy", "autopilot"])(
     "%s is refused with a needs-decision hint",
     (phase) => {
@@ -472,7 +479,7 @@ describe("one task: the grant binds to the task it names and that task's worktre
   });
 });
 
-describe("attribution: --bypass only where a phase covers the gate, and never optional once used", () => {
+describe("attribution: --bypass only where a phase covers the gate, and a typed record after a bypassed start is marked explicit", () => {
   test.each(["build-checks", "verify", "review-delta"])(
     "record --gate %s --bypass is refused and writes nothing",
     (gate) => {

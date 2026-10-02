@@ -42,10 +42,11 @@ runs `ak lifecycle bypass check --grant <file> --task <id> --phase <phase>` (or 
 `<evidence>/<run>/bypass/`. A refusal is a stop with `needs-decision`. When the worker records
 `review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file> --task <id>`, and the
 gate record carries `authority: {mode: "bypass", grant_id, grant, grant_sha256, authorized_by,
-task_id, worktree}`. The attribution is not optional once used: a gate whose phase has a use record in the run,
-or whose record at this snapshot already carries a grant, is refused without `--bypass` naming that
-grant. `--bypass` on a gate no bypass phase records (`build-checks`, `verify`, `review-delta`) is
-refused.
+task_id, worktree}`. The attribution is never silently dropped once used: a typed record of a phase
+that has a use record in the run carries `authority: {mode: explicit, superseded_grant_id}` and ends
+the bypass for that phase (see *A started phase* below), and a snapshot recorded by hand cannot be
+re-recorded with `--bypass`. `--bypass` on a gate no bypass phase records (`build-checks`, `verify`,
+`review-delta`) is refused.
 
 **Start only.** The grant starts phases and nothing else. Every approval inside a phase still stops
 with `needs-decision` for the supervisor who holds the grant: super-align's explicit yes, super-bound's
