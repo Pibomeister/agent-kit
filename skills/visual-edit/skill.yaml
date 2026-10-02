@@ -202,7 +202,9 @@ tests:
       acknowledges that revision and pulls again; no direct canvas source apply occurs.
   - id: missing-prerequisite-stops-without-static-fallback
     kind: negative
-    given: The bridge daemon is absent while the human asks to open the running app for visual editing.
+    given: >-
+      Every other prerequisite is present and only the bridge daemon is absent while the human asks
+      to open the running app for visual editing.
     expect: >-
       The skill returns needs-input naming missing-prerequisite:bridge-daemon and creates no
       generated markup, screenshot or static canvas fallback.
