@@ -43,7 +43,7 @@ entrypoints:
     authority: explicit
     summary: >-
       Open and verify URL-backed route frames, hold visual changes pending, apply the selected batch
-      through source, confirm the running app and acknowledge the exact revision.
+      through source, confirm the running app and acknowledge the revision the pull returned.
 
 requires:
   - repository-read
@@ -84,8 +84,9 @@ outputs:
   - id: applied-edit-receipt
     schema: verification
     summary: >-
-      A probe receipt per applied pending revision. Its parameters name route, viewport and visual
-      revision; artifacts name changed source files and digests; source_revision binds the code;
+      A probe receipt per applied handoff. Its parameters name route, viewport and the revision
+      or, where the WebMCP pull returned none, the handoff digest and that no acknowledgment
+      channel exists; artifacts name changed source files and digests; source_revision binds the code;
       observed records the dev-server confirmation. supports lists the supplied criteria and the
       receipt is consumable by super-verify; with none supplied it carries no_criteria instead,
       saying so and naming what was verified, the running app showing the applied edit.
@@ -119,14 +120,16 @@ hard_gates:
     viewports, never copied markup or static snapshots.
   - The connection, requested frames and Code panel are verified before canvas handoff.
   - Canvas changes remain pending. Compiled routes and source files change only through the coding
-    agent, and acknowledgment follows source application, receipt validation and dev-server confirmation.
+    agent. Where the MCP connector pull returned a revision, it is acknowledged, and only after
+    source application, receipt validation and dev-server confirmation. A WebMCP pull returns no
+    revision and has no acknowledgment.
   - A change beyond style, literal text or local layout requires an approved ticket and super-build.
-  - An applied batch has a schema-valid receipt bound to source revision and environment before
-    acknowledgment (ruling `closure-requires-independent-verification`).
+  - An applied batch has a schema-valid receipt bound to source revision and environment, before
+    any acknowledgment (ruling `closure-requires-independent-verification`).
 
 stop_conditions:
   - complete when the verified canvas is ready with no pending batch, or one pending batch is
-    applied, confirmed, receipted and acknowledged.
+    applied, confirmed and receipted, and acknowledged when its pull returned a revision.
   - needs-input when invocation or a named prerequisite is missing, or a broader change lacks an
     approved implementation ticket.
 
@@ -138,7 +141,7 @@ failure_outcomes:
       approved ticket. A supplied handoff is applied and receipted before a missing connector
       stops the acknowledgment; the receipt stands and the revision stays pending.
     next_permitted_action: >-
-      Supply the named prerequisite or approved ticket and invoke the command again. A revision
+      Supply the named prerequisite or approved ticket and invoke the command again. A handoff
       already receipted, its artifact digests still matching source, is then acknowledged only and
       not applied again.
   - status: failed

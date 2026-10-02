@@ -31,8 +31,8 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 
 - The Design editor hosted at `https://design.agent-native.com`, reached through its MCP connector
   or WebMCP; no local editor is started. Unavailable: `missing-prerequisite:editor-connector`.
-  It opens designs, pulls handoffs and takes acknowledgments; applying a supplied handoff needs it
-  only to acknowledge.
+  It opens designs and pulls handoffs; only the MCP connector returns a revision and takes its
+  acknowledgment. Applying a supplied handoff needs it only to acknowledge.
 - The `@agent-native/core` CLI. Missing: `missing-prerequisite:bridge-cli`. The bridge token and
   the daemon on `127.0.0.1:7331` are made by the run, not brought to it.
 - Only to save or share the design: an account on the editor. Opening routes, comparing
@@ -42,7 +42,7 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
   down is started with the project's own dev command; a route that still does not respond is
   `missing-prerequisite:dev-server`, with that route named.
 - Optional named acceptance criteria. They let the resulting receipt enter `super-verify`'s matrix;
-  without them the batch is still applied, receipted and acknowledged.
+  without them the batch is still applied and receipted.
 
 ## Workflow
 
@@ -69,20 +69,21 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 8. Hand the verified canvas to the human. Visual changes remain pending and never write source from
    the canvas. Preserve the pending batch until it is applied or explicitly discarded. A save or
    share asked for without the account stops with its id and leaves the session as it is.
-9. Pull the pending handoff and its revision through the editor's MCP connector or WebMCP, the
-   channel that also takes the acknowledgment; nothing else pulls. A handoff the human supplies
-   with its revision, already pulled through that channel, is applied and receipted without the
-   connector, which step 11 still requires to acknowledge. For a compiled route, locate and edit
-   authored source through the coding agent. A change beyond style, literal text or local layout
-   stops for an approved ticket, then hands the revision to `super-build`; no partial apply here.
-10. A revision already receipted, its artifact digests still matching source, is never applied
-    again: go to step 11 and only acknowledge it. Otherwise read every target file before writing,
-    apply the batch to source, and confirm the dev server refreshes each affected route at its
-    named viewport. A version conflict is re-read and re-planned, never overwritten.
-11. Emit the receipt in Outputs unless it exists, acknowledge the exact pending revision only after
-    source and dev-server confirmation exist, then pull once more; a non-empty pull is another
-    batch, not a failed acknowledgment. An acknowledgment the connector cannot take stops with
-    `missing-prerequisite:editor-connector`; the receipt stands and the revision stays pending.
+9. Pull the pending handoff; nothing else pulls. The MCP connector's `get-visual-edit-pending`
+   returns it with a revision and `acknowledge-visual-edit-pending` takes that revision. WebMCP's
+   `get-visual-edit-prompt` returns it with no revision and has no acknowledgment. A handoff the
+   human supplies with its revision is applied and receipted without the connector, which step 11
+   still requires to acknowledge. For a compiled route, edit authored source through the coding
+   agent. A change beyond style, literal text or local layout stops for an approved ticket, then
+   hands the handoff to `super-build`; no partial apply here.
+10. A handoff already receipted, its artifact digests still matching source, is never applied
+    again: go to step 11. Otherwise read every target file before writing, apply the batch to
+    source, and confirm the dev server refreshes each affected route at its named viewport. A
+    version conflict is re-read and re-planned, never overwritten.
+11. Emit the receipt in Outputs unless it exists. A handoff with no revision ends there. Otherwise
+    acknowledge the exact revision, then pull once more; a non-empty pull is another batch. An
+    acknowledgment the connector cannot take stops with `missing-prerequisite:editor-connector`;
+    the receipt stands and the revision stays pending.
 12. When acceptance criteria were supplied, pass the receipt to `super-verify`; it decides whether
     the receipt covers them or whether another check is required.
 
@@ -98,30 +99,30 @@ viewports, never copied markup or static snapshots.
 Gate: the connection, frames and Code panel are verified before the human receives the canvas.
 
 Gate: canvas changes remain pending. Compiled routes and source files change only through the coding
-agent; acknowledgment follows source application and dev-server confirmation, never precedes them.
+agent; a revision is acknowledged only after source application and dev-server confirmation.
 
 Gate: a change beyond style, literal text or local layout is not absorbed here. It requires an
 approved implementation ticket and `super-build`.
 
-Gate: an applied batch has a schema-valid receipt bound to source revision and environment before
-acknowledgment. Narrative is not a receipt (ruling `closure-requires-independent-verification`).
+Gate: an applied batch has a schema-valid receipt bound to source revision and environment, before
+any acknowledgment. Narrative is not a receipt (ruling `closure-requires-independent-verification`).
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "The route is down, so a static page is close enough." | It removes the running app from the loop. | Name `missing-prerequisite:dev-server` and stop. |
 | "The canvas looks right, so I can acknowledge now." | Pending edits are not source changes. | Apply, confirm the dev server, write the receipt, then acknowledge. |
-| "This compiled screen can apply itself." | Canvas edits cannot safely locate authored source. | Pull the revision and change source through the coding agent. |
+| "This compiled screen can apply itself." | Canvas edits cannot safely locate authored source. | Pull the handoff and change source through the coding agent. |
 
 ## Outputs
 
 - Returned canvas session data: design URL, design and connection ids, ordered routes, named
   viewports, and the completed pre-handoff checklist. Tokens are excluded.
-- For each applied pending revision, a `verification` receipt
-  (`schemas/verification.schema.json`): the probe parameters name route, viewport and visual-edit
-  revision; `artifacts` names every changed source file with its digest; `source_revision` binds the
-  code; the probe's observed value records the dev-server confirmation. `supports` lists the supplied
-  criteria and `super-verify` may consume it. With none supplied the receipt carries `no_criteria`
-  instead, saying so and naming what was verified: the running app showing the applied edit.
+- For each applied handoff, a `verification` receipt (`schemas/verification.schema.json`): the
+  probe parameters name route, viewport and the revision or, where the channel returned none, the
+  handoff digest and that no acknowledgment channel exists; `artifacts` names every changed source
+  file with its digest; `source_revision` binds the code; the probe's observed value records the
+  dev-server confirmation. `supports` lists the supplied criteria for `super-verify`; with none the
+  receipt carries `no_criteria`, naming what was verified: the running app showing the edit.
 - When the edit exceeds this skill's boundary, the unchanged pending revision and the approved
   ticket requirement are handed to `super-build`; no partial source edit is an output.
 
@@ -132,8 +133,8 @@ canvas-to-source write. Account and bridge secrets stay process-local and never 
 
 ## Stop conditions
 
-- `complete`: the verified canvas is ready with no pending batch, or one batch is applied, confirmed,
-  receipted and acknowledged.
+- `complete`: the verified canvas is ready with no pending batch, or one batch is applied, confirmed
+  and receipted, and acknowledged when its pull returned a revision.
 - `needs-input`: invocation or a named prerequisite is missing, or a non-style change lacks an
   approved implementation ticket.
 - `failed`: the editor or bridge rejects the connection, source conflicts cannot be reconciled, the
@@ -145,6 +146,5 @@ canvas-to-source write. Account and bridge secrets stay process-local and never 
 - Missing prerequisites: 0 (gate). Static output never substitutes for a missing prerequisite.
 - Frames per focused batch: 3-7 (guidance). Use exactly the requested routes and viewports; expand
   beyond seven only for an explicit exhaustive request.
-- Direct application: style, literal text and local layout only (gate). Everything broader enters
-  `super-build`; exploratory alternatives enter `prototype`; acceptance evidence enters
-  `super-verify`.
+- Direct application: style, literal text and local layout only (gate). Broader work enters
+  `super-build`; alternatives enter `prototype`; acceptance evidence enters `super-verify`.
