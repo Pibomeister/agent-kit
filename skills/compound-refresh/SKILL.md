@@ -54,9 +54,10 @@ and names the slash command (ruling `entrypoint-phase-operation-split`).
 
 1. **Check how this run was started**, before any other step and before any tool call. It is started
    only when the human's message begins with `/ak:compound-refresh`; no grant starts it. A request
-   in prose is not a start, even when it names this skill or the command. Otherwise, stop here: make
-   no tool call, say that this command is human-started, and give the human the line to type,
-   `/ak:compound-refresh` and their request.
+   in prose is not a start, even when it names this skill or the command, or asks for this work
+   without naming either. Otherwise, stop before reading any lesson or code, checking inputs or
+   answering the task: the only response is to tell the human to type `/ak:compound-refresh`
+   followed by their request.
 2. **Read each lesson in scope** and the code it describes.
 3. **Classify each one.**
    - **Keep** — still accurate and still useful. Record that it was checked, and nothing more.

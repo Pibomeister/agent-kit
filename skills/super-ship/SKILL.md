@@ -1,14 +1,16 @@
 ---
 name: super-ship
 description: >-
-  Human-started command for preparing a verified, reviewed change for publication: it runs only
-  when the human's message begins with `/ak:super-ship`, under a validated grant, or when a
-  supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. Use when a reviewed,
-  verified change must become a commit and pull request. When prose asks to commit, prepare a pull
-  request or push the change, do not inspect the branch or act; tell the human to type
-  `/ak:super-ship` followed by their request. Runs release checks, a sensitive-data scan, the
-  commit, the pull-request payload and the linked knowledgebase draft. Runs dry or publishes under
-  a grant. Not for merging, deploying or deciding whether the change is correct.
+  Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or
+  under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
+  bypass check`. On any other request do not load or follow it; tell the human to type that
+  command. When prose asks for this publication work on a reviewed change, do not inspect the
+  branch or act; tell the human to type `/ak:super-ship` followed by their request. Prepares a
+  verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the
+  pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally
+  and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become
+  a commit and pull request. Not for merging, not for deploying, and not for deciding whether the
+  change is correct.
 license: MIT
 metadata:
   ak_catalog_id: super-ship

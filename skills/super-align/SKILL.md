@@ -1,14 +1,15 @@
 ---
 name: super-align
 description: >-
-  Human-started command for turning an unsettled request into agreed direction: it runs only when
-  the human's message begins with `/ak:super-align`, under a validated grant, or when a
-  supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. Use when what to build
-  is not yet agreed. When prose asks for this alignment work, do not answer its questions or inspect
-  project context; tell the human to type `/ak:super-align` followed by their request. Produces a
-  design tree worked in rounds, named terms, two or three approaches with a recommendation, and an
-  explicit human yes before anything is built. Not for a request that already carries acceptance
-  criteria, or a single-file fix with no decision in it.
+  Human-started command: it runs only when the human's message begins with `/ak:super-align`, or
+  under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
+  bypass check`. On any other request do not load or follow it; tell the human to type that
+  command. When prose asks for this alignment work, do not answer its questions or inspect project
+  context; tell the human to type `/ak:super-align` followed by their request. Grills an unsettled
+  request into agreed direction: a design tree worked in rounds, named terms, two or three
+  approaches with a recommendation, and an explicit human yes before anything is built. Use when
+  what to build is not yet agreed. Not for a request that already carries acceptance criteria, and
+  not for a single-file fix with no decision in it.
 license: MIT
 metadata:
   ak_catalog_id: super-align

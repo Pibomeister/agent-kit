@@ -1,7 +1,7 @@
 {
  "id": "trigger-dev",
  "version": 4,
- "about": "Skill-routing dev set, version 4. M skills: 2 positives (expects load) + 1 negative. U skills: 3 prose positives (expects recommend: the law says only a typed /ak:<id> starts one, so the reply recommends the command or loads and stops), 1 hard negative near the trigger, and for five of them a positive that begins with the typed command (expects proceed). Every negative carries forbidden. dev-doc-review-p2 carries its document inline because the harness repository is empty. tests/learn/trigger-prompts.test.ts holds the split and the leakage guard.",
+ "about": "Skill-routing dev set, version 4. M skills: 2 positives (expects load) + 1 negative. U skills: 3 prose positives (expects recommend: the law says only a typed /ak:<id> starts one, so the reply recommends the command or loads and stops), 1 hard negative near the trigger (super-ship has a second: an ordinary commit on unreviewed work), and for five of them a positive that begins with the typed command (expects proceed). Every negative carries forbidden. dev-doc-review-p2 carries its document inline because the harness repository is empty. tests/learn/trigger-prompts.test.ts holds the split and the leakage guard.",
  "cases": [
   {"id": "dev-super-align-p1", "skill": "super-align", "polarity": "positive", "invocation": "U", "expected": ["super-align"], "expects": "recommend",
    "prompt": "Please run /ak:super-align on this before anyone writes code: I want some kind of team workspaces feature, but I honestly can't tell if it means shared billing, shared projects, or both."},
@@ -33,6 +33,8 @@
    "prompt": "/ak:super-ship dry run for the retry backoff branch"},
   {"id": "dev-super-ship-h1", "skill": "super-ship", "polarity": "negative", "invocation": "U", "expected": [], "forbidden": ["super-ship"],
    "prompt": "What's the difference between squash-merging and rebase-merging a pull request?"},
+  {"id": "dev-super-ship-h2", "skill": "super-ship", "polarity": "negative", "invocation": "U", "expected": [], "forbidden": ["super-ship"],
+   "prompt": "Nobody has looked at the parser cleanup yet. Just commit what I have so far so I don't lose it."},
 
   {"id": "dev-super-review-p1", "skill": "super-review", "polarity": "positive", "invocation": "U", "expected": ["super-review"], "expects": "recommend",
    "prompt": "Please run /ak:super-review in full mode on the payments refactor branch."},

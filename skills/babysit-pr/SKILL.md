@@ -86,9 +86,10 @@ arriving.
 1. Check how this run was started, before any other step and before any tool call. `watch` is
    started only when the human's message begins with `/ak:babysit-pr`, or when a controller started
    `pr.watch` under a validated grant; `repair` only when a controller started `ci.repair` under a
-   validated grant. A request in prose is not a start, even when it names this skill or the command.
-   With neither, stop here: make no tool call, say that this command is human-started, and give the
-   human the line to type, `/ak:babysit-pr` and their request.
+   validated grant. A request in prose is not a start, even when it names this skill or the command,
+   or asks for this work without naming either. With neither, stop before inspecting the pull
+   request, checking event delivery or answering the task: the only response is to tell the human
+   to type `/ak:babysit-pr` followed by their request.
 2. Confirm the pull request is open and event delivery is available. Neither: stop with
    `needs-input`.
 3. Wait for an event. Do not poll: the run is idle between wake-ups, and an idle run consumes no

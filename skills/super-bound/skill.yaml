@@ -1,7 +1,7 @@
 # Execution contract for super-bound (schemas/skill.schema.json).
 # Prose mirror: skills/super-bound/SKILL.md. The two are one statement in two forms.
 id: super-bound
-version: 0.2.0
+version: 0.2.1
 kind: lifecycle
 invocation: U
 summary: >-
