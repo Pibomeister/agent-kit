@@ -167,3 +167,5 @@ sessions therefore estimate to **$1.07** in host-reported cost. A conservative a
 would be **$2.14**, twice the estimate, with the run stopped rather than widened if either repair still fails.
 
 No such session was run for this repair.
+
+The approved smoke and its early-stop result are recorded in [the 2026-10-02 A3 smoke](2026-10-02-a3-smoke.md).

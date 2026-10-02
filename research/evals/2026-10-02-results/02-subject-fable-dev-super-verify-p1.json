@@ -1,0 +1,12 @@
+{
+  "case": "dev-super-verify-p1",
+  "subject": "subject-fable",
+  "status": "run",
+  "valid": true,
+  "invalid_reason": null,
+  "turn_count": null,
+  "turn_count_note": "The committed trigger-eval entry point parsed but did not retain the host-reported turn count.",
+  "tool_event_count": 4,
+  "declared_cap": 20,
+  "host_reported_cost_usd": 0.39347575
+}
