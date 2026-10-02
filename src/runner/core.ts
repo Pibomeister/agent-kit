@@ -9,7 +9,7 @@ import { artifactHash, sha256Hex } from "../util/hash.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
-import { runnerGit, takeRunnerSnapshot } from "./snapshot.ts";
+import { resolveRunnerGit, runnerGit, takeRunnerSnapshot, type RunnerGitContext } from "./snapshot.ts";
 import type {
   Card,
   CardInput,
@@ -147,6 +147,7 @@ export class Runner {
   private readonly validateCharter: ValidateFunction<Charter>;
   private readonly enforceSnapshot: boolean;
   private readonly sharedGitDir: string | null;
+  private readonly gitContext: RunnerGitContext;
   private readonly evidenceStore: PrivateFileEvidenceStore;
 
   constructor(stateDir: string, workerRoot: string, kitRoot: string, enforceSnapshot = false) {
@@ -154,7 +155,8 @@ export class Runner {
     this.workerRoot = realpathSync(workerRoot);
     this.enforceSnapshot = enforceSnapshot;
     if (inside(requestedStateDir, this.workerRoot)) throw new Error("runner state is worker-writable");
-    const commonDir = runnerGit(this.workerRoot, ["rev-parse", "--git-common-dir"]);
+    const gitContext = resolveRunnerGit(this.workerRoot);
+    const commonDir = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
     this.sharedGitDir =
       commonDir.code === 0
         ? realpathSync(isAbsolute(commonDir.text) ? commonDir.text : join(this.workerRoot, commonDir.text))
@@ -166,6 +168,7 @@ export class Runner {
     if (inside(this.stateDir, this.workerRoot)) throw new Error("runner state resolves into worker root");
     if (this.sharedGitDir !== null && inside(this.stateDir, this.sharedGitDir))
       throw new Error("runner state resolves into the shared git common directory");
+    this.gitContext = { ...gitContext, home: this.stateDir };
     this.evidenceStore = new PrivateFileEvidenceStore(this.stateDir);
     const schemas = compileSchemas(kitRoot);
     if (schemas.issues.some((issue) => issue.severity === "error"))
@@ -270,7 +273,7 @@ export class Runner {
 
   private observedSnapshot(): Snapshot | null {
     if (!this.enforceSnapshot) return null;
-    const snapshot = takeRunnerSnapshot(this.workerRoot, RUNTIME_SCRATCH_DIRS);
+    const snapshot = takeRunnerSnapshot(this.gitContext, this.workerRoot, RUNTIME_SCRATCH_DIRS);
     if (snapshot instanceof Object) return snapshot;
     throw new Error(`runner cannot observe worker revision: ${snapshot}`);
   }
@@ -342,6 +345,7 @@ export class Runner {
       },
       created_at: run.created_at,
       status: run.run_state,
+      cancellation: run.cancellation ?? null,
       charter: { hash: run.charter_hash },
       entries,
     };
@@ -965,6 +969,7 @@ export class Runner {
     if (!this.runSchema(runValue)) throw new Error("runner state is invalid and cannot be cancelled");
     const run = runValue;
     if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot cancel the run");
+    if (run.run_state === "complete") throw new Error("completed run cannot be cancelled");
     if (run.run_state === "cancelled") return run;
     run.run_state = "cancelled";
     run.next_permitted_action = null;

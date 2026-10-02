@@ -1,10 +1,12 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -785,6 +787,133 @@ describe("runner guards", () => {
     expect(existsSync(cleanLog)).toBe(false);
   });
 
+  test("nested snapshots cannot resolve git through a worker PATH shim", async () => {
+    const f = fixture();
+    const workerBin = join(f.worker, "tools", "bin");
+    mkdirSync(workerBin, { recursive: true });
+    writeFileSync(join(f.worker, ".git", "info", "exclude"), "tools/\n");
+    const trustedGit = Bun.which("git");
+    if (trustedGit === null) throw new Error("git is required for the runner test");
+    const path = `${workerBin}:${process.env["PATH"] ?? ""}`;
+    const socket = join(f.privateDir, "runner.sock");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    const server = Bun.spawn(
+      [
+        "bun",
+        join(root, "src", "cli.ts"),
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, PATH: path, AK_RUNNER_WORKER_TOKEN: workerToken },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    try {
+      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
+      expect(existsSync(socket)).toBe(true);
+      const request = join(f.privateDir, "request.json");
+      const call = (verb: string, token: string, args: RunnerArgs) => {
+        writeFileSync(request, JSON.stringify(args));
+        return Bun.spawnSync(
+          ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
+          {
+            cwd: root,
+            env: { ...process.env, AK_RUNNER_TOKEN: token },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+      };
+      expect(
+        call("start", adminToken, {
+          run: "toy-run",
+          charter: f.path,
+          implementer: "implementer-1",
+          revision: f.revision,
+          standing_grant: standing(f),
+        }).exitCode,
+      ).toBe(0);
+      const nested = join(f.worker, "vendor", "lib");
+      mkdirSync(nested, { recursive: true });
+      git(nested, "init", "-q");
+      writeFileSync(join(nested, "a.ts"), "export const value = 1;\n");
+      git(nested, "add", "a.ts");
+      git(nested, "commit", "-qm", "initial");
+      const first = call("sync", workerToken, { run: "toy-run" });
+      expect(first.exitCode).toBe(0);
+      const baseline = first.stdout.toString().match(/"diff_hash"\s*:\s*"sha256:[a-f0-9]{64}"/)?.[0];
+      if (baseline === undefined) throw new Error("runner sync omitted diff_hash");
+      const marker = join(f.privateDir, "worker-git-ran.txt");
+      const shim = join(workerBin, "git");
+      writeFileSync(
+        shim,
+        `#!/bin/sh\nprintf 'ran\\n' >> ${JSON.stringify(marker)}\nexec ${JSON.stringify(realpathSync(trustedGit))} "$@"\n`,
+      );
+      chmodSync(shim, 0o700);
+      expect(
+        Bun.spawnSync(["git", "-C", nested, "rev-parse", "HEAD"], { env: { ...process.env, PATH: path } }).exitCode,
+      ).toBe(0);
+      expect(existsSync(marker)).toBe(true);
+      unlinkSync(marker);
+      writeFileSync(join(nested, "a.ts"), "export const value = 2;\n");
+      const second = call("sync", workerToken, { run: "toy-run" });
+      expect(second.exitCode).toBe(0);
+      expect(second.stdout.toString()).not.toContain(baseline);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      server.kill();
+      await server.exited;
+    }
+  }, 30_000);
+
+  test("FIFO git control files refuse promptly without wedging supervisor cancel", () => {
+    const f = fixture();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const script = `import {Runner} from ${JSON.stringify(join(root, "src", "runner", "core.ts"))};new Runner(${JSON.stringify(f.privateDir)},${JSON.stringify(f.worker)},${JSON.stringify(root)},true).syncRevision("toy-run");`;
+    const refuses = (name: string) => {
+      const child = nodeSpawnSync(process.execPath, ["-e", script], {
+        cwd: root,
+        env: { ...process.env },
+        encoding: "utf8",
+        timeout: 6_000,
+        killSignal: "SIGKILL",
+      });
+      expect(child.error).toBeUndefined();
+      expect(child.status).not.toBe(0);
+      expect(child.stderr).toContain(`runner git ${name} must be a regular file`);
+    };
+    const index = join(f.worker, ".git", "index");
+    unlinkSync(index);
+    expect(Bun.spawnSync(["mkfifo", index]).exitCode).toBe(0);
+    refuses("index");
+    unlinkSync(index);
+    git(f.worker, "reset", "--hard", "HEAD");
+    const head = join(f.worker, ".git", "HEAD");
+    const previous = readFileSync(head);
+    unlinkSync(head);
+    expect(Bun.spawnSync(["mkfifo", head]).exitCode).toBe(0);
+    refuses("HEAD");
+    expect(f.runner.cancel("toy-run", "captain", "Stop despite a broken checkout.").run_state).toBe("cancelled");
+    unlinkSync(head);
+    writeFileSync(head, previous);
+  }, 30_000);
+
   test("runner snapshot follows submodules and embedded repositories", () => {
     const f = fixture();
     const nested = (name: string) => {
@@ -1254,6 +1383,7 @@ describe("runner guards", () => {
       cancellation: { by: "captain", rationale: "Stop the run." },
     });
     expect(new Runner(f.privateDir, f.worker, root).status("toy-run").run_state).toBe("cancelled");
+    expect(f.runner.ledger("toy-run").cancellation).toMatchObject({ by: "captain", rationale: "Stop the run." });
     expect(() => card(f, "after-cancel")).toThrow("stopped");
     expect(f.runner.cancel("toy-run", "captain", "Stop the run.").run_state).toBe("cancelled");
     const capped = ready(0);
@@ -1265,6 +1395,25 @@ describe("runner guards", () => {
     expect(() => stale.runner.status("toy-run")).toThrow("charter no longer validates");
     expect(stale.runner.cancel("toy-run", "captain", "Stop after charter loss.").run_state).toBe("cancelled");
     expect(new Runner(stale.privateDir, stale.worker, root).status("toy-run").run_state).toBe("cancelled");
+    const finished = ready();
+    reachShipReady(finished);
+    const hash = `sha256:${"c".repeat(64)}`;
+    let remote: string | null = null;
+    finished.runner.effect(
+      "toy-run",
+      "pr-open",
+      "toy/pr",
+      hash,
+      () => remote,
+      () => {
+        remote = hash;
+      },
+    );
+    expect(finished.runner.complete("toy-run").run_state).toBe("complete");
+    expect(() => finished.runner.cancel("toy-run", "captain", "Too late.")).toThrow(
+      "completed run cannot be cancelled",
+    );
+    expect(finished.runner.ledger("toy-run").status).toBe("complete");
   });
 
   test("an out-of-phase card is rejected without stopping the run, and decides once its phase arrives", () => {

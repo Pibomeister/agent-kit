@@ -11,6 +11,17 @@
       "description": "The run's state when the ledger was last written.",
       "$ref": "common.schema.json#/$defs/run_state"
     },
+    "cancellation": {
+      "description": "Who cancelled the run, why and when; null before cancellation.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["by", "rationale", "at"],
+      "properties": {
+        "by": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "rationale": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+        "at": { "$ref": "common.schema.json#/$defs/timestamp" }
+      }
+    },
     "charter": {
       "description": "The charter the run is under, by the hash recomputed at load. The charter is immutable for the run: a changed hash is a new charter, and this run does not adopt it.",
       "type": "object",

@@ -55,8 +55,9 @@ option advances the run; any other choice keeps it at that stage, opens nothing,
 back to prepare a revised card. After a human's non-approving answer, every later card for that
 operation escalates to a human again until one approves. The runner always offers `no` as a refusal
 even when the worker's card omitted it, and a human `retry` also keeps the human gate. A supervisor
-may call `ak runner call cancel` with actor and rationale to stop at any point; it does not undo an
-already confirmed effect. `adapters/runner-contract/CLI.md` owns
+may call `ak runner call cancel` with actor and rationale before completion; the ledger records
+who stopped the run, why and when. It does not undo an already confirmed effect or reconcile a
+performed effect still awaiting read-back. `adapters/runner-contract/CLI.md` owns
 the full `answer` rules.
 
 ## Legacy patched binding

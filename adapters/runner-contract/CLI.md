@@ -40,7 +40,7 @@ it to a worker or supply that capability to a skill.
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
 | `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A card that is not the next permitted action is an error and leaves the run unchanged; decide it once its phase arrives. A launcher that fails or answers outside the options refuses the card with its error |
 | `answer` | Firstmate | `{"run":"r","card_id":"align-1","choice":"no","actor":"captain","rationale":"..."}`; the runner always accepts `no` as a refusal even when the card omits it. The escalation recommends `no` by default and names the operation and approving option. After any non-approving human choice, including `retry`, every later card for that operation goes to a human until one approves. An approving answer at a charter cap stops at `cap-reached` |
-| `cancel` | Firstmate | `{"run":"r","actor":"captain","rationale":"Stop this run."}`; records who stopped the run and why, clears an open escalation and sets the durable `cancelled` stop even at a cap. It does not undo a confirmed effect |
+| `cancel` | Firstmate | `{"run":"r","actor":"captain","rationale":"Stop this run."}`; records actor, rationale and time in the ledger, clears an open escalation and sets the durable `cancelled` stop even at a cap. A completed run cannot be cancelled. It does not undo a confirmed effect or reconcile a performed effect awaiting read-back |
 | `sync`, `run-verify` | Worker | `{"run":"r"}`; sync observes the current Git revision and diff, while verification executes only the private configured command |
 | `effect` | Firstmate | `{"run":"r","effect":"pr-open","target":"repo/pr-identity","input_hash":"sha256:<digest>"}` |
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |
@@ -77,6 +77,14 @@ through its normal Firstmate status and inbox rather than
 polling, and Firstmate relays the human's ruling with `answer`. A changed worktree makes old evidence stale. After normal delivery changes the head,
 `sync`, `run-verify`, review and ship must run again before `complete` can succeed. Merge and deploy
 are never granted by these commands.
+
+The runner pins an absolute Git executable when the service starts. Each snapshot Git subprocess
+has a ten-second limit, and a nonregular Git index or HEAD refuses the snapshot. Snapshotting reads
+raw worktree bytes and recursively reads attached nested repositories, so large trees and nested
+repositories add I/O cost. Git ignores remain relevant to untracked files: `.git/info/exclude` can
+hide a top-level file, nested repository ignores can hide nested edits, and a gitlink whose `.git`
+entry is absent is not traversed. Keep gate evidence and verification tied to the actual source
+tree; the fingerprint alone does not establish that these hidden files were reviewed.
 
 For worker-authored checkpoint evidence, the worker writes a file, calls `sync`, and reports its
 path, proposed id and kind to Firstmate. The supervisor copies it into private runner intake and

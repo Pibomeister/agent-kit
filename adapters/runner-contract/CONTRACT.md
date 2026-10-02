@@ -361,14 +361,21 @@ revision and diff; `run-verify` executes only the supervisor-configured command 
 output privately.
 
 The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable bits and index
-entries instead of trusting a Git text diff. Its Git calls disable fsmonitor and hooks, run with a
-filtered `PATH` and do not invoke textconv or attribute clean filters. A tracked edit therefore
-changes the runner's `diff_hash` even when worker Git config claims the tree is clean. A submodule
-or embedded repository is hashed recursively the same way, together with its `HEAD` (or `unborn`),
+entries instead of trusting a Git text diff. At service start it pins an absolute Git executable
+outside the worker root; nested repositories use the same executable and a runner-private Git home.
+Its Git calls disable fsmonitor, hooks and the global excludes file, run with a filtered `PATH`,
+have a ten-second timeout with a kill signal, and do not invoke textconv or attribute clean filters.
+A nonregular Git index or HEAD refuses the snapshot. A tracked edit in an inspected repository
+therefore changes the runner's `diff_hash` even when worker Git config claims the tree is clean.
+An attached submodule or embedded repository with a `.git` entry is hashed recursively the same
+way, together with its `HEAD` (or `unborn`),
 and an entry the runner cannot read, such as a nested repository whose Git fails or a socket,
-refuses the snapshot instead of being skipped. The raw
-fingerprint also omits **untracked** `.omc/` and `.omx/` harness scratch; tracked files in those
-paths and every other untracked source file still count. Standalone lifecycle snapshots retain
+refuses the snapshot instead of being skipped. Git's untracked-file selection still applies:
+`.git/info/exclude` can hide a top-level untracked file, nested repository ignores can hide nested
+edits, and a gitlink with no `.git` entry is not traversed. The raw fingerprint also omits
+**untracked** `.omc/` and `.omx/` harness scratch; tracked files in those paths count.
+Recursively hashing raw bytes costs I/O proportional to the selected files, including attached
+nested repositories. Standalone lifecycle snapshots retain
 their original Git-diff behavior. This change in runner fingerprint format makes evidence from an
 older runner binary stale on upgrade: sync, recollect and verify it before proceeding.
 
@@ -415,6 +422,9 @@ was, so no escalation is ever opened for a checkpoint the run has not reached an
 options are exactly the choices `answer` accepts. An approving answer is held to the same elapsed and
 budget caps as `decide`: at a cap the run goes to `cap-reached` instead of advancing. A
 `cap-reached` run is not answerable, because raising a cap needs a new human-approved charter.
+`cancel` refuses a completed run and records actor, rationale and time in the run ledger. A
+performed remote effect that was pending read-back when cancellation occurred remains unconfirmed;
+cancellation does not reconcile or undo it. Firstmate must inspect the remote system separately.
 
 The service checks the active charter schema, recomputes its canonical hash, verifies its human
 approval and refuses any changed charter on resume. `collect` snapshots only files outside the

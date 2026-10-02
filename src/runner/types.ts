@@ -142,6 +142,7 @@ export interface RunLedger {
   schema: "run-ledger";
   entries: { checkpoint: string; decision: { id: string; hash: string }; outcome: "ruling" | "escalation" }[];
   status: string;
+  cancellation?: { by: string; rationale: string; at: string } | null;
 }
 
 export interface InvocationPolicy {
