@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
@@ -9,6 +9,10 @@ import type { StandingGrant } from "../../src/runner/types.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+
+// Most tests drive git, the live runner service and separate seat processes; they take 2-4s alone
+// and pass the 5s default once the full suite shares the host.
+setDefaultTimeout(30_000);
 
 const root = join(import.meta.dir, "..", "..");
 const transcript: string[] = [
