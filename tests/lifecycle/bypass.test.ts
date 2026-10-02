@@ -79,11 +79,58 @@ function setup() {
   return { project, worktree, home, ledger, grantPath: join(home, "data", "T-1", "bypass.json") };
 }
 
-function ak(cwd: string, ledger: string, ...argv: string[]) {
+function akAt(now: () => Date, cwd: string, ledger: string, ...argv: string[]) {
   const out: string[] = [];
   const err: string[] = [];
-  const code = main(argv, { out: (l) => out.push(l), err: (l) => err.push(l) }, cwd, ledger);
+  const code = main(argv, { out: (l) => out.push(l), err: (l) => err.push(l) }, cwd, ledger, now);
   return { code, out: out.join("\n"), err: err.join("\n") };
+}
+
+const ak = (cwd: string, ledger: string, ...argv: string[]) => akAt(() => new Date(), cwd, ledger, ...argv);
+
+/** A clock a day and an hour on, past a default grant's expiry. */
+const dayLater = () => new Date(Date.now() + 25 * 3_600_000);
+
+const checkPhase = (s: ReturnType<typeof setup>, grant: string, task: string, phase: string) =>
+  ak(s.worktree, s.ledger, "bypass", "check", "--grant", grant, "--task", task, "--phase", phase);
+
+const recordArgs = (gate: string, grant: string, task: string) => [
+  "record",
+  "--gate",
+  gate,
+  "--bypass",
+  grant,
+  "--task",
+  task,
+];
+
+/** A second grant on the setup's worktree, issued at `now`, for `task`: its path and id. */
+function freshGrant(s: ReturnType<typeof setup>, now: () => Date, task: string) {
+  const before = new Set(readdirSync(s.ledger));
+  const path = join(s.home, "data", task, "bypass-fresh.json");
+  const r = akAt(
+    now,
+    s.home,
+    s.ledger,
+    "bypass",
+    "grant",
+    "--task",
+    task,
+    "--by",
+    "captain",
+    "--reason",
+    "r",
+    "--out",
+    path,
+    "--project",
+    s.project,
+    "--worktree",
+    s.worktree,
+  );
+  expect(r).toMatchObject({ code: 0 });
+  const added = readdirSync(s.ledger).filter((name) => !before.has(name));
+  expect(added).toHaveLength(1);
+  return { path, id: String(added[0]).replace(/\.json$/, "") };
 }
 
 /** `bypass grant` for task T-1 on the setup's worktree, run from `cwd`. */
@@ -168,7 +215,7 @@ describe("bypass granted: phases start without a typed command", () => {
     const evidence = defaultEvidenceDir(worktree);
     const full = only(readRecords(evidence, "task", "review-full"));
     expect(full.authority).toMatchObject({ mode: "bypass", authorized_by: "captain", task_id: "T-1" });
-    expect(full.authority?.grant_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(full.authority?.mode === "bypass" && full.authority.grant_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(only(readRecords(evidence, "task", "build-checks")).authority).toBeUndefined();
   });
 });
@@ -437,29 +484,67 @@ describe("attribution: --bypass only where a phase covers the gate, and never op
     },
   );
 
-  test("a review started under a grant cannot be recorded without it", () => {
-    const { worktree, ledger, grantPath } = granted();
-    expect(
-      ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-review:full")
-        .code,
-    ).toBe(0);
-    const plain = ak(worktree, ledger, "record", "--gate", "review-full");
-    expect(plain.code).toBe(1);
-    expect(plain.err).toContain("started under bypass grant");
-    expect(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).toEqual([]);
-    expect(ak(worktree, ledger, "record", "--gate", "review-full", "--bypass", grantPath, "--task", "T-1").code).toBe(
-      0,
-    );
-    expect(only(readRecords(defaultEvidenceDir(worktree), "task", "review-full")).authority?.mode).toBe("bypass");
+  test("a review started under a grant that expired continues under a fresh grant for the same task", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    const expired = akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
+    expect(expired.code).toBe(1);
+    expect(expired.err).toContain("expired");
+    expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).toEqual([]);
+    const fresh = freshGrant(s, dayLater, "T-1");
+    expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
+    expect(only(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).authority).toMatchObject({
+      mode: "bypass",
+      grant_id: fresh.id,
+      task_id: "T-1",
+      superseded_grant_id: first,
+    });
   });
 
-  test("a plain re-record cannot strip the attribution from a bypassed record", () => {
-    const { worktree, ledger, grantPath } = granted();
-    expect(
-      ak(worktree, ledger, "record", "--gate", "review-readiness", "--bypass", grantPath, "--task", "T-1").code,
-    ).toBe(0);
-    expect(ak(worktree, ledger, "record", "--gate", "review-readiness").code).toBe(1);
-    expect(only(readRecords(defaultEvidenceDir(worktree), "task", "review-readiness")).authority?.mode).toBe("bypass");
+  test("a typed record after a bypassed start succeeds and names the grant it ends", () => {
+    const s = granted();
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    expect(only(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).authority).toEqual({
+      mode: "explicit",
+      superseded_grant_id: grantId(s.ledger),
+    });
+  });
+
+  test("another task's grant cannot continue a bypassed start, at check or at record", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    const other = freshGrant(s, () => new Date(), "T-2").path;
+    const checked = checkPhase(s, other, "T-2", "super-review:full");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("started under bypass grant");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", other, "T-2"));
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain("started under bypass grant");
+    expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).toEqual([]);
+    const used = join(defaultEvidenceDir(s.worktree), "task", "bypass", "super-review-full.json");
+    expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({ grant_id: first, task_id: "T-1" });
+  });
+
+  test("a bypassed record at one snapshot is re-recorded by a fresh same-task grant, then by a typed record", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1")).code).toBe(0);
+    const fresh = freshGrant(s, dayLater, "T-1");
+    expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1")).code).toBe(0);
+    const evidence = defaultEvidenceDir(s.worktree);
+    expect(only(readRecords(evidence, "task", "review-readiness")).authority).toMatchObject({
+      mode: "bypass",
+      grant_id: fresh.id,
+      superseded_grant_id: first,
+    });
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
+    expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
+      mode: "explicit",
+      superseded_grant_id: first,
+    });
   });
 });
 

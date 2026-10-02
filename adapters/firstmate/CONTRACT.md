@@ -222,8 +222,10 @@ The grant is start-only: every approval inside those phases still reaches Firstm
 `needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
 check must run from inside the task's worktree the grant names (`--project` cannot stand in for it);
 any run under that task may use it. Gate records made with `--bypass <path> --task <id>` carry
-`authority.mode: bypass` and who authorized it, and once a phase started under the grant its gate
-cannot be recorded without it.
+`authority.mode: bypass` and who authorized it. A phase started under a grant that has since expired
+continues under a fresh grant for the same task and worktree, whose record names the one it
+supersedes, or under the typed command, which ends the bypass and records
+`authority.mode: explicit` with `superseded_grant_id`; a grant for another task or worktree is refused.
 
 `grant` refuses to run from inside any worktree of the repository or under the home's `projects/`,
 or to write inside a worktree or the git directory, and it records the issuing directory, host and

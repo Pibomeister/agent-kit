@@ -183,7 +183,7 @@ export interface GateRecord {
   implementer?: { author_kind: AuthorKind; host: string };
   evidence?: ArtifactRef[];
   /** Present when the phase was started under a bypass grant rather than a typed command (ADR-0008). */
-  authority?: BypassAttribution;
+  authority?: GateAuthority;
 }
 
 export interface ArtifactRef {
@@ -490,14 +490,14 @@ export function recordGate(
     a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);
   if (recordedClass !== undefined) record.class = recordedClass;
   if (implementer !== undefined) record.implementer = implementer;
-  // A bypassed record keeps its attribution: re-recording this snapshot needs the same grant.
-  if (previous?.authority !== undefined && previous.authority.grant_id !== a.bypass?.grant_id) {
-    return {
-      ok: false,
-      reason: `${a.gate} at this snapshot was recorded under bypass grant ${previous.authority.grant_id}; record it with --bypass <grant> --task <id>`,
-    };
-  }
-  if (a.bypass !== undefined) record.authority = a.bypass;
+  // A phase started under a grant, or a record at this snapshot that names one, is continued, never stripped.
+  const covered = BYPASS_GATE_PHASE[a.gate];
+  const started =
+    object(previous?.authority) ??
+    (covered === undefined ? undefined : readObject(bypassUsePath(a.dir, a.run, covered)));
+  const continued = continueBypass(started, a.bypass, a.gate);
+  if (!continued.ok) return continued;
+  if (continued.authority !== undefined) record.authority = continued.authority;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
     const recorded = new Set(refs.map((ref) => ref.id));
     const earlier = previous.evidence.filter((ref) => {
@@ -1200,7 +1200,19 @@ export interface BypassAttribution {
   grant_sha256: string;
   authorized_by: string;
   task_id: string;
+  /** The real path of the task's worktree the grant is bound to. */
+  worktree: string;
+  /** The grant the phase started under, when a fresh grant for the same task continues it. */
+  superseded_grant_id?: string;
 }
+
+/** A typed record of a phase that started under a grant: the bypass ends there, and the record says which. */
+export interface TypedAfterBypass {
+  mode: "explicit";
+  superseded_grant_id: string;
+}
+
+export type GateAuthority = BypassAttribution | TypedAfterBypass;
 
 interface BypassLedgerRecord {
   grant_id: string;
@@ -1255,7 +1267,29 @@ function repoOf(project: string): { common: string; writable: string[] } | undef
 
 /** A gate record is worker-written, so its attribution is a claim; the use record and the grant are what a reviewer checks. */
 const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
-  authority === undefined || authority?.mode === "bypass";
+  authority === undefined || authority?.mode === "bypass" || authority?.mode === "explicit";
+
+const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
+  join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
+
+/**
+ * Who continues a phase that started under a grant: a fresh grant for the same task and worktree, which
+ * names the grant it supersedes, or a typed record without `--bypass`, which ends the bypass and names it.
+ */
+function continueBypass(
+  started: ReturnType<typeof readObject>,
+  bypass: BypassAttribution | undefined,
+  what: string,
+): { ok: true; authority: GateAuthority | undefined } | { ok: false; reason: string } {
+  if (started === undefined) return { ok: true, authority: bypass };
+  const origin = String(started.superseded_grant_id ?? started.grant_id);
+  if (bypass === undefined) return { ok: true, authority: { mode: "explicit", superseded_grant_id: origin } };
+  if (bypass.task_id !== started.task_id || bypass.worktree !== started.worktree)
+    return refuse(
+      `${what} started under bypass grant ${origin} for task ${String(started.task_id)} in ${String(started.worktree)}; continue it with a fresh grant for that task and worktree, or record it with the typed command and no --bypass`,
+    );
+  return { ok: true, authority: bypass.grant_id === origin ? bypass : { ...bypass, superseded_grant_id: origin } };
+}
 
 const refuse = (reason: string) => ({ ok: false as const, reason });
 
@@ -1416,6 +1450,7 @@ export function checkBypass(
       grant_sha256: hash,
       authorized_by: String(g.authorized_by),
       task_id: a.task,
+      worktree: tree,
     },
   };
 }
@@ -1442,7 +1477,7 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
     `Pass \`--bypass ${path} --task ${grant.task_id}\` when you record review-full, review-readiness or ship-preflight;`,
-    "once a phase started under this grant, recording its gate without it is refused.",
+    "A phase started under this grant continues only under a fresh grant for this task, or a typed record that ends the bypass.",
   ].join("\n");
 }
 
@@ -1485,6 +1520,7 @@ export function main(
   io: Io,
   cwd: string = process.cwd(),
   bypassLedger: string = defaultBypassLedger(),
+  now: () => Date = () => new Date(),
 ): number {
   const sub = argv[0] === "bypass" && argv[1] !== undefined ? `bypass ${argv[1]}` : argv[0];
   if (sub === undefined || !(sub in FLAGS)) {
@@ -1555,6 +1591,7 @@ export function main(
       hours: Number(str("hours") ?? "24"),
       cwd,
       ledger: bypassLedger,
+      now,
     });
     if (!granted.ok) {
       io.err(`ak lifecycle bypass grant: ${granted.reason}`);
@@ -1618,15 +1655,24 @@ export function main(
       cwd,
       project,
       ledger: bypassLedger,
+      now,
     });
-    if (!checked.ok) {
-      io.err(`ak lifecycle bypass check: refused: ${checked.reason}`);
+    const stop = (reason: string) => {
+      io.err(`ak lifecycle bypass check: refused: ${reason}`);
       io.err("hint: stop and report needs-decision; the phase needs its typed command");
       return 1;
-    }
-    const used = { ...checked.attribution, phase: phase ?? null, run_id: run, checked_at: new Date().toISOString() };
-    if (phase !== undefined) {
-      atomicJson(join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`), used);
+    };
+    if (!checked.ok) return stop(checked.reason);
+    const usePath = phase !== undefined && isBypassPhase(phase) ? bypassUsePath(dir, run, phase) : undefined;
+    const continued = continueBypass(
+      usePath === undefined ? undefined : readObject(usePath),
+      checked.attribution,
+      phase ?? "",
+    );
+    if (!continued.ok) return stop(continued.reason);
+    const used = { ...continued.authority, phase: phase ?? null, run_id: run, checked_at: now().toISOString() };
+    if (usePath !== undefined) {
+      atomicJson(usePath, used);
       logBypassRun(bypassLedger, checked.attribution.grant_id, run);
     }
     io.out(JSON.stringify(used, null, 2));
@@ -1645,15 +1691,9 @@ export function main(
       io.err("ak lifecycle record: --bypass and --task must be supplied together");
       return 2;
     }
-    const covered = BYPASS_GATE_PHASE[gate];
-    // A phase started under a grant, or a record that already carries one, records with it again.
-    const started =
-      covered === undefined
-        ? undefined
-        : readObject(join(dir, safeRunId(run), "bypass", `${covered.replace(":", "-")}.json`));
-    const required = started === undefined ? undefined : JSON.stringify(started.grant_id);
     let bypass: BypassAttribution | undefined;
     if (bypassPath !== undefined && task !== undefined) {
+      const covered = BYPASS_GATE_PHASE[gate];
       if (covered === undefined) {
         io.err(`ak lifecycle record: refused: no bypass phase records ${gate}, so --bypass does not apply to it`);
         return 1;
@@ -1665,21 +1705,14 @@ export function main(
         cwd,
         project,
         ledger: bypassLedger,
+        now,
       });
       if (!checked.ok) {
         io.err(`ak lifecycle record: refused: ${checked.reason}`);
-        return 1;
-      }
-      if (started !== undefined && checked.attribution.grant_id !== started.grant_id) {
-        io.err(`ak lifecycle record: refused: ${covered} in run ${run} started under bypass grant ${required}`);
+        io.err("hint: issue a fresh grant for this task, or record it with the typed command and no --bypass");
         return 1;
       }
       bypass = checked.attribution;
-    } else if (required !== undefined) {
-      io.err(
-        `ak lifecycle record: refused: ${covered ?? gate} in run ${run} started under bypass grant ${required}; record it with --bypass <grant> --task <id>`,
-      );
-      return 1;
     }
     if (receipts.length > 0 && gate !== "verify") {
       io.err("ak lifecycle record: --receipt is only valid with --gate verify");
