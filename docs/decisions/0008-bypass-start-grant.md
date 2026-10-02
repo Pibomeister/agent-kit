@@ -86,10 +86,10 @@ records `authority: {mode: explicit, superseded_grant_id}`, so a human finish af
 is visible rather than a silent strip, and it marks the use record ended (`ended_at`,
 `ended_by_snapshot`): the bypass is over for that phase in that run, at every later snapshot. After
 that the grant that was in use is refused at `check` and at `record --bypass`; only a fresh grant
-for the same task re-starts the phase, rewriting the use record with `superseded_grant_id`. A grant
-for another task or another worktree is refused. The mirror holds too: a gate recorded by hand at a
-snapshot, with no bypass started in the run, cannot be relabelled by re-recording that snapshot with
-`--bypass`.
+for the same task re-starts the phase, rewriting the use record with `superseded_grant_id` and
+keeping the typed end as `restarted_after_end`. A grant for another task or another worktree is
+refused. The mirror holds too: a gate recorded by hand at a snapshot cannot be relabelled by
+re-recording that snapshot with `--bypass`, even after a check starts the phase under a grant.
 
 ## Consequences
 

@@ -578,9 +578,22 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     );
   });
 
+  test("a fresh grant re-starting at the snapshot of a typed end keeps that end in the use record", () => {
+    const s = granted();
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1")).code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
+    const fresh = freshGrant(s, dayLater, "T-1");
+    expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1")).code).toBe(0);
+    const used = join(defaultEvidenceDir(s.worktree), "task", "bypass", "super-review-readiness.json");
+    expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({ grant_id: fresh.id });
+    expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("restarted_after_end.ended_at");
+    expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("restarted_after_end.ended_by_snapshot");
+  });
+
   test("a phase recorded by hand cannot be relabelled with --bypass at the same snapshot", () => {
     const s = granted();
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
     const relabel = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
     expect(relabel.code).toBe(1);
     expect(relabel.err).toContain("record it with the typed command and no --bypass");
