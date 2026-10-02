@@ -504,7 +504,7 @@ export function recordGate(
   const covered = BYPASS_GATE_PHASE[a.gate];
   const usePath = covered === undefined ? undefined : bypassUsePath(a.dir, a.run, covered);
   const started = usePath === undefined ? undefined : readObject(usePath);
-  if (a.bypass !== undefined && started === undefined && previous !== undefined)
+  if (a.bypass !== undefined && previous !== undefined && previous.authority === undefined)
     return refuse(
       `${a.gate} at this snapshot was recorded with the typed command, so it did not start under a grant; record it with the typed command and no --bypass`,
     );
@@ -526,7 +526,7 @@ export function recordGate(
   atomicJson(path, record);
   if (usePath !== undefined && covered !== undefined) {
     if (a.bypass !== undefined)
-      atomicJson(usePath, { ...record.authority, phase: covered, run_id: a.run, checked_at: record.recorded_at });
+      atomicJson(usePath, useRecord(record.authority, covered, a.run, record.recorded_at, started));
     else if (started !== undefined && started.ended_at === undefined)
       atomicJson(usePath, { ...started, ended_at: record.recorded_at, ended_by_snapshot: short(snapshot) });
   }
@@ -1291,6 +1291,24 @@ const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
 const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
+/** The run's use record for a phase; a re-start after a typed end keeps that end visible. */
+const useRecord = (
+  authority: GateAuthority | undefined,
+  phase: string | null,
+  run: string,
+  at: string,
+  started: ReturnType<typeof readObject>,
+) => ({
+  ...authority,
+  phase,
+  run_id: run,
+  checked_at: at,
+  restarted_after_end:
+    started?.ended_at === undefined
+      ? started?.restarted_after_end
+      : { ended_at: started.ended_at, ended_by_snapshot: started.ended_by_snapshot },
+});
+
 /**
  * Who continues a phase that started under a grant: a fresh grant for the same task and worktree, which
  * names the grant it supersedes, or a typed record without `--bypass`, which ends the bypass and names it.
@@ -1687,13 +1705,10 @@ export function main(
     };
     if (!checked.ok) return stop(checked.reason);
     const usePath = phase !== undefined && isBypassPhase(phase) ? bypassUsePath(dir, run, phase) : undefined;
-    const continued = continueBypass(
-      usePath === undefined ? undefined : readObject(usePath),
-      checked.attribution,
-      phase ?? "",
-    );
+    const started = usePath === undefined ? undefined : readObject(usePath);
+    const continued = continueBypass(started, checked.attribution, phase ?? "");
     if (!continued.ok) return stop(continued.reason);
-    const used = { ...continued.authority, phase: phase ?? null, run_id: run, checked_at: now().toISOString() };
+    const used = useRecord(continued.authority, phase ?? null, run, now().toISOString(), started);
     if (usePath !== undefined) {
       atomicJson(usePath, used);
       logBypassRun(bypassLedger, checked.attribution.grant_id, run);
