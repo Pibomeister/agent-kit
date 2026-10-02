@@ -1,0 +1,5 @@
+{
+  "devServerUrl": "http://127.0.0.1:45101",
+  "devCommand": ["node", "server.mjs"],
+  "routes": ["/catalog", "/checkout"]
+}

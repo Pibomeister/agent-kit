@@ -53,6 +53,10 @@
       "mode": "manual"
     },
     {
+      "skill": "visual-edit",
+      "mode": "manual"
+    },
+    {
       "skill": "compound",
       "mode": "manual"
     },

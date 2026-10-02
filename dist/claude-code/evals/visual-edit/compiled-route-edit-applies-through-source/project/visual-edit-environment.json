@@ -1,0 +1,5 @@
+{
+  "devServerUrl": "http://127.0.0.1:45102",
+  "devCommand": ["node", "server.mjs"],
+  "routes": ["/dashboard"]
+}

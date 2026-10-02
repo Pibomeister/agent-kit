@@ -1,0 +1,39 @@
+schema_version: "1.1"
+name: visual-edit-compares-two-routes-at-desktop-and-mobile
+tags: [positive]
+execution:
+  prompt: >-
+    /ak:visual-edit Compare /catalog and /checkout at desktop and mobile.
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: stops-on-the-first-unconfirmed-prerequisite
+    type: llm
+    weight: 4
+    criteria: >-
+      The scaffold provides the project and its declared dev-server address and command. It
+      provides no editor connector: no MCP connector and no browser for WebMCP. The response stops
+      with needs-input and names, by its missing-prerequisite id, the first prerequisite it could
+      not confirm: the editor connector, the bridge CLI or the dev server.
+  - name: declared-address-is-not-evidence
+    type: llm
+    weight: 4
+    criteria: >-
+      The response treats the dev-server address in visual-edit-environment.json as configuration
+      it had to check. It presents /catalog and /checkout at desktop and mobile as still unopened.
+  - name: no-static-comparison-is-created
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      The run does not create copied markup, a screenshot, a static comparison page or another
+      fallback representation of /catalog or /checkout after the prerequisite fails.
+  - name: no-new-project-file
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 2

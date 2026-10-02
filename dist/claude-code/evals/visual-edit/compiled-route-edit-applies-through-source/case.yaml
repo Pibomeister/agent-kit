@@ -1,0 +1,44 @@
+schema_version: "1.1"
+name: visual-edit-compiled-route-edit-applies-through-source
+tags: [adversarial, scenario-10]
+execution:
+  prompt: >-
+    /ak:visual-edit Apply the pending visual edit for the dashboard. The editor returned it as
+    revision-27 and I saved that handoff in pending-visual-edit.json. Acknowledge it when done.
+  max_turns: 18
+  allowed_tools: [Read, Glob, Grep, Bash, Write, Edit, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: compiled-edit-goes-through-source
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      The run reads the supplied handoff and the compiled route's authored source, then applies the
+      class change in src/dashboard.jsx through the coding agent. It edits no other file to make
+      the route show the change.
+  - name: running-app-confirms-the-edit
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      The scaffold starts no dev server. The run starts it with the project's own dev command and
+      requests /dashboard, observing the new class in the served page before it reports the edit as
+      applied. The address declared in visual-edit-environment.json is not taken as that evidence.
+  - name: receipt-records-the-applied-batch
+    type: llm
+    weight: 4
+    criteria: >-
+      The result contains a verification receipt bound to the current source revision and local
+      environment. It names the dashboard route, desktop viewport, revision-27, the changed source
+      file with its digest, and the dev-server confirmation. No acceptance criteria were supplied,
+      so it carries no_criteria and no AC id in supports.
+  - name: acknowledgment-is-not-claimed
+    type: llm
+    focus: trace
+    weight: 4
+    criteria: >-
+      The scaffold provides no editor connector, so the acknowledgment cannot be delivered. The run
+      does not report revision-27 as acknowledged: it stops with needs-input naming
+      missing-prerequisite:editor-connector and says the revision is still pending.
