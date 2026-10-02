@@ -81,11 +81,12 @@ for audit; a check without `--phase` writes nothing.
 for that phase under `<evidence>/<run>/bypass/`, and that record is the one place the start lives.
 An expired grant cannot finish the phase. Two things continue it. A fresh grant that passes the
 check in full, for the same task and worktree as the grant that started the phase, records with its
-own attribution plus `superseded_grant_id` naming that grant. A typed record without `--bypass`
-records `authority: {mode: explicit, superseded_grant_id}`, so a human finish after a bypassed start
-is visible rather than a silent strip, and it marks the use record ended (`ended_at`,
-`ended_by_snapshot`): the bypass is over for that phase in that run, at every later snapshot. After
-that the grant that was in use is refused at `check` and at `record --bypass`; only a fresh grant
+own attribution plus `superseded_grant_id` naming the grant it replaces. A typed record without
+`--bypass` records `authority: {mode: explicit, superseded_grant_id}` naming the grant in force, so
+a human finish after a bypassed start is visible rather than a silent strip, and it marks the use
+record ended (`ended_at`, `ended_by_snapshot`, and the grant in `ended_grant_ids`): the bypass is
+over for that phase in that run, at every later snapshot. Every grant a typed record ended stays
+refused at `check` and at `record --bypass` in that phase of the run, even after a re-start; only a fresh grant
 for the same task re-starts the phase, rewriting the use record with `superseded_grant_id` and
 keeping the typed end as `restarted_after_end`. A grant for another task or another worktree is
 refused. The mirror holds too: a gate recorded by hand at a snapshot cannot be relabelled by

@@ -543,7 +543,7 @@ describe("attribution: --bypass only where a phase covers the gate, and never op
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
     expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
       mode: "explicit",
-      superseded_grant_id: first,
+      superseded_grant_id: fresh.id,
     });
     const after = akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1"));
     expect(after.code).toBe(1);
@@ -551,7 +551,7 @@ describe("attribution: --bypass only where a phase covers the gate, and never op
     expect(after.err).not.toContain("undefined");
     expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
       mode: "explicit",
-      superseded_grant_id: first,
+      superseded_grant_id: fresh.id,
     });
   });
 });
@@ -588,6 +588,30 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({ grant_id: fresh.id });
     expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("restarted_after_end.ended_at");
     expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("restarted_after_end.ended_by_snapshot");
+  });
+
+  test("a grant a typed record ended stays refused after a fresh grant re-starts the phase", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    const evidence = defaultEvidenceDir(s.worktree);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:readiness").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
+    const fresh = freshGrant(s, () => new Date(), "T-1");
+    expect(checkPhase(s, fresh.path, "T-1", "super-review:readiness").code).toBe(0);
+    const checked = checkPhase(s, s.grantPath, "T-1", "super-review:readiness");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(`ended by a typed record after bypass grant ${first}`);
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1"));
+    expect(recorded.code).toBe(1);
+    expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
+      mode: "explicit",
+      superseded_grant_id: first,
+    });
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1")).code).toBe(0);
+    expect(only(readRecords(evidence, "task", "review-readiness")).authority).toMatchObject({
+      grant_id: fresh.id,
+      superseded_grant_id: first,
+    });
   });
 
   test("a phase recorded by hand cannot be relabelled with --bypass at the same snapshot", () => {

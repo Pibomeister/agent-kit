@@ -528,7 +528,12 @@ export function recordGate(
     if (a.bypass !== undefined)
       atomicJson(usePath, useRecord(record.authority, covered, a.run, record.recorded_at, started));
     else if (started !== undefined && started.ended_at === undefined)
-      atomicJson(usePath, { ...started, ended_at: record.recorded_at, ended_by_snapshot: short(snapshot) });
+      atomicJson(usePath, {
+        ...started,
+        ended_at: record.recorded_at,
+        ended_by_snapshot: short(snapshot),
+        ended_grant_ids: [...endedGrants(started), String(started.grant_id)],
+      });
   }
   return { ok: true, path, record, skipped };
 }
@@ -1291,6 +1296,9 @@ const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
 const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
+/** Every grant a typed record ended in this phase of the run; none of them starts it again. */
+const endedGrants = (started: ReturnType<typeof readObject>): string[] => strings(started?.ended_grant_ids) ?? [];
+
 /** The run's use record for a phase; a re-start after a typed end keeps that end visible. */
 const useRecord = (
   authority: GateAuthority | undefined,
@@ -1303,6 +1311,7 @@ const useRecord = (
   phase,
   run_id: run,
   checked_at: at,
+  ended_grant_ids: endedGrants(started),
   restarted_after_end:
     started?.ended_at === undefined
       ? started?.restarted_after_end
@@ -1319,17 +1328,21 @@ function continueBypass(
   what: string,
 ): { ok: true; authority: GateAuthority | undefined } | { ok: false; reason: string } {
   if (started === undefined) return { ok: true, authority: bypass };
-  const origin = String(started.superseded_grant_id ?? started.grant_id);
+  const origin = String(started.grant_id);
   if (bypass === undefined) return { ok: true, authority: { mode: "explicit", superseded_grant_id: origin } };
-  if (started.ended_at !== undefined && (bypass.grant_id === started.grant_id || bypass.grant_id === origin))
+  if (endedGrants(started).includes(bypass.grant_id))
     return refuse(
-      `${what} was ended by a typed record after bypass grant ${origin}; issue a fresh grant for this task to re-start it, or record it with the typed command and no --bypass`,
+      `${what} was ended by a typed record after bypass grant ${bypass.grant_id}; issue a fresh grant for this task to re-start it, or record it with the typed command and no --bypass`,
     );
   if (bypass.task_id !== started.task_id || bypass.worktree !== started.worktree)
     return refuse(
       `${what} started under bypass grant ${origin} for task ${String(started.task_id)} in ${String(started.worktree)}; continue it with a fresh grant for that task and worktree, or record it with the typed command and no --bypass`,
     );
-  return { ok: true, authority: bypass.grant_id === origin ? bypass : { ...bypass, superseded_grant_id: origin } };
+  const superseded = bypass.grant_id === origin ? strings([started.superseded_grant_id])?.[0] : origin;
+  return {
+    ok: true,
+    authority: superseded === undefined ? bypass : { ...bypass, superseded_grant_id: superseded },
+  };
 }
 
 const refuse = (reason: string) => ({ ok: false as const, reason });
