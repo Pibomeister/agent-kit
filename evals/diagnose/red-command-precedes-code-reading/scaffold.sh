@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Scaffold for evals/diagnose/red-command-precedes-code-reading.
+#
+# A two-file repository of its own: src/slug.js, whose normalizer replaces
+# each whitespace character with a separator instead of each run of them, and
+# test/slug.test.js, which goes red on that with `node --test`. The prompt
+# names the command, so the decision point is the order of the run's first
+# calls: the red command, or a read of src/slug.js.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -12,30 +12,42 @@ context:
   scaffold_script: scaffold.sh
 graders:
   - name: exact-red-command-runs
+    type: tool_used
+    tool: Bash
+    input_match: 'node\s+--test'
+    weight: 2
+  - name: red-command-before-read
+    type: tool_order
+    before:
+      tool: Bash
+      input_match: 'node\s+--test'
+    after:
+      tool: Read
+      input_match: 'slug\.js'
+    weight: 3
+  - name: red-command-before-edit
+    type: tool_order
+    before:
+      tool: Bash
+      input_match: 'node\s+--test'
+    after: Edit
+    weight: 3
+  - name: red-command-is-first-repository-call
     type: llm
     focus: trace
     weight: 2
     criteria: >-
-      The run issues `node --test test/slug.test.js` and observes that it fails on the reported
-      adjacent-whitespace behavior before continuing the diagnosis.
-  - name: red-command-before-read
-    type: tool_order
-    before: Bash
-    after: Read
-    weight: 3
-  - name: red-command-before-edit
-    type: tool_order
-    before: Bash
-    after: Edit
-    weight: 3
+      The Bash call running `node --test test/slug.test.js` comes ahead of every call that reads
+      src/slug.js, whether through Read or through a Bash command such as cat, sed or grep, and
+      ahead of every Edit or Write call. A Skill call, or a read of the skill's own reference
+      files, may come first.
   - name: loop-precedes-theory
     type: llm
-    focus: trace
-    weight: 3
+    weight: 1
     criteria: >-
-      The named red command is the first repository-inspection or change tool call after the skill
-      loads. It is run and observed failing before source code is read, a cause is proposed or a
-      file is edited; the response does not infer the cause from the symptom before the loop runs.
+      The response reports the red command and the failure it observed ahead of any statement about
+      the cause. It does not present a cause inferred from the reported symptom as something known
+      before the command ran.
   - name: skill-fired
     type: tool_used
     tool: Skill

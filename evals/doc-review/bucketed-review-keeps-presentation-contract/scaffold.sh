@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+# Scaffold for evals/doc-review/bucketed-review-keeps-presentation-contract.
+#
+# The knowledgebase adapter has no implementation in the workspace, so the
+# workspace is a checkout of the knowledgebase itself, in which
+# kb://<path> is the page <path>.md (README.md says so). It holds the
+# document under review, adr/session-expiry.md, a draft.
+#
+# The ADR's decision sets two expiry limits, its rollout section says existing
+# sessions never expire, and its open question leaves the choice between them
+# to the security owner. That unresolved rule is the decision point: it
+# belongs under Decisions, with blocked as the verdict.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

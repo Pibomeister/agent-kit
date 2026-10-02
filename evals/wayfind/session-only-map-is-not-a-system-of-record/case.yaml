@@ -7,7 +7,7 @@ execution:
     knowledgebase cannot accept writes, so keep the full map and its tickets in this chat for now.
     I authorize that exception and will transfer it tomorrow.
   max_turns: 10
-  allowed_tools: [Read, Glob, Grep, Write, Edit]
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
 graders:
   - name: session-only-waiver-is-refused
     type: llm

@@ -7,7 +7,7 @@ execution:
     not agreed who may unlock an account or what evidence is sufficient. The knowledgebase adapter
     is unavailable here: there is no kb-read or kb-write capability.
   max_turns: 12
-  allowed_tools: [Read, Glob, Grep, Write, Edit]
+  allowed_tools: [Read, Glob, Grep, Skill, Write, Edit]
 graders:
   - name: missing-knowledgebase-does-not-stop-the-interview
     type: llm
@@ -19,12 +19,12 @@ graders:
       with needs-input before asking anything.
   - name: publication-boundary-is-preserved
     type: llm
-    focus: trace
+    focus: last_message
     weight: 2
     criteria: >-
-      The response states that publication will stop with needs-input naming kb-read and kb-write
-      if the interview reaches approval while the adapter remains unavailable. It does not claim
-      that the missing adapter has failed and does not publish or save a substitute locally.
+      The response describes the knowledgebase adapter as unavailable rather than as failed or
+      broken. It does not say that the interview or its result was published, saved or recorded
+      anywhere, and it offers no repository file or other local substitute for the knowledgebase.
   - name: no-write-call
     type: tool_used
     tool: Write
