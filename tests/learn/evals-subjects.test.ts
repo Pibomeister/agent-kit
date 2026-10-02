@@ -29,15 +29,11 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const req: SessionRequest = { prompt: "Load the greet skill.", cwd: "/scratch/repo", env: {}, timeoutMs: 1000 };
 
-const UNSAFE_ASSIGNMENT_VALUE = /`|\$\(|[<>]\(/;
-
 // Grok's documented grammar: leading assignments are stripped, then a segment runs when some
 // allow glob matches it whole and no deny glob matches either its raw or normalized form.
 const admits = (segment: string) => {
   const argv = grok.command(req, undefined);
   const parsed = words(segment);
-  const beginsWithAssignment = /^[A-Za-z_]\w*=/.test(parsed[0] ?? "");
-  if (beginsWithAssignment && UNSAFE_ASSIGNMENT_VALUE.test(segment)) return false;
   let firstProgram = 0;
   while (/^[A-Za-z_]\w*=/.test(parsed[firstProgram] ?? "")) firstProgram++;
   const normalized = parsed.slice(firstProgram).join(" ");
@@ -252,14 +248,16 @@ describe("grok", () => {
       `host cancelled refused Bash call: ${refusedDiscovery}`,
     );
 
-    for (const command of [
-      'SESSION="$(find /tmp -type d)"; find "$SESSION" -maxdepth 3 -type d',
-      'export SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
-      'SESSION="<SCRATCH>/sessions/<SESSION>"; echo changed > out.txt',
-    ]) {
+    for (const [command, refused] of [
+      ['SESSION="$(find /tmp -type d)"; find "$SESSION" -maxdepth 3 -type d', 'SESSION="$(find /tmp -type d)"'],
+      ['export SESSION=/tmp/sessions; find "$SESSION" -maxdepth 3 -type d', "export SESSION=/tmp/sessions"],
+      ["SESSION=/tmp/sessions; echo changed > out.txt", "echo changed > out.txt"],
+    ] as const) {
       expect([command, readOnlyShell(command)]).toEqual([command, false]);
-      expect(command.split(/; | \| /).every(admits)).toBe(false);
+      expect(command.split("; ")).toContain(refused);
+      expect([refused, admits(refused)]).toEqual([refused, false]);
     }
+    expect(admits("echo changed")).toBe(true);
   });
 
   test("looks the scorer accepts are admitted in their common forms", () => {
