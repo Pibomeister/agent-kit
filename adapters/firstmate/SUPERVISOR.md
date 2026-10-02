@@ -52,7 +52,10 @@ The implementer does not review its own patch. A missing seat, a failed seat lau
 escalation through Firstmate's normal needs-decision protocol; relay the human's ruling with
 `ak runner call answer`, which settles that card with the chosen option. Only the card's approving
 option advances the run; any other choice keeps it at that stage, opens nothing, and sends the worker
-back to prepare a revised card. A `retry` option, when the card lists one, reopens the checkpoint unchanged.
+back to prepare a revised card. After a human's non-approving answer, every later card for that
+operation escalates to a human again until one approves. A `retry` option, when the card lists one,
+reopens the checkpoint unchanged without lifting that gate. `adapters/runner-contract/CLI.md` owns
+the full `answer` rules.
 
 ## Legacy patched binding
 
