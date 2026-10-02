@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -198,3 +199,34 @@ test("ak delegation names the block a record lacks", () => {
     err: "ak delegation: project has no guidance.delegation block (weights and cut points)",
   });
 });
+
+test("the standalone ak a bundle ships as bin/ak scores a ticket exactly as the repository CLI does", () => {
+  const root = makeTree({});
+  writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
+  writeFileSync(join(root, "project.json"), JSON.stringify(validProject));
+  const bundle = join(root, "ak-standalone.mjs");
+  const built = spawnSync(
+    process.execPath,
+    ["build", join(import.meta.dir, "../src/maintenance/cli.ts"), "--target=bun", `--outfile=${bundle}`],
+    { cwd: root, encoding: "utf8" },
+  );
+  expect(built.status).toBe(0);
+  const ak = (...argv: string[]) => spawnSync(process.execPath, [bundle, ...argv], { cwd: root, encoding: "utf8" });
+
+  const expected: string[] = [];
+  runCli(["delegation", "ticket.json", "--project", "project.json"], {
+    cwd: root,
+    io: { out: (line) => expected.push(line), err: () => {} },
+  });
+  const scored = ak("delegation", "ticket.json", "--project", "project.json");
+  expect({ status: scored.status, stderr: scored.stderr }).toEqual({ status: 0, stderr: "" });
+  expect(scored.stdout.trimEnd()).toBe(expected.join("\n"));
+
+  const missing = ak("delegation", "absent.json", "--project", "project.json");
+  expect({ status: missing.status, stderr: missing.stderr.trimEnd(), stdout: missing.stdout }).toEqual({
+    status: 1,
+    stderr: "ak delegation: ticket does not exist: absent.json",
+    stdout: "",
+  });
+  expect(ak("delegation", "ticket.json").status).toBe(2);
+}, 60_000);

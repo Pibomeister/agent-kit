@@ -17,6 +17,7 @@ import {
   type BindingValidators,
   type TrackerBinding,
 } from "../tracker/binding.ts";
+import { scoreDelegationFiles } from "../delegation.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -593,8 +594,16 @@ if (import.meta.main) {
     (action === "update" && flags.length === 0)
   )
     process.exitCode = action === "doctor" ? await doctor(flags[0] === "--json") : await update();
-  else {
-    console.error("Usage: ak doctor [--json] | ak update");
+  else if (action === "delegation" && flags.length === 3 && flags[1] === "--project") {
+    // The bundle's only `ak`: super-bound runs the scorer from an install that has no repository checkout.
+    try {
+      console.log(JSON.stringify(scoreDelegationFiles(flags[0] ?? "", flags[2] ?? ""), null, 2));
+    } catch (cause) {
+      console.error(`ak delegation: ${cause instanceof Error ? cause.message : String(cause)}`);
+      process.exitCode = 1;
+    }
+  } else {
+    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path>");
     process.exitCode = 2;
   }
 }

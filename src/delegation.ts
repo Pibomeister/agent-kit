@@ -7,7 +7,7 @@ import addFormats from "ajv-formats";
 import commonSchema from "../schemas/common.schema.json" with { type: "json" };
 import projectSchema from "../schemas/project.schema.json" with { type: "json" };
 import ticketSchema from "../schemas/ticket.schema.json" with { type: "json" };
-import { DELEGATION_CLASSES, type DelegationClass } from "./lifecycle/gate.ts";
+import type { DelegationClass } from "./lifecycle/gate.ts";
 
 export type DelegationFactorName = "reversibility" | "size" | "complexity" | "spec" | "verification";
 
@@ -58,11 +58,14 @@ const ACTION_FLOORS = new Map<string, DelegationClass>([
   ["history-rewrite", "red"],
 ]);
 
+/**
+ * The order of the classes. gate.ts is imported for its type alone: it runs its own command line when it is
+ * the script, and the bundled `bin/ak` inlines this module, where gate.ts would take itself for the script.
+ */
+const CLASS_RANK: Record<DelegationClass, number> = { green: 0, "yellow-agent": 1, "yellow-owner": 2, red: 3 };
+
 function highest(...classes: DelegationClass[]): DelegationClass {
-  return classes.reduce(
-    (left, right) => (DELEGATION_CLASSES.indexOf(right) > DELEGATION_CLASSES.indexOf(left) ? right : left),
-    "green",
-  );
+  return classes.reduce((left, right) => (CLASS_RANK[right] > CLASS_RANK[left] ? right : left), "green");
 }
 
 function floorClass(floor: DelegationRecord["floor"]): DelegationClass {
