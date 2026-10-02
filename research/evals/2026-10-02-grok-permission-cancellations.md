@@ -32,9 +32,11 @@ an unmatched call falling through to `dontAsk` and a cap cancellation are the pa
 The subject stays in `dontAsk`; no broader permission mode, sandbox profile, scorer rule, grader,
 timeout, prompt or invalid-session rule changed.
 
-- `Bash(env)` now admits only the exact bare environment listing. This is safe at this boundary
-  because `cleanEnv` already limits the subject to process basics, adapter-declared variables and
-  explicit operator opt-ins. `env <command>`, `printenv` and token-display forms remain unapproved.
+- `Bash(env)` now admits only the exact bare environment listing, and only for a request whose
+  environment holds nothing beyond what `cleanEnv` yields: process basics, adapter-declared variables and
+  explicit operator opt-ins. The influence eval adds its canary on top of that, so its Grok
+  subjects get no `Bash(env)` rule and bare `env` falls through to `dontAsk` as before.
+  `env <command>`, `printenv` and token-display forms remain unapproved.
 - `Bash(python3 *)` is now an explicit deny. The smoke's embedded interpreter remains refused, but
   it takes the same recoverable explicit-deny path proved by the redirect session rather than the
   unmatched `dontAsk` path.

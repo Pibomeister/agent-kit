@@ -26,8 +26,9 @@
  * `dontAsk` and the denies. The stream still reports the call as the subject wrote it, so `parse`
  * derives shell reads from the same rewrite, the command the host ran.
  * Variable expansion and command substitution through an admitted program remain scored
- * read-only. Bare `env` is admitted only after the runner reduces the subject environment to its
- * allowlist. Whether the live host expands variables before permission matching is unverified.
+ * read-only. Bare `env` is admitted only when the request environment holds nothing beyond what
+ * `cleanEnv` yields for this adapter; a request carrying anything more, such as the influence eval's canary,
+ * leaves `env` to `dontAsk`. Whether the live host expands variables before permission matching is unverified.
  * A cancelled turn leaves the session invalid, and the receipt names the last attempted call. The
  * read-only sandbox
  * remains unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports `stopReason`. Isolation is a
@@ -45,6 +46,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { shellQuote } from "./grok-mediator.ts";
+import { cleanEnv } from "../session.ts";
 import { privateHome } from "./home.ts";
 import { rewriteAssignmentReadChain } from "./grok-mediator.ts";
 import { grokReadOnlyPermissionRules, readsOf } from "./shell.ts";
@@ -81,6 +83,11 @@ const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
 const READ_ONLY_RULES = grokReadOnlyPermissionRules();
 const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
 
+const allowlisted = (env: Record<string, string>) => {
+  const clean = cleanEnv(grok.env);
+  return Object.entries(env).every(([name, value]) => clean[name] === value);
+};
+
 export const grok: SubjectAdapter = {
   host: "grok",
   env: ["GROK_HOME"],
@@ -93,6 +100,7 @@ export const grok: SubjectAdapter = {
       "--output-format",
       "streaming-json",
       ...READ_ONLY_ALLOW.flatMap((rule) => ["--allow", rule]),
+      ...(allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
       ...READ_ONLY_RULES.deny.flatMap((rule) => ["--deny", rule]),
       ...(model === undefined ? [] : ["-m", model]),
       ...(req.maxTurns === undefined ? [] : ["--max-turns", String(req.maxTurns)]),

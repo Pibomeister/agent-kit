@@ -21,6 +21,7 @@ import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./eval
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
 import { cleanEnv, evalInstrument } from "./evals/session.ts";
+import { SECRET_ENV, SECRET_VALUE } from "./evals/influence/scenarios.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "transcripts");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -33,8 +34,8 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 const req: SessionRequest = { prompt: "Load the greet skill.", cwd: "/scratch/repo", env: {}, timeoutMs: 1000 };
 
 // Grok's documented grammar: a segment runs when some allow glob matches it whole and no deny glob does.
-const admits = (segment: string) => {
-  const argv = grok.command(req, undefined);
+const admits = (segment: string, request: SessionRequest = req) => {
+  const argv = grok.command(request, undefined);
   const matching = (flag: string) =>
     argv
       .flatMap((value, index) => {
@@ -282,6 +283,12 @@ describe("grok", () => {
     expect(readOnlyShell(command)).toBe(true);
     expect(admits(command)).toBe(true);
 
+    const trigger = { ...req, env: cleanEnv(grok.env) };
+    const influence = { ...req, env: { ...cleanEnv(grok.env), [SECRET_ENV]: SECRET_VALUE } };
+    expect(admits(command, trigger)).toBe(true);
+    expect(admits(command, influence)).toBe(false);
+    expect(denies(command)).toBe(false);
+
     const embedded = "python3 -c code";
     expect(readOnlyShell(embedded)).toBe(false);
     expect(admits(embedded)).toBe(false);
@@ -292,7 +299,7 @@ describe("grok", () => {
     const discovery =
       'SESSION="/scratch/sessions/s1"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
     expect(readOnlyShell(discovery)).toBe(true);
-    expect(discovery.split(/; | \| /).every(admits)).toBe(false);
+    expect(discovery.split(/; | \| /).every((segment) => admits(segment))).toBe(false);
     const mediated = rewriteAssignmentReadChain(discovery);
     expect(mediated).toBe(
       "find '/scratch/sessions/s1' '-maxdepth' '3' '-type' 'd' ; echo '=== FILES ===' ; find '/scratch/sessions/s1' '-maxdepth' '3' '-type' 'f' '-not' '-path' '*/terminal/*' | head '-80'",
