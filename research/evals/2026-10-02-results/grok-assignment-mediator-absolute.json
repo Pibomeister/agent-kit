@@ -1,0 +1,88 @@
+{
+  "schema": "ak-grok-assignment-mediator-committed.v2",
+  "label": "final approved live read-chain session with the committed PreToolUse mediator, hook registered by absolute path",
+  "outcome": "passed",
+  "started_at": "2026-10-02T17:09:35.138Z",
+  "completed_at": "2026-10-02T17:09:44.971Z",
+  "hard_cap_usd": 1,
+  "prior_guarded_spend_usd": 0.1595714,
+  "receipted_cost_this_session_usd": 0.007769,
+  "guarded_cost_total_usd": 0.1673404,
+  "instrument": {
+    "revision": "280c9532966d00350c0e56803b94cc67fc3b03bb",
+    "tree": "working tree of the gate worktree at that revision, clean",
+    "host_cli": "grok 1.0.46 (2765805b9442) [stable]",
+    "runner": "runSubject(adapterFor(\"grok\"), \"subject-grok\", undefined, { prompt, cwd: <SCRATCH>, env, timeoutMs: 120000, maxTurns: 3 })"
+  },
+  "mediator_sha256": "bf996c71e5bff177f5a96951d2f4e6da3797ef25bcb4611984420ffea65816af",
+  "mediator_path": "tests/learn/evals/subjects/grok-mediator.ts",
+  "hook_scope": "eval subject private GROK_HOME only",
+  "hook_registration": {
+    "file": "<GROK_HOME>/hooks/assignment-read-chain.json",
+    "content": {
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "<GROK_HOME>/hooks/assignment-read-chain.sh",
+                "timeout": 30
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "script_content": "#!/bin/sh\ncd '<worktree>/tests/learn/evals/subjects' && exec '<bun>' grok-mediator.ts\n"
+  },
+  "offline_preflight": {
+    "when": "before the commit and the session, no paid session",
+    "how": "the registered command run from <SCRATCH>, the live session's working directory, under the isolation environment, with the read chain's PreToolUse event on stdin; a separate private home of the same form as the session's",
+    "limit_ms": 5000,
+    "runs": [
+      {
+        "form": "path",
+        "exit": 0,
+        "duration_ms": 431,
+        "exact_rewrite": true
+      },
+      {
+        "form": "sh -c",
+        "exit": 0,
+        "duration_ms": 74,
+        "exact_rewrite": true
+      },
+      {
+        "form": "path",
+        "exit": 0,
+        "duration_ms": 138,
+        "exact_rewrite": true
+      }
+    ],
+    "passed": true
+  },
+  "read_chain": {
+    "requested_command": "SESSION=\"<SCRATCH>/sessions/probe\"; find \"$SESSION\" -maxdepth 3 -type d; echo '=== FILES ==='; find \"$SESSION\" -maxdepth 3 -type f -not -path '*/terminal/*' | head -80",
+    "observed_command": "SESSION=\"<SCRATCH>/sessions/probe\"; find \"$SESSION\" -maxdepth 3 -type d; echo '=== FILES ==='; find \"$SESSION\" -maxdepth 3 -type f -not -path '*/terminal/*' | head -80",
+    "invalid_reason": null,
+    "completed": true,
+    "read_chain_ok": true,
+    "session": {
+      "reply": "READ_CHAIN_OK",
+      "exitCode": 0,
+      "timedOut": false,
+      "costUsd": 0.007769,
+      "turns": 2,
+      "model": "grok-4.7-build",
+      "stopReason": "end_turn",
+      "durationMs": 9709,
+      "leaks": [
+        "the host's bundled platform skills, fetched into the private home at start and advertised beside the bundle's"
+      ]
+    }
+  },
+  "not_observed": "the stream reports the call as the subject wrote it, so the rewritten command and the hook's own run are not in the session output; the completed chain under dontAsk, which the same host cancelled without a working hook, is the evidence that the rewrite was applied",
+  "write_control": "not run; the two receipts at 988a881 cover it"
+}

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,6 +28,10 @@ import { digestDomain, evidenceDigest } from "../src/validation/docrules.ts";
 
 const FIXTURE = join(import.meta.dir, "fixtures", "checkpoint");
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
+const ISOLATION = join(FIXTURE, "stages", "finding", "tests", "isolation.checks.ts");
+const TICKET_DONE = join(FIXTURE, "selftest", "ticket-done", "quota.ts");
+const INCOMPLETE = join(FIXTURE, "selftest", "repair-incomplete", "report.ts");
+const COMPLETE = join(FIXTURE, "selftest", "repair-complete", "report.ts");
 
 function shippedSchemas(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -63,21 +67,98 @@ const artifacts = Object.fromEntries(
 function materialize(): string {
   return execFileSync(join(FIXTURE, "materialize.sh"), [], { encoding: "utf8" }).trim();
 }
+
+type Outcome = { pass: number; fail: number; failing: string[] };
+
+function runFixtureTests(work: string, target: string): Outcome {
+  // Both streams: bun writes the run summary to stderr, so reading stdout
+  // alone reports zero passes for every state that passed -- which reads as a
+  // broken fixture rather than as a broken harness.
+  const proc = spawnSync(process.execPath, ["test", target], { cwd: work, encoding: "utf8" });
+  const out = `${proc.stdout ?? ""}${proc.stderr ?? ""}`;
+  if (out.trim() === "") throw new Error(`no output from the fixture run in ${work}`);
+  const num = (re: RegExp) => Number(out.match(re)?.[1] ?? "0");
+  return {
+    pass: num(/(\d+) pass/),
+    fail: num(/(\d+) fail/),
+    failing: [...out.matchAll(/\(fail\) (.+?) \[/g)].map((m) => m[1]!),
+  };
+}
+
+function materializeState(files: Record<string, string>): string {
+  // Materialize rather than copy `repo/`. The layout a state runs against has
+  // to be the one materialize.sh produces -- including the rename that keeps
+  // the fixture's own checks out of this repository's test collector -- and a
+  // copy made here would be a second spelling of that layout that diverges
+  // the first time either moves. It already did: this harness reported an
+  // empty state machine when the copy kept a name the materializer changes.
+  const work = materialize();
+  for (const [rel, from] of Object.entries(files)) {
+    mkdirSync(dirname(join(work, rel)), { recursive: true });
+    writeFileSync(join(work, rel), readFileSync(from, "utf8"));
+  }
+  return work;
+}
+
 const repo = materialize();
 const head = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
+const stateRepos = {
+  ticket: materializeState({ "src/quota.ts": TICKET_DONE, "tests/isolation.test.ts": ISOLATION }),
+  incomplete: materializeState({
+    "src/quota.ts": TICKET_DONE,
+    "src/report.ts": INCOMPLETE,
+    "tests/isolation.test.ts": ISOLATION,
+  }),
+  complete: materializeState({
+    "src/quota.ts": TICKET_DONE,
+    "src/report.ts": COMPLETE,
+    "tests/isolation.test.ts": ISOLATION,
+  }),
+};
+
+// Every subprocess runs once here, outside the timed test bodies. A nested Bun
+// run takes tens of seconds on a loaded machine, so one inside a test body is
+// what the per-test timeout measures instead of the fixture.
+const outcomes = {
+  before: runFixtureTests(repo, "tests/quota.test.ts"),
+  ticketAcceptance: runFixtureTests(stateRepos.ticket, "tests/quota.test.ts"),
+  ticketIsolation: runFixtureTests(stateRepos.ticket, "tests/isolation.test.ts"),
+  incompleteIsolation: runFixtureTests(stateRepos.incomplete, "tests/isolation.test.ts"),
+  completeIsolation: runFixtureTests(stateRepos.complete, "tests/isolation.test.ts"),
+  completeAll: runFixtureTests(stateRepos.complete, "tests/"),
+};
+
+const second = materialize();
+const secondHead = execFileSync("git", ["-C", second, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+rmSync(second, { recursive: true, force: true });
+
+const lane = join(repo, "tools", "security-lane.sh");
+const laneDefault = spawnSync(lane, [], { encoding: "utf8", env: { ...process.env, BUN: process.execPath } });
+const laneUnavailable = spawnSync(lane, [], {
+  encoding: "utf8",
+  env: { ...process.env, BUN: process.execPath, CHECKPOINT_SECURITY_LANE: "unavailable" },
+});
+
+// The schema pass runs here for the same reason: compiling every shipped
+// schema is seconds of CPU on a loaded machine, and inside a test body that is
+// what the per-test timeout measures.
+const schemaRoot = makeTree({
+  "catalog.yaml": CATALOG,
+  ...shippedSchemas(),
+  ...Object.fromEntries(artifactNames.map((n) => [`templates/${n}`, JSON.stringify(artifacts[n])])),
+});
+const schemaErrors = checkSchemas({ root: schemaRoot, catalog: loadCatalog(schemaRoot).catalog! })
+  .filter((i) => i.severity === "error" && i.file.startsWith("templates/"))
+  .map((i) => `${i.file}: ${i.message}`);
+
+afterAll(() => {
+  for (const work of Object.values(stateRepos)) rmSync(work, { recursive: true, force: true });
+});
+
 describe("the fixture's artifacts conform to the schemas they exercise", () => {
   test("every artifact validates", () => {
-    const root = makeTree({
-      "catalog.yaml": CATALOG,
-      ...shippedSchemas(),
-      ...Object.fromEntries(artifactNames.map((n) => [`templates/${n}`, JSON.stringify(artifacts[n])])),
-    });
-    const { catalog } = loadCatalog(root);
-    const errors = checkSchemas({ root, catalog: catalog! })
-      .filter((i) => i.severity === "error" && i.file.startsWith("templates/"))
-      .map((i) => `${i.file}: ${i.message}`);
-    expect(errors).toEqual([]);
+    expect(schemaErrors).toEqual([]);
   });
 
   test("the charter's approval binds to the charter it approved", () => {
@@ -125,9 +206,6 @@ describe("the artifacts and the repository agree about the revision", () => {
   });
 
   test("materializing twice produces the same revision", () => {
-    const second = materialize();
-    const secondHead = execFileSync("git", ["-C", second, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    rmSync(second, { recursive: true, force: true });
     expect(secondHead).toBe(head);
   });
 });
@@ -154,63 +232,23 @@ describe("the fixture can host a refused closure", () => {
   // green and leaves the second red. A fixture where the obvious repair closed
   // the finding would grade a run that never checked independently exactly the
   // same as one that did.
-  type Outcome = { pass: number; fail: number; failing: string[] };
-
-  function run(files: Record<string, string>, target: string): Outcome {
-    // Materialize rather than copy `repo/`. The layout a state runs against has
-    // to be the one materialize.sh produces -- including the rename that keeps
-    // the fixture's own checks out of this repository's test collector -- and a
-    // copy made here would be a second spelling of that layout that diverges
-    // the first time either moves. It already did: this harness reported an
-    // empty state machine when the copy kept a name the materializer changes.
-    const work = materialize();
-    for (const [rel, from] of Object.entries(files)) {
-      mkdirSync(dirname(join(work, rel)), { recursive: true });
-      writeFileSync(join(work, rel), readFileSync(from, "utf8"));
-    }
-    // Both streams: bun writes the run summary to stderr, so reading stdout
-    // alone reports zero passes for every state that passed -- which reads as a
-    // broken fixture rather than as a broken harness.
-    const proc = spawnSync(process.execPath, ["test", target], { cwd: work, encoding: "utf8" });
-    const out = `${proc.stdout ?? ""}${proc.stderr ?? ""}`;
-    rmSync(work, { recursive: true, force: true });
-    if (out.trim() === "") throw new Error(`no output from the fixture run in ${work}`);
-    const num = (re: RegExp) => Number(out.match(re)?.[1] ?? "0");
-    return {
-      pass: num(/(\d+) pass/),
-      fail: num(/(\d+) fail/),
-      failing: [...out.matchAll(/\(fail\) (.+?) \[/g)].map((m) => m[1]!),
-    };
-  }
-
-  const ISOLATION = join(FIXTURE, "stages", "finding", "tests", "isolation.checks.ts");
-  const TICKET_DONE = join(FIXTURE, "selftest", "ticket-done", "quota.ts");
-  const INCOMPLETE = join(FIXTURE, "selftest", "repair-incomplete", "report.ts");
-  const COMPLETE = join(FIXTURE, "selftest", "repair-complete", "report.ts");
-
   test("state 1: the ticket's own checks are red before the change", () => {
-    const r = run({}, "tests/quota.test.ts");
+    const r = outcomes.before;
     expect(r.pass).toBe(0);
     expect(r.fail).toBe(2);
   });
 
   test("state 2: the change satisfies the ticket and does not touch the defect", () => {
-    const acceptance = run({ "src/quota.ts": TICKET_DONE }, "tests/quota.test.ts");
+    const acceptance = outcomes.ticketAcceptance;
     expect(acceptance.fail).toBe(0);
     expect(acceptance.pass).toBe(2);
 
-    const isolation = run(
-      { "src/quota.ts": TICKET_DONE, "tests/isolation.test.ts": ISOLATION },
-      "tests/isolation.test.ts",
-    );
+    const isolation = outcomes.ticketIsolation;
     expect(isolation.fail).toBe(2);
   });
 
   test("state 3: the repair the finding points at leaves the independent check red", () => {
-    const r = run(
-      { "src/quota.ts": TICKET_DONE, "src/report.ts": INCOMPLETE, "tests/isolation.test.ts": ISOLATION },
-      "tests/isolation.test.ts",
-    );
+    const r = outcomes.incompleteIsolation;
     expect(r.pass).toBe(1);
     expect(r.fail).toBe(1);
     // Named, not counted: which one stays red is the whole content of the state.
@@ -218,10 +256,7 @@ describe("the fixture can host a refused closure", () => {
   });
 
   test("state 4: a complete repair closes it", () => {
-    const r = run(
-      { "src/quota.ts": TICKET_DONE, "src/report.ts": COMPLETE, "tests/isolation.test.ts": ISOLATION },
-      "tests/",
-    );
+    const r = outcomes.completeAll;
     expect(r.fail).toBe(0);
     expect(r.pass).toBe(4);
   });
@@ -229,15 +264,7 @@ describe("the fixture can host a refused closure", () => {
   test("the two isolation checks are not the same check", () => {
     // If the incomplete repair satisfied both, the fixture would have no
     // refusal on it and this whole block would be measuring nothing.
-    const incomplete = run(
-      { "src/quota.ts": TICKET_DONE, "src/report.ts": INCOMPLETE, "tests/isolation.test.ts": ISOLATION },
-      "tests/isolation.test.ts",
-    );
-    const complete = run(
-      { "src/quota.ts": TICKET_DONE, "src/report.ts": COMPLETE, "tests/isolation.test.ts": ISOLATION },
-      "tests/isolation.test.ts",
-    );
-    expect(incomplete.fail).toBeGreaterThan(complete.fail);
+    expect(outcomes.incompleteIsolation.fail).toBeGreaterThan(outcomes.completeIsolation.fail);
   });
 });
 
@@ -315,23 +342,16 @@ describe("the findings point at what they say they point at", () => {
 });
 
 describe("a required lane can be made unavailable", () => {
-  const lane = join(repo, "tools", "security-lane.sh");
-
   test("the lane runs and reports the defect by default", () => {
-    const proc = spawnSync(lane, [], { encoding: "utf8", env: { ...process.env, BUN: process.execPath } });
-    expect(proc.status).not.toBe(0);
-    expect(proc.status).not.toBe(70);
+    expect(laneDefault.status).not.toBe(0);
+    expect(laneDefault.status).not.toBe(70);
   });
 
   test("the switch makes it unavailable, distinguishably from finding something", () => {
-    const proc = spawnSync(lane, [], {
-      encoding: "utf8",
-      env: { ...process.env, BUN: process.execPath, CHECKPOINT_SECURITY_LANE: "unavailable" },
-    });
     // 70, not 1: a lane that cannot tell "the tool is missing" from "the tool
     // found a problem" turns one into the other, and scenario 4 is exactly
     // about not letting the first read as the second.
-    expect(proc.status).toBe(70);
-    expect(proc.stderr).toContain("unavailable");
+    expect(laneUnavailable.status).toBe(70);
+    expect(laneUnavailable.stderr).toContain("unavailable");
   });
 });

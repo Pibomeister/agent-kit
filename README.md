@@ -82,6 +82,12 @@ start, checkpoint ledger and trusted evidence outside the worker worktree. The o
 Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or CI needs Firstmate
 installed.
 
+**Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
+a grant from its own home with `node <bundle>/bin/ak-gate.mjs bypass grant`, and the worker checks it before
+each human-started phase. A grant is valid only in the lifecycle run it is first used in, so the
+supervisor issues a fresh one when super-build opens the ticket's run. It starts phases only: approvals
+still go to the supervisor, and merge and deploy are never on it (`docs/decisions/0008-bypass-start-grant.md`).
+
 ## Catalog
 
 Every entry is declared in `catalog.yaml`. The validator fails on an entry with no directory and on a

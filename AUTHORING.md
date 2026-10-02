@@ -1551,6 +1551,15 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
 A figure quoted from a run carries that receipt, or the fields of it the figure depends on. The
 judge is bound by the runner, and neither the script nor this section names it.
 
+The three paid callers, trigger-eval, influence-eval and the reviewer panel that `calibrate grade`
+runs, retain the token usage a Codex session reports on its `turn.completed` line, per session and
+summed over the run. A session's `cost_usd` is derived from that usage only when the matrix's
+`price-table` names a table under `research/` (the committed one is
+`research/evals/codex-token-prices-2026-10-02.json`) that has an entry for the session's binding;
+otherwise the usage is kept and the cost stays unset. Each records the table's path, version and
+as-of date: the two eval runners in their receipt, the panel in the totals line `calibrate grade`
+prints, with each reviewer's usage and cost kept on the graded item.
+
 ---
 
 ## 10. The batch process you are working under

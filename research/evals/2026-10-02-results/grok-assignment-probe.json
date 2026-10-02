@@ -1,0 +1,65 @@
+{
+  "schema": "ak-grok-assignment-probe.v1",
+  "label": "captain-approved A0 Grok assignment read-chain plus deliberate write-deny control",
+  "started_at": "2026-10-02T15:06:34.935Z",
+  "completed_at": "2026-10-02T15:06:44.519Z",
+  "hard_cap_usd": 1,
+  "cost_total_usd": 0.00985932,
+  "instrument": {
+    "revision": "988a88199ab4b177210343152b9e397247dbdb8c",
+    "donors_present": false,
+    "install_config": "no ak.install.yaml: default, all fail-closed adapters attached (runner-contract, knowledgebase, firstmate, tracker); tracker: no backend, kb-write fallback (knowledgebase)"
+  },
+  "adapter_rules_sha256": "a93712ffd0624cf068de21813d921e89b10efb0eca9c0e8edca81a9d305e1dbb",
+  "relevant_rules": {
+    "allow": [
+      "Bash(head *)",
+      "Bash(find *)",
+      "Bash(echo *)"
+    ],
+    "deny": [
+      "Bash(*>*)"
+    ]
+  },
+  "read_chain": {
+    "deliberate_control": false,
+    "requested_command": "SESSION=\"<SCRATCH>/sessions/probe\"; find \"$SESSION\" -maxdepth 3 -type d; echo \"=== FILES ===\"; find \"$SESSION\" -maxdepth 3 -type f -not -path \"*/terminal/*\" | head -80",
+    "observed_command": "SESSION=\"<SCRATCH>/sessions/probe\"; find \"$SESSION\" -maxdepth 3 -type d; echo \"=== FILES ===\"; find \"$SESSION\" -maxdepth 3 -type f -not -path \"*/terminal/*\" | head -80",
+    "invalid_reason": "host cancelled refused Bash call: SESSION=\"<SCRATCH>/sessions/probe\"; find \"$SESSION\" -maxdepth 3 -type d; echo \"=== FILES ===\"; find \"$SESSION\" -maxdepth 3 -type f -not -path \"*/terminal/*\" | head -80",
+    "completed": false,
+    "session": {
+      "reply": "",
+      "exitCode": 0,
+      "timedOut": false,
+      "costUsd": 0.00496468,
+      "turns": 1,
+      "stopReason": "cancelled",
+      "durationMs": 4953,
+      "leaks": [
+        "the host's bundled platform skills, fetched into the private home at start and advertised beside the bundle's"
+      ]
+    }
+  },
+  "write_deny_control": {
+    "deliberate_control": true,
+    "requested_command": "echo deliberate-control > \"<SCRATCH>/write-control.txt\"",
+    "observed_command": "echo deliberate-control > \"<SCRATCH>/write-control.txt\"",
+    "invalid_reason": "host cancelled refused Bash call: echo deliberate-control > \"<SCRATCH>/write-control.txt\"",
+    "refused": true,
+    "target_exists": false,
+    "session": {
+      "reply": "",
+      "exitCode": 1,
+      "timedOut": false,
+      "costUsd": 0.00489464,
+      "turns": 1,
+      "stopReason": "cancelled",
+      "durationMs": 4527,
+      "leaks": [
+        "the host's bundled platform skills, fetched into the private home at start and advertised beside the bundle's"
+      ]
+    }
+  },
+  "compacted_from": "grok-assignment-probe-988a8819.json",
+  "compaction": "per-session event lists and the served-model name dropped; every other field verbatim"
+}

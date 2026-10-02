@@ -18,6 +18,7 @@ import {
   turnCapReceipt,
 } from "./evals/matrix.ts";
 import { buildPanel, calibration, grade, type Judge, parseVote, readQueue } from "./evals/panel.ts";
+import { loadPriceTable } from "./evals/pricing.ts";
 import type { SessionResult } from "./evals/subjects/types.ts";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ak-panel-test-")));
@@ -32,6 +33,12 @@ describe("matrix", () => {
     const m = parseMatrix(text);
     expect(m.subjects.map((s) => s.id)).toEqual(["subject-a", "subject-b", "subject-c"]);
     expect(m.subjects.map((s) => s.maxTurns)).toEqual([20, null, 20]);
+    expect(m.priceTable).toBe("research/evals/codex-token-prices-2026-10-02.json");
+    if (m.priceTable === undefined) throw new Error("the example has no price table");
+    const prices = loadPriceTable(join(import.meta.dir, "..", "..", m.priceTable));
+    expect(prices.version).toBe(1);
+    expect(prices.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(Object.keys(prices.models).length).toBeGreaterThan(0);
     expect(m.reviewers.map((r) => r.host)).toEqual(["claude", "codex", "grok"]);
     expect(m.panels).toEqual(rules);
     // No line of the example starts with a `model:` key, the shape the catalog's routing scan looks for.
@@ -113,6 +120,19 @@ describe("matrix", () => {
     });
     expect(turnCapReceipt({ id: "s-c", host: "claude", model: undefined, maxTurns: 20 })).toEqual({ max_turns: 20 });
     expect(turnCapReceipt({ id: "s-d", host: "codex", model: undefined, maxTurns: null })).toEqual({ max_turns: null });
+  });
+
+  test("the optional price table must be a path under research/", () => {
+    const tail =
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\n" +
+      "panels: {independent-of: subject, min-reviewers: 2}\n";
+    const subjects = "subjects: [{id: s-a, host: claude}]\n";
+    expect(parseMatrix(subjects + "price-table: research/evals/prices.json\n" + tail).priceTable).toBe(
+      "research/evals/prices.json",
+    );
+    expect(parseMatrix(subjects + tail).priceTable).toBeUndefined();
+    for (const path of [".work/prices.json", "provenance/prices.json", "research/../prices.json"])
+      expect(() => parseMatrix(`${subjects}price-table: ${path}\n${tail}`)).toThrow(/price-table/);
   });
 });
 
@@ -203,7 +223,7 @@ describe("grade", () => {
     async (reviewer, prompt) => {
       expect(prompt).toContain("[tool Skill]");
       expect(prompt).toContain("<criteria>");
-      return votes[reviewer.id]!;
+      return { reply: votes[reviewer.id]! };
     };
 
   test("unanimity is the verdict and nothing is queued", async () => {
@@ -247,6 +267,28 @@ describe("grade", () => {
     expect(g.verdict).toBe("needs-human");
     expect(g.reason).toBe("a reviewer gave no readable verdict");
     expect(readQueue(queue)).toHaveLength(1);
+  });
+
+  test("each reviewer's reported usage and cost are kept beside its vote", async () => {
+    const usage = {
+      inputTokens: 100,
+      cachedInputTokens: 40,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 2,
+      totalTokens: 110,
+    };
+    const g = await grade(panel, transcript, "c", {
+      item: "c-usage",
+      queue: join(scratch, "usage.jsonl"),
+      judge: async (reviewer) =>
+        reviewer.id === "reviewer-b"
+          ? { reply: '{"verdict":"PASS"}', usage, costUsd: 0.5 }
+          : { reply: '{"verdict":"PASS"}' },
+    });
+    expect(g.verdict).toBe("PASS");
+    expect(g.usage).toEqual({ "reviewer-b": usage });
+    expect(g.cost_usd).toEqual({ "reviewer-b": 0.5 });
   });
 
   test("an unavailable panel grades nothing and calls no judge", async () => {

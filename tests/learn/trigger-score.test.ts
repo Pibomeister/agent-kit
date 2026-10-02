@@ -7,10 +7,11 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { usageReceipt } from "./evals/pricing.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
-import type { SessionEvent, ToolEvent } from "./evals/subjects/types.ts";
+import type { SessionEvent, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
 import {
   argvProblems,
   asksForInvocation,
@@ -137,6 +138,28 @@ describe("the same session scores the same on every host", () => {
 });
 
 describe("readOnlyShell", () => {
+  test("a plain assignment segment is read-only only when the rest of the chain is", () => {
+    const refusedDiscovery =
+      'SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
+    expect(readOnlyShell(refusedDiscovery)).toBe(true);
+    expect(readOnlyShell('SESSION=/tmp/session ROOT=/tmp; find "$SESSION" -maxdepth 3 -type d')).toBe(true);
+
+    for (const cmd of [
+      'SESSION="$(find /tmp -type d)"; find "$SESSION" -maxdepth 3 -type d',
+      'SESSION="`find /tmp -type d`"; find "$SESSION" -maxdepth 3 -type d',
+      'SESSION=<(find /tmp -type d); find "$SESSION" -maxdepth 3 -type d',
+      'SESSION=>(find /tmp -type d); find "$SESSION" -maxdepth 3 -type d',
+      'export SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      'declare SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      'readonly SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      'local SESSION="<SCRATCH>/sessions/<SESSION>"; find "$SESSION" -maxdepth 3 -type d',
+      "SESSION=/tmp/session git status",
+      'SESSION="<SCRATCH>/sessions/<SESSION>"; echo changed > out.txt',
+    ]) {
+      expect([cmd, readOnlyShell(cmd)]).toEqual([cmd, false]);
+    }
+  });
+
   test("looking commands, alone or chained, are read-only", () => {
     for (const cmd of [
       "git status",
@@ -1251,6 +1274,39 @@ describe("invalid sessions and the no-op floor", () => {
     expect(invalidSession({ exitCode: 1, timedOut: false, reply: "partial" })).toBe("exit 1");
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "  " })).toBe("empty reply");
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done" })).toBeNull();
+  });
+
+  test("the usage receipt sums the sessions that reported usage and counts them", () => {
+    const usage: TokenUsage = {
+      inputTokens: 55,
+      cachedInputTokens: 20,
+      cacheWriteInputTokens: 0,
+      outputTokens: 5,
+      reasoningOutputTokens: 2,
+      totalTokens: 60,
+    };
+    expect(usageReceipt([{ usage }, {}, { usage }])).toEqual({
+      usage: {
+        input_tokens: 110,
+        cached_input_tokens: 40,
+        cache_write_input_tokens: 0,
+        output_tokens: 10,
+        reasoning_output_tokens: 4,
+        total_tokens: 120,
+      },
+      usage_sessions: 2,
+    });
+    expect(usageReceipt([{}])).toEqual({
+      usage: {
+        input_tokens: 0,
+        cached_input_tokens: 0,
+        cache_write_input_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 0,
+      },
+      usage_sessions: 0,
+    });
   });
 
   test("a session the host cancelled on a refused call says so, rather than reading as an empty reply", () => {

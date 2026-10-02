@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "as_of": "2026-10-02",
+  "source": "https://help.openai.com/en/articles/20001415-chatgpt-rate-card-enterprise-token-based-pricing",
+  "verified_against_live_session": false,
+  "models": {
+    "gpt-6-astra": {
+      "input_per_million_usd": 10,
+      "cached_input_per_million_usd": 1,
+      "output_per_million_usd": 50
+    },
+    "gpt-6-sol": {
+      "input_per_million_usd": 2,
+      "cached_input_per_million_usd": 0.2,
+      "output_per_million_usd": 10
+    }
+  }
+}

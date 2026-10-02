@@ -37,6 +37,17 @@ export interface UserEvent {
 
 export type SessionEvent = ToolEvent | MessageEvent | UserEvent;
 
+/** Host-reported token totals for one session. Cached input is included in input; reasoning is included in output. */
+export interface TokenUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  /** Billable token volume without double-counting cached input or reasoning output. */
+  totalTokens: number;
+}
+
 export interface SessionResult {
   /** The subject id from the matrix (a role label such as `subject-a`), never a model name in committed code. */
   subject: string;
@@ -47,6 +58,7 @@ export interface SessionResult {
   exitCode: number;
   timedOut: boolean;
   costUsd?: number;
+  usage?: TokenUsage;
   turns?: number;
   /** The model the host reported serving the session, as it named it; absent when the host does not say. */
   model?: string;
@@ -82,6 +94,7 @@ export interface SubjectAdapter {
     events: SessionEvent[];
     reply: string;
     costUsd?: number;
+    usage?: TokenUsage;
     turns?: number;
     model?: string;
     slashCommands?: string[];

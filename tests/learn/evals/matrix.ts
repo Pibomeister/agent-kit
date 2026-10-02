@@ -44,10 +44,15 @@ export interface Matrix {
   subjects: Subject[];
   reviewers: Seat[];
   panels: PanelRules;
+  /** Repository-relative path under research/. */
+  priceTable?: string;
 }
 
 type MatrixSubject = Omit<Subject, "maxTurns"> & { "max-turns"?: number | null };
-type MatrixFile = Omit<Matrix, "subjects"> & { subjects: MatrixSubject[] };
+type MatrixFile = Omit<Matrix, "subjects" | "priceTable"> & {
+  subjects: MatrixSubject[];
+  "price-table"?: string;
+};
 
 let validator: ReturnType<InstanceType<typeof Ajv2020>["compile"]> | undefined;
 
@@ -84,17 +89,22 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
         problems.push(`subject '${subject.id}' uses host 'codex', which cannot enforce max-turns`);
       }
     }
+    if (matrix["price-table"]?.split("/").includes(".."))
+      problems.push("price-table must not traverse outside research/");
   }
   if (problems.length > 0) throw new Error(`${source}: ${problems.join("; ")}`);
   const matrix = value as MatrixFile;
-  return {
-    ...matrix,
-    subjects: matrix.subjects.map(({ "max-turns": maxTurns, ...subject }) => ({
+  const { subjects, "price-table": priceTable, ...rest } = matrix;
+  const parsed: Matrix = {
+    ...rest,
+    subjects: subjects.map(({ "max-turns": maxTurns, ...subject }) => ({
       ...subject,
       model: subject.model,
       maxTurns,
     })),
   };
+  if (priceTable !== undefined) parsed.priceTable = priceTable;
+  return parsed;
 }
 
 /**

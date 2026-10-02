@@ -239,3 +239,36 @@ comparing each kept grant record's `binding_sha256` and `binding` path with the 
 worker that rewrites the ledger and the grant records consistently still passes. Preventing it needs the
 runner's validated grants (ADR-0004). Any other operation, merge and scope changes included, is
 refused. The worker then reports `needs-decision` and Firstmate decides or asks the captain.
+
+### Bypass, for one task
+
+A bypass grant is the other route, and it needs neither a binding nor the patches (ADR-0008).
+Firstmate writes it with the bundle's gate script, run by `node` with its home as the working directory:
+`node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <id> --by <who> --reason <why> --out
+data/<task-id>/bypass.json --project <repo> --worktree <task worktree>`, and pastes the section it prints
+into the brief. Never run it through `bun` or from a project directory: `bun` loads the working
+directory's `bunfig.toml` and `.env` first, which a worker can write (SUPERVISOR.md). The worker runs
+`node <agent-kit bundle>/bin/ak-gate.mjs bypass check --grant <path> --task <id> --phase <phase>` before
+super-align, super-bound, super-review `full` or `readiness`, and super-ship; exit 0 is the start.
+The grant is start-only: every approval inside those phases still reaches Firstmate as
+`needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
+check must run from inside the task's worktree the grant names (`--project` cannot stand in for it);
+a grant is valid only in the run it is first used in, claimed atomically on first use. When super-build opens the ticket's run, the
+worker's next check is refused as bound to the earlier run; the worker reports `needs-decision`, and
+Firstmate issues a fresh grant for the same task and worktree on its standing authorization, with no
+captain step (SUPERVISOR.md). Gate records made with `--bypass <path> --task <id>` carry
+`authority.mode: bypass` and who authorized it. A phase started under a grant that has since expired
+continues under a fresh grant for the same task and worktree in the same run, whose record names the
+one it supersedes, or under the typed command, which records `authority.mode: explicit` with
+`superseded_grant_id` and ends the bypass for that phase in the run. The run binding and the end are
+read from the grant's run claim and the run's use records in the evidence store, which the worker can write, so they guard
+against accidents, not a determined worker; the worker never writes `~/.agent-kit`. A grant for another task or worktree is refused, and a gate recorded
+by hand cannot be relabelled with `--bypass` at the same snapshot.
+
+`grant` refuses to run from inside any worktree of the repository or under the home's `projects/`,
+or to write inside a worktree or the git directory, and it records the issuing directory, host and
+home. `check` refuses a grant that is unregistered, copied, edited, expired, for another repository
+or inside a worktree, and judges only the bytes it opened. A same-user worker can still issue a grant
+from elsewhere: this guards against accidents and shortcuts, not a determined worker. Firstmate
+accepted that limit on the captain's behalf on 2026-10-01 (ADR-0008); an out-of-account issuer is
+the follow-up.

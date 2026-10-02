@@ -5,18 +5,21 @@
  * No host CLI runs here.
  */
 import { afterAll, describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
+import { costOf, loadPriceTable } from "./evals/pricing.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
+import { rewriteAssignmentReadChain } from "./evals/subjects/grok-mediator.ts";
 import { privateHome } from "./evals/subjects/home.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
-import type { SessionRequest, SubjectAdapter, ToolEvent } from "./evals/subjects/types.ts";
+import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
 import { evalInstrument } from "./evals/session.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "transcripts");
@@ -145,6 +148,40 @@ describe("codex", () => {
     expect(tools(parsed.events).at(-1)!.input.command).toBe("bun test");
   });
 
+  test("a completed turn retains every reported token total", () => {
+    expect(codex.parse(fixture("codex-usage.jsonl")).usage).toEqual({
+      inputTokens: 38420,
+      cachedInputTokens: 31104,
+      cacheWriteInputTokens: 0,
+      outputTokens: 60,
+      reasoningOutputTokens: 0,
+      totalTokens: 38480,
+    });
+  });
+
+  test("a completed turn without cache-write or reasoning totals counts them as zero", () => {
+    expect(codex.parse(fixture("codex-tools.doc-derived.jsonl")).usage).toEqual({
+      inputTokens: 100,
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 0,
+      totalTokens: 110,
+    });
+  });
+
+  test("absent or malformed completed-turn usage is ignored", () => {
+    expect(codex.parse(fixture("codex-usage-absent.jsonl")).usage).toBeUndefined();
+    expect(codex.parse(fixture("codex-usage-malformed.jsonl")).usage).toBeUndefined();
+    const reported = { input_tokens: 100, cached_input_tokens: 0, output_tokens: 10 };
+    for (const usage of [
+      { ...reported, reasoning_output_tokens: "unknown" },
+      { ...reported, cache_write_input_tokens: null },
+      { input_tokens: 100, output_tokens: 10 },
+    ])
+      expect(codex.parse(JSON.stringify({ type: "turn.completed", usage })).usage).toBeUndefined();
+  });
+
   test("a deleted file, or a change of a kind not listed, is a mutating tool", () => {
     const stdout = JSON.stringify({
       type: "item.completed",
@@ -217,6 +254,103 @@ describe("grok", () => {
     );
     expect(readOnlyShell(command)).toBe(true);
     for (const segment of command.split(/ && |; /)) expect([segment, admits(segment)]).toEqual([segment, true]);
+  });
+
+  test("the mediator turns an assignment read chain into literal commands the rules admit, and the session is valid", () => {
+    const discovery =
+      'SESSION="/scratch/sessions/s1"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
+    expect(readOnlyShell(discovery)).toBe(true);
+    expect(discovery.split(/; | \| /).every(admits)).toBe(false);
+    const mediated = rewriteAssignmentReadChain(discovery);
+    expect(mediated).toBe(
+      "find '/scratch/sessions/s1' '-maxdepth' '3' '-type' 'd' ; echo '=== FILES ===' ; find '/scratch/sessions/s1' '-maxdepth' '3' '-type' 'f' '-not' '-path' '*/terminal/*' | head '-80'",
+    );
+    for (const segment of String(mediated).split(/ ; | \| /))
+      expect([segment, admits(segment)]).toEqual([segment, true]);
+
+    const attempted = JSON.stringify({
+      type: "tool_call",
+      toolName: "run_terminal_command",
+      rawInput: { command: discovery },
+    });
+    const reply = JSON.stringify({ type: "text", data: "READ_CHAIN_OK" });
+    const ended = JSON.stringify({ type: "end", stopReason: "end_turn", num_turns: 2 });
+    const parsed = grok.parse(`${attempted}\n${reply}\n${ended}`);
+    expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBeNull();
+
+    const throughVariable = JSON.stringify({
+      type: "tool_call",
+      toolName: "run_terminal_command",
+      rawInput: { command: 'D=/home/skills/super-align; cat "$D/SKILL.md"' },
+    });
+    expect(skillLoads(grok.parse(throughVariable).events).map((l) => l.skill)).toEqual(["super-align"]);
+
+    for (const [command, rewritten] of [
+      ['ls /maybe; SESSION=/scratch/s1 && find "$SESSION" -type d', "ls '/maybe' ; find '/scratch/s1' '-type' 'd'"],
+      ["ROOT=/scratch; SESSION=$ROOT/s1; git -C . status; ls ${SESSION}", null],
+      ["ROOT=/scratch; SESSION=$ROOT/s1 && git status -sb | head -5", "git 'status' '-sb' | head '-5'"],
+      ["NAME='$HOME'; echo \"$NAME\"", "echo '$HOME'"],
+    ] as const)
+      expect([command, rewriteAssignmentReadChain(command)]).toEqual([command, rewritten]);
+  });
+
+  test("the mediator leaves writes and everything it cannot read as literal words to dontAsk and the denies", () => {
+    for (const command of [
+      'ROOT=/scratch; OUT=$ROOT/out cp notes.md "$ROOT"',
+      "ROOT=/scratch; GIT_DIR=$ROOT/.git git log -3",
+      'ROOT=/scratch; ROOT=/other ls "$ROOT"; ls "$ROOT"',
+      'SESSION=/scratch/s1 find "$SESSION" -type d',
+      'SESSION=/scratch/s1 ls; find "$SESSION" -type d',
+      "LC_ALL=C ls -la /scratch",
+      'test -d /scratch/a && SESSION=/scratch/a || SESSION=/scratch/b; ls "$SESSION"',
+      "SESSION=/scratch/s1 || ls /scratch",
+      "SESSION=/scratch/s1 | ls /scratch",
+      "ls /scratch; SESSION=/scratch/s1",
+      "PATH=/scratch; ls /scratch",
+      "HOME=/scratch; ls /scratch",
+      'OUT=/scratch/out; rm -rf "$OUT"',
+      'OUT=/scratch/out.txt; echo changed > "$OUT"',
+      'OUT=/scratch/out.txt; cat notes.md 2>/dev/null; ls "$OUT"',
+      'SESSION=/scratch/s1; find "$SESSION" -delete',
+      "FLAG=-delete; find /scratch/s1 $FLAG",
+      "TOOL=rm; $TOOL /scratch/s1",
+      'SESSION="$(mktemp -d)"; find "$SESSION" -type d',
+      'SESSION=`mktemp -d`; find "$SESSION" -type d',
+      'SESSION=/scratch/s1; (find "$SESSION" -type d)',
+      'SESSION=/scratch/s1; find "$SESSION" -type d & ls',
+      'SESSION=/scratch/s1; find "$SESSION -type d',
+      'SESSION=/scratch/s1; find "$OTHER" -type d',
+      "SESSION=/scratch/s1; ls $SESSION/*.md",
+      'SESSION="/scratch/s 1"; ls $SESSION',
+      'SESSION=/scratch/s1; find "$SESSION" -name a\\ b',
+      'export SESSION=/scratch/s1; find "$SESSION" -type d',
+      "1SESSION=/scratch/s1; ls",
+      "SESSION=/scratch/s1",
+      "find /scratch/s1 -type d; echo done",
+      'echo deliberate-control > "/scratch/write-control.txt"',
+    ])
+      expect([command, rewriteAssignmentReadChain(command)]).toEqual([command, null]);
+
+    for (const segment of [
+      'cp notes.md "$ROOT"',
+      'rm -rf "$OUT"',
+      'echo changed > "$OUT"',
+      'find "$SESSION" -delete',
+      'echo deliberate-control > "/scratch/write-control.txt"',
+    ])
+      expect([segment, admits(segment)]).toEqual([segment, false]);
+
+    const control = 'echo deliberate-control > "/scratch/write-control.txt"';
+    const attempted = JSON.stringify({
+      type: "tool_call",
+      toolName: "run_terminal_command",
+      rawInput: { command: control },
+    });
+    const cancelled = JSON.stringify({ type: "end", stopReason: "cancelled", num_turns: 1 });
+    const parsed = grok.parse(`${attempted}\n${cancelled}`);
+    expect(invalidSession({ ...parsed, exitCode: 1, timedOut: false }, 20)).toBe(
+      `host cancelled refused Bash call: ${control}`,
+    );
   });
 
   test("looks the scorer accepts are admitted in their common forms", () => {
@@ -392,6 +526,46 @@ describe("isolation", () => {
     expect(g.env.GROK_CLAUDE_SKILLS_ENABLED).toBe("false");
     expect(g.env.GROK_MEMORY).toBe("0");
 
+    const hooks = join(String(g.env.GROK_HOME), "hooks");
+    const registered: unknown = JSON.parse(readFileSync(join(hooks, "assignment-read-chain.json"), "utf8"));
+    const script = join(hooks, "assignment-read-chain.sh");
+    expect(registered).toEqual({
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: script, timeout: 30 }] }] },
+    });
+    expect(isAbsolute(script)).toBe(true);
+    const run = (file: string, args: string[], stdin: string) => {
+      const ran = spawnSync(file, args, { cwd: scratch, input: stdin, encoding: "utf8", timeout: 5000 });
+      return [ran.status, ran.stdout];
+    };
+    const hook = (stdin: string) => {
+      const asPath = run(script, [], stdin);
+      expect(run("/bin/sh", ["-c", script], stdin)).toEqual(asPath);
+      return asPath;
+    };
+    const event = (command: string, toolInputTruncated = false) =>
+      JSON.stringify({
+        hook_event_name: "PreToolUse",
+        toolName: "run_terminal_command",
+        toolInput: { command, description: `List files under ${hooks}` },
+        toolInputTruncated,
+      });
+    const chain = 'SESSION="/scratch/s1"; find "$SESSION" -maxdepth 3 -type d | head -80';
+    const [status, stdout] = hook(event(chain));
+    expect(status).toBe(0);
+    expect(JSON.parse(String(stdout))).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: {
+          command: "find '/scratch/s1' '-maxdepth' '3' '-type' 'd' | head '-80'",
+          description: `List files under ${hooks}`,
+        },
+      },
+    });
+    expect(hook(event(chain, true))).toEqual([0, ""]);
+    expect(hook(event('OUT=/scratch/out.txt; echo changed > "$OUT"'))).toEqual([0, ""]);
+    expect(hook(JSON.stringify({ toolInput: { file_path: "a.md" } }))).toEqual([0, ""]);
+    expect(hook("not json")).toEqual([0, ""]);
+
     expect(claude.isolate!(scratch, req).env).toEqual({
       CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
@@ -455,6 +629,71 @@ describe("runSubject", () => {
     expect(adapterFor("claude").host).toBe("claude");
     expect(adapterFor("codex").host).toBe("codex");
     expect(adapterFor("grok").host).toBe("grok");
+  });
+
+  test("a price table derives cost only for a matching bound Codex session", async () => {
+    const priceFile = join(scratch, "placeholder-prices.json");
+    writeFileSync(
+      priceFile,
+      JSON.stringify({
+        version: 1,
+        as_of: "2026-01-02",
+        source: "https://prices.invalid/placeholder",
+        verified_against_live_session: false,
+        models: {
+          "model-placeholder": {
+            input_per_million_usd: 3,
+            cached_input_per_million_usd: 0.75,
+            output_per_million_usd: 8,
+          },
+        },
+      }),
+    );
+    const prices = loadPriceTable(priceFile);
+    const usage: TokenUsage = {
+      inputTokens: 2_000_000,
+      cachedInputTokens: 500_000,
+      cacheWriteInputTokens: 0,
+      outputTokens: 100_000,
+      reasoningOutputTokens: 25_000,
+      totalTokens: 2_100_000,
+    };
+    expect(costOf(usage, prices.models["model-placeholder"])).toBe(5.675);
+    expect(costOf(usage, prices.models["missing-placeholder"])).toBeUndefined();
+
+    const fakeCodex: SubjectAdapter = {
+      ...codex,
+      command: () => ["printf", "%s", "ignored"],
+      parse: () => ({ events: [], reply: "ok", usage }),
+      isolate: undefined,
+    };
+    const priced = await runSubject(
+      fakeCodex,
+      "subject-placeholder",
+      "model-placeholder",
+      {
+        ...req,
+        cwd: scratch,
+        env: { PATH: process.env.PATH ?? "" },
+      },
+      prices,
+    );
+    expect(priced.usage).toEqual(usage);
+    expect(priced.costUsd).toBe(5.675);
+
+    const unpriced = await runSubject(
+      fakeCodex,
+      "subject-placeholder",
+      "missing-placeholder",
+      {
+        ...req,
+        cwd: scratch,
+        env: { PATH: process.env.PATH ?? "" },
+      },
+      prices,
+    );
+    expect(unpriced.usage).toEqual(usage);
+    expect(unpriced.costUsd).toBeUndefined();
   });
 });
 

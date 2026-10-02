@@ -100,8 +100,10 @@
  * authority result is never a pass on a positive; on a negative, a load that changed nothing holds.
  * The receipt's `noop_baseline` is the same summary for a subject that never loads anything; a
  * reported balanced accuracy means something only above it.
- * Cost: each scored case carries the session's `cost_usd` as its host reported it (null when the
- * host reports none), and each subject's summary the total over the cases that reported one.
+ * Cost: each scored case carries the session's `cost_usd` as its host reported it, or for a Codex
+ * session as the configured versioned price table derives it (null when neither source exists),
+ * and each subject's summary totals the cases that reported one. Token totals are retained per
+ * session and summed in the receipt.
  * Each subject's receipt entry lists `observed_models`: the distinct models its host reported
  * serving the sessions, empty when the host does not report one, and `max_turns`: the effective
  * subject cap or null when that host runs uncapped.
@@ -119,6 +121,7 @@ import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
 import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
+import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
@@ -127,6 +130,7 @@ import {
   READ_ONLY_GIT,
   READ_ONLY_GIT_ACTIONS,
   READ_ONLY_PROGRAMS,
+  plainAssignmentSegment,
   readsOf,
   unwrap,
   words,
@@ -609,7 +613,8 @@ function newlinesAsSeparators(command: string): string {
 
 /**
  * True when every command in a list (split at `&&`, `||`, `;`, `|`, `&` and newlines) is a
- * read-only program and nothing is redirected to a file. Input (`<file`), a duplicated descriptor
+ * read-only program or a segment of plain `NAME=value` assignments that runs no nested command,
+ * and nothing is redirected to a file. Input (`<file`), a duplicated descriptor
  * (`2>&1`, `>&2`) and `/dev/null` are not files. A read-write open (`<>file`, `0<>file`) creates
  * its target, so it is a write. A `( … )` group is read through its commands, and a
  * `for x in <literal words>; do … done` loop through its body, where an `if … ; then … ; fi` may
@@ -646,7 +651,7 @@ export function readOnlyShell(command: string): boolean {
         redirect[2] === "<" || (redirect[3] === "&" ? /^(?:\d+|-)$/.test(target ?? "") : target === "/dev/null");
       if (!harmless) return false;
     }
-    return readOnlyProgram(program);
+    return plainAssignmentSegment(program) || readOnlyProgram(program);
   };
   const readOnlyFor = (start: number): number => {
     const header = commands[start]!;
@@ -1511,13 +1516,23 @@ async function main(argv: string[]): Promise<number> {
   const scoring: ScoreOptions = { arm, userInvoked, known, drafts, fingerprints };
   const draftPaths = new Map([...drafts].map(([path, name]) => [name, path]));
 
-  const subjects = loadMatrix().subjects.filter((s) => onlySubject === undefined || s.id === onlySubject);
+  const matrix = loadMatrix();
+  const subjects = matrix.subjects.filter((s) => onlySubject === undefined || s.id === onlySubject);
   if (subjects.length === 0) {
     console.error(`trigger-eval: no subject ${onlySubject ?? ""} in the eval matrix`);
     return 2;
   }
+  let priced: ReturnType<typeof matrixPrices>;
+  try {
+    priced = matrixPrices(matrix.priceTable);
+  } catch (error) {
+    console.error(`trigger-eval: ${error instanceof Error ? error.message : String(error)}`);
+    return 2;
+  }
+  const { prices, price_table } = priced;
 
   const instrument = evalInstrument(PACKAGE_ROOT, revision());
+  const ranSessions: SessionResult[] = [];
   const report = [];
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
@@ -1552,6 +1567,7 @@ async function main(argv: string[]): Promise<number> {
           host: subject.host,
           injection: adapter.injection,
           ...turnCapReceipt(subject),
+          price_table,
           cases: cases.length,
           command: adapter.command(request(cases[0]!), subject.model),
         }),
@@ -1559,20 +1575,24 @@ async function main(argv: string[]): Promise<number> {
       continue;
     }
     const sessions: SessionResult[] = await pool(cases, jobs, (c) =>
-      runSubject(adapter, subject.id, subject.model, request(c)),
+      runSubject(adapter, subject.id, subject.model, request(c), prices),
     );
-    const results = cases.map((c, i) => {
-      const scored = scoreCase(c, sessions[i]!.events, sessions[i]!.reply, scoring, sessions[i]!.slashCommands);
-      const invalid = invalidSession(sessions[i]!, maxTurns);
-      return invalid === null ? scored : { ...scored, invalid };
+    ranSessions.push(...sessions);
+    const evaluated = sessions.map((session, index) => {
+      const evalCase = cases[index];
+      if (evalCase === undefined) throw new Error(`completed session has no case at index ${index}`);
+      const scored = scoreCase(evalCase, session.events, session.reply, scoring, session.slashCommands);
+      const invalid = invalidSession(session, maxTurns);
+      return { case: evalCase, session, result: invalid === null ? scored : { ...scored, invalid } };
     });
+    const results = evaluated.map(({ result }) => result);
 
     if (dumpDir !== undefined) {
       const dir = join(dumpDir, subject.id);
       mkdirSync(dir, { recursive: true });
       // Every session is written: quiet negatives and misses are what a labeller most needs to see.
       // The hand-check sample stays over the fired ones, which is what it checks.
-      const all = results.map((r, i) => ({ r, s: sessions[i]!, c: cases[i]! }));
+      const all = evaluated.map(({ result: r, session: s, case: c }) => ({ r, s, c }));
       const fired = all.filter(({ r }) => r.loaded.length > 0);
       for (const { r, s, c } of all) {
         const checkAgainst = r.loaded.map(
@@ -1604,6 +1624,7 @@ async function main(argv: string[]): Promise<number> {
     const summary = {
       ...summarise(results),
       cost_usd: costs.length === 0 ? null : Math.round(costs.reduce((a, b) => a + b, 0) * 10_000) / 10_000,
+      ...usageReceipt(sessions),
     };
     report.push({
       subject: subject.id,
@@ -1617,12 +1638,13 @@ async function main(argv: string[]): Promise<number> {
       summary,
       per_skill: perSkill(results),
       confusion: confusion(results, known),
-      results: results.map((r, i) => ({
-        ...r,
-        reply: sessions[i]!.reply,
-        timed_out: sessions[i]!.timedOut,
-        exit_code: sessions[i]!.exitCode,
-        cost_usd: sessions[i]!.costUsd ?? null,
+      results: evaluated.map(({ result, session }) => ({
+        ...result,
+        reply: session.reply,
+        timed_out: session.timedOut,
+        exit_code: session.exitCode,
+        cost_usd: session.costUsd ?? null,
+        usage: session.usage === undefined ? null : usageReceipt([session]).usage,
       })),
     });
     if (!quiet) {
@@ -1651,6 +1673,8 @@ async function main(argv: string[]): Promise<number> {
     ...bundleEvidence(bundleOn, promptSet.cases, new Set(drafts.values())),
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
+    ...usageReceipt(ranSessions),
+    price_table,
     argv: ["bun", "tests/learn/evals/trigger-eval.ts", ...argv],
     ...instrument,
     subjects: report.map((r) => ({
@@ -1659,6 +1683,8 @@ async function main(argv: string[]): Promise<number> {
       injection: r.injection,
       max_turns: r.max_turns,
       bundle: r.bundle,
+      usage: r.summary.usage,
+      usage_sessions: r.summary.usage_sessions,
       leaks: r.leaks,
       observed_models: r.observed_models,
     })),

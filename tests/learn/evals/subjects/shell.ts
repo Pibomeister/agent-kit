@@ -72,6 +72,14 @@ export function unwrap(command: string): string {
   return inner.length === 1 ? inner[0]! : command;
 }
 
+const PLAIN_ASSIGNMENT = /^[A-Za-z_]\w*=[\s\S]*$/;
+const ASSIGNMENT_EXECUTION = /`|\$\(|[<>]\(/;
+
+/** A standalone assignment changes only the current shell and runs no nested command. */
+export function plainAssignmentSegment(segment: readonly string[]): boolean {
+  return segment.length > 0 && segment.every((word) => PLAIN_ASSIGNMENT.test(word) && !ASSIGNMENT_EXECUTION.test(word));
+}
+
 /** Programs the scorer accepts as read-only for all arguments not rejected by its write-flag guard. */
 export const READ_ONLY_PROGRAMS = [
   "cd",
@@ -158,6 +166,11 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * --show-token` forms are looks to the scorer and have no rule here. Variable expansion and command
  * substitution through an admitted program such as `echo` or `test` remain admitted, so the
  * inherited environment still reaches the subject.
+ * No rule covers a plain assignment whose variable a later `find` reads: the Grok 1.0.46 user guide
+ * (`22-permissions-and-safety.md`, Rule Matching Reference) honours an allow rule for a variable
+ * argument only as an `ls` or `rg` file operand, and other programs still prompt. The eval's
+ * `PreToolUse` hook (`grok-mediator.ts`) rewrites such a chain into literal commands and checks
+ * each against these same rules.
  * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
  * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
  * refuses every segment containing `>`, which no rule did before it.

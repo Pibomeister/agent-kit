@@ -601,8 +601,7 @@
     "anti-slop(no-unsafe-dictionary-type)": 6,
     "anti-slop(require-safety-comment-for-type-assertion)": 10,
     "typescript(no-non-null-assertion)": 10,
-    "typescript(no-unsafe-type-assertion)": 10,
-    "unicorn(consistent-function-scoping)": 1
+    "typescript(no-unsafe-type-assertion)": 10
   },
   "tests/cli.test.ts": {
     "anti-slop(require-safety-comment-for-type-assertion)": 8,
@@ -861,7 +860,7 @@
     "anti-slop(no-runtime-typeof)": 5,
     "anti-slop(require-safety-comment-for-type-assertion)": 5,
     "eslint(no-shadow)": 1,
-    "typescript(no-non-null-assertion)": 36,
+    "typescript(no-non-null-assertion)": 26,
     "typescript(no-unsafe-type-assertion)": 3,
     "unicorn(consistent-function-scoping)": 3,
     "unicorn(no-array-sort)": 4

@@ -1,13 +1,14 @@
 ---
 name: super-review
 description: >-
-  Human-started command: it runs only when the human's message begins with `/ak:super-review`, under
-  a validated grant, or as a delta inside an open review run. On any other request do not load or
+  Human-started command: it runs only when the human's message begins with `/ak:super-review`,
+  under a validated grant, when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
+  bypass check`, or as a delta inside an open review run. On any other request do not load or
   follow it; tell the human to type that command. Reviews a change with a panel of independent
-  specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix (delta),
-  or the two-lane readiness gate (readiness). Use when a change needs judgment against requirements,
-  standards and tests. Reviewers cannot edit source. Not for writing the fix, not for running
-  acceptance checks, and not for repairing a red pipeline.
+  specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix
+  (delta), or the two-lane readiness gate (readiness). Use when a change needs judgment against
+  requirements, standards and tests. Reviewers cannot edit source. Not for writing the fix, not
+  for running acceptance checks, and not for repairing a red pipeline.
 license: MIT
 metadata:
   ak_catalog_id: super-review
@@ -68,6 +69,13 @@ Under a Firstmate binding, Firstmate is the delegated controller and the host va
 grant: cite the record it prints on the review. A refusal means stop and report `needs-decision` to
 Firstmate (ADR-0004).
 
+Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
+task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
+--phase super-review:full` (or `super-review:readiness`): exit 0 is the start, and a refusal is a stop with
+`needs-decision`. The grant starts the review and nothing else; a decision a human would make inside
+it still goes to the supervisor through `needs-decision`. Record the gate with `--bypass <path> --task <id>`
+so it carries the attribution.
+
 `review.delta` does not open a review run. Invoked where none is open, it stops with `needs-input`
 naming `super-review full` as the next permitted action.
 
@@ -95,10 +103,11 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    check. `full` and `readiness` are started only when the human's message begins with
    `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
    validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
-   Authority, and a refusal is a stop. A request in prose is not a start, even when it names this
-   skill or the command. With neither, stop here: make no other tool call, say that this command is
-   human-started, and give the human the line to type, `/ak:super-review` and their request. For
-   `delta`, confirm a review run is open; if not, stop with `needs-input`.
+   Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
+   in prose is not a start, even when it names this skill or the command. With neither, stop here:
+   make no other tool call, say that this command is human-started, and give the human the line to
+   type, `/ak:super-review` and their request. For `delta`, confirm a review run is open; if not,
+   stop with `needs-input`.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only
