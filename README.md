@@ -132,8 +132,7 @@ Shared phase logic, invoked by skills rather than by humans:
 
 `codebase-design` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
 `tracker-of-record` · `delegation` · `structural-checks`. Loaded on demand, never exposed as slash
-commands. `delegation` and `structural-checks` are declared at `status: contract`; their bodies
-are not authored yet.
+commands. `structural-checks` is declared at `status: contract`; its body is not authored yet.
 
 ## What makes it self-checking
 

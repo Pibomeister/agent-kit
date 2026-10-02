@@ -1460,7 +1460,7 @@ only the last `--case` it is given. So a run that leaves these cases out goes th
 case loses the tag when its scaffold lands, unless its graders still cannot measure the behavior
 in the sandbox: a scaffolded case keeps the tag for as long as that holds. Two such reasons are in
 use. The pass needs an adapter write the host cannot supply
-(`evals/super-bound/approved-direction-produces-spec-and-tickets`), or a no-file grader counts
+(`evals/super-bound/approved-direction-stops-at-open-decisions`), or a no-file grader counts
 `.git` writes because the case grants `Bash` in a repository
 (`evals/super-ship/lesson-is-drafted-not-published`).
 

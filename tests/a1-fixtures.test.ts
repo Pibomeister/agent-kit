@@ -67,7 +67,7 @@ describe("A1 state-dependent fixtures", () => {
 describe("A1 cases the sandbox cannot measure", () => {
   test.each([
     "compound/correction-becomes-one-candidate",
-    "super-bound/approved-direction-produces-spec-and-tickets",
+    "super-bound/approved-direction-stops-at-open-decisions",
     "super-ship/lesson-is-drafted-not-published",
     "wayfind/loose-effort-charts-a-map",
   ])("%s stays out of difference claims", (dir) => {
@@ -109,7 +109,7 @@ describe("A1 scaffold content leaves the behavior observable", () => {
   });
 
   test("the approved sandbox direction has a compatible tenant-policy path", () => {
-    const workspace = scaffold("super-bound/approved-direction-produces-spec-and-tickets", "ak-a1-direction-");
+    const workspace = scaffold("super-bound/approved-direction-stops-at-open-decisions", "ak-a1-direction-");
     const alignment = JSON.parse(readFileSync(join(workspace, "runs/sandbox-self-serve/alignment.json"), "utf8"));
     expect(alignment.status).toBe("approved");
     expect(alignment.direction).toMatch(/self-serve sandbox provisioning/i);
