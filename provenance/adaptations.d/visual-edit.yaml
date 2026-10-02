@@ -18,8 +18,9 @@ adaptations:
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L18-L19`
       and
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L26-L27`
-      require. The open call mints the bridge token before the bridge starts, the ordering pinned
-      at
+      require. The connector's open call mints the bridge token before the bridge starts, and a
+      signed-out WebMCP session generates the token and starts the bridge before it opens, the
+      two orderings pinned at
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L263-L281`,
       and a dev server that is down is started with its own command, as
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L34-L37`

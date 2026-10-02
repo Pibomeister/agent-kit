@@ -70,7 +70,7 @@ inputs:
     required: false
     summary: >-
       Named criteria the resulting receipt may support in super-verify's evidence matrix. Without
-      them the batch is still applied, receipted and acknowledged.
+      them the batch is still applied and receipted.
   - id: approved-ticket
     schema: ticket
     required: false
@@ -193,8 +193,9 @@ provenance:
         at named viewports; visual changes stay pending until the coding agent applies source and
         acknowledges the revision; compiled routes stay on that agent path. The connection, route
         frames and code view are verified before handoff. The editor stays the donor's hosted
-        app, the open call mints the bridge token before the bridge starts, and the account gates
-        only save and share.
+        app, the connector's open call mints the bridge token before the bridge starts, a
+        signed-out WebMCP session generates the token and starts the bridge before it opens, and
+        the account gates only save and share.
     - donor: builderio-skills
       commit: eb07be67e6d924b958445f706f5ac386243df6b4
       path: skills/visual-edit/README.md

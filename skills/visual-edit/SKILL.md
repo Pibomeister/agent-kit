@@ -56,10 +56,10 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
    an already pulled handoff, check only the dev server here and go to step 9.
 4. Probe every requested route at the dev-server URL. Preserve the human's route labels, order and
    viewports; discover routes, from the CLI's manifest, only when none were supplied.
-5. Through the editor's MCP connector or WebMCP, open the design with the exact routes and
-   viewports. That call mints the bridge token; a signed-out WebMCP session generates the token
-   locally and passes it once. Each screen stays a URL-backed frame with route, URL, bridge and
-   viewport metadata.
+5. Through the editor's MCP connector, open the design with the exact routes and viewports; that
+   call mints the bridge token and step 6 starts the bridge with it. A signed-out WebMCP session
+   reverses the two: generate the token locally, do step 6, then open, passing the token once.
+   Each screen stays a URL-backed frame with route, URL, bridge and viewport metadata.
 6. Start the durable bridge with that token through `npx @agent-native/core@latest design connect`,
    reusing a healthy matching bridge rather than starting a second app on 7331. A bridge that does
    not come up stops with `missing-prerequisite:bridge-daemon`.

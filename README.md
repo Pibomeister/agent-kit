@@ -87,13 +87,13 @@ installed.
 Every entry is declared in `catalog.yaml`. The validator fails on an entry with no directory and on a
 directory with no entry.
 
-### Skills (34)
+### Skills (35)
 
 | Group | Members |
 |---|---|
 | **Lifecycle** (7) | `super-align` U · `super-bound` U · `super-scout` M · `super-build` M · `super-verify` M · `super-review` U/M · `super-ship` U |
 | **Supervisor** (1) | `autopilot` U |
-| **Standalone** (20) | `verify` U · `compound` U · `compound-refresh` U · `ideate` U · `pov` U · `bakeoff` U · `doc-review` M · `receiving-review` U · `diagnose` M · `improve-architecture` U · `doubt-driven` U · `simplify` M · `research` M · `source-driven` M · `deprecate` U · `explain` U · `triage` U · `strategy` U · `product-pulse` U · `writing-skills` U |
+| **Standalone** (21) | `verify` U · `visual-edit` U · `compound` U · `compound-refresh` U · `ideate` U · `pov` U · `bakeoff` U · `doc-review` M · `receiving-review` U · `diagnose` M · `improve-architecture` U · `doubt-driven` U · `simplify` M · `research` M · `source-driven` M · `deprecate` U · `explain` U · `triage` U · `strategy` U · `product-pulse` U · `writing-skills` U |
 | **Primitives** (4) | `prototype` M · `handoff` M · `wait-what` M · `wayfind` U |
 | **Operational** (2) | `babysit-pr` U · `ultraqa` U |
 
