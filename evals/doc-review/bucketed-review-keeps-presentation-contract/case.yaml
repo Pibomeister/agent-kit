@@ -1,0 +1,34 @@
+schema_version: "1.1"
+name: bucketed-review-keeps-presentation-contract
+tags: [positive]
+execution:
+  prompt: >-
+    Review the drafted ADR at kb://adr/session-expiry before implementation. It defines two session
+    expiry limits, but its rollout section says existing sessions never expire. The security owner
+    has not decided which rule wins.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: fixed-four-bucket-presentation
+    type: llm
+    weight: 3
+    criteria: >-
+      The final response begins its review result with one Verdict line, then presents exactly the
+      four review buckets Applied, Proposed fixes, Decisions and FYI in that order. Every heading is
+      present even when empty, and the unresolved expiry rule appears under Decisions rather than a
+      differently named blocker, fix or recommendation section.
+  - name: blocked-is-a-verdict-not-a-bucket
+    type: llm
+    weight: 2
+    criteria: >-
+      If the unresolved security rule blocks approval, blocked appears as the Verdict value and not
+      as a fifth findings bucket. The response does not replace the fixed presentation with a list
+      of blockers, decisions and fixes.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?doc-review"'
+    arm: with-only
+    weight: 1

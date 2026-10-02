@@ -238,6 +238,14 @@ tests:
     expect: >-
       The skill stops with needs-input and names the missing capability. It does not chart a map
       that lives only in the session, and it does not write one into the working repository.
+  - id: session-only-map-is-not-a-system-of-record
+    kind: missing-tools
+    given: >-
+      A human explicitly starts wayfinding without tracker-access or kb-write, authorizes keeping
+      the map in the conversation and promises to transfer it later.
+    expect: >-
+      The skill stops before charting with needs-input naming tracker-access and kb-write. It
+      rejects the waiver, produces no session-only map or tickets and writes no local substitute.
 
 body:
   line_budget: 150
