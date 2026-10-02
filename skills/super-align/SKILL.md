@@ -2,12 +2,12 @@
 name: super-align
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-align`, or
-  under a validated grant, or when a supervisor's bypass grant passes `ak lifecycle bypass check`.
-  On any other request do not load or follow it; tell the human to type that command. Grills an
-  unsettled request into agreed direction: a design tree worked in rounds, named terms, two or
-  three approaches with a recommendation, and an explicit human yes before anything is built. Use
-  when what to build is not yet agreed. Not for a request that already carries acceptance
-  criteria, and not for a single-file fix with no decision in it.
+  under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
+  bypass check`. On any other request do not load or follow it; tell the human to type that
+  command. Grills an unsettled request into agreed direction: a design tree worked in rounds,
+  named terms, two or three approaches with a recommendation, and an explicit human yes before
+  anything is built. Use when what to build is not yet agreed. Not for a request that already
+  carries acceptance criteria, and not for a single-file fix with no decision in it.
 license: MIT
 metadata:
   ak_catalog_id: super-align
@@ -55,7 +55,7 @@ directly.
 
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
 task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
---phase super-align` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
+--phase super-align`: exit 0 is the start, and a refusal is a stop with
 `needs-decision`. The grant starts the interview and nothing else. The explicit yes at step 11 still
 comes from the supervisor through `needs-decision`; the worker never approves its own direction.
 

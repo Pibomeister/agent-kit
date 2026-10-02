@@ -257,8 +257,10 @@ any run under that task may use it. Gate records made with `--bypass <path> --ta
 `authority.mode: bypass` and who authorized it. A phase started under a grant that has since expired
 continues under a fresh grant for the same task and worktree, whose record names the one it
 supersedes, or under the typed command, which records `authority.mode: explicit` with
-`superseded_grant_id` and ends the bypass for that phase of the task, in every later run too; after that only a fresh grant
-for the same task re-starts it. A grant for another task or worktree is refused, and a gate recorded
+`superseded_grant_id` and ends the bypass for that phase of the task, in every later run too; after
+that only a fresh grant for the same task re-starts it. The end is derived from the runs' use records
+in the evidence store, which the worker can write, so like the run-level end it guards against
+accidents, not a determined worker; the worker never writes `~/.agent-kit`. A grant for another task or worktree is refused, and a gate recorded
 by hand cannot be relabelled with `--bypass` at the same snapshot.
 
 `grant` refuses to run from inside any worktree of the repository or under the home's `projects/`,

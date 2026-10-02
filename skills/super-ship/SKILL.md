@@ -2,12 +2,12 @@
 name: super-ship
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or
-  under a validated grant, or when a supervisor's bypass grant passes `ak lifecycle bypass check`.
-  On any other request do not load or follow it; tell the human to type that command. Prepares a
-  verified, reviewed change for publication: release checks, a sensitive-data scan, the commit,
-  the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload
-  locally and pushing nothing, or publishes under a grant. Not for merging, not for deploying, and
-  not for deciding whether the change is correct.
+  under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
+  bypass check`. On any other request do not load or follow it; tell the human to type that
+  command. Prepares a verified, reviewed change for publication: release checks, a sensitive-data
+  scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs dry,
+  generating the payload locally and pushing nothing, or publishes under a grant. Not for merging,
+  not for deploying, and not for deciding whether the change is correct.
 license: MIT
 metadata:
   ak_catalog_id: super-ship
@@ -68,7 +68,7 @@ covers the binding's delivery action and nothing more; merge is never on it (ADR
 
 Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
 task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
---phase super-ship` (or `ak lifecycle bypass check`): exit 0 is the start, and a refusal is a stop with
+--phase super-ship`: exit 0 is the start, and a refusal is a stop with
 `needs-decision`. The grant starts the ship and nothing else: it runs as the explicit form up to the
 first remote call, as in `dry-run`, and every remote effect waits for the supervisor's answer to a
 `needs-decision`. Record `ship-preflight` with `--bypass <path> --task <id>`. Merge and deploy are never on it.

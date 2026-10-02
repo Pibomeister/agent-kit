@@ -407,8 +407,6 @@ export interface RecordArgs {
   delegationClass?: DelegationClass;
   implementer?: { author_kind: AuthorKind; host: string };
   bypass?: BypassAttribution;
-  /** The bypass ledger; a typed end is recorded beside it, for the whole task. */
-  ledger?: string;
   now?: () => Date;
 }
 
@@ -505,12 +503,21 @@ export function recordGate(
   // The run's use record is the one place a bypassed start lives; a typed record ends it for the phase.
   const covered = BYPASS_GATE_PHASE[a.gate];
   const usePath = covered === undefined ? undefined : bypassUsePath(a.dir, a.run, covered);
-  const started = usePath === undefined ? undefined : readObject(usePath);
+  // A phase held under a grant in an earlier run of this task still counts as started here, so a typed
+  // record in a later run ends it too; the task is the one whose grant named this worktree.
+  const started =
+    (usePath === undefined ? undefined : readObject(usePath)) ??
+    (covered === undefined ? undefined : heldElsewhere(a.dir, a.run, covered, worktreeOf(a.project)));
   if (a.bypass !== undefined && previous !== undefined && previous.authority === undefined)
     return refuse(
       `${a.gate} at this snapshot was recorded with the typed command, so it did not start under a grant; record it with the typed command and no --bypass`,
     );
-  const continued = continueBypass(started, a.bypass, a.gate);
+  const continued = continueBypass(
+    started,
+    a.bypass,
+    a.gate,
+    covered === undefined || a.bypass === undefined ? [] : endedForTask(a.dir, a.bypass.task_id, covered),
+  );
   if (!continued.ok) return continued;
   if (continued.authority !== undefined) record.authority = continued.authority;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
@@ -529,16 +536,14 @@ export function recordGate(
   if (usePath !== undefined && covered !== undefined) {
     if (a.bypass !== undefined)
       atomicJson(usePath, useRecord(record.authority, covered, a.run, record.recorded_at, started));
-    else if (started !== undefined && started.ended_at === undefined) {
-      const ended = [...new Set([...endedGrants(started), ...heldGrants(started)])];
+    else if (started !== undefined && started.ended_at === undefined)
       atomicJson(usePath, {
         ...started,
+        run_id: a.run,
         ended_at: record.recorded_at,
         ended_by_snapshot: short(snapshot),
-        ended_grant_ids: ended,
+        ended_grant_ids: [...new Set([...endedGrants(started), ...heldGrants(started)])],
       });
-      if (a.ledger !== undefined) endForTask(a.ledger, String(started.task_id), covered, ended);
-    }
   }
   return { ok: true, path, record, skipped };
 }
@@ -1299,17 +1304,43 @@ const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
 const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
-/**
- * Where a typed end is kept for the whole task, beside the ledger rather than in a run's evidence: the
- * lifecycle opens new runs after a fix, and a grant a typed record ended stays ended in every one of them.
- */
-const bypassEndedPath = (ledger: string, task: string): string => join(ledger, "ended", `${safeRunId(task)}.json`);
+/** Every run's use record for a phase in this evidence store. */
+type UseRecord = NonNullable<ReturnType<typeof readObject>>;
 
-/** Adds grants to the task's ended set for a phase. */
-function endForTask(ledger: string, task: string, phase: BypassPhase, grants: readonly string[]): void {
-  const path = bypassEndedPath(ledger, task);
-  const was = readObject(path);
-  atomicJson(path, { ...was, task_id: task, [phase]: [...new Set([...(strings(was?.[phase]) ?? []), ...grants])] });
+function useRecords(dir: string, phase: BypassPhase): { run: string; record: UseRecord }[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).flatMap((run) => {
+    const record = readObject(bypassUsePath(dir, run, phase));
+    return record === undefined ? [] : [{ run, record }];
+  });
+}
+
+/**
+ * Every grant a typed record ended for this phase of the task, in any run. Derived from the runs' use
+ * records each time rather than kept beside the ledger, so the worker never writes the ledger and the
+ * lifecycle's new runs after a fix still see the end. The use records are worker-written, so this holds
+ * against accidents, not against a worker that edits them (ADR-0008).
+ */
+const endedForTask = (dir: string, task: string, phase: BypassPhase): string[] => [
+  ...new Set(useRecords(dir, phase).flatMap(({ record }) => (record.task_id === task ? endedGrants(record) : []))),
+];
+
+/** The latest unended hold of a phase in another run from this worktree, if any. */
+function heldElsewhere(
+  dir: string,
+  run: string,
+  phase: BypassPhase,
+  worktree: string | undefined,
+): UseRecord | undefined {
+  if (worktree === undefined) return undefined;
+  const held = useRecords(dir, phase)
+    .filter(
+      ({ run: other, record }) => other !== safeRunId(run) && record.worktree === worktree && record.mode === "bypass",
+    )
+    .filter(({ record }) => record.ended_at === undefined)
+    .map(({ record }) => record)
+    .toSorted((x, y) => String(x.checked_at).localeCompare(String(y.checked_at)));
+  return held.at(-1);
 }
 
 /** Every grant a typed record ended in this phase of the run; none of them starts it again. */
@@ -1348,7 +1379,12 @@ function continueBypass(
   started: ReturnType<typeof readObject>,
   bypass: BypassAttribution | undefined,
   what: string,
+  endedInTask: readonly string[],
 ): { ok: true; authority: GateAuthority | undefined } | { ok: false; reason: string } {
+  if (bypass !== undefined && endedInTask.includes(bypass.grant_id))
+    return refuse(
+      `${what} was ended by a typed record after bypass grant ${bypass.grant_id}; issue a fresh grant for this task to re-start it, or record it with the typed command and no --bypass`,
+    );
   if (started === undefined) return { ok: true, authority: bypass };
   const origin = String(started.grant_id);
   if (bypass === undefined) return { ok: true, authority: { mode: "explicit", superseded_grant_id: origin } };
@@ -1517,10 +1553,6 @@ export function checkBypass(
   if (a.phase !== undefined && !(Array.isArray(g.covers) && g.covers.includes(a.phase)))
     return no(`bypass grant ${id} does not cover ${a.phase}`);
   if (g.task_id !== a.task) return no(`bypass grant ${id} is for task ${String(g.task_id)}, not ${a.task}`);
-  if (a.phase !== undefined && (strings(readObject(bypassEndedPath(a.ledger, a.task))?.[a.phase]) ?? []).includes(id))
-    return no(
-      `${a.phase} was ended by a typed record after bypass grant ${id}; issue a fresh grant for this task to re-start it, or record it with the typed command and no --bypass`,
-    );
   return {
     ok: true,
     attribution: {
@@ -1541,8 +1573,12 @@ export function checkBypass(
  */
 const gateCommand = (): string => {
   const self = fileURLToPath(import.meta.url);
-  return self.endsWith(".mjs") ? `node ${self}` : "node <agent-kit bundle>/bin/ak-gate.mjs";
+  return self.endsWith(".mjs") ? `node ${shellWord(self)}` : "node <agent-kit bundle>/bin/ak-gate.mjs";
 };
+
+/** A path as one POSIX shell word: as is when it has only safe characters, else single-quoted. */
+const shellWord = (word: string): string =>
+  /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 
 /** The brief section a supervisor pastes into the task's brief: the one place the worker learns of the grant. */
 export function bypassBrief(grant: BypassGrant, path: string): string {
@@ -1551,12 +1587,12 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "",
     `Bypass grant: \`${path}\`, authorized by ${grant.authorized_by} for task ${grant.task_id} until ${grant.expires_at}.`,
     "It stands in for the typed command of super-align, super-bound, super-review full and readiness, and",
-    `super-ship. Before starting one, run \`${gateCommand()} bypass check --grant ${path} --task ${grant.task_id} --phase <phase>\`;`,
+    `super-ship. Before starting one, run \`${gateCommand()} bypass check --grant ${shellWord(path)} --task ${shellWord(grant.task_id)} --phase <phase>\`;`,
     "exit 0 is the start, anything else is a stop.",
     `Run it from the task's worktree, ${grant.worktree}; a check from any other worktree is refused.`,
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
-    `Pass \`--bypass ${path} --task ${grant.task_id}\` when you record review-full, review-readiness or ship-preflight.`,
+    `Pass \`--bypass ${shellWord(path)} --task ${shellWord(grant.task_id)}\` when you record review-full, review-readiness or ship-preflight.`,
     "A phase started under this grant continues only under a fresh grant for this task, or a typed record that ends the bypass.",
   ].join("\n");
 }
@@ -1568,6 +1604,8 @@ export interface Io {
 
 export const LIFECYCLE_USAGE = [
   "ak lifecycle — the gate records each lifecycle phase leaves, and the check super-ship runs first",
+  "From an installed bundle run each command as `node <bundle>/bin/ak-gate.mjs <subcommand> …`; `ak lifecycle`",
+  "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
@@ -1746,7 +1784,12 @@ export function main(
     if (!checked.ok) return stop(checked.reason);
     const usePath = phase !== undefined && isBypassPhase(phase) ? bypassUsePath(dir, run, phase) : undefined;
     const started = usePath === undefined ? undefined : readObject(usePath);
-    const continued = continueBypass(started, checked.attribution, phase ?? "");
+    const continued = continueBypass(
+      started,
+      checked.attribution,
+      phase ?? "",
+      phase !== undefined && isBypassPhase(phase) ? endedForTask(dir, task, phase) : [],
+    );
     if (!continued.ok) return stop(continued.reason);
     const used = useRecord(continued.authority, phase ?? null, run, now().toISOString(), started);
     if (usePath !== undefined) atomicJson(usePath, used);
@@ -1837,7 +1880,6 @@ export function main(
       delegationClass,
       implementer,
       bypass,
-      ledger: bypassLedger,
     });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);

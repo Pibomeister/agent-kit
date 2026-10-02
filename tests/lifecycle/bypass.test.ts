@@ -8,6 +8,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -609,6 +610,50 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).toEqual([]);
     const fresh = freshGrant(s, dayLater, "T-1");
     expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
+  });
+
+  test("a typed end needs no write to the ledger: with the ledger read-only it still ends the grant for the task", () => {
+    const s = granted();
+    const ticketPath = join(s.home, "ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    chmodSync(s.ledger, 0o555);
+    try {
+      expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+      writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 4;\n");
+      const reopened = ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
+      expect(reopened.code).toBe(0);
+      const run = reopened.out.replace(/^opened run /, "");
+      const checked = checkPhase(s, s.grantPath, "T-1", "super-review:full");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain("ended by a typed record");
+      expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(1);
+      expect(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).toEqual([]);
+    } finally {
+      chmodSync(s.ledger, 0o755);
+    }
+  });
+
+  test("a typed record in a later run ends the grant that held the phase in an earlier run", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    const ticketPath = join(s.home, "ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 5;\n");
+    const second = ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
+    expect(second.code).toBe(0);
+    const run = second.out.replace(/^opened run /, "");
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    expect(only(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).authority).toEqual({
+      mode: "explicit",
+      superseded_grant_id: first,
+    });
+    const checked = checkPhase(s, s.grantPath, "T-1", "super-review:full");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("ended by a typed record");
   });
 
   test("a fresh grant re-starting at the snapshot of a typed end keeps the ended grant refused", () => {

@@ -40,8 +40,7 @@ node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <id> --by <who autho
 `node` loads nothing from the working directory. `bun` loads that directory's `bunfig.toml` preload and
 `.env` before the script runs, so running the grant through `bun` from a project directory or a task
 worktree would execute worker-written code inside the supervisor's grant; the supervisor never does.
-(`ak lifecycle bypass …` is the same code from an agent-kit checkout, for maintainers; the installed `ak`
-on `PATH` is the maintenance CLI.) It prints the brief section the supervisor pastes into the task's
+The installed `ak` on `PATH` is the maintenance CLI and has no `lifecycle` subcommand. It prints the brief section the supervisor pastes into the task's
 brief, naming that same script. Before each phase the worker runs `node <agent-kit bundle>/bin/ak-gate.mjs
 bypass check --grant <file> --task <id> --phase <phase>`. Exit 0 is the start and leaves a use record under
 `<evidence>/<run>/bypass/`. A refusal is a stop with `needs-decision`. When the worker records
@@ -91,9 +90,15 @@ own attribution plus `superseded_grant_id` naming the grant it replaces. A typed
 a human finish after a bypassed start is visible rather than a silent strip, and it marks the use
 record ended (`ended_at`, `ended_by_snapshot`, and in `ended_grant_ids` every grant that has held
 the phase in the run, which the use record keeps in `held_grant_ids`). The end holds for the whole
-task, not only that run: the ended grants are also written beside the ledger, in
-`~/.agent-kit/bypass/ended/<task>.json` under the phase, and `check` refuses them there. A run opened
-after a fix (`open --ticket`) therefore cannot resume bypass for that phase with an ended grant.
+task, not only that run: `check` and `record --bypass` derive the task's ended set each time from
+every run's use record for the phase in the evidence store, so a run opened after a fix
+(`open --ticket`) cannot resume bypass for that phase with an ended grant. A typed record in a run
+that never checked the phase still ends the grant that held it in an earlier run from the same
+worktree. Nothing in this is written to the ledger: the worker never writes `~/.agent-kit`, so a
+ledger the host keeps read-only to the worker does not stop a typed end. **Trust:** the use records
+live in the evidence store under the git common directory, which the worker can write, so a worker
+that deletes or edits them can lift an end, exactly as with the run-level end. The task-wide end
+guards against accidents, not against a determined worker.
 Every grant a typed record ended stays refused at `check` and at `record --bypass` for that phase of
 the task, even after a re-start; only a fresh grant for the same task re-starts the phase, rewriting
 the use record with `superseded_grant_id`. A grant for another task or another worktree is

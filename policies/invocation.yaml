@@ -37,7 +37,7 @@ law:
         the typed command and the class, and the first workflow step names the command and stops;
         autopilot also names Firstmate's standing grant and runner validation; no host flag is
         emitted (docs/decisions/0003-model-invocation.md, ADR-0007). A bypass start is checked by
-        `ak lifecycle bypass check` (src/lifecycle/gate.ts)
+        the bundle's `ak-gate.mjs bypass check` (src/lifecycle/gate.ts)
     - id: u-may-call-m
       rule: A user-invoked skill may call model-invoked (M) skills directly.
     - id: u-may-not-call-u
@@ -442,8 +442,10 @@ bypass:
     that passes the check for the same task and worktree, whose record names the grant it
     supersedes in `superseded_grant_id`, or a typed record without `--bypass`, which records
     `authority: {mode: explicit, superseded_grant_id}` and ends the bypass for that phase of the
-    task: the ended grants are kept beside the ledger, so no run of the task, including one opened
-    later, resumes it with them until a fresh grant for the same task re-starts it. A grant for another task or worktree, an expired one, or the grant a typed record
+    task: the ended set is derived from every run's use records in the evidence store, so no run of
+    the task, including one opened later, resumes it with them until a fresh grant for the same task
+    re-starts it. Those records are worker-writable, so the end guards against accidents, not a
+    determined worker; nothing is written to the ledger. A grant for another task or worktree, an expired one, or the grant a typed record
     ended is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
     on a gate no bypass phase records is refused.
   trust: >-
