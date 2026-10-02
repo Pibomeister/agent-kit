@@ -167,7 +167,7 @@ export const grok: SubjectAdapter = {
     mkdirSync(hooks, { recursive: true });
     writeFileSync(
       join(hooks, MEDIATOR_HOOK),
-      `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(join(import.meta.dir, "grok-mediator.ts"))}\n`,
+      `#!/bin/sh\ncd ${shellQuote(import.meta.dir)} && exec ${shellQuote(process.execPath)} grok-mediator.ts\n`,
       { mode: 0o755 },
     );
     writeFileSync(

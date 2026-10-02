@@ -94,7 +94,7 @@ the registered hook script as a process on `PreToolUse` events.
 
 ## Live evidence
 
-Two receipts, both measured at revision `988a88199ab4b177210343152b9e397247dbdb8c` without
+Two prototype receipts, both measured at revision `988a88199ab4b177210343152b9e397247dbdb8c` without
 `.donors/`, default install. Compact copies are in `research/evals/2026-10-02-results/`; the
 per-session event lists and the served-model name are dropped, every other field is verbatim.
 
@@ -109,11 +109,10 @@ The read chain is the smoke's chain with a probe session directory. The write co
 Guarded spend across the probes was 0.15461148 USD against a 1 USD cap. That figure includes a
 conservative 0.10 USD reserve for one attempt that ended in an assembly error and left no receipt.
 
-The live proof ran the prototype mediator (sha256
-`83412eac5917cd97331eb2f7e90c466bfbbbaa559e643a19602c68386282aa23`), not the file committed here. The
-committed mediator returns the same output as the prototype for both receipted commands: the same
-rewritten read chain, and no rewrite for the write control. It differs elsewhere, and none of these
-differences has run on the live host:
+Those two receipts ran the prototype mediator (sha256
+`83412eac5917cd97331eb2f7e90c466bfbbbaa559e643a19602c68386282aa23`). The committed mediator returns
+the same output as the prototype for both receipted commands: the same rewritten read chain, and no
+rewrite for the write control. It differs elsewhere:
 
 - It refuses more: a backslash anywhere, and an unquoted glob, brace or tilde, which the prototype
   would have quoted into a literal. A `$` inside single quotes stays literal instead of being
@@ -128,7 +127,42 @@ differences has run on the live host:
   such as `PATH` or `HOME`, where the prototype dropped it.
 - It is registered as a script beside the hook file, the layout of the guide's own example.
 
-No session was run for this revision.
+### The committed mediator on the live host: blocked
+
+One further session was approved to prove the committed hook, with no retry. It ran at revision
+`938ace6e994099884388e0438e9d1681556390e9` (mediator sha256
+`bf996c71e5bff177f5a96951d2f4e6da3797ef25bcb4611984420ffea65816af`), through `runSubject` and the
+adapter's own `isolate`, so the hook was registered from the private `GROK_HOME` as
+`hooks/assignment-read-chain.json` naming `assignment-read-chain.sh`. The receipt is
+`grok-assignment-mediator-committed.json`.
+
+The host cancelled the read chain: stop reason `cancelled`, one turn, no reply, 0.00495992 USD. The
+gap is therefore not shown closed for the committed hook, and this change is blocked on that proof.
+Guarded spend is now 0.1595714 USD against the 1 USD cap.
+
+The host reports only the cancelled call, not what the hook did. Checked afterwards without a
+session:
+
+- The mediator at that revision rewrites the observed command, in 8 ms in process.
+- The registered script, run by hand with the observed event on stdin, prints that rewrite but
+  takes 11 to 35 s when its working directory is under the scratch directory, and 0.2 to 0.4 s from
+  the worktree. The runtime's start is what is slow there; the input does not matter. On this
+  machine the temporary directory above the scratch directory is very large.
+- The guide gives a hook 5 s by default and says a hook that times out fails open
+  (`10-hooks.md`, Key Fields). A hook killed at that limit leaves the original chain to `dontAsk`,
+  which is the cancellation observed.
+
+That reading fits the evidence and was not observed on the host. After the session the hook script
+was changed to enter the adapter's directory before it starts the runtime, and
+`tests/learn/evals-subjects.test.ts` now runs it from the private home's hook directory inside the
+5 s limit; that test fails on the script as it ran live and passes on the changed one. One
+alternative is not ruled out: `assignment-read-chain.sh` as a bare name is not found when a shell
+runs it as a command, so a host that treats the registered `command` as an inline shell command
+and not as a path relative to the hook file would also fail open. The guide's own example names
+its script with a directory, `bin/log-activity.sh`.
+
+The changed script has not run on the live host. Proving it needs one more session, which is a new
+approval and was not taken here.
 
 ## Follow-up, not fixed here
 

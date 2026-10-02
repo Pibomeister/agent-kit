@@ -499,7 +499,12 @@ describe("isolation", () => {
       },
     });
     const hook = (stdin: string) => {
-      const ran = spawnSync(join(hooks, "assignment-read-chain.sh"), { input: stdin, encoding: "utf8" });
+      const ran = spawnSync(join(hooks, "assignment-read-chain.sh"), {
+        cwd: hooks,
+        input: stdin,
+        encoding: "utf8",
+        timeout: 5000,
+      });
       return [ran.status, ran.stdout];
     };
     const event = (command: string, toolInputTruncated = false) =>
