@@ -92,12 +92,18 @@ record ended (`ended_at`, `ended_by_snapshot`, and in `ended_grant_ids` every gr
 the phase in the run, which the use record keeps in `held_grant_ids`). The end holds for the whole
 task, not only that run: `check` and `record --bypass` derive the task's ended set each time from
 every run's use record for the phase in the evidence store, so a run opened after a fix
-(`open --ticket`) cannot resume bypass for that phase with an ended grant. A typed record in a run
-that never checked the phase still ends the grant that held it in an earlier run from the same
-worktree. Nothing in this is written to the ledger: the worker never writes `~/.agent-kit`, so a
+(`open --ticket`) cannot resume bypass for that phase with an ended grant. A typed record ends every
+grant that holds the phase unended in any run from the same worktree and task, not only the latest
+one, and a run that never checked the phase ends them too. Holds are matched on the task as well as
+the worktree: the grant's task with `--bypass`, else the task this run's own hold names; a typed record
+in a run that holds nothing for any task cannot tell tasks apart, so a worktree reused across tasks
+should get a fresh one. `--dir` is refused with a bypass grant, at `check` and at `record --bypass`,
+because the end is read from the default evidence store. Nothing in this is written to the ledger: the worker never writes `~/.agent-kit`, so a
 ledger the host keeps read-only to the worker does not stop a typed end. **Trust:** the use records
 live in the evidence store under the git common directory, which the worker can write, so a worker
-that deletes or edits them can lift an end, exactly as with the run-level end. The task-wide end
+that deletes or edits them can lift an end, exactly as with the run-level end. A typed record and a
+`bypass check` of the same phase in the same run at the same moment are not serialized; the check
+refuses when it sees the end appear while it ran, which narrows that window without closing it. The task-wide end
 guards against accidents, not against a determined worker.
 Every grant a typed record ended stays refused at `check` and at `record --bypass` for that phase of
 the task, even after a re-start; only a fresh grant for the same task re-starts the phase, rewriting

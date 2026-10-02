@@ -656,6 +656,72 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     expect(checked.err).toContain("ended by a typed record");
   });
 
+  test("a typed end ends every grant that held the phase in any earlier run, not only the latest (P7, P8)", () => {
+    for (const typedInFreshRun of [false, true]) {
+      const s = granted();
+      const ticketPath = join(s.home, "ticket.json");
+      writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+      let edit = 0;
+      const newRun = () => {
+        edit += 1;
+        writeFileSync(join(s.worktree, "src", "a.js"), `export const a = ${10 + edit};\n`);
+        expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
+      };
+      newRun();
+      expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+      newRun();
+      const second = freshGrant(s, () => new Date(), "T-1");
+      expect(checkPhase(s, second.path, "T-1", "super-review:full").code).toBe(0);
+      if (typedInFreshRun) newRun();
+      expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+      newRun();
+      for (const grant of [s.grantPath, second.path]) {
+        const checked = checkPhase(s, grant, "T-1", "super-review:full");
+        expect(checked.code).toBe(1);
+        expect(checked.err).toContain("ended by a typed record");
+      }
+    }
+  });
+
+  test("a bypass record for one task is not refused by another task's abandoned hold in the same worktree (P13c)", () => {
+    const s = granted();
+    const ticketPath = join(s.home, "ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 20;\n");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-2" }));
+    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
+    const other = freshGrant(s, () => new Date(), "T-2");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", other.path, "T-2"));
+    expect(recorded.err).not.toContain("for task T-1");
+    expect(recorded.code).toBe(0);
+  });
+
+  test("--dir is refused with a bypass grant, so another store cannot dodge the typed end (P9b)", () => {
+    const s = granted();
+    const elsewhere = dir("ak-bypass-store-");
+    const checked = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-review:full",
+      "--dir",
+      elsewhere,
+    );
+    expect(checked.code).toBe(2);
+    expect(checked.err).toContain("--dir is refused");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--dir", elsewhere);
+    expect(recorded.code).toBe(2);
+    expect(readdirSync(elsewhere)).toEqual([]);
+  });
+
   test("a fresh grant re-starting at the snapshot of a typed end keeps the ended grant refused", () => {
     const s = granted();
     const first = grantId(s.ledger);
