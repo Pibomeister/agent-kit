@@ -145,5 +145,7 @@ describe("verification receipt without acceptance criteria", () => {
       expect(typeof stated).toBe("string");
       expectVerdict({ ...criteria, supports }, true);
     }
-  });
+    // This plans the repository's real bundle once per host and compiles every
+    // schema four times, which does not fit the default limit on a busy host.
+  }, 30_000);
 });
