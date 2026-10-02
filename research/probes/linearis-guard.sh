@@ -73,10 +73,12 @@ row() { # row <name> <ok:0|1> <detail>
 guarded() { # guarded <cwd> [VAR=val ...] -- <linearis args>
   local cwd="$1"; shift
   local vars=()
+  local shell_flags=()
+  [ "${GUARD_ERREXIT:-}" = 1 ] && shell_flags=(-e)
   while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do vars+=("$1"); shift; done
   shift
   (cd "$cwd" && env "${DEAD[@]}" HOME="$OPHOME" PATH="$SHIM:$PATH" token_file=.linear-token ${vars[@]+"${vars[@]}"} \
-    sh -c ". \"\$0\"" "$GUARD" "$@") 2>&1
+    "${GUARD_SHELL:-sh}" ${shell_flags[@]+"${shell_flags[@]}"} -c ". \"\$0\"" "$GUARD" "$@") 2>&1
 }
 
 # 1. Absent token, from a subdirectory.
@@ -108,11 +110,11 @@ mv "$WORK/ak.tracker.yaml" "$PROJ/ak.tracker.yaml"
 
 # 6. linearis itself, empty token, empty home.
 EMPTY="$WORK/empty-home"; mkdir -p "$EMPTY"
-out="$(cd "$PROJ" && env "${DEAD[@]}" LINEAR_API_TOKEN="" HOME="$EMPTY" XDG_CONFIG_HOME="$EMPTY" npm exec --no -- linearis issues list 2>&1)"; st=$?
+out="$(cd "$PROJ" && env "${DEAD[@]}" LINEAR_API_TOKEN="" HOME="$EMPTY" XDG_CONFIG_HOME="$EMPTY" "$PROJ/node_modules/.bin/linearis" issues list 2>&1)"; st=$?
 row "linearis, empty token and empty home: No API token found" "$([ $st -ne 0 ] && [[ "$out" == *"No API token found"* ]] && echo 1 || echo 0)" "exit $st: $out"
 
 # 7. Control: the global fallback is real.
-out="$(cd "$PROJ" && env "${DEAD[@]}" LINEAR_API_TOKEN="" HOME="$OPHOME" XDG_CONFIG_HOME="$OPHOME" npm exec --no -- linearis issues list 2>&1)"; st=$?
+out="$(cd "$PROJ" && env "${DEAD[@]}" LINEAR_API_TOKEN="" HOME="$OPHOME" XDG_CONFIG_HOME="$OPHOME" "$PROJ/node_modules/.bin/linearis" issues list 2>&1)"; st=$?
 row "control: operator home's ~/.linear_api_token is used" "$([[ "$out" == *"linear_api_token"* ]] && [[ "$out" != *"No API token found"* ]] && echo 1 || echo 0)" "exit $st: $out"
 
 # 8. Guarded, project token present, operator home holding the global token.
@@ -122,6 +124,34 @@ row "guarded: project token used, global token not read, request stopped at the 
 made="$(grep -c . "$MKTEMP_LOG")"; leftover=0
 while IFS= read -r d; do [ -e "$d" ] && leftover=$((leftover + 1)); done < "$MKTEMP_LOG"
 row "guarded: every temporary home removed" "$([ "$made" -gt 0 ] && [ "$leftover" -eq 0 ] && echo 1 || echo 0)" "$made made, $leftover left behind"
+
+# Negative control: npm exec --no still picks a PATH binary in another project.
+GLOBAL_ONLY="$WORK/global-only"; GLOBAL_BIN="$WORK/global-bin"
+mkdir -p "$GLOBAL_ONLY" "$GLOBAL_BIN"
+printf '{"name":"global-only","private":true}\n' > "$GLOBAL_ONLY/package.json"
+ln -s "$PROJ/node_modules/.bin/linearis" "$GLOBAL_BIN/linearis"
+out="$(cd "$GLOBAL_ONLY" && PATH="$GLOBAL_BIN:$PATH" NO_UPDATE_NOTIFIER=1 npm exec --no -- linearis --version 2>&1)"; st=$?
+row "negative control: npm exec --no accepts a PATH binary outside this project" "$([ "$st" -eq 0 ] && [ "$out" = "$VERSION" ] && echo 1 || echo 0)" "exit $st: $out"
+
+if command -v zsh >/dev/null; then
+  rm "$PROJ/node_modules/.bin/linearis"
+  cat > "$PROJ/node_modules/.bin/linearis" <<'SH'
+#!/bin/sh
+if [ "$1" = --version ]; then echo 2026.8.0; exit 0; fi
+if [ "$1" = probe-success ]; then echo '{"issues":[]}'; exit 0; fi
+echo '{"error":"Authentication required, not authenticated"}' >&2
+exit 1
+SH
+  chmod +x "$PROJ/node_modules/.bin/linearis"
+  out="$(GUARD_SHELL=zsh guarded "$PROJ/src" -- probe-success)"; st=$?
+  row "zsh guarded success keeps result JSON" "$([ "$st" -eq 0 ] && [ "$out" = '{"issues":[]}' ] && echo 1 || echo 0)" "exit $st: $out"
+  out="$(GUARD_SHELL=zsh guarded "$PROJ/src" -- probe-auth)"; st=$?
+  row "zsh guarded auth rejection becomes exit 42" "$([ "$st" -eq 42 ] && [[ "$out" == *"Authentication required, not authenticated"* ]] && echo 1 || echo 0)" "exit $st: $out"
+  for shell in sh bash zsh; do
+    out="$(GUARD_SHELL="$shell" GUARD_ERREXIT=1 guarded "$PROJ/src" -- probe-auth)"; st=$?
+    row "$shell -e guarded auth rejection keeps exit 42 and text" "$([ "$st" -eq 42 ] && [[ "$out" == *"Authentication required, not authenticated"* ]] && echo 1 || echo 0)" "exit $st: $out"
+  done
+fi
 
 echo "linearis $VERSION, guard extracted from ${DOC#"$ROOT/"} at $(git -C "$ROOT" rev-parse --short HEAD)$([ -z "$(git -C "$ROOT" status --porcelain -- "$DOC")" ] || echo ' (working tree: uncommitted)'): $FAILS failed"
 exit "$FAILS"

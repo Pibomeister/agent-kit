@@ -316,10 +316,14 @@ describe("the secret stays in the folder and out of git", () => {
     expect(rules(dir)).toEqual(["error tracker.secret-not-ignored"]);
   });
 
-  test("a token readable by group or others is a warning", () => {
+  test("a token must be readable by its owner only", () => {
     const dir = project({ [BINDING_FILE]: BINDING, ".gitignore": ".linear-token\n", ".linear-token": TOKEN });
     chmodSync(join(dir, ".linear-token"), 0o644);
-    expect(rules(dir)).toEqual(["warning tracker.secret-readable-by-others"]);
+    expect(rules(dir)).toEqual(["error tracker.secret-mode"]);
+    chmodSync(join(dir, ".linear-token"), 0o640);
+    expect(rules(dir)).toEqual(["error tracker.secret-mode"]);
+    chmodSync(join(dir, ".linear-token"), 0o400);
+    expect(rules(dir)).toEqual([]);
   });
 
   test("a history scan that runs out of time is a warning, not a pass", () => {

@@ -4,14 +4,18 @@
     "name": "Pibomeister"
   },
   "metadata": {
-    "description": "One engineering lifecycle amalgamated from eight donors (seven MIT, one Apache-2.0), installable under /ak:.",
-    "version": "0.0.0"
+    "description": "One engineering lifecycle amalgamated from eight donors (seven MIT, one Apache-2.0), installable under /ak:."
   },
   "plugins": [
     {
       "name": "ak",
       "description": "Seven super skills plus packs, protocols and roles: align, bound, scout, build, verify, review, ship.",
-      "source": "./dist/claude-code",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/Pibomeister/agent-kit.git",
+        "path": "dist/claude-code",
+        "ref": "published"
+      },
       "license": "MIT",
       "author": {
         "name": "Pibomeister"

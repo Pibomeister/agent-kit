@@ -304,8 +304,8 @@ and `project`). No schema inspects values, so a token pasted as a value under `d
    the binding's shape and backend, and that `token_file` is non-blank, inside the folder, ignored
    by a `.gitignore` there (a later `!` rule that un-ignores it does not count) whose rule is
    committed at `HEAD` (a rule only in the working tree or only staged does not count), untracked and
-   absent from every commit reachable from a ref. It warns when the file is readable by others and
-   when the history scan did not finish. It reports only the secret's path and size, never its
+   absent from every commit reachable from a ref. It fails when the file's mode grants any access
+   beyond its owner (`chmod 600` repairs it) and warns when the history scan did not finish. It reports only the secret's path and size, never its
    contents. It does not read the project record, which lives in the knowledgebase, so the
    record-and-binding comparison of §2 step 1 is the operation's to make, not this check's.
 

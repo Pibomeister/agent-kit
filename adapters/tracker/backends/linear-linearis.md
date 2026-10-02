@@ -52,11 +52,10 @@ package manager, detected from the lockfile at the project root:
 No `package.json` at the root, or two lockfiles disagreeing, stops setup and asks the human; the
 agent does not create a package manifest to make room for the tool.
 
-It is invoked only as `npm exec --no -- linearis`, from the project root. `--no` forbids fetching:
-npm resolves the binary from the project's own `node_modules/.bin`, or from the workspace root's
-where a workspace hoists it, and fails rather than download one. Never with `-g`, never as a bare
-`linearis` resolved from `PATH`, and never through `npx` without `--no`, which can fetch a copy
-that is not the project's. linearis's own `README.md` installs it with `npm install -g`, and its update
+It is invoked by the path to `node_modules/.bin/linearis` under the binding root or repository root
+where a workspace hoists it. The guard verifies that the executable resolves inside that dependency
+tree. Never through `npm exec`, `npx`, or a bare `linearis` resolved from `PATH`: even
+`npm exec --no` can select a global command. linearis's own `README.md` installs it with `npm install -g`, and its update
 notice (`dist/common/update-notifier.js`) suggests the same; both are ignored here. The notice is
 also a network call to the npm registry, so every call sets `NO_UPDATE_NOTIFIER=1`, the variable
 that module and `USAGE.md` name for silencing it.
@@ -95,13 +94,29 @@ command:
   token="${token%"${token##*[![:space:]]}"}"
   [ -n "$token" ] || { echo "refused: $token_file is blank" >&2; exit 1; }
   case "$token" in *[[:space:]]*) echo "refused: $token_file holds more than one line or word" >&2; exit 1 ;; esac
-  version="$(NO_UPDATE_NOTIFIER=1 npm exec --no -- linearis --version)" || { echo "refused: linearis is not installed in this project" >&2; exit 1; }
+  binary="$root/node_modules/.bin/linearis"
+  [ -x "$binary" ] || binary="$top/node_modules/.bin/linearis"
+  [ -x "$binary" ] || { echo "refused: linearis is not installed in this project" >&2; exit 1; }
+  resolved="$(realpath "$binary")" || exit 1
+  case "$resolved" in
+    "$root/node_modules/"*|"$top/node_modules/"*) ;;
+    *) echo "refused: linearis resolves outside this project's dependencies" >&2; exit 1 ;;
+  esac
+  version="$(NO_UPDATE_NOTIFIER=1 "$binary" --version)" || exit 1
   [ "$version" = "2026.8.0" ] || { echo "refused: linearis $version installed, 2026.8.0 required" >&2; exit 1; }
   home="$(mktemp -d)" || exit 1
   trap 'rm -rf "$home"' EXIT
   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
-  LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 \
-    npm exec --no -- linearis <command>
+  linearis_rc=0
+  output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>"$home/stderr")" || linearis_rc=$?
+  errors="$(cat "$home/stderr")"
+  [ -z "$errors" ] || printf '%s\n' "$errors" >&2
+  if [ "$linearis_rc" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
+  printf '%s\n' "$output" >&2
+  case "$output$errors" in
+    *AUTHENTICATION_REQUIRED*|*'Authentication required, not authenticated'*|*'No API token found'*) exit 42 ;;
+  esac
+  exit "$linearis_rc"
 )
 ```
 
@@ -116,6 +131,8 @@ Each line is load-bearing:
   resolved with `pwd -P`, and the upward search stops at the top level or at `/`, whichever comes
   first — it cannot walk past either. The token file and the binary are the project's only when
   resolved from that root.
+- **The binary is resolved by path and checked with `realpath`.** A same-named global command on
+  `PATH`, or a symlink from the project's `.bin` to a global executable, cannot satisfy the guard.
 - **The token is read once**, with CR and surrounding whitespace stripped, so a file saved on
   Windows or ending in a blank line is neither a different token nor a blank one passed through. A
   file holding whitespace *inside* the token — two lines, two words — is refused rather than
@@ -130,13 +147,17 @@ Each line is load-bearing:
 - **`HOME` and `XDG_CONFIG_HOME` point at an empty directory.** linearis's global stores live
   under them, so with nothing there to read, no path through its resolution order reaches the
   operator's global login — even if the token check above were bypassed.
+- **stdout remains result JSON.** The temporary home's `stderr` file keeps warnings out of a
+  successful response. On failure the guard prints both streams to stderr and maps the observed
+  authentication messages to exit `42`; other exit codes pass through. `linearis_rc` also works in
+  zsh, where `status` is read-only.
 
 **Preflight, before every call.** The operation refuses — and linearis is not started — unless all
 of these hold. The guarded form performs the first three; the fourth is checked once per session:
 
 1. An `ak.tracker.yaml` exists at or above the working directory, inside the repository.
 2. `token_file` exists and contains a non-whitespace character.
-3. `npm exec --no -- linearis --version` prints exactly `2026.8.0`, the version every behavior in
+3. The resolved project-local linearis path prints exactly `2026.8.0`, the version every behavior in
    this document was read from. Any other installed version refuses, newer included: nothing here
    is known to hold for it.
 4. `node --version` is `v22` or later.
@@ -152,7 +173,7 @@ the global store. A blank token file is therefore refused exactly as a missing o
 empty home makes the global store unreachable anyway.
 
 **Verified offline at `2026.8.0`** by `research/probes/linearis-guard.sh`, which extracts the
-guarded form above from this file, runs it under `sh`, installs the package exactly into a scratch project and routes
+guarded form above from this file, runs it under `sh` and `zsh` where available, installs the package exactly into a scratch project and routes
 every request to a dead proxy (with `NODE_USE_ENV_PROXY=1`, without which Node's `fetch` ignores
 the proxy variables and the request reaches Linear), so no call can reach Linear:
 
@@ -167,6 +188,9 @@ the proxy variables and the request reaches Linear), so no call can reach Linear
 | Control: linearis, `LINEAR_API_TOKEN=""`, `HOME` holding a `~/.linear_api_token` | Warned that `~/.linear_api_token` is deprecated and used it: the global fallback is real |
 | Guarded form, padded project token, operator `HOME` holding that global token | No deprecation warning; the request stopped at the proxy (`fetch failed`), so the project token was the one sent |
 | Every guarded run | The temporary home is gone afterwards |
+| Negative control: `npm exec --no` in another project with linearis only on `PATH` | Prints `2026.8.0`; this is why the guard invokes a checked project path |
+| Guarded success under zsh with a fake local linearis | Result JSON only on stdout, exit `0` |
+| Guarded auth rejection under zsh with a fake local linearis | Rejection on stderr, exit `42` |
 
 Removing the `GIT_*` unset, the `trap` or the inner-whitespace refusal from the form above turns the
 matching row red; the probe was run that way once to confirm it can fail.
@@ -176,13 +200,13 @@ matching row red; the probe was run that way once to confirm it can fail.
 | Exit | Meaning | Result |
 |---|---|---|
 | `0` | Result JSON on stdout | The operation's result |
-| `42` | `{"error":"AUTHENTICATION_REQUIRED",…}`: the token was rejected | Refusal, `needs-input`: the operator replaces the token. Never retried, never a fall to the knowledgebase (CONTRACT §5) |
+| `42` | The guard recognized an authentication rejection in linearis's output | Refusal, `needs-input`: the operator replaces the token. Never retried, never a fall to the knowledgebase (CONTRACT §5) |
 | `2` | Invalid invocation, with a usage envelope | `failed`: the mapping in §5 is wrong for this version. Not retried with guessed flags |
 | `1` | Application error: not found, API rejection | `failed`, with linearis's message |
 
-`README.md` also lists "no usable token" under `42`. At `2026.8.0` with no token anywhere, the
-observed result is exit `1` with `{"error":"No API token found. …"}`; the preflight makes that case
-unreachable, and should it occur it is treated as the refusal it describes, not as `failed`.
+`README.md` lists a rejected token under `42`, but at `2026.8.0` the observed Linear rejection
+is exit `1` with `{"error":"Authentication required, not authenticated"}`. The guard classifies
+that message and exits `42`; other exit-`1` errors remain `failed`.
 
 ---
 

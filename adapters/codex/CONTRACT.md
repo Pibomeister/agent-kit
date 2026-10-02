@@ -47,13 +47,12 @@ What this package does **not** copy: the `interface` display block (marketing me
 for a catalog of engineering instructions), and the further host manifests the donor ships for hosts
 this package does not target.
 
-**Unverified — do not assert.** The donor's converter comments describe Codex's native plugin flow as
+**The current host command differs from the donor's comment.** The donor's converter describes
+Codex's native plugin flow as
 `codex plugin install` reading `.codex-plugin/plugin.json`
 (`compound-engineering@05c42da:src/converters/claude-to-codex.ts`, the comment above
-`includeSkills`). The CLI installed here exposes **`codex plugin add`**, not `install`
-(verified (CLI), §4). The package does not claim to know which is correct for a given Codex version;
-the packager pins the command the target CLI actually exposes and the smoke test in §5 is what
-confirms it.
+`includeSkills`). The installed CLI exposes **`codex plugin add`**, not `install`; an isolated
+marketplace install confirmed `add` (§4). Check the target CLI again when its version changes.
 
 ---
 
@@ -144,11 +143,12 @@ capabilities.
 
 ## 4. Install
 
-Verified (CLI), `codex-cli 0.154.0`:
+The command forms are verified against the installed Codex CLI; the isolated `CODEX_HOME` smoke
+used a local publication candidate. The GitHub ref needs a post-publication smoke:
 
 ```bash
-codex plugin marketplace add <source>   # local path, owner/repo[@ref], HTTPS or SSH Git URL
-codex plugin add <plugin>               # install from a configured or remote marketplace
+codex plugin marketplace add Pibomeister/agent-kit --ref published
+codex plugin add ak@agent-kit
 codex plugin list
 codex plugin remove <plugin>
 ```
@@ -161,9 +161,11 @@ codex plugin marketplace add <dist/codex>
 codex plugin add ak@agent-kit
 ```
 
-`codex plugin marketplace add` accepts `--ref` for Git sources. The packager records the exact
-command pair for the pinned target CLI version in the release notes; see the unverified-command note
-in §1.
+`codex plugin marketplace add` accepts `--ref` for Git sources. The generated `published` branch
+contains `.agents/plugins/marketplace.json` pointing at `./dist/codex`. An isolated local
+marketplace smoke confirmed add, install and an enabled `ak@agent-kit` in `codex plugin list
+--json`. Codex exposes no project-scope option. `ak update` uses `codex plugin marketplace upgrade
+agent-kit` followed by `codex plugin add ak@agent-kit`.
 
 ---
 
@@ -198,10 +200,11 @@ Tests this adapter owns, in `tests/adapters/`:
    appearing in the other's bundle is a failure.
 4. **Non-trigger corpus completeness** — every U skill in the codex bundle has a non-trigger eval
    case, and every such case's prompt is drawn from that skill's `## Not for` section.
-5. **Install smoke test** — the bundle carries the marketplace manifest required by
-   `codex plugin marketplace add <dist/codex>`; follow it with `codex plugin add ak@agent-kit`, then
-   confirm the skills are listed. Run manually against the pinned CLI version at release time and
-   record it as a receipt; it is not a CI gate because it requires a host install.
+5. **Install smoke test** — `codex plugin marketplace add Pibomeister/agent-kit --ref published`
+   followed by `codex plugin add ak@agent-kit`, then confirming the plugin is enabled. Run against
+   an isolated `CODEX_HOME` after the publication workflow has populated the branch.
+   The local form, `codex plugin marketplace add <dist/codex>`, relies on the marketplace manifest
+   the bundle carries.
 
 **Reported honestly, not worked around:** with no verified host-native eval runner for this host, the
 behavioral corpus is executed against the claude-code bundle and, when a runner is attached, through

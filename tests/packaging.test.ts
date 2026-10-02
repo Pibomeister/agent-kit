@@ -998,6 +998,7 @@ describe("the marketplace entry each host bundle carries", () => {
     expect("homepage" in market.plugins[0]).toBe(false);
     expect("tags" in market.plugins[0]).toBe(false);
     expect("description" in market.metadata).toBe(false);
+    expect("description" in market).toBe(false);
   });
 
   test("a catalog with no usable author fails rather than shipping an unowned marketplace", () => {

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, wri
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
+import type { ValidateFunction } from "ajv";
 import { parse as parseYaml } from "yaml";
 
 import { readTextIfPresent } from "../util/fs.ts";
@@ -34,6 +35,12 @@ export interface BindingResult {
   issues: Issue[];
 }
 
+/** Embedded validators let the standalone maintenance command use these same checks without a source checkout. */
+export interface BindingValidators {
+  binding: ValidateFunction<TrackerBinding>;
+  backends: ReadonlyMap<string, ValidateFunction<TrackerBinding>>;
+}
+
 /**
  * Parse and shape-check the folder's binding against `schemas/tracker-binding.schema.json`.
  *
@@ -42,7 +49,11 @@ export interface BindingResult {
  * error: an unbound folder is the case the knowledgebase chain covers
  * (CONTRACT.md §2), not a malformed one.
  */
-export function loadTrackerBinding(projectRoot: string, schemaRoot: string): BindingResult {
+export function loadTrackerBinding(
+  projectRoot: string,
+  schemaRoot: string,
+  embedded?: BindingValidators,
+): BindingResult {
   const text = readTextIfPresent(join(projectRoot, BINDING_FILE));
   if (text === null) {
     return {
@@ -63,8 +74,7 @@ export function loadTrackerBinding(projectRoot: string, schemaRoot: string): Bin
     const first = (cause instanceof Error ? cause.message : String(cause)).split("\n")[0];
     return { binding: null, issues: [error("tracker.binding-unparseable", BINDING_FILE, `Not valid YAML: ${first}`)] };
   }
-  const set = compileSchemas(schemaRoot);
-  const validate = set.validatorFor("tracker-binding");
+  const validate = embedded?.binding ?? compileSchemas(schemaRoot).validatorFor("tracker-binding");
   if (validate === undefined) {
     return {
       binding: null,
@@ -96,7 +106,7 @@ export function loadTrackerBinding(projectRoot: string, schemaRoot: string): Bin
     };
   }
   const binding = value as TrackerBinding;
-  const backendIssues = checkBackend(binding, schemaRoot);
+  const backendIssues = checkBackend(binding, schemaRoot, embedded?.backends);
   return { binding: backendIssues.length === 0 ? binding : null, issues: backendIssues };
 }
 
@@ -110,9 +120,13 @@ export const BACKEND_SCHEMAS_DIR = "schemas/tracker-backends";
  * `schemas/tracker-backends/<id>.schema.json` beside its document, and a backend
  * with no document is not a binding this package can describe to anyone.
  */
-function checkBackend(binding: TrackerBinding, schemaRoot: string): Issue[] {
+function checkBackend(
+  binding: TrackerBinding,
+  schemaRoot: string,
+  embedded?: ReadonlyMap<string, ValidateFunction<TrackerBinding>>,
+): Issue[] {
   const id = binding.backend;
-  if (!existsSync(join(schemaRoot, BACKENDS_DIR, `${id}.md`))) {
+  if (embedded ? !embedded.has(id) : !existsSync(join(schemaRoot, BACKENDS_DIR, `${id}.md`))) {
     return [
       error(
         "tracker.backend-unknown",
@@ -122,6 +136,15 @@ function checkBackend(binding: TrackerBinding, schemaRoot: string): Issue[] {
     ];
   }
   const file = `${BACKEND_SCHEMAS_DIR}/${id}.schema.json`;
+  const embeddedValidator = embedded?.get(id);
+  if (embeddedValidator !== undefined) {
+    if (embeddedValidator(binding)) return [];
+    const detail = (embeddedValidator.errors ?? [])
+      .slice(0, 6)
+      .map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`)
+      .join("; ");
+    return [error("tracker.binding-invalid", BINDING_FILE, `Does not match ${file}: ${detail}`)];
+  }
   const text = readTextIfPresent(join(schemaRoot, file));
   if (text === null) return [];
   let validate;
@@ -294,12 +317,13 @@ export function checkTrackerSecret(
       ),
     );
   }
-  if (text !== null && (statSync(path).mode & 0o044) !== 0) {
+  const mode = text === null ? null : statSync(path).mode & 0o777;
+  if (mode !== null && (mode & 0o077) !== 0) {
     issues.push(
-      warning(
-        "tracker.secret-readable-by-others",
+      error(
+        "tracker.secret-mode",
         file,
-        "token_file is readable by its group or by other users of this machine. Restrict it to its owner: chmod 600.",
+        `token_file mode ${mode.toString(8)} grants access to someone other than the owner. Run chmod 600 ${file}`,
       ),
     );
   }
@@ -378,8 +402,8 @@ export function checkTrackerSecret(
 }
 
 /** `ak tracker check`: the binding's shape and backend, then its secret, in that order. */
-export function checkTrackerBinding(projectRoot: string, schemaRoot: string): Issue[] {
-  const loaded = loadTrackerBinding(projectRoot, schemaRoot);
+export function checkTrackerBinding(projectRoot: string, schemaRoot: string, embedded?: BindingValidators): Issue[] {
+  const loaded = loadTrackerBinding(projectRoot, schemaRoot, embedded);
   if (loaded.binding === null) return loaded.issues;
   return [...loaded.issues, ...checkTrackerSecret(projectRoot, loaded.binding)];
 }

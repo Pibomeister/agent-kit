@@ -1,4 +1,6 @@
 import { join, posix } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 
 import { entryBodyPath } from "../catalog/layout.ts";
 import { listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
@@ -48,6 +50,35 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
  * marketplace through the same path before resolving `ak@agent-kit`.
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
+
+const maintenanceScripts = new Map<string, string | null>();
+
+function maintenanceScript(root: string): string | null {
+  const cached = maintenanceScripts.get(root);
+  if (cached !== undefined) return cached;
+  const script = buildMaintenanceScript(root);
+  maintenanceScripts.set(root, script);
+  return script;
+}
+
+function buildMaintenanceScript(root: string): string | null {
+  const source = join(root, "src/maintenance/cli.ts");
+  if (!existsSync(source)) return null;
+  const scratch = join(root, ".work");
+  mkdirSync(scratch, { recursive: true });
+  const dir = mkdtempSync(join(scratch, "ak-maintenance-"));
+  try {
+    const outfile = join(dir, "ak.mjs");
+    const result = spawnSync(process.execPath, ["build", source, "--target=bun", `--outfile=${outfile}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
+    return `#!/usr/bin/env bun\n${readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "")}`;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /**
  * The eval corpus directory: where the cases are copied, and what the manifest
@@ -691,6 +722,19 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       continue;
     }
     files.set(name, { path: name, contents: text, source: name });
+  }
+
+  try {
+    const script = maintenanceScript(root);
+    if (script !== null) files.set("bin/ak", { path: "bin/ak", contents: script });
+  } catch (cause) {
+    issues.push(
+      error(
+        "packaging.maintenance-build-failed",
+        "src/maintenance/cli.ts",
+        cause instanceof Error ? cause.message : String(cause),
+      ),
+    );
   }
 
   // The lifecycle gate travels with the lifecycle: a session with only this bundle records and checks
