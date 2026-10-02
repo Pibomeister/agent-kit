@@ -117,12 +117,12 @@ any acknowledgment. Narrative is not a receipt (ruling `closure-requires-indepen
 
 - Returned canvas session data: design URL, design and connection ids, ordered routes, named
   viewports, and the completed pre-handoff checklist. Tokens are excluded.
-- For each applied handoff, a `verification` receipt (`schemas/verification.schema.json`): the
+- For each applied handoff, a `verification` receipt (`schemas/verification.schema.json`) made from
+  [the receipt template](assets/receipt.example.json) under [its rules](references/receipt.md):
   probe parameters name route, viewport and the revision or, where the channel returned none, the
   handoff digest and that no acknowledgment channel exists; `artifacts` names every changed source
-  file with its digest; `source_revision` binds the code; the probe's observed value records the
-  dev-server confirmation. `supports` lists the supplied criteria for `super-verify`; with none the
-  receipt carries `no_criteria`, naming what was verified: the running app showing the edit.
+  file with its digest; `source_revision` binds the code; `observed` records the dev-server
+  confirmation. `supports` lists supplied criteria; with none, `no_criteria` names what the app showed.
 - When the edit exceeds this skill's boundary, the unchanged pending revision and the approved
   ticket requirement are handed to `super-build`; no partial source edit is an output.
 

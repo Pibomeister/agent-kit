@@ -84,7 +84,8 @@ outputs:
   - id: applied-edit-receipt
     schema: verification
     summary: >-
-      A probe receipt per applied handoff. Its parameters name route, viewport and the revision
+      A probe receipt per applied handoff, made from assets/receipt.example.json and written
+      under the member rules in references/receipt.md. Its parameters name route, viewport and the revision
       or, where the WebMCP pull returned none, the handoff digest and that no acknowledgment
       channel exists; artifacts name changed source files and digests; source_revision binds the code;
       observed records the dev-server confirmation. supports lists the supplied criteria and the

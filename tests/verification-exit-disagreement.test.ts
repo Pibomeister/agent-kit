@@ -3,6 +3,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
+import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { planBundle } from "../src/packaging/plan.ts";
 import { checkDocument, indexDocuments } from "../src/validation/docrules.ts";
 import { checkSchemas } from "../src/validation/schemas.ts";
 import { makeTree } from "./helpers/tree.ts";
@@ -127,5 +129,21 @@ describe("verification receipt without acceptance criteria", () => {
 
   test("rejects a receipt that both supports criteria and states none were supplied", () => {
     expect(akValidateAccepts({ ...unsupported, supports, no_criteria: noCriteria })).toBe(false);
+  });
+
+  test("every host's visual-edit bundle carries a receipt template that is valid in both forms", () => {
+    const { catalog } = loadCatalog(ROOT);
+    if (catalog === null) throw new Error("repository has no catalog");
+    for (const host of HOST_IDS) {
+      const plan = planBundle({ root: ROOT, catalog }, host, {});
+      const shipped = plan.files.get("skills/visual-edit/assets/receipt.example.json")?.contents;
+      if (shipped === undefined) throw new Error(`${host} bundle carries no visual-edit receipt template`);
+      const template = JSON.parse(shipped) as Receipt;
+      expect(template.kind).toBe("probe");
+      expectVerdict(template, true);
+      const { no_criteria: stated, ...criteria } = template;
+      expect(typeof stated).toBe("string");
+      expectVerdict({ ...criteria, supports }, true);
+    }
   });
 });
