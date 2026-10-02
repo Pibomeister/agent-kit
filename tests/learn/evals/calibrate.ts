@@ -45,7 +45,11 @@
  *          timed-out judge session leaves) counts as graded, so it is never paid for twice. With
  *          `--retry-invalid` the seats holding one are graded again, only those seats; each retry
  *          replaces its invalid vote and counts against `--max-calls` like any other call.
- * kappa    Cohen's κ (./stats.ts `kappaTable`) for each reviewer against the human, each reviewer
+ *          Each graded item keeps, by reviewer, the token usage and cost its latest judge session
+ *          reported, and a `--spend` run ends with one JSON line: the token totals, the number of
+ *          sessions that reported usage, the summed cost (null when no session carried one) and
+ *          the matrix's price table (./pricing.ts).
+ * kappa   Cohen's κ (./stats.ts `kappaTable`) for each reviewer against the human, each reviewer
  *          pair, the scorer's suggested verdict against the human, and the scorer against each
  *          reviewer, each with its n. A row counts the items both its raters rated, so the rows
  *          against the human count labelled items only, and the others count every item: they
