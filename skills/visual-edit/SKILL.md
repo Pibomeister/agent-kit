@@ -60,9 +60,9 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
    bridge token, then step 6 starts the bridge with it. Signed-out WebMCP runs the other order:
    generate the token locally, do step 6 with it, then call `open-visual-edit` with that same
    token. Each screen stays a URL-backed frame with route, URL, bridge and viewport metadata.
-6. Start the durable bridge with that token through `npx @agent-native/core@latest design connect`,
-   reusing a healthy matching bridge rather than starting a second app on 7331. A bridge that does
-   not come up stops with `missing-prerequisite:bridge-daemon`.
+6. Start the durable bridge, or reuse a healthy matching one on 7331, with the token in the
+   environment: `AGENT_NATIVE_BRIDGE_TOKEN=<token> npx @agent-native/core@latest design connect
+   --url <dev-server> --root <root> --daemon`, never `--json`. Not up: `missing-prerequisite:bridge-daemon`.
 7. Before handing over the canvas, verify the connection, every requested route and viewport, each
    frame's `src` rather than `srcdoc`, and the Code panel's local source root plus one opened file.
    A failed check stops with its name; a returned link alone is not readiness.
