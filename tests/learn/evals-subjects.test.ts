@@ -506,7 +506,7 @@ describe("shell reads", () => {
 });
 
 describe("isolation", () => {
-  test("each subject receives only process basics and its declared caller variables", () => {
+  test("each subject receives only process basics, its declared caller variables and the operator's opted-in names", () => {
     const planted = {
       GH_TOKEN: "gh-secret",
       ANTHROPIC_API_KEY: "anthropic-secret",
@@ -518,6 +518,14 @@ describe("isolation", () => {
       CLAUDECODE: "parent",
       CLAUDE_CODE_ENTRYPOINT: "parent-entrypoint",
       LC_TEST: "locale",
+      HTTPS_PROXY: "http://proxy.invalid:3128",
+      NODE_EXTRA_CA_CERTS: "/caller/ca.pem",
+      AWS_PROFILE: "caller-profile",
+      AWS_REGION: "caller-region",
+      GOOGLE_APPLICATION_CREDENTIALS: "/caller/gcp.json",
+      AK_EVAL_PASS_ENV: "AK_TEST_OPTED_IN  AK_TEST_UNSET",
+      AK_TEST_OPTED_IN: "opted-in",
+      AK_TEST_STRAY: "stray",
     } as const;
     const previous = Object.fromEntries(Object.keys(planted).map((key) => [key, process.env[key]]));
     Object.assign(process.env, planted);
@@ -531,6 +539,11 @@ describe("isolation", () => {
       expect(claudeEnv).not.toHaveProperty("GH_TOKEN");
       expect(claudeEnv).not.toHaveProperty("XAI_API_KEY");
       expect(claudeEnv).not.toHaveProperty("OPENAI_API_KEY");
+      expect(claudeEnv).toMatchObject({
+        AWS_PROFILE: "caller-profile",
+        AWS_REGION: "caller-region",
+        GOOGLE_APPLICATION_CREDENTIALS: "/caller/gcp.json",
+      });
 
       const codexEnv = cleanEnv(codex.env);
       expect(codexEnv.CODEX_HOME).toBe("/caller/codex");
@@ -539,8 +552,18 @@ describe("isolation", () => {
       for (const env of [codexEnv, grokEnv]) {
         for (const secret of ["GH_TOKEN", "ANTHROPIC_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY"])
           expect(env).not.toHaveProperty(secret);
+        for (const provider of ["AWS_PROFILE", "AWS_REGION", "GOOGLE_APPLICATION_CREDENTIALS"])
+          expect(env).not.toHaveProperty(provider);
       }
       for (const env of [claudeEnv, codexEnv, grokEnv]) {
+        expect(env).toMatchObject({
+          HTTPS_PROXY: "http://proxy.invalid:3128",
+          NODE_EXTRA_CA_CERTS: "/caller/ca.pem",
+          AK_TEST_OPTED_IN: "opted-in",
+        });
+        expect(env).not.toHaveProperty("AK_TEST_STRAY");
+        expect(env).not.toHaveProperty("AK_TEST_UNSET");
+        expect(env).not.toHaveProperty("AK_EVAL_PASS_ENV");
         expect(env).not.toHaveProperty("CLAUDECODE");
         expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT");
       }

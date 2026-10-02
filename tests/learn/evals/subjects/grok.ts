@@ -34,8 +34,9 @@
  * memory off: by default grok also reads
  * `~/.claude` skills, rules, plugins and hooks, and `~/.agents/skills`. The bundle's skills are
  * copied into the private `skills/`.
- * Authentication comes from the copied `auth.json`, not an environment credential. `GROK_HOME` is
- * admitted only to locate the caller's file before the adapter replaces it with the scratch home.
+ * Authentication comes from the copied `auth.json`, not an environment credential, so
+ * `XAI_API_KEY` is not declared and does not reach the subject. `GROK_HOME` is admitted only to
+ * locate the caller's file before the adapter replaces it with the scratch home.
  *
  * Grok loads a skill by reading its SKILL.md with `read_file`, which maps to Read.
  */

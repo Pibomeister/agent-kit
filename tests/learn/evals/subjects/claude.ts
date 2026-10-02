@@ -17,7 +17,8 @@
  * `claude plugin eval` sets for its own children) and `CLAUDE_CODE_DISABLE_AUTO_MEMORY` close
  * both; `--no-session-persistence` keeps the run out of the caller's transcript store.
  * Claude reads its login and provider credentials from the environment, so the adapter declares
- * only those inputs below; unrelated caller credentials are removed before the host starts.
+ * only those inputs below, including the region, profile and credential variables the Bedrock and
+ * Vertex flags depend on; unrelated caller credentials are removed before the host starts.
  * research/evals/2026-09-25-isolation.md, "Direct `claude -p` subjects", has the measurements.
  */
 import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
@@ -48,7 +49,15 @@ export const claude: SubjectAdapter = {
     "ANTHROPIC_BASE_URL",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "CLAUDE_CODE_USE_BEDROCK",
+    "AWS_REGION",
+    "AWS_PROFILE",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
     "CLAUDE_CODE_USE_VERTEX",
+    "ANTHROPIC_VERTEX_PROJECT_ID",
+    "CLOUD_ML_REGION",
+    "GOOGLE_APPLICATION_CREDENTIALS",
     "CLAUDE_CONFIG_DIR",
   ],
   injection: "append-system-prompt",

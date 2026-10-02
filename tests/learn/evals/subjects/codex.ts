@@ -12,8 +12,9 @@
  * `auth.json` also carries the account's connected apps (GitHub, Vercel, Drive and the like) as
  * `codex_apps` tools unless the `apps` feature is off; on 2026-09-28 subjects searched them. The
  * bundle's skills are copied into the private `skills/`.
- * Authentication comes from that copied `auth.json`, not an environment credential. `CODEX_HOME`
- * is admitted only to locate the caller's file before the adapter replaces it with the scratch home.
+ * Authentication comes from that copied `auth.json`, not an environment credential, so
+ * `OPENAI_API_KEY` is not declared and does not reach the subject. `CODEX_HOME` is admitted only
+ * to locate the caller's file before the adapter replaces it with the scratch home.
  *
  * Codex has no Skill or Read tool: a skill is loaded by printing its SKILL.md through the shell.
  * Every shell call becomes a Bash event, and each file it prints also becomes a Read event, so
