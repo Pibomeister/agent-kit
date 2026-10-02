@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,13 +42,23 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 /** A repository on branch `feature`, one commit in, with the work uncommitted on top as a session leaves it. */
-function repo(): string {
+function buildRepo(): string {
   const dir = makeTree({ "src/a.js": "export const a = 1;\n" });
   git(dir, "init", "-q", "-b", "main");
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", "init");
   git(dir, "checkout", "-q", "-b", "feature");
   writeFileSync(join(dir, "src/a.js"), "export const a = 2;\n");
+  return dir;
+}
+
+// Initializing and committing a repository is pure fixture construction but repeatedly competes
+// for subprocess slots on a loaded host. Copy one module-level template for each isolated test.
+const REPO_TEMPLATE = buildRepo();
+
+function repo(): string {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-lifecycle-repo-")));
+  cpSync(REPO_TEMPLATE, dir, { recursive: true });
   return dir;
 }
 

@@ -7,7 +7,7 @@
  * Firstmate home; the real-upstream check is recorded separately, against a
  * scratch clone, and says so.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,7 +46,7 @@ export interface Home {
  * `patched: true` applies both to the working tree, which is what a maintainer
  * applying 0001 then 0002 does; `"0001"` applies only the first; `false` neither.
  */
-export function makeHome(opts: { patched: boolean | "0001" }): Home {
+function buildHome(patched: boolean | "0001"): Home {
   const home = makeTree({ "bin/fm-dod-lib.sh": ORIGINAL, "config/.keep": "" });
   gitIn(home, "init", "-q", "-b", "main");
   gitIn(home, "add", "-A");
@@ -72,13 +72,33 @@ export function makeHome(opts: { patched: boolean | "0001" }): Home {
     before = after;
   }
   gitIn(home, "reset", "-q");
-  writeFileSync(file, opts.patched === true ? PATCHED_2 : opts.patched === "0001" ? PATCHED : ORIGINAL);
+  writeFileSync(file, patched === true ? PATCHED_2 : patched === "0001" ? PATCHED : ORIGINAL);
 
   return { home, upstream: { commit, patch: "0001-agent-kit-mode", stack } };
 }
 
+// Creating a synthetic home runs git repeatedly to build its upstream commit and patch stack.
+// Build each immutable starting state once at module load, then copy it for tests that mutate it.
+const HOME_TEMPLATES = {
+  patched: buildHome(true),
+  firstPatch: buildHome("0001"),
+  unpatched: buildHome(false),
+};
+
+export function makeHome(opts: { patched: boolean | "0001" }): Home {
+  const template =
+    opts.patched === true
+      ? HOME_TEMPLATES.patched
+      : opts.patched === "0001"
+        ? HOME_TEMPLATES.firstPatch
+        : HOME_TEMPLATES.unpatched;
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "ak-fm-home-")));
+  cpSync(template.home, home, { recursive: true });
+  return { home, upstream: template.upstream };
+}
+
 /** A project checkout with a trusted no-mistakes config, as preflight requires. */
-export function makeProject(noMistakes?: string): string {
+function buildProject(noMistakes?: string): string {
   const project = makeTree({
     "src/a.ts": "export const a = 1;\n",
     ".no-mistakes.yaml": noMistakes ?? "commands:\n  test: bun test\nauto_fix:\n  test: 0\n  lint: 0\n  ci: 0\n",
@@ -86,6 +106,15 @@ export function makeProject(noMistakes?: string): string {
   gitIn(project, "init", "-q", "-b", "main");
   gitIn(project, "add", "-A");
   gitIn(project, "commit", "-q", "-m", "init");
+  return project;
+}
+
+const PROJECT_TEMPLATE = buildProject();
+
+export function makeProject(noMistakes?: string): string {
+  if (noMistakes !== undefined) return buildProject(noMistakes);
+  const project = realpathSync(mkdtempSync(join(tmpdir(), "ak-fm-project-")));
+  cpSync(PROJECT_TEMPLATE, project, { recursive: true });
   return project;
 }
 

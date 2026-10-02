@@ -43,12 +43,37 @@ function loadCase(dir: string): CaseSpec {
   return parseYaml(readFileSync(join(ROOT, "evals", dir, "case.yaml"), "utf8")) ?? {};
 }
 
-function scaffold(dir: string, prefix: string): string {
+function buildScaffold(dir: string): string {
+  const prefix = `ak-a1-${dir.replaceAll("/", "-")}-`;
   const workspace = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   made.push(workspace);
   const script = join(ROOT, "evals", dir, "scaffold.sh");
   const result = spawnSync("bash", [script], { cwd: workspace, encoding: "utf8" });
   expect(result.status, result.stderr).toBe(0);
+  return workspace;
+}
+
+const fixtureDirs = [
+  ...EMPTY_WORKSPACE_CASES.map(([dir]) => dir),
+  "super-verify/named-criterion-gets-a-receipt",
+  "super-ship/lesson-is-drafted-not-published",
+  "super-bound/approved-direction-stops-at-open-decisions",
+];
+
+// Each scaffold is a shell subprocess that can spend seconds waiting for CPU on a loaded host.
+// Build every immutable workspace once at module load and keep the timed tests assertion-only.
+const scaffolds = new Map([...new Set(fixtureDirs)].map((dir) => [dir, buildScaffold(dir)]));
+const typoWorkspace = scaffolds.get("super-align/typo-fix-does-not-start-alignment");
+if (typoWorkspace === undefined) throw new Error("missing typo-fix scaffold");
+const typoCheck = spawnSync("node", ["--test", "test/email/templates.test.js"], {
+  cwd: typoWorkspace,
+  encoding: "utf8",
+});
+const typoTemplates = require(join(typoWorkspace, "src/email/templates.js"));
+
+function scaffold(dir: string): string {
+  const workspace = scaffolds.get(dir);
+  if (!workspace) throw new Error(`missing precomputed scaffold for ${dir}`);
   return workspace;
 }
 
@@ -59,7 +84,7 @@ describe("A1 state-dependent fixtures", () => {
     expect(spec.context?.scaffold_script).toBe("scaffold.sh");
 
     expect(existsSync(join(ROOT, "evals", dir, "scaffold.sh"))).toBe(true);
-    const workspace = scaffold(dir, "ak-a1-fixture-");
+    const workspace = scaffold(dir);
     expect(existsSync(join(workspace, marker))).toBe(true);
   });
 });
@@ -90,26 +115,23 @@ describe("A1 review fixtures expose their revisions", () => {
 
 describe("A1 scaffold content leaves the behavior observable", () => {
   test("the named-criterion case does not hand the verification command to the subject", () => {
-    const workspace = scaffold("super-verify/named-criterion-gets-a-receipt", "ak-a1-command-");
+    const workspace = scaffold("super-verify/named-criterion-gets-a-receipt");
     expect(readFileSync(join(workspace, "tickets/AK-214.md"), "utf8")).not.toContain("Verification:");
   });
 
   test("the typo-fix premise keeps the baseline's template module and its test green", () => {
-    const workspace = scaffold("super-align/typo-fix-does-not-start-alignment", "ak-a1-typo-");
-    const check = spawnSync("node", ["--test", "test/email/templates.test.js"], { cwd: workspace, encoding: "utf8" });
-    expect(check.status, check.stdout + check.stderr).toBe(0);
-    const templates = require(join(workspace, "src/email/templates.js"));
-    expect(templates.invoiceFooter).toBe("Payement due on reciept");
-    expect(templates.render("Hi {{ name }}", { name: "Ada" })).toBe("Hi Ada");
+    expect(typoCheck.status, typoCheck.stdout + typoCheck.stderr).toBe(0);
+    expect(typoTemplates.invoiceFooter).toBe("Payement due on reciept");
+    expect(typoTemplates.render("Hi {{ name }}", { name: "Ada" })).toBe("Hi Ada");
   });
 
   test("the drafted-lesson case, though kept out of difference claims, still builds its premise", () => {
-    const workspace = scaffold("super-ship/lesson-is-drafted-not-published", "ak-a1-lesson-");
+    const workspace = scaffold("super-ship/lesson-is-drafted-not-published");
     expect(existsSync(join(workspace, "evidence/migration-ordering.md"))).toBe(true);
   });
 
   test("the approved sandbox direction has a compatible tenant-policy path", () => {
-    const workspace = scaffold("super-bound/approved-direction-stops-at-open-decisions", "ak-a1-direction-");
+    const workspace = scaffold("super-bound/approved-direction-stops-at-open-decisions");
     const alignment = JSON.parse(readFileSync(join(workspace, "runs/sandbox-self-serve/alignment.json"), "utf8"));
     expect(alignment.status).toBe("approved");
     expect(alignment.direction).toMatch(/self-serve sandbox provisioning/i);

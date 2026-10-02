@@ -33,6 +33,128 @@ function project(): string {
   return root;
 }
 
+// These CLI subprocesses run once at module load so a busy host cannot spend a test's entire
+// timeout scheduling Bun. The assertions below still cover their exit codes and complete output.
+const maintenanceRoot = project();
+const maintenanceCli = join(import.meta.dir, "../src/maintenance/cli.ts");
+const maintenanceEnv = {
+  ...process.env,
+  PATH: "/usr/bin:/bin",
+  CLAUDE_CONFIG_DIR: join(maintenanceRoot, "claude-home"),
+  CODEX_HOME: join(maintenanceRoot, "codex-home"),
+  AK_PUBLISHED_ROOT: join(maintenanceRoot, "missing-published"),
+};
+const doctorJson = spawnSync(process.execPath, [maintenanceCli, "doctor", "--json"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
+const rejectedUpdate = spawnSync(process.execPath, [maintenanceCli, "update", "--dry-run"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
+const repoUpdate = spawnSync(process.execPath, [join(import.meta.dir, "../src/cli.ts"), "update", "--dry-run"], {
+  cwd: maintenanceRoot,
+  env: maintenanceEnv,
+  encoding: "utf8",
+});
+
+function runLinkedWorktreeFixture() {
+  const root = realpathSync(project());
+  const linked = `${project()}-linked`;
+  roots.push(linked);
+  mkdirSync(join(root, ".claude"));
+  writeFileSync(join(root, ".claude/settings.json"), '{"enabledPlugins":{"ak@agent-kit":true}}');
+  writeFileSync(join(root, ".gitignore"), ".linear-token\n");
+  spawnSync("git", ["-C", root, "add", ".claude/settings.json", ".gitignore"]);
+  spawnSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "setup"]);
+  const added = spawnSync("git", ["-C", root, "worktree", "add", "--detach", linked], { encoding: "utf8" });
+  const published = join(root, "published");
+  for (const host of ["claude-code", "codex"]) {
+    const manifest = join(published, "dist", host, host === "codex" ? ".codex-plugin" : ".claude-plugin");
+    mkdirSync(manifest, { recursive: true });
+    writeFileSync(join(manifest, "plugin.json"), '{"name":"ak","version":"0.1.0"}');
+  }
+  const fakeBin = join(root, "fake-bin");
+  mkdirSync(fakeBin);
+  const claude = join(fakeBin, "claude");
+  writeFileSync(
+    claude,
+    `#!/bin/sh
+if [ "$2" = marketplace ]; then
+  if [ "$AK_TEST_MARKET_SOURCE" = directory ]; then
+    printf '%s\n' '[{"name":"agent-kit","source":"directory","path":"/tmp/old-clone"}]'
+  else
+    printf '%s\n' '[{"name":"agent-kit","source":"github","repo":"Pibomeister/agent-kit"}]'
+  fi
+else
+  current="$(pwd -P)"
+  enabled=false
+  if [ "$current" = "$AK_TEST_ROOT" ] || [ "$current" = "$AK_TEST_LINKED" ]; then enabled=true; fi
+  printf '[{"id":"ak@agent-kit","version":"0.1.0","scope":"project","enabled":%s,"projectEnabled":%s,"projectPath":"%s"}]\n' "$enabled" "$enabled" "$AK_TEST_ROOT"
+fi
+`,
+  );
+  chmodSync(claude, 0o755);
+  const codex = join(fakeBin, "codex");
+  writeFileSync(codex, "#!/bin/sh\necho '{\"installed\":[]}'\n");
+  chmodSync(codex, 0o755);
+  const env = {
+    ...process.env,
+    PATH: `${fakeBin}:${process.env.PATH}`,
+    AK_PUBLISHED_ROOT: published,
+    AK_TEST_ROOT: root,
+    AK_TEST_LINKED: realpathSync(linked),
+    CODEX_HOME: join(root, "empty-codex"),
+    AK_TEST_MARKET_SOURCE: "github",
+  };
+  const projectRuns = [linked, join(root, "src")].map((cwd) => {
+    if (cwd.endsWith("src")) mkdirSync(cwd);
+    return {
+      doctor: spawnSync(process.execPath, [maintenanceCli, "doctor"], { cwd, env, encoding: "utf8" }),
+      update: spawnSync(process.execPath, [maintenanceCli, "update"], { cwd, env, encoding: "utf8" }),
+    };
+  });
+  const oldSource = spawnSync(process.execPath, [maintenanceCli, "doctor"], {
+    cwd: linked,
+    env: { ...env, AK_TEST_MARKET_SOURCE: "directory" },
+    encoding: "utf8",
+  });
+  const update = spawnSync(process.execPath, [maintenanceCli, "update"], {
+    cwd: linked,
+    env: { ...env, AK_TEST_MARKET_SOURCE: "directory" },
+    encoding: "utf8",
+  });
+  const bundle = join(root, "ak-standalone.mjs");
+  const built = spawnSync(process.execPath, ["build", maintenanceCli, "--target=bun", `--outfile=${bundle}`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  const standalone = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
+  writeFileSync(
+    join(linked, "ak.tracker.yaml"),
+    "backend: linear-linearis\ntoken_file: .linear-token\ndefaults:\n  team: ENG\n",
+  );
+  writeFileSync(join(linked, ".linear-token"), " \n", { mode: 0o600 });
+  const blank = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
+  writeFileSync(
+    join(linked, "ak.tracker.yaml"),
+    "backend: linear-linearis\ntoken_file: .linear-token\ndefaults:\n  project: Demo\n",
+  );
+  const missingTeam = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
+  writeFileSync(
+    join(linked, "ak.tracker.yaml"),
+    "backend: jira-nope\ntoken_file: .linear-token\ndefaults:\n  team: ENG\n",
+  );
+  const unknown = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
+  return { added, projectRuns, oldSource, update, built, standalone, blank, missingTeam, unknown };
+}
+
+// Nine nested Bun invocations took 17s normally and 25s beside another full suite on this host.
+// Running the fixture here keeps scheduler delay outside the timed assertion body.
+const linkedWorktreeFixture = runLinkedWorktreeFixture();
+
 describe("ak doctor checks", () => {
   test("checks installed, enabled and published plugin versions", () => {
     expect(checkPlugin("Claude Code", [], "1.2.0").level).toBe("WARN");
@@ -139,18 +261,8 @@ describe("ak doctor checks", () => {
   });
 
   test("doctor --json is parseable and update rejects unknown flags before touching hosts", () => {
-    const root = project();
-    const cli = join(import.meta.dir, "../src/maintenance/cli.ts");
-    const env = {
-      ...process.env,
-      PATH: "/usr/bin:/bin",
-      CLAUDE_CONFIG_DIR: join(root, "claude-home"),
-      CODEX_HOME: join(root, "codex-home"),
-      AK_PUBLISHED_ROOT: join(root, "missing-published"),
-    };
-    const doctor = spawnSync(process.execPath, [cli, "doctor", "--json"], { cwd: root, env, encoding: "utf8" });
-    expect(doctor.status).toBe(1);
-    const parsed: unknown = JSON.parse(doctor.stdout);
+    expect(doctorJson.status).toBe(1);
+    const parsed: unknown = JSON.parse(doctorJson.stdout);
     const valid = new Ajv().compile({
       type: "object",
       required: ["findings"],
@@ -172,18 +284,13 @@ describe("ak doctor checks", () => {
       },
     });
     expect(valid(parsed)).toBe(true);
-    const update = spawnSync(process.execPath, [cli, "update", "--dry-run"], { cwd: root, env, encoding: "utf8" });
-    expect(update.status).toBe(2);
-    expect(update.stderr).toContain("Usage: ak doctor [--json] | ak update");
+    expect(rejectedUpdate.status).toBe(2);
+    expect(rejectedUpdate.stderr).toContain("Usage: ak doctor [--json] | ak update");
   });
 
   test("the repo CLI forwards maintenance flags instead of running a real update", () => {
-    const root = project();
-    const cli = join(import.meta.dir, "../src/cli.ts");
-    const env = { ...process.env, PATH: "/usr/bin:/bin", AK_PUBLISHED_ROOT: join(root, "missing-published") };
-    const update = spawnSync(process.execPath, [cli, "update", "--dry-run"], { cwd: root, env, encoding: "utf8" });
-    expect(update.status).toBe(2);
-    expect(update.stderr).toContain("Usage: ak doctor [--json] | ak update");
+    expect(repoUpdate.status).toBe(2);
+    expect(repoUpdate.stderr).toContain("Usage: ak doctor [--json] | ak update");
   });
 
   test("doctor ignores foreign GIT_DIR and GIT_WORK_TREE", () => {
@@ -211,119 +318,29 @@ describe("ak doctor checks", () => {
   });
 
   test("doctor sees a project install from a linked worktree and a subdirectory", () => {
-    const root = realpathSync(project());
-    const linked = `${project()}-linked`;
-    roots.push(linked);
-    mkdirSync(join(root, ".claude"));
-    writeFileSync(join(root, ".claude/settings.json"), '{"enabledPlugins":{"ak@agent-kit":true}}');
-    writeFileSync(join(root, ".gitignore"), ".linear-token\n");
-    spawnSync("git", ["-C", root, "add", ".claude/settings.json", ".gitignore"]);
-    spawnSync("git", ["-C", root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "setup"]);
-    const added = spawnSync("git", ["-C", root, "worktree", "add", "--detach", linked], { encoding: "utf8" });
-    expect(added.status).toBe(0);
-    const published = join(root, "published");
-    for (const host of ["claude-code", "codex"]) {
-      const manifest = join(published, "dist", host, host === "codex" ? ".codex-plugin" : ".claude-plugin");
-      mkdirSync(manifest, { recursive: true });
-      writeFileSync(join(manifest, "plugin.json"), '{"name":"ak","version":"0.1.0"}');
+    expect(linkedWorktreeFixture.added.status).toBe(0);
+    for (const run of linkedWorktreeFixture.projectRuns) {
+      expect(run.doctor.status).toBe(0);
+      expect(run.doctor.stdout).toContain("PASS Claude Code plugin: enabled; installed 0.1.0");
+      expect(run.update.status).toBe(0);
+      expect(run.update.stdout).toContain("PASS Claude Code project: 0.1.0 -> 0.1.0");
     }
-    const fakeBin = join(root, "fake-bin");
-    mkdirSync(fakeBin);
-    const claude = join(fakeBin, "claude");
-    writeFileSync(
-      claude,
-      `#!/bin/sh
-if [ "$2" = marketplace ]; then
-  if [ "$AK_TEST_MARKET_SOURCE" = directory ]; then
-    printf '%s\n' '[{"name":"agent-kit","source":"directory","path":"/tmp/old-clone"}]'
-  else
-    printf '%s\n' '[{"name":"agent-kit","source":"github","repo":"Pibomeister/agent-kit"}]'
-  fi
-else
-  current="$(pwd -P)"
-  enabled=false
-  if [ "$current" = "$AK_TEST_ROOT" ] || [ "$current" = "$AK_TEST_LINKED" ]; then enabled=true; fi
-  printf '[{"id":"ak@agent-kit","version":"0.1.0","scope":"project","enabled":%s,"projectEnabled":%s,"projectPath":"%s"}]\n' "$enabled" "$enabled" "$AK_TEST_ROOT"
-fi
-`,
+    expect(linkedWorktreeFixture.oldSource.status).toBe(1);
+    expect(linkedWorktreeFixture.oldSource.stdout).toContain(
+      "FAIL Claude Code marketplace source: configured marketplace is local",
     );
-    chmodSync(claude, 0o755);
-    const codex = join(fakeBin, "codex");
-    writeFileSync(codex, "#!/bin/sh\necho '{\"installed\":[]}'\n");
-    chmodSync(codex, 0o755);
-    const env = {
-      ...process.env,
-      PATH: `${fakeBin}:${process.env.PATH}`,
-      AK_PUBLISHED_ROOT: published,
-      AK_TEST_ROOT: root,
-      AK_TEST_LINKED: realpathSync(linked),
-      CODEX_HOME: join(root, "empty-codex"),
-      AK_TEST_MARKET_SOURCE: "github",
-    };
-    for (const cwd of [linked, join(root, "src")]) {
-      if (cwd.endsWith("src")) mkdirSync(cwd);
-      const run = spawnSync(process.execPath, [join(import.meta.dir, "../src/maintenance/cli.ts"), "doctor"], {
-        cwd,
-        env,
-        encoding: "utf8",
-      });
-      expect(run.status).toBe(0);
-      expect(run.stdout).toContain("PASS Claude Code plugin: enabled; installed 0.1.0");
-      const refreshed = spawnSync(process.execPath, [join(import.meta.dir, "../src/maintenance/cli.ts"), "update"], {
-        cwd,
-        env,
-        encoding: "utf8",
-      });
-      expect(refreshed.status).toBe(0);
-      expect(refreshed.stdout).toContain("PASS Claude Code project: 0.1.0 -> 0.1.0");
-    }
-    const oldSource = spawnSync(process.execPath, [join(import.meta.dir, "../src/maintenance/cli.ts"), "doctor"], {
-      cwd: linked,
-      env: { ...env, AK_TEST_MARKET_SOURCE: "directory" },
-      encoding: "utf8",
-    });
-    expect(oldSource.status).toBe(1);
-    expect(oldSource.stdout).toContain("FAIL Claude Code marketplace source: configured marketplace is local");
-    const update = spawnSync(process.execPath, [join(import.meta.dir, "../src/maintenance/cli.ts"), "update"], {
-      cwd: linked,
-      env: { ...env, AK_TEST_MARKET_SOURCE: "directory" },
-      encoding: "utf8",
-    });
-    expect(update.status).toBe(1);
-    expect(update.stderr).toContain("FAIL Claude Code update: configured marketplace is local");
-    const bundle = join(root, "ak-standalone.mjs");
-    const built = spawnSync(
-      process.execPath,
-      ["build", join(import.meta.dir, "../src/maintenance/cli.ts"), "--target=bun", `--outfile=${bundle}`],
-      { cwd: root, encoding: "utf8" },
-    );
-    expect(built.status).toBe(0);
-    const standalone = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
-    expect(standalone.status).toBe(0);
-    expect(standalone.stdout).toContain("PASS Claude Code plugin: enabled; installed 0.1.0");
-    writeFileSync(
-      join(linked, "ak.tracker.yaml"),
-      "backend: linear-linearis\ntoken_file: .linear-token\ndefaults:\n  team: ENG\n",
-    );
-    writeFileSync(join(linked, ".linear-token"), " \n", { mode: 0o600 });
-    const blank = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
-    expect(blank.status).toBe(1);
-    expect(blank.stdout).toContain("FAIL tracker token:");
-    writeFileSync(
-      join(linked, "ak.tracker.yaml"),
-      "backend: linear-linearis\ntoken_file: .linear-token\ndefaults:\n  project: Demo\n",
-    );
-    const missingTeam = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
-    expect(missingTeam.status).toBe(1);
-    expect(missingTeam.stdout).toContain("FAIL tracker binding:");
-    writeFileSync(
-      join(linked, "ak.tracker.yaml"),
-      "backend: jira-nope\ntoken_file: .linear-token\ndefaults:\n  team: ENG\n",
-    );
-    const unknown = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
-    expect(unknown.status).toBe(1);
-    expect(unknown.stdout).toContain("FAIL tracker binding:");
-  }, 30_000);
+    expect(linkedWorktreeFixture.update.status).toBe(1);
+    expect(linkedWorktreeFixture.update.stderr).toContain("FAIL Claude Code update: configured marketplace is local");
+    expect(linkedWorktreeFixture.built.status).toBe(0);
+    expect(linkedWorktreeFixture.standalone.status).toBe(0);
+    expect(linkedWorktreeFixture.standalone.stdout).toContain("PASS Claude Code plugin: enabled; installed 0.1.0");
+    expect(linkedWorktreeFixture.blank.status).toBe(1);
+    expect(linkedWorktreeFixture.blank.stdout).toContain("FAIL tracker token:");
+    expect(linkedWorktreeFixture.missingTeam.status).toBe(1);
+    expect(linkedWorktreeFixture.missingTeam.stdout).toContain("FAIL tracker binding:");
+    expect(linkedWorktreeFixture.unknown.status).toBe(1);
+    expect(linkedWorktreeFixture.unknown.stdout).toContain("FAIL tracker binding:");
+  });
 
   test("checks project enablement", () => {
     const root = project();

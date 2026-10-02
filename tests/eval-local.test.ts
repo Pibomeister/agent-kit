@@ -4,7 +4,7 @@
  * an empty result and exits 1), and writes canned results. The assertions are on the result, the
  * receipt and the exit status; the script's source is not read.
  */
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -18,10 +18,6 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-
-// Each test runs the whole script (a bun subprocess, a bundle copy per group, the stub host), which
-// takes 2-3s warm and has passed the 5s default on a cold first run.
-setDefaultTimeout(30_000);
 
 const REPO = resolve(import.meta.dir, "..");
 const SCRIPT = join(REPO, "scripts", "eval-local.sh");
@@ -123,7 +119,7 @@ afterAll(() => {
   for (const dir of made) rmSync(dir, { recursive: true, force: true });
 });
 
-function run(args: string[], env: Record<string, string> = {}) {
+function runFixture(args: string[], env: Record<string, string> = {}) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-eval-local-")));
   made.push(dir);
   const bin = join(dir, "bin");
@@ -188,6 +184,37 @@ function run(args: string[], env: Record<string, string> = {}) {
     hostGit: read(join(dir, "git.json")),
     developerGit,
   };
+}
+
+const fixtureKey = (args: string[], env: Record<string, string> = {}) => JSON.stringify([args, env]);
+const fixtureInputs: Array<[string[], Record<string, string>?]> = [
+  [["--case", "case-one", "--case", "case-two", "--case", "case-three"]],
+  [["--tag", "slow"]],
+  [["--case", "case-three"]],
+  [["--case", "case-three", "--inherit-env"]],
+  [[], { FAKE_DROP: "case-two" }],
+  [[], { FAKE_DROP: "case-three,case-four" }],
+  [[]],
+  [["--case", "case-three"], { FAKE_TRACE: "1" }],
+  [["--case", "case-three"], { FAKE_TRACE: "1", FAKE_CRASH: "1" }],
+  [["--case", "case-three"], { FAKE_UNGRADED: "with" }],
+  [["--case", "case-three"], { FAKE_UNGRADED: "with", FAKE_FAILED: "with" }],
+  [["--case", "case-three"], { FAKE_WITH_ONLY: "case-three" }],
+  [["--case", "case-three"], { FAKE_FAILED: "without" }],
+  [["--case", "case-three", "--max-cost-usd", "1"], { FAKE_COST: "2.5" }],
+  [["--case", "case-three", "--max-cost-usd", "3"], { FAKE_COST: "2.5" }],
+  [["--case", "case-one", "--case", "case-three", "--max-cost-usd", "0.3"], { FAKE_COST: "0.1,0.2" }],
+  [["--case", "case-three", "--max-cost-usd", "0.3"], { FAKE_COST: "0.30003" }],
+];
+
+// A run stages a bundle and launches the shell script plus one host per grant group. Build every
+// deterministic result once at module load so host scheduling cannot consume a timed test body.
+const fixtures = new Map(fixtureInputs.map(([args, env = {}]) => [fixtureKey(args, env), runFixture(args, env)]));
+
+function run(args: string[], env: Record<string, string> = {}) {
+  const fixture = fixtures.get(fixtureKey(args, env));
+  if (!fixture) throw new Error(`missing precomputed eval-local fixture for ${fixtureKey(args, env)}`);
+  return fixture;
 }
 
 const names = (result: { cases: Array<{ name: string }> }) => result.cases.map((c) => c.name).sort();
