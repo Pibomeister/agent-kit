@@ -79,13 +79,21 @@ Without that live service, autonomous ship stops with trusted evidence unavailab
 
 ## Granting bypass for one task
 
-When the captain authorizes a task to run without typed phase commands, write a bypass grant from
-the home, not from the task's worktree, and paste the section it prints into the brief:
+When the captain authorizes a task to run without typed phase commands, write a bypass grant with the
+installed agent-kit bundle's gate script, run by `node` from the home, and paste the section it prints
+into the brief:
 
 ```
-ak lifecycle bypass grant --task <task-id> --by <who authorized it> --reason <why> \
-  --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree> [--hours <n>]
+cd <home>
+node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <task-id> --by <who authorized it> \
+  --reason <why> --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree> [--hours <n>]
 ```
+
+`<agent-kit bundle>` is the installed plugin's directory, or `dist/claude-code` after `ak build`. Run it
+with `node` and with the home as the working directory, never through `bun` and never from a project
+directory or a task worktree: `bun` loads the working directory's `bunfig.toml` and `.env` before the
+script runs, so a worker-written file there would run inside your grant. The `ak` command on `PATH` is
+the maintenance CLI and has no `lifecycle` subcommand.
 
 The section tells the worker to pass `--task <task-id>` to every check and to `record --bypass`;
 a check for another task, or run from any worktree but the task's, is refused. Issue it from the

@@ -28,17 +28,22 @@ captain wants to run once without typing each command.
 
 A bypass grant is a file that stands in for the typed command of five phase starts: `super-align`,
 `super-bound`, `super-review:full`, `super-review:readiness` and `super-ship`. A supervisor (Firstmate
-or a human) writes it with one line, from outside the repository:
+or a human) writes it with one line, run by `node` from the bundle with the supervisor's home as the
+working directory:
 
 ```
-ak lifecycle bypass grant --task <id> --by <who authorized it> --reason <why> \
-  --out <supervisor home>/data/<task>/bypass.json --project <repo> \
-  --worktree <task worktree> [--hours <n>]
+cd <supervisor home>
+node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <id> --by <who authorized it> \
+  --reason <why> --out data/<task>/bypass.json --project <repo> --worktree <task worktree> [--hours <n>]
 ```
 
-It prints the brief section the supervisor pastes into the task's brief. Before each phase the worker
-runs `ak lifecycle bypass check --grant <file> --task <id> --phase <phase>` (or the bundle's
-`bin/ak-gate.mjs bypass check`). Exit 0 is the start and leaves a use record under
+`node` loads nothing from the working directory. `bun` loads that directory's `bunfig.toml` preload and
+`.env` before the script runs, so running the grant through `bun` from a project directory or a task
+worktree would execute worker-written code inside the supervisor's grant; the supervisor never does.
+(`ak lifecycle bypass …` is the same code from an agent-kit checkout, for maintainers; the installed `ak`
+on `PATH` is the maintenance CLI.) It prints the brief section the supervisor pastes into the task's
+brief, naming that same script. Before each phase the worker runs `node <agent-kit bundle>/bin/ak-gate.mjs
+bypass check --grant <file> --task <id> --phase <phase>`. Exit 0 is the start and leaves a use record under
 `<evidence>/<run>/bypass/`. A refusal is a stop with `needs-decision`. When the worker records
 `review-full`, `review-readiness` or `ship-preflight` it passes `--bypass <file> --task <id>`, and the
 gate record carries `authority: {mode: "bypass", grant_id, grant, grant_sha256, authorized_by,
@@ -85,10 +90,13 @@ own attribution plus `superseded_grant_id` naming the grant it replaces. A typed
 `--bypass` records `authority: {mode: explicit, superseded_grant_id}` naming the grant in force, so
 a human finish after a bypassed start is visible rather than a silent strip, and it marks the use
 record ended (`ended_at`, `ended_by_snapshot`, and in `ended_grant_ids` every grant that has held
-the phase in the run, which the use record keeps in `held_grant_ids`): the bypass is over for that
-phase in that run, at every later snapshot. Every grant a typed record ended stays
-refused at `check` and at `record --bypass` in that phase of the run, even after a re-start; only a fresh grant
-for the same task re-starts the phase, rewriting the use record with `superseded_grant_id`. A grant for another task or another worktree is
+the phase in the run, which the use record keeps in `held_grant_ids`). The end holds for the whole
+task, not only that run: the ended grants are also written beside the ledger, in
+`~/.agent-kit/bypass/ended/<task>.json` under the phase, and `check` refuses them there. A run opened
+after a fix (`open --ticket`) therefore cannot resume bypass for that phase with an ended grant.
+Every grant a typed record ended stays refused at `check` and at `record --bypass` for that phase of
+the task, even after a re-start; only a fresh grant for the same task re-starts the phase, rewriting
+the use record with `superseded_grant_id`. A grant for another task or another worktree is
 refused. The mirror holds too: a gate recorded by hand at a snapshot cannot be relabelled by
 re-recording that snapshot with `--bypass`, even after a check starts the phase under a grant.
 

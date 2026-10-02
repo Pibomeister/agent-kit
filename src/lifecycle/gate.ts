@@ -407,6 +407,8 @@ export interface RecordArgs {
   delegationClass?: DelegationClass;
   implementer?: { author_kind: AuthorKind; host: string };
   bypass?: BypassAttribution;
+  /** The bypass ledger; a typed end is recorded beside it, for the whole task. */
+  ledger?: string;
   now?: () => Date;
 }
 
@@ -527,13 +529,16 @@ export function recordGate(
   if (usePath !== undefined && covered !== undefined) {
     if (a.bypass !== undefined)
       atomicJson(usePath, useRecord(record.authority, covered, a.run, record.recorded_at, started));
-    else if (started !== undefined && started.ended_at === undefined)
+    else if (started !== undefined && started.ended_at === undefined) {
+      const ended = [...new Set([...endedGrants(started), ...heldGrants(started)])];
       atomicJson(usePath, {
         ...started,
         ended_at: record.recorded_at,
         ended_by_snapshot: short(snapshot),
-        ended_grant_ids: [...new Set([...endedGrants(started), ...heldGrants(started)])],
+        ended_grant_ids: ended,
       });
+      if (a.ledger !== undefined) endForTask(a.ledger, String(started.task_id), covered, ended);
+    }
   }
   return { ok: true, path, record, skipped };
 }
@@ -1294,6 +1299,19 @@ const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
 const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
+/**
+ * Where a typed end is kept for the whole task, beside the ledger rather than in a run's evidence: the
+ * lifecycle opens new runs after a fix, and a grant a typed record ended stays ended in every one of them.
+ */
+const bypassEndedPath = (ledger: string, task: string): string => join(ledger, "ended", `${safeRunId(task)}.json`);
+
+/** Adds grants to the task's ended set for a phase. */
+function endForTask(ledger: string, task: string, phase: BypassPhase, grants: readonly string[]): void {
+  const path = bypassEndedPath(ledger, task);
+  const was = readObject(path);
+  atomicJson(path, { ...was, task_id: task, [phase]: [...new Set([...(strings(was?.[phase]) ?? []), ...grants])] });
+}
+
 /** Every grant a typed record ended in this phase of the run; none of them starts it again. */
 const endedGrants = (started: ReturnType<typeof readObject>): string[] => strings(started?.ended_grant_ids) ?? [];
 
@@ -1499,6 +1517,10 @@ export function checkBypass(
   if (a.phase !== undefined && !(Array.isArray(g.covers) && g.covers.includes(a.phase)))
     return no(`bypass grant ${id} does not cover ${a.phase}`);
   if (g.task_id !== a.task) return no(`bypass grant ${id} is for task ${String(g.task_id)}, not ${a.task}`);
+  if (a.phase !== undefined && (strings(readObject(bypassEndedPath(a.ledger, a.task))?.[a.phase]) ?? []).includes(id))
+    return no(
+      `${a.phase} was ended by a typed record after bypass grant ${id}; issue a fresh grant for this task to re-start it, or record it with the typed command and no --bypass`,
+    );
   return {
     ok: true,
     attribution: {
@@ -1513,6 +1535,15 @@ export function checkBypass(
   };
 }
 
+/**
+ * The command that runs this gate as written: the bundled `ak-gate.mjs` names itself, so the brief a
+ * supervisor prints from the bundle is runnable as is; from a checkout it names the bundle's path.
+ */
+const gateCommand = (): string => {
+  const self = fileURLToPath(import.meta.url);
+  return self.endsWith(".mjs") ? `node ${self}` : "node <agent-kit bundle>/bin/ak-gate.mjs";
+};
+
 /** The brief section a supervisor pastes into the task's brief: the one place the worker learns of the grant. */
 export function bypassBrief(grant: BypassGrant, path: string): string {
   return [
@@ -1520,8 +1551,8 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "",
     `Bypass grant: \`${path}\`, authorized by ${grant.authorized_by} for task ${grant.task_id} until ${grant.expires_at}.`,
     "It stands in for the typed command of super-align, super-bound, super-review full and readiness, and",
-    `super-ship. Before starting one, run \`ak lifecycle bypass check --grant ${path} --task ${grant.task_id} --phase <phase>\``,
-    "(or `node <bundle>/bin/ak-gate.mjs bypass check …`); exit 0 is the start, anything else is a stop.",
+    `super-ship. Before starting one, run \`${gateCommand()} bypass check --grant ${path} --task ${grant.task_id} --phase <phase>\`;`,
+    "exit 0 is the start, anything else is a stop.",
     `Run it from the task's worktree, ${grant.worktree}; a check from any other worktree is refused.`,
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
@@ -1548,7 +1579,8 @@ export const LIFECYCLE_USAGE = [
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
-  `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant from outside the repository; the worker`,
+  `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant as \`node <bundle>/bin/ak-gate.mjs bypass grant\``,
+  "  from its own home, never under bun from a project directory; the worker",
   "  runs check before each phase and passes --bypass <file> --task <id> to record, from the",
   "  task's worktree the grant names. Start only: approvals still stop.",
   "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
@@ -1805,6 +1837,7 @@ export function main(
       delegationClass,
       implementer,
       bypass,
+      ledger: bypassLedger,
     });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);

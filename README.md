@@ -83,7 +83,7 @@ Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or CI n
 installed.
 
 **Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
-a grant from outside the repository with `ak lifecycle bypass grant`, and the worker checks it before
+a grant from its own home with `node <bundle>/bin/ak-gate.mjs bypass grant`, and the worker checks it before
 each human-started phase. It starts phases only: approvals still go to the supervisor, and merge and
 deploy are never on it (`docs/decisions/0008-bypass-start-grant.md`).
 

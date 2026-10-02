@@ -243,9 +243,12 @@ refused. The worker then reports `needs-decision` and Firstmate decides or asks 
 ### Bypass, for one task
 
 A bypass grant is the other route, and it needs neither a binding nor the patches (ADR-0008).
-Firstmate writes it from its home with `ak lifecycle bypass grant --task <id> --by <who> --reason
-<why> --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree>` and pastes the section it prints into the
-brief. The worker runs `ak lifecycle bypass check --grant <path> --task <id> --phase <phase>` before
+Firstmate writes it with the bundle's gate script, run by `node` with its home as the working directory:
+`node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <id> --by <who> --reason <why> --out
+data/<task-id>/bypass.json --project <repo> --worktree <task worktree>`, and pastes the section it prints
+into the brief. Never run it through `bun` or from a project directory: `bun` loads the working
+directory's `bunfig.toml` and `.env` first, which a worker can write (SUPERVISOR.md). The worker runs
+`node <agent-kit bundle>/bin/ak-gate.mjs bypass check --grant <path> --task <id> --phase <phase>` before
 super-align, super-bound, super-review `full` or `readiness`, and super-ship; exit 0 is the start.
 The grant is start-only: every approval inside those phases still reaches Firstmate as
 `needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
@@ -254,7 +257,7 @@ any run under that task may use it. Gate records made with `--bypass <path> --ta
 `authority.mode: bypass` and who authorized it. A phase started under a grant that has since expired
 continues under a fresh grant for the same task and worktree, whose record names the one it
 supersedes, or under the typed command, which records `authority.mode: explicit` with
-`superseded_grant_id` and ends the bypass for that phase in the run; after that only a fresh grant
+`superseded_grant_id` and ends the bypass for that phase of the task, in every later run too; after that only a fresh grant
 for the same task re-starts it. A grant for another task or worktree is refused, and a gate recorded
 by hand cannot be relabelled with `--bypass` at the same snapshot.
 

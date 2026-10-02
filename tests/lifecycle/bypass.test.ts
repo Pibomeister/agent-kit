@@ -55,8 +55,11 @@ function git(cwd: string, ...args: string[]): string {
 const dir = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
 
 /** The id of the one grant registered in a ledger, from its ledger file name. */
+/** The grant entries in a ledger: `<grant_id>.json` files, not the `ended/` directory beside them. */
+const entries = (ledger: string) => readdirSync(ledger).filter((name) => name.endsWith(".json"));
+
 function grantId(ledger: string): string {
-  const [name] = readdirSync(ledger);
+  const [name] = entries(ledger);
   if (name === undefined) throw new Error("nothing registered");
   return name.replace(/\.json$/, "");
 }
@@ -108,7 +111,7 @@ const recordArgs = (gate: string, grant: string, task: string) => [
 
 /** A second grant on the setup's worktree, issued at `now`, for `task`: its path and id. */
 function freshGrant(s: ReturnType<typeof setup>, now: () => Date, task: string) {
-  const before = new Set(readdirSync(s.ledger));
+  const before = new Set(entries(s.ledger));
   const path = join(s.home, "data", task, "bypass-fresh.json");
   const r = akAt(
     now,
@@ -130,7 +133,7 @@ function freshGrant(s: ReturnType<typeof setup>, now: () => Date, task: string) 
     s.worktree,
   );
   expect(r).toMatchObject({ code: 0 });
-  const added = readdirSync(s.ledger).filter((name) => !before.has(name));
+  const added = entries(s.ledger).filter((name) => !before.has(name));
   expect(added).toHaveLength(1);
   return { path, id: String(added[0]).replace(/\.json$/, "") };
 }
@@ -585,6 +588,29 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     );
   });
 
+  test("a typed end holds for the task: a run opened after it cannot resume bypass with the ended grant", () => {
+    const s = granted();
+    const ticketPath = join(s.home, "ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+    const open = () => ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
+    expect(open().code).toBe(0);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 3;\n");
+    const reopened = open();
+    expect(reopened.code).toBe(0);
+    const run = reopened.out.replace(/^opened run /, "");
+    const checked = checkPhase(s, s.grantPath, "T-1", "super-review:full");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("ended by a typed record");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain("ended by a typed record");
+    expect(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).toEqual([]);
+    const fresh = freshGrant(s, dayLater, "T-1");
+    expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
+  });
+
   test("a fresh grant re-starting at the snapshot of a typed end keeps the ended grant refused", () => {
     const s = granted();
     const first = grantId(s.ledger);
@@ -832,4 +858,48 @@ test(`the bundled ${GATE_FILE} carries bypass and refuses an absent grant under 
   const missing = node("bypass", "check", "--grant", s.grantPath, "--task", "T-1", "--phase", "super-align");
   expect(missing.exitCode).toBe(1);
   expect(missing.stderr.toString()).toContain("does not exist");
+});
+
+test(`the supervisor's documented grant command, node ${GATE_FILE} from its home, reaches grant and loads no cwd config`, () => {
+  const s = setup();
+  const { catalog } = loadCatalog(REPO);
+  if (catalog === null) throw new Error("no catalog");
+  const script = join(dir("ak-bypass-bundle-"), "ak-gate.mjs");
+  const bundled = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get(GATE_FILE);
+  if (bundled === undefined) throw new Error(`no ${GATE_FILE} in the bundle`);
+  writeFileSync(script, bundled.contents);
+  // A home holding what bun would load first: a preload that leaves a marker, and an .env that breaks git.
+  const marker = join(s.home, "preload-ran");
+  writeFileSync(join(s.home, "preload.ts"), `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran");\n`);
+  writeFileSync(join(s.home, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
+  writeFileSync(join(s.home, ".env"), "GIT_DIR=/nonexistent-from-dotenv\n");
+  // The real ledger is the account's, so the call stops at a guard before writing: a worktree that is
+  // not one of the repository's. Reaching that guard shows the command routes to grant and git worked.
+  const notWorktree = dir("ak-bypass-notwt-");
+  const r = Bun.spawnSync(
+    [
+      "node",
+      script,
+      "bypass",
+      "grant",
+      "--task",
+      "T-1",
+      "--by",
+      "captain",
+      "--reason",
+      "r",
+      "--out",
+      s.grantPath,
+      "--project",
+      s.project,
+      "--worktree",
+      notWorktree,
+    ],
+    { cwd: s.home },
+  );
+  expect(r.exitCode).toBe(1);
+  expect(r.stderr.toString()).toContain("is not one of the worktrees");
+  expect(r.stderr.toString()).not.toContain("nonexistent-from-dotenv");
+  expect(existsSync(marker)).toBe(false);
+  expect(existsSync(s.grantPath)).toBe(false);
 });

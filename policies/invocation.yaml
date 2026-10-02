@@ -420,7 +420,8 @@ bypass:
   rule: >-
     A bypass grant stands in for the typed command of the phases listed here, for one task and
     one repository, until it expires. A supervisor (Firstmate or a human) writes it from outside
-    the repository with `ak lifecycle bypass grant`; the worker runs `ak lifecycle bypass check
+    the repository with `node <agent-kit bundle>/bin/ak-gate.mjs bypass grant`, run from its own
+    home and never through bun from a project directory; the worker runs `ak lifecycle bypass check
     --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
     must equal the grant's, and the check must run from inside the task's worktree the grant
     names; `--project` cannot substitute for that. Any run under that task may use it. The
@@ -440,9 +441,9 @@ bypass:
     record for the phase, and a phase started there continues in exactly two ways: a fresh grant
     that passes the check for the same task and worktree, whose record names the grant it
     supersedes in `superseded_grant_id`, or a typed record without `--bypass`, which records
-    `authority: {mode: explicit, superseded_grant_id}` and marks the use record ended, so the bypass
-    is over for that phase in that run at every later snapshot until a fresh grant for the same task
-    re-starts it. A grant for another task or worktree, an expired one, or the grant a typed record
+    `authority: {mode: explicit, superseded_grant_id}` and ends the bypass for that phase of the
+    task: the ended grants are kept beside the ledger, so no run of the task, including one opened
+    later, resumes it with them until a fresh grant for the same task re-starts it. A grant for another task or worktree, an expired one, or the grant a typed record
     ended is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
     on a gate no bypass phase records is refused.
   trust: >-
