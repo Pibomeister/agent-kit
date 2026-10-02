@@ -100,8 +100,11 @@
  * authority result is never a pass on a positive; on a negative, a load that changed nothing holds.
  * The receipt's `noop_baseline` is the same summary for a subject that never loads anything; a
  * reported balanced accuracy means something only above it.
- * Cost: each scored case carries the session's `cost_usd` as its host reported it (null when the
- * host reports none), and each subject's summary the total over the cases that reported one.
+ * Cost: each scored case carries the session's `cost_usd` as its host reported it, or for a Codex
+ * session as the configured versioned price table derives it (null when neither source exists),
+ * and each subject's summary totals the cases that reported one. Token totals are retained per
+ * session and summed in the receipt. Matrix session/run token caps apply to every host that reports
+ * usage; a run at its cap starts no new sessions, though sessions already in flight may overshoot.
  * Each subject's receipt entry lists `observed_models`: the distinct models its host reported
  * serving the sessions, empty when the host does not report one, and `max_turns`: the effective
  * subject cap or null when that host runs uncapped.
@@ -110,7 +113,7 @@
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { loadConfig } from "../../../src/learn/core/config.ts";
 import type { LearnContext } from "../../../src/learn/core/context.ts";
@@ -118,7 +121,8 @@ import { run } from "../../../src/learn/core/proc.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
-import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
+import { effectiveMaxTurns, loadMatrix, tokenCapReceipt, turnCapReceipt } from "./matrix.ts";
+import { loadPriceTable } from "./pricing.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
@@ -131,7 +135,7 @@ import {
   unwrap,
   words,
 } from "./subjects/shell.ts";
-import type { SessionEvent, SessionRequest, SessionResult, ToolEvent } from "./subjects/types.ts";
+import type { SessionEvent, SessionRequest, SessionResult, TokenUsage, ToolEvent } from "./subjects/types.ts";
 
 export type Arm = "natural" | "nudged";
 export type Polarity = "positive" | "negative";
@@ -1082,8 +1086,9 @@ export function scoreCase(
  */
 export function invalidSession(
   session: Pick<SessionResult, "exitCode" | "timedOut" | "reply" | "stopReason"> &
-    Partial<Pick<SessionResult, "events" | "turns">>,
+    Partial<Pick<SessionResult, "events" | "turns" | "usage">>,
   maxTurns?: number,
+  maxTokens?: number,
 ): string | null {
   if (session.timedOut) return "timeout";
   const calls = (session.events ?? []).filter(
@@ -1096,6 +1101,8 @@ export function invalidSession(
     const command = shell === null ? "" : `: ${shell}`;
     return `host cancelled refused ${call.name} call${command}`;
   }
+  if (maxTokens !== undefined && session.usage !== undefined && session.usage.totalTokens > maxTokens)
+    return `token cap ${maxTokens} reached after ${session.usage.totalTokens} tokens`;
   const toolEvents = calls.length;
   if (maxTurns !== undefined && session.reply.trim() === "" && (session.turns === maxTurns || toolEvents >= maxTurns))
     return `turn cap ${maxTurns} reached after ${toolEvents} tool events`;
@@ -1390,23 +1397,92 @@ function userInvokedSkills(): { userInvoked: Set<string>; known: Set<string>; fi
   };
 }
 
-async function pool<T, R>(items: readonly T[], jobs: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = [];
+const emptyUsage = (): TokenUsage => ({
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  cacheWriteInputTokens: 0,
+  outputTokens: 0,
+  reasoningOutputTokens: 0,
+  totalTokens: 0,
+});
+
+/** Run-wide accounting shared across subject pools. In-flight sessions may finish after the cap closes. */
+export class TokenBudget {
+  usage = emptyUsage();
+  reportedSessions = 0;
+
+  constructor(readonly cap: number | undefined) {}
+
+  get exhausted(): boolean {
+    return this.cap !== undefined && this.usage.totalTokens >= this.cap;
+  }
+
+  get overBudget(): boolean {
+    return this.cap !== undefined && this.usage.totalTokens > this.cap;
+  }
+
+  record(usage: TokenUsage | undefined): void {
+    if (usage === undefined) return;
+    this.reportedSessions++;
+    this.usage = {
+      inputTokens: this.usage.inputTokens + usage.inputTokens,
+      cachedInputTokens: this.usage.cachedInputTokens + usage.cachedInputTokens,
+      cacheWriteInputTokens: this.usage.cacheWriteInputTokens + usage.cacheWriteInputTokens,
+      outputTokens: this.usage.outputTokens + usage.outputTokens,
+      reasoningOutputTokens: this.usage.reasoningOutputTokens + usage.reasoningOutputTokens,
+      totalTokens: this.usage.totalTokens + usage.totalTokens,
+    };
+  }
+}
+
+export function usageReceipt(usage: TokenUsage) {
+  return {
+    input_tokens: usage.inputTokens,
+    cached_input_tokens: usage.cachedInputTokens,
+    cache_write_input_tokens: usage.cacheWriteInputTokens,
+    output_tokens: usage.outputTokens,
+    reasoning_output_tokens: usage.reasoningOutputTokens,
+    total_tokens: usage.totalTokens,
+  };
+}
+
+export async function tokenBudgetedPool<T, R extends { usage?: TokenUsage }>(
+  items: readonly T[],
+  jobs: number,
+  budget: TokenBudget,
+  fn: (item: T) => Promise<R>,
+): Promise<Array<{ index: number; value: R }>> {
+  const out = Array.from({ length: items.length }, (): R | undefined => undefined);
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.max(1, jobs) }, async () => {
-      while (next < items.length) {
+      while (!budget.exhausted && next < items.length) {
         const i = next++;
-        out[i] = await fn(items[i]!);
+        const value = await fn(items[i]!);
+        out[i] = value;
+        budget.record(value.usage);
       }
     }),
   );
-  return out;
+  return out.flatMap((value, index) => (value === undefined ? [] : [{ index, value }]));
 }
 
 function revision(): string {
   const result = run(["git", "rev-parse", "HEAD"], { cwd: PACKAGE_ROOT });
   return result.code === 0 ? result.stdout.trim() : "unknown";
+}
+
+function priceTableFile(path: string): string {
+  const file = resolve(PACKAGE_ROOT, path);
+  const allowed = [resolve(PACKAGE_ROOT, "research"), resolve(PACKAGE_ROOT, "provenance")];
+  if (
+    !allowed.some((root) => {
+      const fromRoot = relative(root, file);
+      return fromRoot !== "" && !fromRoot.startsWith("..") && !isAbsolute(fromRoot);
+    })
+  )
+    throw new Error(`price table must be a file under research/ or provenance/: ${path}`);
+  return file;
 }
 
 const VALUE_FLAGS: Record<string, readonly string[] | null> = {
@@ -1511,13 +1587,24 @@ async function main(argv: string[]): Promise<number> {
   const scoring: ScoreOptions = { arm, userInvoked, known, drafts, fingerprints };
   const draftPaths = new Map([...drafts].map(([path, name]) => [name, path]));
 
-  const subjects = loadMatrix().subjects.filter((s) => onlySubject === undefined || s.id === onlySubject);
+  const matrix = loadMatrix();
+  const subjects = matrix.subjects.filter((s) => onlySubject === undefined || s.id === onlySubject);
   if (subjects.length === 0) {
     console.error(`trigger-eval: no subject ${onlySubject ?? ""} in the eval matrix`);
     return 2;
   }
+  let prices: ReturnType<typeof loadPriceTable> | undefined;
+  if (matrix.priceTable !== undefined) {
+    try {
+      prices = loadPriceTable(priceTableFile(matrix.priceTable));
+    } catch (error) {
+      console.error(`trigger-eval: ${error instanceof Error ? error.message : String(error)}`);
+      return 2;
+    }
+  }
 
   const instrument = evalInstrument(PACKAGE_ROOT, revision());
+  const budget = new TokenBudget(matrix.tokenCaps?.run);
   const report = [];
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
@@ -1552,27 +1639,38 @@ async function main(argv: string[]): Promise<number> {
           host: subject.host,
           injection: adapter.injection,
           ...turnCapReceipt(subject),
+          ...tokenCapReceipt(matrix.tokenCaps),
+          price_table:
+            matrix.priceTable === undefined || prices === undefined
+              ? null
+              : { path: matrix.priceTable, version: prices.version, as_of: prices.asOf },
           cases: cases.length,
           command: adapter.command(request(cases[0]!), subject.model),
         }),
       );
       continue;
     }
-    const sessions: SessionResult[] = await pool(cases, jobs, (c) =>
-      runSubject(adapter, subject.id, subject.model, request(c)),
+    const completed = await tokenBudgetedPool(cases, jobs, budget, (c) =>
+      runSubject(adapter, subject.id, subject.model, request(c), prices),
     );
-    const results = cases.map((c, i) => {
-      const scored = scoreCase(c, sessions[i]!.events, sessions[i]!.reply, scoring, sessions[i]!.slashCommands);
-      const invalid = invalidSession(sessions[i]!, maxTurns);
-      return invalid === null ? scored : { ...scored, invalid };
+    const evaluated = completed.map(({ index, value: session }) => {
+      const evalCase = cases[index];
+      if (evalCase === undefined) throw new Error(`completed session has no case at index ${index}`);
+      const scored = scoreCase(evalCase, session.events, session.reply, scoring, session.slashCommands);
+      const invalid = invalidSession(session, maxTurns, matrix.tokenCaps?.session);
+      return { case: evalCase, session, result: invalid === null ? scored : { ...scored, invalid } };
     });
+    const sessions: SessionResult[] = evaluated.map(({ session }) => session);
+    const completedIndexes = new Set(completed.map(({ index }) => index));
+    const skippedCases = cases.filter((_, index) => !completedIndexes.has(index)).map((c) => c.id);
+    const results = evaluated.map(({ result }) => result);
 
     if (dumpDir !== undefined) {
       const dir = join(dumpDir, subject.id);
       mkdirSync(dir, { recursive: true });
       // Every session is written: quiet negatives and misses are what a labeller most needs to see.
       // The hand-check sample stays over the fired ones, which is what it checks.
-      const all = results.map((r, i) => ({ r, s: sessions[i]!, c: cases[i]! }));
+      const all = evaluated.map(({ result: r, session: s, case: c }) => ({ r, s, c }));
       const fired = all.filter(({ r }) => r.loaded.length > 0);
       for (const { r, s, c } of all) {
         const checkAgainst = r.loaded.map(
@@ -1601,28 +1699,35 @@ async function main(argv: string[]): Promise<number> {
     }
 
     const costs = sessions.flatMap((x) => (x.costUsd === undefined ? [] : [x.costUsd]));
+    const subjectUsage = new TokenBudget(undefined);
+    for (const session of sessions) subjectUsage.record(session.usage);
     const summary = {
       ...summarise(results),
       cost_usd: costs.length === 0 ? null : Math.round(costs.reduce((a, b) => a + b, 0) * 10_000) / 10_000,
+      usage: usageReceipt(subjectUsage.usage),
+      usage_sessions: subjectUsage.reportedSessions,
     };
     report.push({
       subject: subject.id,
       host: subject.host,
       injection: adapter.injection,
       ...turnCapReceipt(subject),
+      ...tokenCapReceipt(matrix.tokenCaps),
       bundle: bundleDir ?? "none",
+      skipped_cases: skippedCases,
       leaks: [...new Set(sessions.flatMap((x) => x.leaks ?? []))],
       observed_models: [...new Set(sessions.flatMap((x) => (x.model === undefined ? [] : [x.model])))].sort(),
       command: adapter.command(request(cases[0]!), subject.model),
       summary,
       per_skill: perSkill(results),
       confusion: confusion(results, known),
-      results: results.map((r, i) => ({
-        ...r,
-        reply: sessions[i]!.reply,
-        timed_out: sessions[i]!.timedOut,
-        exit_code: sessions[i]!.exitCode,
-        cost_usd: sessions[i]!.costUsd ?? null,
+      results: evaluated.map(({ result, session }) => ({
+        ...result,
+        reply: session.reply,
+        timed_out: session.timedOut,
+        exit_code: session.exitCode,
+        cost_usd: session.costUsd ?? null,
+        usage: session.usage === undefined ? null : usageReceipt(session.usage),
       })),
     });
     if (!quiet) {
@@ -1651,6 +1756,14 @@ async function main(argv: string[]): Promise<number> {
     ...bundleEvidence(bundleOn, promptSet.cases, new Set(drafts.values())),
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
+    ...tokenCapReceipt(matrix.tokenCaps),
+    usage: usageReceipt(budget.usage),
+    usage_sessions: budget.reportedSessions,
+    over_budget: budget.overBudget,
+    price_table:
+      matrix.priceTable === undefined || prices === undefined
+        ? null
+        : { path: matrix.priceTable, version: prices.version, as_of: prices.asOf },
     argv: ["bun", "tests/learn/evals/trigger-eval.ts", ...argv],
     ...instrument,
     subjects: report.map((r) => ({
@@ -1658,7 +1771,12 @@ async function main(argv: string[]): Promise<number> {
       host: r.host,
       injection: r.injection,
       max_turns: r.max_turns,
+      max_session_tokens: r.max_session_tokens,
+      max_run_tokens: r.max_run_tokens,
       bundle: r.bundle,
+      skipped_cases: r.skipped_cases,
+      usage: r.summary.usage,
+      usage_sessions: r.summary.usage_sessions,
       leaks: r.leaks,
       observed_models: r.observed_models,
     })),

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/tests/eval-matrix.schema.json",
   "title": "Cross-host eval matrix",
-  "description": "Who runs the cross-host evals: subjects under test and reviewers who grade them, each a role label bound to a host CLI. The `model` value is the runner's binding, an opaque string passed to the host; this repository commits roles and hosts only, and the bound file lives at .work/eval-matrix.yaml.",
+  "description": "Who runs the cross-host evals: subjects under test and reviewers who grade them, each a role label bound to a host CLI. The `model` value is the runner's binding, an opaque string passed to the host; this repository commits no concrete binding, and the bound file lives at .work/eval-matrix.yaml.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -48,6 +48,31 @@
           "description": "Seat at most this many reviewers, chosen to span host families. Absent seats every independent reviewer."
         }
       }
+    },
+    "token-caps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session",
+        "run"
+      ],
+      "properties": {
+        "session": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "A session reporting more tokens is invalid. Subjects that do not report usage are unaffected."
+        },
+        "run": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Once reported usage reaches this total, the runner starts no new sessions; an overshoot from in-flight sessions marks the receipt over_budget."
+        }
+      }
+    },
+    "price-table": {
+      "type": "string",
+      "pattern": "^(research|provenance)/.+\\.json$",
+      "description": "Optional repository-relative versioned token price table. Only Codex sessions whose bound model has an entry receive a derived cost."
     }
   },
   "$defs": {

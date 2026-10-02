@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
-import type { SessionEvent, ToolEvent } from "./evals/subjects/types.ts";
+import type { SessionEvent, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
 import {
   argvProblems,
   asksForInvocation,
@@ -39,7 +39,10 @@ import {
   skillLoads,
   stopsOnLaw,
   summarise,
+  TokenBudget,
+  tokenBudgetedPool,
   typedSkill,
+  usageReceipt,
   workflowCalls,
 } from "./evals/trigger-eval.ts";
 
@@ -1251,6 +1254,63 @@ describe("invalid sessions and the no-op floor", () => {
     expect(invalidSession({ exitCode: 1, timedOut: false, reply: "partial" })).toBe("exit 1");
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "  " })).toBe("empty reply");
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done" })).toBeNull();
+  });
+
+  test("a session over its token cap is invalid with the cap and reported count", () => {
+    const usage: TokenUsage = {
+      inputTokens: 100,
+      cachedInputTokens: 80,
+      cacheWriteInputTokens: 0,
+      outputTokens: 21,
+      reasoningOutputTokens: 5,
+      totalTokens: 121,
+    };
+    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done", usage }, undefined, 120)).toBe(
+      "token cap 120 reached after 121 tokens",
+    );
+    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done", usage }, undefined, 121)).toBeNull();
+    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done" }, undefined, 120)).toBeNull();
+  });
+
+  test("a run token budget stops starting sessions after reported usage crosses the cap", async () => {
+    const started: number[] = [];
+    const budget = new TokenBudget(100);
+    const completed = await tokenBudgetedPool([1, 2, 3], 1, budget, async (item) => {
+      started.push(item);
+      return {
+        item,
+        usage: {
+          inputTokens: 55,
+          cachedInputTokens: 20,
+          cacheWriteInputTokens: 0,
+          outputTokens: 5,
+          reasoningOutputTokens: 2,
+          totalTokens: 60,
+        },
+      };
+    });
+    expect(started).toEqual([1, 2]);
+    expect(completed.map(({ index, value }) => [index, value.item])).toEqual([
+      [0, 1],
+      [1, 2],
+    ]);
+    expect(budget.usage).toEqual({
+      inputTokens: 110,
+      cachedInputTokens: 40,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 4,
+      totalTokens: 120,
+    });
+    expect(budget.overBudget).toBe(true);
+    expect(usageReceipt(budget.usage)).toEqual({
+      input_tokens: 110,
+      cached_input_tokens: 40,
+      cache_write_input_tokens: 0,
+      output_tokens: 10,
+      reasoning_output_tokens: 4,
+      total_tokens: 120,
+    });
   });
 
   test("a session the host cancelled on a refused call says so, rather than reading as an empty reply", () => {

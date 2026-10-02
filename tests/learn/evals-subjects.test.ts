@@ -10,13 +10,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
+import { costOf, loadPriceTable } from "./evals/pricing.ts";
 import { claude } from "./evals/subjects/claude.ts";
 import { codex } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
 import { privateHome } from "./evals/subjects/home.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
-import type { SessionRequest, SubjectAdapter, ToolEvent } from "./evals/subjects/types.ts";
+import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
 import { evalInstrument } from "./evals/session.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "transcripts");
@@ -143,6 +144,22 @@ describe("codex", () => {
     expect(reads).toEqual(["skills/super-align/SKILL.md", "README.md"]);
     expect(parsed.reply).toBe("Loaded super-align.");
     expect(tools(parsed.events).at(-1)!.input.command).toBe("bun test");
+  });
+
+  test("a completed turn retains every reported token total", () => {
+    expect(codex.parse(fixture("codex-usage.jsonl")).usage).toEqual({
+      inputTokens: 38420,
+      cachedInputTokens: 31104,
+      cacheWriteInputTokens: 0,
+      outputTokens: 60,
+      reasoningOutputTokens: 0,
+      totalTokens: 38480,
+    });
+  });
+
+  test("absent or malformed completed-turn usage is ignored", () => {
+    expect(codex.parse(fixture("codex-usage-absent.jsonl")).usage).toBeUndefined();
+    expect(codex.parse(fixture("codex-usage-malformed.jsonl")).usage).toBeUndefined();
   });
 
   test("a deleted file, or a change of a kind not listed, is a mutating tool", () => {
@@ -455,6 +472,69 @@ describe("runSubject", () => {
     expect(adapterFor("claude").host).toBe("claude");
     expect(adapterFor("codex").host).toBe("codex");
     expect(adapterFor("grok").host).toBe("grok");
+  });
+
+  test("a price table derives cost only for a matching bound Codex session", async () => {
+    const priceFile = join(scratch, "placeholder-prices.json");
+    writeFileSync(
+      priceFile,
+      JSON.stringify({
+        version: 1,
+        as_of: "2026-01-02",
+        models: {
+          "model-placeholder": {
+            input_per_million_usd: 3,
+            cached_input_per_million_usd: 0.75,
+            output_per_million_usd: 8,
+          },
+        },
+      }),
+    );
+    const prices = loadPriceTable(priceFile);
+    const usage: TokenUsage = {
+      inputTokens: 2_000_000,
+      cachedInputTokens: 500_000,
+      cacheWriteInputTokens: 0,
+      outputTokens: 100_000,
+      reasoningOutputTokens: 25_000,
+      totalTokens: 2_100_000,
+    };
+    expect(costOf(usage, prices.models["model-placeholder"])).toBe(5.675);
+    expect(costOf(usage, prices.models["missing-placeholder"])).toBeUndefined();
+
+    const fakeCodex: SubjectAdapter = {
+      ...codex,
+      command: () => ["printf", "%s", "ignored"],
+      parse: () => ({ events: [], reply: "ok", usage }),
+      isolate: undefined,
+    };
+    const priced = await runSubject(
+      fakeCodex,
+      "subject-placeholder",
+      "model-placeholder",
+      {
+        ...req,
+        cwd: scratch,
+        env: { PATH: process.env.PATH ?? "" },
+      },
+      prices,
+    );
+    expect(priced.usage).toEqual(usage);
+    expect(priced.costUsd).toBe(5.675);
+
+    const unpriced = await runSubject(
+      fakeCodex,
+      "subject-placeholder",
+      "missing-placeholder",
+      {
+        ...req,
+        cwd: scratch,
+        env: { PATH: process.env.PATH ?? "" },
+      },
+      prices,
+    );
+    expect(unpriced.usage).toEqual(usage);
+    expect(unpriced.costUsd).toBeUndefined();
   });
 });
 

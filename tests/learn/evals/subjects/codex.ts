@@ -22,7 +22,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { privateHome } from "./home.ts";
 import { readsOf, unwrap } from "./shell.ts";
-import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
+import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter, TokenUsage } from "./types.ts";
 
 interface Item {
   id?: string;
@@ -39,9 +39,46 @@ interface Item {
 interface Line {
   type?: string;
   item?: Item;
+  usage?: UsageLine;
+}
+
+interface UsageLine {
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  cache_write_input_tokens?: number;
+  output_tokens?: number;
+  reasoning_output_tokens?: number;
 }
 
 const CHANGE_TOOL: Record<string, string> = { add: "Write", update: "Edit", delete: "Delete" };
+const tokenCount = (field: number | undefined): field is number => Number.isSafeInteger(field) && Number(field) >= 0;
+
+function tokenUsage(value: UsageLine | undefined): TokenUsage | undefined {
+  if (value === undefined) return undefined;
+  const inputTokens = value.input_tokens;
+  const cachedInputTokens = value.cached_input_tokens;
+  const cacheWriteInputTokens = value.cache_write_input_tokens;
+  const outputTokens = value.output_tokens;
+  const reasoningOutputTokens = value.reasoning_output_tokens;
+  if (
+    !tokenCount(inputTokens) ||
+    !tokenCount(cachedInputTokens) ||
+    !tokenCount(cacheWriteInputTokens) ||
+    !tokenCount(outputTokens) ||
+    !tokenCount(reasoningOutputTokens)
+  )
+    return undefined;
+  if (cachedInputTokens > inputTokens || cacheWriteInputTokens > inputTokens || reasoningOutputTokens > outputTokens)
+    return undefined;
+  return {
+    inputTokens,
+    cachedInputTokens,
+    cacheWriteInputTokens,
+    outputTokens,
+    reasoningOutputTokens,
+    totalTokens: inputTokens + outputTokens,
+  };
+}
 
 function itemEvents(item: Item): SessionEvent[] {
   switch (item.type) {
@@ -115,12 +152,17 @@ export const codex: SubjectAdapter = {
     const started = new Map<string, Item>();
     const done = new Set<string>();
     let reply = "";
+    let usage: TokenUsage | undefined;
     for (const raw of stdout.split("\n")) {
       let line: Line;
       try {
         line = JSON.parse(raw) as Line;
       } catch {
         continue;
+      }
+      if (line.type === "turn.completed") {
+        const completedUsage = tokenUsage(line.usage);
+        if (completedUsage !== undefined) usage = completedUsage;
       }
       const item = line.item;
       if (item === undefined) continue;
@@ -132,7 +174,7 @@ export const codex: SubjectAdapter = {
     }
     // A command still running when the session ended (a timeout) was still called.
     for (const [id, item] of started) if (!done.has(id)) events.push(...itemEvents(item));
-    return { events, reply };
+    return usage === undefined ? { events, reply } : { events, reply, usage };
   },
   isolate(scratch: string, req: SessionRequest): Isolation {
     const callerHome = req.env.CODEX_HOME ?? join(req.env.HOME ?? homedir(), ".codex");

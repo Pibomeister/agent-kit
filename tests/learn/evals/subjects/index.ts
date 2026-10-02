@@ -6,6 +6,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runAsync } from "../session.ts";
+import { costOf, type PriceTable } from "../pricing.ts";
 import { claude } from "./claude.ts";
 import { codex } from "./codex.ts";
 import { grok } from "./grok.ts";
@@ -43,6 +44,7 @@ export async function runSubject(
   subjectId: string,
   model: string | undefined,
   req: SessionRequest,
+  prices?: PriceTable,
 ): Promise<SessionResult> {
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), `ak-subject-${adapter.host}-`)));
   const isolation = adapter.isolate?.(scratch, req);
@@ -54,8 +56,14 @@ export async function runSubject(
       timeoutMs: req.timeoutMs,
     });
     const parsed = adapter.parse(result.stdout);
-    const reported: Pick<SessionResult, "costUsd" | "turns" | "model" | "slashCommands" | "stopReason"> = {};
+    const reported: Pick<SessionResult, "costUsd" | "usage" | "turns" | "model" | "slashCommands" | "stopReason"> = {};
+    const estimatedCost =
+      adapter.host === "codex" && model !== undefined && parsed.usage !== undefined
+        ? costOf(parsed.usage, prices?.models[model])
+        : undefined;
     if (parsed.costUsd !== undefined) reported.costUsd = parsed.costUsd;
+    else if (estimatedCost !== undefined) reported.costUsd = estimatedCost;
+    if (parsed.usage !== undefined) reported.usage = parsed.usage;
     if (parsed.turns !== undefined) reported.turns = parsed.turns;
     if (parsed.model !== undefined) reported.model = parsed.model;
     if (parsed.slashCommands !== undefined) reported.slashCommands = parsed.slashCommands;
