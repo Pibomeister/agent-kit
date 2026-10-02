@@ -505,6 +505,25 @@ describe("shell reads", () => {
   });
 });
 
+const applyEnv = (values: Record<string, string | undefined>) => {
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) Reflect.deleteProperty(process.env, key);
+    else process.env[key] = value;
+  }
+};
+const withCallerEnv = (planted: Record<string, string | undefined>, body: () => void) => {
+  const previous = Object.fromEntries(Object.keys(planted).map((key) => [key, process.env[key]]));
+  applyEnv(planted);
+  try {
+    body();
+  } finally {
+    applyEnv(previous);
+  }
+};
+const absent = (env: Record<string, string>, names: Record<string, string>) => {
+  for (const name of Object.keys(names)) expect(env).not.toHaveProperty(name);
+};
+
 describe("isolation", () => {
   test("each subject receives only process basics, its declared caller variables and the operator's opted-in names", () => {
     const planted = {
@@ -520,16 +539,11 @@ describe("isolation", () => {
       LC_TEST: "locale",
       HTTPS_PROXY: "http://proxy.invalid:3128",
       NODE_EXTRA_CA_CERTS: "/caller/ca.pem",
-      AWS_PROFILE: "caller-profile",
-      AWS_REGION: "caller-region",
-      GOOGLE_APPLICATION_CREDENTIALS: "/caller/gcp.json",
       AK_EVAL_PASS_ENV: "AK_TEST_OPTED_IN  AK_TEST_UNSET",
       AK_TEST_OPTED_IN: "opted-in",
       AK_TEST_STRAY: "stray",
-    } as const;
-    const previous = Object.fromEntries(Object.keys(planted).map((key) => [key, process.env[key]]));
-    Object.assign(process.env, planted);
-    try {
+    };
+    withCallerEnv(planted, () => {
       const claudeEnv = cleanEnv(claude.env);
       expect(claudeEnv).toMatchObject({
         ANTHROPIC_API_KEY: "anthropic-secret",
@@ -539,11 +553,6 @@ describe("isolation", () => {
       expect(claudeEnv).not.toHaveProperty("GH_TOKEN");
       expect(claudeEnv).not.toHaveProperty("XAI_API_KEY");
       expect(claudeEnv).not.toHaveProperty("OPENAI_API_KEY");
-      expect(claudeEnv).toMatchObject({
-        AWS_PROFILE: "caller-profile",
-        AWS_REGION: "caller-region",
-        GOOGLE_APPLICATION_CREDENTIALS: "/caller/gcp.json",
-      });
 
       const codexEnv = cleanEnv(codex.env);
       expect(codexEnv.CODEX_HOME).toBe("/caller/codex");
@@ -552,8 +561,6 @@ describe("isolation", () => {
       for (const env of [codexEnv, grokEnv]) {
         for (const secret of ["GH_TOKEN", "ANTHROPIC_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY"])
           expect(env).not.toHaveProperty(secret);
-        for (const provider of ["AWS_PROFILE", "AWS_REGION", "GOOGLE_APPLICATION_CREDENTIALS"])
-          expect(env).not.toHaveProperty(provider);
       }
       for (const env of [claudeEnv, codexEnv, grokEnv]) {
         expect(env).toMatchObject({
@@ -567,12 +574,61 @@ describe("isolation", () => {
         expect(env).not.toHaveProperty("CLAUDECODE");
         expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT");
       }
-    } finally {
-      for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) Reflect.deleteProperty(process.env, key);
-        else process.env[key] = value;
+    });
+  });
+
+  test("cloud provider variables reach a claude subject only under the matching provider flag, and no other host", () => {
+    const aws = {
+      AWS_REGION: "caller-region",
+      AWS_PROFILE: "caller-profile",
+      AWS_ACCESS_KEY_ID: "aws-id",
+      AWS_SECRET_ACCESS_KEY: "aws-secret",
+      AWS_SESSION_TOKEN: "aws-session",
+    };
+    const vertex = {
+      ANTHROPIC_VERTEX_PROJECT_ID: "caller-project",
+      CLOUD_ML_REGION: "caller-ml-region",
+      GOOGLE_APPLICATION_CREDENTIALS: "/caller/gcp.json",
+    };
+    const exported = { ...aws, ...vertex, AK_EVAL_PASS_ENV: undefined };
+    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: undefined, CLAUDE_CODE_USE_VERTEX: undefined }, () => {
+      absent(cleanEnv(claude.env), { ...aws, ...vertex });
+    });
+    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: "", CLAUDE_CODE_USE_VERTEX: undefined }, () => {
+      absent(cleanEnv(claude.env), { ...aws, ...vertex });
+    });
+    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: undefined }, () => {
+      const env = cleanEnv(claude.env);
+      expect(env).toMatchObject(aws);
+      absent(env, vertex);
+    });
+    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: undefined, CLAUDE_CODE_USE_VERTEX: "1" }, () => {
+      const env = cleanEnv(claude.env);
+      expect(env).toMatchObject(vertex);
+      absent(env, aws);
+    });
+    withCallerEnv({ ...exported, CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "1" }, () => {
+      for (const env of [cleanEnv(codex.env), cleanEnv(grok.env)]) absent(env, { ...aws, ...vertex });
+    });
+  });
+
+  test("a parent-session name cannot be opted in: the strip before the host starts still removes it", () => {
+    const planted = {
+      AK_EVAL_PASS_ENV: "CLAUDE_CODE_SKIP_BEDROCK_AUTH EVAL_CANARY AK_TEST_OPTED_IN",
+      CLAUDE_CODE_SKIP_BEDROCK_AUTH: "1",
+      EVAL_CANARY: "canary",
+      AK_TEST_OPTED_IN: "opted-in",
+      CLAUDE_CODE_OAUTH_TOKEN: "claude-token",
+    };
+    withCallerEnv(planted, () => {
+      for (const adapter of [claude, codex, grok]) {
+        const spawned = withoutParentSession(cleanEnv(adapter.env));
+        expect(spawned).not.toHaveProperty("CLAUDE_CODE_SKIP_BEDROCK_AUTH");
+        expect(spawned).not.toHaveProperty("EVAL_CANARY");
+        expect(spawned.AK_TEST_OPTED_IN).toBe("opted-in");
       }
-    }
+      expect(withoutParentSession(cleanEnv(claude.env)).CLAUDE_CODE_OAUTH_TOKEN).toBe("claude-token");
+    });
   });
 
   test("codex and grok get a private home with the credentials and the bundle's skills; claude isolates by argv and drops CLAUDE.md", () => {
