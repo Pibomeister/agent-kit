@@ -94,8 +94,10 @@ approves its own specification or tickets.
    [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) rather than
    renaming the same things here.
 6. When the caller supplies a draft ticket or scorer input, load the delegation reference and run
-   `ak delegation` now. Persist the scorer output, readiness and assumptions on the evidence-bearing
-   draft before document review; the draft is not an approved implementation ticket.
+   `bun <this skill's directory>/../../bin/ak delegation <ticket> --project <project-record>` now.
+   That is the bundle's scorer, and it needs Bun. Persist the scorer output, readiness and
+   assumptions on the evidence-bearing draft before document review; the draft is not an approved
+   implementation ticket.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
@@ -106,9 +108,10 @@ approves its own specification or tickets.
    supervisor's answer is the approval.
 9. Load [the delegation reference pack](../../references/delegation/REFERENCE.md) and follow its
    ordered stack, readiness, assumptions and advisor procedures for every zero-context slice.
-10. Run `ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
-   factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
-   `assumptions` before returning, including on `needs-input`. Never derive the class in this body.
+10. Run `bun <this skill's directory>/../../bin/ak delegation <ticket> --project <project-record>`
+   after populating its floor, evidenced factors and the `class` seed the reference names; persist
+   its complete JSON with `readiness` and `assumptions` before returning, including on
+   `needs-input`. Never derive the class in this body.
 11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
     and what it produces that later tickets rely on with exact names, parameters and return types.
     Write for a skilled developer who knows almost nothing about this toolset or problem domain.

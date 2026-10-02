@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import validProject from "./fixtures/delegation/valid.project.json" with { type: "json" };
 import validTicket from "./fixtures/delegation/valid.ticket.json" with { type: "json" };
+import { loadCatalog } from "../src/catalog/load.ts";
 import { runCli } from "../src/cli.ts";
 import {
   scoreDelegation,
@@ -14,8 +15,10 @@ import {
   type DelegationRecord,
   type DelegationTicket,
 } from "../src/delegation.ts";
+import { planBundle } from "../src/packaging/plan.ts";
 import { makeTree } from "./helpers/tree.ts";
 
+const REPO = join(import.meta.dir, "..");
 const FIXTURES = join(import.meta.dir, "fixtures", "delegation");
 
 const FACTORS: DelegationRecord["factors"] = {
@@ -200,33 +203,51 @@ test("ak delegation names the block a record lacks", () => {
   });
 });
 
-test("the standalone ak a bundle ships as bin/ak scores a ticket exactly as the repository CLI does", () => {
+test("the scorer command the packaged super-bound body names runs the bundle's bin/ak and scores as the repository CLI does", () => {
+  const { catalog } = loadCatalog(REPO);
+  if (catalog === null) throw new Error("no catalog");
+  const { files } = planBundle({ root: REPO, catalog }, "claude-code", {});
   const root = makeTree({});
+  for (const path of ["skills/super-bound/SKILL.md", "bin/ak"]) {
+    const file = files.get(path);
+    if (file === undefined) throw new Error(`no ${path} in the bundle`);
+    mkdirSync(dirname(join(root, "bundle", path)), { recursive: true });
+    writeFileSync(join(root, "bundle", path), file.contents);
+  }
   writeFileSync(join(root, "ticket.json"), JSON.stringify(validTicket));
   writeFileSync(join(root, "project.json"), JSON.stringify(validProject));
-  const bundle = join(root, "ak-standalone.mjs");
-  const built = spawnSync(
-    process.execPath,
-    ["build", join(import.meta.dir, "../src/maintenance/cli.ts"), "--target=bun", `--outfile=${bundle}`],
-    { cwd: root, encoding: "utf8" },
+
+  // The packaged body is the generated interface a host reads: every scorer command it prints must run.
+  const skillDir = join(root, "bundle", "skills", "super-bound");
+  const body = readFileSync(join(skillDir, "SKILL.md"), "utf8").replace(/\s+/g, " ");
+  const commands = [...body.matchAll(/`([^`]*\bdelegation <ticket> --project <project-record>)`/g)].map(
+    (match) => match[1] ?? "",
   );
-  expect(built.status).toBe(0);
-  const ak = (...argv: string[]) => spawnSync(process.execPath, [bundle, ...argv], { cwd: root, encoding: "utf8" });
+  expect(commands.length).toBe(2);
+  const ak = (command: string, ticketPath: string, extra: string[] = ["--project", "project.json"]) => {
+    const [program, relative = ""] = command.replace("<this skill's directory>", ".").split(" ");
+    expect(program).toBe("bun");
+    const resolved = join(skillDir, relative);
+    return spawnSync(process.execPath, [resolved, "delegation", ticketPath, ...extra], { cwd: root, encoding: "utf8" });
+  };
 
   const expected: string[] = [];
   runCli(["delegation", "ticket.json", "--project", "project.json"], {
     cwd: root,
     io: { out: (line) => expected.push(line), err: () => {} },
   });
-  const scored = ak("delegation", "ticket.json", "--project", "project.json");
-  expect({ status: scored.status, stderr: scored.stderr }).toEqual({ status: 0, stderr: "" });
-  expect(scored.stdout.trimEnd()).toBe(expected.join("\n"));
+  for (const command of commands) {
+    const scored = ak(command, "ticket.json");
+    expect({ status: scored.status, stderr: scored.stderr }).toEqual({ status: 0, stderr: "" });
+    expect(scored.stdout.trimEnd()).toBe(expected.join("\n"));
+  }
 
-  const missing = ak("delegation", "absent.json", "--project", "project.json");
+  const [command = ""] = commands;
+  const missing = ak(command, "absent.json");
   expect({ status: missing.status, stderr: missing.stderr.trimEnd(), stdout: missing.stdout }).toEqual({
     status: 1,
     stderr: "ak delegation: ticket does not exist: absent.json",
     stdout: "",
   });
-  expect(ak("delegation", "ticket.json").status).toBe(2);
+  expect(ak(command, "ticket.json", []).status).toBe(2);
 }, 60_000);

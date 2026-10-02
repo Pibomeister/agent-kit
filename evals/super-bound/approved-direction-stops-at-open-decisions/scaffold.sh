@@ -12,9 +12,10 @@
 # project's recorded context is supplied as a read-only checkout under
 # knowledge-base/, untracked and outside the application's history: the prd
 # in scope, the accepted adr on the tenant model, and the glossary. That
-# checkout answers reads only; the skill's publish step needs the adapter to
-# write, which the host cannot supply, so the case stays tagged needs-fixture
-# and out of difference claims until the adapter is available in the sandbox.
+# checkout answers reads only. This case passes by stopping at open review
+# decisions, before any publish. The scaffold is shared with
+# approved-spec-produces-tickets, whose pass needs the adapter write the host
+# cannot supply; this case carries the needs-fixture tag alongside it.
 #
 # The project record is project.json, untracked, carrying the delegation
 # guidance the scorer consumes. The host's scorer is the repository-local `ak`
