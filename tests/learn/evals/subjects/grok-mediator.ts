@@ -19,11 +19,12 @@
  * assignment segment set are substituted. A command keeps its own leading assignments, written
  * out as literals, because they are its environment and the host strips them before matching. A
  * bare assignment is dropped only where it always runs and never decides what runs next: after the
- * chain start or `;`, and before `;` or `&&`. Anything else prints nothing, so the original call
- * reaches `dontAsk` and the deny rules unchanged: a redirect, a command or process substitution, a
- * backtick, a parenthesis, a backslash, a background `&`, an unclosed quote, an unassigned variable,
- * an unquoted glob, brace or tilde, a bare assignment in any other position, and a command with no
- * rule. An error in the hook also prints nothing.
+ * chain start or `;`, and before `;` or `&&`, and only when it names a variable the hook's own
+ * environment does not carry, since assigning an exported one changes what later commands see.
+ * Anything else prints nothing, so the original call reaches `dontAsk` and the deny rules
+ * unchanged: a redirect, a command or process substitution, a backtick, a parenthesis, a backslash, a background `&`, an unclosed quote, an unassigned variable,
+ * an unquoted glob, brace or tilde, a bare assignment in any other position or to an environment
+ * variable, and a command with no rule. An error in the hook also prints nothing.
  */
 import { readFileSync } from "node:fs";
 import { grokReadOnlyPermissionRules } from "./shell.ts";
@@ -161,7 +162,10 @@ export function rewriteAssignmentReadChain(command: string): string | null {
     if (program === undefined) {
       const after = chain.operators[index];
       if (before !== ";" || (after !== ";" && after !== "&&")) return null;
-      for (const [name, value] of assigned) values.set(name, value);
+      for (const [name, value] of assigned) {
+        if (process.env[name] !== undefined) return null;
+        values.set(name, value);
+      }
       afterDropped = true;
       continue;
     }
