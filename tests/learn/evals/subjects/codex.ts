@@ -55,11 +55,13 @@ const tokenCount = (field: number | undefined): field is number => Number.isSafe
 
 function tokenUsage(value: UsageLine | undefined): TokenUsage | undefined {
   if (value === undefined) return undefined;
-  const inputTokens = value.input_tokens;
-  const cachedInputTokens = value.cached_input_tokens;
-  const cacheWriteInputTokens = value.cache_write_input_tokens;
-  const outputTokens = value.output_tokens;
-  const reasoningOutputTokens = value.reasoning_output_tokens;
+  const {
+    input_tokens: inputTokens,
+    cached_input_tokens: cachedInputTokens,
+    cache_write_input_tokens: cacheWriteInputTokens = 0,
+    output_tokens: outputTokens,
+    reasoning_output_tokens: reasoningOutputTokens = 0,
+  } = value;
   if (
     !tokenCount(inputTokens) ||
     !tokenCount(cachedInputTokens) ||

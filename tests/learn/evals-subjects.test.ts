@@ -157,9 +157,25 @@ describe("codex", () => {
     });
   });
 
+  test("a completed turn without cache-write or reasoning totals counts them as zero", () => {
+    expect(codex.parse(fixture("codex-tools.doc-derived.jsonl")).usage).toEqual({
+      inputTokens: 100,
+      cachedInputTokens: 0,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 0,
+      totalTokens: 110,
+    });
+  });
+
   test("absent or malformed completed-turn usage is ignored", () => {
     expect(codex.parse(fixture("codex-usage-absent.jsonl")).usage).toBeUndefined();
     expect(codex.parse(fixture("codex-usage-malformed.jsonl")).usage).toBeUndefined();
+    const turn = (usage: Record<string, unknown>) => JSON.stringify({ type: "turn.completed", usage });
+    const reported = { input_tokens: 100, cached_input_tokens: 0, output_tokens: 10 };
+    expect(codex.parse(turn({ ...reported, reasoning_output_tokens: "unknown" })).usage).toBeUndefined();
+    expect(codex.parse(turn({ ...reported, cache_write_input_tokens: null })).usage).toBeUndefined();
+    expect(codex.parse(turn({ input_tokens: 100, output_tokens: 10 })).usage).toBeUndefined();
   });
 
   test("a deleted file, or a change of a kind not listed, is a mutating tool", () => {
