@@ -69,15 +69,18 @@ documented one, in the same user guide:
 - `22-permissions-and-safety.md:123-136`: hooks run before the permission rules, a hook that allows
   a call skips none of the later checks, and the mode decides what no rule approved.
 
-The hook rewrites a Bash call only when the chain assigns at least one variable and every segment,
-after zero or more leading plain `NAME=value` words, is either a bare assignment or a command that
-`grokReadOnlyPermissionRules` admits once the assigned variables are replaced by their literal
-values. Bare assignment segments are dropped, only variables the chain assigned are substituted, and
-the output keeps every field of the original tool input (the description among them) and replaces
-`command` alone. It prints nothing, so `dontAsk` and the deny rules decide the original call, for a
+The hook rewrites a Bash call only when a bare assignment segment assigns at least one variable and
+every segment, after zero or more leading plain `NAME=value` words, is either a bare assignment or a
+command that `grokReadOnlyPermissionRules` admits once the assigned variables are replaced by their
+literal values. Bare assignment segments are dropped, and only where they always run and never
+decide what runs next: after the chain start or `;`, and before `;` or `&&`. Only variables a bare
+assignment set are substituted. A command keeps its own leading assignments, written out as
+literals, since they are its environment and the host strips them before matching. The output keeps
+every field of the original tool input (the description among them) and replaces `command` alone.
+It prints nothing, so `dontAsk` and the deny rules decide the original call, for a
 redirect, a command or process substitution, a backtick, a parenthesis, a backslash, a background
-`&`, an unclosed quote, an unassigned variable, an unquoted glob, brace or tilde, a command with no
-rule, and a truncated or unreadable event. The rewrite is not an approval: the host's own allow and
+`&`, an unclosed quote, an unassigned variable, an unquoted glob, brace or tilde, a bare assignment
+in any other position, a command with no rule, and a truncated or unreadable event. The rewrite is not an approval: the host's own allow and
 deny rules still judge the rewritten call. The stream reports the call as the subject wrote it, so
 the scorer reads the original chain, which is why the scorer change above is still needed.
 
@@ -114,6 +117,10 @@ differences has run on the live host:
 - It matches rules against the literal words joined by single spaces, the form the guide says the
   host matches, where the prototype matched its own quoted output. Exact-form rules such as
   `git status -sb` therefore admit a rewritten segment.
+- It keeps a command's leading assignments as that command's environment, where the prototype
+  dropped them and substituted them into the command and into later segments. It declines a bare
+  assignment beside `||` or `|`, after `&&`, or at the end of the chain, where the prototype dropped
+  it and kept the neighbouring operator.
 - It is registered as a script beside the hook file, the layout of the guide's own example.
 
 No session was run for this revision.

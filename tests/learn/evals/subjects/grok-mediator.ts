@@ -13,13 +13,17 @@
  * schema (`10-hooks.md:285-310`); hooks run before the permission rules, and `dontAsk` denies
  * whatever is left to prompt for (`22-permissions-and-safety.md:123-136`).
  *
- * A chain is rewritten only when it assigns at least one variable and every segment, after zero
- * or more leading plain `NAME=value` words, is either nothing (a bare assignment, dropped) or a
- * command `grokReadOnlyPermissionRules` admits. Only variables the chain itself assigned are
- * substituted. Anything else prints nothing, so the original call reaches `dontAsk` and the deny
- * rules unchanged: a redirect, a command or process substitution, a backtick, a parenthesis, a
- * backslash, a background `&`, an unclosed quote, an unassigned variable, an unquoted glob, brace
- * or tilde, and a command with no rule. An error in the hook also prints nothing.
+ * A chain is rewritten only when a bare assignment segment assigns at least one variable and every
+ * segment, after zero or more leading plain `NAME=value` words, is either nothing (a bare
+ * assignment, dropped) or a command `grokReadOnlyPermissionRules` admits. Only variables a bare
+ * assignment segment set are substituted. A command keeps its own leading assignments, written
+ * out as literals, because they are its environment and the host strips them before matching. A
+ * bare assignment is dropped only where it always runs and never decides what runs next: after the
+ * chain start or `;`, and before `;` or `&&`. Anything else prints nothing, so the original call
+ * reaches `dontAsk` and the deny rules unchanged: a redirect, a command or process substitution, a
+ * backtick, a parenthesis, a backslash, a background `&`, an unclosed quote, an unassigned variable,
+ * an unquoted glob, brace or tilde, a bare assignment in any other position, and a command with no
+ * rule. An error in the hook also prints nothing.
  */
 import { readFileSync } from "node:fs";
 import { grokReadOnlyPermissionRules } from "./shell.ts";
@@ -136,24 +140,39 @@ export function rewriteAssignmentReadChain(command: string): string | null {
   const deny = bashPatterns(rules.deny);
   const values = new Map<string, string>();
   let rewritten = "";
+  let afterDropped = false;
   for (const [index, segment] of chain.segments.entries()) {
+    const assigned = new Map(values);
+    const environment: string[] = [];
     const literal: string[] = [];
     for (const word of segment) {
       const assignment = literal.length === 0 ? assignmentOf(word) : undefined;
-      const text = expand(assignment?.value ?? word, values);
+      const text = expand(assignment?.value ?? word, assignment === undefined ? values : assigned);
       if (text === undefined) return null;
-      if (assignment === undefined) literal.push(text);
-      else values.set(assignment.name, text);
+      if (assignment === undefined) {
+        literal.push(text);
+      } else {
+        assigned.set(assignment.name, text);
+        environment.push(`${assignment.name}=${shellQuote(text)}`);
+      }
     }
-    if (literal.length === 0) continue;
+    const before = index === 0 ? ";" : chain.operators[index - 1];
     const [program, ...args] = literal;
-    if (program === undefined || !PROGRAM.test(program)) return null;
+    if (program === undefined) {
+      const after = chain.operators[index];
+      if (before !== ";" || (after !== ";" && after !== "&&")) return null;
+      for (const [name, value] of assigned) values.set(name, value);
+      afterDropped = true;
+      continue;
+    }
+    if (!PROGRAM.test(program)) return null;
     const seen = literal.join(" ");
     if (!allow.some((pattern) => pattern.test(seen)) || deny.some((pattern) => pattern.test(seen))) return null;
-    const quoted = [program, ...args.map(shellQuote)].join(" ");
-    rewritten = rewritten === "" ? quoted : `${rewritten} ${chain.operators[index - 1]} ${quoted}`;
+    const quoted = [...environment, program, ...args.map(shellQuote)].join(" ");
+    rewritten = rewritten === "" ? quoted : `${rewritten} ${afterDropped ? ";" : before} ${quoted}`;
+    afterDropped = false;
   }
-  return values.size === 0 || rewritten === "" ? null : rewritten;
+  return values.size === 0 ? null : rewritten;
 }
 
 /** What the hook prints for one `PreToolUse` event on stdin: the rewrite, or nothing. */

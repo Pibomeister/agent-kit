@@ -244,7 +244,9 @@ describe("grok", () => {
     expect(invalidSession({ ...parsed, exitCode: 0, timedOut: false }, 20)).toBeNull();
 
     for (const [command, rewritten] of [
-      ['SESSION=/scratch/s1 find "$SESSION" -type d', "find '/scratch/s1' '-type' 'd'"],
+      ["ROOT=/scratch; GIT_DIR=$ROOT/.git git log -3", "GIT_DIR='/scratch/.git' git 'log' '-3'"],
+      ['ls /maybe; SESSION=/scratch/s1 && find "$SESSION" -type d', "ls '/maybe' ; find '/scratch/s1' '-type' 'd'"],
+      ['ROOT=/scratch; ROOT=/other ls "$ROOT"; ls "$ROOT"', "ROOT='/other' ls '/scratch' ; ls '/scratch'"],
       ["ROOT=/scratch; SESSION=$ROOT/s1; git -C . status; ls ${SESSION}", null],
       ["ROOT=/scratch; SESSION=$ROOT/s1 && git status -sb | head -5", "git 'status' '-sb' | head '-5'"],
       ["NAME='$HOME'; echo \"$NAME\"", "echo '$HOME'"],
@@ -254,7 +256,14 @@ describe("grok", () => {
 
   test("the mediator leaves writes and everything it cannot read as literal words to dontAsk and the denies", () => {
     for (const command of [
-      'OUT=/scratch/out cp notes.md "$OUT"',
+      'ROOT=/scratch; OUT=$ROOT/out cp notes.md "$ROOT"',
+      'SESSION=/scratch/s1 find "$SESSION" -type d',
+      'SESSION=/scratch/s1 ls; find "$SESSION" -type d',
+      "LC_ALL=C ls -la /scratch",
+      'test -d /scratch/a && SESSION=/scratch/a || SESSION=/scratch/b; ls "$SESSION"',
+      "SESSION=/scratch/s1 || ls /scratch",
+      "SESSION=/scratch/s1 | ls /scratch",
+      "ls /scratch; SESSION=/scratch/s1",
       'OUT=/scratch/out; rm -rf "$OUT"',
       'OUT=/scratch/out.txt; echo changed > "$OUT"',
       'OUT=/scratch/out.txt; cat notes.md 2>/dev/null; ls "$OUT"',
@@ -279,7 +288,7 @@ describe("grok", () => {
       expect([command, rewriteAssignmentReadChain(command)]).toEqual([command, null]);
 
     for (const segment of [
-      'cp notes.md "$OUT"',
+      'cp notes.md "$ROOT"',
       'rm -rf "$OUT"',
       'echo changed > "$OUT"',
       'find "$SESSION" -delete',
