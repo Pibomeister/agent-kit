@@ -88,10 +88,9 @@ results -- are written untracked after the last commit, so writing them
 does not move the head they name. Where a case needs the knowledgebase, the
 scaffold supplies a read-only checkout of it as plain files (under
 `knowledge-base/`, or as the whole workspace for doc-review's
-`drafted-spec-gets-a-panel` and
-`bucketed-review-keeps-presentation-contract`), with a README saying what
-`kb://<path>` resolves to, because the knowledgebase adapter has no
-implementation in a run's workspace.
+`drafted-spec-gets-a-panel`), with a README saying what `kb://<path>`
+resolves to, because the knowledgebase adapter has no implementation in a
+run's workspace.
 
 Cases scaffolded on these fixtures:
 
@@ -120,8 +119,6 @@ Cases scaffolded on these fixtures:
 | `babysit-pr/failing-check-is-repaired-within-the-cap` | tiny-service-repo, pr-812-org-cache |
 | `doc-review/changed-evidence-resurfaces-a-rejected-finding` | search-migration-round-two |
 | `doc-review/drafted-spec-gets-a-panel` | knowledgebase checkout (own pages) |
-| `doc-review/bucketed-review-keeps-presentation-contract` | knowledgebase checkout (own pages) |
-| `diagnose/red-command-precedes-code-reading` | none (own two-file repository) |
 | `compound/no-knowledgebase-means-no-repo-fallback` | tiny-service-repo |
 | `doc-review/no-knowledgebase-write-stops-before-publishing` | tiny-service-repo |
 | `doc-review/third-round-does-not-run` | tiny-service-repo |

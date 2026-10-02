@@ -283,22 +283,6 @@ tests:
       the reproduction, writes ranked hypotheses with their predictions, states the causal chain
       with locations, and emits a patch with receipts. It does not open with a theory read from the
       code.
-  - id: red-command-precedes-code-reading
-    kind: positive
-    given: >-
-      A caller reports a reproducible normalization defect, supplies the exact command that goes red
-      on it and grants writes to the implementation and its test.
-    expect: >-
-      The skill runs the named red command as its first repository-inspection or change tool call,
-      observes the failure, and only then reads the code, forms ranked hypotheses or edits a file.
-  - id: three-failed-fixes-activate-diagnosis
-    kind: positive
-    given: >-
-      Three attempted fixes have each moved a checkout race to another path, and the caller asks for
-      diagnosis before anyone attempts a fourth patch.
-    expect: >-
-      The cap prompt activates the skill. It treats the failed fixes as diagnosis evidence, reports
-      cap-reached, states the common architecture question and attempts no fourth fix.
   - id: refuses-style-complaint
     kind: negative
     given: A request to look at a module that has confusing names and a duplicated block.

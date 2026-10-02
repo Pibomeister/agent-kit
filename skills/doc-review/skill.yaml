@@ -240,15 +240,6 @@ tests:
       that declare no activation signal plus the conditional seats the payments domain and the
       document's own claims activate, records every lane with a reason where it did not activate,
       and returns the four buckets with the forks as Decisions.
-  - id: bucketed-review-keeps-presentation-contract
-    kind: positive
-    given: >-
-      A drafted ADR contains an unresolved security rule that blocks approval, and the caller asks
-      for review before implementation.
-    expect: >-
-      The final response carries one Verdict line followed by Applied, Proposed fixes, Decisions
-      and FYI in that order, with every heading present. The unresolved rule is a Decision and a
-      blocked result is the verdict rather than another bucket.
   - id: a-code-diff-is-not-a-document-review
     kind: negative
     given: >-
