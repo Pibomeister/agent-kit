@@ -33,7 +33,7 @@ function failedGit(stderr: string): GitResult {
   return { code: -1, stdout: new Uint8Array(), text: "", stderr };
 }
 
-function gitProcess(
+export function gitProcess(
   context: RunnerGitContext,
   project: string,
   args: readonly string[],

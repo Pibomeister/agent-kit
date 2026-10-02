@@ -798,6 +798,13 @@ describe("runner guards", () => {
     const socket = join(f.privateDir, "runner.sock");
     const adminToken = "a".repeat(48);
     const workerToken = "b".repeat(48);
+    const marker = join(f.privateDir, "worker-git-ran.txt");
+    const shim = join(workerBin, "git");
+    writeFileSync(
+      shim,
+      `#!/bin/sh\nprintf 'ran\\n' >> ${JSON.stringify(marker)}\nexec ${JSON.stringify(realpathSync(trustedGit))} "$@"\n`,
+    );
+    chmodSync(shim, 0o700);
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
     const server = Bun.spawn(
@@ -827,6 +834,7 @@ describe("runner guards", () => {
     try {
       for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
       expect(existsSync(socket)).toBe(true);
+      expect(existsSync(marker)).toBe(false);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
@@ -859,13 +867,6 @@ describe("runner guards", () => {
       expect(first.exitCode).toBe(0);
       const baseline = first.stdout.toString().match(/"diff_hash"\s*:\s*"sha256:[a-f0-9]{64}"/)?.[0];
       if (baseline === undefined) throw new Error("runner sync omitted diff_hash");
-      const marker = join(f.privateDir, "worker-git-ran.txt");
-      const shim = join(workerBin, "git");
-      writeFileSync(
-        shim,
-        `#!/bin/sh\nprintf 'ran\\n' >> ${JSON.stringify(marker)}\nexec ${JSON.stringify(realpathSync(trustedGit))} "$@"\n`,
-      );
-      chmodSync(shim, 0o700);
       expect(
         Bun.spawnSync(["git", "-C", nested, "rev-parse", "HEAD"], { env: { ...process.env, PATH: path } }).exitCode,
       ).toBe(0);

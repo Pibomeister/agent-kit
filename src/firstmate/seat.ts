@@ -199,7 +199,7 @@ export function judgeSeat(args: SeatJudgeArgs) {
   const value: unknown = JSON.parse(last);
   if (!seatAnswer(value) || !packet.card.options.includes(value.choice))
     throw new Error("seat report ends without a declared option and rationale");
-  const token = readAdminToken(args.adminTokenFile, [home]);
+  const token = readAdminToken(args.adminTokenFile, home);
   const request = join(
     dirname(realpathSync(args.adminTokenFile)),
     `ak-judge-${packet.run}-${packet.card.id}-${args.seat}.json`,

@@ -333,7 +333,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const runner = new Runner(state, workerRoot, resolve(import.meta.dir, "..", ".."), true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
-  const adminToken = readAdminToken(adminTokenFile, [workerRoot]);
+  const adminToken = readAdminToken(adminTokenFile, workerRoot);
   if (adminToken === workerToken) throw new Error("admin and worker tokens must differ");
   let launchers: SeatLauncher[] = [];
   if (seatConfigPath !== undefined) {
