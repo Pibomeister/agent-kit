@@ -22,7 +22,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.0
+  version: 0.1.1
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not

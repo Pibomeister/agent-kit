@@ -101,8 +101,8 @@ Setup is an operator task, not a skill. Stop at the first step that fails.
   home="$(mktemp -d)" || exit 1
   trap 'rm -rf "$home"' EXIT
   trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
-  output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>"$home/stderr")"
-  linearis_rc=$?
+  linearis_rc=0
+  output="$(LINEAR_API_TOKEN="$token" HOME="$home" XDG_CONFIG_HOME="$home" NO_UPDATE_NOTIFIER=1 "$binary" <command> 2>"$home/stderr")" || linearis_rc=$?
   errors="$(cat "$home/stderr")"
   [ -z "$errors" ] || printf '%s\n' "$errors" >&2
   if [ "$linearis_rc" -eq 0 ]; then printf '%s\n' "$output"; exit 0; fi
@@ -151,5 +151,5 @@ git --literal-pathspecs ls-files --error-unmatch -- "$f"            # exit 0: tr
 git --literal-pathspecs log --all --full-history --format=%h -1 -- "$f"   # any output: in history, rotate
 ```
 
-`--all` covers every commit reachable from a ref, not unreachable objects. The file should also be
-readable by its owner only (`chmod 600`).
+`--all` covers every commit reachable from a ref, not unreachable objects. The token file must have
+exact mode 600 (`chmod 600`), as checked by both `ak tracker check` and `ak doctor`.

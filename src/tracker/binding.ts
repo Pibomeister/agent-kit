@@ -317,12 +317,13 @@ export function checkTrackerSecret(
       ),
     );
   }
-  if (text !== null && (statSync(path).mode & 0o044) !== 0) {
+  const mode = text === null ? null : statSync(path).mode & 0o777;
+  if (mode !== null && mode !== 0o600) {
     issues.push(
-      warning(
-        "tracker.secret-readable-by-others",
+      error(
+        "tracker.secret-mode",
         file,
-        "token_file is readable by its group or by other users of this machine. Restrict it to its owner: chmod 600.",
+        `token_file mode ${mode.toString(8)}, expected 600. Run chmod 600 on the token file.`,
       ),
     );
   }

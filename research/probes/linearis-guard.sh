@@ -73,10 +73,12 @@ row() { # row <name> <ok:0|1> <detail>
 guarded() { # guarded <cwd> [VAR=val ...] -- <linearis args>
   local cwd="$1"; shift
   local vars=()
+  local shell_flags=()
+  [ "${GUARD_ERREXIT:-}" = 1 ] && shell_flags=(-e)
   while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do vars+=("$1"); shift; done
   shift
   (cd "$cwd" && env "${DEAD[@]}" HOME="$OPHOME" PATH="$SHIM:$PATH" token_file=.linear-token ${vars[@]+"${vars[@]}"} \
-    "${GUARD_SHELL:-sh}" -c ". \"\$0\"" "$GUARD" "$@") 2>&1
+    "${GUARD_SHELL:-sh}" "${shell_flags[@]}" -c ". \"\$0\"" "$GUARD" "$@") 2>&1
 }
 
 # 1. Absent token, from a subdirectory.
@@ -145,6 +147,10 @@ SH
   row "zsh guarded success keeps result JSON" "$([ "$st" -eq 0 ] && [ "$out" = '{"issues":[]}' ] && echo 1 || echo 0)" "exit $st: $out"
   out="$(GUARD_SHELL=zsh guarded "$PROJ/src" -- probe-auth)"; st=$?
   row "zsh guarded auth rejection becomes exit 42" "$([ "$st" -eq 42 ] && [[ "$out" == *"Authentication required, not authenticated"* ]] && echo 1 || echo 0)" "exit $st: $out"
+  for shell in sh bash zsh; do
+    out="$(GUARD_SHELL="$shell" GUARD_ERREXIT=1 guarded "$PROJ/src" -- probe-auth)"; st=$?
+    row "$shell -e guarded auth rejection keeps exit 42 and text" "$([ "$st" -eq 42 ] && [[ "$out" == *"Authentication required, not authenticated"* ]] && echo 1 || echo 0)" "exit $st: $out"
+  done
 fi
 
 echo "linearis $VERSION, guard extracted from ${DOC#"$ROOT/"} at $(git -C "$ROOT" rev-parse --short HEAD)$([ -z "$(git -C "$ROOT" status --porcelain -- "$DOC")" ] || echo ' (working tree: uncommitted)'): $FAILS failed"

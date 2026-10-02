@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative } from "node:path";
+import { basename, isAbsolute, join, relative } from "node:path";
 import Ajv, { type ValidateFunction } from "ajv";
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -47,6 +47,11 @@ interface CodexConfig {
 interface PublishedManifest {
   name: string;
   version: string;
+}
+type ManifestFailure = { reason: "network" | "missing" | "invalid" | "http-error"; status?: number };
+interface PublishedResult {
+  value: PublishedManifest | null;
+  failure?: ManifestFailure;
 }
 interface ProjectSettings {
   enabledPlugins?: Record<string, boolean>;
@@ -127,13 +132,23 @@ const bindingValidators: BindingValidators = {
 
 const ID = "ak@agent-kit";
 const ROOT = process.env.AK_PUBLISHED_ROOT ?? "https://raw.githubusercontent.com/Pibomeister/agent-kit/published";
+const COMMAND_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 5_000;
 
 function finding(level: Level, check: string, detail: string, remedy: string): Finding {
   return { level, check, detail, remedy };
 }
 
-function command(binary: string, args: string[], cwd = process.cwd(), env = process.env) {
-  const run = spawnSync(binary, args, { cwd, encoding: "utf8", env });
+export function command(
+  binary: string,
+  args: string[],
+  cwd = process.cwd(),
+  env = process.env,
+  timeoutMs = COMMAND_TIMEOUT_MS,
+) {
+  const safeEnv =
+    binary === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
+  const run = spawnSync(binary, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run.status === 0, output: (run.stdout || run.stderr || run.error?.message || "").trim() };
 }
 
@@ -174,10 +189,12 @@ function claudeRecords(root: string): HostPlugin[] {
 
 export function isClaudeSource(marketplace: ClaudeMarketplace): boolean {
   if (marketplace.name !== "agent-kit") return false;
-  if (marketplace.source === "github") return marketplace.repo === "Pibomeister/agent-kit";
+  if (marketplace.source === "github") return marketplace.repo?.toLowerCase() === "pibomeister/agent-kit";
   return (
     marketplace.source === "git" &&
-    /^https:\/\/github\.com\/Pibomeister\/agent-kit(?:\.git)?$/.test(marketplace.url ?? "")
+    /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)pibomeister\/agent-kit(?:\.git)?$/i.test(
+      marketplace.url ?? "",
+    )
   );
 }
 
@@ -230,12 +247,37 @@ export function checkPlugin(host: string, installed: HostPlugin[], latest: strin
   );
 }
 
-export function checkSource(host: string, published: PublishedManifest | null, configured = true): Finding {
+export function checkSource(
+  host: string,
+  published: PublishedManifest | null,
+  configured = true,
+  failure?: ManifestFailure,
+): Finding {
   if (!published || published.name !== "ak") {
+    if (failure?.reason === "network")
+      return finding(
+        "FAIL",
+        `${host} marketplace source`,
+        "cannot reach the published bundle manifest",
+        "Check network access to the published bundle source and retry.",
+      );
+    if (failure?.reason === "missing" || failure?.reason === "http-error")
+      return finding(
+        "FAIL",
+        `${host} marketplace source`,
+        failure.status
+          ? `published bundle manifest returned HTTP ${failure.status}`
+          : "published bundle manifest is missing",
+        failure.status === 404
+          ? "Check that the published branch contains this host's bundle, then retry."
+          : "Check the published bundle source and retry.",
+      );
     return finding(
       "FAIL",
       `${host} marketplace source`,
-      "published bundle manifest does not resolve",
+      failure?.reason === "invalid"
+        ? "published bundle manifest is invalid"
+        : "published bundle manifest does not resolve",
       "Publish the validated bundle branch, then retry.",
     );
   }
@@ -317,10 +359,6 @@ export function checkToken(root: string | null, binding: TrackerBinding | null):
     const error = issues.find((issue) => issue.severity === "error");
     if (error)
       return finding("FAIL", "tracker token", error.message, "Repair the token file, then run ak tracker check.");
-    const path = join(root, binding.token_file);
-    const mode = statSync(path).mode & 0o777;
-    if (mode !== 0o600)
-      return finding("FAIL", "tracker token", `mode ${mode.toString(8)}, expected 600`, `Run chmod 600 ${path}.`);
     const warning = issues.find((issue) => issue.severity === "warning");
     if (warning) return finding("WARN", "tracker token", warning.message, "Run ak tracker check for details.");
     return finding("PASS", "tracker token", "exists, mode 600, gitignored and untracked", "No action needed.");
@@ -373,26 +411,38 @@ export function checkLinearis(root: string | null, backend: string | null): Find
   );
 }
 
-async function manifest(host: "claude-code" | "codex"): Promise<PublishedManifest | null> {
+export async function manifest(
+  host: "claude-code" | "codex",
+  root = ROOT,
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<PublishedResult> {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute(ROOT)) return parseJson(readFileSync(join(ROOT, suffix), "utf8"), validManifest);
-    else {
-      const response = await fetch(`${ROOT}/${suffix}`);
-      if (!response.ok) return null;
-      return parseJson(await response.text(), validManifest);
+    if (isAbsolute(root)) {
+      const value = parseJson(readFileSync(join(root, suffix), "utf8"), validManifest);
+      return { value, failure: value ? undefined : { reason: "invalid" } };
+    } else {
+      const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!response.ok)
+        return {
+          value: null,
+          failure: { reason: response.status === 404 ? "missing" : "http-error", status: response.status },
+        };
+      const value = parseJson(await response.text(), validManifest);
+      return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return null;
+    return { value: null, failure: { reason: isAbsolute(root) ? "missing" : "network" } };
   }
 }
 
-function print(items: Finding[]): number {
-  for (const item of items) console.log(`${item.level} ${item.check}: ${item.detail}. Remedy: ${item.remedy}`);
+function print(items: Finding[], json = false): number {
+  if (json) console.log(JSON.stringify({ findings: items }));
+  else for (const item of items) console.log(`${item.level} ${item.check}: ${item.detail}. Remedy: ${item.remedy}`);
   return items.some((item) => item.level === "FAIL") ? 1 : 0;
 }
 
-async function doctor(): Promise<number> {
+async function doctor(json = false): Promise<number> {
   const [claudeSource, codexSource] = await Promise.all([manifest("claude-code"), manifest("codex")]);
   const hostRoot = projectRoot();
   const claude = claudeRecords(hostRoot);
@@ -405,13 +455,13 @@ async function doctor(): Promise<number> {
   const binding = parseBinding(root);
   const items = [
     hasClaude || claudeConfigured
-      ? checkSource("Claude Code", claudeSource, claudeConfigured)
+      ? checkSource("Claude Code", claudeSource.value, claudeConfigured, claudeSource.failure)
       : finding("WARN", "Claude Code marketplace source", "not configured", "Install ak from Pibomeister/agent-kit."),
     hasCodex || codexConfigured
-      ? checkSource("Codex", codexSource, codexConfigured)
+      ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure)
       : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
-    checkPlugin("Claude Code", claude, claudeSource?.version ?? null),
-    checkPlugin("Codex", codex, codexSource?.version ?? null),
+    checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
+    checkPlugin("Codex", codex, codexSource.value?.version ?? null),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
@@ -427,17 +477,54 @@ async function doctor(): Promise<number> {
       ),
     );
   }
-  return print(items);
+  return print(items, json);
+}
+
+export function checkMaintenanceCommand(current: string, published: string): Finding {
+  if (current === published)
+    return finding("PASS", "maintenance command", "installed bin/ak matches the published bundle", "No action needed.");
+  return finding(
+    "WARN",
+    "maintenance command",
+    "installed bin/ak differs from the published bundle",
+    `Download ${ROOT}/dist/claude-code/bin/ak again and make it executable.`,
+  );
+}
+
+async function maintenanceCommandNotice(): Promise<Finding | null> {
+  const path = process.argv[1];
+  if (!path || basename(path) !== "ak") return null;
+  try {
+    const current = readFileSync(path, "utf8");
+    const published = isAbsolute(ROOT)
+      ? readFileSync(join(ROOT, "dist/claude-code/bin/ak"), "utf8")
+      : await (async () => {
+          const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.text();
+        })();
+    return checkMaintenanceCommand(current, published);
+  } catch {
+    return finding(
+      "WARN",
+      "maintenance command",
+      "could not compare installed bin/ak with the published bundle",
+      `Check ${ROOT}/dist/claude-code/bin/ak and retry.`,
+    );
+  }
 }
 
 async function update(): Promise<number> {
   const [claudeSource, codexSource] = await Promise.all([manifest("claude-code"), manifest("codex")]);
-  if (!claudeSource && !codexSource) return print([checkSource("published", null)]);
+  if (!claudeSource.value && !codexSource.value)
+    return print([checkSource("published", null, true, claudeSource.failure ?? codexSource.failure)]);
   let failures = 0;
   const root = projectRoot();
   const claudeBefore = claudeRecords(root).filter((row) => row.id === ID);
   if (claudeBefore.length > 0) {
-    const source = checkSource("Claude Code", claudeSource, claudeSourceConfigured(root));
+    const source = checkSource("Claude Code", claudeSource.value, claudeSourceConfigured(root), claudeSource.failure);
     const marketplace =
       source.level === "PASS"
         ? command("claude", ["plugin", "marketplace", "update", "agent-kit"], root)
@@ -453,7 +540,7 @@ async function update(): Promise<number> {
         const result = command("claude", ["plugin", "update", ID, "--scope", scope, "--json"], updateRoot);
         const after = claudeRecords(root).find((row) => row.id === ID && (row.scope ?? "user") === scope);
         const current = after?.version ?? "unknown";
-        const okay = result.ok && current === claudeSource?.version;
+        const okay = result.ok && current === claudeSource.value?.version;
         console.log(
           `${okay ? "PASS" : "FAIL"} Claude Code ${scope}: ${oldVersion} -> ${current}${okay ? "" : `; ${result.output || "published version not installed"}`}`,
         );
@@ -462,7 +549,7 @@ async function update(): Promise<number> {
   }
   const codexBefore = codexRecords().find((row) => row.pluginId === ID);
   if (codexBefore) {
-    const source = checkSource("Codex", codexSource, codexSourceConfigured());
+    const source = checkSource("Codex", codexSource.value, codexSourceConfigured(), codexSource.failure);
     const refresh =
       source.level === "PASS"
         ? command("codex", ["plugin", "marketplace", "upgrade", "agent-kit", "--json"])
@@ -470,7 +557,7 @@ async function update(): Promise<number> {
     const result = refresh.ok ? command("codex", ["plugin", "add", ID, "--json"]) : refresh;
     const after = codexRecords().find((row) => row.pluginId === ID);
     const current = after?.version ?? "unknown";
-    const okay = result.ok && current === codexSource?.version;
+    const okay = result.ok && current === codexSource.value?.version;
     console.log(
       `${okay ? "PASS" : "FAIL"} Codex: ${codexBefore.version ?? "unknown"} -> ${current}${okay ? "" : `; ${result.output || "published version not installed"}`}`,
     );
@@ -478,15 +565,21 @@ async function update(): Promise<number> {
   }
   if (claudeBefore.length === 0 && !codexBefore)
     return print([finding("FAIL", "installation", "ak is absent from both hosts", "Install ak before updating.")]);
+  const maintenance = await maintenanceCommandNotice();
+  if (maintenance) print([maintenance]);
   return failures ? 1 : 0;
 }
 
 if (import.meta.main) {
   const action = process.argv[2];
-  process.exitCode =
-    action === "doctor"
-      ? await doctor()
-      : action === "update"
-        ? await update()
-        : (console.error("Usage: ak doctor|update"), 2);
+  const flags = process.argv.slice(3);
+  if (
+    (action === "doctor" && flags.every((flag) => flag === "--json") && flags.length <= 1) ||
+    (action === "update" && flags.length === 0)
+  )
+    process.exitCode = action === "doctor" ? await doctor(flags[0] === "--json") : await update();
+  else {
+    console.error("Usage: ak doctor [--json] | ak update");
+    process.exitCode = 2;
+  }
 }

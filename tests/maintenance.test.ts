@@ -3,17 +3,21 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Ajv from "ajv";
 
 import {
   checkLinearis,
+  checkMaintenanceCommand,
   checkPlugin,
   checkProjectEnablement,
   checkSource,
   checkToken,
+  command,
   findBindingRoot,
   inProject,
   isClaudeSource,
   isCodexSource,
+  manifest as fetchManifest,
   parseBinding,
 } from "../src/maintenance/cli.ts";
 
@@ -82,9 +86,119 @@ describe("ak doctor checks", () => {
     expect(checkSource("Claude Code", { name: "ak", version: "1.2.0" }, false).level).toBe("FAIL");
     expect(isClaudeSource({ name: "agent-kit", source: "directory" })).toBe(false);
     expect(isClaudeSource({ name: "agent-kit", source: "github", repo: "Pibomeister/agent-kit" })).toBe(true);
+    expect(isClaudeSource({ name: "agent-kit", source: "github", repo: "pibomeister/AGENT-KIT" })).toBe(true);
+    for (const url of [
+      "git@github.com:Pibomeister/agent-kit.git",
+      "ssh://git@github.com/PIBOMEISTER/AGENT-KIT",
+      "https://github.com/pibomeister/agent-kit.git",
+    ])
+      expect(isClaudeSource({ name: "agent-kit", source: "git", url })).toBe(true);
+    expect(isClaudeSource({ name: "agent-kit", source: "git", url: "git@github.com:other/agent-kit.git" })).toBe(false);
     expect(isCodexSource("/tmp/agent-kit", "published")).toBe(false);
     expect(isCodexSource("Pibomeister/agent-kit", "main")).toBe(false);
     expect(isCodexSource("Pibomeister/agent-kit", "published")).toBe(true);
+  });
+
+  test("explains published network failures separately from 404", () => {
+    expect(checkSource("Codex", null, true, { reason: "network" }).detail).toContain("cannot reach");
+    expect(checkSource("Codex", null, true, { reason: "network" }).remedy).toContain("network access");
+    expect(checkSource("Codex", null, true, { reason: "missing", status: 404 }).detail).toContain("HTTP 404");
+    expect(checkSource("Codex", null, true, { reason: "missing", status: 404 }).remedy).toContain("published branch");
+  });
+
+  test("published manifest fetch distinguishes 404 and times out", async () => {
+    const missing = Bun.serve({ port: 0, fetch: () => new Response("missing", { status: 404 }) });
+    try {
+      const result = await fetchManifest("claude-code", `http://127.0.0.1:${missing.port}`, 500);
+      expect(result.failure).toEqual({ reason: "missing", status: 404 });
+    } finally {
+      void missing.stop(true);
+    }
+    const stalled = Bun.serve({ port: 0, fetch: () => new Promise<Response>(() => {}) });
+    try {
+      const start = Date.now();
+      const result = await fetchManifest("codex", `http://127.0.0.1:${stalled.port}`, 100);
+      expect(result.failure?.reason).toBe("network");
+      expect(Date.now() - start).toBeLessThan(2000);
+    } finally {
+      void stalled.stop(true);
+    }
+  });
+
+  test("host subprocesses time out", () => {
+    const start = Date.now();
+    const result = command("sh", ["-c", "exec sleep 5"], project(), process.env, 100);
+    expect(result.ok).toBe(false);
+    expect(result.output).toContain("ETIMEDOUT");
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+
+  test("warns when the curl-installed maintenance command is stale", () => {
+    expect(checkMaintenanceCommand("old", "new").level).toBe("WARN");
+    expect(checkMaintenanceCommand("current", "current").level).toBe("PASS");
+  });
+
+  test("doctor --json is parseable and update rejects unknown flags before touching hosts", () => {
+    const root = project();
+    const cli = join(import.meta.dir, "../src/maintenance/cli.ts");
+    const env = {
+      ...process.env,
+      PATH: "/usr/bin:/bin",
+      CLAUDE_CONFIG_DIR: join(root, "claude-home"),
+      CODEX_HOME: join(root, "codex-home"),
+      AK_PUBLISHED_ROOT: join(root, "missing-published"),
+    };
+    const doctor = spawnSync(process.execPath, [cli, "doctor", "--json"], { cwd: root, env, encoding: "utf8" });
+    expect(doctor.status).toBe(1);
+    const parsed: unknown = JSON.parse(doctor.stdout);
+    const valid = new Ajv().compile({
+      type: "object",
+      required: ["findings"],
+      properties: {
+        findings: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            required: ["level", "check", "detail", "remedy"],
+            properties: {
+              level: { enum: ["PASS", "WARN", "FAIL"] },
+              check: { type: "string" },
+              detail: { type: "string" },
+              remedy: { type: "string", minLength: 1 },
+            },
+          },
+        },
+      },
+    });
+    expect(valid(parsed)).toBe(true);
+    const update = spawnSync(process.execPath, [cli, "update", "--dry-run"], { cwd: root, env, encoding: "utf8" });
+    expect(update.status).toBe(2);
+    expect(update.stderr).toContain("Usage: ak doctor [--json] | ak update");
+  });
+
+  test("doctor ignores foreign GIT_DIR and GIT_WORK_TREE", () => {
+    const local = project();
+    const foreign = project();
+    mkdirSync(join(foreign, ".claude"));
+    writeFileSync(join(foreign, ".claude/settings.json"), '{"enabledPlugins":{"ak@agent-kit":true}}');
+    const bin = join(foreign, "node_modules/.bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "linearis"), "#!/bin/sh\necho 2026.8.0\n");
+    chmodSync(join(bin, "linearis"), 0o755);
+    const savedDir = process.env.GIT_DIR;
+    const savedTree = process.env.GIT_WORK_TREE;
+    process.env.GIT_DIR = join(foreign, ".git");
+    process.env.GIT_WORK_TREE = foreign;
+    try {
+      expect(checkProjectEnablement(local).level).toBe("WARN");
+      expect(checkLinearis(local, "linear-linearis").level).toBe("FAIL");
+    } finally {
+      if (savedDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = savedDir;
+      if (savedTree === undefined) delete process.env.GIT_WORK_TREE;
+      else process.env.GIT_WORK_TREE = savedTree;
+    }
   });
 
   test("doctor sees a project install from a linked worktree and a subdirectory", () => {

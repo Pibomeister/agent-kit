@@ -43,8 +43,8 @@ exit 0
 ```
 
 The shorthand is the deliberately failing control. The committed HTTPS source installs without
-an SSH key. The public GitHub `published` branch does not exist until the post-merge workflow runs,
-so this test replaces only the network endpoint with a local remote.
+an SSH key. At the measured source revision, the public GitHub `published` branch did not yet exist,
+so this test replaced only the network endpoint with a local remote.
 
 ## Linearis guard under zsh
 
@@ -109,5 +109,100 @@ The version-gate tests reject a missing published manifest, a changed bundle at 
 and a downgrade; a valid version bump and first publish pass.
 
 After merge, `.github/workflows/publish-bundle.yml` creates or updates `published` from `ak build`.
-No release tag is needed. The remaining remote smoke is to run the README's Claude and Codex
-GitHub install commands in fresh isolated homes after that workflow succeeds.
+No release tag is needed. The real GitHub smoke follows below.
+
+## Post-merge smoke against GitHub's real `published` branch
+
+The first publication completed at
+https://github.com/Pibomeister/agent-kit/actions/runs/36942947494 (success).
+`main` was `60df574f3298b818c440327e1d4b4abd67f91e37`; the real GitHub
+`published` branch was `b1ae37039086a7011303e838037ae8a61b89eb4e`.
+The commands below ran from a fresh scratch Git project with fresh `HOME`,
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME`. An empty `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_NOSYSTEM=1` and `GIT_SSH_COMMAND=false` kept the run HTTPS-only and
+independent of the operator's Git settings. The local `bin` folder was added
+first on `PATH` for the downloaded `ak`. The four host install commands and
+maintenance-command URL are the README commands; only the destination of the
+`curl -o` download was the isolated `bin` folder.
+
+```text
+published=b1ae37039086a7011303e838037ae8a61b89eb4e
+2.1.287 (Claude Code)
+codex-cli 0.159.0
+1.3.10
+git version 2.50.1 (Apple Git-155)
+
+$ claude plugin marketplace add Pibomeister/agent-kit
+Adding marketplace…Cloning via SSH: git@github.com:Pibomeister/agent-kit.git
+Refreshing marketplace cache (timeout: 120s)…
+Cloning repository (timeout: 120s): git@github.com:Pibomeister/agent-kit.git
+SSH clone failed, retrying with HTTPS: https://github.com/Pibomeister/agent-kit.git
+Refreshing marketplace cache (timeout: 120s)…
+Cloning repository (timeout: 120s): https://github.com/Pibomeister/agent-kit.git
+Clone complete, validating marketplace…
+Cleaning up old marketplace cache…
+✔ Successfully added marketplace: agent-kit (declared in user settings)
+exit=0
+
+$ claude plugin install ak@agent-kit --scope project
+Installing plugin "ak@agent-kit"...✔ Successfully installed plugin: ak@agent-kit (scope: project)
+exit=0
+
+$ codex plugin marketplace add Pibomeister/agent-kit --ref published
+Added marketplace `agent-kit` from https://github.com/Pibomeister/agent-kit.git#published.
+Installed marketplace root: /Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-fixes/.work/real-github/codex/.tmp/marketplaces/agent-kit
+exit=0
+
+$ codex plugin add ak@agent-kit
+Added plugin `ak` from marketplace `agent-kit`.
+Installed plugin root: /Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-fixes/.work/real-github/codex/plugins/cache/agent-kit/ak/0.1.0
+exit=0
+
+$ curl -fsSL https://raw.githubusercontent.com/Pibomeister/agent-kit/published/dist/claude-code/bin/ak -o /Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-fixes/.work/real-github/bin/ak
+exit=0
+
+$ chmod +x /Users/eduardopicazo/orca/workspaces/agent-kit/fm-ak-fixes/.work/real-github/bin/ak
+exit=0
+
+$ ak doctor
+PASS Claude Code marketplace source: resolves to ak 0.1.0. Remedy: No action needed.
+PASS Codex marketplace source: resolves to ak 0.1.0. Remedy: No action needed.
+PASS Claude Code plugin: enabled; installed 0.1.0; published 0.1.0. Remedy: No action needed.
+PASS Codex plugin: enabled; installed 0.1.0; published 0.1.0. Remedy: No action needed.
+PASS project enablement: ak@agent-kit is enabled in this repo. Remedy: No action needed.
+WARN tracker binding: no ak.tracker.yaml. Remedy: Add a project tracker binding if this repo uses an external tracker.
+WARN tracker token: no binding token_file to check. Remedy: Add a valid tracker binding first.
+WARN linearis: no linear-linearis binding to check. Remedy: Add the binding if this repo uses Linear.
+exit=0
+
+$ ak update
+PASS Claude Code project: 0.1.0 -> 0.1.0
+PASS Codex: 0.1.0 -> 0.1.0
+exit=0
+
+$ ak doctor
+PASS Claude Code marketplace source: resolves to ak 0.1.0. Remedy: No action needed.
+PASS Codex marketplace source: resolves to ak 0.1.0. Remedy: No action needed.
+PASS Claude Code plugin: enabled; installed 0.1.0; published 0.1.0. Remedy: No action needed.
+PASS Codex plugin: enabled; installed 0.1.0; published 0.1.0. Remedy: No action needed.
+PASS project enablement: ak@agent-kit is enabled in this repo. Remedy: No action needed.
+WARN tracker binding: no ak.tracker.yaml. Remedy: Add a project tracker binding if this repo uses an external tracker.
+WARN tracker token: no binding token_file to check. Remedy: Add a valid tracker binding first.
+WARN linearis: no linear-linearis binding to check. Remedy: Add the binding if this repo uses Linear.
+exit=0
+```
+
+## Follow-up bundle transport check (unpublished 0.1.1)
+
+From this follow-up working tree, `bun run ak build` exited 0. The version gate
+`tools/publish/version-gate.sh dist` exited 0 against GitHub's published 0.1.0.
+The workflow's `tar -czf`/`tar -xzf` transfer preserved the executable bit on
+`dist/claude-code/bin/ak` (`test -x` exited 0). Running that extracted command
+with `doctor --json` in the checkout exited 1 because no host plugin is installed
+in the checkout's configuration; its JSON parsed into eight findings. This
+checks artifact transport and JSON output, not a live 0.1.1 installation.
+
+The follow-up guard probe (`bash research/probes/linearis-guard.sh`) exited 0 with
+15 PASS rows and 0 failures. Its new auth rows ran under `sh -e`, `bash -e` and
+`zsh -e`, each preserving the rejection text and exit 42. The 42-line guard
+blocks in the backend and tracker reference are byte-identical.

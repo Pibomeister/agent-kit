@@ -34,8 +34,10 @@ ak update
 ```
 
 `ak doctor` prints PASS, WARN or FAIL with a remedy for each host and project check, and exits
-nonzero on FAIL. `ak update` refreshes each installed host and reports old and new versions; it is
-safe to rerun. Add `$HOME/.local/bin` to `PATH` if it is not already there. The `published` branch
+nonzero on FAIL. Use `ak doctor --json` for machine-readable findings. `ak update` refreshes each
+installed host and reports old and new versions; it is safe to rerun. If the curl-installed
+`bin/ak` differs from the published command, update warns and gives the download remedy. Add
+`$HOME/.local/bin` to `PATH` if it is not already there. The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green push to `main`. On the first
 merge, wait for that workflow to complete before using the commands above; no release tag is
 needed. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;

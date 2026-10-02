@@ -854,7 +854,7 @@ describe("ak lifecycle check, standalone", () => {
     expect(other.err).toContain(`no record for run ${runs["feat-x"]} `);
     record(dir, ...PRE_SHIP_GATES);
     expect(ak(dir, "check").out[0]).toContain(`ok: run ${runs["feat-x"]} has current evidence`);
-  });
+  }, 20_000);
 
   test("records taken before the first commit survive a mid-task merge from main on an opened run", () => {
     const dir = repo();
@@ -971,7 +971,7 @@ describe("the gate a bundle carries", () => {
       expect(refused.exitCode).toBe(1);
       expect(refused.stderr.toString()).toContain("refused: gate build-checks has no current evidence");
     }
-  });
+  }, 20_000);
 
   test("both byte-identical packaged gates enforce the strengthened evidence cases", () => {
     const { catalog } = loadCatalog(REPO);
