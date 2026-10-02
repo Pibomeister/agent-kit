@@ -29,17 +29,16 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 
 ## Inputs
 
-- A Design editor URL the operator runs or is given. A self-hosted editor is first class;
-  `https://design.agent-native.com` is one convenience value. Missing: `missing-prerequisite:editor`.
-- The `@agent-native/core` CLI, a bridge token minted through the selected editor's MCP connector or
-  WebMCP, and its bridge daemon listening on `127.0.0.1:7331`. Missing any one names
-  `missing-prerequisite:bridge-cli`, `missing-prerequisite:bridge-token` or
-  `missing-prerequisite:bridge-daemon`.
-- Only to save or share the design: an account on the selected editor. Opening routes, comparing
+- The Design editor hosted at `https://design.agent-native.com`, reached through its MCP connector
+  or WebMCP; no local editor is started. Unavailable: `missing-prerequisite:editor-connector`.
+- The `@agent-native/core` CLI. Missing: `missing-prerequisite:bridge-cli`. The bridge token and
+  the daemon on `127.0.0.1:7331` are made by the run, not brought to it.
+- Only to save or share the design: an account on the editor. Opening routes, comparing
   viewports and applying pending edits run signed out. Missing when a save or share is asked for:
   `missing-prerequisite:editor-account`.
-- A running local dev server, repository root, requested route paths and named viewports. A route
-  that does not respond is `missing-prerequisite:dev-server`, with that route named.
+- A local dev server, repository root, requested route paths and named viewports. A server that is
+  down is started with the project's own dev command; a route that still does not respond is
+  `missing-prerequisite:dev-server`, with that route named.
 - Optional named acceptance criteria. They let the resulting receipt enter `super-verify`'s matrix;
   without them the batch is still applied, receipted and acknowledged.
 
@@ -47,42 +46,49 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 
 1. Check how the run started before any tool call. If the message does not begin with
    `/ak:visual-edit`, stop and return that exact command.
-2. Freeze the editor URL, repository root, dev-server URL, ordered routes and viewports. If the
+2. Freeze the repository root, dev-server URL, ordered routes and viewports. If the
    request is for a not-yet-built alternative, hand the bounded question to `prototype` and stop.
-3. Check every prerequisite the request needs by using it; an address or status declared in a
-   project file is configuration, not evidence. Stop on the first missing id; never replace a missing
-   editor, bridge or dev server with generated markup, a screenshot or another static preview.
+3. Check the editor connector, the CLI and the dev server by using each one the request needs; an
+   address or status declared in a project file is configuration, not evidence. Stop on the first
+   missing id; never replace a missing editor, bridge or dev server with generated markup, a
+   screenshot or another static preview.
 4. Probe every requested route at the dev-server URL. Preserve the human's route labels, order and
-   viewports; discover routes only when none were supplied.
-5. Use `npx @agent-native/core@latest design connect` to read the manifest and run the durable
-   token-matched bridge. Reuse a healthy matching bridge rather than starting a second app on 7331.
-6. Through the selected editor's MCP connector or WebMCP, open the design with the exact routes and
-   viewports. Each screen stays a URL-backed frame with route, URL, bridge and viewport metadata.
+   viewports; discover routes, from the CLI's manifest, only when none were supplied.
+5. Through the editor's MCP connector or WebMCP, open the design with the exact routes and
+   viewports. That call mints the bridge token; a signed-out WebMCP session generates the token
+   locally and passes it once. Each screen stays a URL-backed frame with route, URL, bridge and
+   viewport metadata.
+6. Start the durable bridge with that token through `npx @agent-native/core@latest design connect`,
+   reusing a healthy matching bridge rather than starting a second app on 7331. A bridge that does
+   not come up stops with `missing-prerequisite:bridge-daemon`.
 7. Before handing over the canvas, verify the connection, every requested route and viewport, each
    frame's `src` rather than `srcdoc`, and the Code panel's local source root plus one opened file.
    A failed check stops with its name; a returned link alone is not readiness.
 8. Hand the verified canvas to the human. Visual changes remain pending and never write source from
    the canvas. Preserve the pending batch until it is applied or explicitly discarded. A save or
    share asked for without the account stops with its id and leaves the session as it is.
-9. Pull the pending handoff and its revision through the selected editor's MCP connector or
-   WebMCP, the channel that also takes the acknowledgment. `design pending` on the bridge CLI is
-   the fallback and prints the handoff with no revision, so nothing is acknowledged from it. A
-   repository file that describes a pending revision is not a handoff. For a compiled route, locate and edit authored source
-   through the coding agent. A change beyond style, literal text or local layout stops for an
-   approved ticket, then hands the revision to `super-build`; do not partially apply it here.
+9. Pull the pending handoff and its revision through the editor's MCP connector or WebMCP, the
+   channel that also takes the acknowledgment; nothing else pulls. A handoff the human supplies
+   with its revision, already pulled through that channel, needs only the dev server to be applied
+   and receipted. For a compiled route, locate and edit authored source through the coding agent.
+   A change beyond style, literal text or local layout stops for an approved ticket, then hands
+   the revision to `super-build`; do not partially apply it here.
 10. Read every target file before writing, apply the pending batch to source, and confirm the dev
     server refreshes each affected route at its named viewport. A version conflict is re-read and
     re-planned, never overwritten.
 11. Emit the receipt in Outputs, acknowledge the exact pending revision only after the source and
     dev-server confirmation exist, then pull once more. A non-empty pull is another pending batch,
-    not evidence that acknowledgment failed.
+    not evidence that acknowledgment failed. An acknowledgment the connector cannot take stops with
+    `missing-prerequisite:editor-connector`: the receipt stands and the revision stays pending, to
+    be acknowledged later and never applied twice.
 12. When acceptance criteria were supplied, pass the receipt to `super-verify`; it decides whether
     the receipt covers them or whether another check is required.
 
 ## Hard gates
 
-Gate: any missing editor, CLI, token, daemon, dev server or route stops with its named
-prerequisite, and a missing account stops a save or share. The run never degrades to generated markup.
+Gate: a missing editor connector, CLI, dev server or route stops with its named prerequisite, as
+does a bridge that does not come up, and a missing account stops a save or share. The run never
+degrades to generated markup.
 
 Gate: the running app is the source of truth. Requested screens are URL-backed frames at the named
 viewports, never copied markup or static snapshots.
@@ -106,7 +112,7 @@ acknowledgment. Narrative is not a receipt (ruling `closure-requires-independent
 
 ## Outputs
 
-- Returned canvas session data: editor URL, design and connection ids, ordered routes, named
+- Returned canvas session data: design URL, design and connection ids, ordered routes, named
   viewports, and the completed pre-handoff checklist. Tokens are excluded.
 - For each applied pending revision, a `verification` receipt
   (`schemas/verification.schema.json`): the probe parameters name route, viewport and visual-edit
@@ -134,8 +140,7 @@ canvas-to-source write. Account and bridge secrets stay process-local and never 
 
 ## Limits
 
-- Missing prerequisites: 0 (gate). Self-hosted and hosted editor URLs satisfy the same checks;
-  neither the hosted convenience nor static output substitutes for a missing prerequisite.
+- Missing prerequisites: 0 (gate). Static output never substitutes for a missing prerequisite.
 - Frames per focused batch: 3-7 (guidance). Use exactly the requested routes and viewports; expand
   beyond seven only for an explicit exhaustive request.
 - Direct application: style, literal text and local layout only (gate). Everything broader enters

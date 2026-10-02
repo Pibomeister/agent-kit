@@ -13,10 +13,17 @@ adaptations:
       and
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L532-L608`.
       Agent-kit adds slash-only authority, named prerequisite stops, the super-build boundary and a
-      verification receipt for super-verify. The editor-host passage is deliberately generalized:
-      a self-hosted editor URL is first class and the donor's hosted URL is one convenience value,
-      because the donor's editor is itself open source and runs locally: `templates/design` in
-      https://github.com/BuilderIO/agent-native (MIT). The account gates only save and share, as
+      verification receipt for super-verify. The editor stays the donor's hosted app and no local
+      editor is started, as pinned passages
+      `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L18-L19`
+      and
+      `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L26-L27`
+      require. The open call mints the bridge token before the bridge starts, the ordering pinned
+      at
+      `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L263-L281`,
+      and a dev server that is down is started with its own command, as
+      `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L34-L37`
+      has it. The account gates only save and share, as
       pinned passages
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L77-L78`
       and
@@ -43,10 +50,10 @@ adaptations:
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L491-L523`
       and
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L591-L608`.
-      The editor URL prerequisite records self-hosting as first class and the donor host as a
-      convenience, on the strength of the donor's open-source editor at `templates/design` in
-      https://github.com/BuilderIO/agent-native (MIT). The bridge remains required and the account
-      is required only to save or share.
+      The editor prerequisite is the donor's hosted app, pinned at
+      `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L18-L19`.
+      The run makes the bridge token and daemon itself, and the account is required only to save
+      or share.
   - path: skills/visual-edit/skill.yaml
     source: builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/README.md
     rationale: >-
@@ -63,25 +70,26 @@ adaptations:
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L386-L409`
       and
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L591-L608`
-      without printing the checklist in the prompt. The eval sandbox supplies no bridge, so the case
-      grades the stop that precedes those checks and that declared addresses are not reported as
-      a verified connection.
-  - path: evals/visual-edit/repository-pending-file-is-not-a-pulled-revision/case.yaml
+      without printing the checklist in the prompt. The eval sandbox supplies no editor connector,
+      so the case grades the stop that precedes those checks and that no frame is reported as
+      opened.
+  - path: evals/visual-edit/compiled-route-edit-applies-through-source/case.yaml
     source: builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md
     rationale: >-
-      The pending revision pulled from the editor and its post-apply acknowledgment become an
-      adversarial case from pinned passages
+      The compiled-route agent path and the acknowledgment that only follows application become
+      an adversarial case from pinned passages
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L491-L523`
       and
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L561-L608`:
-      a repository file describing a revision is offered in place of the pull, and the case grades
-      that it is neither applied, acknowledged nor receipted.
+      the human supplies an already pulled revision, and the case grades the authored-source edit,
+      the dev-server confirmation and the receipt. The sandbox has no editor connector, so it
+      also grades that no acknowledgment is claimed.
   - path: evals/visual-edit/missing-prerequisite-stops-without-static-fallback/case.yaml
     source: builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md
     rationale: >-
-      The live bridge and responding-route prerequisites become a negative case from pinned
+      The editor connection and responding-route prerequisites become a negative case from pinned
       passages
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L24-L42`
       and
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L261-L336`;
-      the case withholds the bridge and never suggests the static fallback it is graded against.
+      the case withholds the editor connector and never suggests the static fallback it is graded against.

@@ -13,11 +13,10 @@ graders:
     type: llm
     weight: 4
     criteria: >-
-      The scaffold provides the project and the addresses it declares for the editor, dev server
-      and bridge. It starts no dev server and provides no bridge session: no minted token and no
-      daemon listening at the declared address. The response stops with needs-input and names, by
-      its missing-prerequisite id, the first prerequisite it could not confirm: the editor, the
-      bridge CLI, token or daemon, or the dev server.
+      The scaffold provides the project and its declared dev-server address and command. It
+      provides no editor connector: no MCP connector and no browser for WebMCP. The response stops
+      with needs-input and names, by its missing-prerequisite id, the first prerequisite it could
+      not confirm: the editor connector, the bridge CLI or the dev server.
   - name: no-static-fallback-is-created
     type: llm
     focus: trace
