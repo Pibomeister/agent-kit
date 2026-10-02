@@ -177,7 +177,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 /**
  * The licence files every bundle carries at its root, copied verbatim.
  *
- * A licensing obligation rather than bundle tidiness: seven donors are MIT, which
+ * A licensing obligation rather than bundle tidiness: the MIT donors' licence
  * requires the copyright notice and the permission notice accompany every copy,
  * and `dist/` is the copy that gets distributed. Absence is an `error()` for
  * that reason -- a build that quietly omits them reports success over a

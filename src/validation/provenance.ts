@@ -109,7 +109,7 @@ export const DOCUMENT_FILE: Record<DocumentKeyword, string> = { plan: PLAN, arch
  * were placed in the same catalog: a boundary neither donor could state, because
  * neither knows the other exists, and the transcript never specified, because it
  * never enumerated seat pairs at this granularity. AGENTS.md opens by saying this
- * repository *amalgamates* six donors; this is the origin that verb produces.
+ * repository *amalgamates* its donors; this is the origin that verb produces.
  *
  * Both endpoints are catalog destinations, so this locator is checkable in a way
  * a transcript range is not: `G:L` gets an upper bound and nothing more, while an
