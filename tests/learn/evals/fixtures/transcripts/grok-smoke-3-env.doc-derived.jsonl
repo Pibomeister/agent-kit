@@ -1,2 +1,2 @@
 {"type":"tool_call","toolCallId":"smoke-3-env","title":"run_terminal_command","kind":"execute","status":"pending","toolName":"run_terminal_command","rawInput":{"command":"env","description":"Print environment variable names and values"},"content":[],"locations":[]}
-{"type":"end","stopReason":"cancelled","num_turns":20,"modelUsage":{}}
+{"type":"end","stopReason":"cancelled","modelUsage":{}}

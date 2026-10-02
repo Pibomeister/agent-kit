@@ -278,7 +278,7 @@ describe("grok", () => {
     const command = String(tools(parsed.events).at(-1)?.input.command);
     expect(command).toBe("env");
     expect(parsed.stopReason).toBe("cancelled");
-    expect(parsed.turns).toBe(20);
+    expect(parsed.turns).toBeUndefined();
     expect(readOnlyShell(command)).toBe(true);
     expect(admits(command)).toBe(true);
 
