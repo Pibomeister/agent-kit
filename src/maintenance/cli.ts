@@ -133,6 +133,7 @@ const bindingValidators: BindingValidators = {
 const ID = "ak@agent-kit";
 const ROOT = process.env.AK_PUBLISHED_ROOT ?? "https://raw.githubusercontent.com/Pibomeister/agent-kit/published";
 const COMMAND_TIMEOUT_MS = 15_000;
+const MUTATION_TIMEOUT_MS = 300_000;
 const FETCH_TIMEOUT_MS = 5_000;
 
 function finding(level: Level, check: string, detail: string, remedy: string): Finding {
@@ -527,7 +528,7 @@ async function update(): Promise<number> {
     const source = checkSource("Claude Code", claudeSource.value, claudeSourceConfigured(root), claudeSource.failure);
     const marketplace =
       source.level === "PASS"
-        ? command("claude", ["plugin", "marketplace", "update", "agent-kit"], root)
+        ? command("claude", ["plugin", "marketplace", "update", "agent-kit"], root, process.env, MUTATION_TIMEOUT_MS)
         : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
     if (!marketplace.ok) {
       console.error(`FAIL Claude Code update: ${marketplace.output}`);
@@ -537,7 +538,13 @@ async function update(): Promise<number> {
         const installation = claudeBefore.find((row) => (row.scope ?? "user") === scope);
         const oldVersion = installation?.version ?? "unknown";
         const updateRoot = scope === "user" ? root : (installation?.projectPath ?? root);
-        const result = command("claude", ["plugin", "update", ID, "--scope", scope, "--json"], updateRoot);
+        const result = command(
+          "claude",
+          ["plugin", "update", ID, "--scope", scope, "--json"],
+          updateRoot,
+          process.env,
+          MUTATION_TIMEOUT_MS,
+        );
         const after = claudeRecords(root).find((row) => row.id === ID && (row.scope ?? "user") === scope);
         const current = after?.version ?? "unknown";
         const okay = result.ok && current === claudeSource.value?.version;
@@ -552,9 +559,17 @@ async function update(): Promise<number> {
     const source = checkSource("Codex", codexSource.value, codexSourceConfigured(), codexSource.failure);
     const refresh =
       source.level === "PASS"
-        ? command("codex", ["plugin", "marketplace", "upgrade", "agent-kit", "--json"])
+        ? command(
+            "codex",
+            ["plugin", "marketplace", "upgrade", "agent-kit", "--json"],
+            process.cwd(),
+            process.env,
+            MUTATION_TIMEOUT_MS,
+          )
         : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
-    const result = refresh.ok ? command("codex", ["plugin", "add", ID, "--json"]) : refresh;
+    const result = refresh.ok
+      ? command("codex", ["plugin", "add", ID, "--json"], process.cwd(), process.env, MUTATION_TIMEOUT_MS)
+      : refresh;
     const after = codexRecords().find((row) => row.pluginId === ID);
     const current = after?.version ?? "unknown";
     const okay = result.ok && current === codexSource.value?.version;

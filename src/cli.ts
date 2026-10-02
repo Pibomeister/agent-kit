@@ -314,7 +314,7 @@ function trackerCommand(parsed: Parsed, options: CliOptions): number {
 
 export function runCli(argv: readonly string[], options: CliOptions): number {
   if (argv[0] === "doctor" || argv[0] === "update") {
-    const result = spawnSync(process.execPath, [join(import.meta.dir, "maintenance", "cli.ts"), argv[0]], {
+    const result = spawnSync(process.execPath, [join(import.meta.dir, "maintenance", "cli.ts"), ...argv], {
       cwd: options.cwd,
       encoding: "utf8",
       env: process.env,

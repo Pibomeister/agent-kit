@@ -78,7 +78,7 @@ guarded() { # guarded <cwd> [VAR=val ...] -- <linearis args>
   while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do vars+=("$1"); shift; done
   shift
   (cd "$cwd" && env "${DEAD[@]}" HOME="$OPHOME" PATH="$SHIM:$PATH" token_file=.linear-token ${vars[@]+"${vars[@]}"} \
-    "${GUARD_SHELL:-sh}" "${shell_flags[@]}" -c ". \"\$0\"" "$GUARD" "$@") 2>&1
+    "${GUARD_SHELL:-sh}" ${shell_flags[@]+"${shell_flags[@]}"} -c ". \"\$0\"" "$GUARD" "$@") 2>&1
 }
 
 # 1. Absent token, from a subdirectory.

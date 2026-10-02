@@ -177,6 +177,15 @@ describe("ak doctor checks", () => {
     expect(update.stderr).toContain("Usage: ak doctor [--json] | ak update");
   });
 
+  test("the repo CLI forwards maintenance flags instead of running a real update", () => {
+    const root = project();
+    const cli = join(import.meta.dir, "../src/cli.ts");
+    const env = { ...process.env, PATH: "/usr/bin:/bin", AK_PUBLISHED_ROOT: join(root, "missing-published") };
+    const update = spawnSync(process.execPath, [cli, "update", "--dry-run"], { cwd: root, env, encoding: "utf8" });
+    expect(update.status).toBe(2);
+    expect(update.stderr).toContain("Usage: ak doctor [--json] | ak update");
+  });
+
   test("doctor ignores foreign GIT_DIR and GIT_WORK_TREE", () => {
     const local = project();
     const foreign = project();
