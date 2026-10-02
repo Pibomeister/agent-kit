@@ -89,6 +89,15 @@ node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <task-id> --by <who 
   --reason <why> --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree> [--hours <n>]
 ```
 
+**One grant per run, issued automatically.** A grant is valid only in the lifecycle run it is first
+used in, and super-build's `open --ticket` starts a new run, so a task normally needs a second grant
+there. When a worker reports `needs-decision` because its check was refused as "first used in run …",
+issue a fresh grant with the same command, task and worktree, under a new `--out` (for example
+`data/<task-id>/bypass-<n>.json`), and send the worker the section it prints. That is not a new
+authorization: the captain's bypass for the task already covers it, so do not ask the captain again.
+Do not reissue for any other refusal; an expired grant, a wrong task or worktree, an edited file or an
+approval card are still decisions.
+
 `<agent-kit bundle>` is the installed plugin's directory, or `dist/claude-code` after `ak build`. Run it
 with `node` and with the home as the working directory, never through `bun` and never from a project
 directory or a task worktree: `bun` loads the working directory's `bunfig.toml` and `.env` before the

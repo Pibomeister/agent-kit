@@ -77,9 +77,18 @@ past `expires_at`, which defaults to 24 hours and is capped at 168.
 from the grant file, and refuse unless it equals the grant's `task_id`. `grant` records the task's
 own worktree, which must be one of the repository's, and `check` and `record --bypass` compare it with the worktree of
 the directory they run from, never with a flag: `--project` must name that same worktree, so another
-task's worktree is refused even with the right `--task` and `--project` naming the granted one. The grant is
-not bound to a run: the lifecycle opens new runs after align, so any run under the task may use it.
+task's worktree is refused even with the right `--task` and `--project` naming the granted one.
 A check without `--phase` writes nothing.
+
+**One run.** A grant is valid only in the run it is first used in: the first phase check or
+`record --bypass` that names it writes the run's use record, and from then on `check` and
+`record --bypass` refuse it in any other run, naming the run it belongs to. The lifecycle opens a new
+run when super-build runs `open --ticket`, so align and bound use one grant and the ticket's run takes
+another. That costs no human step: the worker reports the refusal as `needs-decision`, and the
+supervisor issues a fresh grant for the same task and worktree, as its standing authorization for the
+task already allows (SUPERVISOR.md). The captain chose this over letting one grant continue across runs
+(2026-10-02): five review rounds showed that carrying a grant, and a typed end, across runs kept
+leaving a path where an old grant resumed. With a grant tied to one run there is nothing to carry.
 
 **A started phase.** A phase check, or a gate recorded with `--bypass`, writes the run's use record
 for that phase under `<evidence>/<run>/bypass/`, and that record is the one place the start lives.
@@ -89,27 +98,20 @@ own attribution plus `superseded_grant_id` naming the grant it replaces. A typed
 `--bypass` records `authority: {mode: explicit, superseded_grant_id}` naming the grant in force, so
 a human finish after a bypassed start is visible rather than a silent strip, and it marks the use
 record ended (`ended_at`, `ended_by_snapshot`, and in `ended_grant_ids` every grant that has held
-the phase in the run, which the use record keeps in `held_grant_ids`). The end holds for the whole
-task, not only that run: `check` and `record --bypass` derive the task's ended set each time from
-every run's use record for the phase in the evidence store, so a run opened after a fix
-(`open --ticket`) cannot resume bypass for that phase with an ended grant. A typed record ends every
-grant that holds the phase unended in any run from the same worktree and task, not only the latest
-one, and a run that never checked the phase ends them too. Holds are matched on the task as well as
-the worktree: the grant's task with `--bypass`, else the task this run's own hold names; a typed record
-in a run that holds nothing for any task cannot tell tasks apart, so a worktree reused across tasks
-should get a fresh one. `--dir` is refused with a bypass grant, at `check` and at `record --bypass`,
-because the end is read from the default evidence store. Nothing in this is written to the ledger: the worker never writes `~/.agent-kit`, so a
-ledger the host keeps read-only to the worker does not stop a typed end. **Trust:** the use records
-live in the evidence store under the git common directory, which the worker can write, so a worker
-that deletes or edits them can lift an end, exactly as with the run-level end. A typed record and a
-`bypass check` of the same phase in the same run at the same moment are not serialized; the check
-refuses when it sees the end appear while it ran, which narrows that window without closing it. The task-wide end
-guards against accidents, not against a determined worker.
-Every grant a typed record ended stays refused at `check` and at `record --bypass` for that phase of
-the task, even after a re-start; only a fresh grant for the same task re-starts the phase, rewriting
-the use record with `superseded_grant_id`. A grant for another task or another worktree is
+the phase in the run, which the use record keeps in `held_grant_ids`). The bypass is then over for that
+phase in that run: every grant it ended is refused at `check` and at `record --bypass` there, even
+after a re-start, and only a fresh grant for the same task re-starts the phase, rewriting the use
+record with `superseded_grant_id`. A later run is covered by **One run**: the ended grants were used
+in this run, so they are refused in any other. A grant for another task or another worktree is
 refused. The mirror holds too: a gate recorded by hand at a snapshot cannot be relabelled by
 re-recording that snapshot with `--bypass`, even after a check starts the phase under a grant.
+`--dir` is refused with a bypass grant, at `check` and at `record --bypass`, because the run binding is
+read from the default evidence store. Nothing in this is written to the ledger: the worker never
+writes `~/.agent-kit`. **Trust:** the use records live in the evidence store under the git common
+directory, which the worker can write, so a worker that deletes or edits them can lift a run binding or
+an end. Both guard against accidents, not against a determined worker. A typed record and a
+`bypass check` of the same phase in the same run at the same moment are not serialized; the check
+refuses when it sees the end appear while it ran, which narrows that window without closing it.
 
 ## Consequences
 

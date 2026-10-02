@@ -453,26 +453,32 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(existsSync(s.grantPath)).toBe(false);
   });
 
-  test("one grant carries the task from align through ship across the run super-build opens", () => {
-    const { worktree, ledger, grantPath, home } = granted();
-    const check = (phase: string) =>
-      ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", phase);
-    expect(check("super-align").code).toBe(0);
-    expect(check("super-bound").code).toBe(0);
+  test("a grant works only in the run it starts in; super-build's new run takes a fresh grant through ship", () => {
+    const g = granted();
+    const { worktree, ledger, grantPath, home } = g;
+    const check = (grant: string, phase: string) =>
+      ak(worktree, ledger, "bypass", "check", "--grant", grant, "--task", "T-1", "--phase", phase);
+    expect(check(grantPath, "super-align").code).toBe(0);
+    expect(check(grantPath, "super-bound").code).toBe(0);
     const ticketPath = join(home, "ticket.json");
     writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
     const opened = ak(worktree, ledger, "open", "--ticket", ticketPath);
     expect(opened.code).toBe(0);
     const run = opened.out.replace(/^opened run /, "");
     expect(run).not.toBe("task");
-    expect(check("super-review:full").code).toBe(0);
-    const record = (gate: string) =>
-      ak(worktree, ledger, "record", "--gate", gate, "--bypass", grantPath, "--task", "T-1");
-    expect(record("review-full").code).toBe(0);
-    expect(check("super-ship").code).toBe(0);
-    expect(record("ship-preflight").code).toBe(0);
+    const refused = check(grantPath, "super-review:full");
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("first used in run task");
+    expect(refused.err).toContain("fresh grant for this run");
+    expect(ak(worktree, ledger, ...recordArgs("review-full", grantPath, "T-1")).code).toBe(1);
+    expect(readRecords(defaultEvidenceDir(worktree), run, "review-full")).toEqual([]);
+    const fresh = freshGrant(g, () => new Date(), "T-1");
+    expect(check(fresh.path, "super-review:full").code).toBe(0);
+    expect(ak(worktree, ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
+    expect(check(fresh.path, "super-ship").code).toBe(0);
+    expect(ak(worktree, ledger, ...recordArgs("ship-preflight", fresh.path, "T-1")).code).toBe(0);
     expect(readRecords(defaultEvidenceDir(worktree), run, "ship-preflight").map((r) => r.authority)).toEqual([
-      expect.objectContaining({ mode: "bypass", task_id: "T-1" }),
+      expect.objectContaining({ mode: "bypass", grant_id: fresh.id, task_id: "T-1" }),
     ]);
   });
 
@@ -589,113 +595,21 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     );
   });
 
-  test("a typed end holds for the task: a run opened after it cannot resume bypass with the ended grant", () => {
+  test("a typed end needs no write to the ledger: with the ledger read-only it still ends the grant in the run", () => {
     const s = granted();
-    const ticketPath = join(s.home, "ticket.json");
-    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
-    const open = () => ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
-    expect(open().code).toBe(0);
-    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
-    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
-    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 3;\n");
-    const reopened = open();
-    expect(reopened.code).toBe(0);
-    const run = reopened.out.replace(/^opened run /, "");
-    const checked = checkPhase(s, s.grantPath, "T-1", "super-review:full");
-    expect(checked.code).toBe(1);
-    expect(checked.err).toContain("ended by a typed record");
-    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
-    expect(recorded.code).toBe(1);
-    expect(recorded.err).toContain("ended by a typed record");
-    expect(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).toEqual([]);
-    const fresh = freshGrant(s, dayLater, "T-1");
-    expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
-  });
-
-  test("a typed end needs no write to the ledger: with the ledger read-only it still ends the grant for the task", () => {
-    const s = granted();
-    const ticketPath = join(s.home, "ticket.json");
-    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
-    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
     expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
     chmodSync(s.ledger, 0o555);
     try {
       expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
       writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 4;\n");
-      const reopened = ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
-      expect(reopened.code).toBe(0);
-      const run = reopened.out.replace(/^opened run /, "");
       const checked = checkPhase(s, s.grantPath, "T-1", "super-review:full");
       expect(checked.code).toBe(1);
       expect(checked.err).toContain("ended by a typed record");
       expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(1);
-      expect(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).toEqual([]);
+      expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).toHaveLength(1);
     } finally {
       chmodSync(s.ledger, 0o755);
     }
-  });
-
-  test("a typed record in a later run ends the grant that held the phase in an earlier run", () => {
-    const s = granted();
-    const first = grantId(s.ledger);
-    const ticketPath = join(s.home, "ticket.json");
-    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
-    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
-    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
-    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 5;\n");
-    const second = ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
-    expect(second.code).toBe(0);
-    const run = second.out.replace(/^opened run /, "");
-    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
-    expect(only(readRecords(defaultEvidenceDir(s.worktree), run, "review-full")).authority).toEqual({
-      mode: "explicit",
-      superseded_grant_id: first,
-    });
-    const checked = checkPhase(s, s.grantPath, "T-1", "super-review:full");
-    expect(checked.code).toBe(1);
-    expect(checked.err).toContain("ended by a typed record");
-  });
-
-  test("a typed end ends every grant that held the phase in any earlier run, not only the latest (P7, P8)", () => {
-    for (const typedInFreshRun of [false, true]) {
-      const s = granted();
-      const ticketPath = join(s.home, "ticket.json");
-      writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
-      let edit = 0;
-      const newRun = () => {
-        edit += 1;
-        writeFileSync(join(s.worktree, "src", "a.js"), `export const a = ${10 + edit};\n`);
-        expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
-      };
-      newRun();
-      expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
-      newRun();
-      const second = freshGrant(s, () => new Date(), "T-1");
-      expect(checkPhase(s, second.path, "T-1", "super-review:full").code).toBe(0);
-      if (typedInFreshRun) newRun();
-      expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
-      newRun();
-      for (const grant of [s.grantPath, second.path]) {
-        const checked = checkPhase(s, grant, "T-1", "super-review:full");
-        expect(checked.code).toBe(1);
-        expect(checked.err).toContain("ended by a typed record");
-      }
-    }
-  });
-
-  test("a bypass record for one task is not refused by another task's abandoned hold in the same worktree (P13c)", () => {
-    const s = granted();
-    const ticketPath = join(s.home, "ticket.json");
-    writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
-    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
-    expect(checkPhase(s, s.grantPath, "T-1", "super-review:full").code).toBe(0);
-    writeFileSync(join(s.worktree, "src", "a.js"), "export const a = 20;\n");
-    writeFileSync(ticketPath, JSON.stringify({ id: "T-2" }));
-    expect(ak(s.worktree, s.ledger, "open", "--ticket", ticketPath).code).toBe(0);
-    const other = freshGrant(s, () => new Date(), "T-2");
-    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", other.path, "T-2"));
-    expect(recorded.err).not.toContain("for task T-1");
-    expect(recorded.code).toBe(0);
   });
 
   test("--dir is refused with a bypass grant, so another store cannot dodge the typed end (P9b)", () => {

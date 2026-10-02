@@ -503,15 +503,8 @@ export function recordGate(
   // The run's use record is the one place a bypassed start lives; a typed record ends it for the phase.
   const covered = BYPASS_GATE_PHASE[a.gate];
   const usePath = covered === undefined ? undefined : bypassUsePath(a.dir, a.run, covered);
-  // A phase held under a grant in an earlier run of this task still counts as started here, so a typed
-  // record in a later run ends it too. The task is the grant's when `--bypass` names one, else the task
-  // this run's own hold names, else the one whose grant named this worktree.
-  const here = usePath === undefined ? undefined : readObject(usePath);
-  const holds =
-    covered === undefined
-      ? []
-      : heldElsewhere(a.dir, a.run, covered, worktreeOf(a.project), a.bypass?.task_id ?? strings([here?.task_id])?.[0]);
-  const started = here ?? holds.at(-1);
+  // A grant is valid only in the run it was first used in; a phase starts and ends within one run.
+  const started = usePath === undefined ? undefined : readObject(usePath);
   if (a.bypass !== undefined && previous !== undefined && previous.authority === undefined)
     return refuse(
       `${a.gate} at this snapshot was recorded with the typed command, so it did not start under a grant; record it with the typed command and no --bypass`,
@@ -520,7 +513,7 @@ export function recordGate(
     started,
     a.bypass,
     a.gate,
-    covered === undefined || a.bypass === undefined ? [] : endedForTask(a.dir, a.bypass.task_id, covered),
+    a.bypass === undefined ? undefined : grantRun(a.dir, a.bypass.grant_id, a.run),
   );
   if (!continued.ok) return continued;
   if (continued.authority !== undefined) record.authority = continued.authority;
@@ -546,14 +539,7 @@ export function recordGate(
         run_id: a.run,
         ended_at: record.recorded_at,
         ended_by_snapshot: short(snapshot),
-        // Every unended hold of the phase in this task, in any run, not only the latest one.
-        ended_grant_ids: [
-          ...new Set([
-            ...endedGrants(started),
-            ...heldGrants(started),
-            ...holds.filter((hold) => hold.task_id === started.task_id).flatMap(heldGrants),
-          ]),
-        ],
+        ended_grant_ids: [...new Set([...endedGrants(started), ...heldGrants(started)])],
       });
   }
   return { ok: true, path, record, skipped };
@@ -1315,46 +1301,23 @@ const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
 const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
-/** Every run's use record for a phase in this evidence store. */
-type UseRecord = NonNullable<ReturnType<typeof readObject>>;
-
-function useRecords(dir: string, phase: BypassPhase): { run: string; record: UseRecord }[] {
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((run) => {
-    const record = readObject(bypassUsePath(dir, run, phase));
-    return record === undefined ? [] : [{ run, record }];
-  });
-}
-
 /**
- * Every grant a typed record ended for this phase of the task, in any run. Derived from the runs' use
- * records each time rather than kept beside the ledger, so the worker never writes the ledger and the
- * lifecycle's new runs after a fix still see the end. The use records are worker-written, so this holds
- * against accidents, not against a worker that edits them (ADR-0008).
+ * The run a grant was first used in, when that is not `run`: any run of this store whose use record for
+ * any phase names the grant. A grant is valid only in that run; another run needs a fresh grant. The use
+ * records are worker-written, so this binding holds against accidents, not against a worker that edits
+ * them (ADR-0008).
  */
-const endedForTask = (dir: string, task: string, phase: BypassPhase): string[] => [
-  ...new Set(useRecords(dir, phase).flatMap(({ record }) => (record.task_id === task ? endedGrants(record) : []))),
-];
-
-/**
- * Every unended hold of a phase in another run from this worktree, oldest first, limited to one task when
- * the caller knows it. A worktree that outlives one task is told apart only by that task.
- */
-function heldElsewhere(
-  dir: string,
-  run: string,
-  phase: BypassPhase,
-  worktree: string | undefined,
-  task: string | undefined,
-): UseRecord[] {
-  if (worktree === undefined) return [];
-  return useRecords(dir, phase)
-    .filter(
-      ({ run: other, record }) => other !== safeRunId(run) && record.worktree === worktree && record.mode === "bypass",
-    )
-    .filter(({ record }) => record.ended_at === undefined && (task === undefined || record.task_id === task))
-    .map(({ record }) => record)
-    .toSorted((x, y) => String(x.checked_at).localeCompare(String(y.checked_at)));
+function grantRun(dir: string, grantId: string, run: string): string | undefined {
+  if (!existsSync(dir)) return undefined;
+  const here = safeRunId(run);
+  return readdirSync(dir).find(
+    (other) =>
+      other !== here &&
+      BYPASS_PHASES.some((phase) => {
+        const used = readObject(bypassUsePath(dir, other, phase));
+        return used !== undefined && heldGrants(used).includes(grantId);
+      }),
+  );
 }
 
 /** Every grant a typed record ended in this phase of the run; none of them starts it again. */
@@ -1393,11 +1356,11 @@ function continueBypass(
   started: ReturnType<typeof readObject>,
   bypass: BypassAttribution | undefined,
   what: string,
-  endedInTask: readonly string[],
+  usedInRun: string | undefined,
 ): { ok: true; authority: GateAuthority | undefined } | { ok: false; reason: string } {
-  if (bypass !== undefined && endedInTask.includes(bypass.grant_id))
+  if (bypass !== undefined && usedInRun !== undefined)
     return refuse(
-      `${what} was ended by a typed record after bypass grant ${bypass.grant_id}; issue a fresh grant for this task to re-start it, or record it with the typed command and no --bypass`,
+      `bypass grant ${bypass.grant_id} was first used in run ${usedInRun}, and a grant is valid only in the run it starts in; ask the supervisor for a fresh grant for this run, or record it with the typed command and no --bypass`,
     );
   if (started === undefined) return { ok: true, authority: bypass };
   const origin = String(started.grant_id);
@@ -1508,7 +1471,7 @@ export interface BypassCheckArgs {
 /**
  * Validates the grant: registered, unedited, unexpired, for this task, phase, repository and worktree.
  * It does not apply the task's typed end: a grant a typed record ended still passes here, so callers
- * pass `endedForTask` to `continueBypass` before treating the result as a start.
+ * pass the grant's run (`grantRun`) to `continueBypass` before treating the result as a start.
  */
 export function checkBypass(
   a: BypassCheckArgs,
@@ -1612,7 +1575,9 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
     `Pass \`--bypass ${shellWord(path)} --task ${shellWord(grant.task_id)}\` when you record review-full, review-readiness or ship-preflight.`,
-    "A phase started under this grant continues only under a fresh grant for this task, or a typed record that ends the bypass.",
+    "This grant is valid only in the run it is first used in. When a check in another run (after `open --ticket`)",
+    "is refused for that reason, report needs-decision and the supervisor issues a fresh grant for this run.",
+    "A typed record ends the bypass for that phase in the run.",
   ].join("\n");
 }
 
@@ -1779,7 +1744,7 @@ export function main(
   }
 
   // The task-wide end is read from the default store; a store of the worker's choosing would not hold it.
-  const otherStore = "--dir is refused with a bypass grant: the typed end lives in the default evidence store";
+  const otherStore = "--dir is refused with a bypass grant: its run binding lives in the default evidence store";
   if (sub === "bypass check") {
     const grantPath = str("grant");
     const task = str("task");
@@ -1813,7 +1778,7 @@ export function main(
       started,
       checked.attribution,
       phase ?? "",
-      phase !== undefined && isBypassPhase(phase) ? endedForTask(dir, task, phase) : [],
+      phase !== undefined && isBypassPhase(phase) ? grantRun(dir, checked.attribution.grant_id, run) : undefined,
     );
     if (!continued.ok) return stop(continued.reason);
     const used = useRecord(continued.authority, phase ?? null, run, now().toISOString(), started);
