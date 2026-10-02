@@ -809,8 +809,10 @@ export async function gradeLabels(
         target.votes = retry ? { ...target.votes, ...result.votes } : result.votes;
         target.reasons = retry ? { ...target.reasons, ...result.reasons } : result.reasons;
         target.panel_verdict = retry ? panelVerdict(panel, target.votes) : result.verdict;
-        target.usage = retry ? { ...target.usage, ...usage } : usage;
-        target.cost_usd = retry ? { ...target.cost_usd, ...result.cost_usd } : result.cost_usd;
+        const others = <T>(kept: Record<string, T> | undefined) =>
+          Object.fromEntries(Object.entries(kept ?? {}).filter(([reviewer]) => !(reviewer in result.votes)));
+        target.usage = retry ? { ...others(target.usage), ...usage } : usage;
+        target.cost_usd = retry ? { ...others(target.cost_usd), ...result.cost_usd } : result.cost_usd;
         target.graded_as = panel.subject.id;
         writeLabels(file, fresh);
       }

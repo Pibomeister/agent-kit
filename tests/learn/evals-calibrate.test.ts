@@ -639,11 +639,25 @@ describe("gradeLabels", () => {
       panel_verdict: "needs-human" as const,
       reasons: { "reviewer-b": "no reply", "reviewer-c": "ok" },
     };
+    const earlier = {
+      input_tokens: 100,
+      cached_input_tokens: 40,
+      cache_write_input_tokens: 0,
+      output_tokens: 10,
+      reasoning_output_tokens: 2,
+      total_tokens: 110,
+    };
     const file = join(scratch, "retry", "labels.json");
     writeLabels(
       file,
       fileOf([
-        item("1", { ...graded, label: "PASS", votes: { "reviewer-b": "invalid", "reviewer-c": "PASS" } }),
+        item("1", {
+          ...graded,
+          label: "PASS",
+          votes: { "reviewer-b": "invalid", "reviewer-c": "PASS" },
+          usage: { "reviewer-b": earlier, "reviewer-c": earlier },
+          cost_usd: { "reviewer-b": 0.25, "reviewer-c": 0.5 },
+        }),
         item("2", { ...graded, votes: { "reviewer-b": "invalid", "reviewer-c": "invalid" } }),
         item("3", { ...graded, votes: { "reviewer-b": "PASS", "reviewer-c": "PASS" } }),
       ]),
@@ -675,7 +689,11 @@ describe("gradeLabels", () => {
       votes: { "reviewer-b": "PASS", "reviewer-c": "PASS" },
       reasons: { "reviewer-b": "stubbed", "reviewer-c": "ok" },
       panel_verdict: "PASS",
+      usage: { "reviewer-c": earlier },
+      cost_usd: { "reviewer-c": 0.5 },
     });
+    expect(Object.keys(after.items[0]?.usage ?? {})).toEqual(["reviewer-c"]);
+    expect(Object.keys(after.items[0]?.cost_usd ?? {})).toEqual(["reviewer-c"]);
     expect(after.items[1]!.votes).toEqual({ "reviewer-b": "invalid", "reviewer-c": "invalid" });
     const again = await gradeLabels(file, { matrix, spend: false, retryInvalid: true });
     expect(again.plan).toMatchObject({ calls: 2, pending: { "subject-a": ["2"] } });
