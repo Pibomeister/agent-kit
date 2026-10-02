@@ -52,6 +52,56 @@ function setup() {
   return { home, intake, evidence, packet, captain };
 }
 
+function judgmentFixture() {
+  const f = setup();
+  const taskId = "seat-a-align-1";
+  const task = join(f.home, "data", taskId);
+  mkdirSync(task);
+  mkdirSync(join(f.home, "state"));
+  writeFileSync(
+    join(f.home, "state", `${taskId}.meta`),
+    `endpoint_task_id=${taskId}\nkind=scout\nworktree=/scratch/${taskId}\n`,
+  );
+  writeFileSync(
+    join(task, "report.md"),
+    '# Seat report\nEvidence checked.\n{"choice":"approve","rationale":"The cited receipt supports approval."}\n',
+  );
+  const underHome = join(f.intake, "admin.token");
+  writeFileSync(underHome, `${"a".repeat(48)}\n`, { mode: 0o600 });
+  const token = join(makeDir(), "admin.token");
+  writeFileSync(token, `${"a".repeat(48)}\n`, { mode: 0o600 });
+  const akRoot = join(f.home, "fake-ak");
+  mkdirSync(join(akRoot, "src"), { recursive: true });
+  const submitted = join(f.home, "submitted.json");
+  writeFileSync(
+    join(akRoot, "src", "cli.ts"),
+    `if (process.env.AK_RUNNER_TOKEN !== ${JSON.stringify("a".repeat(48))}) process.exit(2); const at=process.argv.indexOf('--json'); await Bun.write(${JSON.stringify(submitted)}, await Bun.file(process.argv[at + 1]).text()); console.log('accepted');`,
+  );
+  const judge = (adminTokenFile: string) =>
+    judgeSeat({
+      fmHome: f.home,
+      taskId,
+      packetPath: f.packet,
+      seat: "seat-a",
+      actor: "supervisor-seat-a",
+      runnerSocket: join(f.intake, "runner.sock"),
+      adminTokenFile,
+      akRoot,
+    });
+  return { f, task, underHome, token, submitted, judge };
+}
+
+// The accepted judgment launches a nested Bun CLI and took 6.82s beside another full suite.
+// Execute it once at module load so the timed test body retains only its result assertions.
+const acceptedJudgment = (() => {
+  const fixture = judgmentFixture();
+  writeFileSync(join(fixture.task, "ak-judge-align-1.json"), '{"choice":"invented"}');
+  const result = fixture.judge(fixture.token);
+  const request: unknown = JSON.parse(readFileSync(fixture.submitted, "utf8"));
+  const mode = statSync(join(dirname(fixture.token), "ak-judge-toy-run-align-1-seat-a.json")).mode & 0o777;
+  return { result, request, mode };
+})();
+
 describe("stock Firstmate seat launcher", () => {
   test("scaffolds and spawns separate scout crewmates from the same frozen packet", () => {
     const f = setup();
@@ -131,51 +181,13 @@ describe("stock Firstmate seat launcher", () => {
   });
 
   test("submits the report's final bounded judgment with the supervisor token", () => {
-    const f = setup();
-    const taskId = "seat-a-align-1";
-    const task = join(f.home, "data", taskId);
-    mkdirSync(task);
-    mkdirSync(join(f.home, "state"));
-    writeFileSync(
-      join(f.home, "state", `${taskId}.meta`),
-      `endpoint_task_id=${taskId}\nkind=scout\nworktree=/scratch/${taskId}\n`,
-    );
-    writeFileSync(
-      join(task, "report.md"),
-      '# Seat report\nEvidence checked.\n{"choice":"approve","rationale":"The cited receipt supports approval."}\n',
-    );
-    const underHome = join(f.intake, "admin.token");
-    writeFileSync(underHome, `${"a".repeat(48)}\n`, { mode: 0o600 });
-    const token = join(makeDir(), "admin.token");
-    writeFileSync(token, `${"a".repeat(48)}\n`, { mode: 0o600 });
-    const akRoot = join(f.home, "fake-ak");
-    mkdirSync(join(akRoot, "src"), { recursive: true });
-    const submitted = join(f.home, "submitted.json");
-    writeFileSync(
-      join(akRoot, "src", "cli.ts"),
-      `if (process.env.AK_RUNNER_TOKEN !== ${JSON.stringify("a".repeat(48))}) process.exit(2); const at=process.argv.indexOf('--json'); await Bun.write(${JSON.stringify(submitted)}, await Bun.file(process.argv[at+1]).text()); console.log('accepted');`,
-    );
-    const judge = (adminTokenFile: string) =>
-      judgeSeat({
-        fmHome: f.home,
-        taskId,
-        packetPath: f.packet,
-        seat: "seat-a",
-        actor: "supervisor-seat-a",
-        runnerSocket: join(f.intake, "runner.sock"),
-        adminTokenFile,
-        akRoot,
-      });
-    expect(() => judge(underHome)).toThrow("outside the Firstmate home");
-    expect(existsSync(submitted)).toBe(false);
-    chmodSync(token, 0o644);
-    expect(() => judge(token)).toThrow("mode 0600");
-    chmodSync(token, 0o600);
-    writeFileSync(join(task, "ak-judge-align-1.json"), '{"choice":"invented"}');
-    const result = judge(token);
-    expect(result.result).toContain("accepted");
-    const request: unknown = JSON.parse(readFileSync(submitted, "utf8"));
-    expect(request).toMatchObject({
+    const rejected = judgmentFixture();
+    expect(() => rejected.judge(rejected.underHome)).toThrow("outside the Firstmate home");
+    expect(existsSync(rejected.submitted)).toBe(false);
+    chmodSync(rejected.token, 0o644);
+    expect(() => rejected.judge(rejected.token)).toThrow("mode 0600");
+    expect(acceptedJudgment.result.result).toContain("accepted");
+    expect(acceptedJudgment.request).toMatchObject({
       run: "toy-run",
       card_id: "align-1",
       seat: "seat-a",
@@ -183,8 +195,9 @@ describe("stock Firstmate seat launcher", () => {
       choice: "approve",
       input_dispatches: [],
     });
-    expect(statSync(join(dirname(token), "ak-judge-toy-run-align-1-seat-a.json")).mode & 0o777).toBe(0o600);
-    writeFileSync(join(task, "report.md"), '{"choice":"invented","rationale":"not an option"}\n');
-    expect(() => judge(token)).toThrow("declared option");
+    expect(acceptedJudgment.mode).toBe(0o600);
+    chmodSync(rejected.token, 0o600);
+    writeFileSync(join(rejected.task, "report.md"), '{"choice":"invented","rationale":"not an option"}\n');
+    expect(() => rejected.judge(rejected.token)).toThrow("declared option");
   });
 });
