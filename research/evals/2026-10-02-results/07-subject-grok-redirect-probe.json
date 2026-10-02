@@ -4,7 +4,7 @@
   "prompt_command": "ls -la 2>/dev/null && git status -sb 2>/dev/null",
   "status": "not-run",
   "valid": null,
-  "invalid_reason": "Stopped before this session because the Grok refused-call cancellation repair failed.",
+  "invalid_reason": "Stopped before this session by the stop condition after session 5 was cancelled on a refused call. The scorer classifies that call as a write, so the Grok refused-call cancellation repair is unresolved, not shown failed.",
   "turn_count": null,
   "tool_event_count": 0,
   "declared_cap": 20,

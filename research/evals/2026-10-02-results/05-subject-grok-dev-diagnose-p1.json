@@ -4,6 +4,7 @@
   "status": "run",
   "valid": false,
   "invalid_reason": "host cancelled refused Bash call: SESSION=\"<SCRATCH>/sessions/<SESSION>\"; find \"$SESSION\" -maxdepth 3 -type d; echo '=== FILES ==='; find \"$SESSION\" -maxdepth 3 -type f -not -path '*/terminal/*' | head -80",
+  "refused_call_scorer_read_only": false,
   "turn_count": null,
   "turn_count_note": "The committed trigger-eval entry point parsed but did not retain the host-reported turn count.",
   "tool_event_count": 16,
