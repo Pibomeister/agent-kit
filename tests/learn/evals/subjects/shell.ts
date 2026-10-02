@@ -164,8 +164,9 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * `git tag` and `sort` are exact forms, because a trailing glob would also admit a ref-writing
  * flag, a name to create, or a bundled `-o`. The direct `printenv` and `gh auth status
  * --show-token` forms are looks to the scorer and have no rule here. Variable expansion and command
- * substitution through an admitted program such as `echo` or `test` remain admitted, so the
- * inherited environment still reaches the subject.
+ * substitution through an admitted program such as `echo` or `test` remain admitted and scored
+ * read-only, but only the process basics, the adapter-declared variables and the names the
+ * operator opted in are present in the subject's environment.
  * No rule covers a plain assignment whose variable a later `find` reads: the Grok 1.0.46 user guide
  * (`22-permissions-and-safety.md`, Rule Matching Reference) honours an allow rule for a variable
  * argument only as an `ls` or `rg` file operand, and other programs still prompt. The eval's
