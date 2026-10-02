@@ -1,0 +1,25 @@
+{
+  "case": "dev-diagnose-p1",
+  "subject": "subject-sol",
+  "status": "run",
+  "valid": true,
+  "invalid_reason": null,
+  "timed_out": false,
+  "exit_code": 0,
+  "turn_count": null,
+  "turn_count_note": "The Codex host runs uncapped and the committed trigger-eval entry point did not retain a turn count.",
+  "tool_event_count": 17,
+  "declared_cap": null,
+  "timeout_ms": 300000,
+  "host_load_averages": [17.92, 11.11, 14.52],
+  "elapsed_seconds": 53,
+  "derived_cost_usd": 0.0729356,
+  "usage": {
+    "input_tokens": 162175,
+    "cached_input_tokens": 145408,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1032,
+    "reasoning_output_tokens": 198,
+    "total_tokens": 163207
+  }
+}

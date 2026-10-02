@@ -1,0 +1,18 @@
+{
+  "case": "dev-super-scout-p2",
+  "subject": "subject-opus",
+  "status": "run",
+  "valid": true,
+  "invalid_reason": null,
+  "timed_out": false,
+  "exit_code": 0,
+  "turn_count": null,
+  "turn_count_note": "The committed trigger-eval entry point parsed but did not retain the host-reported turn count. The reply says the super-scout workflow used 3 of its own 4-turn budget; this is reply evidence, not a host turn count.",
+  "tool_event_count": 8,
+  "declared_cap": 20,
+  "timeout_ms": 300000,
+  "host_load_averages": [6.7, 8.6, 13.94],
+  "elapsed_seconds": 36,
+  "host_reported_cost_usd": 0.2306738,
+  "usage": null
+}

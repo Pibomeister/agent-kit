@@ -1,0 +1,25 @@
+{
+  "case": "dev-diagnose-p1",
+  "subject": "subject-astra",
+  "status": "run",
+  "valid": true,
+  "invalid_reason": null,
+  "timed_out": false,
+  "exit_code": 0,
+  "turn_count": null,
+  "turn_count_note": "The Codex host runs uncapped and the committed trigger-eval entry point did not retain a turn count.",
+  "tool_event_count": 4,
+  "declared_cap": null,
+  "timeout_ms": 300000,
+  "host_load_averages": [9.44, 9.96, 13.81],
+  "elapsed_seconds": 26,
+  "derived_cost_usd": 0.44725,
+  "usage": {
+    "input_tokens": 62634,
+    "cached_input_tokens": 21760,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 335,
+    "reasoning_output_tokens": 11,
+    "total_tokens": 62969
+  }
+}
