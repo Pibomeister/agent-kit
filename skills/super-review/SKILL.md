@@ -1,14 +1,15 @@
 ---
 name: super-review
 description: >-
-  Human-started command: it runs only when the human's message begins with `/ak:super-review`,
-  under a validated grant, when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
-  bypass check`, or as a delta inside an open review run. On any other request do not load or
-  follow it; tell the human to type that command. Reviews a change with a panel of independent
-  specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix
-  (delta), or the two-lane readiness gate (readiness). Use when a change needs judgment against
-  requirements, standards and tests. Reviewers cannot edit source. Not for writing the fix, not
-  for running acceptance checks, and not for repairing a red pipeline.
+  Human-started command for reviewing a change against requirements, standards and tests: it runs
+  only when the human's message begins with `/ak:super-review`, under a validated grant, when a
+  supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`, or as a delta inside
+  an open review run. Use when a change needs judgment against requirements, standards and tests.
+  When prose asks for this review work, do not inspect the change or its prerequisites; tell the
+  human to type `/ak:super-review` followed by their request. Runs a panel over an immutable
+  snapshot (full), a two-axis delta over an accepted fix (delta), or the two-lane readiness gate.
+  Reviewers cannot edit source. Not for writing the fix, running acceptance checks, or repairing a
+  red pipeline.
 license: MIT
 metadata:
   ak_catalog_id: super-review
@@ -104,10 +105,10 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
    validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
    Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
-   in prose is not a start, even when it names this skill or the command. With neither, stop here:
-   make no other tool call, say that this command is human-started, and give the human the line to
-   type, `/ak:super-review` and their request. For `delta`, confirm a review run is open; if not,
-   stop with `needs-input`.
+   in prose is not a start, even when it asks for this work without naming the skill. With neither,
+   stop before inspecting the change, checking prerequisites or answering the task: the only
+   response is to tell the human to type `/ak:super-review` followed by their request. For `delta`,
+   confirm a review run is open; if not, stop with `needs-input`.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only

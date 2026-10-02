@@ -1,7 +1,7 @@
 {
  "id": "trigger-dev",
- "version": 3,
- "about": "Skill-routing dev set, version 3. M skills: 2 positives (expects load) + 1 negative. U skills: 3 prose positives (expects recommend: the law says only a typed /ak:<id> starts one, so the reply recommends the command or loads and stops), 1 hard negative near the trigger, and for five of them a positive that begins with the typed command (expects proceed). Every negative carries forbidden. tests/learn/trigger-prompts.test.ts holds the split and the leakage guard.",
+ "version": 4,
+ "about": "Skill-routing dev set, version 4. M skills: 2 positives (expects load) + 1 negative. U skills: 3 prose positives (expects recommend: the law says only a typed /ak:<id> starts one, so the reply recommends the command or loads and stops), 1 hard negative near the trigger, and for five of them a positive that begins with the typed command (expects proceed). Every negative carries forbidden. Document tasks include their own source text. tests/learn/trigger-prompts.test.ts holds the split and the leakage guard.",
  "cases": [
   {"id": "dev-super-align-p1", "skill": "super-align", "polarity": "positive", "invocation": "U", "expected": ["super-align"], "expects": "recommend",
    "prompt": "Please run /ak:super-align on this before anyone writes code: I want some kind of team workspaces feature, but I honestly can't tell if it means shared billing, shared projects, or both."},
@@ -127,7 +127,7 @@
   {"id": "dev-doc-review-p1", "skill": "doc-review", "polarity": "positive", "invocation": "M", "expected": ["doc-review"], "expects": "load",
    "prompt": "Review this ADR draft for contradictions and whether it is ready for a decision."},
   {"id": "dev-doc-review-p2", "skill": "doc-review", "polarity": "positive", "invocation": "M", "expected": ["doc-review"], "expects": "load",
-   "prompt": "Read docs/plan.md and tell me where two of its sections disagree with each other."},
+   "prompt": "Here is docs/plan.md:\n\n# Rollout\nEnable the new checkout for every account in one release.\n\n# Risk controls\nExpose the new checkout only to internal accounts until error rates stay below one percent for seven days.\n\nTell me where these sections disagree."},
   {"id": "dev-doc-review-n1", "skill": "doc-review", "polarity": "negative", "invocation": "M", "expected": [], "forbidden": ["doc-review"], "load_fails": true,
    "prompt": "Tighten the wording in docs/plan.md; it's clunky and runs too long."},
 
