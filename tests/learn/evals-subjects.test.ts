@@ -132,6 +132,18 @@ describe("claude", () => {
     expect(full.slice(-3)).toEqual(["--append-system-prompt", "ROSTER", "Load the greet skill."]);
     expect(claude.injection).toBe("append-system-prompt");
   });
+
+  test("argv: a case's declared tools become the complete unattended grant", () => {
+    const argv = claude.command({ ...req, allowedTools: ["Read", "Bash", "Write"] }, undefined);
+    expect(argv.slice(argv.indexOf("--allowedTools"), argv.indexOf("--allowedTools") + 4)).toEqual([
+      "--allowedTools",
+      "Read",
+      "Bash",
+      "Write",
+    ]);
+    expect(argv).toContain("dontAsk");
+    expect(argv).toContain("none");
+  });
 });
 
 describe("codex", () => {
@@ -235,6 +247,19 @@ describe("codex", () => {
       "--disable plugins --disable remote_plugin --disable apps",
     );
   });
+
+  test("argv: a case that grants mutation runs in the scratch workspace, while an ordinary subject stays read-only", () => {
+    const ordinary = codex.command(req, undefined);
+    expect(ordinary.slice(ordinary.indexOf("--sandbox"), ordinary.indexOf("--sandbox") + 2)).toEqual([
+      "--sandbox",
+      "read-only",
+    ]);
+    const argv = codex.command({ ...req, allowedTools: ["Read", "Bash"] }, undefined);
+    expect(argv.slice(argv.indexOf("--sandbox"), argv.indexOf("--sandbox") + 2)).toEqual([
+      "--sandbox",
+      "workspace-write",
+    ]);
+  });
 });
 
 describe("grok", () => {
@@ -255,6 +280,17 @@ describe("grok", () => {
       "helper-under-test,model-under-test",
     );
     expect(grok.parse(end({})).model).toBeUndefined();
+  });
+
+  test("argv: a case's declared tools replace the ordinary read-only permission table", () => {
+    const ordinary = grok.command(req, undefined);
+    expect(ordinary.filter((value) => value === "--allow").length).toBeGreaterThan(3);
+    expect(ordinary).toContain("--deny");
+    const argv = grok.command({ ...req, allowedTools: ["Read", "Bash", "Write"] }, undefined);
+    const values = (flag: string) => argv.flatMap((value, index) => (value === flag ? [argv[index + 1]] : []));
+    expect(values("--allow")).toEqual(["Read", "Bash(*)", "Write"]);
+    expect(values("--deny")).toEqual([]);
+    expect(argv).toContain("dontAsk");
   });
 
   test("a live session under dontAsk: the refused write is still an Edit event, and there is no reply", () => {

@@ -27,6 +27,8 @@ import { privateHome } from "./home.ts";
 import { readsOf, unwrap } from "./shell.ts";
 import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter, TokenUsage } from "./types.ts";
 
+const MUTATING_GRANTS = new Set(["Bash", "Delete", "Edit", "NotebookEdit", "Write"]);
+
 interface Item {
   id?: string;
   type?: string;
@@ -138,7 +140,7 @@ export const codex: SubjectAdapter = {
       "--skip-git-repo-check",
       "--ignore-rules",
       "--sandbox",
-      "read-only",
+      req.allowedTools?.some((tool) => MUTATING_GRANTS.has(tool)) === true ? "workspace-write" : "read-only",
       "--disable",
       "plugins",
       "--disable",

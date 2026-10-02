@@ -94,15 +94,20 @@ export const grok: SubjectAdapter = {
   env: ["GROK_HOME"],
   injection: "append-system-prompt",
   command(req: SessionRequest, model: string | undefined): string[] {
+    const allow =
+      req.allowedTools === undefined
+        ? READ_ONLY_ALLOW
+        : req.allowedTools.map((tool) => (tool === "Bash" ? "Bash(*)" : tool));
+    const deny = req.allowedTools === undefined ? READ_ONLY_RULES.deny : [];
     return [
       "grok",
       "-p",
       req.prompt,
       "--output-format",
       "streaming-json",
-      ...READ_ONLY_ALLOW.flatMap((rule) => ["--allow", rule]),
-      ...(allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
-      ...READ_ONLY_RULES.deny.flatMap((rule) => ["--deny", rule]),
+      ...allow.flatMap((rule) => ["--allow", rule]),
+      ...(req.allowedTools === undefined && allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
+      ...deny.flatMap((rule) => ["--deny", rule]),
       ...(model === undefined ? [] : ["-m", model]),
       ...(req.maxTurns === undefined ? [] : ["--max-turns", String(req.maxTurns)]),
       "--permission-mode",
