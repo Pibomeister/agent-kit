@@ -35,11 +35,13 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
   WebMCP, and its bridge daemon listening on `127.0.0.1:7331`. Missing any one names
   `missing-prerequisite:bridge-cli`, `missing-prerequisite:bridge-token` or
   `missing-prerequisite:bridge-daemon`.
-- An account on the selected editor with permission to save the design. Missing:
+- Only to save or share the design: an account on the selected editor. Opening routes, comparing
+  viewports and applying pending edits run signed out. Missing when a save or share is asked for:
   `missing-prerequisite:editor-account`.
 - A running local dev server, repository root, requested route paths and named viewports. A route
   that does not respond is `missing-prerequisite:dev-server`, with that route named.
-- Optional named acceptance criteria. They let the resulting receipt enter `super-verify`'s matrix.
+- Optional named acceptance criteria. They let the resulting receipt enter `super-verify`'s matrix;
+  without them the batch is still applied, receipted and acknowledged.
 
 ## Workflow
 
@@ -47,7 +49,8 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
    `/ak:visual-edit`, stop and return that exact command.
 2. Freeze the editor URL, repository root, dev-server URL, ordered routes and viewports. If the
    request is for a not-yet-built alternative, hand the bounded question to `prototype` and stop.
-3. Check every prerequisite in Inputs. Stop on the first missing id; never replace a missing
+3. Check every prerequisite the request needs by using it; an address or status declared in a
+   project file is configuration, not evidence. Stop on the first missing id; never replace a missing
    editor, bridge or dev server with generated markup, a screenshot or another static preview.
 4. Probe every requested route at the dev-server URL. Preserve the human's route labels, order and
    viewports; discover routes only when none were supplied.
@@ -59,8 +62,10 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
    frame's `src` rather than `srcdoc`, and the Code panel's local source root plus one opened file.
    A failed check stops with its name; a returned link alone is not readiness.
 8. Hand the verified canvas to the human. Visual changes remain pending and never write source from
-   the canvas. Preserve the pending batch until it is applied or explicitly discarded.
-9. Pull the pending handoff and its revision. For a compiled route, locate and edit authored source
+   the canvas. Preserve the pending batch until it is applied or explicitly discarded. A save or
+   share asked for without the account stops with its id and leaves the session as it is.
+9. Pull the pending handoff and its revision through the bridge; a repository file that describes
+   a pending revision is not a handoff. For a compiled route, locate and edit authored source
    through the coding agent. A change beyond style, literal text or local layout stops for an
    approved ticket, then hands the revision to `super-build`; do not partially apply it here.
 10. Read every target file before writing, apply the pending batch to source, and confirm the dev
@@ -74,8 +79,8 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 
 ## Hard gates
 
-Gate: any missing editor, account, CLI, token, daemon, dev server or route stops with its named
-prerequisite. The run never degrades to generated markup.
+Gate: any missing editor, CLI, token, daemon, dev server or route stops with its named
+prerequisite, and a missing account stops a save or share. The run never degrades to generated markup.
 
 Gate: the running app is the source of truth. Requested screens are URL-backed frames at the named
 viewports, never copied markup or static snapshots.
@@ -104,7 +109,9 @@ acknowledgment. Narrative is not a receipt (ruling `closure-requires-independent
 - For each applied pending revision, a `verification` receipt
   (`schemas/verification.schema.json`): the probe parameters name route, viewport and visual-edit
   revision; `artifacts` names every changed source file with its digest; `source_revision` binds the
-  code; the probe's observed value records the dev-server confirmation. `super-verify` may consume it.
+  code; the probe's observed value records the dev-server confirmation. `supports` lists the supplied
+  criteria and `super-verify` may consume it. With none supplied the receipt carries `no_criteria`
+  instead, saying so and naming what was verified: the running app showing the applied edit.
 - When the edit exceeds this skill's boundary, the unchanged pending revision and the approved
   ticket requirement are handed to `super-build`; no partial source edit is an output.
 

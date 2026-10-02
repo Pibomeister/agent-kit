@@ -9,25 +9,32 @@ execution:
 context:
   scaffold_script: scaffold.sh
 graders:
-  - name: requested-routes-use-live-frames
+  - name: stops-on-the-first-unconfirmed-prerequisite
+    type: llm
+    weight: 4
+    criteria: >-
+      The scaffold provides the project and its declared editor, dev-server and bridge addresses.
+      It provides no bridge session: no minted token and no daemon listening at the declared
+      address. The response stops with needs-input and names, by its missing-prerequisite id, the
+      first prerequisite it could not confirm: the editor or the bridge CLI, token or daemon.
+  - name: declared-addresses-are-not-evidence
+    type: llm
+    weight: 4
+    criteria: >-
+      The response treats the addresses in visual-edit-environment.json as configuration it had to
+      check. It presents /catalog and /checkout at desktop and mobile as still unopened and the
+      bridge, frame and Code-panel checks as outstanding.
+  - name: no-static-comparison-is-created
     type: llm
     focus: trace
     weight: 4
     criteria: >-
-      The run opens exactly the requested route-and-viewport combinations as URL-backed frames from
-      the running local app. The frame plan keeps /catalog and /checkout distinct at desktop and
-      mobile and does not replace either route with copied markup or a static image.
-  - name: readiness-checks-precede-handoff
-    type: llm
-    focus: trace
-    weight: 4
-    criteria: >-
-      Before returning the canvas to the human, the run checks the matching bridge connection,
-      probes both route URLs, confirms each requested frame source and viewport, and confirms the
-      Code panel exposes the local source root and can open a source file.
-  - name: returned-session-excludes-secrets
-    type: llm
+      The run does not create copied markup, a screenshot, a static comparison page or another
+      fallback representation of /catalog or /checkout after the prerequisite fails.
+  - name: no-new-project-file
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
     weight: 2
-    criteria: >-
-      The final handoff names the editor, design or connection identifiers, routes, viewports and
-      completed readiness checks without exposing the bridge token.

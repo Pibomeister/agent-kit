@@ -1,7 +1,7 @@
 {
   "editorUrl": "https://design.agent-native.com",
-  "devServerUrl": "http://127.0.0.1:45101",
+  "devServerUrl": "http://127.0.0.1:45102",
   "devCommand": ["node", "server.mjs"],
   "bridgeUrl": "http://127.0.0.1:7331",
-  "routes": ["/catalog", "/checkout"]
+  "routes": ["/dashboard"]
 }

@@ -30,7 +30,9 @@ prerequisites:
       A bridge token minted through the selected editor's MCP connector or WebMCP and a matching
       bridge daemon listening on 127.0.0.1:7331.
   - kind: approval
-    ref: An account on the selected editor with permission to save the design.
+    ref: >-
+      Only to save or share the design: an account on the selected editor. Opening routes, comparing
+      viewports and applying pending edits run signed out.
   - kind: environment
     ref: A running local dev server whose requested routes respond.
 
@@ -54,8 +56,8 @@ inputs:
   - id: editor-connection
     required: true
     summary: >-
-      The selected editor URL, authenticated account, MCP or WebMCP connection, bridge token and
-      healthy matching daemon.
+      The selected editor URL, MCP or WebMCP connection, bridge token and healthy matching daemon.
+      An account on the editor is needed only to save or share the design.
   - id: running-app
     required: true
     summary: The repository root, dev-server URL and responding requested routes.
@@ -64,7 +66,9 @@ inputs:
     summary: Ordered route paths, human labels and named viewports; routes are discovered only when absent.
   - id: acceptance-criteria
     required: false
-    summary: Named criteria the resulting receipt may support in super-verify's evidence matrix.
+    summary: >-
+      Named criteria the resulting receipt may support in super-verify's evidence matrix. Without
+      them the batch is still applied, receipted and acknowledged.
   - id: approved-ticket
     schema: ticket
     required: false
@@ -80,7 +84,9 @@ outputs:
     summary: >-
       A probe receipt per applied pending revision. Its parameters name route, viewport and visual
       revision; artifacts name changed source files and digests; source_revision binds the code;
-      observed records the dev-server confirmation. It is consumable by super-verify.
+      observed records the dev-server confirmation. supports lists the supplied criteria and the
+      receipt is consumable by super-verify; with none supplied it carries no_criteria instead,
+      saying so and naming what was verified, the running app showing the applied edit.
   - id: build-handoff
     summary: >-
       For a broader change, the unchanged pending visual revision plus the approved-ticket
@@ -102,8 +108,8 @@ constraints:
   broader-change-may-bypass-super-build: false
 
 hard_gates:
-  - Any missing editor, account, CLI, token, daemon, dev server or route stops with its named
-    prerequisite; generated markup never substitutes.
+  - Any missing editor, CLI, token, daemon, dev server or route stops with its named
+    prerequisite, and a missing account stops a save or share; generated markup never substitutes.
   - The running app is the source of truth. Requested screens are URL-backed frames at the named
     viewports, never copied markup or static snapshots.
   - The connection, requested frames and Code panel are verified before canvas handoff.
@@ -122,8 +128,9 @@ stop_conditions:
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The command was not explicit, a named editor, account, bridge, server or route prerequisite
-      is missing, or a broader change has no approved ticket.
+      The command was not explicit, a named editor, bridge, server or route prerequisite is
+      missing, a save or share was asked for without the account, or a broader change has no
+      approved ticket.
     next_permitted_action: Supply the named prerequisite or approved ticket and invoke the command again.
   - status: failed
     meaning: >-
@@ -172,7 +179,9 @@ provenance:
         at named viewports; visual changes stay pending until the coding agent applies source and
         acknowledges the revision; compiled routes stay on that agent path. The connection, route
         frames and code view are verified before handoff. The editor URL is generalized to include
-        a self-hosted editor while retaining the donor's hosted URL as a convenience.
+        a self-hosted editor while retaining the donor's hosted URL as a convenience: the donor's
+        editor is open source and runs locally, at templates/design in
+        https://github.com/BuilderIO/agent-native (MIT).
     - donor: builderio-skills
       commit: eb07be67e6d924b958445f706f5ac386243df6b4
       path: skills/visual-edit/README.md
@@ -188,26 +197,28 @@ tests:
   - id: compares-two-routes-at-desktop-and-mobile
     kind: positive
     given: >-
-      A running app exposes two named routes, and the human asks to compare both at desktop and mobile.
+      The human asks to compare two named routes at desktop and mobile. The project declares its
+      editor, dev-server and bridge addresses, and no bridge prerequisite can be confirmed.
     expect: >-
-      Four URL-backed frames use the requested routes and named viewports, and the connection,
-      frames and Code panel are verified before the canvas is handed to the human.
-  - id: compiled-route-edit-applies-through-source
+      The skill holds the four route-and-viewport combinations, checks the prerequisites by using
+      them and returns needs-input naming the first one it could not confirm. The declared addresses
+      are not reported as a healthy bridge, and no static comparison is produced.
+  - id: repository-pending-file-is-not-a-pulled-revision
     kind: adversarial
     given: >-
-      A pending visual revision changes a compiled route's local styling while the canvas cannot
-      write the authored source safely.
+      The bridge is unavailable, a repository file describes a pending revision for a compiled
+      route, and the human asks to apply and acknowledge the revision from that file.
     expect: >-
-      The coding agent applies the revision to source, confirms the dev server, emits the receipt,
-      acknowledges that revision and pulls again; no direct canvas source apply occurs.
+      The skill returns needs-input naming the first prerequisite it could not confirm. Source is
+      unchanged and the revision is neither acknowledged nor receipted, because a pending revision
+      is pulled only through the bridge.
   - id: missing-prerequisite-stops-without-static-fallback
     kind: negative
     given: >-
-      Every other prerequisite is present and only the bridge daemon is absent while the human asks
-      to open the running app for visual editing.
+      No bridge is available while the human asks to open the running app for visual editing.
     expect: >-
-      The skill returns needs-input naming missing-prerequisite:bridge-daemon and creates no
-      generated markup, screenshot or static canvas fallback.
+      The skill returns needs-input naming the first prerequisite it could not confirm and creates
+      no generated markup, screenshot or static canvas fallback.
 
 body:
   line_budget: 150

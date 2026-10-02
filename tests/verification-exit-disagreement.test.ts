@@ -110,3 +110,22 @@ describe("verification exit disagreement", () => {
     expectVerdict(readJson(join(ROOT, "templates", "verification.weakened.example.json")), true, [decision]);
   });
 });
+
+describe("verification receipt without acceptance criteria", () => {
+  const { supports, ...unsupported } = readJson(join(ROOT, "templates", "verification.example.json"));
+  const noCriteria = "No acceptance criteria were supplied; the running app showed the applied edit.";
+
+  test("accepts a receipt that states no criteria were supplied in place of supports", () => {
+    expectVerdict({ ...unsupported, no_criteria: noCriteria }, true);
+  });
+
+  test("rejects a receipt that names neither criteria nor their absence", () => {
+    expect(akValidateAccepts(unsupported)).toBe(false);
+    expect(akValidateAccepts({ ...unsupported, supports: [] })).toBe(false);
+    expect(akValidateAccepts({ ...unsupported, no_criteria: "  " })).toBe(false);
+  });
+
+  test("rejects a receipt that both supports criteria and states none were supplied", () => {
+    expect(akValidateAccepts({ ...unsupported, supports, no_criteria: noCriteria })).toBe(false);
+  });
+});

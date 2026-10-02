@@ -7,6 +7,6 @@ source "$SCRIPT_DIR/../../super-build/_fixtures/scaffold-lib.sh"
 
 repo_init
 cp -R "$SCRIPT_DIR/project/." .
-commit_all "fixture: pending compiled-route visual edit" "2026-10-02T08:05:00+00:00"
+commit_all "fixture: repository file describing a pending visual edit" "2026-10-02T08:05:00+00:00"
 
 echo "scaffold: visual-edit fixture ready"

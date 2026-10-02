@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/verification.schema.json",
   "title": "Verification receipt",
-  "description": "Plan 5.6. One receipt: the command or probe, its exit status, the relevant output or artifact digest, the code revision, the environment identity, and the acceptance criteria it supports. The five outcomes are tracked as distinct members of 'status' — 'passed', 'failed', 'not-run', 'not-applicable' and 'inconclusive' — so an unproven result never collapses into a pass. An agent's prose description of green tests is not a receipt: 'notes' is explicitly non-authoritative, a passing command receipt must carry exit status 0 together with an output digest, and no free-text field can stand in for either (release scenario 10). A receipt is bound to a revision, so a later code change leaves it visibly stale rather than silently green.",
+  "description": "Plan 5.6. One receipt: the command or probe, its exit status, the relevant output or artifact digest, the code revision, the environment identity, and the acceptance criteria it supports or, where none were supplied, a statement saying so. The five outcomes are tracked as distinct members of 'status' — 'passed', 'failed', 'not-run', 'not-applicable' and 'inconclusive' — so an unproven result never collapses into a pass. An agent's prose description of green tests is not a receipt: 'notes' is explicitly non-authoritative, a passing command receipt must carry exit status 0 together with an output digest, and no free-text field can stand in for either (release scenario 10). A receipt is bound to a revision, so a later code change leaves it visibly stale rather than silently green.",
   "type": "object",
-  "required": ["kind", "environment", "supports"],
+  "required": ["kind", "environment"],
   "properties": {
     "schema": { "const": "verification" },
     "status": {
@@ -141,6 +141,10 @@
       "minItems": 1,
       "items": { "type": "string", "pattern": "^AC-[0-9]+$" }
     },
+    "no_criteria": {
+      "description": "Carried in place of 'supports' when the check was run with no acceptance criteria supplied. It says so and names what was verified instead. Such a receipt is still bound to its revision and environment, and it is outside the acceptance-to-evidence matrix: it supports no criterion and no gate may count it toward one.",
+      "$ref": "common.schema.json#/$defs/nonempty_string"
+    },
     "ticket": { "$ref": "common.schema.json#/$defs/artifact_ref" },
     "finding": {
       "description": "Set when the receipt exists to close a finding. Closure is a property of this evidence plus a policy rule saying the evidence suffices for that finding, never of a reviewer's confidence or a classifier's output, and the closer is never the author of the change (plan 5.5, ruling `closure-requires-independent-verification`, release scenario 3). A changed patch does not inherit this receipt: 'source_revision' binds it and 'invalidation' records when it stops applying.",
@@ -190,6 +194,10 @@
   "unevaluatedProperties": false,
   "allOf": [
     { "$ref": "common.schema.json#/$defs/envelope" },
+    {
+      "description": "A receipt names the criteria it supports, or states that none were supplied. It never does both and never does neither.",
+      "oneOf": [{ "required": ["supports"] }, { "required": ["no_criteria"] }]
+    },
     {
       "description": "A command check records the command it ran.",
       "if": { "properties": { "kind": { "const": "command" } }, "required": ["kind"] },

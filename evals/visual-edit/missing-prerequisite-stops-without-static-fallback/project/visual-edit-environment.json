@@ -1,10 +1,7 @@
 {
   "editorUrl": "https://design.agent-native.com",
-  "account": "eval-editor",
   "devServerUrl": "http://127.0.0.1:45103",
   "devCommand": ["node", "server.mjs"],
   "bridgeUrl": "http://127.0.0.1:7331",
-  "bridgeTokenSource": "webmcp",
-  "bridgeStatus": "absent",
   "routes": ["/account"]
 }
