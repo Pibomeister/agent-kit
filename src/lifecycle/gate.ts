@@ -1470,8 +1470,8 @@ export interface BypassCheckArgs {
 
 /**
  * Validates the grant: registered, unedited, unexpired, for this task, phase, repository and worktree.
- * It does not apply the task's typed end: a grant a typed record ended still passes here, so callers
- * pass the grant's run (`grantRun`) to `continueBypass` before treating the result as a start.
+ * It does not apply the run binding or the run's typed end: callers pass the grant's run (`grantRun`) and
+ * the run's use record to `continueBypass` before treating the result as a start.
  */
 export function checkBypass(
   a: BypassCheckArgs,
@@ -1743,7 +1743,7 @@ export function main(
     return 2;
   }
 
-  // The task-wide end is read from the default store; a store of the worker's choosing would not hold it.
+  // The run binding is read from the default store; a store of the worker's choosing would not hold it.
   const otherStore = "--dir is refused with a bypass grant: its run binding lives in the default evidence store";
   if (sub === "bypass check") {
     const grantPath = str("grant");
