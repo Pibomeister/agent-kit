@@ -1525,7 +1525,7 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     `Run it from the task's worktree, ${grant.worktree}; a check from any other worktree is refused.`,
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
-    `Pass \`--bypass ${path} --task ${grant.task_id}\` when you record review-full, review-readiness or ship-preflight;`,
+    `Pass \`--bypass ${path} --task ${grant.task_id}\` when you record review-full, review-readiness or ship-preflight.`,
     "A phase started under this grant continues only under a fresh grant for this task, or a typed record that ends the bypass.",
   ].join("\n");
 }

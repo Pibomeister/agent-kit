@@ -587,6 +587,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
 
   test("a fresh grant re-starting at the snapshot of a typed end keeps the ended grant refused", () => {
     const s = granted();
+    const first = grantId(s.ledger);
     expect(ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1")).code).toBe(0);
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
     const fresh = freshGrant(s, dayLater, "T-1");
@@ -594,7 +595,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     const used = join(defaultEvidenceDir(s.worktree), "task", "bypass", "super-review-readiness.json");
     expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({
       grant_id: fresh.id,
-      ended_grant_ids: [grantId(s.ledger)],
+      ended_grant_ids: [first],
     });
     expect(checkPhase(s, s.grantPath, "T-1", "super-review:readiness").code).toBe(1);
   });
