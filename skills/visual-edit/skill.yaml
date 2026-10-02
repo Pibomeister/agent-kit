@@ -22,7 +22,8 @@ prerequisites:
   - kind: capability
     ref: >-
       The Design editor hosted at https://design.agent-native.com, reached through its MCP
-      connector or WebMCP. No local editor is started.
+      connector or WebMCP. No local editor is started. Applying a handoff the human supplies,
+      already pulled, needs the connector only to acknowledge.
   - kind: capability
     ref: >-
       The @agent-native/core CLI available to connect the running app. The bridge token and the
@@ -111,7 +112,8 @@ constraints:
 hard_gates:
   - A missing editor connector, CLI, dev server or route stops with its named prerequisite, as
     does a bridge that does not come up, and a missing account stops a save or share; generated
-    markup never substitutes.
+    markup never substitutes. For a handoff the human supplies, already pulled, the connector stop
+    comes at acknowledgment, after apply and receipt.
   - The running app is the source of truth. Requested screens are URL-backed frames at the named
     viewports, never copied markup or static snapshots.
   - The connection, requested frames and Code panel are verified before canvas handoff.
@@ -132,8 +134,8 @@ failure_outcomes:
     meaning: >-
       The command was not explicit, a named connector, CLI, bridge, server or route prerequisite
       is missing, a save or share was asked for without the account, or a broader change has no
-      approved ticket. When the connector is missing for an acknowledgment, the receipt stands and
-      the revision stays pending.
+      approved ticket. A supplied handoff is applied and receipted before a missing connector
+      stops the acknowledgment; the receipt stands and the revision stays pending.
     next_permitted_action: Supply the named prerequisite or approved ticket and invoke the command again.
   - status: failed
     meaning: >-

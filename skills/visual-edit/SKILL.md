@@ -31,6 +31,8 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 
 - The Design editor hosted at `https://design.agent-native.com`, reached through its MCP connector
   or WebMCP; no local editor is started. Unavailable: `missing-prerequisite:editor-connector`.
+  It opens designs, pulls handoffs and takes acknowledgments; applying a supplied handoff needs it
+  only to acknowledge.
 - The `@agent-native/core` CLI. Missing: `missing-prerequisite:bridge-cli`. The bridge token and
   the daemon on `127.0.0.1:7331` are made by the run, not brought to it.
 - Only to save or share the design: an account on the editor. Opening routes, comparing
@@ -48,10 +50,10 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
    `/ak:visual-edit`, stop and return that exact command.
 2. Freeze the repository root, dev-server URL, ordered routes and viewports. If the
    request is for a not-yet-built alternative, hand the bounded question to `prototype` and stop.
-3. Check the editor connector, the CLI and the dev server by using each one the request needs; an
-   address or status declared in a project file is configuration, not evidence. Stop on the first
-   missing id; never replace a missing editor, bridge or dev server with generated markup, a
-   screenshot or another static preview.
+3. Check the editor connector, the CLI and the dev server by using them; an address or status
+   declared in a project file is configuration, not evidence. Stop on the first missing id; never
+   replace a missing editor, bridge or dev server with a static preview. When the human supplies
+   an already pulled handoff, check only the dev server here and go to step 9.
 4. Probe every requested route at the dev-server URL. Preserve the human's route labels, order and
    viewports; discover routes, from the CLI's manifest, only when none were supplied.
 5. Through the editor's MCP connector or WebMCP, open the design with the exact routes and
@@ -69,8 +71,8 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
    share asked for without the account stops with its id and leaves the session as it is.
 9. Pull the pending handoff and its revision through the editor's MCP connector or WebMCP, the
    channel that also takes the acknowledgment; nothing else pulls. A handoff the human supplies
-   with its revision, already pulled through that channel, needs only the dev server to be applied
-   and receipted. For a compiled route, locate and edit authored source through the coding agent.
+   with its revision, already pulled through that channel, is applied and receipted without the
+   connector, which step 11 still requires to acknowledge. For a compiled route, locate and edit authored source through the coding agent.
    A change beyond style, literal text or local layout stops for an approved ticket, then hands
    the revision to `super-build`; do not partially apply it here.
 10. Read every target file before writing, apply the pending batch to source, and confirm the dev
@@ -87,8 +89,8 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 ## Hard gates
 
 Gate: a missing editor connector, CLI, dev server or route stops with its named prerequisite, as
-does a bridge that does not come up, and a missing account stops a save or share. The run never
-degrades to generated markup.
+does a bridge that does not come up, and a missing account stops a save or share. For a supplied
+handoff the connector stop comes at acknowledgment, after apply and receipt. Never generated markup.
 
 Gate: the running app is the source of truth. Requested screens are URL-backed frames at the named
 viewports, never copied markup or static snapshots.
