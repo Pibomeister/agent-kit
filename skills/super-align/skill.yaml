@@ -221,8 +221,7 @@ tests:
       kb-read nor kb-write is available.
     expect: >-
       Missing kb-read is reported as a coverage limit and the interview still opens with a numbered
-      frontier round. Publication later stops with needs-input naming kb-read and kb-write, and no
-      local substitute is written.
+      frontier round. No local substitute is written.
   - id: typo-fix-does-not-start-alignment
     kind: negative
     given: A human asks for a misspelled word in one file to be corrected.
