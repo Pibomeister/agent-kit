@@ -172,10 +172,11 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 ## Provenance
 
-Eight donors, pinned to exact commits in `provenance/upstream.lock.yaml`. Six MIT donors make up the
+Nine donors, pinned to exact commits in `provenance/upstream.lock.yaml`. Six MIT donors make up the
 engineering lifecycle (pinned 2026-09-18): `EveryInc/compound-engineering-plugin`, `obra/superpowers`,
 `mattpocock/skills`, `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`,
-`Yeachan-Heo/oh-my-codex`. Two more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect`
+`Yeachan-Heo/oh-my-codex`. `BuilderIO/skills` (MIT, pinned 2026-09-30) is the source of
+`visual-edit`. Two more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect`
 (MIT) and `thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
 `provenance/licenses/`, the root `NOTICE` carries its NOTICE, and each file adapted from it records
 what was changed.
