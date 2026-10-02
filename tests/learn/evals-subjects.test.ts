@@ -8,7 +8,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
 import { claude } from "./evals/subjects/claude.ts";
@@ -493,19 +493,19 @@ describe("isolation", () => {
 
     const hooks = join(String(g.env.GROK_HOME), "hooks");
     const registered: unknown = JSON.parse(readFileSync(join(hooks, "assignment-read-chain.json"), "utf8"));
+    const script = join(hooks, "assignment-read-chain.sh");
     expect(registered).toEqual({
-      hooks: {
-        PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "assignment-read-chain.sh" }] }],
-      },
+      hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: script, timeout: 30 }] }] },
     });
-    const hook = (stdin: string) => {
-      const ran = spawnSync(join(hooks, "assignment-read-chain.sh"), {
-        cwd: hooks,
-        input: stdin,
-        encoding: "utf8",
-        timeout: 5000,
-      });
+    expect(isAbsolute(script)).toBe(true);
+    const run = (file: string, args: string[], stdin: string) => {
+      const ran = spawnSync(file, args, { cwd: scratch, input: stdin, encoding: "utf8", timeout: 5000 });
       return [ran.status, ran.stdout];
+    };
+    const hook = (stdin: string) => {
+      const asPath = run(script, [], stdin);
+      expect(run("/bin/sh", ["-c", script], stdin)).toEqual(asPath);
+      return asPath;
     };
     const event = (command: string, toolInputTruncated = false) =>
       JSON.stringify({

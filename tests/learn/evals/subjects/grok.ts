@@ -75,9 +75,6 @@ const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
   ["SKILLS", "RULES", "AGENTS", "MCPS", "HOOKS"].map((cell) => [`GROK_${vendor}_${cell}_ENABLED`, "false"] as const),
 );
 
-/** The hook script, named relative to the hook file that registers it. */
-const MEDIATOR_HOOK = "assignment-read-chain.sh";
-
 const READ_ONLY_RULES = grokReadOnlyPermissionRules();
 const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
 
@@ -165,15 +162,16 @@ export const grok: SubjectAdapter = {
     mkdirSync(join(scratch, "home"), { recursive: true });
     const hooks = join(home.dir, "hooks");
     mkdirSync(hooks, { recursive: true });
+    const script = join(hooks, "assignment-read-chain.sh");
     writeFileSync(
-      join(hooks, MEDIATOR_HOOK),
+      script,
       `#!/bin/sh\ncd ${shellQuote(import.meta.dir)} && exec ${shellQuote(process.execPath)} grok-mediator.ts\n`,
       { mode: 0o755 },
     );
     writeFileSync(
       join(hooks, "assignment-read-chain.json"),
       JSON.stringify({
-        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: MEDIATOR_HOOK }] }] },
+        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: script, timeout: 30 }] }] },
       }),
     );
     return {

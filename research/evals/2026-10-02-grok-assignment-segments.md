@@ -58,7 +58,9 @@ live and did not admit the chain; its receipt is not copied here.
 ## The mediator
 
 `tests/learn/evals/subjects/grok-mediator.ts` is registered by the Grok subject adapter's `isolate`
-as `hooks/assignment-read-chain.json` in the private home, matcher `Bash`. The mechanism is the
+as `hooks/assignment-read-chain.json` in the private home, matcher `Bash`. The hook file names the
+script beside it, `hooks/assignment-read-chain.sh`, by its absolute path, which is the same command
+whether the host reads `command` as a path or as an inline shell command. The mechanism is the
 documented one, in the same user guide:
 
 - `10-hooks.md:189-191`: every handler receives the model's original tool input, an `updatedInput`
@@ -125,7 +127,7 @@ rewrite for the write control. It differs elsewhere:
   `||` or `|`, after `&&`, or at the end of the chain, where the prototype dropped it and kept the
   neighbouring operator. It declines a bare assignment to a variable already in the environment,
   such as `PATH` or `HOME`, where the prototype dropped it.
-- It is registered as a script beside the hook file, the layout of the guide's own example.
+- It is registered as a script beside the hook file, named by its absolute path.
 
 ### The committed mediator on the live host: blocked
 
