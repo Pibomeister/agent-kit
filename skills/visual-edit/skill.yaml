@@ -211,7 +211,7 @@ tests:
     expect: >-
       The skill returns needs-input naming the first prerequisite it could not confirm. Source is
       unchanged and the revision is neither acknowledged nor receipted, because a pending revision
-      is pulled only through the bridge.
+      is pulled only from the editor.
   - id: missing-prerequisite-stops-without-static-fallback
     kind: negative
     given: >-

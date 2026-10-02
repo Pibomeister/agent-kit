@@ -69,7 +69,7 @@ adaptations:
   - path: evals/visual-edit/repository-pending-file-is-not-a-pulled-revision/case.yaml
     source: builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md
     rationale: >-
-      The pending revision pulled through the bridge and its post-apply acknowledgment become an
+      The pending revision pulled from the editor and its post-apply acknowledgment become an
       adversarial case from pinned passages
       `builderio-skills@eb07be67e6d924b958445f706f5ac386243df6b4:skills/visual-edit/SKILL.md#L491-L523`
       and

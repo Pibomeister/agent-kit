@@ -64,8 +64,10 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 8. Hand the verified canvas to the human. Visual changes remain pending and never write source from
    the canvas. Preserve the pending batch until it is applied or explicitly discarded. A save or
    share asked for without the account stops with its id and leaves the session as it is.
-9. Pull the pending handoff and its revision through the bridge; a repository file that describes
-   a pending revision is not a handoff. For a compiled route, locate and edit authored source
+9. Pull the pending handoff and its revision through the selected editor's MCP connector or
+   WebMCP, the channel that also takes the acknowledgment. `design pending` on the bridge CLI is
+   the fallback and prints the handoff with no revision, so nothing is acknowledged from it. A
+   repository file that describes a pending revision is not a handoff. For a compiled route, locate and edit authored source
    through the coding agent. A change beyond style, literal text or local layout stops for an
    approved ticket, then hands the revision to `super-build`; do not partially apply it here.
 10. Read every target file before writing, apply the pending batch to source, and confirm the dev
