@@ -1,0 +1,24 @@
+{
+  "currency": "USD",
+  "entries": [
+    {
+      "description": "Earlier iterations and withdrawn cross-family run",
+      "costUsd": 12.366,
+      "resultClaim": "withdrawn"
+    },
+    {
+      "description": "Manual Claude run",
+      "revision": "1d6d53f1",
+      "costUsd": 3.75,
+      "resultClaim": "none; retained for spend accounting only"
+    },
+    {
+      "description": "Authorized five-case Claude run",
+      "revision": "7f21baedb1c43c334173b3556f6d6147205ed6fa",
+      "costUsd": 6.632,
+      "receipt": "claude-five-case.json"
+    }
+  ],
+  "totalReportedCostUsd": 22.748,
+  "unreportedCost": "Earlier Codex attempts did not report host cost."
+}

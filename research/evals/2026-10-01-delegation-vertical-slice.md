@@ -1,71 +1,46 @@
-# Delegation vertical slice across model families, 2026-10-01
+# Delegation vertical slice evaluation, 2026-10-01
 
-The delegation slice adds three adversarial `super-bound` cases and extends the positive one. This
-note records what has been measured, what has not, and what it cost.
+The committed Claude receipt records one authorized run of the five current `super-bound` cases at
+revision `7f21baedb1c43c334173b3556f6d6147205ed6fa`. The run produced two passes, two failures, and
+one ungraded case. It does not satisfy the vertical slice's pass criterion.
 
-The short answer: **the cross-family proof is still owed.** No run has yet been graded by the
-committed graders at a committed revision on all three families, so this note claims no pass.
+## Cases and results
 
-## Cases
+| Case | Result | Evidence |
+| --- | --- | --- |
+| Refresh-token floor | pass | The scorer ran; the red authentication floor, human authorship, and advisor citation were persisted. |
+| Vague checkout criterion | pass | Readiness failed by named criteria and the vague language became frontier questions. |
+| Refused large split | fail | The subject wrote a decision ticket instead of the required ordered stack or an accepted zero-context stop shape. |
+| Approved direction, stop at decisions | fail | The review returned open decisions, but two implementation tickets were written before those decisions were resolved. |
+| Approved specification, produce tickets | ungraded | The scorer ran, but the three paid graders were skipped at the cost ceiling. |
 
-| Case | Path |
-| --- | --- |
-| Refresh-token floor | `evals/super-bound/delegated-refresh-token-rotation/case.yaml` |
-| Vague checkout criterion | `evals/super-bound/vague-checkout-speed-criterion/case.yaml` |
-| Refused large split | `evals/super-bound/refused-oversized-change-split/case.yaml` |
-| Approved direction (extended) | `evals/super-bound/approved-direction-produces-spec-and-tickets/case.yaml` |
-
-## What was measured, and why it is not a receipt
-
-An earlier pass on this branch ran the three new cases on a Claude, a Codex and a Grok subject and
-reported 3/3 on each. Those figures are withdrawn:
-
-- The tree was `5b0522705dd4cb8b8245a17e0a81875531d5bd8d` plus uncommitted changes. Nobody can
-  rebuild it.
-- The Codex and Grok runs were scored by a throwaway runner with its own predicates, not by the
-  graders in the case files. Two of its results were regraded without a rerun.
-- The receipts sat in temporary and gitignored directories. None is committed.
-- The fixtures have changed since. The advisor stub and the factor evidence no longer state the
-  graded answer, the scorer output no longer sits in the repository the subject reads, and the
-  advisor grader now reads the `kb_refs` citation.
+The compact receipt is
+[`2026-10-01-results/claude-five-case.json`](2026-10-01-results/claude-five-case.json). It names the
+measured revision, bundle digest, host, isolation method, per-case grader outcomes, and spend. The
+runner exited 1. Its reported cost was $6.632 against a $6 cap; in-flight work completed after the
+remaining group budget was allocated. No rerun or case iteration followed.
 
 ## Spend
 
+The committed [spend ledger](2026-10-01-results/spend.json) records:
+
 | Runs | Reported cost |
 | --- | ---: |
-| Earlier Claude-host iterations and the withdrawn consolidated run | $11.194 |
-| Earlier Grok attempts, including cancelled and timed-out ones | $1.172 |
-| Earlier Codex attempts | not reported by the host |
-| Rerun authorized at an $8 cap | $0.000, not started |
-| Cumulative | $12.366 |
+| Earlier iterations and the withdrawn cross-family run | $12.366 |
+| Manual Claude run at `1d6d53f1` | $3.750 |
+| Five-case Claude run at `7f21baedb1c43c334173b3556f6d6147205ed6fa` | $6.632 |
+| Cumulative reported spend | $22.748 |
 
-## Why the rerun has not happened
+Earlier Codex attempts did not report host cost, so that amount is not included.
 
-The rerun was authorized for all four cases on Claude, Codex and Grok, against the committed
-graders at the committed revision. It was not started, for three reasons:
+## Evidence boundary
 
-1. **No committed revision yet.** The fixture and grader changes above ship in the same commit as
-   this note. A receipt has to name the revision it measured, so the run comes after that commit.
-2. **The case-grader path changes user state.** `scripts/eval-local.sh` is the repository's path
-   for running a case file's graders. It moves `~/.docker/cli-plugins` and `~/.docker/bin` aside
-   for the run, and its header says to run it only by hand. The gate step that made these changes
-   may not touch files outside its worktree, and both directories exist on the operator's machine.
-3. **Codex and Grok cannot execute the committed graders.** The cross-model path in
-   `research/evals/2026-09-28-a2-cross-model.md` is `tests/learn/evals/trigger-eval.ts` with the
-   subject adapters under `tests/learn/evals/subjects/`. It scores routing over a prompt set. It
-   does not read a case file, run its scaffold, or evaluate `llm` and `tool_used` graders. Only
-   the Claude host's plugin evaluator does that. This is why the earlier pass fell back to a
-   throwaway runner.
+The earlier Claude, Codex, and Grok 3/3 claim is withdrawn because it did not use committed graders
+on a committed tree. This note relies only on the committed receipt summary above. Codex and Grok
+remain unproven for these case-file graders and are deferred to a follow-up committed runner task.
 
-## Follow-ups
-
-- Run the four cases with `scripts/eval-local.sh` by hand at the commit that carries this note,
-  and commit a compact receipt summary under `research/evals/` in the shape of
-  `research/evals/2026-09-25-results/`.
-- Decide how Codex and Grok get graded: either a repository runner that executes case-file graders
-  on those hosts, or an accepted narrower proof. Until then the three-family criterion is open.
-- One scaffold detail is unverified until a paid run: the scorer stub reads its output from a
-  directory under `TMPDIR`, outside the workspace, and the eval sandbox has to allow that read.
+The current scaffolds create scorer output inside their fixture setup; the former claim that a
+scorer stub depended on an external `TMPDIR` path no longer describes these cases.
 
 ## Out of scope
 

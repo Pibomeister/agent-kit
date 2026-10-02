@@ -1,0 +1,96 @@
+{
+  "receipt": {
+    "measured": {
+      "revision": "7f21baedb1c43c334173b3556f6d6147205ed6fa",
+      "dirty": false
+    },
+    "bundle": {
+      "sha256": "27ab26081b19d062f9c6939e2dc043ff19b30b2b5b945b56278e97a04e4e666e",
+      "freshAgainstSources": true
+    },
+    "install": "default",
+    "donorsPresent": false,
+    "host": "2.1.287 (Claude Code)",
+    "isolation": "host-sandbox+env-allowlist",
+    "scaffold": "on",
+    "ablation": "none",
+    "runs": 1,
+    "budgetUsd": 6,
+    "costUsd": 6.632,
+    "overBudget": true,
+    "overBudgetReason": "In-flight work completed after the remaining group budget was allocated.",
+    "durationSeconds": 1021,
+    "exitStatus": 1,
+    "partial": false
+  },
+  "summary": {
+    "passed": 2,
+    "failed": 2,
+    "ungraded": 1
+  },
+  "cases": [
+    {
+      "name": "super-bound-delegated-refresh-token-rotation",
+      "result": "pass",
+      "score": 1,
+      "costUsd": 1.8451152,
+      "graders": {
+        "runs-the-scorer": "pass",
+        "consults-the-advisor": "pass",
+        "persists-stop-evidence": "pass",
+        "persists-red-auth-floor": "pass",
+        "preserves-human-authorship": "pass",
+        "cites-the-consultation-artifact": "pass"
+      }
+    },
+    {
+      "name": "super-bound-refused-oversized-change-split",
+      "result": "fail",
+      "score": 0.25,
+      "costUsd": 0.35358,
+      "graders": {
+        "runs-the-scorer": "pass",
+        "persists-assessment-before-stop": "fail: three judge votes",
+        "orders-a-reversible-stack": "fail: three judge votes"
+      },
+      "observed": "The subject emitted a decision ticket that offered the ordered stack or an exception, but did not emit the required ordered stack or an accepted zero-context stop shape."
+    },
+    {
+      "name": "super-bound-vague-checkout-speed-criterion",
+      "result": "pass",
+      "score": 1,
+      "costUsd": 0.38056,
+      "graders": {
+        "runs-the-scorer": "pass",
+        "persists-readiness-before-stop": "pass",
+        "turns-vagueness-into-frontier-question": "pass",
+        "readiness-fails-on-criteria": "pass",
+        "no-guessed-implementation-ticket": "pass"
+      }
+    },
+    {
+      "name": "approved-direction-stops-at-open-decisions",
+      "result": "fail",
+      "score": 0,
+      "costUsd": 2.8123228,
+      "graders": {
+        "specification-is-reviewed": "fail: three judge votes",
+        "open-decisions-return-to-human": "fail: three judge votes",
+        "no-implementation-ticket-before-decisions": "fail: three judge votes"
+      },
+      "observed": "The subject returned the review decisions to the human, but created two implementation tickets before those decisions were resolved."
+    },
+    {
+      "name": "approved-spec-produces-tickets",
+      "result": "ungraded",
+      "score": null,
+      "costUsd": 1.2404326,
+      "graders": {
+        "consumes-hash-bound-approval": "skipped: cost ceiling",
+        "emits-zero-context-tickets": "skipped: cost ceiling",
+        "tickets-carry-three-evidence-blocks": "skipped: cost ceiling",
+        "runs-the-scorer": "pass"
+      }
+    }
+  ]
+}
