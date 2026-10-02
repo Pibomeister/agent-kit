@@ -59,6 +59,28 @@ const isStoredReport = ajv.compile<StoredReport>({
     },
   },
 });
+const isAbortedReport = ajv.compile<{
+  receipt: { cost_usd: number | null; aborted: { subject: string; reason: string } };
+  results: unknown[];
+}>({
+  type: "object",
+  required: ["receipt", "results"],
+  properties: {
+    receipt: {
+      type: "object",
+      required: ["cost_usd", "aborted"],
+      properties: {
+        cost_usd: { type: ["number", "null"] },
+        aborted: {
+          type: "object",
+          required: ["subject", "reason"],
+          properties: { subject: { type: "string" }, reason: { type: "string" } },
+        },
+      },
+    },
+    results: { type: "array" },
+  },
+});
 const isDryPlan = ajv.compile<DryPlan>({
   type: "object",
   required: ["mode", "subject", "case", "command"],
@@ -213,6 +235,92 @@ describe("execute path", () => {
     expect(result.files_created).toContain("tickets/result.json");
     expect(result.graders.map(({ definition }) => definition)).toEqual(loadCase(CASE_FILE).graders);
     expect(receiptCase.sha256).toBe(loadCase(CASE_FILE).sha256);
+  });
+
+  test("checks every subject's bundle before starting any session", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-bundles-")));
+    work.push(cwd);
+    const bundle = join(cwd, "dist");
+    mkdirSync(join(bundle, "claude-code"), { recursive: true });
+    const json = join(cwd, "result.json");
+    const errors: string[] = [];
+    let started = 0;
+    const code = await caseRunnerMain(
+      [
+        "--execute",
+        "--subject",
+        "subject-grok",
+        "--subject",
+        "subject-codex",
+        "--case",
+        CASE_FILE,
+        "--bundle",
+        bundle,
+        "--json",
+        json,
+      ],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        out: () => {},
+        err: (line) => errors.push(line),
+        startSubject: async () => {
+          started += 1;
+          throw new Error("a session started before the bundle check");
+        },
+      },
+    );
+
+    expect(code).toBe(2);
+    expect(started).toBe(0);
+    expect(errors.join("\n")).toContain(join(bundle, "codex"));
+  });
+
+  test("writes the completed rows and the aborted session when a later session throws", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-abort-")));
+    work.push(cwd);
+    const bundle = join(cwd, "dist");
+    mkdirSync(join(bundle, "claude-code"), { recursive: true });
+    mkdirSync(join(bundle, "codex"), { recursive: true });
+    const json = join(cwd, "result.json");
+    const errors: string[] = [];
+    const code = await caseRunnerMain(
+      [
+        "--execute",
+        "--subject",
+        "subject-grok",
+        "--subject",
+        "subject-codex",
+        "--case",
+        CASE_FILE,
+        "--bundle",
+        bundle,
+        "--json",
+        json,
+      ],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        out: () => {},
+        err: (line) => errors.push(line),
+        startSubject: async (_adapter, id, _model, request) => {
+          if (id === "subject-codex") throw new Error("host exited before a transcript");
+          mkdirSync(join(request.cwd, "tickets"));
+          writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+          return { ...session("grok", "grok.jsonl"), subject: id, costUsd: 0.25 };
+        },
+        judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
+      },
+    );
+    const report: unknown = JSON.parse(readFileSync(json, "utf8"));
+    if (!isAbortedReport(report)) throw new Error("case runner wrote an invalid aborted receipt");
+
+    expect(code).toBe(2);
+    expect(report.results).toHaveLength(1);
+    expect(report.receipt.cost_usd).toBe(0.25);
+    expect(report.receipt.aborted).toMatchObject({
+      subject: "subject-codex",
+      reason: "host exited before a transcript",
+    });
+    expect(errors.join("\n")).toContain("host exited before a transcript");
   });
 });
 

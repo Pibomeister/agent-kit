@@ -469,19 +469,27 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     if (outputFile === undefined) throw new Error("--execute requires --json");
     const queue = lastFlagValue(argv, "--queue") ?? `${outputFile}.queue.jsonl`;
     const start = dependencies.startSubject ?? runSubject;
+    const bundles = subjects.map((subject) => join(bundleRoot, BUNDLE_FOR[subject.host]));
+    const missing = [...new Set(bundles.filter((bundleDir) => !existsSync(bundleDir)))];
+    if (missing.length > 0) throw new Error(`${missing.join(", ")} missing; run bun run ak build --profile all`);
     const rows: CaseSessionResult[] = [];
-    for (const subject of subjects) {
+    const started: SessionResult[] = [];
+    let aborted: { subject: string; case: string; reason: string; subject_cost_usd: number | null } | null = null;
+    sessions: for (const subject of subjects) {
       const adapter = adapterFor(subject.host);
       const bundleDir = join(bundleRoot, BUNDLE_FOR[subject.host]);
-      if (!existsSync(bundleDir)) throw new Error(`${bundleDir} is missing; run bun run ak build --profile all`);
       const panel = buildPanel(matrix, subject);
       for (const evalCase of cases) {
-        const prepared = prepareCase(evalCase);
+        let prepared: PreparedCase | undefined;
+        let session: SessionResult | undefined;
         try {
+          prepared = prepareCase(evalCase);
           const request = requestFor(evalCase, subject, prepared.cwd, bundleDir);
-          const session = await start(adapter, subject.id, subject.model, request, priced.prices);
+          session = await start(adapter, subject.id, subject.model, request, priced.prices);
+          started.push(session);
           const after = filesUnder(prepared.cwd);
-          const filesCreated = [...after].filter((file) => !prepared.before.has(file)).toSorted();
+          const before = prepared.before;
+          const filesCreated = [...after].filter((file) => !before.has(file)).toSorted();
           rows.push(
             await evaluateCaseSession(evalCase, session, {
               cwd: prepared.cwd,
@@ -493,28 +501,40 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
               command: adapter.command(request, subject.model),
             }),
           );
+        } catch (error) {
+          aborted = {
+            subject: subject.id,
+            case: evalCase.name,
+            reason: error instanceof Error ? error.message : String(error),
+            subject_cost_usd: session?.costUsd ?? null,
+          };
         } finally {
-          rmSync(prepared.cwd, { recursive: true, force: true });
+          if (prepared !== undefined) rmSync(prepared.cwd, { recursive: true, force: true });
         }
+        if (aborted !== null) break sessions;
       }
     }
 
     const report = summariseCaseSessions(rows);
     const json = resolve(PACKAGE_ROOT, outputFile);
     mkdirSync(dirname(json), { recursive: true });
-    const sessions = rows.map((row) => row.session);
     const receipt = {
       ...evalInstrument(PACKAGE_ROOT, revision()),
       argv: ["bun", "tests/learn/evals/case-runner.ts", ...argv],
       price_table: priced.price_table,
       cases: cases.map(({ name, file, sha256 }) => ({ name, file, sha256 })),
       subjects: subjects.map(({ id, host }) => ({ id, host })),
-      ...usageReceipt(sessions),
+      ...usageReceipt(started),
       cost_usd: report.cost_usd,
       summary: report.summary,
+      aborted,
     };
     writeFileSync(json, `${JSON.stringify({ receipt, ...report }, null, 2)}\n`);
     out(JSON.stringify({ receipt, results: report.results, invalid_sessions: report.invalid_sessions }));
+    if (aborted !== null) {
+      err(`case-runner: ${aborted.subject} ${aborted.case}: ${aborted.reason}`);
+      return 2;
+    }
     return report.summary.failed > 0 || report.summary.invalid > 0 || report.summary.ungraded > 0 ? 1 : 0;
   } catch (error) {
     err(`case-runner: ${error instanceof Error ? error.message : String(error)}`);
