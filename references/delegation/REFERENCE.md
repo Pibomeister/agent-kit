@@ -55,8 +55,11 @@ an advisor opinion is not lowering evidence.
 
 ## Obtain the record from the scorer
 
-First write the ticket's evidenced `floor`, five factors, `stage` and `lowered_by`, and ensure both
-the ticket and project record validate. Then run:
+First write the ticket's evidenced `floor`, five factors, `stage`, `lowered_by` and a `class` seed,
+and ensure both the ticket and project record validate. The seed is an input the schema requires,
+not a judgment: a first ticket-time block seeds `class` at `green`, and a re-run carries the class
+the previous run persisted. The scorer only raises the seed, so any other seed is a hand-derived
+class. Then run:
 
 ```text
 ak delegation <ticket> --project <project-record>

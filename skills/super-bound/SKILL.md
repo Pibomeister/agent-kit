@@ -106,9 +106,9 @@ approves its own specification or tickets.
    supervisor's answer is the approval.
 9. Load [the delegation reference pack](../../references/delegation/REFERENCE.md) and follow its
    ordered stack, readiness, assumptions and advisor procedures for every zero-context slice.
-10. Run `ak delegation <ticket> --project <project-record>` after populating its floor and evidenced
-   factors; persist its complete JSON with `readiness` and `assumptions` before returning, including
-   on `needs-input`. Never derive the class in this body.
+10. Run `ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
+   factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
+   `assumptions` before returning, including on `needs-input`. Never derive the class in this body.
 11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
     and what it produces that later tickets rely on with exact names, parameters and return types.
     Write for a skilled developer who knows almost nothing about this toolset or problem domain.
