@@ -134,6 +134,7 @@ export interface Run {
   effects: Record<string, Effect>;
   events: Record<string, { payload_hash: string; received_at: string; acted: boolean }>;
   open_escalation: Escalation | null;
+  cancellation?: { by: string; rationale: string; at: string };
   resume?: { run_state: string; next_permitted_action: string | null };
 }
 

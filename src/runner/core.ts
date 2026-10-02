@@ -6,9 +6,10 @@ import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
 
 import { artifactHash, sha256Hex } from "../util/hash.ts";
-import { git, takeSnapshot, type Snapshot } from "../lifecycle/gate.ts";
+import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
+import { runnerGit, takeRunnerSnapshot } from "./snapshot.ts";
 import type {
   Card,
   CardInput,
@@ -51,6 +52,8 @@ const LIMIT_NAME = new Map([
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
+const HUMAN_REFUSAL = "no";
+const HUMAN_RETRY = "retry";
 const EFFECTS = new Set([
   "remote-push",
   "pr-open",
@@ -103,19 +106,29 @@ function digest(bytes: Buffer): string {
 
 function approved(decision: Decision): boolean {
   const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
-  return decision.result.status === "complete" && choice === decision.card.approve;
+  return (
+    decision.result.status === "complete" &&
+    choice === decision.card.approve &&
+    choice !== HUMAN_REFUSAL &&
+    choice !== HUMAN_RETRY
+  );
 }
 
 function optionsFor(card: Card) {
-  return card.options.map((option) => ({
+  const options = card.options.map((option) => ({
     id: option,
     summary:
-      option === card.approve
-        ? `${option} (approves ${card.operation})`
-        : option === "retry"
-          ? `${option} (reopens ${card.operation})`
-          : `${option} (does not approve ${card.operation})`,
+      option === HUMAN_REFUSAL
+        ? `${option} (refuses ${card.operation})`
+        : option === card.approve
+          ? `${option} (approves ${card.operation})`
+          : option === HUMAN_RETRY
+            ? `${option} (reopens ${card.operation})`
+            : `${option} (does not approve ${card.operation})`,
   }));
+  if (!card.options.includes(HUMAN_REFUSAL))
+    options.push({ id: HUMAN_REFUSAL, summary: `${HUMAN_REFUSAL} (refuses ${card.operation})` });
+  return options;
 }
 
 function charterDigest(charter: Charter): string {
@@ -141,7 +154,7 @@ export class Runner {
     this.workerRoot = realpathSync(workerRoot);
     this.enforceSnapshot = enforceSnapshot;
     if (inside(requestedStateDir, this.workerRoot)) throw new Error("runner state is worker-writable");
-    const commonDir = git(this.workerRoot, ["rev-parse", "--git-common-dir"]);
+    const commonDir = runnerGit(this.workerRoot, ["rev-parse", "--git-common-dir"]);
     this.sharedGitDir =
       commonDir.code === 0
         ? realpathSync(isAbsolute(commonDir.text) ? commonDir.text : join(this.workerRoot, commonDir.text))
@@ -208,6 +221,11 @@ export class Runner {
         effects: { type: "object" },
         events: { type: "object" },
         open_escalation: { type: ["object", "null"] },
+        cancellation: {
+          type: "object",
+          required: ["by", "rationale", "at"],
+          properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } },
+        },
       },
     });
     const policySchema = schemas.ajv.compile<InvocationPolicy>({
@@ -252,7 +270,7 @@ export class Runner {
 
   private observedSnapshot(): Snapshot | null {
     if (!this.enforceSnapshot) return null;
-    const snapshot = takeSnapshot(this.workerRoot, { ignoreUntrackedDirs: RUNTIME_SCRATCH_DIRS });
+    const snapshot = takeRunnerSnapshot(this.workerRoot, RUNTIME_SCRATCH_DIRS);
     if (snapshot instanceof Object) return snapshot;
     throw new Error(`runner cannot observe worker revision: ${snapshot}`);
   }
@@ -266,6 +284,7 @@ export class Runner {
     const runValue: unknown = JSON.parse(readFileSync(this.path(id), "utf8"));
     if (!this.runSchema(runValue)) throw new Error(`runner state is invalid: ${JSON.stringify(this.runSchema.errors)}`);
     const run = runValue;
+    if (run.run_state === "cancelled") return run;
     const charterValue: unknown = JSON.parse(readFileSync(run.charter_path, "utf8"));
     if (!this.validateCharter(charterValue)) throw new Error("charter no longer validates");
     const charter = charterValue;
@@ -367,7 +386,7 @@ export class Runner {
       need: "Runner cap was reached",
       options: optionsFor(card),
       tried: [{ ref: card.evidence[0] ?? run.charter_hash, kind: "receipt" as const }],
-      default: card.options[0] ?? "stop",
+      default: HUMAN_REFUSAL,
       charter_rule: `runner:budget/${result.cap?.limit ?? "unknown"}`,
       blocked: [card.id],
       operation: card.operation,
@@ -621,11 +640,16 @@ export class Runner {
       !card.question ||
       card.options.length < 2 ||
       card.options.length > 6 ||
+      (card.options.length === 6 && !card.options.includes(HUMAN_REFUSAL)) ||
       card.options.some((option) => !ID.test(option)) ||
       new Set(card.options).size !== card.options.length ||
-      !card.options.includes(card.approve)
+      !card.options.includes(card.approve) ||
+      card.approve === HUMAN_REFUSAL ||
+      card.approve === HUMAN_RETRY
     )
-      throw new Error("invalid checkpoint card: options must be unique ids and include the approving option");
+      throw new Error(
+        "invalid checkpoint card: options must leave room for refusal and name a non-reserved approving option",
+      );
     const existing = run.cards[card.id];
     if (existing !== undefined) {
       if (JSON.stringify({ ...existing, judgments: [] }) !== JSON.stringify({ ...card, judgments: [] }))
@@ -703,13 +727,11 @@ export class Runner {
   }
 
   private refuse(run: Run, card: Card, rule: string, reason: string): OperationResult {
-    const defaultOption = card.options[0];
-    if (defaultOption === undefined) throw new Error("checkpoint has no default option");
     const escalation = {
       need: reason,
       options: optionsFor(card),
       tried: [{ ref: card.evidence[0] ?? run.charter_hash, kind: "receipt" as const }],
-      default: defaultOption,
+      default: HUMAN_REFUSAL,
       charter_rule: rule,
       blocked: [card.id],
       operation: card.operation,
@@ -822,10 +844,7 @@ export class Runner {
     const reached = this.capReached(run, step);
     if (reached !== null) return this.cap(run, card, reached.limit, reached.value);
     const lastHumanRuling = run.decisions.findLast(
-      (decision) =>
-        decision.card.operation === card.operation &&
-        decision.answer !== undefined &&
-        decision.answer.choice !== "retry",
+      (decision) => decision.card.operation === card.operation && decision.answer !== undefined,
     );
     if (lastHumanRuling?.answer !== undefined && lastHumanRuling.answer.choice !== lastHumanRuling.card.approve)
       return this.refuse(
@@ -915,18 +934,19 @@ export class Runner {
     )
       throw new Error("card has no open escalation to answer");
     const card = decision.card;
-    if (!card.options.includes(choice) || !ID.test(by) || !rationale.trim())
-      throw new Error("answer must name one of the card's options, who answered and why");
+    if ((choice !== HUMAN_REFUSAL && !card.options.includes(choice)) || !ID.test(by) || !rationale.trim())
+      throw new Error("answer must name the runner refusal or one of the card's options, who answered and why");
     if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot answer the escalation");
     const step = STAGE.get(card.operation);
     if (step === undefined) throw new Error("phase is not declared");
     run.run_state = resume.run_state;
     run.next_permitted_action = resume.next_permitted_action;
-    const reached = choice === card.approve ? this.capReached(run, step) : null;
+    const approving = choice === card.approve && choice !== HUMAN_REFUSAL && choice !== HUMAN_RETRY;
+    const reached = approving ? this.capReached(run, step) : null;
     if (reached !== null) {
       run.run_state = "cap-reached";
       run.next_permitted_action = null;
-    } else if (choice === card.approve) this.advance(run, step);
+    } else if (approving) this.advance(run, step);
     const result: OperationResult =
       reached === null
         ? { operation: card.operation, status: "complete", next_permitted_action: run.next_permitted_action }
@@ -937,6 +957,22 @@ export class Runner {
     delete run.resume;
     this.save(run);
     return result;
+  }
+
+  cancel(id: string, by: string, rationale: string): Run {
+    if (!ID.test(by) || !rationale.trim()) throw new Error("cancel needs a supervisor actor and rationale");
+    const runValue: unknown = JSON.parse(readFileSync(this.path(id), "utf8"));
+    if (!this.runSchema(runValue)) throw new Error("runner state is invalid and cannot be cancelled");
+    const run = runValue;
+    if (run.excluded_actors.includes(by)) throw new Error("an excluded actor cannot cancel the run");
+    if (run.run_state === "cancelled") return run;
+    run.run_state = "cancelled";
+    run.next_permitted_action = null;
+    run.open_escalation = null;
+    run.cancellation = { by, rationale, at: new Date().toISOString() };
+    delete run.resume;
+    this.save(run);
+    return run;
   }
 
   private advance(run: Run, step: StageStep): void {

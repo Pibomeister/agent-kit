@@ -53,8 +53,10 @@ escalation through Firstmate's normal needs-decision protocol; relay the human's
 `ak runner call answer`, which settles that card with the chosen option. Only the card's approving
 option advances the run; any other choice keeps it at that stage, opens nothing, and sends the worker
 back to prepare a revised card. After a human's non-approving answer, every later card for that
-operation escalates to a human again until one approves. A `retry` option, when the card lists one,
-reopens the checkpoint unchanged without lifting that gate. `adapters/runner-contract/CLI.md` owns
+operation escalates to a human again until one approves. The runner always offers `no` as a refusal
+even when the worker's card omitted it, and a human `retry` also keeps the human gate. A supervisor
+may call `ak runner call cancel` with actor and rationale to stop at any point; it does not undo an
+already confirmed effect. `adapters/runner-contract/CLI.md` owns
 the full `answer` rules.
 
 ## Legacy patched binding

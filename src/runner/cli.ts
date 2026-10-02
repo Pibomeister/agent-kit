@@ -1,9 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
-import { chmodSync, existsSync, lstatSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { createConnection, createServer } from "node:net";
-import { delimiter, dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { Runner } from "./core.ts";
+import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
   isArgs,
@@ -30,6 +31,7 @@ const ADMIN = new Set([
   "event",
   "effect",
   "complete",
+  "cancel",
   "charge",
 ]);
 const WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
@@ -98,28 +100,6 @@ function childEnv() {
   return env;
 }
 
-function workerControlledPath(path: string, workerRoot: string): boolean {
-  if (!isAbsolute(path)) return true;
-  let existing = resolve(path);
-  for (;;) {
-    try {
-      lstatSync(existing);
-      break;
-    } catch (cause) {
-      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT") return true;
-      const parent = dirname(existing);
-      if (parent === existing) return true;
-      existing = parent;
-    }
-  }
-  try {
-    const rel = relative(workerRoot, realpathSync(existing));
-    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-  } catch {
-    return true;
-  }
-}
-
 function privateChildEnv(runner: Runner) {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(childEnv())) {
@@ -134,10 +114,7 @@ function privateChildEnv(runner: Runner) {
     const value = env[key];
     if (value !== undefined && workerControlledPath(value, runner.workerRoot)) env[key] = runner.stateDir;
   }
-  const safePath = (env["PATH"] ?? "")
-    .split(delimiter)
-    .filter((path) => path.length > 0 && !workerControlledPath(path, runner.workerRoot));
-  env["PATH"] = safePath.length > 0 ? safePath.join(delimiter) : "/usr/bin:/bin";
+  env["PATH"] = workerFreePath(env["PATH"], runner.workerRoot);
   return env;
 }
 
@@ -266,6 +243,8 @@ async function execute(
     }
     case "complete":
       return runner.complete(str(a, "run"));
+    case "cancel":
+      return runner.cancel(str(a, "run"), str(a, "actor"), str(a, "rationale"));
     case "status":
       return runner.status(str(a, "run"));
     case "sync":

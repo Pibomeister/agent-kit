@@ -354,15 +354,20 @@ file that breaks any of these rules. The worker token comes from `AK_RUNNER_WORK
 `ak runner call <verb> --json <request-file>`; the service checks the token and verb before
 touching run state. `start` first validates the autopilot.start standing grant against the
 captain-approved charter (ADR-0007) and records `start_authority` before any seat dispatch.
-`start`, `collect`, `revision`, `judge`, `answer`, `verify`, `charge`, `effect`, `event` and
+`start`, `collect`, `revision`, `judge`, `answer`, `cancel`, `verify`, `charge`, `effect`, `event` and
 `complete` require the supervisor token. A worker can read `status` and `ledger`, freeze a `prepare`
 card and ask `decide` to apply the next validated grant. `sync` observes the worker's current Git
 revision and diff; `run-verify` executes only the supervisor-configured command and stores its
 output privately.
 
-The runner's Git snapshot omits **untracked** `.omc/` and `.omx/` harness scratch. Tracked files in
-those paths and every other untracked source file still affect the diff hash. Standalone lifecycle
-snapshots retain their original all-untracked behavior; this exception is confined to the runner.
+The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable bits and index
+entries instead of trusting a Git text diff. Its Git calls disable fsmonitor and hooks, run with a
+filtered `PATH` and do not invoke textconv or attribute clean filters. A tracked edit therefore
+changes the runner's `diff_hash` even when worker Git config claims the tree is clean. The raw
+fingerprint also omits **untracked** `.omc/` and `.omx/` harness scratch; tracked files in those
+paths and every other untracked source file still count. Standalone lifecycle snapshots retain
+their original Git-diff behavior. This change in runner fingerprint format makes evidence from an
+older runner binary stale on upgrade: sync, recollect and verify it before proceeding.
 
 At `decide`, the service checks the charter, grant, current state, evidence and cap before invoking
 the two configured launchers. It sends each launcher the same frozen question, option ids and
@@ -379,8 +384,10 @@ that carries each launcher's error, and the seat is not relaunched. Without a se
 supervisor may submit separate judgments with `judge`, and a missing judgment blocks the card.
 
 Every card names its approving option in `approve`, one of its `options`; `prepare` refuses a card
-without it. Only that choice advances the run, whether two seats agree on it or a human answers with
-it. Any other choice (no, revise, hold, reject) is recorded as the ruling, leaves the run at the same
+without it and refuses `no` or `retry` as approving options. The runner adds `no` as a refusal to
+every human escalation even if the worker omitted it, and recommends it as the default. Only the
+card's non-reserved approving choice advances the run, whether two seats agree on it or a human
+answers with it. Any other choice (no, revise, hold, reject) is recorded as the ruling, leaves the run at the same
 stage with that operation as its next permitted action, issues no grant and authorizes no effect: a
 non-approving `ship.prepare` never unlocks `pr-open` or a push. The way forward is a revised card that
 an approving decision then settles. The packet and escalation name both the operation and its
@@ -388,7 +395,7 @@ approving option, so a seat or human can see which choice would advance. An iden
 a non-approving seat ruling is not re-dispatched; a revised artifact may return to the seats.
 
 `answer` settles the escalated card with the human's or supervisor's ruling: the `card_id`, a
-`choice` from the card's options, the `actor` who ruled and a `rationale`. An excluded actor cannot
+`choice` from the card's options or the runner's `no`, the `actor` who ruled and a `rationale`. An excluded actor cannot
 answer. The card becomes decided with that choice, so `decide` replays the ruling and no seat is
 relaunched, and the run moves exactly as an agreeing pair of seats with that choice would move it.
 The ledger entry is marked answered and carries the choice, actor, rationale and time; the card's
@@ -396,8 +403,10 @@ decision artifact keeps the refusal, because a `decided` artifact needs two seat
 resubmitted card cannot override the ruling: `prepare` refuses the same operation and artifact at
 the same revision and diff. After a human non-approving answer, even a revised artifact or changed
 worker revision remains human-gated for that operation until a human approves; `decide` escalates
-before launching seats. A `retry`
-option, when the card lists one, instead reopens the checkpoint as it stood before the refusal.
+before launching seats. A `retry` option, when the card lists one, reopens the checkpoint but is
+itself non-approving, so the next card still needs a human. A supervisor `cancel` with actor and
+rationale moves any run state, including `needs-input` or `cap-reached`, to the durable `cancelled`
+stop. Cancellation does not undo confirmed remote effects.
 `decide` rejects a card that is not the next permitted action with an error and leaves the run as it
 was, so no escalation is ever opened for a checkpoint the run has not reached and every escalation's
 options are exactly the choices `answer` accepts. An approving answer is held to the same elapsed and

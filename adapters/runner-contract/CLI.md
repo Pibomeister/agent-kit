@@ -36,10 +36,11 @@ it to a worker or supply that capability to a skill.
 | `collect` | Firstmate | `{"run":"r","id":"receipt-id","source":"/private/receipt","revision":"<full-git-sha>","kind":"source"}` |
 | `revision`, `verify` | Firstmate | `{"run":"r","revision":"<full-git-sha>"}` or `{"run":"r","evidence":"verify-id"}`; records a changed head or an already collected verification receipt |
 | `event`, `charge` | Firstmate | `{"run":"r","key":"event-key","payload":"..."}` or `{"run":"r","limit":"fix_cycles","amount":1,"subject":"finding-id"}`; event storage alone does not deliver it to a worker |
-| `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","no"],"approve":"yes","evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}` |
+| `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","retry"],"approve":"yes","evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}`; `no` and `retry` cannot be the approving option, and the runner reserves a slot for its human `no` |
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
 | `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A card that is not the next permitted action is an error and leaves the run unchanged; decide it once its phase arrives. A launcher that fails or answers outside the options refuses the card with its error |
-| `answer` | Firstmate | `{"run":"r","card_id":"align-1","choice":"yes","actor":"captain","rationale":"..."}`; settles the escalated card without relaunching seats. The escalation names the operation and approving option. After a non-approving human choice, every later card for that operation goes to a human until one approves, regardless of worker revision or artifact label. A listed `retry` reopens the checkpoint but does not erase an earlier human refusal. An approving answer at a charter cap stops at `cap-reached` |
+| `answer` | Firstmate | `{"run":"r","card_id":"align-1","choice":"no","actor":"captain","rationale":"..."}`; the runner always accepts `no` as a refusal even when the card omits it. The escalation recommends `no` by default and names the operation and approving option. After any non-approving human choice, including `retry`, every later card for that operation goes to a human until one approves. An approving answer at a charter cap stops at `cap-reached` |
+| `cancel` | Firstmate | `{"run":"r","actor":"captain","rationale":"Stop this run."}`; records who stopped the run and why, clears an open escalation and sets the durable `cancelled` stop even at a cap. It does not undo a confirmed effect |
 | `sync`, `run-verify` | Worker | `{"run":"r"}`; sync observes the current Git revision and diff, while verification executes only the private configured command |
 | `effect` | Firstmate | `{"run":"r","effect":"pr-open","target":"repo/pr-identity","input_hash":"sha256:<digest>"}` |
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |
@@ -70,7 +71,8 @@ directory. Use distinct task
 ids and worktrees for the two seats. Firstmate owns their normal status and teardown lifecycle.
 
 A refusal is an operation result or CLI error. A `needs-input` result contains one escalation with
-six required fields plus the runner's operation and approving option; the crewmate reports it
+six required fields plus the runner's operation and approving option; its options always include
+the runner's `no`, even if the worker's card did not. The crewmate reports it
 through its normal Firstmate status and inbox rather than
 polling, and Firstmate relays the human's ruling with `answer`. A changed worktree makes old evidence stale. After normal delivery changes the head,
 `sync`, `run-verify`, review and ship must run again before `complete` can succeed. Merge and deploy

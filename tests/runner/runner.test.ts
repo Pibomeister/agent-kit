@@ -750,6 +750,35 @@ describe("runner guards", () => {
     expect(() => runner.collect("toy-run", "after-source", receipt, f.revision, "source")).toThrow("stale");
   });
 
+  test("runner snapshot ignores worker fsmonitor and clean filters but sees tracked edits", () => {
+    const f = fixture();
+    const runner = new Runner(f.privateDir, f.worker, root, true);
+    const before = runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f)).diff_hash;
+    const monitor = join(f.worker, "fsmonitor.sh");
+    const clean = join(f.worker, "clean.sh");
+    const monitorLog = join(f.privateDir, "fsmonitor.log");
+    const cleanLog = join(f.privateDir, "clean.log");
+    writeFileSync(monitor, `#!/bin/sh\nprintf 'called\\n' >> ${JSON.stringify(monitorLog)}\nprintf 'token\\0'\n`);
+    writeFileSync(clean, `#!/bin/sh\nprintf 'called\\n' >> ${JSON.stringify(cleanLog)}\nprintf 'toy worktree\\n'\n`);
+    chmodSync(monitor, 0o700);
+    chmodSync(clean, 0o700);
+    writeFileSync(join(f.worker, ".git", "info", "exclude"), "fsmonitor.sh\nclean.sh\n.gitattributes\n");
+    writeFileSync(join(f.worker, ".gitattributes"), "README.md filter=lie\n");
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "core.fsmonitor", monitor]).exitCode).toBe(0);
+    expect(Bun.spawnSync(["git", "-C", f.worker, "config", "filter.lie.clean", clean]).exitCode).toBe(0);
+    writeFileSync(join(f.worker, "README.md"), "worker changed tracked content\n");
+    const ordinary = Bun.spawnSync(["git", "-C", f.worker, "diff", "--no-ext-diff", "--binary", f.revision]);
+    expect(ordinary.exitCode).toBe(0);
+    expect(ordinary.stdout.toString()).toBe("");
+    expect(existsSync(monitorLog)).toBe(true);
+    expect(existsSync(cleanLog)).toBe(true);
+    unlinkSync(monitorLog);
+    unlinkSync(cleanLog);
+    expect(runner.syncRevision("toy-run").diff_hash).not.toBe(before);
+    expect(existsSync(monitorLog)).toBe(false);
+    expect(existsSync(cleanLog)).toBe(false);
+  });
+
   test("each remote effect reads back once and events deduplicate", () => {
     const f = ready();
     reachShipReady(f);
@@ -1077,18 +1106,122 @@ describe("runner guards", () => {
     expect(stage(yes)).toEqual(["alignment", "bound.run"]);
   });
 
-  test("retry reopens the checkpoint, and a cap-reached run is not answerable", () => {
+  test("retry reopens the checkpoint for a human, and a cap-reached run is not answerable", () => {
     const g = ready();
     expect(split(g, "unsure", ["yes", "retry"]).status).toBe("needs-input");
     expect(g.runner.answer("toy-run", "unsure", "retry", "captain", "Ask the seats again.").next_permitted_action).toBe(
       "align.run",
     );
-    card(g, "again");
-    expect(g.runner.decide("toy-run", "again").status).toBe("complete");
+    g.runner.prepare("toy-run", {
+      id: "again",
+      operation: "align.run",
+      grant: { charter_hash: g.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed after retry?",
+      options: ["yes", "retry"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    expect(g.runner.decide("toy-run", "again").escalation?.charter_rule).toBe("runner:human-ruling");
+    expect(g.runner.answer("toy-run", "again", "yes", "captain", "Approve this revision.").status).toBe("complete");
     const capped = ready(0);
     card(capped);
     expect(capped.runner.decide("toy-run", "card-1").status).toBe("cap-reached");
     expect(() => capped.runner.answer("toy-run", "card-1", "yes", "captain", "raise it")).toThrow("no open escalation");
+  });
+
+  test("a runner-owned no is available on yes/retry ship cards and cannot open a PR", () => {
+    const f = ready();
+    reachShipReady(f, false);
+    const first = split(f, "ship-yes-retry", ["yes", "retry"], "ship.prepare");
+    expect(first.escalation).toMatchObject({
+      default: "no",
+      options: [{ id: "yes" }, { id: "retry" }, { id: "no", summary: "no (refuses ship.prepare)" }],
+    });
+    expect(f.runner.answer("toy-run", "ship-yes-retry", "no", "captain", "Do not open this PR.")).toMatchObject({
+      status: "complete",
+      next_permitted_action: "ship.prepare",
+    });
+    f.runner.prepare("toy-run", {
+      id: "ship-revised",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open the revised PR?",
+      options: ["yes", "retry"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"c".repeat(64)}`,
+    });
+    expect(f.runner.decide("toy-run", "ship-revised").escalation?.charter_rule).toBe("runner:human-ruling");
+    expect(f.runner.status("toy-run").cards["ship-revised"]?.judgments).toEqual([]);
+    expect(f.runner.answer("toy-run", "ship-revised", "retry", "captain", "Reopen for a new revision.")).toMatchObject({
+      status: "complete",
+      next_permitted_action: "ship.prepare",
+    });
+    f.runner.prepare("toy-run", {
+      id: "ship-after-retry",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open now?",
+      options: ["yes", "retry"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"c".repeat(64)}`,
+    });
+    expect(f.runner.decide("toy-run", "ship-after-retry").escalation?.charter_rule).toBe("runner:human-ruling");
+    expect(() =>
+      f.runner.effect(
+        "toy-run",
+        "pr-open",
+        "toy/pr",
+        `sha256:${"d".repeat(64)}`,
+        () => null,
+        () => {
+          throw new Error("retry opened a PR without a human yes");
+        },
+      ),
+    ).toThrow("current ship checkpoint");
+    expect(f.runner.answer("toy-run", "ship-after-retry", "yes", "captain", "This one is approved.")).toMatchObject({
+      status: "complete",
+      next_permitted_action: "pr-open",
+    });
+  });
+
+  test("retry alone keeps ship human-gated, and supervisor cancel is a durable stop", () => {
+    const f = ready();
+    reachShipReady(f, false);
+    expect(split(f, "ship-retry", ["yes", "retry"], "ship.prepare").status).toBe("needs-input");
+    f.runner.answer("toy-run", "ship-retry", "retry", "captain", "Ask again later.");
+    f.runner.prepare("toy-run", {
+      id: "ship-after-retry",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open now?",
+      options: ["yes", "retry"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    expect(f.runner.decide("toy-run", "ship-after-retry").escalation?.charter_rule).toBe("runner:human-ruling");
+    expect(f.runner.status("toy-run").cards["ship-after-retry"]?.judgments).toEqual([]);
+    expect(f.runner.cancel("toy-run", "captain", "Stop the run.")).toMatchObject({
+      run_state: "cancelled",
+      next_permitted_action: null,
+      open_escalation: null,
+      cancellation: { by: "captain", rationale: "Stop the run." },
+    });
+    expect(new Runner(f.privateDir, f.worker, root).status("toy-run").run_state).toBe("cancelled");
+    expect(() => card(f, "after-cancel")).toThrow("stopped");
+    expect(f.runner.cancel("toy-run", "captain", "Stop the run.").run_state).toBe("cancelled");
+    const capped = ready(0);
+    card(capped);
+    expect(capped.runner.decide("toy-run", "card-1").status).toBe("cap-reached");
+    expect(capped.runner.cancel("toy-run", "captain", "Stop after the cap.").run_state).toBe("cancelled");
+    const stale = ready();
+    writeFileSync(stale.path, "{}");
+    expect(() => stale.runner.status("toy-run")).toThrow("charter no longer validates");
+    expect(stale.runner.cancel("toy-run", "captain", "Stop after charter loss.").run_state).toBe("cancelled");
+    expect(new Runner(stale.privateDir, stale.worker, root).status("toy-run").run_state).toBe("cancelled");
   });
 
   test("an out-of-phase card is rejected without stopping the run, and decides once its phase arrives", () => {
@@ -1498,6 +1631,11 @@ describe("runner guards", () => {
       expect(ledger).toMatchObject({
         entries: [{ answered: true, answer: { choice: "yes", by: "captain", rationale: ruling.rationale } }],
       });
+      const cancellation = { ...run, actor: "captain", rationale: "Stop the run." };
+      expect(call("cancel", workerToken, cancellation).exitCode).toBe(1);
+      expect(call("cancel", adminToken, cancellation).exitCode).toBe(0);
+      const stopped: unknown = JSON.parse(call("status", workerToken, run).stdout.toString());
+      expect(stopped).toMatchObject({ run_state: "cancelled", next_permitted_action: null });
       transcript.push(
         "Seat launcher exit 7 → `decide` returned `needs-input` carrying the launcher error; worker `answer` refused (exit 1); supervisor `answer` `yes` settled the card, advanced the run to `bound.run` and was ledgered; a replayed `decide` returned the ruling without relaunching seats.",
       );

@@ -218,8 +218,9 @@ failure_outcomes:
       chosen option and is ledgered with who chose it and why. Only the card's approving option
       advances the run; any other choice keeps it at that stage, authorizes no effect and needs a
       revised card. After a human non-approving answer, that operation stays human-gated until a
-      human approves even if the worker changes the artifact label or revision; retry reopens the
-      checkpoint without clearing that gate.
+      human approves even if the worker changes the artifact label or revision. The runner always
+      offers a `no` refusal regardless of the worker's options; retry reopens the checkpoint but
+      is non-approving and keeps the human gate.
   - status: cap-reached
     meaning: >-
       A runner cap or the fix-cycle cap on a finding was reached. Any pull request is left as it is
