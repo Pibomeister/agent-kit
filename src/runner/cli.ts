@@ -348,15 +348,9 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     let body = "";
     let handled = false;
     connection.setEncoding("utf8");
-    connection.on("data", async (chunk: string) => {
-      if (handled) return;
-      body += chunk;
-      if (body.length > 1_000_000) connection.destroy(new Error("runner request too large"));
-      const newline = body.indexOf("\n");
-      if (newline < 0) return;
-      handled = true;
+    const respond = async (line: string) => {
       try {
-        const requestValue: unknown = JSON.parse(body.slice(0, newline));
+        const requestValue: unknown = JSON.parse(line);
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         connection.end(
@@ -367,6 +361,15 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           `${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}\n`,
         );
       }
+    };
+    connection.on("data", (chunk: string) => {
+      if (handled) return;
+      body += chunk;
+      if (body.length > 1_000_000) connection.destroy(new Error("runner request too large"));
+      const newline = body.indexOf("\n");
+      if (newline < 0) return;
+      handled = true;
+      void respond(body.slice(0, newline));
     });
   });
   server.listen(socketPath, () => {

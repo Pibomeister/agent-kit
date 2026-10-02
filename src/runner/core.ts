@@ -284,15 +284,17 @@ export class Runner {
       if (outcome === "ruling")
         return { checkpoint: entry.checkpoint, decision: entry.decision, outcome: entry.outcome, ruling: entry.ruling };
       const answer = decision.answer;
-      return {
+      const escalation: Omit<typeof entry, "ruling"> & {
+        answer?: Pick<NonNullable<typeof answer>, "choice" | "by" | "rationale" | "at">;
+      } = {
         checkpoint: entry.checkpoint,
         decision: entry.decision,
         outcome: entry.outcome,
         answered: entry.answered,
-        ...(answer === undefined
-          ? {}
-          : { answer: { choice: answer.choice, by: answer.by, rationale: answer.rationale, at: answer.at } }),
       };
+      if (answer !== undefined)
+        escalation.answer = { choice: answer.choice, by: answer.by, rationale: answer.rationale, at: answer.at };
+      return escalation;
     });
     const ledger = {
       schema: "run-ledger" as const,

@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import { Runner } from "../../src/runner/core.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
+import type { RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
@@ -1158,7 +1159,7 @@ describe("runner guards", () => {
     try {
       for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
       const request = join(f.privateDir, "request.json");
-      const call = (verb: string, token: string, args: object) => {
+      const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
         return Bun.spawnSync(["bun", "src/cli.ts", "runner", "call", verb, "--json", request, "--socket", socket], {
           cwd: root,
