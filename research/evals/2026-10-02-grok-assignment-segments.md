@@ -172,3 +172,6 @@ hook.
 Both receipts carry the isolation leak the adapter already declares: "the host's bundled platform
 skills, fetched into the private home at start and advertised beside the bundle's". It is recorded
 as a finding for a later change.
+
+The approved four-session follow-up on the landed repair is recorded in
+[the 2026-10-02 Grok follow-up smoke](2026-10-02-grok-smoke-2.md).

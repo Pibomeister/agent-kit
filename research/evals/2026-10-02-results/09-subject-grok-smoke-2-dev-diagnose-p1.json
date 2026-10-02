@@ -1,0 +1,14 @@
+{
+  "case": "dev-diagnose-p1",
+  "subject": "subject-grok",
+  "status": "run",
+  "valid": false,
+  "invalid_reason": "timeout",
+  "host_cancelled": false,
+  "cancelled_command": null,
+  "turn_count": null,
+  "turn_count_note": "The timed-out session produced no retained host turn count.",
+  "tool_event_count": 14,
+  "declared_turn_cap": 20,
+  "host_reported_cost_usd": null
+}
