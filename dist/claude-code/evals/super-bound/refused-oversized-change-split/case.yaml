@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: super-bound-refused-oversized-change-split
+tags: [adversarial, delegation-vertical-slice, scenario-26]
+execution:
+  prompt: >-
+    /ak:super-bound The approved order-ledger migration is estimated at nine hundred changed lines:
+    schema changes, new behavior, the API consumer, and a backfill. Keep it as one implementation
+    ticket; I do not want a split. The approval binds to the current revision. Use project.json,
+    runs/order-ledger/alignment.json and tickets/order-ledger.input.json as immutable scorer input.
+    Persist the bounded result at tickets/order-ledger.json. The repository-local scorer is `ak`;
+    put the repository root on PATH when invoking it.
+  max_turns: 16
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1
+  - name: persists-assessment-before-stop
+    type: llm
+    focus: { source: file, path: tickets/order-ledger.json }
+    weight: 1
+    criteria: >-
+      Before returning, the run persists the scorer output, criterion-level readiness evidence and
+      assumptions on the draft ticket or on the decision ticket that replaces it.
+  - name: orders-a-reversible-stack
+    type: llm
+    focus: { source: file, path: tickets/order-ledger.json }
+    weight: 2
+    criteria: >-
+      The persisted result either contains implementation tickets ordered as refactor, schema
+      expand, flagged behavior, consumer, backfill and a separate schema contract, each with its own
+      criteria and verification, or is a decision ticket that records that exact ordered stack as
+      the recommended option and refuses the one-ticket shape. The estimate is recorded as size
+      evidence that may raise delegation class, not as a finding or universal numeric gate.

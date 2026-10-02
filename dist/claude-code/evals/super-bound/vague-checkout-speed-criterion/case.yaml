@@ -1,0 +1,51 @@
+schema_version: "1.1"
+name: super-bound-vague-checkout-speed-criterion
+tags: [adversarial, delegation-vertical-slice, scenario-26]
+execution:
+  prompt: >-
+    /ak:super-bound The checkout performance direction is approved against the current revision.
+    Its only acceptance criterion is “make checkout faster.” Prepare the implementation ticket
+    using project.json, runs/checkout-performance/alignment.json and
+    tickets/checkout-performance.input.json as immutable scorer input. Persist the bounded result at
+    tickets/checkout-performance.json. The repository-local scorer is `ak`; put the repository root
+    on PATH when invoking it.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1
+  - name: persists-readiness-before-stop
+    type: llm
+    focus: { source: file, path: tickets/checkout-performance.json }
+    weight: 1
+    criteria: >-
+      Before returning, the run persists the scorer output, all six readiness criteria with their
+      evidence, vague_terms containing faster and the assumptions list on the draft or replacement
+      decision ticket.
+  - name: turns-vagueness-into-frontier-question
+    type: llm
+    weight: 2
+    criteria: >-
+      The response identifies “faster” as a vague term and asks a bounded frontier question that
+      obtains a measurable target, measurement conditions and verification path instead of choosing
+      them itself.
+  - name: readiness-fails-on-criteria
+    type: llm
+    focus: { source: file, path: tickets/checkout-performance.json }
+    weight: 2
+    criteria: >-
+      The ticket draft records the vague term and shows which readiness criteria lack evidence,
+      including acceptance criteria and verification path. It does not replace those criterion-level
+      failures with a total score or call the total a finding.
+  - name: no-guessed-implementation-ticket
+    type: llm
+    focus: last_message
+    weight: 1
+    criteria: >-
+      No executable implementation ticket is presented as ready. The response stops for the answer
+      or emits a decision ticket carrying the open performance question.

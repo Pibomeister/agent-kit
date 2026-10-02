@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scaffold for evals/super-bound/approved-direction-produces-spec-and-tickets.
+# Scaffold for evals/super-bound/approved-direction-stops-at-open-decisions.
 #
 # tiny-service-repo, whose sandbox provisioning is operations-only today
 # (src/billing/sandbox.js, driven by scripts/provision-sandbox.js).
@@ -12,9 +12,17 @@
 # project's recorded context is supplied as a read-only checkout under
 # knowledge-base/, untracked and outside the application's history: the prd
 # in scope, the accepted adr on the tenant model, and the glossary. That
-# checkout answers reads only; the skill's publish step needs the adapter to
-# write, which the host cannot supply, so the case stays tagged needs-fixture
-# and out of difference claims until the adapter is available in the sandbox.
+# checkout answers reads only. This case passes by stopping at open review
+# decisions, before any publish. The scaffold is shared with
+# approved-spec-produces-tickets, whose pass needs the adapter write the host
+# cannot supply; this case carries the needs-fixture tag alongside it.
+#
+# The project record is project.json, untracked, carrying the delegation
+# guidance the scorer consumes. The host's scorer is the repository-local `ak`
+# stand-in: it accepts only `ak delegation <ticket> --project <record>` on
+# files that exist, and returns the ticket's own delegation block at the
+# highest of the submitted class, the yellow-owner the endpoint's
+# authentication surface sets, and red when the floor names a red action.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -128,5 +136,54 @@ status: active
 - **Operations path** -- a script under `scripts/` run by staff, outside
   tenant scoping.
 MD
+
+cat > project.json <<'JSON'
+{
+  "guidance": {
+    "delegation": {
+      "weights": {"reversibility": 1, "size": 1, "complexity": 1, "spec": 1, "verification": 1},
+      "cut_points": {"yellow_agent": 4, "yellow_owner": 7, "red": 10},
+      "enforcement": "advisory"
+    }
+  }
+}
+JSON
+cat > ak <<'SH'
+#!/usr/bin/env sh
+set -eu
+if [ "$#" -ne 4 ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ "$1" != delegation ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ "$3" != --project ]; then
+  echo 'ak delegation: needs exactly one ticket path and --project <path>' >&2
+  exit 2
+fi
+if [ ! -f "$2" ] || [ ! -f "$4" ]; then
+  echo 'ak delegation: ticket or project record does not exist' >&2
+  exit 1
+fi
+exec node -e '
+const { delegation } = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+if (delegation === undefined) {
+  console.error("ak delegation: ticket has no delegation block to score");
+  process.exit(1);
+}
+const classes = ["green", "yellow-agent", "yellow-owner", "red"];
+const redActions = [
+  "merge", "deploy", "production-credentials", "destructive-data",
+  "money-movement", "trust-boundary-change", "force-push", "history-rewrite",
+];
+const actions = delegation.floor?.sensitive_actions ?? [];
+const floor = actions.some((action) => redActions.includes(action)) ? "red" : "yellow-owner";
+const highest = Math.max(classes.indexOf(delegation.class), classes.indexOf(floor));
+console.log(JSON.stringify({ ...delegation, class: classes[highest] }, null, 2));
+' "$2"
+SH
+chmod +x ak
 
 echo "scaffold: tiny-service ready at $(git rev-parse --short HEAD)"

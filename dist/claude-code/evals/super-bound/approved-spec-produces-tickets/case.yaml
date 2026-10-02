@@ -1,0 +1,38 @@
+schema_version: "1.1"
+name: approved-spec-produces-tickets
+tags: [positive, needs-fixture]
+execution:
+  prompt: >-
+    /ak:super-bound The sandbox self-serve specification is reviewed and approved at the current
+    revision, but its implementation tickets have not been cut. The specification, resolved review
+    and hash-bound approval are under runs/sandbox-self-serve/. The project record is project.json,
+    and the repository-local scorer is `ak`; put the repository root on PATH when invoking it.
+  max_turns: 32
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Bash, Skill, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: consumes-hash-bound-approval
+    type: llm
+    weight: 1
+    criteria: >-
+      The response uses the recorded human approval only because its specification_hash equals the
+      current specification's content hash; it does not bind approval to the whole plan.
+  - name: emits-zero-context-tickets
+    type: llm
+    weight: 1
+    criteria: >-
+      The response emits implementation tickets with exact consumed and produced interfaces, owned
+      files, acceptance criteria and named verification commands.
+  - name: tickets-carry-three-evidence-blocks
+    type: llm
+    weight: 1
+    criteria: >-
+      Every emitted ticket carries the unmodified ak delegation result, all six readiness criteria
+      with evidence plus vague_terms, and assumptions whose items are resolved.
+  - name: runs-the-scorer
+    type: tool_used
+    tool: Bash
+    input_match: 'ak\s+delegation'
+    weight: 1
