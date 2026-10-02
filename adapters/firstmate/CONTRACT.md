@@ -261,7 +261,7 @@ captain step (SUPERVISOR.md). Gate records made with `--bypass <path> --task <id
 continues under a fresh grant for the same task and worktree in the same run, whose record names the
 one it supersedes, or under the typed command, which records `authority.mode: explicit` with
 `superseded_grant_id` and ends the bypass for that phase in the run. The run binding and the end are
-read from the run's use records in the evidence store, which the worker can write, so they guard
+read from the grant's run claim and the run's use records in the evidence store, which the worker can write, so they guard
 against accidents, not a determined worker; the worker never writes `~/.agent-kit`. A grant for another task or worktree is refused, and a gate recorded
 by hand cannot be relabelled with `--bypass` at the same snapshot.
 

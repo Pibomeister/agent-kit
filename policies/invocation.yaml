@@ -446,8 +446,8 @@ bypass:
     supersedes in `superseded_grant_id`, or a typed record without `--bypass`, which records
     `authority: {mode: explicit, superseded_grant_id}` and ends the bypass for that phase in that
     run: the grants it ended are refused there until a fresh grant for the same task re-starts it,
-    and as grants used in that run they are refused in any other. The use records are
-    worker-writable, so the run binding and the end guard against accidents, not a determined
+    and as grants used in that run they are refused in any other. The use records and the
+    grant's run claim are worker-writable, so the run binding and the end guard against accidents, not a determined
     worker; nothing is written to the ledger. A grant for another task or worktree, an expired one,
     one first used in another run, or the grant a typed record
     ended is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
