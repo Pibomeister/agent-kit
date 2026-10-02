@@ -9,6 +9,6 @@
   "turn_count": null,
   "turn_count_note": "The timed-out session produced no retained host turn count.",
   "tool_event_count": 28,
-  "declared_turn_cap": 20,
+  "declared_cap": 20,
   "host_reported_cost_usd": null
 }

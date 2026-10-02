@@ -10,7 +10,7 @@
   "refused_command": "ls -la 2>/dev/null && git status -sb 2>/dev/null",
   "turn_count": 3,
   "tool_event_count": 2,
-  "declared_turn_cap": 20,
+  "declared_cap": 20,
   "host_reported_cost_usd": 0.02113236,
   "stop_reason": "end_turn"
 }
