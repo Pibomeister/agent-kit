@@ -434,7 +434,7 @@ bypass:
     work under bypass.
   never: [merge, deploy, autopilot, scope-expansion]
   attribution: >-
-    Each check leaves a use record under `<evidence>/<run>/bypass/`, and a gate recorded with
+    Each phase check leaves a use record under `<evidence>/<run>/bypass/`, and a gate recorded with
     `--bypass <file> --task <id>` carries `authority.mode: bypass` with the grant's id, path,
     sha256, task, worktree and who authorized it. A check or `record --bypass` writes the run's use
     record for the phase, and a phase started there continues in exactly two ways: a fresh grant
