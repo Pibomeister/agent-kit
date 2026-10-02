@@ -363,7 +363,10 @@ output privately.
 The runner's Git snapshot hashes raw worktree bytes, symlink targets, executable bits and index
 entries instead of trusting a Git text diff. Its Git calls disable fsmonitor and hooks, run with a
 filtered `PATH` and do not invoke textconv or attribute clean filters. A tracked edit therefore
-changes the runner's `diff_hash` even when worker Git config claims the tree is clean. The raw
+changes the runner's `diff_hash` even when worker Git config claims the tree is clean. A submodule
+or embedded repository is hashed recursively the same way, together with its `HEAD` (or `unborn`),
+and an entry the runner cannot read, such as a nested repository whose Git fails or a socket,
+refuses the snapshot instead of being skipped. The raw
 fingerprint also omits **untracked** `.omc/` and `.omx/` harness scratch; tracked files in those
 paths and every other untracked source file still count. Standalone lifecycle snapshots retain
 their original Git-diff behavior. This change in runner fingerprint format makes evidence from an
