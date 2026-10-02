@@ -224,8 +224,9 @@ describe("bypass granted: phases start without a typed command", () => {
 
 describe("start only: approvals, merge and deploy are never covered", () => {
   test("policies/invocation.yaml lists the same bypass phases the gate starts", () => {
-    const policy = parse(readFileSync(join(REPO, "policies", "invocation.yaml"), "utf8"));
-    expect(policy.bypass.phases).toEqual([...BYPASS_PHASES]);
+    expect(parse(readFileSync(join(REPO, "policies", "invocation.yaml"), "utf8"))).toMatchObject({
+      bypass: { phases: [...BYPASS_PHASES] },
+    });
   });
 
   test.each(["align-answer", "spec-approval", "ticket-approval", "ship-pr", "merge", "deploy", "autopilot"])(
@@ -466,15 +467,14 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(record("review-full").code).toBe(0);
     expect(check("super-ship").code).toBe(0);
     expect(record("ship-preflight").code).toBe(0);
-    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"))).toMatchObject({
-      runs: ["task", run],
-    });
+    expect(readRecords(defaultEvidenceDir(worktree), run, "ship-preflight").map((r) => r.authority)).toEqual([
+      expect.objectContaining({ mode: "bypass", task_id: "T-1" }),
+    ]);
   });
 
-  test("a phase-less check is a read-only probe and logs no run", () => {
+  test("a phase-less check is a read-only probe and writes no use record", () => {
     const { worktree, ledger, grantPath } = granted();
     expect(ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1").code).toBe(0);
-    expect(JSON.parse(readFileSync(join(ledger, `${grantId(ledger)}.json`), "utf8"))).not.toHaveProperty("runs");
     expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
   });
 });
@@ -585,16 +585,18 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     );
   });
 
-  test("a fresh grant re-starting at the snapshot of a typed end keeps that end in the use record", () => {
+  test("a fresh grant re-starting at the snapshot of a typed end keeps the ended grant refused", () => {
     const s = granted();
     expect(ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1")).code).toBe(0);
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
     const fresh = freshGrant(s, dayLater, "T-1");
     expect(akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1")).code).toBe(0);
     const used = join(defaultEvidenceDir(s.worktree), "task", "bypass", "super-review-readiness.json");
-    expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({ grant_id: fresh.id });
-    expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("restarted_after_end.ended_at");
-    expect(JSON.parse(readFileSync(used, "utf8"))).toHaveProperty("restarted_after_end.ended_by_snapshot");
+    expect(JSON.parse(readFileSync(used, "utf8"))).toMatchObject({
+      grant_id: fresh.id,
+      ended_grant_ids: [grantId(s.ledger)],
+    });
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:readiness").code).toBe(1);
   });
 
   test("a grant a typed record ended stays refused after a fresh grant re-starts the phase", () => {

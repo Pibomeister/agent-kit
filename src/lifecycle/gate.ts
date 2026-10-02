@@ -1243,8 +1243,6 @@ interface BypassLedgerRecord {
   grant_path: string;
   grant_sha256: string;
   issued: BypassIssuer;
-  /** Every run that used the grant, for audit; never a refusal condition. */
-  runs?: string[];
 }
 
 /** Resolved from the account's home directory, never from `HOME` or another variable a worker could set. */
@@ -1308,7 +1306,7 @@ const heldGrants = (started: ReturnType<typeof readObject>): string[] => [
   ]),
 ];
 
-/** The run's use record for a phase; a re-start after a typed end keeps that end visible. */
+/** The run's use record for a phase. */
 const useRecord = (
   authority: GateAuthority | undefined,
   phase: string | null,
@@ -1322,10 +1320,6 @@ const useRecord = (
   checked_at: at,
   ended_grant_ids: endedGrants(started),
   held_grant_ids: [...new Set([...heldGrants(started), ...(authority?.mode === "bypass" ? [authority.grant_id] : [])])],
-  restarted_after_end:
-    started?.ended_at === undefined
-      ? started?.restarted_after_end
-      : { ended_at: started.ended_at, ended_by_snapshot: started.ended_by_snapshot },
 });
 
 /**
@@ -1517,15 +1511,6 @@ export function checkBypass(
       worktree: tree,
     },
   };
-}
-
-/** Adds a run that used the grant to its ledger entry, for audit. */
-function logBypassRun(ledger: string, grantId: string, run: string): void {
-  const path = join(ledger, `${safeRunId(grantId)}.json`);
-  const entry = readObject(path);
-  if (entry === undefined) return;
-  const runs = Array.isArray(entry.runs) ? entry.runs.map(String) : [];
-  if (!runs.includes(run)) atomicJson(path, { ...entry, runs: [...runs, run] });
 }
 
 /** The brief section a supervisor pastes into the task's brief: the one place the worker learns of the grant. */
@@ -1732,10 +1717,7 @@ export function main(
     const continued = continueBypass(started, checked.attribution, phase ?? "");
     if (!continued.ok) return stop(continued.reason);
     const used = useRecord(continued.authority, phase ?? null, run, now().toISOString(), started);
-    if (usePath !== undefined) {
-      atomicJson(usePath, used);
-      logBypassRun(bypassLedger, checked.attribution.grant_id, run);
-    }
+    if (usePath !== undefined) atomicJson(usePath, used);
     io.out(JSON.stringify(used, null, 2));
     return 0;
   }
@@ -1828,7 +1810,6 @@ export function main(
       io.err(`ak lifecycle record: ${r.reason}`);
       return 1;
     }
-    if (bypass !== undefined) logBypassRun(bypassLedger, bypass.grant_id, run);
     if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
     for (const line of r.skipped) io.err(`note: ${line}`);
     io.out(`recorded ${gate} for run ${run} at ${short(r.record.snapshot)}: ${r.path}`);

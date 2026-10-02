@@ -75,8 +75,7 @@ own worktree, which must be one of the repository's, and `check` and `record --b
 the directory they run from, never with a flag: `--project` must name that same worktree, so another
 task's worktree is refused even with the right `--task` and `--project` naming the granted one. The grant is
 not bound to a run: the lifecycle opens new runs after align, so any run under the task may use it.
-Each phase check and `record --bypass` adds its run id to a `runs` list in the grant's ledger entry
-for audit; a check without `--phase` writes nothing.
+A check without `--phase` writes nothing.
 
 **A started phase.** A phase check, or a gate recorded with `--bypass`, writes the run's use record
 for that phase under `<evidence>/<run>/bypass/`, and that record is the one place the start lives.
@@ -89,8 +88,7 @@ record ended (`ended_at`, `ended_by_snapshot`, and in `ended_grant_ids` every gr
 the phase in the run, which the use record keeps in `held_grant_ids`): the bypass is over for that
 phase in that run, at every later snapshot. Every grant a typed record ended stays
 refused at `check` and at `record --bypass` in that phase of the run, even after a re-start; only a fresh grant
-for the same task re-starts the phase, rewriting the use record with `superseded_grant_id` and
-keeping the typed end as `restarted_after_end`. A grant for another task or another worktree is
+for the same task re-starts the phase, rewriting the use record with `superseded_grant_id`. A grant for another task or another worktree is
 refused. The mirror holds too: a gate recorded by hand at a snapshot cannot be relabelled by
 re-recording that snapshot with `--bypass`, even after a check starts the phase under a grant.
 
