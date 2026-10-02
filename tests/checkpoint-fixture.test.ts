@@ -140,22 +140,25 @@ const laneUnavailable = spawnSync(lane, [], {
   env: { ...process.env, BUN: process.execPath, CHECKPOINT_SECURITY_LANE: "unavailable" },
 });
 
+// The schema pass runs here for the same reason: compiling every shipped
+// schema is seconds of CPU on a loaded machine, and inside a test body that is
+// what the per-test timeout measures.
+const schemaRoot = makeTree({
+  "catalog.yaml": CATALOG,
+  ...shippedSchemas(),
+  ...Object.fromEntries(artifactNames.map((n) => [`templates/${n}`, JSON.stringify(artifacts[n])])),
+});
+const schemaErrors = checkSchemas({ root: schemaRoot, catalog: loadCatalog(schemaRoot).catalog! })
+  .filter((i) => i.severity === "error" && i.file.startsWith("templates/"))
+  .map((i) => `${i.file}: ${i.message}`);
+
 afterAll(() => {
   for (const work of Object.values(stateRepos)) rmSync(work, { recursive: true, force: true });
 });
 
 describe("the fixture's artifacts conform to the schemas they exercise", () => {
   test("every artifact validates", () => {
-    const root = makeTree({
-      "catalog.yaml": CATALOG,
-      ...shippedSchemas(),
-      ...Object.fromEntries(artifactNames.map((n) => [`templates/${n}`, JSON.stringify(artifacts[n])])),
-    });
-    const { catalog } = loadCatalog(root);
-    const errors = checkSchemas({ root, catalog: catalog! })
-      .filter((i) => i.severity === "error" && i.file.startsWith("templates/"))
-      .map((i) => `${i.file}: ${i.message}`);
-    expect(errors).toEqual([]);
+    expect(schemaErrors).toEqual([]);
   });
 
   test("the charter's approval binds to the charter it approved", () => {
