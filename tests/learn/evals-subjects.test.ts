@@ -20,7 +20,7 @@ import { privateHome } from "./evals/subjects/home.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
-import { evalInstrument } from "./evals/session.ts";
+import { cleanEnv, evalInstrument } from "./evals/session.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "transcripts");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
@@ -506,6 +506,52 @@ describe("shell reads", () => {
 });
 
 describe("isolation", () => {
+  test("each subject receives only process basics and its declared caller variables", () => {
+    const planted = {
+      GH_TOKEN: "gh-secret",
+      ANTHROPIC_API_KEY: "anthropic-secret",
+      XAI_API_KEY: "xai-secret",
+      OPENAI_API_KEY: "openai-secret",
+      CLAUDE_CODE_OAUTH_TOKEN: "claude-token",
+      CODEX_HOME: "/caller/codex",
+      GROK_HOME: "/caller/grok",
+      CLAUDECODE: "parent",
+      CLAUDE_CODE_ENTRYPOINT: "parent-entrypoint",
+      LC_TEST: "locale",
+    } as const;
+    const previous = Object.fromEntries(Object.keys(planted).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, planted);
+    try {
+      const claudeEnv = cleanEnv(claude.env);
+      expect(claudeEnv).toMatchObject({
+        ANTHROPIC_API_KEY: "anthropic-secret",
+        CLAUDE_CODE_OAUTH_TOKEN: "claude-token",
+        LC_TEST: "locale",
+      });
+      expect(claudeEnv).not.toHaveProperty("GH_TOKEN");
+      expect(claudeEnv).not.toHaveProperty("XAI_API_KEY");
+      expect(claudeEnv).not.toHaveProperty("OPENAI_API_KEY");
+
+      const codexEnv = cleanEnv(codex.env);
+      expect(codexEnv.CODEX_HOME).toBe("/caller/codex");
+      const grokEnv = cleanEnv(grok.env);
+      expect(grokEnv.GROK_HOME).toBe("/caller/grok");
+      for (const env of [codexEnv, grokEnv]) {
+        for (const secret of ["GH_TOKEN", "ANTHROPIC_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY"])
+          expect(env).not.toHaveProperty(secret);
+      }
+      for (const env of [claudeEnv, codexEnv, grokEnv]) {
+        expect(env).not.toHaveProperty("CLAUDECODE");
+        expect(env).not.toHaveProperty("CLAUDE_CODE_ENTRYPOINT");
+      }
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
+    }
+  });
+
   test("codex and grok get a private home with the credentials and the bundle's skills; claude isolates by argv and drops CLAUDE.md", () => {
     const callerHome = join(scratch, "caller");
     mkdirSync(join(callerHome, ".codex"), { recursive: true });

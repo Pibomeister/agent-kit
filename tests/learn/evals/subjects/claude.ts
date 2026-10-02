@@ -16,6 +16,8 @@
  * auto-memory names the caller's real memory dir. `CLAUDE_CODE_DISABLE_CLAUDE_MDS` (what
  * `claude plugin eval` sets for its own children) and `CLAUDE_CODE_DISABLE_AUTO_MEMORY` close
  * both; `--no-session-persistence` keeps the run out of the caller's transcript store.
+ * Claude reads its login and provider credentials from the environment, so the adapter declares
+ * only those inputs below; unrelated caller credentials are removed before the host starts.
  * research/evals/2026-09-25-isolation.md, "Direct `claude -p` subjects", has the measurements.
  */
 import type { Isolation, SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
@@ -40,6 +42,15 @@ interface Line {
 
 export const claude: SubjectAdapter = {
   host: "claude",
+  env: [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CONFIG_DIR",
+  ],
   injection: "append-system-prompt",
   command(req: SessionRequest, model: string | undefined): string[] {
     return [

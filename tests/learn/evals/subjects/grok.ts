@@ -16,8 +16,8 @@
  * list, whose prefix rules had no deny beside them: `2>/dev/null`, `2>&1`, a `'%h -> %s'` format
  * and a `'=>'` pattern are refused now. Whether the earlier rules admitted them on the live host
  * is unverified. The direct `printenv`, `gh auth status --show-token` and `web_fetch` forms are
- * looks to the scorer and are refused here on purpose. That is not isolation: the inherited
- * environment reaches the subject. A chain that assigns a variable and passes it to `find` has no
+ * looks to the scorer and are refused here on purpose. The harness now allowlists the environment,
+ * closing that disclosure path. A chain that assigns a variable and passes it to `find` has no
  * rule that covers it: the Grok 1.0.46 user guide (`22-permissions-and-safety.md`, Rule Matching
  * Reference) lets an allow rule cover a variable argument only as an `ls` or `rg` file operand, and
  * says other programs still prompt, which `dontAsk` refuses. The private home therefore carries one
@@ -25,16 +25,17 @@
  * commands it stands for when these rules admit every one of them, and leaves every other call to
  * `dontAsk` and the denies. The stream still reports the call as the subject wrote it, so `parse`
  * derives shell reads from the same rewrite, the command the host ran.
- * Variable expansion and command substitution through an
- * admitted program (`echo $VAR`, `test -n "$VAR"`, `echo $(printenv)`) remain admitted and scored
- * read-only, and the read-only gh and `git remote` commands reach the network. Whether the live
- * host expands variables before permission matching is unverified. A refused call leaves the
- * session invalid, and the receipt names the attempted call. The read-only sandbox
+ * Variable expansion and command substitution through an admitted program remain scored
+ * read-only. Whether the live host expands variables before permission matching is unverified.
+ * A refused call leaves the session invalid, and the receipt names the attempted call. The
+ * read-only sandbox
  * remains unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports `stopReason`. Isolation is a
  * private GROK_HOME and HOME with the Claude and Cursor compatibility scans and cross-session
  * memory off: by default grok also reads
  * `~/.claude` skills, rules, plugins and hooks, and `~/.agents/skills`. The bundle's skills are
  * copied into the private `skills/`.
+ * Authentication comes from the copied `auth.json`, not an environment credential. `GROK_HOME` is
+ * admitted only to locate the caller's file before the adapter replaces it with the scratch home.
  *
  * Grok loads a skill by reading its SKILL.md with `read_file`, which maps to Read.
  */
@@ -80,6 +81,7 @@ const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
 
 export const grok: SubjectAdapter = {
   host: "grok",
+  env: ["GROK_HOME"],
   injection: "append-system-prompt",
   command(req: SessionRequest, model: string | undefined): string[] {
     return [

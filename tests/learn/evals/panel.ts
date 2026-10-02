@@ -188,11 +188,12 @@ export const hostJudge =
     const { adapterFor, runSubject } = await import("./subjects/index.ts");
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-judge-")));
     try {
+      const adapter = adapterFor(reviewer.host);
       return await runSubject(
-        adapterFor(reviewer.host),
+        adapter,
         reviewer.id,
         reviewer.model,
-        { prompt, cwd, env: cleanEnv(), timeoutMs: 180_000, maxTurns: 1 },
+        { prompt, cwd, env: cleanEnv(adapter.env), timeoutMs: 180_000, maxTurns: 1 },
         prices,
       );
     } finally {

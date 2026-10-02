@@ -12,6 +12,8 @@
  * `auth.json` also carries the account's connected apps (GitHub, Vercel, Drive and the like) as
  * `codex_apps` tools unless the `apps` feature is off; on 2026-09-28 subjects searched them. The
  * bundle's skills are copied into the private `skills/`.
+ * Authentication comes from that copied `auth.json`, not an environment credential. `CODEX_HOME`
+ * is admitted only to locate the caller's file before the adapter replaces it with the scratch home.
  *
  * Codex has no Skill or Read tool: a skill is loaded by printing its SKILL.md through the shell.
  * Every shell call becomes a Bash event, and each file it prints also becomes a Read event, so
@@ -124,6 +126,7 @@ function itemEvents(item: Item): SessionEvent[] {
 
 export const codex: SubjectAdapter = {
   host: "codex",
+  env: ["CODEX_HOME"],
   injection: "developer-instructions",
   command(req: SessionRequest, model: string | undefined): string[] {
     return [

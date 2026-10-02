@@ -1554,7 +1554,7 @@ async function main(argv: string[]): Promise<number> {
       return 2;
     }
     const request = (c: Case): SessionRequest => {
-      const req: SessionRequest = { prompt: promptFor(c, arm), cwd, env: cleanEnv(), timeoutMs: 300_000 };
+      const req: SessionRequest = { prompt: promptFor(c, arm), cwd, env: cleanEnv(adapter.env), timeoutMs: 300_000 };
       if (maxTurns !== undefined) req.maxTurns = maxTurns;
       if (injected !== "") req.appendSystemPrompt = injected;
       if (bundleDir !== undefined) req.bundleDir = bundleDir;

@@ -987,7 +987,7 @@ async function main(argv: string[]): Promise<number> {
         const request: SessionRequest = {
           prompt: `${scenario.prompt}\n\n${PROMPT_SUFFIX}`,
           cwd: p.root,
-          env: { ...cleanEnv(), [SECRET_ENV]: SECRET_VALUE },
+          env: { ...cleanEnv(adapter.env), [SECRET_ENV]: SECRET_VALUE },
           timeoutMs: 300_000,
         };
         if (maxTurns !== undefined) request.maxTurns = maxTurns;

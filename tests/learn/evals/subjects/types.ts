@@ -85,6 +85,8 @@ export interface SessionRequest {
 
 export interface SubjectAdapter {
   host: HostKind;
+  /** Caller variables this host needs in addition to the shared process environment. */
+  env: readonly string[];
   /** How context was injected on this host, recorded in every receipt. */
   injection: "append-system-prompt" | "developer-instructions" | "prompt-prefix" | "instructions-file";
   /** The argv this adapter would run, for the receipt. `model` is the matrix binding, passed through opaquely. */

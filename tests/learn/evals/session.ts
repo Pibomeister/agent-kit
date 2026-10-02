@@ -12,18 +12,23 @@ import { describeInstall, loadInstallConfig } from "../../../src/packaging/insta
 import { hasErrors } from "../../../src/validation/types.ts";
 
 /** Variables that make a nested host CLI believe it runs inside the parent session. */
-const NESTED_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
+const NESTED_SESSION_VARS = new Set(["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"]);
+
+/** Process plumbing every host may inherit. Locale categories are admitted by prefix below. */
+const PROCESS_ENV = new Set(["PATH", "HOME", "TMPDIR", "SHELL", "TERM", "LANG", "USER", "LOGNAME"]);
 
 export function option(argv: readonly string[], name: string): string | undefined {
   const i = argv.indexOf(name);
   return i >= 0 ? argv[i + 1] : undefined;
 }
 
-/** The caller's environment minus the nested-session markers. */
-export function cleanEnv(): Record<string, string> {
+/** The process basics plus the variables explicitly declared by one subject adapter. */
+export function cleanEnv(subjectEnv: readonly string[] = []): Record<string, string> {
+  const allowed = new Set([...PROCESS_ENV, ...subjectEnv]);
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined && !NESTED_SESSION_VARS.includes(key)) env[key] = value;
+    if (value !== undefined && !NESTED_SESSION_VARS.has(key) && (allowed.has(key) || key.startsWith("LC_")))
+      env[key] = value;
   }
   return env;
 }
