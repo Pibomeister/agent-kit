@@ -100,8 +100,9 @@ function materializeState(files: Record<string, string>): string {
   return work;
 }
 
-// Build each state once outside the timed test bodies; nested Bun startup is
-// the behavior under test, while repeated Git setup only made it load-sensitive.
+const repo = materialize();
+const head = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
 const stateRepos = {
   ticket: materializeState({ "src/quota.ts": TICKET_DONE, "tests/isolation.test.ts": ISOLATION }),
   incomplete: materializeState({
@@ -116,12 +117,32 @@ const stateRepos = {
   }),
 };
 
+// Every subprocess runs once here, outside the timed test bodies. A nested Bun
+// run takes tens of seconds on a loaded machine, so one inside a test body is
+// what the per-test timeout measures instead of the fixture.
+const outcomes = {
+  before: runFixtureTests(repo, "tests/quota.test.ts"),
+  ticketAcceptance: runFixtureTests(stateRepos.ticket, "tests/quota.test.ts"),
+  ticketIsolation: runFixtureTests(stateRepos.ticket, "tests/isolation.test.ts"),
+  incompleteIsolation: runFixtureTests(stateRepos.incomplete, "tests/isolation.test.ts"),
+  completeIsolation: runFixtureTests(stateRepos.complete, "tests/isolation.test.ts"),
+  completeAll: runFixtureTests(stateRepos.complete, "tests/"),
+};
+
+const second = materialize();
+const secondHead = execFileSync("git", ["-C", second, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+rmSync(second, { recursive: true, force: true });
+
+const lane = join(repo, "tools", "security-lane.sh");
+const laneDefault = spawnSync(lane, [], { encoding: "utf8", env: { ...process.env, BUN: process.execPath } });
+const laneUnavailable = spawnSync(lane, [], {
+  encoding: "utf8",
+  env: { ...process.env, BUN: process.execPath, CHECKPOINT_SECURITY_LANE: "unavailable" },
+});
+
 afterAll(() => {
   for (const work of Object.values(stateRepos)) rmSync(work, { recursive: true, force: true });
 });
-
-const repo = materialize();
-const head = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
 describe("the fixture's artifacts conform to the schemas they exercise", () => {
   test("every artifact validates", () => {
@@ -182,9 +203,6 @@ describe("the artifacts and the repository agree about the revision", () => {
   });
 
   test("materializing twice produces the same revision", () => {
-    const second = materialize();
-    const secondHead = execFileSync("git", ["-C", second, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    rmSync(second, { recursive: true, force: true });
     expect(secondHead).toBe(head);
   });
 });
@@ -212,22 +230,22 @@ describe("the fixture can host a refused closure", () => {
   // the finding would grade a run that never checked independently exactly the
   // same as one that did.
   test("state 1: the ticket's own checks are red before the change", () => {
-    const r = runFixtureTests(repo, "tests/quota.test.ts");
+    const r = outcomes.before;
     expect(r.pass).toBe(0);
     expect(r.fail).toBe(2);
   });
 
   test("state 2: the change satisfies the ticket and does not touch the defect", () => {
-    const acceptance = runFixtureTests(stateRepos.ticket, "tests/quota.test.ts");
+    const acceptance = outcomes.ticketAcceptance;
     expect(acceptance.fail).toBe(0);
     expect(acceptance.pass).toBe(2);
 
-    const isolation = runFixtureTests(stateRepos.ticket, "tests/isolation.test.ts");
+    const isolation = outcomes.ticketIsolation;
     expect(isolation.fail).toBe(2);
   });
 
   test("state 3: the repair the finding points at leaves the independent check red", () => {
-    const r = runFixtureTests(stateRepos.incomplete, "tests/isolation.test.ts");
+    const r = outcomes.incompleteIsolation;
     expect(r.pass).toBe(1);
     expect(r.fail).toBe(1);
     // Named, not counted: which one stays red is the whole content of the state.
@@ -235,7 +253,7 @@ describe("the fixture can host a refused closure", () => {
   });
 
   test("state 4: a complete repair closes it", () => {
-    const r = runFixtureTests(stateRepos.complete, "tests/");
+    const r = outcomes.completeAll;
     expect(r.fail).toBe(0);
     expect(r.pass).toBe(4);
   });
@@ -243,9 +261,7 @@ describe("the fixture can host a refused closure", () => {
   test("the two isolation checks are not the same check", () => {
     // If the incomplete repair satisfied both, the fixture would have no
     // refusal on it and this whole block would be measuring nothing.
-    const incomplete = runFixtureTests(stateRepos.incomplete, "tests/isolation.test.ts");
-    const complete = runFixtureTests(stateRepos.complete, "tests/isolation.test.ts");
-    expect(incomplete.fail).toBeGreaterThan(complete.fail);
+    expect(outcomes.incompleteIsolation.fail).toBeGreaterThan(outcomes.completeIsolation.fail);
   });
 });
 
@@ -323,23 +339,16 @@ describe("the findings point at what they say they point at", () => {
 });
 
 describe("a required lane can be made unavailable", () => {
-  const lane = join(repo, "tools", "security-lane.sh");
-
   test("the lane runs and reports the defect by default", () => {
-    const proc = spawnSync(lane, [], { encoding: "utf8", env: { ...process.env, BUN: process.execPath } });
-    expect(proc.status).not.toBe(0);
-    expect(proc.status).not.toBe(70);
+    expect(laneDefault.status).not.toBe(0);
+    expect(laneDefault.status).not.toBe(70);
   });
 
   test("the switch makes it unavailable, distinguishably from finding something", () => {
-    const proc = spawnSync(lane, [], {
-      encoding: "utf8",
-      env: { ...process.env, BUN: process.execPath, CHECKPOINT_SECURITY_LANE: "unavailable" },
-    });
     // 70, not 1: a lane that cannot tell "the tool is missing" from "the tool
     // found a problem" turns one into the other, and scenario 4 is exactly
     // about not letting the first read as the second.
-    expect(proc.status).toBe(70);
-    expect(proc.stderr).toContain("unavailable");
+    expect(laneUnavailable.status).toBe(70);
+    expect(laneUnavailable.stderr).toContain("unavailable");
   });
 });
