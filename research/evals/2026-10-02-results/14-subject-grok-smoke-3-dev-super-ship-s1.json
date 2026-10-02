@@ -26,6 +26,7 @@
     "name": "Bash",
     "description": "Find ak binary and worktree database"
   },
+  "outside_reach_note": "No retained call addressed a path outside the eval repository and subject scratch home.",
   "timeline_note": "The committed entry point emitted no output until the session ended. Its parsed transcript retains the ordered events but no event or turn timestamps, so time within the 67-second interval cannot be attributed further.",
   "host_reported_cost_usd": 0.08422344
 }
