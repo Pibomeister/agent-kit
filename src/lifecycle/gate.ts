@@ -1294,6 +1294,10 @@ function continueBypass(
   if (started === undefined) return { ok: true, authority: bypass };
   const origin = String(started.superseded_grant_id ?? started.grant_id);
   if (bypass === undefined) return { ok: true, authority: { mode: "explicit", superseded_grant_id: origin } };
+  if (started.mode === "explicit")
+    return refuse(
+      `${what} at this snapshot was recorded with the typed command after bypass grant ${origin}, which ended the bypass; record it with the typed command and no --bypass`,
+    );
   if (bypass.task_id !== started.task_id || bypass.worktree !== started.worktree)
     return refuse(
       `${what} started under bypass grant ${origin} for task ${String(started.task_id)} in ${String(started.worktree)}; continue it with a fresh grant for that task and worktree, or record it with the typed command and no --bypass`,

@@ -545,6 +545,14 @@ describe("attribution: --bypass only where a phase covers the gate, and never op
       mode: "explicit",
       superseded_grant_id: first,
     });
+    const after = akAt(dayLater, s.worktree, s.ledger, ...recordArgs("review-readiness", fresh.path, "T-1"));
+    expect(after.code).toBe(1);
+    expect(after.err).toContain("ended the bypass");
+    expect(after.err).not.toContain("undefined");
+    expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
+      mode: "explicit",
+      superseded_grant_id: first,
+    });
   });
 });
 
