@@ -58,8 +58,10 @@ an advisor opinion is not lowering evidence.
 First write the ticket's evidenced `floor`, five factors, `stage`, `lowered_by` and a `class` seed,
 and ensure both the ticket and project record validate. The seed is an input the schema requires,
 not a judgment: a first ticket-time block seeds `class` at `green`, and a re-run carries the class
-the previous run persisted. The scorer only raises the seed, so any other seed is a hand-derived
-class. Then run:
+the previous run persisted. When `lowered_by` records a named human's lowering, the seed is the
+class that person lowered to; the scorer still holds the floor and supersedes the lowering when a
+later computed class exceeds `from`. The scorer only raises the seed, so any seed outside these
+three cases is a hand-derived class. Then run:
 
 ```text
 ak delegation <ticket> --project <project-record>
