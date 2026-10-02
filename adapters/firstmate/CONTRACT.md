@@ -253,7 +253,7 @@ super-align, super-bound, super-review `full` or `readiness`, and super-ship; ex
 The grant is start-only: every approval inside those phases still reaches Firstmate as
 `needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
 check must run from inside the task's worktree the grant names (`--project` cannot stand in for it);
-a grant is valid only in the run it is first used in. When super-build opens the ticket's run, the
+a grant is valid only in the run it is first used in, claimed atomically on first use. When super-build opens the ticket's run, the
 worker's next check is refused as bound to the earlier run; the worker reports `needs-decision`, and
 Firstmate issues a fresh grant for the same task and worktree on its standing authorization, with no
 captain step (SUPERVISOR.md). Gate records made with `--bypass <path> --task <id>` carry

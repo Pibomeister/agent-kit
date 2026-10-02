@@ -425,8 +425,9 @@ bypass:
     check --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
     must equal the grant's, and the check must run from inside the task's worktree the grant
     names; `--project` cannot substitute for that. A grant is valid only in the run it is first
-    used in; another run (super-build's `open --ticket` starts one) is refused and takes a fresh
-    grant, which the supervisor issues without a human step. The
+    used in, claimed atomically on first use in `<store>/grant-runs/<grant>.json`; another run
+    (super-build's `open --ticket` starts one) is refused and takes a fresh grant, which the
+    supervisor issues without a human step, and `--run .` or `--run ..` is refused. The
     phase runs as its explicit form. It is not a phase operation, not a delegated grant and not
     trusted evidence.
   phases: [super-align, super-bound, "super-review:full", "super-review:readiness", super-ship]

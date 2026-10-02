@@ -90,8 +90,8 @@ node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <task-id> --by <who 
 ```
 
 **One grant per run, issued automatically.** A grant is valid only in the lifecycle run it is first
-used in, and super-build's `open --ticket` starts a new run, so a task normally needs a second grant
-there. When a worker reports `needs-decision` because its check was refused as "first used in run …",
+used in, and every new run needs one: super-build's `open --ticket` starts a run per ticket, and a ship
+after the head moves past a closed run starts another. Expect one fresh grant per run. When a worker reports `needs-decision` because its check was refused as "first used in run …",
 issue a fresh grant with the same command, task and worktree, under a new `--out` (for example
 `data/<task-id>/bypass-<n>.json`), and send the worker the section it prints. That is not a new
 authorization: the captain's bypass for the task already covers it, so do not ask the captain again.

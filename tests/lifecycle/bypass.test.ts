@@ -718,6 +718,106 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
   });
 });
 
+describe("one run per grant: the binding cannot be dodged by flag or by racing", () => {
+  test.each([".", ".."])("--run %s is not a run id, at check and at record --bypass, and nothing is written", (dot) => {
+    const s = granted();
+    const store = defaultEvidenceDir(s.worktree);
+    const checked = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-review:full",
+      "--run",
+      dot,
+    );
+    expect(checked.code).toBe(2);
+    expect(checked.err).toContain("is not a run id");
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", dot).code).toBe(2);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full", "--run", dot).code).toBe(2);
+    expect(existsSync(join(store, "bypass"))).toBe(false);
+    expect(existsSync(join(store, "..", "bypass"))).toBe(false);
+  });
+
+  test("a grant first used under --run A is refused under --run B, with a hint naming the fresh grant", () => {
+    const s = granted();
+    const at = (run: string) =>
+      ak(
+        s.worktree,
+        s.ledger,
+        "bypass",
+        "check",
+        "--grant",
+        s.grantPath,
+        "--task",
+        "T-1",
+        "--phase",
+        "super-review:full",
+        "--run",
+        run,
+      );
+    expect(at("run-a").code).toBe(0);
+    const other = at("run-b");
+    expect(other.code).toBe(1);
+    expect(other.err).toContain("first used in run run-a");
+    expect(other.err).toContain("issues a fresh grant for this run");
+    expect(other.err).not.toContain("the phase needs its typed command");
+    expect(at("run-a").code).toBe(0);
+  });
+
+  test("first use through record --bypass binds the grant just as a check does", () => {
+    const s = granted();
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", "run-a").code).toBe(0);
+    const other = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-ship",
+      "--run",
+      "run-b",
+    );
+    expect(other.code).toBe(1);
+    expect(other.err).toContain("first used in run run-a");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1"), "--run", "run-b");
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain("issues a fresh grant for this run");
+    expect(readRecords(defaultEvidenceDir(s.worktree), "run-b", "review-readiness")).toEqual([]);
+  });
+
+  test("two first uses of one grant in two runs at the same moment: at most one wins", async () => {
+    const script = join(dir("ak-bypass-race-"), "check.ts");
+    writeFileSync(
+      script,
+      `import { main } from ${JSON.stringify(join(REPO, "src", "lifecycle", "gate.ts"))};
+const [cwd, ledger, grant, run] = process.argv.slice(2);
+process.exitCode = main(["bypass", "check", "--grant", grant, "--task", "T-1", "--phase", "super-review:full", "--run", run], { out: () => {}, err: () => {} }, cwd, ledger);
+`,
+    );
+    let bothWon = 0;
+    for (let i = 0; i < 6; i += 1) {
+      const s = granted();
+      const spawn = (run: string) =>
+        Bun.spawn(["bun", script, s.worktree, s.ledger, s.grantPath, run], { stdout: "ignore", stderr: "ignore" });
+      const [a, b] = [spawn(`run-a-${i}`), spawn(`run-b-${i}`)];
+      const codes = await Promise.all([a.exited, b.exited]);
+      expect(codes.toSorted()).toEqual(codes.includes(1) ? [0, 1] : [0, 0]);
+      if (codes[0] === 0 && codes[1] === 0) bothWon += 1;
+    }
+    expect(bothWon).toBe(0);
+  }, 120_000);
+});
+
 describe("a forged grant cannot ride a genuine grant's hash", () => {
   test("swapping the grant path between a forged file and the genuine one never passes an expired grant", async () => {
     const s = setup();

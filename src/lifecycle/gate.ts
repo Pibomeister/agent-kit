@@ -32,6 +32,7 @@ import {
   copyFileSync,
   existsSync,
   fstatSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -41,6 +42,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -513,7 +515,7 @@ export function recordGate(
     started,
     a.bypass,
     a.gate,
-    a.bypass === undefined ? undefined : grantRun(a.dir, a.bypass.grant_id, a.run),
+    a.bypass === undefined ? undefined : claimGrant(a.dir, a.bypass.grant_id, a.run),
   );
   if (!continued.ok) return continued;
   if (continued.authority !== undefined) record.authority = continued.authority;
@@ -1302,22 +1304,29 @@ const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
 /**
- * The run a grant was first used in, when that is not `run`: any run of this store whose use record for
- * any phase names the grant. A grant is valid only in that run; another run needs a fresh grant. The use
- * records are worker-written, so this binding holds against accidents, not against a worker that edits
- * them (ADR-0008).
+ * Claims a grant for `run` on first use and returns the run it belongs to when that is another one. The
+ * claim is an exclusive create of `<store>/grant-runs/<grant>.json` naming the exact run id, written to a
+ * temporary file and hard-linked into place, so two first uses at the same moment cannot both win and a
+ * reader never sees a half-written claim. It is taken before any use record or gate record is written. The
+ * store is worker-writable, so the binding holds against accidents, not a worker that edits it (ADR-0008).
  */
-function grantRun(dir: string, grantId: string, run: string): string | undefined {
-  if (!existsSync(dir)) return undefined;
-  const here = safeRunId(run);
-  return readdirSync(dir).find(
-    (other) =>
-      other !== here &&
-      BYPASS_PHASES.some((phase) => {
-        const used = readObject(bypassUsePath(dir, other, phase));
-        return used !== undefined && heldGrants(used).includes(grantId);
-      }),
+function claimGrant(dir: string, grantId: string, run: string): string | undefined {
+  const path = join(dir, "grant-runs", `${safeRunId(grantId)}.json`);
+  mkdirSync(dirname(path), { recursive: true });
+  const staging = `${path}.claim-${process.pid}-${randomBytes(6).toString("hex")}`;
+  writeFileSync(
+    staging,
+    `${JSON.stringify({ grant_id: grantId, run_id: run, claimed_at: new Date().toISOString() })}\n`,
   );
+  try {
+    linkSync(staging, path);
+  } catch {
+    // Already claimed; the existing file is complete because it was linked into place whole.
+  } finally {
+    unlinkSync(staging);
+  }
+  const owner = readObject(path)?.run_id;
+  return owner === run ? undefined : String(owner);
 }
 
 /** Every grant a typed record ended in this phase of the run; none of them starts it again. */
@@ -1360,7 +1369,7 @@ function continueBypass(
 ): { ok: true; authority: GateAuthority | undefined } | { ok: false; reason: string } {
   if (bypass !== undefined && usedInRun !== undefined)
     return refuse(
-      `bypass grant ${bypass.grant_id} was first used in run ${usedInRun}, and a grant is valid only in the run it starts in; ask the supervisor for a fresh grant for this run, or record it with the typed command and no --bypass`,
+      `bypass grant ${bypass.grant_id} was first used in run ${usedInRun}, and ${RUN_BOUND}; ask the supervisor for a fresh grant for this run, or record it with the typed command and no --bypass`,
     );
   if (started === undefined) return { ok: true, authority: bypass };
   const origin = String(started.grant_id);
@@ -1381,6 +1390,11 @@ function continueBypass(
 }
 
 const refuse = (reason: string) => ({ ok: false as const, reason });
+
+/** Marks the run-binding refusal, whose remedy is a fresh grant the supervisor issues without a decision. */
+const RUN_BOUND = "a grant is valid only in the run it starts in";
+const RUN_BOUND_HINT =
+  "hint: report this refusal to the supervisor as is; it issues a fresh grant for this run (SUPERVISOR.md), no captain decision needed";
 
 export interface BypassGrantArgs {
   task: string;
@@ -1470,7 +1484,7 @@ export interface BypassCheckArgs {
 
 /**
  * Validates the grant: registered, unedited, unexpired, for this task, phase, repository and worktree.
- * It does not apply the run binding or the run's typed end: callers pass the grant's run (`grantRun`) and
+ * It does not apply the run binding or the run's typed end: callers pass the grant's run (`claimGrant`) and
  * the run's use record to `continueBypass` before treating the result as a start.
  */
 export function checkBypass(
@@ -1742,6 +1756,11 @@ export function main(
     io.err(`ak lifecycle ${sub}: --run needs a value`);
     return 2;
   }
+  // `.` and `..` would put the run's records at or above the store root, where no run is read back.
+  if (safeRunId(run) === "." || safeRunId(run) === "..") {
+    io.err(`ak lifecycle ${sub}: --run ${run} is not a run id`);
+    return 2;
+  }
 
   // The run binding is read from the default store; a store of the worker's choosing would not hold it.
   const otherStore = "--dir is refused with a bypass grant: its run binding lives in the default evidence store";
@@ -1768,7 +1787,11 @@ export function main(
     });
     const stop = (reason: string) => {
       io.err(`ak lifecycle bypass check: refused: ${reason}`);
-      io.err("hint: stop and report needs-decision; the phase needs its typed command");
+      io.err(
+        reason.includes(RUN_BOUND)
+          ? RUN_BOUND_HINT
+          : "hint: stop and report needs-decision; the phase needs its typed command",
+      );
       return 1;
     };
     if (!checked.ok) return stop(checked.reason);
@@ -1778,7 +1801,7 @@ export function main(
       started,
       checked.attribution,
       phase ?? "",
-      phase !== undefined && isBypassPhase(phase) ? grantRun(dir, checked.attribution.grant_id, run) : undefined,
+      phase !== undefined && isBypassPhase(phase) ? claimGrant(dir, checked.attribution.grant_id, run) : undefined,
     );
     if (!continued.ok) return stop(continued.reason);
     const used = useRecord(continued.authority, phase ?? null, run, now().toISOString(), started);
@@ -1880,6 +1903,7 @@ export function main(
     });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);
+      if (r.reason.includes(RUN_BOUND)) io.err(RUN_BOUND_HINT);
       return 1;
     }
     if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);

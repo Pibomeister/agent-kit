@@ -80,12 +80,17 @@ the directory they run from, never with a flag: `--project` must name that same 
 task's worktree is refused even with the right `--task` and `--project` naming the granted one.
 A check without `--phase` writes nothing.
 
-**One run.** A grant is valid only in the run it is first used in: the first phase check or
-`record --bypass` that names it writes the run's use record, and from then on `check` and
-`record --bypass` refuse it in any other run, naming the run it belongs to. The lifecycle opens a new
+**One run.** A grant is valid only in the run it is first used in. The first phase check or
+`record --bypass` that names it claims it for that run, by an exclusive create of
+`<store>/grant-runs/<grant>.json` naming the exact run id, before any use record or gate record is
+written; from then on `check` and `record --bypass` refuse it in any other run, naming the run it
+belongs to. The create is atomic, so two first uses in two runs at the same moment cannot both win.
+`--run .` and `--run ..` are refused as run ids, since they would put a run's records at or above the
+store root. The lifecycle opens a new
 run when super-build runs `open --ticket`, so align and bound use one grant and the ticket's run takes
-another. That costs no human step: the worker reports the refusal as `needs-decision`, and the
-supervisor issues a fresh grant for the same task and worktree, as its standing authorization for the
+another, and so does every later run (a run closed by ship, another ticket). That costs no human step:
+the refusal's hint tells the worker to report it as is, and the supervisor issues a fresh grant for the
+same task and worktree, as its standing authorization for the
 task already allows (SUPERVISOR.md). The captain chose this over letting one grant continue across runs
 (2026-10-02): five review rounds showed that carrying a grant, and a typed end, across runs kept
 leaving a path where an old grant resumed. With a grant tied to one run there is nothing to carry.
@@ -108,7 +113,7 @@ re-recording that snapshot with `--bypass`, even after a check starts the phase 
 `--dir` is refused with a bypass grant, at `check` and at `record --bypass`, because the run binding is
 read from the default evidence store. Nothing in this is written to the ledger: the worker never
 writes `~/.agent-kit`. **Trust:** the use records live in the evidence store under the git common
-directory, which the worker can write, so a worker that deletes or edits them can lift a run binding or
+directory, as do the grant claims, which the worker can write, so a worker that deletes or edits them can lift a run binding or
 an end. Both guard against accidents, not against a determined worker. A typed record and a
 `bypass check` of the same phase in the same run at the same moment are not serialized; the check
 refuses when it sees the end appear while it ran, which narrows that window without closing it.
