@@ -163,7 +163,7 @@ export function rewriteAssignmentReadChain(command: string): string | null {
       afterDropped = true;
       continue;
     }
-    if (assigned.size !== values.size || !PROGRAM.test(program)) return null;
+    if (literal.length !== segment.length || !PROGRAM.test(program)) return null;
     const seen = literal.join(" ");
     if (!allow.some((pattern) => pattern.test(seen)) || deny.some((pattern) => pattern.test(seen))) return null;
     const quoted = [program, ...args.map(shellQuote)].join(" ");

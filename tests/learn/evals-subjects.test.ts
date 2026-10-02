@@ -263,6 +263,7 @@ describe("grok", () => {
     for (const command of [
       'ROOT=/scratch; OUT=$ROOT/out cp notes.md "$ROOT"',
       "ROOT=/scratch; GIT_DIR=$ROOT/.git git log -3",
+      'ROOT=/scratch; ROOT=/other ls "$ROOT"; ls "$ROOT"',
       'SESSION=/scratch/s1 find "$SESSION" -type d',
       'SESSION=/scratch/s1 ls; find "$SESSION" -type d',
       "LC_ALL=C ls -la /scratch",
