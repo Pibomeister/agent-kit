@@ -129,42 +129,43 @@ rewrite for the write control. It differs elsewhere:
   such as `PATH` or `HOME`, where the prototype dropped it.
 - It is registered as a script beside the hook file, named by its absolute path.
 
-### The committed mediator on the live host: blocked
+### The committed mediator on the live host
 
-One further session was approved to prove the committed hook, with no retry. It ran at revision
-`938ace6e994099884388e0438e9d1681556390e9` (mediator sha256
-`bf996c71e5bff177f5a96951d2f4e6da3797ef25bcb4611984420ffea65816af`), through `runSubject` and the
-adapter's own `isolate`, so the hook was registered from the private `GROK_HOME` as
-`hooks/assignment-read-chain.json` naming `assignment-read-chain.sh`. The receipt is
-`grok-assignment-mediator-committed.json`.
+Two further sessions were approved to prove the committed hook, each with no retry.
 
-The host cancelled the read chain: stop reason `cancelled`, one turn, no reply, 0.00495992 USD. The
-gap is therefore not shown closed for the committed hook, and this change is blocked on that proof.
-Guarded spend is now 0.1595714 USD against the 1 USD cap.
+| Receipt | Revision | Hook `command` | Read chain |
+|---|---|---|---|
+| `grok-assignment-mediator-committed.json` | `938ace6e994099884388e0438e9d1681556390e9` | `assignment-read-chain.sh`, a bare name | cancelled: stop reason `cancelled`, one turn, no reply |
+| `grok-assignment-mediator-absolute.json` | `280c9532966d00350c0e56803b94cc67fc3b03bb` | the script's absolute path | completed: reply `READ_CHAIN_OK`, stop reason `end_turn`, two turns |
 
-The host reports only the cancelled call, not what the hook did. Checked afterwards without a
-session:
+Both ran the same mediator file (sha256
+`bf996c71e5bff177f5a96951d2f4e6da3797ef25bcb4611984420ffea65816af`) through `runSubject` and the
+adapter's own `isolate`, on the smoke's chain with a probe session directory, which the stream
+reports verbatim in both. The second is the proof that a subject writing this chain is no longer
+cancelled. The sessions cost 0.00495992 USD and 0.007769 USD; guarded spend is 0.1673404 USD against
+the 1 USD cap. No write control was run for either; the two receipts at `988a881` cover it.
 
-- The mediator at that revision rewrites the observed command, in 8 ms in process.
-- The registered script, run by hand with the observed event on stdin, prints that rewrite but
-  takes 11 to 35 s when its working directory is under the scratch directory, and 0.2 to 0.4 s from
-  the worktree. The runtime's start is what is slow there; the input does not matter. On this
-  machine the temporary directory above the scratch directory is very large.
-- The guide gives a hook 5 s by default and says a hook that times out fails open
-  (`10-hooks.md`, Key Fields). A hook killed at that limit leaves the original chain to `dontAsk`,
-  which is the cancellation observed.
+Two things changed between the cancelled session and the completed one, and the pair of sessions
+does not say which one mattered:
 
-That reading fits the evidence and was not observed on the host. After the session the hook script
-was changed to enter the adapter's directory before it starts the runtime, and
-`tests/learn/evals-subjects.test.ts` now runs it from the private home's hook directory inside the
-5 s limit; that test fails on the script as it ran live and passes on the changed one. One
-alternative is not ruled out: `assignment-read-chain.sh` as a bare name is not found when a shell
-runs it as a command, so a host that treats the registered `command` as an inline shell command
-and not as a path relative to the hook file would also fail open. The guide's own example names
-its script with a directory, `bin/log-activity.sh`.
+- The hook script now enters the adapter's directory before it starts the runtime. Run by hand
+  after the first session, the script as it then was printed the right rewrite but took 11 to 35 s
+  from a working directory under the scratch directory, against 0.2 to 0.4 s from the worktree; on
+  this machine the temporary directory above the scratch directory is very large. The guide gives
+  a hook 5 s by default and says one that times out fails open (`10-hooks.md`, Key Fields).
+- The hook file now names the script by its absolute path and sets `timeout` to 30. A bare name is
+  not found when a shell runs it as a command, so a host that reads `command` as an inline shell
+  command would have failed open as well.
 
-The changed script has not run on the live host. Proving it needs one more session, which is a new
-approval and was not taken here.
+Before the second session the registered command was run three times from the session's working
+directory under the isolation environment, twice as a path and once through `sh -c`. Each exited 0
+with the exact rewrite, in 431, 74 and 138 ms. `tests/learn/evals-subjects.test.ts` runs the
+registered command both ways from a scratch directory inside the 5 s limit.
+
+Not observed: the host's stream carries the call as the subject wrote it, so neither the rewritten
+command nor the hook's run appears in the session output. The evidence that the rewrite was applied
+is that the chain completed under `dontAsk`, where the same host cancelled it without a working
+hook.
 
 ## Follow-up, not fixed here
 
