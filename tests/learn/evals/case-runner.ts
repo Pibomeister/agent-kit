@@ -525,7 +525,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       cases: cases.map(({ name, file, sha256 }) => ({ name, file, sha256 })),
       subjects: subjects.map(({ id, host }) => ({ id, host })),
       ...usageReceipt(started),
-      cost_usd: report.cost_usd,
+      cost_usd: aborted?.subject_cost_usd == null ? report.cost_usd : (report.cost_usd ?? 0) + aborted.subject_cost_usd,
       summary: report.summary,
       aborted,
     };

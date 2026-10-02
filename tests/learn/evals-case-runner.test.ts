@@ -322,6 +322,60 @@ describe("execute path", () => {
     });
     expect(errors.join("\n")).toContain("host exited before a transcript");
   });
+
+  test("counts a paid session whose grading throws in the receipt spend", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-judge-abort-")));
+    work.push(cwd);
+    const bundle = join(cwd, "dist");
+    mkdirSync(join(bundle, "claude-code"), { recursive: true });
+    mkdirSync(join(bundle, "codex"), { recursive: true });
+    const json = join(cwd, "result.json");
+    const errors: string[] = [];
+    let codexStarted = false;
+    const code = await caseRunnerMain(
+      [
+        "--execute",
+        "--subject",
+        "subject-grok",
+        "--subject",
+        "subject-codex",
+        "--case",
+        CASE_FILE,
+        "--bundle",
+        bundle,
+        "--json",
+        json,
+      ],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        out: () => {},
+        err: (line) => errors.push(line),
+        startSubject: async (_adapter, id, _model, request) => {
+          codexStarted = id === "subject-codex";
+          mkdirSync(join(request.cwd, "tickets"));
+          writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+          return codexStarted
+            ? { ...session("codex", "codex.jsonl"), subject: id, costUsd: 0.5 }
+            : { ...session("grok", "grok.jsonl"), subject: id, costUsd: 0.25 };
+        },
+        judge: async () => {
+          if (codexStarted) throw new Error("judge panel rejected");
+          return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' };
+        },
+      },
+    );
+    const report: unknown = JSON.parse(readFileSync(json, "utf8"));
+    if (!isAbortedReport(report)) throw new Error("case runner wrote an invalid aborted receipt");
+
+    expect(code).toBe(2);
+    expect(report.results).toHaveLength(1);
+    expect(report.receipt.cost_usd).toBe(0.75);
+    expect(report.receipt.aborted).toMatchObject({
+      subject: "subject-codex",
+      reason: "judge panel rejected",
+    });
+    expect(errors.join("\n")).toContain("judge panel rejected");
+  });
 });
 
 describe("dry run", () => {
