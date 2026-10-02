@@ -35,7 +35,7 @@ export function git(cwd, args, env) {
     stderr: (proc.stderr ?? "").toString().trim()
   };
 }
-export function takeSnapshot(project) {
+export function takeSnapshot(project, options = {}) {
   const head = git(project, ["rev-parse", "HEAD"]);
   if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text)) {
     return `${project} has no committed revision: ${head.stderr || head.text}`;
@@ -56,7 +56,7 @@ export function takeSnapshot(project) {
     const untracked = git(project, ["ls-files", "--others", "--exclude-standard", "-z"], env);
     if (untracked.code !== 0)
       return `cannot list untracked files in ${project}: ${untracked.stderr}`;
-    const paths = untracked.text.split("\x00").filter((p) => p !== "");
+    const paths = untracked.text.split("\x00").filter((path) => path !== "" && !(options.ignoreUntrackedDirs ?? []).some((dir) => path === dir || path.startsWith(`${dir}/`)));
     if (paths.length > 0) {
       const add = git(project, ["add", "--intent-to-add", "--", ...paths], env);
       if (add.code !== 0)
