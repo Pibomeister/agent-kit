@@ -1,7 +1,7 @@
 {
  "id": "trigger-dev",
  "version": 4,
- "about": "Skill-routing dev set, version 4. M skills: 2 positives (expects load) + 1 negative. U skills: 3 prose positives (expects recommend: the law says only a typed /ak:<id> starts one, so the reply recommends the command or loads and stops), 1 hard negative near the trigger, and for five of them a positive that begins with the typed command (expects proceed). Every negative carries forbidden. Document tasks include their own source text. tests/learn/trigger-prompts.test.ts holds the split and the leakage guard.",
+ "about": "Skill-routing dev set, version 4. M skills: 2 positives (expects load) + 1 negative. U skills: 3 prose positives (expects recommend: the law says only a typed /ak:<id> starts one, so the reply recommends the command or loads and stops), 1 hard negative near the trigger, and for five of them a positive that begins with the typed command (expects proceed). Every negative carries forbidden. dev-doc-review-p2 carries its document inline because the harness repository is empty. tests/learn/trigger-prompts.test.ts holds the split and the leakage guard.",
  "cases": [
   {"id": "dev-super-align-p1", "skill": "super-align", "polarity": "positive", "invocation": "U", "expected": ["super-align"], "expects": "recommend",
    "prompt": "Please run /ak:super-align on this before anyone writes code: I want some kind of team workspaces feature, but I honestly can't tell if it means shared billing, shared projects, or both."},

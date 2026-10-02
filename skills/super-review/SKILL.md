@@ -105,10 +105,11 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
    validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
    Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
-   in prose is not a start, even when it asks for this work without naming the skill. With neither,
-   stop before inspecting the change, checking prerequisites or answering the task: the only
-   response is to tell the human to type `/ak:super-review` followed by their request. For `delta`,
-   confirm a review run is open; if not, stop with `needs-input`.
+   in prose is not a start, even when it names this skill or the command, or asks for this work
+   without naming either. With neither, stop before inspecting the change, checking prerequisites
+   or answering the task: the only response is to tell the human to type `/ak:super-review`
+   followed by their request. For `delta`, confirm a review run is open; if not, stop with
+   `needs-input`.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only

@@ -105,9 +105,9 @@ The project's own release checks, discovered rather than assumed.
    controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
    binding the grant check is the `ak firstmate grant` call in Authority, and under a bypass grant
    it is the bypass check there; a refusal is a stop. A request in prose is not a start, even when
-   it asks for this work without naming the skill. With neither, stop before inspecting the branch,
-   checking prerequisites or answering the task: the only response is to tell the human to type
-   `/ak:super-ship` followed by their request.
+   it names this skill or the command, or asks for this work without naming either. With neither,
+   stop before inspecting the branch, checking prerequisites or answering the task: the only
+   response is to tell the human to type `/ak:super-ship` followed by their request.
 2. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
    `dry-run` stops there.
 3. Confirm the preconditions: receipts bind to the head, the review verdict binds to that head's

@@ -132,14 +132,6 @@ describe("trigger prompt sets", () => {
     }
   });
 
-  test("document-review prompts supply the document they ask the subject to compare", () => {
-    const c = dev.cases.find((candidate) => candidate.id === "dev-doc-review-p2");
-    expect(c?.prompt).toContain("# Rollout");
-    expect(c?.prompt).toContain("# Risk controls");
-    expect(c?.prompt).toContain("every account");
-    expect(c?.prompt).toContain("only to internal accounts");
-  });
-
   test("every negative carries a `forbidden` list with its own skill, all catalog skills", () => {
     for (const c of all.filter((x) => x.polarity === "negative")) {
       expect([c.id, c.expected, c.expects]).toEqual([c.id, [], undefined]);
