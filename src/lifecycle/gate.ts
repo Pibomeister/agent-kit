@@ -532,7 +532,7 @@ export function recordGate(
         ...started,
         ended_at: record.recorded_at,
         ended_by_snapshot: short(snapshot),
-        ended_grant_ids: [...endedGrants(started), String(started.grant_id)],
+        ended_grant_ids: [...new Set([...endedGrants(started), ...heldGrants(started)])],
       });
   }
   return { ok: true, path, record, skipped };
@@ -1299,6 +1299,15 @@ const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
 /** Every grant a typed record ended in this phase of the run; none of them starts it again. */
 const endedGrants = (started: ReturnType<typeof readObject>): string[] => strings(started?.ended_grant_ids) ?? [];
 
+/** Every grant that has held the phase in this run, the one in force included. */
+const heldGrants = (started: ReturnType<typeof readObject>): string[] => [
+  ...new Set([
+    ...(strings(started?.held_grant_ids) ?? []),
+    ...(strings([started?.superseded_grant_id]) ?? []),
+    ...(strings([started?.grant_id]) ?? []),
+  ]),
+];
+
 /** The run's use record for a phase; a re-start after a typed end keeps that end visible. */
 const useRecord = (
   authority: GateAuthority | undefined,
@@ -1312,6 +1321,7 @@ const useRecord = (
   run_id: run,
   checked_at: at,
   ended_grant_ids: endedGrants(started),
+  held_grant_ids: heldGrants(started),
   restarted_after_end:
     started?.ended_at === undefined
       ? started?.restarted_after_end

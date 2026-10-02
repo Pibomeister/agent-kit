@@ -84,8 +84,9 @@ check in full, for the same task and worktree as the grant that started the phas
 own attribution plus `superseded_grant_id` naming the grant it replaces. A typed record without
 `--bypass` records `authority: {mode: explicit, superseded_grant_id}` naming the grant in force, so
 a human finish after a bypassed start is visible rather than a silent strip, and it marks the use
-record ended (`ended_at`, `ended_by_snapshot`, and the grant in `ended_grant_ids`): the bypass is
-over for that phase in that run, at every later snapshot. Every grant a typed record ended stays
+record ended (`ended_at`, `ended_by_snapshot`, and in `ended_grant_ids` every grant that has held
+the phase in the run, which the use record keeps in `held_grant_ids`): the bypass is over for that
+phase in that run, at every later snapshot. Every grant a typed record ended stays
 refused at `check` and at `record --bypass` in that phase of the run, even after a re-start; only a fresh grant
 for the same task re-starts the phase, rewriting the use record with `superseded_grant_id` and
 keeping the typed end as `restarted_after_end`. A grant for another task or another worktree is

@@ -614,6 +614,27 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     });
   });
 
+  test("a typed end refuses every grant that held the phase, not only the one in force", () => {
+    const s = granted();
+    const first = grantId(s.ledger);
+    const evidence = defaultEvidenceDir(s.worktree);
+    expect(checkPhase(s, s.grantPath, "T-1", "super-review:readiness").code).toBe(0);
+    const second = freshGrant(s, () => new Date(), "T-1");
+    expect(checkPhase(s, second.path, "T-1", "super-review:readiness").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-readiness").code).toBe(0);
+    for (const grant of [s.grantPath, second.path]) {
+      const checked = checkPhase(s, grant, "T-1", "super-review:readiness");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain("ended by a typed record");
+      expect(ak(s.worktree, s.ledger, ...recordArgs("review-readiness", grant, "T-1")).code).toBe(1);
+    }
+    expect(only(readRecords(evidence, "task", "review-readiness")).authority).toEqual({
+      mode: "explicit",
+      superseded_grant_id: second.id,
+    });
+    expect(first).not.toBe(second.id);
+  });
+
   test("a phase recorded by hand cannot be relabelled with --bypass at the same snapshot", () => {
     const s = granted();
     expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
