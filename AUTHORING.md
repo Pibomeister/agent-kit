@@ -1551,13 +1551,12 @@ Each run writes `<result>.receipt.json` beside the JSON result. It records:
 A figure quoted from a run carries that receipt, or the fields of it the figure depends on. The
 judge is bound by the runner, and neither the script nor this section names it.
 
-Cross-host trigger-eval receipts retain each reporting session's input, cached-input, cache-write,
-output and reasoning-output token totals and their run sum without double-counting cached or
-reasoning subsets. The matrix may bind session and run token caps plus a versioned price table under
-`research/` or `provenance/`; only a Codex session whose bound model has a table entry receives a
-derived `cost_usd`, while missing entries keep the token evidence and leave cost unset. The receipt
-records the table path, version and as-of date, both effective caps, skipped cases, and
-`over_budget`; sessions already in flight may finish after the run cap closes.
+Cross-host trigger-eval receipts retain the token usage a Codex session reports on its
+`turn.completed` line, per session and summed over the run. A session's `cost_usd` is derived from
+that usage only when the matrix's `price-table` names a table under `research/` (the committed one
+is `research/evals/codex-token-prices-2026-10-02.json`) that has an entry for the session's
+binding; otherwise the usage is kept and the cost stays unset. The receipt records the table's
+path, version and as-of date.
 
 ---
 

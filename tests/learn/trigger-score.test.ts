@@ -39,8 +39,6 @@ import {
   skillLoads,
   stopsOnLaw,
   summarise,
-  TokenBudget,
-  tokenBudgetedPool,
   typedSkill,
   usageReceipt,
   workflowCalls,
@@ -1256,60 +1254,36 @@ describe("invalid sessions and the no-op floor", () => {
     expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done" })).toBeNull();
   });
 
-  test("a session over its token cap is invalid with the cap and reported count", () => {
+  test("the usage receipt sums the sessions that reported usage and counts them", () => {
     const usage: TokenUsage = {
-      inputTokens: 100,
-      cachedInputTokens: 80,
+      inputTokens: 55,
+      cachedInputTokens: 20,
       cacheWriteInputTokens: 0,
-      outputTokens: 21,
-      reasoningOutputTokens: 5,
-      totalTokens: 121,
+      outputTokens: 5,
+      reasoningOutputTokens: 2,
+      totalTokens: 60,
     };
-    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done", usage }, undefined, 120)).toBe(
-      "token cap 120 reached after 121 tokens",
-    );
-    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done", usage }, undefined, 121)).toBeNull();
-    expect(invalidSession({ exitCode: 0, timedOut: false, reply: "done" }, undefined, 120)).toBeNull();
-  });
-
-  test("a run token budget stops starting sessions after reported usage crosses the cap", async () => {
-    const started: number[] = [];
-    const budget = new TokenBudget(100);
-    const completed = await tokenBudgetedPool([1, 2, 3], 1, budget, async (item) => {
-      started.push(item);
-      return {
-        item,
-        usage: {
-          inputTokens: 55,
-          cachedInputTokens: 20,
-          cacheWriteInputTokens: 0,
-          outputTokens: 5,
-          reasoningOutputTokens: 2,
-          totalTokens: 60,
-        },
-      };
+    expect(usageReceipt([{ usage }, {}, { usage }])).toEqual({
+      usage: {
+        input_tokens: 110,
+        cached_input_tokens: 40,
+        cache_write_input_tokens: 0,
+        output_tokens: 10,
+        reasoning_output_tokens: 4,
+        total_tokens: 120,
+      },
+      usage_sessions: 2,
     });
-    expect(started).toEqual([1, 2]);
-    expect(completed.map(({ index, value }) => [index, value.item])).toEqual([
-      [0, 1],
-      [1, 2],
-    ]);
-    expect(budget.usage).toEqual({
-      inputTokens: 110,
-      cachedInputTokens: 40,
-      cacheWriteInputTokens: 0,
-      outputTokens: 10,
-      reasoningOutputTokens: 4,
-      totalTokens: 120,
-    });
-    expect(budget.overBudget).toBe(true);
-    expect(usageReceipt(budget.usage)).toEqual({
-      input_tokens: 110,
-      cached_input_tokens: 40,
-      cache_write_input_tokens: 0,
-      output_tokens: 10,
-      reasoning_output_tokens: 4,
-      total_tokens: 120,
+    expect(usageReceipt([{}])).toEqual({
+      usage: {
+        input_tokens: 0,
+        cached_input_tokens: 0,
+        cache_write_input_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 0,
+      },
+      usage_sessions: 0,
     });
   });
 

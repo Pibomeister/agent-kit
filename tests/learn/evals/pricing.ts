@@ -18,7 +18,8 @@ export interface PriceTable {
 interface PriceTableFile {
   version: number;
   as_of: string;
-  source?: string;
+  source: string;
+  verified_against_live_session: boolean;
   models: Record<
     string,
     {
@@ -32,11 +33,12 @@ interface PriceTableFile {
 const PRICE_TABLE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["version", "as_of", "models"],
+  required: ["version", "as_of", "source", "verified_against_live_session", "models"],
   properties: {
     version: { type: "integer", minimum: 1 },
     as_of: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" },
-    source: { type: "string", minLength: 1 },
+    source: { type: "string", pattern: "^https://" },
+    verified_against_live_session: { type: "boolean" },
     models: {
       type: "object",
       minProperties: 1,

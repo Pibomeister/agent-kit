@@ -40,24 +40,17 @@ export interface PanelRules {
   size?: number;
 }
 
-export interface TokenCaps {
-  session: number;
-  run: number;
-}
-
 export interface Matrix {
   subjects: Subject[];
   reviewers: Seat[];
   panels: PanelRules;
-  tokenCaps?: TokenCaps;
-  /** Repository-relative path under research/ or provenance/. */
+  /** Repository-relative path under research/. */
   priceTable?: string;
 }
 
 type MatrixSubject = Omit<Subject, "maxTurns"> & { "max-turns"?: number | null };
-type MatrixFile = Omit<Matrix, "subjects" | "tokenCaps" | "priceTable"> & {
+type MatrixFile = Omit<Matrix, "subjects" | "priceTable"> & {
   subjects: MatrixSubject[];
-  "token-caps"?: TokenCaps;
   "price-table"?: string;
 };
 
@@ -72,11 +65,6 @@ export function effectiveMaxTurns(subject: Subject, evaluatorDefault = DEFAULT_M
 /** Receipt fragment for the effective cap; JSON null means the host runs uncapped. */
 export function turnCapReceipt(subject: Subject, evaluatorDefault = DEFAULT_MAX_TURNS): { max_turns: number | null } {
   return { max_turns: effectiveMaxTurns(subject, evaluatorDefault) ?? null };
-}
-
-/** Receipt fragment for the matrix's token ceilings; JSON null means no ceiling. */
-export function tokenCapReceipt(caps: TokenCaps | undefined) {
-  return { max_session_tokens: caps?.session ?? null, max_run_tokens: caps?.run ?? null };
 }
 
 /** Parse and validate matrix YAML. Throws with every problem found, never a partial matrix. */
@@ -102,11 +90,11 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
       }
     }
     if (matrix["price-table"]?.split("/").includes(".."))
-      problems.push("price-table must not traverse outside research/ or provenance/");
+      problems.push("price-table must not traverse outside research/");
   }
   if (problems.length > 0) throw new Error(`${source}: ${problems.join("; ")}`);
   const matrix = value as MatrixFile;
-  const { subjects, "token-caps": tokenCaps, "price-table": priceTable, ...rest } = matrix;
+  const { subjects, "price-table": priceTable, ...rest } = matrix;
   const parsed: Matrix = {
     ...rest,
     subjects: subjects.map(({ "max-turns": maxTurns, ...subject }) => ({
@@ -115,7 +103,6 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
       maxTurns,
     })),
   };
-  if (tokenCaps !== undefined) parsed.tokenCaps = tokenCaps;
   if (priceTable !== undefined) parsed.priceTable = priceTable;
   return parsed;
 }

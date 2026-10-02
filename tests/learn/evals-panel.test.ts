@@ -15,7 +15,6 @@ import {
   type Matrix,
   parseMatrix,
   type Seat,
-  tokenCapReceipt,
   turnCapReceipt,
 } from "./evals/matrix.ts";
 import { buildPanel, calibration, grade, type Judge, parseVote, readQueue } from "./evals/panel.ts";
@@ -34,11 +33,11 @@ describe("matrix", () => {
     const m = parseMatrix(text);
     expect(m.subjects.map((s) => s.id)).toEqual(["subject-a", "subject-b", "subject-c"]);
     expect(m.subjects.map((s) => s.maxTurns)).toEqual([20, null, 20]);
-    expect(m.tokenCaps).toEqual({ session: 200_000, run: 10_000_000 });
     expect(m.priceTable).toBe("research/evals/codex-token-prices-2026-10-02.json");
     if (m.priceTable === undefined) throw new Error("the example has no price table");
     const prices = loadPriceTable(join(import.meta.dir, "..", "..", m.priceTable));
     expect(prices.version).toBe(1);
+    expect(prices.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(Object.keys(prices.models).length).toBeGreaterThan(0);
     expect(m.reviewers.map((r) => r.host)).toEqual(["claude", "codex", "grok"]);
     expect(m.panels).toEqual(rules);
@@ -123,30 +122,17 @@ describe("matrix", () => {
     expect(turnCapReceipt({ id: "s-d", host: "codex", model: undefined, maxTurns: null })).toEqual({ max_turns: null });
   });
 
-  test("token caps and the optional price table are validated and recorded", () => {
+  test("the optional price table must be a path under research/", () => {
     const tail =
       "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\n" +
       "panels: {independent-of: subject, min-reviewers: 2}\n";
-    const configured = parseMatrix(
-      "subjects: [{id: s-a, host: codex, model: z}]\n" +
-        "token-caps: {session: 120, run: 500}\n" +
-        "price-table: provenance/prices.json\n" +
-        tail,
+    const subjects = "subjects: [{id: s-a, host: claude}]\n";
+    expect(parseMatrix(subjects + "price-table: research/evals/prices.json\n" + tail).priceTable).toBe(
+      "research/evals/prices.json",
     );
-    expect(configured.tokenCaps).toEqual({ session: 120, run: 500 });
-    expect(configured.priceTable).toBe("provenance/prices.json");
-    expect(tokenCapReceipt(configured.tokenCaps)).toEqual({ max_session_tokens: 120, max_run_tokens: 500 });
-    expect(tokenCapReceipt(undefined)).toEqual({ max_session_tokens: null, max_run_tokens: null });
-
-    expect(() =>
-      parseMatrix("subjects: [{id: s-a, host: claude}]\ntoken-caps: {session: 0, run: 500}\n" + tail),
-    ).toThrow(/token-caps/);
-    expect(() => parseMatrix("subjects: [{id: s-a, host: claude}]\nprice-table: .work/prices.json\n" + tail)).toThrow(
-      /price-table/,
-    );
-    expect(() =>
-      parseMatrix("subjects: [{id: s-a, host: claude}]\nprice-table: research/../prices.json\n" + tail),
-    ).toThrow(/price-table/);
+    expect(parseMatrix(subjects + tail).priceTable).toBeUndefined();
+    for (const path of [".work/prices.json", "provenance/prices.json", "research/../prices.json"])
+      expect(() => parseMatrix(`${subjects}price-table: ${path}\n${tail}`)).toThrow(/price-table/);
   });
 });
 

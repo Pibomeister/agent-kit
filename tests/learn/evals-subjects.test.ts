@@ -497,6 +497,8 @@ describe("runSubject", () => {
       JSON.stringify({
         version: 1,
         as_of: "2026-01-02",
+        source: "https://prices.invalid/placeholder",
+        verified_against_live_session: false,
         models: {
           "model-placeholder": {
             input_per_million_usd: 3,

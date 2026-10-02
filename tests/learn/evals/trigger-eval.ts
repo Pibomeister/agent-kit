@@ -103,8 +103,7 @@
  * Cost: each scored case carries the session's `cost_usd` as its host reported it, or for a Codex
  * session as the configured versioned price table derives it (null when neither source exists),
  * and each subject's summary totals the cases that reported one. Token totals are retained per
- * session and summed in the receipt. Matrix session/run token caps apply to every host that reports
- * usage; a run at its cap starts no new sessions, though sessions already in flight may overshoot.
+ * session and summed in the receipt.
  * Each subject's receipt entry lists `observed_models`: the distinct models its host reported
  * serving the sessions, empty when the host does not report one, and `max_turns`: the effective
  * subject cap or null when that host runs uncapped.
@@ -121,7 +120,7 @@ import { run } from "../../../src/learn/core/proc.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
-import { effectiveMaxTurns, loadMatrix, tokenCapReceipt, turnCapReceipt } from "./matrix.ts";
+import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
 import { loadPriceTable } from "./pricing.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
@@ -1086,9 +1085,8 @@ export function scoreCase(
  */
 export function invalidSession(
   session: Pick<SessionResult, "exitCode" | "timedOut" | "reply" | "stopReason"> &
-    Partial<Pick<SessionResult, "events" | "turns" | "usage">>,
+    Partial<Pick<SessionResult, "events" | "turns">>,
   maxTurns?: number,
-  maxTokens?: number,
 ): string | null {
   if (session.timedOut) return "timeout";
   const calls = (session.events ?? []).filter(
@@ -1101,8 +1099,6 @@ export function invalidSession(
     const command = shell === null ? "" : `: ${shell}`;
     return `host cancelled refused ${call.name} call${command}`;
   }
-  if (maxTokens !== undefined && session.usage !== undefined && session.usage.totalTokens > maxTokens)
-    return `token cap ${maxTokens} reached after ${session.usage.totalTokens} tokens`;
   const toolEvents = calls.length;
   if (maxTurns !== undefined && session.reply.trim() === "" && (session.turns === maxTurns || toolEvents >= maxTurns))
     return `turn cap ${maxTurns} reached after ${toolEvents} tool events`;
@@ -1397,74 +1393,35 @@ function userInvokedSkills(): { userInvoked: Set<string>; known: Set<string>; fi
   };
 }
 
-const emptyUsage = (): TokenUsage => ({
-  inputTokens: 0,
-  cachedInputTokens: 0,
-  cacheWriteInputTokens: 0,
-  outputTokens: 0,
-  reasoningOutputTokens: 0,
-  totalTokens: 0,
-});
-
-/** Run-wide accounting shared across subject pools. In-flight sessions may finish after the cap closes. */
-export class TokenBudget {
-  usage = emptyUsage();
-  reportedSessions = 0;
-
-  constructor(readonly cap: number | undefined) {}
-
-  get exhausted(): boolean {
-    return this.cap !== undefined && this.usage.totalTokens >= this.cap;
-  }
-
-  get overBudget(): boolean {
-    return this.cap !== undefined && this.usage.totalTokens > this.cap;
-  }
-
-  record(usage: TokenUsage | undefined): void {
-    if (usage === undefined) return;
-    this.reportedSessions++;
-    this.usage = {
-      inputTokens: this.usage.inputTokens + usage.inputTokens,
-      cachedInputTokens: this.usage.cachedInputTokens + usage.cachedInputTokens,
-      cacheWriteInputTokens: this.usage.cacheWriteInputTokens + usage.cacheWriteInputTokens,
-      outputTokens: this.usage.outputTokens + usage.outputTokens,
-      reasoningOutputTokens: this.usage.reasoningOutputTokens + usage.reasoningOutputTokens,
-      totalTokens: this.usage.totalTokens + usage.totalTokens,
-    };
-  }
-}
-
-export function usageReceipt(usage: TokenUsage) {
-  return {
-    input_tokens: usage.inputTokens,
-    cached_input_tokens: usage.cachedInputTokens,
-    cache_write_input_tokens: usage.cacheWriteInputTokens,
-    output_tokens: usage.outputTokens,
-    reasoning_output_tokens: usage.reasoningOutputTokens,
-    total_tokens: usage.totalTokens,
-  };
-}
-
-export async function tokenBudgetedPool<T, R extends { usage?: TokenUsage }>(
-  items: readonly T[],
-  jobs: number,
-  budget: TokenBudget,
-  fn: (item: T) => Promise<R>,
-): Promise<Array<{ index: number; value: R }>> {
-  const out = Array.from({ length: items.length }, (): R | undefined => undefined);
+async function pool<T, R>(items: readonly T[], jobs: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.max(1, jobs) }, async () => {
-      while (!budget.exhausted && next < items.length) {
+      while (next < items.length) {
         const i = next++;
-        const value = await fn(items[i]!);
-        out[i] = value;
-        budget.record(value.usage);
+        out[i] = await fn(items[i]!);
       }
     }),
   );
-  return out.flatMap((value, index) => (value === undefined ? [] : [{ index, value }]));
+  return out;
+}
+
+/** Receipt fragment summing the token totals of the sessions that reported usage. */
+export function usageReceipt(sessions: ReadonlyArray<Pick<SessionResult, "usage">>) {
+  const reported = sessions.flatMap((session) => (session.usage === undefined ? [] : [session.usage]));
+  const sum = (field: keyof TokenUsage) => reported.reduce((total, usage) => total + usage[field], 0);
+  return {
+    usage: {
+      input_tokens: sum("inputTokens"),
+      cached_input_tokens: sum("cachedInputTokens"),
+      cache_write_input_tokens: sum("cacheWriteInputTokens"),
+      output_tokens: sum("outputTokens"),
+      reasoning_output_tokens: sum("reasoningOutputTokens"),
+      total_tokens: sum("totalTokens"),
+    },
+    usage_sessions: reported.length,
+  };
 }
 
 function revision(): string {
@@ -1474,14 +1431,9 @@ function revision(): string {
 
 function priceTableFile(path: string): string {
   const file = resolve(PACKAGE_ROOT, path);
-  const allowed = [resolve(PACKAGE_ROOT, "research"), resolve(PACKAGE_ROOT, "provenance")];
-  if (
-    !allowed.some((root) => {
-      const fromRoot = relative(root, file);
-      return fromRoot !== "" && !fromRoot.startsWith("..") && !isAbsolute(fromRoot);
-    })
-  )
-    throw new Error(`price table must be a file under research/ or provenance/: ${path}`);
+  const fromRoot = relative(resolve(PACKAGE_ROOT, "research"), file);
+  if (fromRoot === "" || fromRoot.startsWith("..") || isAbsolute(fromRoot))
+    throw new Error(`price table must be a file under research/: ${path}`);
   return file;
 }
 
@@ -1604,7 +1556,7 @@ async function main(argv: string[]): Promise<number> {
   }
 
   const instrument = evalInstrument(PACKAGE_ROOT, revision());
-  const budget = new TokenBudget(matrix.tokenCaps?.run);
+  const ranSessions: SessionResult[] = [];
   const report = [];
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
@@ -1639,7 +1591,6 @@ async function main(argv: string[]): Promise<number> {
           host: subject.host,
           injection: adapter.injection,
           ...turnCapReceipt(subject),
-          ...tokenCapReceipt(matrix.tokenCaps),
           price_table:
             matrix.priceTable === undefined || prices === undefined
               ? null
@@ -1650,19 +1601,17 @@ async function main(argv: string[]): Promise<number> {
       );
       continue;
     }
-    const completed = await tokenBudgetedPool(cases, jobs, budget, (c) =>
+    const sessions: SessionResult[] = await pool(cases, jobs, (c) =>
       runSubject(adapter, subject.id, subject.model, request(c), prices),
     );
-    const evaluated = completed.map(({ index, value: session }) => {
+    ranSessions.push(...sessions);
+    const evaluated = sessions.map((session, index) => {
       const evalCase = cases[index];
       if (evalCase === undefined) throw new Error(`completed session has no case at index ${index}`);
       const scored = scoreCase(evalCase, session.events, session.reply, scoring, session.slashCommands);
-      const invalid = invalidSession(session, maxTurns, matrix.tokenCaps?.session);
+      const invalid = invalidSession(session, maxTurns);
       return { case: evalCase, session, result: invalid === null ? scored : { ...scored, invalid } };
     });
-    const sessions: SessionResult[] = evaluated.map(({ session }) => session);
-    const completedIndexes = new Set(completed.map(({ index }) => index));
-    const skippedCases = cases.filter((_, index) => !completedIndexes.has(index)).map((c) => c.id);
     const results = evaluated.map(({ result }) => result);
 
     if (dumpDir !== undefined) {
@@ -1699,22 +1648,17 @@ async function main(argv: string[]): Promise<number> {
     }
 
     const costs = sessions.flatMap((x) => (x.costUsd === undefined ? [] : [x.costUsd]));
-    const subjectUsage = new TokenBudget(undefined);
-    for (const session of sessions) subjectUsage.record(session.usage);
     const summary = {
       ...summarise(results),
       cost_usd: costs.length === 0 ? null : Math.round(costs.reduce((a, b) => a + b, 0) * 10_000) / 10_000,
-      usage: usageReceipt(subjectUsage.usage),
-      usage_sessions: subjectUsage.reportedSessions,
+      ...usageReceipt(sessions),
     };
     report.push({
       subject: subject.id,
       host: subject.host,
       injection: adapter.injection,
       ...turnCapReceipt(subject),
-      ...tokenCapReceipt(matrix.tokenCaps),
       bundle: bundleDir ?? "none",
-      skipped_cases: skippedCases,
       leaks: [...new Set(sessions.flatMap((x) => x.leaks ?? []))],
       observed_models: [...new Set(sessions.flatMap((x) => (x.model === undefined ? [] : [x.model])))].sort(),
       command: adapter.command(request(cases[0]!), subject.model),
@@ -1727,7 +1671,7 @@ async function main(argv: string[]): Promise<number> {
         timed_out: session.timedOut,
         exit_code: session.exitCode,
         cost_usd: session.costUsd ?? null,
-        usage: session.usage === undefined ? null : usageReceipt(session.usage),
+        usage: session.usage === undefined ? null : usageReceipt([session]).usage,
       })),
     });
     if (!quiet) {
@@ -1756,10 +1700,7 @@ async function main(argv: string[]): Promise<number> {
     ...bundleEvidence(bundleOn, promptSet.cases, new Set(drafts.values())),
     roster_tokens: Math.floor(injected.length / 4),
     noop_baseline: noopBaseline(cases, scoring),
-    ...tokenCapReceipt(matrix.tokenCaps),
-    usage: usageReceipt(budget.usage),
-    usage_sessions: budget.reportedSessions,
-    over_budget: budget.overBudget,
+    ...usageReceipt(ranSessions),
     price_table:
       matrix.priceTable === undefined || prices === undefined
         ? null
@@ -1771,10 +1712,7 @@ async function main(argv: string[]): Promise<number> {
       host: r.host,
       injection: r.injection,
       max_turns: r.max_turns,
-      max_session_tokens: r.max_session_tokens,
-      max_run_tokens: r.max_run_tokens,
       bundle: r.bundle,
-      skipped_cases: r.skipped_cases,
       usage: r.summary.usage,
       usage_sessions: r.summary.usage_sessions,
       leaks: r.leaks,

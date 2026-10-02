@@ -49,30 +49,10 @@
         }
       }
     },
-    "token-caps": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "session",
-        "run"
-      ],
-      "properties": {
-        "session": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "A session reporting more tokens is invalid. Subjects that do not report usage are unaffected."
-        },
-        "run": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Once reported usage reaches this total, the runner starts no new sessions; an overshoot from in-flight sessions marks the receipt over_budget."
-        }
-      }
-    },
     "price-table": {
       "type": "string",
-      "pattern": "^(research|provenance)/.+\\.json$",
-      "description": "Optional repository-relative versioned token price table. Only Codex sessions whose bound model has an entry receive a derived cost."
+      "pattern": "^research/.+\\.json$",
+      "description": "Optional repository-relative path, under research/, of a versioned token price table. Only Codex sessions whose bound model has an entry receive a derived cost."
     }
   },
   "$defs": {

@@ -1,9 +1,6 @@
 # Shape of .work/eval-matrix.yaml, which is gitignored and never committed. Copy this there and
 # replace each `model` value with the binding the runner supplies for that seat; the values below
 # only show where a binding goes. Schema: tests/learn/evals/eval-matrix.schema.json.
-token-caps:
-  session: 200000
-  run: 10000000
 price-table: research/evals/codex-token-prices-2026-10-02.json
 subjects:
   # `max-turns` is declared per subject: 20 is the trigger evaluator's default, sized above the
