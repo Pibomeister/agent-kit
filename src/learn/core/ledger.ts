@@ -1,5 +1,7 @@
 /**
- * A git-versioned ledger directory: one commit per job, one lock per ledger.
+ * A git-versioned ledger directory: one commit per completed job, one lock per
+ * ledger. A failed or rejected reflect, and a failed nightly, commit nothing;
+ * the rows they record ride in the next commit.
  *
  * Raw layers are append-only and are never reverted. Wiki layers (pattern
  * pages, memory, lessons, guardrails) are revertible through git. That

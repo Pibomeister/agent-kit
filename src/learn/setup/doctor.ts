@@ -1,6 +1,6 @@
 /**
- * `ak learn setup doctor` — report prerequisites, the resolved environment and
- * the last 24 hours of judge calls.
+ * `ak learn setup doctor` — report prerequisites, the scheduled judge's login,
+ * the resolved environment and the last 24 hours of judge calls.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
@@ -30,6 +30,12 @@ export function judgeBinary(ctx: LearnContext, deps: SetupDeps): string | null {
 /** What a scheduler gives a unit before the unit's own environment is applied. */
 const SCHEDULER_BASE = ["HOME", "USER", "LOGNAME"];
 
+/**
+ * Whether the default judge is logged in under the environment `setup schedule`
+ * would give the unit now, not the operator's shell and not an already
+ * installed unit. Free: it asks the host CLI for its auth status and makes no
+ * judge call. Null for a custom judge command, whose login this cannot read.
+ */
 function scheduledJudgeAuth(ctx: LearnContext, deps: SetupDeps): Check | null {
   if (
     ctx.config.judgeCommand.length !== DEFAULT_JUDGE.length ||

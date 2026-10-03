@@ -297,7 +297,10 @@ function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn
   return declaredUnavailable(parsed) === null ? "ok" : "unavailable";
 }
 
-/** A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced. */
+/**
+ * A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced.
+ * The command runs from the runtime directory, so it discovers no project instructions from its working directory.
+ */
 export function commandJudge(config: LearnConfig): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
     mkdirSync(config.runtimeDir, { recursive: true });
