@@ -230,7 +230,7 @@ describe("bypass granted: phases start without a typed command", () => {
 
 describe("start only: approvals, merge and deploy are never covered", () => {
   test("a host-unattested verifier receipt is refused once a checked gate started under the grant", () => {
-    for (const start of ["typed", "bypass"] as const) {
+    for (const start of ["typed", "bypass", "ship-use"] as const) {
       const { worktree, ledger, grantPath } = granted();
       const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
       const ticket = {
@@ -298,6 +298,10 @@ describe("start only: approvals, merge and deploy are never covered", () => {
         })}\n`,
       );
       expect(ak(worktree, ledger, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+      if (start === "ship-use")
+        expect(
+          ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-ship").code,
+        ).toBe(0);
       const checked = ak(worktree, ledger, "check");
       if (start === "typed") {
         expect(checked.code).toBe(0);
