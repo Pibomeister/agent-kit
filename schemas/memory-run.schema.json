@@ -23,11 +23,6 @@
     "quarantined": { "type": "array", "items": { "type": "string", "pattern": "^obs:[0-9]+$" } },
     "tokens_in": { "type": "integer", "minimum": 0 },
     "tokens_out": { "type": "integer", "minimum": 0 },
-    "min_obs_id": {
-      "description": "The lowest observation id a reflect run was shown. With 'max_obs_id' on an 'ok' run it bounds the ids that run screened; nightly consolidation and review ingest read only observations inside such a range.",
-      "type": "integer",
-      "minimum": 0
-    },
     "max_obs_id": { "type": "integer", "minimum": 0 },
     "episodes": { "type": "integer", "minimum": 0 },
     "selected": { "type": "integer", "minimum": 0 },

@@ -6,11 +6,10 @@
 import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { acquireLock, type Ledger } from "../../src/learn/core/ledger.ts";
+import { acquireLock } from "../../src/learn/core/ledger.ts";
 import { tickLogPath } from "../../src/learn/core/paths.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import {
-  appendRun,
   ensureMemoryLedger,
   memoryDir,
   readState,
@@ -109,13 +108,8 @@ function fixtureProject() {
   observe("found another");
   mem.toolUse({ sid: "cccc3333-0000", project: "shop", tool: "Bash", cwd: root, at: now - 86_400_000 + 500 });
   mem.close();
+  // Nightly reads only what the reflector has screened; a test that runs it puts `reflected` behind the watermark.
   return { root, reflected, ctx: testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath } }) };
-}
-
-/** Nightly reads only what a reflect run was shown; a test that runs it records `reflected` as reflected. */
-function seedReflected(ledger: Ledger, reflected: number, state: MemoryState = {}): void {
-  saveState(ledger, { ...state, last_obs_id_reflected: reflected });
-  appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: reflected, max_obs_id: reflected });
 }
 
 afterAll(removeProjectScratch);
@@ -125,7 +119,7 @@ describe("tick", () => {
     const { root, reflected, ctx } = fixtureProject();
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     const start = new Date(2026, 8, 18, 2, 10);
-    seedReflected(ledger, reflected, { last_nightly: "2026-09-17", last_weekly: start.getTime() });
+    saveState(ledger, { last_obs_id_reflected: reflected, last_nightly: "2026-09-17", last_weekly: start.getTime() });
     ledger.commit("seed scheduler state");
     try {
       setSystemTime(start);
@@ -167,10 +161,10 @@ describe("tick", () => {
 
   test("force without a job runs every job", () => {
     const { root, reflected, ctx } = fixtureProject();
-    seedReflected(ensureMemoryLedger(memoryDir(ctx.config, root)), reflected);
+    saveState(ensureMemoryLedger(memoryDir(ctx.config, root)), { last_obs_id_reflected: reflected });
     expect(tick(ctx, { force: true })).toBe(0);
     const jobs = readJsonl<{ job: string }>(join(memoryDir(ctx.config, root), "runs.jsonl")).map((row) => row.job);
-    expect(jobs).toEqual(["reflect", "episodes", "reflect", "nightly", "weekly"]); // the first is the seeded run
+    expect(jobs).toEqual(["episodes", "reflect", "nightly", "weekly"]);
     expect(ctx.prompts.length).toBe(2); // reflect and nightly; weekly has no lessons to pair
   });
 

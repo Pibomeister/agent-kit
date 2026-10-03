@@ -30,12 +30,10 @@ import {
 import {
   appendRun,
   ensureMemoryLedger,
-  isScreened,
   loadLessons,
   proposeConfirmed,
   readState,
   saveState,
-  screenedObservationRanges,
 } from "../../src/learn/memory/ledger.ts";
 import { lessonsBlock } from "../../src/learn/memory/session-context.ts";
 import { EVENTS_FILE, reviewLedger } from "../../src/learn/review/ledger.ts";
@@ -409,7 +407,7 @@ function nightlyFixture(replies: (o1: number, o2: number) => Reply[]) {
   const review = reviewLedger(ctx.config, root);
   const source = ClaudeMemSource.open(dbPath)!;
   expect(buildEpisodes(source, ledger, "shop", []).length).toBe(2);
-  appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: o1, max_obs_id: o2 });
+  saveState(ledger, { last_obs_id_reflected: o2 });
   return { ctx, root, ledger, review, source, o1, o2 };
 }
 
@@ -462,7 +460,7 @@ function growingFixture() {
   const build = (source: ClaudeMemSource) => {
     buildEpisodes(source, ledger, "shop", []);
     const newest = source.sessionObservations(GROWING_SID).at(-1)!.id;
-    appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: early[0], max_obs_id: newest });
+    saveState(ledger, { ...readState(ledger), last_obs_id_reflected: newest });
   };
   return {
     ctx,
@@ -494,10 +492,10 @@ describe("nightly", () => {
   test("observations the reflector has not screened are held back, and their episode waits", () => {
     const { ctx, root, ledger, review, source, o1 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
     try {
-      writeFileSync(ledger.path("runs.jsonl"), "");
+      saveState(ledger, {});
       expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no reflected observations to consolidate");
       expect(ctx.prompts).toEqual([]);
-      appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: o1, max_obs_id: o1 });
+      saveState(ledger, { last_obs_id_reflected: o1 });
       expect(consolidate(ctx, source, ledger, root, review)).toBe(
         "nightly: 1/1 episodes -> +0 lessons, 0 review events",
       );
@@ -507,45 +505,6 @@ describe("nightly", () => {
     expect(shownObs(ctx.prompts[0])).toEqual([o1]);
     expect(ctx.prompts[0]).not.toContain("tests pass from the main tree");
     expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["bbbb2222-0000"]);
-  });
-
-  test("history older than the first reflect's window is never shown, though it sits below the watermark", () => {
-    const { ctx, root, ledger, review, source, o2 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
-    try {
-      writeFileSync(ledger.path("runs.jsonl"), "");
-      saveState(ledger, { last_obs_id_reflected: o2 });
-      appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: o2, max_obs_id: o2 });
-      expect(consolidate(ctx, source, ledger, root, review)).toBe(
-        "nightly: 1/1 episodes -> +0 lessons, 0 review events",
-      );
-    } finally {
-      source.close();
-    }
-    expect(shownObs(ctx.prompts[0])).toEqual([o2]);
-    expect(ctx.prompts[0]).not.toContain("tests failed from a worktree");
-    expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["aaaa1111-0000"]);
-  });
-
-  test("a reflect run recorded without its lowest id starts after the run before it; the first screens nothing", () => {
-    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
-    appendRun(ledger, { job: "reflect", status: "ok", max_obs_id: 40 });
-    appendRun(ledger, { job: "reflect", status: "rejected", min_obs_id: 41, max_obs_id: 55 });
-    appendRun(ledger, { job: "reflect", status: "ok", max_obs_id: 60 });
-    appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: 63, max_obs_id: 70 });
-    const ranges = screenedObservationRanges(ledger);
-    expect(ranges).toEqual([
-      [41, 60],
-      [63, 70],
-    ]);
-    expect([40, 41, 60, 61, 63, 70, 71].map((id) => isScreened(ranges, id))).toEqual([
-      false,
-      true,
-      true,
-      false,
-      true,
-      true,
-      false,
-    ]);
   });
 
   test("a re-queued session shows only the observations after the highest id its last run consumed", () => {

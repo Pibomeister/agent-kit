@@ -111,29 +111,6 @@ export function quarantinedObservationIds(ledger: Ledger): Set<string> {
   );
 }
 
-/**
- * The observation ids each reflector run that advanced the watermark was shown, as `[lowest, highest]`.
- * Only these have been through the security channel. A row written before the lowest id was recorded
- * starts after the run before it; the first such row, whose reach is unknown, screens nothing.
- */
-export function screenedObservationRanges(ledger: Ledger): [number, number][] {
-  const ranges: [number, number][] = [];
-  let previous: number | undefined;
-  for (const run of readJsonl<{ job?: string; status?: string; min_obs_id?: number; max_obs_id?: number }>(
-    ledger.path("runs.jsonl"),
-  )) {
-    if (run.job !== "reflect" || run.status !== "ok" || run.max_obs_id === undefined) continue;
-    const lowest = run.min_obs_id ?? (previous === undefined ? undefined : previous + 1);
-    if (lowest !== undefined) ranges.push([lowest, run.max_obs_id]);
-    previous = run.max_obs_id;
-  }
-  return ranges;
-}
-
-export function isScreened(ranges: readonly (readonly [number, number])[], id: number): boolean {
-  return ranges.some(([lowest, highest]) => id >= lowest && id <= highest);
-}
-
 export function logLine(ledger: Ledger, message: string): void {
   appendFileSync(ledger.path("log.md"), `- ${nowIso()} ${message}\n`);
 }

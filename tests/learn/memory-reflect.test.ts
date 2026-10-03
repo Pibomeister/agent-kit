@@ -13,7 +13,6 @@ import {
   provenanceGate,
   readState,
   saveState,
-  screenedObservationRanges,
   SECTIONS,
 } from "../../src/learn/memory/ledger.ts";
 import {
@@ -316,7 +315,6 @@ describe("reflect", () => {
     }
     expect(ctx.prompts[0]).toContain(`obs:${ids[0]}`);
     expect(readState(ledger).last_obs_id_reflected).toBe(ids[2]);
-    expect(screenedObservationRanges(ledger)).toEqual([[Math.min(...ids), Math.max(...ids)]]);
     expect(readFileSync(ledger.path("memory.md"), "utf8")).toContain("- latest finding");
   });
 
