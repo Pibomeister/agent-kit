@@ -60,9 +60,11 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol `phase-oper
    from the events the gate kept, never read from the reply. An event counted once against a page
    is not counted again on replay.
 4. **Set status in the runtime.**
-   - A pattern is `active` when its count reaches the active threshold and its events come from at
-     least two distinct pull requests or two distinct source families; `candidate` otherwise.
-     There are two families: review threads (the inline comment, the reply, the author's reply and
+   - A pattern is `active` when its count reaches the active threshold and its events include
+     either a direct user correction or two distinct reviewers, bots and the runtime's own author
+     labels not counted, across at least two distinct pull requests or two distinct source
+     families; `candidate` otherwise. One account repeating a comment on several pull requests is
+     one reviewer. There are two families: review threads (the inline comment, the reply, the author's reply and
      the summary report are one family) and user corrections. Every other source, the session
      observer and the nightly consolidation included, only corroborates: it leaves evidence and
      raises the count, but adds no family and no pull request, because it recorded or forwarded what
@@ -74,6 +76,10 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol `phase-oper
      does.
    - A lesson is `confirmed` when its surviving evidence spans at least two sessions, and
      `hypothesis` otherwise.
+   - A lesson supersedes a `hypothesis` whatever its own status, and a `confirmed` lesson only
+     when it is itself `confirmed`. A lesson that is not `confirmed` and names a `confirmed` one
+     in `supersedes` leaves both `conflict`, with neither superseded. A target in any other
+     status is left as it is.
    - `retired` is sticky: only a human, through `compound-refresh`, retires or revives.
 5. **Reject a degenerate working-memory rewrite whole** when any one of these holds. Each is
    checked on the judge's text after step 2, before the runtime's security bullet is added, so that
