@@ -1140,7 +1140,7 @@ function evaluateEvidence(
     const check = nonempty(receipt.check) ? checks.get(receipt.check) : undefined;
     const required = strings(check?.evidence_required) ?? [];
     const expectedRecipe = object(check?.recipe);
-    if (required.length > 0 || expectedRecipe !== undefined) {
+    if (required.length > 0 || expectedRecipe !== undefined || receipt.evidence_kind !== undefined) {
       const creator = object(receipt.created_by);
       if (creator?.role !== "verifier") {
         reasons.push({
@@ -1205,7 +1205,12 @@ function evaluateEvidence(
     for (const criterion of valid ? (strings(receipt.supports) ?? []) : []) {
       if (receipt.status === "passed") passed.add(criterion);
       if (receipt.status === "failed") failed.add(criterion);
-      if (receipt.status === "passed" && nonempty(receipt.evidence_kind)) {
+      if (
+        receipt.status === "passed" &&
+        nonempty(receipt.evidence_kind) &&
+        required.includes(receipt.evidence_kind) &&
+        (strings(check?.supports) ?? []).includes(criterion)
+      ) {
         const coverage = surfaceCoverage.get(criterion) ?? new Set<string>();
         coverage.add(receipt.evidence_kind);
         surfaceCoverage.set(criterion, coverage);

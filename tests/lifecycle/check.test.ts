@@ -94,8 +94,8 @@ interface TicketOverrides {
     check: string;
     kind: "command" | "probe" | "manual";
     supports: readonly string[];
-    recipe: { id: string; hash: string };
-    evidence_required: readonly string[];
+    recipe?: { id: string; hash: string };
+    evidence_required?: readonly string[];
   }[];
 }
 
@@ -374,6 +374,62 @@ describe("ak lifecycle check, standalone", () => {
     expect(checked.err).toContain(
       `refused: criterion AC-1 requires frontend evidence rendered-screenshot, but no current receipt at`,
     );
+  });
+
+  test("surface evidence filed under a check that does not require it is seat-checked and does not cover", () => {
+    const dir = repo();
+    const recipeHash = `sha256:${"4".repeat(64)}`;
+    const ticketPath = ticket(dir, "borrowed-surface", {
+      acceptance_criteria: [{ id: "AC-1", text: "The settings route renders.", surface: "frontend" }],
+      verification: [
+        { id: "project-check", check: "Run the unit tests.", kind: "command", supports: ["AC-1"] },
+        {
+          id: "runtime",
+          check: "Drive the settings route.",
+          kind: "probe",
+          supports: ["AC-1"],
+          recipe: { id: "settings-runtime", hash: recipeHash },
+          evidence_required: ["rendered-screenshot"],
+        },
+      ],
+    });
+    const run = openedRun(dir, ticketPath);
+    expect(
+      ak(
+        dir,
+        "record",
+        "--gate",
+        "build-checks",
+        "--class",
+        "green",
+        "--author-kind",
+        "agent",
+        "--host",
+        "codex",
+        "--seat-id",
+        "build-1",
+      ).code,
+    ).toBe(0);
+    record(dir, "review-full", "review-readiness");
+    const borrowed = receipt(
+      dir,
+      run,
+      ticketPath,
+      {
+        created_by: { role: "verifier" },
+        recipe: { id: "settings-runtime", hash: `sha256:${"5".repeat(64)}` },
+        evidence_kind: "rendered-screenshot",
+        verifier_seat: { id: "build-1", implementer_seat: "other", isolation: "host-unattested", attestation: null },
+      },
+      [{ name: "settings.png", contents: "png\n", kind: "screenshot" }],
+    );
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", borrowed).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: evidence recipe-mismatch");
+    expect(checked.err).toContain("was produced by implementer seat build-1");
+    expect(checked.err).toContain("refused: verifier seat build-1 is host-unattested");
+    expect(checked.err).toContain("refused: criterion AC-1 requires frontend evidence rendered-screenshot");
   });
 
   test("every declared artifact is copied and re-hashed", () => {
