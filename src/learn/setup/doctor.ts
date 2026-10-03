@@ -5,9 +5,10 @@
  */
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { DEFAULT_JUDGE } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
-import { schedulerKind } from "./schedule.ts";
+import { schedulerKind, unitEnvironment } from "./schedule.ts";
 import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
 
 export interface Check {
@@ -26,8 +27,36 @@ export function judgeBinary(ctx: LearnContext, deps: SetupDeps): string | null {
   return deps.which(bin);
 }
 
+function scheduledJudgeAuth(ctx: LearnContext, deps: SetupDeps): Check | null {
+  if (
+    ctx.config.judgeCommand.length !== DEFAULT_JUDGE.length ||
+    ctx.config.judgeCommand.some((arg, index) => arg !== DEFAULT_JUDGE[index])
+  ) {
+    return null;
+  }
+  const binary = judgeBinary(ctx, deps);
+  if (binary === null) {
+    return { name: "scheduled judge auth", ok: false, hard: false, why: "judge command is unavailable" };
+  }
+  const env = { ...ctx.env };
+  const scheduled = new Map(unitEnvironment(ctx, deps));
+  const configDir = scheduled.get("CLAUDE_CONFIG_DIR");
+  if (configDir === undefined) delete env.CLAUDE_CONFIG_DIR;
+  else env.CLAUDE_CONFIG_DIR = configDir;
+  env.PATH = scheduled.get("PATH");
+  const result = deps.run([binary, "auth", "status"], { env });
+  const loggedIn = result.code === 0 && /"loggedIn"\s*:\s*true/.test(result.stdout);
+  return {
+    name: "scheduled judge auth",
+    ok: loggedIn,
+    hard: false,
+    why: loggedIn ? "logged in" : "not logged in",
+  };
+}
+
 export function doctorChecks(ctx: LearnContext, deps: SetupDeps): Check[] {
   const gh = deps.which("gh");
+  const auth = scheduledJudgeAuth(ctx, deps);
   return [
     { name: "bun", ok: deps.which("bun") !== null, hard: true, why: "runs `ak learn` from hooks and the scheduler" },
     { name: "git", ok: deps.which("git") !== null, hard: true, why: "every ledger is a git repository" },
@@ -55,10 +84,11 @@ export function doctorChecks(ctx: LearnContext, deps: SetupDeps): Check[] {
       hard: false,
       why: "PR review threads for the review loop",
     },
+    ...(auth === null ? [] : [auth]),
   ];
 }
 
-export function doctor(ctx: LearnContext, deps: SetupDeps): number {
+export function doctor(ctx: LearnContext, deps: SetupDeps, options: { liveJudge?: boolean } = {}): number {
   const checks = doctorChecks(ctx, deps);
   const width = Math.max(...checks.map((check) => check.name.length));
   for (const check of checks) {
@@ -82,6 +112,11 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(
     `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,
   );
+  if (options.liveJudge === true) {
+    const reply = ctx.judge('Reply with exactly {"ok":true}.');
+    ctx.io.out(`  live judge probe    ${reply === null ? "FAILED" : "OK"}`);
+    if (reply === null) return 1;
+  }
   const blocked = checks.filter((check) => check.hard && !check.ok).map((check) => check.name);
   if (blocked.length > 0) {
     ctx.io.out(`\nBLOCKED: ${blocked.join(", ")}`);

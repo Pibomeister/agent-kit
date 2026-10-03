@@ -300,13 +300,19 @@ function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn
 /** A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced. */
 export function commandJudge(config: LearnConfig): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
+    mkdirSync(config.runtimeDir, { recursive: true });
     const env: NodeJS.ProcessEnv = {};
     for (const [key, value] of Object.entries(process.env)) {
       if (!NESTED_SESSION_VARS.includes(key)) env[key] = value;
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const startedAt = Date.now();
-      const result = run(config.judgeCommand, { input: prompt, env, timeoutMs: config.judgeTimeoutMs });
+      const result = run(config.judgeCommand, {
+        cwd: config.runtimeDir,
+        input: prompt,
+        env,
+        timeoutMs: config.judgeTimeoutMs,
+      });
       const parsed = result.timedOut || result.code !== 0 ? null : extractJson(result.stdout);
       const outcome = judgeOutcome(result, parsed);
       traceAttempt(config, prompt, context, attempt + 1, startedAt, result, outcome);
