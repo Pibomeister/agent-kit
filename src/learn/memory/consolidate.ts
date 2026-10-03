@@ -467,8 +467,6 @@ export function consolidate(
   const obsBySid = new Map<string, ObservationRow[]>();
   const obsSessionAll = new Map<string, string>();
   for (const episode of chosen) obsBySid.set(episode.sid, rankObs(unseen.get(episode.sid)?.rows ?? [], quarantined));
-  for (const [, success] of pairs)
-    if (!obsBySid.has(success.sid)) obsBySid.set(success.sid, rankObs(screened(success.sid), quarantined));
   for (const [sid, rows] of obsBySid) for (const row of rows) obsSessionAll.set(`obs:${row.id}`, sid8(sid).slice(1));
   const { prompt, included } = consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid);
   if (ctx.config.dryRun) {
