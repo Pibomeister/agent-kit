@@ -159,6 +159,10 @@ function rotateTrace(config: LearnConfig, trace: string): void {
   renameSync(trace, rotated);
 }
 
+/**
+ * Append one row per attempt to `judge-calls.jsonl` in the runtime directory.
+ * Best-effort: a trace that cannot be written never fails the judge call.
+ */
 function traceAttempt(
   config: LearnConfig,
   prompt: string,
@@ -281,7 +285,7 @@ function judgeOutcome(result: ReturnType<typeof run>, parsed: Record<string, unk
   return declaredUnavailable(parsed) === null ? "ok" : "unavailable";
 }
 
-/** A judge bound to the configured command. One retry on an empty, failed or unparseable reply. */
+/** A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced. */
 export function commandJudge(config: LearnConfig): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
     const env: NodeJS.ProcessEnv = {};

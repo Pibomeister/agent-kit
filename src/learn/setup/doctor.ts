@@ -1,5 +1,6 @@
 /**
- * `ak learn setup doctor` — report prerequisites and the resolved environment.
+ * `ak learn setup doctor` — report prerequisites, the resolved environment and
+ * the last 24 hours of judge calls.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";

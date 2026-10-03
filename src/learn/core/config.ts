@@ -11,12 +11,12 @@ import { join } from "node:path";
 export interface LearnConfig {
   /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`. Ledgers live under `<configDir>/projects/`. */
   configDir: string;
-  /** Runtime-wide state outside any project: the project registry and the tick log. */
+  /** Runtime-wide state outside any project: the project registry, the tick log and the judge-call trace. */
   runtimeDir: string;
   /** The judge command as argv. The prompt goes to stdin; JSON comes back on stdout. */
   judgeCommand: string[];
   judgeTimeoutMs: number;
-  /** Write prompt and reply bodies beside the metadata trace. */
+  /** `AK_LEARN_TRACE=full`: also write each call's prompt and reply bodies beside the metadata trace. */
   traceFull: boolean;
   /** Maximum bytes in the current judge-call metadata file before rotation. Fixed; not an environment option. */
   traceMaxBytes: number;
