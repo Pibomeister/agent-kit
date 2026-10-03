@@ -4,7 +4,13 @@
  *   grok -p PROMPT --output-format streaming-json --allow RULE... --deny RULE... [-m M]
  *     [--max-turns N] --permission-mode dontAsk [--rules TEXT]
  *
- * `--rules` appends to the system prompt. `dontAsk` refuses any call that would need approval
+ * With a case grant (`allowedTools`) the launch is instead:
+ *
+ *   grok -p PROMPT --output-format streaming-json --allow RULE... --tools LIST --always-approve
+ *     [-m M] [--max-turns N] [--rules TEXT]
+ *
+ * `--rules` appends to the system prompt. Everything below up to the case-grant sentence describes
+ * the ungranted launch. `dontAsk` refuses any call that would need approval
  * instead of waiting for one. An explicit deny returns a tool failure the model can recover from,
  * as the recorded redirect probe did; an unlisted call falls through to `dontAsk`. The adapter
  * therefore supplies `--allow` rules generated from the scorer's read-only program, git and gh
@@ -31,7 +37,10 @@
  * `cleanEnv` yields for this adapter; a request carrying anything more, such as the influence eval's canary,
  * leaves `env` to `dontAsk`. Whether the live host expands variables before permission matching is unverified.
  * A request carrying a case grant (`allowedTools`) replaces those generated rules: the `--allow`
- * rules are the grant's `GRANT_RULES` entries alone, with no deny rules and no `env` rule.
+ * rules are the grant's `GRANT_RULES` entries alone, with no deny rules and no `env` rule. It also
+ * drops `dontAsk`: `--tools` restricts the session to the grant's `GRANT_TOOLS` entries and
+ * `--always-approve` approves every call from that set, including any shell command when Bash is
+ * granted. `dontAsk` applies only to ungranted requests.
  * A cancelled turn leaves the session invalid, and the receipt names the last attempted call. The
  * read-only sandbox
  * remains unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports `stopReason`. Isolation is a

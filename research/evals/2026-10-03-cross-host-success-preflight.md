@@ -52,8 +52,10 @@ surfaces and point evidence claims at the evidence they already required. An off
 runs every one of the four cases with a marker for each judged criterion planted only on the surface
 that criterion is meant to read (the output file, the trace or the final reply), and with no marker
 in a counterpart run. A stub judge passes a criterion only when its marker reaches it, so a grader
-aimed at the wrong surface fails. This proves the grading surfaces, without a judge model call; it
-does not show that a judge model applies the criteria correctly.
+aimed at the wrong surface fails, with one exception: the trace ends with the final reply, so a
+criterion meant for the reply and moved to the trace is not detected. This proves the grading
+surfaces to that extent, without a judge model call; it does not show that a judge model applies the
+criteria correctly.
 
 ## Free reproduction and verification
 
