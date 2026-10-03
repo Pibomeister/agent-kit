@@ -8,7 +8,8 @@
  * instead of waiting for one. An explicit deny returns a tool failure the model can recover from,
  * as the recorded redirect probe did; an unlisted call falls through to `dontAsk`. The adapter
  * therefore supplies `--allow` rules generated from the scorer's read-only program, git and gh
- * tables, plus matching denies for write-shaped flags and redirects; `dontAsk` continues to refuse
+ * tables, plus matching denies for write-shaped flags and redirects and a `python3` deny that keeps
+ * an interpreter call on the recoverable path; `dontAsk` continues to refuse
  * every unlisted call. Grok's glob grammar cannot safely express the scorer's semantic subsets for awk,
  * sed, curl, gh api, shell loops, arbitrary help/version calls, the ship gate's `check`, a
  * `git branch` or `git tag` listing beyond its exact forms, or harmless output redirection without

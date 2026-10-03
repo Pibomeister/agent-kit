@@ -174,7 +174,9 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * each against these same rules.
  * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
  * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
- * refuses every segment containing `>`, which no rule did before it.
+ * refuses every segment containing `>`, which no rule did before it. The `python3` deny guards no
+ * allow: it turns an embedded interpreter call from a `dontAsk` cancellation into a tool failure
+ * the subject can recover from.
  */
 export function grokReadOnlyPermissionRules() {
   const grammarGaps = new Set(["awk", "["]);
