@@ -30,6 +30,8 @@
  * read-only. Bare `env` is admitted only when the request environment holds nothing beyond what
  * `cleanEnv` yields for this adapter; a request carrying anything more, such as the influence eval's canary,
  * leaves `env` to `dontAsk`. Whether the live host expands variables before permission matching is unverified.
+ * A request carrying a case grant (`allowedTools`) replaces those generated rules: the `--allow`
+ * rules are the grant's `GRANT_RULES` entries alone, with no deny rules and no `env` rule.
  * A cancelled turn leaves the session invalid, and the receipt names the last attempted call. The
  * read-only sandbox
  * remains unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports `stopReason`. Isolation is a
