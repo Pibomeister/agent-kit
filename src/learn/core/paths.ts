@@ -6,7 +6,7 @@
  * edit, nothing a `git status` in the project would show.
  */
 import { statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import type { LearnConfig } from "./config.ts";
 import { run } from "./proc.ts";
 
@@ -53,13 +53,22 @@ function isDirectory(path: string): boolean {
  * and ignores every timeout, so the scheduled path may only stat. A linked
  * worktree (whose `.git` is a file) returns null; its main root registers from
  * its own foreground sessions instead.
+ *
+ * Stops where git stops: a directory listed in GIT_CEILING_DIRECTORIES is not
+ * searched from below, so this walk and `mainRepoRoot` agree on what is outside.
  */
 export function rootOf(cwd: string): string | null {
+  const ceilings = new Set(
+    (process.env.GIT_CEILING_DIRECTORIES ?? "")
+      .split(delimiter)
+      .filter((entry) => entry !== "")
+      .map((entry) => resolve(entry)),
+  );
   let dir = resolve(cwd);
   for (;;) {
     if (isDirectory(join(dir, ".git"))) return dir;
     const parent = dirname(dir);
-    if (parent === dir) return null;
+    if (parent === dir || ceilings.has(parent)) return null;
     dir = parent;
   }
 }
