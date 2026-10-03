@@ -1050,6 +1050,16 @@ function evaluateEvidence(
       .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
       .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
   );
+  const shipStart = readObject(bypassUsePath(a.dir, a.run, "super-ship"));
+  const startedUnderGrant =
+    (shipStart?.mode === "bypass" && shipStart.ended_at === undefined) ||
+    a.gates.some((gate) =>
+      readRecords(a.dir, a.run, gate).some(
+        (record) =>
+          record.authority?.mode === "bypass" &&
+          (same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision)),
+      ),
+    );
   if (refs.length === 0)
     reasons.push({ code: "missing", detail: "the current verify marker has no verification evidence references" });
 
@@ -1177,7 +1187,7 @@ function evaluateEvidence(
         });
       }
       if (seatId !== undefined && seat?.isolation !== "runner-attested") {
-        if (buildSeats.size > 0)
+        if (buildSeats.size > 0 || startedUnderGrant)
           reasons.push({
             code: "unattested-verifier",
             detail: `verifier seat ${seatId} is host-unattested; autonomous ship requires a runner attestation`,
