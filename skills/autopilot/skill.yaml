@@ -255,9 +255,9 @@ packaging:
           autonomy profile does not install against this host alone; this is where the ceiling
           stays, and attaching an adapter that supplies it is the install's choice.
         - >-
-          independent-context is partial: the host cannot attest that two seats are independent, so
-          a checkpoint needing both stops for explicit human decision unless the runner attests
-          the seats.
+          independent-context is not provided by the host, which cannot attest that two seats are
+          independent, so a checkpoint needing both stops for explicit human decision unless the
+          runner attests the seats.
     - adapter: codex
       mode: manual
       unsupported:

@@ -211,9 +211,9 @@ packaging:
           is why it does not cap this row while that adapter is attached (ruling
           `fail-closed-adapter-lifts-ceiling`).
         - >-
-          independent-context is provided as a fresh subagent context. The host does not attest that
-          two contexts are independent, so seat independence is recorded by this package and checked
-          against the ticket's authorship rather than assumed from the host.
+          independent-context is not provided by the host: a fresh subagent context exists, but the
+          host does not attest that two contexts are independent, so seat independence is recorded by
+          this package and checked against the ticket's authorship rather than assumed from the host.
     - adapter: codex
       mode: autonomous
       unsupported:
@@ -226,9 +226,9 @@ packaging:
           is why it does not cap this row while that adapter is attached (ruling
           `fail-closed-adapter-lifts-ceiling`).
         - >-
-          independent-context is provided as a fresh subagent context. The host does not attest that
-          two contexts are independent, so seat independence is recorded by this package and checked
-          against the ticket's authorship rather than assumed from the host.
+          independent-context is not provided by the host: a fresh subagent context exists, but the
+          host does not attest that two contexts are independent, so seat independence is recorded by
+          this package and checked against the ticket's authorship rather than assumed from the host.
 
 provenance:
   origin: donor
