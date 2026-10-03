@@ -26,3 +26,6 @@ adaptations:
   - path: tests/verification-schemas.test.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
     rationale: Schema tests exercise the new project, ticket, recipe and receipt records plus invalid evidence and response shapes.
+  - path: templates/verification.surface.example.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: The surface receipt example demonstrates a recipe-bound runner-attested API response with every evidence digest represented.

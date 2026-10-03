@@ -1277,6 +1277,9 @@ adaptations:
   - path: templates/charter.example.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: The example charter's denied actions now exercises the protected money-movement action.
+  - path: templates/verification.surface.example.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: The surface receipt example demonstrates a recipe-bound runner-attested API response with every evidence digest represented.
   - path: tests/charter-constraints.test.ts
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: The charter schema fixture exercises money movement as a sensitive action.

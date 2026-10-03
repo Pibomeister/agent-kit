@@ -17,6 +17,7 @@ describe("the bundled verification predicate", () => {
       .map((name) => read(join(fixtureDir, name)));
     const templates = [
       "verification.example.json",
+      "verification.surface.example.json",
       "verification.weakened.example.json",
       "verification.zero-exit-failure.example.json",
     ].map((name) => read(join(ROOT, "templates", name)));
