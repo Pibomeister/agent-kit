@@ -600,7 +600,7 @@ describe("execute path", () => {
     expect(errors.join("\n")).toContain("host exited before a transcript");
   });
 
-  test("counts a paid session whose grading throws in the receipt spend", async () => {
+  test("retains the spend, raw stream and artifacts of a paid session whose grading throws", async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-judge-abort-")));
     work.push(cwd);
     const bundle = join(cwd, "dist");
@@ -645,6 +645,13 @@ describe("execute path", () => {
     expect(report.receipt.aborted).toMatchObject({
       subject: "subject-codex",
       reason: "judge panel rejected",
+      session: {
+        subject: "subject-codex",
+        servedModel: "subject-model",
+        rawOutput: readFileSync(join(FIXTURES, "codex-app-server.jsonl"), "utf8"),
+      },
+      files_created: ["tickets/result.json"],
+      artifacts: { "tickets/result.json": { text: '{"class":"red","owner":"Maya Chen"}\n' } },
     });
     expect(errors.join("\n")).toContain("judge panel rejected");
   });

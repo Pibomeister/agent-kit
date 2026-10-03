@@ -701,7 +701,15 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const rows: CaseSessionResult[] = [];
     const started: SessionResult[] = [];
     const judge = dependencies.judge ?? hostJudge(priced.prices);
-    let aborted: { subject: string; case: string; reason: string; cost_usd: number | null } | null = null;
+    let aborted: {
+      subject: string;
+      case: string;
+      reason: string;
+      cost_usd: number | null;
+      session: SessionResult | null;
+      files_created: string[];
+      artifacts: ReturnType<typeof snapshotArtifacts>;
+    } | null = null;
     sessions: for (const subject of subjects) {
       const adapter = adapterFor(subject.host);
       const bundleDir = join(bundleRoot, BUNDLE_FOR[subject.host]);
@@ -710,6 +718,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
         let prepared: PreparedCase | undefined;
         let session: SessionResult | undefined;
         let judgeSpend: number | undefined;
+        let filesCreated: string[] = [];
         try {
           prepared = prepareCase(evalCase);
           const request = requestFor(evalCase, subject, prepared.cwd, bundleDir);
@@ -717,7 +726,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           started.push(session);
           const after = filesUnder(prepared.cwd);
           const before = prepared.before;
-          const filesCreated = [...after].filter((file) => !before.has(file)).toSorted();
+          filesCreated = [...after].filter((file) => !before.has(file)).toSorted();
           rows.push(
             await evaluateCaseSession(evalCase, session, {
               cwd: prepared.cwd,
@@ -742,6 +751,9 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
               session?.costUsd === undefined && judgeSpend === undefined
                 ? null
                 : (session?.costUsd ?? 0) + (judgeSpend ?? 0),
+            session: session ?? null,
+            files_created: filesCreated,
+            artifacts: prepared === undefined ? {} : snapshotArtifacts(prepared.cwd, filesCreated),
           };
         } finally {
           if (prepared !== undefined) rmSync(prepared.cwd, { recursive: true, force: true });
