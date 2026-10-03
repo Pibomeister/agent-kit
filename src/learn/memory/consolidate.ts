@@ -27,13 +27,14 @@ import { type Episode, loadEpisodes, markConsolidated, MEMORY_SOURCE, unconsolid
 import {
   appendRun,
   cleanTags,
-  FAILURE_TYPES,
+  isFailureObservation,
   list,
   loadLessons,
   lessonsIndexText,
   logLine,
   oneLine,
   proposeOrSkip,
+  quarantinedObservationIds,
   readState,
   rewriteIndex,
   saveState,
@@ -92,9 +93,18 @@ export function pairFailures<T extends Stratifiable>(failures: readonly T[], all
 }
 
 /** A session's observations, failures first, then decisions, then the rest; capped. */
-export function fetchObs(source: ClaudeMemSource, sid: string, cap = OBS_PER_EPISODE): ObservationRow[] {
-  const rank = (row: ObservationRow) => (FAILURE_TYPES.has(row.type) ? 0 : row.type === "decision" ? 1 : 2);
-  return [...source.sessionObservations(sid)].sort((a, b) => rank(a) - rank(b) || a.id - b.id).slice(0, cap);
+export function fetchObs(
+  source: ClaudeMemSource,
+  sid: string,
+  cap = OBS_PER_EPISODE,
+  quarantined: ReadonlySet<string> = new Set(),
+): ObservationRow[] {
+  const rank = (row: ObservationRow) => (isFailureObservation(row) ? 0 : row.type === "decision" ? 1 : 2);
+  return source
+    .sessionObservations(sid)
+    .filter((row) => !quarantined.has(`obs:${row.id}`))
+    .sort((a, b) => rank(a) - rank(b) || a.id - b.id)
+    .slice(0, cap);
 }
 
 export function formatEpisode(episode: Episode, rows: readonly ObservationRow[]): string {
@@ -277,13 +287,30 @@ export function applyConsolidation(
       last_seen: today,
       valid_until: "",
     };
-    const supersedes: string[] = [];
+    const targets = [];
     for (const old of strings(lesson.supersedes)) {
       const page = existing.get(old);
-      if (page === undefined || old === id) continue;
-      writeLesson(page.path, { ...page.meta, status: "superseded", valid_until: today, superseded_by: id }, page.body);
-      supersedes.push(old);
-      summary.superseded.push(old);
+      if (old !== id && page !== undefined) targets.push(page);
+    }
+    const supersedes: string[] = [];
+    if (
+      targets.length > 0 &&
+      meta.status === "confirmed" &&
+      targets.every((page) => page.meta.status === "confirmed")
+    ) {
+      for (const page of targets) {
+        const old = str(page.meta.id);
+        writeLesson(
+          page.path,
+          { ...page.meta, status: "superseded", valid_until: today, superseded_by: id },
+          page.body,
+        );
+        supersedes.push(old);
+        summary.superseded.push(old);
+      }
+    } else if (targets.length > 0) {
+      meta.status = "conflict";
+      for (const page of targets) writeLesson(page.path, { ...page.meta, status: "conflict" }, page.body);
     }
     meta.supersedes = supersedes;
     const path = join(ledger.path("lessons"), `${id}.md`);
@@ -423,10 +450,11 @@ export function consolidate(
   if (pending.length === 0) return "nightly: no unconsolidated episodes";
   const { chosen, failures } = stratify(pending, ctx.config.batch);
   const pairs = pairFailures(failures, all);
+  const quarantined = quarantinedObservationIds(ledger);
   const obsBySid = new Map<string, ObservationRow[]>();
   const obsSessionAll = new Map<string, string>();
   for (const episode of [...chosen, ...pairs.map(([, success]) => success)]) {
-    const rows = fetchObs(source, episode.sid);
+    const rows = fetchObs(source, episode.sid, OBS_PER_EPISODE, quarantined);
     obsBySid.set(episode.sid, rows);
     for (const row of rows) obsSessionAll.set(`obs:${row.id}`, sid8(episode.sid).slice(1));
   }

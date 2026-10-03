@@ -16,7 +16,7 @@ import {
 } from "../../src/learn/review/hooks.ts";
 import { reviewLedger, reviewLedgerDir } from "../../src/learn/review/ledger.ts";
 import { reviewArea } from "../../src/learn/review/cli.ts";
-import { gitRepo, scratch, testContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepo, scratch, testContext } from "./helpers.ts";
 
 function recorder(): { spawner: Spawner; calls: Array<{ argv: readonly string[]; cwd: string }> } {
   const calls: Array<{ argv: readonly string[]; cwd: string }> = [];
@@ -30,7 +30,7 @@ describe("stop hook", () => {
     const { spawner, calls } = recorder();
     stopHook(ctx, { cwd: "/x/plugins/cache/y" }, parseLearnArgs([]), spawner);
     stopHook(ctx, { cwd: repo, stop_hook_active: true }, parseLearnArgs([]), spawner);
-    stopHook(ctx, { cwd: scratch() }, parseLearnArgs([]), spawner);
+    inOutsideRepo((cwd) => stopHook(ctx, { cwd }, parseLearnArgs([]), spawner));
     expect(calls).toHaveLength(0);
     expect(existsSync(reviewLedgerDir(ctx.config, repo))).toBe(false);
   });

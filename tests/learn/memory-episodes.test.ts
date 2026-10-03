@@ -6,7 +6,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildEpisodes, type Episode, type EpisodeEvent } from "../../src/learn/memory/episodes.ts";
+import {
+  buildEpisodes,
+  type Episode,
+  type EpisodeEvent,
+  loadEpisodes,
+  markConsolidated,
+  unconsolidatedEpisodes,
+} from "../../src/learn/memory/episodes.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
 import { MemFixture, scratch } from "./helpers.ts";
@@ -147,6 +154,60 @@ describe("episodes", () => {
         .split("\n")
         .filter((line) => line !== "").length,
     ).toBe(3);
+  });
+
+  test("a session with new observations is rebuilt and re-queued for nightly", () => {
+    const dir = scratch();
+    const dbPath = join(dir, "mem.db");
+    const mem = new MemFixture(dbPath);
+    mem.session({ sid: "growing", project: "app", started: NOW - 8 * H });
+    mem.observation({ sid: "growing", project: "app", type: "discovery", title: "first", at: NOW - 8 * H });
+    const ledger = ensureMemoryLedger(join(dir, "memory"));
+    let source = ClaudeMemSource.open(dbPath);
+    expect(source).not.toBeNull();
+    if (source === null) return;
+    try {
+      expect(buildEpisodes(source, ledger, "app", EVENTS, { now: NOW })[0]?.obs).toBe(1);
+    } finally {
+      source.close();
+    }
+    markConsolidated(ledger, new Set(["growing"]), "nightly-1");
+    expect(unconsolidatedEpisodes(ledger)).toEqual([]);
+
+    mem.observation({ sid: "growing", project: "app", type: "bugfix", title: "fixed it", at: NOW - 7 * H });
+    mem.close();
+    source = ClaudeMemSource.open(dbPath);
+    expect(source).not.toBeNull();
+    if (source === null) return;
+    try {
+      const refreshed = buildEpisodes(source, ledger, "app", EVENTS, { now: NOW });
+      expect(refreshed).toHaveLength(1);
+      expect([refreshed[0]?.obs, refreshed[0]?.failure_signals]).toEqual([2, 1]);
+    } finally {
+      source.close();
+    }
+    expect(loadEpisodes(ledger)).toHaveLength(1);
+    expect(unconsolidatedEpisodes(ledger).map((episode) => episode.sid)).toEqual(["growing"]);
+  });
+
+  test("bugfix observations and failure wording in titles fill the failure signal", () => {
+    const dir = scratch();
+    const dbPath = join(dir, "mem.db");
+    const mem = new MemFixture(dbPath);
+    mem.session({ sid: "failed", project: "app", started: NOW - D, completed: NOW - D + H });
+    mem.observation({ sid: "failed", project: "app", type: "bugfix", title: "repair", at: NOW - D });
+    mem.observation({ sid: "failed", project: "app", type: "discovery", title: "tests failed in CI", at: NOW - D });
+    mem.observation({ sid: "failed", project: "app", type: "discovery", title: "normal discovery", at: NOW - D });
+    mem.close();
+    const ledger = ensureMemoryLedger(join(dir, "memory"));
+    const source = ClaudeMemSource.open(dbPath);
+    expect(source).not.toBeNull();
+    if (source === null) return;
+    try {
+      expect(buildEpisodes(source, ledger, "app", [], { now: NOW })[0]?.failure_signals).toBe(2);
+    } finally {
+      source.close();
+    }
   });
 
   test("a dry run writes nothing", () => {

@@ -29,6 +29,7 @@ import {
   rebuildIndex,
   savePattern,
   section,
+  statusFor,
   str,
 } from "./patterns.ts";
 
@@ -175,6 +176,7 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
     }
     if (
       pattern.meta.status !== "active" ||
+      statusFor(pattern.meta, ctx.config.activeAt) !== "active" ||
       num(pattern.meta, "count") < threshold ||
       str(pattern.meta, "promoted_to") !== ""
     )

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/episode.schema.json",
   "title": "Episode",
-  "description": "One ended session as the memory ledger records it, derived deterministically from the observation source (ruling learning-runtime-is-host-adapter). Rows are appended, never rewritten, except that consolidation stamps 'consolidated_run'. 'priority' is the runtime's weighted sum of correction, failure, review, token, novelty and age signals and decides which episodes the consolidator sees first; no judge sets it (ruling learning-judge-is-runner-bound).",
+  "description": "One recorded revision of an ended session, derived deterministically from the observation source (ruling learning-runtime-is-host-adapter). Rows are appended, never rewritten; a session that later gains observations appends a new revision, the latest revision is read, and the session returns to the nightly queue. 'priority' is the runtime's weighted sum of correction, failure, review, token, novelty and age signals and decides which episodes the consolidator sees first; no judge sets it (ruling learning-judge-is-runner-bound).",
   "type": "object",
   "additionalProperties": false,
   "required": [

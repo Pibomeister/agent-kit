@@ -1,6 +1,7 @@
 /**
- * Episode memory: completed claude-mem sessions become `episodes.jsonl` rows,
- * deterministically, each with a priority. Rows are only ever appended.
+ * Episode memory: ended claude-mem sessions become `episodes.jsonl` rows,
+ * deterministically, each with a priority. Rows are only ever appended; when a
+ * resumed session gains observations, its newer row supersedes the older one.
  * Consolidation is recorded beside them in `raw/consolidated.jsonl` as
  * `{sid, run}`, also append-only; a rollback appends the runs it undid to
  * `raw/undone-runs.jsonl`, and their marks stop counting.
@@ -14,7 +15,7 @@
 import { appendJsonl, nowIso, nowMs, readJsonl } from "../core/store.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { type ClaudeMemSource, jsonList, type SessionRow } from "../sources/claude-mem.ts";
-import { FAILURE_TYPES } from "./ledger.ts";
+import { isFailureObservation } from "./ledger.ts";
 
 export interface Episode {
   sid: string;
@@ -41,6 +42,8 @@ export const UNDONE_RUNS_FILE = "raw/undone-runs.jsonl";
 export interface ConsolidationMark {
   sid: string;
   run: string;
+  /** Observation count of the episode revision this run consumed. */
+  obs?: number;
   ts?: string;
 }
 
@@ -102,14 +105,14 @@ export function rawEpisode(
     files_modified: [...files].sort(),
     request: summary?.request ?? null,
     completed: (summary?.completed ?? "").trim() !== "",
-    failure_signals: obs.filter((row) => FAILURE_TYPES.has(row.type)).length,
+    failure_signals: obs.filter(isFailureObservation).length,
     corrections,
     review_events: reviewEvents,
   };
 }
 
-function decay(ageDays: number, half = 14): number {
-  return Math.exp(-ageDays / half);
+function decay(ageDays: number, eFoldDays = 14): number {
+  return Math.exp(-ageDays / eFoldDays);
 }
 
 function round4(value: number): number {
@@ -149,7 +152,9 @@ export function score(
 }
 
 export function loadEpisodes(ledger: Ledger): Episode[] {
-  return readJsonl<Episode>(ledger.path("episodes.jsonl"));
+  const latest = new Map<string, Episode>();
+  for (const episode of readJsonl<Episode>(ledger.path("episodes.jsonl"))) latest.set(episode.sid, episode);
+  return [...latest.values()];
 }
 
 /** Runs a rollback undid. Their consolidation marks no longer count. */
@@ -160,18 +165,22 @@ export function undoneRuns(ledger: Ledger): Set<string> {
 /** Session ids consolidated by a run that still stands. */
 export function consolidatedSids(ledger: Ledger): Set<string> {
   const undone = undoneRuns(ledger);
+  const rows = readJsonl<Episode>(ledger.path("episodes.jsonl"));
+  const latest = new Map(loadEpisodes(ledger).map((episode) => [episode.sid, episode]));
+  const revisions = new Map<string, number>();
+  for (const row of rows) revisions.set(row.sid, (revisions.get(row.sid) ?? 0) + 1);
   const marks: ConsolidationMark[] = [
-    ...loadEpisodes(ledger).flatMap((row) =>
-      row.consolidated_run ? [{ sid: row.sid, run: row.consolidated_run }] : [],
-    ),
+    ...rows.flatMap((row) => (row.consolidated_run ? [{ sid: row.sid, run: row.consolidated_run, obs: row.obs }] : [])),
     ...readJsonl<ConsolidationMark>(ledger.path(CONSOLIDATED_FILE)),
   ];
-  return new Set(
-    marks
-      .values()
-      .filter((mark) => !undone.has(mark.run))
-      .map((mark) => mark.sid),
-  );
+  const consolidated = new Set<string>();
+  for (const mark of marks) {
+    if (undone.has(mark.run)) continue;
+    const episode = latest.get(mark.sid);
+    if (episode === undefined) continue;
+    if (mark.obs !== undefined ? mark.obs >= episode.obs : revisions.get(mark.sid) === 1) consolidated.add(mark.sid);
+  }
+  return consolidated;
 }
 
 /** Episodes no standing run has consolidated, in file order. */
@@ -183,13 +192,14 @@ export function unconsolidatedEpisodes(ledger: Ledger): Episode[] {
 /** Record that `run` consolidated these sessions. Appends; never rewrites. */
 export function markConsolidated(ledger: Ledger, sids: ReadonlySet<string>, run: string): void {
   const ts = nowIso();
+  const episodes = new Map(loadEpisodes(ledger).map((episode) => [episode.sid, episode]));
   appendJsonl(
     ledger.path(CONSOLIDATED_FILE),
-    [...sids].map((sid) => ({ sid, run, ts })),
+    [...sids].map((sid) => ({ sid, run, obs: episodes.get(sid)?.obs ?? 0, ts })),
   );
 }
 
-/** Append episodes for sessions not yet recorded, oldest first. Returns the new rows. */
+/** Append new or observation-refreshed episodes, oldest first. Returns the appended rows. */
 export function buildEpisodes(
   source: ClaudeMemSource,
   ledger: Ledger,
@@ -199,14 +209,21 @@ export function buildEpisodes(
 ): Episode[] {
   const now = options.now ?? nowMs();
   const existing = loadEpisodes(ledger);
-  const known = new Set(existing.map((episode) => episode.sid));
+  const known = new Map(existing.map((episode) => [episode.sid, episode]));
   const raw: Array<Omit<Episode, "priority">> = [];
   for (const session of source.sessions(memProject, now - (options.days ?? 30) * DAY_MS, now - STALE_ACTIVE_MS)) {
-    if (known.has(session.memory_session_id)) continue;
+    const previous = known.get(session.memory_session_id);
+    if (previous !== undefined && session.observation_count <= previous.obs) continue;
     const episode = rawEpisode(source, session, events);
-    if (episode !== null) raw.push(episode);
+    if (episode === null) continue;
+    if (previous === undefined || episode.obs > previous.obs) raw.push(episode);
   }
-  const fresh = score(raw, existing, now);
+  const refreshed = new Set(raw.map((episode) => episode.sid));
+  const fresh = score(
+    raw,
+    existing.filter((episode) => !refreshed.has(episode.sid)),
+    now,
+  );
   if (fresh.length > 0 && options.dryRun !== true) {
     appendJsonl(
       ledger.path("episodes.jsonl"),

@@ -10,7 +10,7 @@ import { readJsonl } from "../../src/learn/core/store.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
 import { UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { appendRun, ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
-import { gitRepo, MemFixture, scratch, testContext, type TestContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepo, MemFixture, scratch, testContext, type TestContext } from "./helpers.ts";
 
 function learn(ctx: TestContext, argv: string[], cwd = ctx.cwd): number {
   return runLearn(argv, {
@@ -67,8 +67,11 @@ describe("memory cli", () => {
   });
 
   test("outside a repository the foreground verbs fail cleanly", () => {
-    const ctx = testContext({ cwd: scratch() });
-    expect(learn(ctx, ["memory", "show"])).toBe(1);
+    const { ctx, code } = inOutsideRepo((cwd) => {
+      const created = testContext({ cwd });
+      return { ctx: created, code: learn(created, ["memory", "show"]) };
+    });
+    expect(code).toBe(1);
     expect(ctx.err).toEqual(["ak learn memory: not inside a git repository"]);
   });
 });

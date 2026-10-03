@@ -23,7 +23,7 @@ import {
   type SkillRegistry,
   skillsLedger,
 } from "../../src/learn/skills/learn.ts";
-import { gitRepo, MemFixture, scratch, type TestContext, testContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepo, MemFixture, scratch, type TestContext, testContext } from "./helpers.ts";
 
 const CAND: ProposedCandidate = {
   name: "Bot Re-Review",
@@ -354,8 +354,11 @@ describe("ak learn skills", () => {
   test("discover validates --since and refuses to run outside a repository", () => {
     const { ctx, root } = fixture();
     expect(verb(ctx, "discover", ["--repo", root, "--since", "soon"])).toBe(2);
-    const outside = testContext({ cwd: scratch() });
-    expect(verb(outside, "discover", [])).toBe(2);
+    const { outside, code } = inOutsideRepo((cwd) => {
+      const created = testContext({ cwd });
+      return { outside: created, code: verb(created, "discover", []) };
+    });
+    expect(code).toBe(2);
     expect(outside.err[0]).toBe("ak learn skills: not inside a git repository; pass --repo");
   });
 });

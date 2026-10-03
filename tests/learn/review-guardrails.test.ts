@@ -8,7 +8,7 @@ import { DEFAULT_SHOWN, guardrailsSection, topRecent } from "../../src/learn/rev
 import { ingestOptions, reviewArea } from "../../src/learn/review/cli.ts";
 import { reviewLedger, reviewLedgerDir } from "../../src/learn/review/ledger.ts";
 import { rebuildIndex, loadPatterns } from "../../src/learn/review/patterns.ts";
-import { gitRepo, scratch, testContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepo, scratch, testContext } from "./helpers.ts";
 
 function writePage(ledger: Ledger, id: string, count: number, lastSeen: string, extra = ""): void {
   mkdirSync(ledger.path("patterns"), { recursive: true });
@@ -171,8 +171,11 @@ describe("ak learn review", () => {
     const live = testContext({ cwd: repo });
     expect(run("ingest", ["--pr", "12,x", "--no-mem"], live)).toBe(1);
     expect(live.err.join("\n")).toContain("--pr wants PR numbers, got x");
-    const elsewhere = testContext({ cwd: scratch() });
-    expect(run("maintain", [], elsewhere)).toBe(1);
+    const { elsewhere, code } = inOutsideRepo((cwd) => {
+      const created = testContext({ cwd });
+      return { elsewhere: created, code: run("maintain", [], created) };
+    });
+    expect(code).toBe(1);
     expect(elsewhere.err).toEqual(["ak learn review: not inside a git repository"]);
   });
 });

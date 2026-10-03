@@ -28,6 +28,7 @@ import {
   UNDONE_RUNS_FILE,
 } from "../../src/learn/memory/episodes.ts";
 import {
+  appendRun,
   ensureMemoryLedger,
   loadLessons,
   proposeConfirmed,
@@ -100,28 +101,20 @@ describe("consolidate apply", () => {
     expect(summary).toEqual({
       created: ["ls-001", "ls-002", "ls-003"],
       dropped: 1,
-      superseded: ["ls-001"],
+      superseded: [],
       confirmed: ["ls-002"],
       review_events: 1,
       review_events_parked: 0,
     });
     const lessons = loadLessons(ledger);
     const meta = (id: string) => lessons.get(id)!.meta;
-    expect([meta("ls-001").status, meta("ls-001").valid_until, meta("ls-001").superseded_by]).toEqual([
-      "superseded",
-      todayLocal(),
-      "ls-003",
-    ]);
+    expect([meta("ls-001").status, meta("ls-003").status]).toEqual(["conflict", "conflict"]);
     expect([meta("ls-002").status, meta("ls-002").sessions, meta("ls-002").tags]).toEqual([
       "confirmed",
       2,
       ["blocker"],
     ]);
-    expect([meta("ls-003").status, meta("ls-003").supersedes, meta("ls-003").confidence]).toEqual([
-      "hypothesis",
-      ["ls-001"],
-      "0.80",
-    ]);
+    expect([meta("ls-003").supersedes, meta("ls-003").confidence]).toEqual([[], "0.80"]);
     expect(readFileSync(ledger.path("lessons.md"), "utf8")).toContain("| ls-002 | confirmed | technology | 0.90 |");
 
     const events = readJsonl<ReviewEvent>(review.path(EVENTS_FILE));
@@ -152,6 +145,28 @@ describe("consolidate apply", () => {
     );
     const meta = loadLessons(ledger).get("ls-001")!.meta;
     expect([meta.status, meta.sessions, meta.confidence]).toEqual(["hypothesis", 1, "0.50"]);
+  });
+
+  test("only a confirmed lesson may supersede another confirmed lesson", () => {
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    applyConsolidation(
+      ledger,
+      { lessons: [{ statement: "old", evidence: ["obs:1", "obs:3"], supersedes: [] }] },
+      VALID,
+      OBS_SESSION,
+    );
+    const summary = applyConsolidation(
+      ledger,
+      { lessons: [{ statement: "new", evidence: ["obs:1", "obs:3"], supersedes: ["ls-001"] }] },
+      VALID,
+      OBS_SESSION,
+    );
+    const lessons = loadLessons(ledger);
+    expect(summary.superseded).toEqual(["ls-001"]);
+    expect([lessons.get("ls-001")?.meta.status, lessons.get("ls-002")?.meta.status]).toEqual([
+      "superseded",
+      "confirmed",
+    ]);
   });
 
   test("a hostile tag cannot confirm a lesson, set its sessions or move its id", () => {
@@ -340,6 +355,18 @@ function confirmedReply(o1: number, o2: number): Reply {
 }
 
 describe("nightly", () => {
+  test("quarantined observations never reach the consolidator prompt", () => {
+    const { ctx, root, ledger, review, source, o1 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
+    appendRun(ledger, { job: "reflect", status: "ok", quarantined: [`obs:${o1}`] });
+    try {
+      consolidate(ctx, source, ledger, root, review);
+    } finally {
+      source.close();
+    }
+    expect(ctx.prompts[0]).not.toContain(`  obs:${o1} [`);
+    expect(ctx.prompts[0]).not.toContain("tests failed from a worktree");
+  });
+
   test("a failed judge call records a failed run under the run id the judge call carried", () => {
     const { ctx, root, ledger, review, source } = nightlyFixture(() => []);
     try {

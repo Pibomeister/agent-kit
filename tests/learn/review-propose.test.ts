@@ -42,7 +42,7 @@ function page(id: string, options: PageOptions): string {
   } = options;
   return (
     `---\nid: ${id}\ntitle: T ${id}\nstatus: ${status}\ncount: ${count}\nfirst_seen: 2026-09-01\nlast_seen: ${lastSeen}\n` +
-    `sources: [claude-mem, github]\nprs: [1, 2]\nreviewers: [a]\n` +
+    `sources: [claude-mem, github]\nprs: [1, 2]\nreviewers: [a, b]\n` +
     `promoted_to: ${promotedTo}\nteam_target: ${teamTarget}\npromoted_count: ${promotedCount}\n---\n\n` +
     `## Problem\nP ${id}\n\n## Root cause\nR ${id}\n\n## Fix\n${fix}\n\n## Evidence\n` +
     `- https://github.com/acme/app/pull/1#discussion_r9 (a P2 pr 1 2026-09-10)\n- obs:44 (b pr 2 2026-09-10)\n`

@@ -17,6 +17,26 @@ export function scratch(prefix = "ak-learn-"): string {
   return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
 }
 
+/** Run a probe from `dir` without git discovering a repository above that scratch directory. */
+export function withGitCeiling<T>(dir: string, probe: () => T): T {
+  const previous = process.env.GIT_CEILING_DIRECTORIES;
+  process.env.GIT_CEILING_DIRECTORIES = dir;
+  try {
+    return probe();
+  } finally {
+    if (previous === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+    else process.env.GIT_CEILING_DIRECTORIES = previous;
+  }
+}
+
+/** A child directory whose own scratch root is git's discovery ceiling for the duration of `probe`. */
+export function inOutsideRepo<T>(probe: (cwd: string) => T): T {
+  const ceiling = scratch();
+  const cwd = join(ceiling, "outside");
+  mkdirSync(cwd);
+  return withGitCeiling(ceiling, () => probe(cwd));
+}
+
 const projectScratches: string[] = [];
 
 /**

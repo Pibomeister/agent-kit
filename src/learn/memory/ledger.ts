@@ -4,7 +4,7 @@
  * | File | What |
  * |---|---|
  * | `memory.md` | the organized working memory; the only prose injected at session start, with confirmed lessons |
- * | `episodes.jsonl` | one record per completed claude-mem session, with its priority |
+ * | `episodes.jsonl` | append-only episode revisions for ended claude-mem sessions, with latest revision winning |
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
@@ -20,7 +20,7 @@ import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { parsePage, renderPage, type PageMeta } from "../core/pages.ts";
 import { loopDir } from "../core/paths.ts";
-import { appendJsonl, nowIso, nowMs, readJson, readText, writeJson } from "../core/store.ts";
+import { appendJsonl, nowIso, nowMs, readJson, readJsonl, readText, writeJson } from "../core/store.ts";
 import { lessonDraft, proposeLesson, type ProposalResult, type TriggerKind } from "../kb.ts";
 
 /** The six sections a reflected memory must carry, in order. */
@@ -33,8 +33,9 @@ export const SECTIONS = [
   "## Completed ✅ (last 7 days)",
 ] as const;
 
-/** Observation types that count as a failure signal. */
+/** Observation types that count as a failure signal on their own. */
 export const FAILURE_TYPES = new Set([
+  "bugfix",
   "review-finding",
   "test-failure",
   "error",
@@ -42,6 +43,13 @@ export const FAILURE_TYPES = new Set([
   "critical-issue",
   "blocker",
 ]);
+
+const FAILURE_TITLE = /\b(?:bug|broken|crash(?:ed)?|error|fail(?:ed|ing|ure)?|regression|timeout|block(?:ed|er))\b/i;
+
+/** A failure-shaped observation from the types and titles the source actually emits. */
+export function isFailureObservation(row: { type: string; title?: string | null }): boolean {
+  return FAILURE_TYPES.has(row.type) || FAILURE_TITLE.test(row.title ?? "");
+}
 
 export const LESSONS_INDEX_HEAD =
   "# Lessons\n\n| id | status | scope | confidence | last seen | statement |\n|---|---|---|---|---|---|\n";
@@ -91,6 +99,15 @@ export function saveState(ledger: Ledger, state: MemoryState): void {
 
 export function appendRun(ledger: Ledger, run: Record<string, unknown>): void {
   appendJsonl(ledger.path("runs.jsonl"), [{ ts: nowIso(), ...run }]);
+}
+
+/** Every observation id any reflector run quarantined. Run rows are the persistent raw security ledger. */
+export function quarantinedObservationIds(ledger: Ledger): Set<string> {
+  return new Set(
+    readJsonl<{ quarantined?: string[] }>(ledger.path("runs.jsonl")).flatMap((run) =>
+      (run.quarantined ?? []).filter((id) => /^obs:\d+$/.test(id)),
+    ),
+  );
 }
 
 export function logLine(ledger: Ledger, message: string): void {

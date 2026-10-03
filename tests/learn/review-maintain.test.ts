@@ -23,6 +23,7 @@ status: candidate
 count: 1
 sources: [github]
 prs: [1873]
+reviewers: [alice]
 promoted_to:\u0020
 ---
 
@@ -33,7 +34,7 @@ Test asserts a value computed the same way as the implementation.
 Take expected values from a spec literal or fixture.
 
 ## Evidence
-- https://example.test/a (review-bot P2 pr 1873)
+- https://example.test/a (alice P2 pr 1873)
 `;
 
 const EXISTING = `---
@@ -149,9 +150,9 @@ describe("pages and evidence", () => {
   test("append, replace and insert_after; a missing target throws", () => {
     let body = parsePage(PAGE).body;
     body = patchBody(body, "append", "", "- https://example.test/b (bob pr 1874)");
-    expect(
-      body.endsWith("- https://example.test/a (review-bot P2 pr 1873)\n- https://example.test/b (bob pr 1874)\n"),
-    ).toBe(true);
+    expect(body.endsWith("- https://example.test/a (alice P2 pr 1873)\n- https://example.test/b (bob pr 1874)\n")).toBe(
+      true,
+    );
     body = patchBody(
       body,
       "replace",
@@ -207,11 +208,11 @@ describe("applying a judge reply", () => {
     expect(repeatRate(state.tally)).toBe("33%");
   });
 
-  test("the existing pattern becomes active on its second PR, and the patch lands", () => {
+  test("one human plus a bot on separate PRs stays candidate, and the patch still lands", () => {
     const { state } = applied();
     const page = state.patterns.get("rp-001")!;
     expect(page.meta.count).toBe(2);
-    expect(page.meta.status).toBe("active");
+    expect(page.meta.status).toBe("candidate");
     expect(page.meta.prs).toEqual(["1800", "1873"]);
     expect(page.meta.last_seen).toBe("2026-09-10");
     expect(page.body.split("- https://x.test/1 (carol pr 1873 2026-09-10)").length - 1).toBe(1);
@@ -425,17 +426,34 @@ describe("independence gate", () => {
     expect(readFileSync(ledger.path("guardrails.md"), "utf8")).toBe("");
   });
 
-  test("a second PR, or a second source family, still activates it", () => {
+  test("two distinct human reviewers, or one direct human correction, activate it", () => {
     const twoPrs = run([
       ...THREAD,
       ev("g4", { source: "github", pr: 8, author: "bob", url: "https://x.test/8", text: "same again" }),
+      ev("g6", { source: "github", pr: 9, author: "carol", url: "https://x.test/9", text: "same again" }),
     ]).page;
-    expect([twoPrs.meta.status, twoPrs.meta.count]).toEqual(["active", 3]);
+    expect([twoPrs.meta.status, twoPrs.meta.count]).toEqual(["active", 4]);
     const twoFamilies = run([
       ...THREAD,
       ev("g5", { source: "correction", pr: null, author: "alice", url: null, text: "no, derive it" }),
     ]).page;
     expect([twoFamilies.meta.status, twoFamilies.meta.count]).toEqual(["active", 3]);
+  });
+
+  test("one drive-by reviewer across three PRs and bot-only reviewers never activate a pattern", () => {
+    const oneReviewer = run([
+      ev("d1", { source: "github", pr: 1, author: "drive-by", text: "same" }),
+      ev("d2", { source: "github", pr: 2, author: "drive-by", text: "same" }),
+      ev("d3", { source: "github", pr: 3, author: "drive-by", text: "same" }),
+    ]).page;
+    expect([oneReviewer.meta.status, oneReviewer.meta.reviewers]).toEqual(["candidate", ["drive-by"]]);
+
+    const bots = run([
+      ev("b1", { source: "github", pr: 1, author: "review-bot", text: "same" }),
+      ev("b2", { source: "github", pr: 2, author: "other[bot]", text: "same" }),
+      ev("b3", { source: "github", pr: 3, author: "review-bot", text: "same" }),
+    ]).page;
+    expect(bots.meta.status).toBe("candidate");
   });
 
   test("one bot comment seen by the observer and forwarded by learn-memory is still one opinion, and never promotes", () => {

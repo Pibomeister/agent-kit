@@ -14,7 +14,7 @@ import { applyReflection } from "../../src/learn/memory/reflect.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
 import { sessionStartBlock, trim } from "../../src/learn/memory/session-context.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
-import { gitRepo, scratch, testContext, type TestContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepo, scratch, testContext, type TestContext } from "./helpers.ts";
 
 const FULL =
   "## Current state\n- state bullet [obs:1]\n## Decisions\n- decision bullet [obs:2]\n## Unresolved\n" +
@@ -97,8 +97,11 @@ describe("sessionStartBlock", () => {
   });
 
   test("outside a repository only the roster is returned and nothing is registered", () => {
-    const ctx = testContext({ cwd: scratch() });
-    expect(sessionStartBlock(ctx)).not.toContain("Working memory");
+    const { ctx, block } = inOutsideRepo((cwd) => {
+      const created = testContext({ cwd });
+      return { ctx: created, block: sessionStartBlock(created) };
+    });
+    expect(block).not.toContain("Working memory");
     expect(readRegistry(ctx.config)).toEqual({});
   });
 

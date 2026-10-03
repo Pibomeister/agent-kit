@@ -12,7 +12,7 @@ import { verify, verifyChecks } from "../../src/learn/setup/verify.ts";
 import { MEM_MODE, type SetupDeps, wire } from "../../src/learn/setup/wire.ts";
 import { schedule } from "../../src/learn/setup/schedule.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
-import { gitRepo, MemFixture, scratch, type TestContext, testContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepo, MemFixture, scratch, type TestContext, testContext } from "./helpers.ts";
 
 function fakeDeps(
   bins: string[],
@@ -146,7 +146,7 @@ describe("setup seed", () => {
 
   test("outside a repository it refuses", () => {
     const ctx = testContext();
-    expect(seed(ctx, scratch(), { skipGithub: true })).toBe(1);
+    expect(inOutsideRepo((cwd) => seed(ctx, cwd, { skipGithub: true }))).toBe(1);
     expect(ctx.err[0]).toContain("is not inside a git repository");
   });
 

@@ -100,8 +100,9 @@ export function sourceFamily(source: string): "github" | "correction" | null {
 }
 
 /**
- * Active at `activeAt` events seen from at least two distinct PRs or two
- * distinct source families; candidate otherwise. A bot comment, its summary
+ * Active at `activeAt` events backed by either a direct user correction or two
+ * distinct non-bot reviewers across independent PRs or source families;
+ * candidate otherwise. A bot comment, its summary
  * report, the author's reply and any observation of them are one opinion, so
  * they never activate a pattern alone. Promotion requires `active`, so count
  * raised by corroborating events never promotes a pattern this gate has not
@@ -109,9 +110,17 @@ export function sourceFamily(source: string): "github" | "correction" | null {
  */
 export function statusFor(meta: PageMeta, activeAt: number): PatternStatus {
   if (meta.status === "retired") return "retired";
-  const families = new Set(list(meta, "sources").flatMap((source) => sourceFamily(source) ?? [])).size;
+  const sources = list(meta, "sources");
+  const families = new Set(sources.flatMap((source) => sourceFamily(source) ?? [])).size;
   const distinct = Math.max(families, list(meta, "prs").length);
-  return num(meta, "count") >= activeAt && distinct >= 2 ? "active" : "candidate";
+  const reviewers = new Set(list(meta, "reviewers").filter((reviewer) => !isBotReviewer(reviewer))).size;
+  const trusted = sources.includes("correction") || (distinct >= 2 && reviewers >= 2);
+  return num(meta, "count") >= activeAt && trusted ? "active" : "candidate";
+}
+
+/** Host author labels that identify automation rather than an independent reviewer. */
+export function isBotReviewer(reviewer: string): boolean {
+  return /(?:\[bot\]|bot$|^bot(?:[-_.]|$))/i.test(reviewer);
 }
 
 function union(values: readonly string[], add: string): string[] {
@@ -151,7 +160,8 @@ export function addEvidence(
   // Only a witness adds a PR: a corroborating event's PR number is hearsay about a thread it did not read.
   if (event.pr && sourceFamily(event.source) !== null)
     next.prs = union(list(meta, "prs").map(String), String(event.pr));
-  if (event.author) next.reviewers = union(list(meta, "reviewers"), event.author);
+  if (event.author && sourceFamily(event.source) !== null)
+    next.reviewers = union(list(meta, "reviewers"), event.author);
   next.status = statusFor(next, activeAt);
   return { meta: next, body: withLine };
 }

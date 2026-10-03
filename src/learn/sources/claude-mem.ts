@@ -34,6 +34,7 @@ export interface SessionRow {
   platform_source: string;
   started_at_epoch: number;
   completed_at_epoch: number | null;
+  observation_count: number;
 }
 
 export interface SummaryRow {
@@ -143,9 +144,11 @@ export class ClaudeMemSource {
   sessions(project: string, sinceMs: number, staleBeforeMs: number): SessionRow[] {
     return this.db
       .query<SessionRow, [string, string, number, number]>(
-        `select id, memory_session_id, platform_source, started_at_epoch, completed_at_epoch from sdk_sessions
-         where (project = ? or project like ?) and memory_session_id is not null and started_at_epoch >= ?
-           and (completed_at_epoch is not null or started_at_epoch < ?) order by started_at_epoch`,
+        `select s.id, s.memory_session_id, s.platform_source, s.started_at_epoch, s.completed_at_epoch,
+           (select count(*) from observations o where o.memory_session_id = s.memory_session_id) as observation_count
+         from sdk_sessions s where (s.project = ? or s.project like ?) and s.memory_session_id is not null
+           and s.started_at_epoch >= ? and (s.completed_at_epoch is not null or s.started_at_epoch < ?)
+         order by s.started_at_epoch`,
       )
       .all(...this.args(project), sinceMs, staleBeforeMs);
   }
