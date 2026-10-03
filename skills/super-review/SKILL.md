@@ -150,9 +150,10 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 10. For `readiness`: run the two independent lanes as a gate over the panel's synthesized verdict,
     not as a substitute for it. A missing lane is `unavailable`, and a blocking lane result vetoes
     approval no matter what the panel concluded. Load
-    [verification evidence](../../references/verification-evidence/REFERENCE.md), then require each
-    criterion's current receipt to name a verifier seat distinct from the implementer and to carry
-    each project-declared surface evidence kind. A missing seat attestation or kind makes the
+    [verification evidence](../../references/verification-evidence/REFERENCE.md), then, where the build
+    gate records an implementer seat, require each criterion's current receipt to name a
+    runner-attested verifier seat distinct from it (without that record, only recipe-bound checks
+    need one), and require each `frontend` or `backend` criterion to carry its declared surface kinds. A missing seat attestation or kind makes the
     verification lane `unavailable`; name the criterion and gap rather than substituting review
     judgment.
 11. Set the verdict from the lane results: `approved`, `changes-requested`, `blocked` or

@@ -132,8 +132,9 @@ absence is recorded (`policies/limits.yaml`).
     stop. A silent discard is forbidden.
 12. Load [verification evidence](../../references/verification-evidence/REFERENCE.md), run the
     ticket's named checks as implementer self-checks and record each receipt with
-    `created_by.role: implementer` and the implementer seat id. They are self-check evidence and
-    never satisfy the independent verify gate. Hand the claim, criteria, frozen revision, project
+    `created_by.role: implementer` and the implementer seat id. They are self-check evidence: once
+    the build gate records that seat they never satisfy the verify gate, and without it they count
+    only for checks no recipe binds. Hand the claim, criteria, frozen revision, project
     recipe and permitted commands to `super-verify`; its verifier seat reruns them and produces
     gate-eligible receipts. Commit the work on the ticket's own branch, then publish the receipts and
     ticket result through the knowledgebase adapter's `publishArtifact` operation. Report every

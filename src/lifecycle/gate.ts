@@ -826,6 +826,8 @@ export function verificationShapeReasons(value: unknown): string[] {
   if (receipt.evidence_kind !== undefined) {
     if (creator?.role !== "verifier") reasons.push("surface evidence was not created by verifier");
     if (receipt.recipe === undefined) reasons.push("surface evidence has no recipe");
+  }
+  if (receipt.evidence_kind !== undefined || receipt.verifier_seat !== undefined) {
     const seat = object(receipt.verifier_seat);
     if (
       seat === undefined ||
@@ -1140,7 +1142,8 @@ function evaluateEvidence(
     const check = nonempty(receipt.check) ? checks.get(receipt.check) : undefined;
     const required = strings(check?.evidence_required) ?? [];
     const expectedRecipe = object(check?.recipe);
-    if (required.length > 0 || expectedRecipe !== undefined) {
+    const surfaceCheck = required.length > 0 || expectedRecipe !== undefined;
+    if (surfaceCheck || buildSeat !== undefined) {
       const creator = object(receipt.created_by);
       if (creator?.role !== "verifier") {
         reasons.push({
@@ -1150,7 +1153,7 @@ function evaluateEvidence(
         });
       }
       const recipe = object(receipt.recipe);
-      if (recipe?.id !== expectedRecipe?.id || recipe?.hash !== expectedRecipe?.hash) {
+      if (surfaceCheck && (recipe?.id !== expectedRecipe?.id || recipe?.hash !== expectedRecipe?.hash)) {
         reasons.push({
           code: "recipe-mismatch",
           detail: `receipt ${ref.id} does not name recipe ${String(expectedRecipe?.id)} at ${String(expectedRecipe?.hash)}`,
@@ -1226,6 +1229,12 @@ function evaluateEvidence(
       });
     else if (failed.has(criterion))
       reasons.push({ code: "failed", detail: `${criterion} has failed evidence at this head`, criterion });
+    else if ((surfaces.get(criterion) ?? "none") !== "none" && (requiredKinds.get(criterion)?.size ?? 0) === 0)
+      reasons.push({
+        code: "surface-evidence",
+        detail: `criterion ${criterion} declares ${surfaces.get(criterion) ?? "none"} surface, but no named check requires an evidence kind for it`,
+        criterion,
+      });
     else if ((requiredKinds.get(criterion)?.size ?? 0) > 0) {
       for (const kind of requiredKinds.get(criterion) ?? []) {
         if (surfaceCoverage.get(criterion)?.has(kind)) continue;

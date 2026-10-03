@@ -24,8 +24,9 @@ central knowledgebase; it is never written to a host-specific path in the applic
 
 ## Criterion binding
 
-`ticket.acceptance_criteria[].surface` is `frontend`, `backend` or `none`. Each named verification
-check binds its supported criteria to one recipe id and hash plus one or more `evidence_required`
+`ticket.acceptance_criteria[].surface` is `frontend`, `backend` or `none`. A `frontend` or
+`backend` criterion needs at least one supporting check that declares `evidence_required`; a ticket
+that declares no surface is treated as `none`. Each named verification check binds its supported criteria to one recipe id and hash plus one or more `evidence_required`
 kinds. The recipe declaration must advertise every selected kind. An undeclared facility does not
 become available because a check can approximate it.
 
@@ -59,6 +60,17 @@ The verifier seat record names its id, the implementer seat, and one isolation s
   writable scope. This is eligible for autonomous closure.
 - `host-unattested`: the host created a fresh context but cannot attest what it saw or its lineage.
   This remains useful guided evidence and never claims autonomous independence.
+
+The local lifecycle gate checks the attestation's shape only: an id and hash are present and the
+seat ids differ. It does not resolve the attestation, and it cannot tell a runner-written record from
+one a worker wrote. The runner's enforcement of seat identity, excluded lineage and storage outside
+the worker's writable scope is what makes an attestation trustworthy; without a runner, a
+`runner-attested` receipt is only the worker's claim.
+
+Independent verification is declared available when the build gate records the implementer seat.
+Then every counted receipt, `surface: none` included, must name a runner-attested verifier seat
+distinct from that seat. Without that record, only checks bound to a recipe require a verifier seat,
+which keeps older tickets and receipts compatible.
 
 The verifier is never the implementer, change author, spec approver, recipe author for the change or
 a seat already used on the same decision. An ineligible or unfillable seat is `unavailable`; it is

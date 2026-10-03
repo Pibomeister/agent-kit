@@ -427,6 +427,74 @@ describe("ak lifecycle check, standalone", () => {
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
     expect(checked.err).toContain("refused: criterion AC-1 requires frontend evidence rendered-screenshot");
+    expect(checked.err).toContain("was produced by implementer seat build-1");
+  });
+
+  test("a recorded implementer seat requires a runner-attested verifier seat on every receipt", () => {
+    for (const variant of ["implementer", "verifier"] as const) {
+      const dir = repo();
+      const ticketPath = ticket(dir, `declared-independence-${variant}`);
+      const run = openedRun(dir, ticketPath);
+      expect(
+        ak(
+          dir,
+          "record",
+          "--gate",
+          "build-checks",
+          "--class",
+          "green",
+          "--author-kind",
+          "agent",
+          "--host",
+          "codex",
+          "--seat-id",
+          "build-1",
+        ).code,
+      ).toBe(0);
+      record(dir, "review-full", "review-readiness");
+      const receiptPath = receipt(
+        dir,
+        run,
+        ticketPath,
+        variant === "implementer"
+          ? { created_by: { role: "implementer" } }
+          : {
+              created_by: { role: "verifier" },
+              verifier_seat: {
+                id: "verify-8",
+                implementer_seat: "build-1",
+                isolation: "runner-attested",
+                attestation: { id: "seat-verify-8", hash: `sha256:${"8".repeat(64)}` },
+              },
+            },
+      );
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+      const checked = ak(dir, "check");
+      if (variant === "verifier") {
+        expect(checked.code).toBe(0);
+        continue;
+      }
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(
+        `refused: receipt ${basename(receiptPath, ".json")} was created by implementer; an independent verifier seat is required`,
+      );
+      expect(checked.err).toContain("names no verifier seat");
+    }
+  });
+
+  test("a frontend criterion whose checks omit evidence_required is refused", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "frontend-without-kinds", {
+      acceptance_criteria: [{ id: "AC-1", text: "The settings route renders.", surface: "frontend" }],
+      verification: [{ id: "project-check", check: "Run the unit tests.", kind: "command", supports: ["AC-1"] }],
+    });
+    openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness", "verify");
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(
+      "refused: criterion AC-1 declares frontend surface, but no named check requires an evidence kind for it",
+    );
   });
 
   test("a verifier receipt carrying evidence under a recipe-less check covers its criterion", () => {

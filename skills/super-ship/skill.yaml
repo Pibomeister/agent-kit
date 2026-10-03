@@ -171,8 +171,8 @@ hard_gates:
     trusted evidence, which is gate evidence the runner recorded into the run's evidence store outside
     the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
     evidence, and neither a grant nor a host permission makes them so.
-  - No ship begins with an uncovered criterion, an implementer-authored verifier receipt, a
-    host-unattested verifier in autonomous mode, or a missing project-declared surface evidence kind.
+  - No ship begins with an uncovered criterion, an implementer-authored receipt where the build gate
+    records an implementer seat or a recipe binds the check, a host-unattested verifier in autonomous mode, or a missing project-declared surface evidence kind.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
     dry run.
   - Every remote effect carries an idempotency key derived from the run id, the operation id, the
