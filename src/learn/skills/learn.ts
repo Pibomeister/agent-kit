@@ -407,7 +407,14 @@ export function discover(ctx: LearnContext, root: string, options: DiscoverOptio
       ctx.io.out(prompt);
       return "dry run";
     }
-    const proposed = parseCandidates(ctx.judge(prompt));
+    const proposed = parseCandidates(
+      ctx.judge(prompt, {
+        runId: null,
+        loop: "skills",
+        role: "skill-scout",
+        project: basename(root),
+      }),
+    );
     if (proposed === null) return "judge call failed (sessions left unmarked)";
 
     const taken = new Set([

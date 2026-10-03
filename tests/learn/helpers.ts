@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import type { LearnContext } from "../../src/learn/core/context.ts";
-import type { JudgeFn } from "../../src/learn/core/judge.ts";
+import type { JudgeCallContext, JudgeFn } from "../../src/learn/core/judge.ts";
 import { run } from "../../src/learn/core/proc.ts";
 
 /** A fresh directory with one canonical spelling (macOS `/var` is a symlink). */
@@ -61,6 +61,7 @@ export interface TestContext extends LearnContext {
   out: string[];
   err: string[];
   prompts: string[];
+  judgeContexts: Array<JudgeCallContext | undefined>;
 }
 
 /**
@@ -86,9 +87,11 @@ export function testContext(
   const out: string[] = [];
   const err: string[] = [];
   const prompts: string[] = [];
+  const judgeContexts: Array<JudgeCallContext | undefined> = [];
   const queue = [...(options.replies ?? [])];
-  const judge: JudgeFn = (prompt) => {
+  const judge: JudgeFn = (prompt, context) => {
     prompts.push(prompt);
+    judgeContexts.push(context);
     const next = queue.shift();
     if (next === undefined) return null;
     return typeof next === "function" ? next(prompt) : next;
@@ -102,6 +105,7 @@ export function testContext(
     out,
     err,
     prompts,
+    judgeContexts,
   };
 }
 

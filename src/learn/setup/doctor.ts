@@ -5,6 +5,7 @@
 import { existsSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { LearnContext } from "../core/context.ts";
+import { judgeTraceSummary } from "../core/judge.ts";
 import { schedulerKind } from "./schedule.ts";
 import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
 
@@ -76,6 +77,10 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(`  claude-mem dir      ${memDir(ctx, deps)}   (db ${ctx.config.memDb})`);
   ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
+  const trace = judgeTraceSummary(ctx.config);
+  ctx.io.out(
+    `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,
+  );
   const blocked = checks.filter((check) => check.hard && !check.ok).map((check) => check.name);
   if (blocked.length > 0) {
     ctx.io.out(`\nBLOCKED: ${blocked.join(", ")}`);

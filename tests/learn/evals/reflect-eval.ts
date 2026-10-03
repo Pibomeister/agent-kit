@@ -420,8 +420,8 @@ function contextFor(base: string, built: BuiltFixture, judge: JudgeFn): LearnCon
 export function runFixture(built: BuiltFixture, base: string, judge: JudgeFn): ReflectScore {
   let reply: string | null = null;
   let notes: unknown;
-  const capturing: JudgeFn = (prompt) => {
-    const out = judge(prompt);
+  const capturing: JudgeFn = (prompt, context) => {
+    const out = judge(prompt, context);
     reply = typeof out?.memory === "string" ? out.memory : null;
     notes = out?.security_notes;
     return out;

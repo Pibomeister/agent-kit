@@ -5,6 +5,7 @@
  * ingest → maintain → propose under one lock. A second concurrent run exits
  * quietly with status 0.
  */
+import { basename } from "node:path";
 import type { LearnArea, LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
@@ -96,7 +97,7 @@ export const reviewArea: LearnArea = {
         locked(args, ctx, (ledger, root) => {
           // Maintain runs even with nothing fresh: a batch the judge failed on earlier is still waiting.
           doIngest(args, ctx, ledger, root);
-          ctx.io.out(`maintain: ${maintain(ctx, ledger)}`);
+          ctx.io.out(`maintain: ${maintain(ctx, ledger, basename(root))}`);
           ctx.io.out(`propose: ${propose(ctx, ledger, root)}`);
           return 0;
         }),
@@ -113,8 +114,8 @@ export const reviewArea: LearnArea = {
     maintain: {
       usage: "review maintain               classify unprocessed events into pattern pages",
       run: (args, ctx) =>
-        locked(args, ctx, (ledger) => {
-          ctx.io.out(`maintain: ${maintain(ctx, ledger)}`);
+        locked(args, ctx, (ledger, root) => {
+          ctx.io.out(`maintain: ${maintain(ctx, ledger, basename(root))}`);
           return 0;
         }),
     },

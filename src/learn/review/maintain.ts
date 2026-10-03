@@ -6,6 +6,7 @@
  * Every id it cites must be in its input or it is discarded; counts, statuses,
  * ids, the index table and the repeat rate are computed here from the ledger.
  */
+import { basename } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import type { PatchOp } from "../core/pages.ts";
@@ -283,7 +284,7 @@ export function repeatRate(tally: Tally): string {
  * pages, index, log, impact row and the processed map in one commit. The
  * caller holds the ledger lock.
  */
-export function maintain(ctx: LearnContext, ledger: Ledger): string {
+export function maintain(ctx: LearnContext, ledger: Ledger, project = basename(ledger.dir)): string {
   const processed = readJson<Record<string, string[]>>(ledger.path(PROCESSED_FILE), {});
   const pending = loadEvents(ledger).filter((event) => !(event.hash in processed));
   if (pending.length === 0) return "no new events";
@@ -297,7 +298,12 @@ export function maintain(ctx: LearnContext, ledger: Ledger): string {
 
   for (let i = 0; i < pending.length; i += size) {
     const chunk = pending.slice(i, i + size);
-    const reply = ctx.judge(maintainerPrompt(ctx, ledger, state.patterns, chunk));
+    const reply = ctx.judge(maintainerPrompt(ctx, ledger, state.patterns, chunk), {
+      runId: null,
+      loop: "review",
+      role: "pattern-maintainer",
+      project,
+    });
     if (!validReply(reply)) {
       logLine(
         ledger,

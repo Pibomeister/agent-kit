@@ -9,7 +9,7 @@
  * tagged decision, security or blocker never go stale.
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
@@ -263,7 +263,12 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
   const stale = decayLessons(ledger);
   let pairs: PairResult = { merged: [], conflicts: [], confirmed: [] };
   if (index !== "(none)") {
-    const reply = ctx.judge(deepPrompt(ctx, index));
+    const reply = ctx.judge(deepPrompt(ctx, index), {
+      runId: null,
+      loop: "memory",
+      role: "lesson-merger",
+      project: basename(root),
+    });
     if (reply !== null) pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
   }
   const runId = `weekly-${todayLocal()}-${nowMs() % 100_000}`;

@@ -11,7 +11,7 @@
  * three patterns more than there are gold classes. State lives in a scratch
  * config directory and is discarded.
  */
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { loadConfig } from "../../../src/learn/core/config.ts";
@@ -60,7 +60,12 @@ export function scoreMaintainer(
   });
   const ledger = reviewLedger(ctx.config, root);
   const state = emptyState(new Map());
-  const reply = ctx.judge(maintainerPrompt(ctx, ledger, state.patterns, events));
+  const reply = ctx.judge(maintainerPrompt(ctx, ledger, state.patterns, events), {
+    runId: null,
+    loop: "review",
+    role: "pattern-maintainer",
+    project: basename(root),
+  });
   if (!validReply(reply)) {
     print("FAIL: no usable judge reply");
     return null;

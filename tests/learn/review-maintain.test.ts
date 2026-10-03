@@ -495,9 +495,10 @@ describe("maintain", () => {
     const { ledger } = seeded();
     appendEvents(ledger, [E1, E2, E3, E4]);
     const ctx = testContext({ replies: [REPLY] });
-    const summary = maintain(ctx, ledger);
+    const summary = maintain(ctx, ledger, "shop");
     expect(summary).toBe("processed 4 events; 1 new patterns; repeat rate 33%");
     expect(ctx.prompts).toHaveLength(1);
+    expect(ctx.judgeContexts).toEqual([{ runId: null, loop: "review", role: "pattern-maintainer", project: "shop" }]);
     expect(ctx.prompts[0]).toContain("- rp-001: Vacuous assertion — Assertion cannot fail.");
     const pages = loadPatterns(ledger);
     expect([...pages.keys()]).toEqual(["rp-001", "rp-002"]);

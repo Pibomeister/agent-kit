@@ -259,7 +259,12 @@ export function reflect(
     ctx.io.out(prompt);
     return `reflect: dry run (${observations.length} observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = ctx.judge(prompt);
+  const reply = ctx.judge(prompt, {
+    runId: null,
+    loop: "memory",
+    role: "reflector",
+    project: memProject,
+  });
   const text = reply?.memory;
   if (typeof text !== "string" || text.trim() === "") {
     markAttempt(ledger);
