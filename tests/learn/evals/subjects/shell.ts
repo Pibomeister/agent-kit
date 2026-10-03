@@ -174,9 +174,10 @@ const bashRules = (prefix: string): string[] => [`Bash(${prefix})`, `Bash(${pref
  * each against these same rules.
  * `dontAsk` leaves the rest visible as cancelled invalid sessions. Denies guard the write-shaped
  * forms of broad safe-prefix rules; deny wins over allow in Grok's grammar. The redirect deny
- * refuses every segment containing `>`, which no rule did before it. The `python3` and `git -C`
- * denies guard no allow: they turn otherwise-unlisted calls from a `dontAsk` cancellation into a
- * tool failure the subject can recover from.
+ * refuses every segment containing `>`, which no rule did before it. The `python3` deny and the
+ * git global-option denies (`-C`, `-c`, `--git-dir`, `--work-tree`) guard no allow: they turn
+ * otherwise-unlisted calls from a `dontAsk` cancellation into a tool failure the subject can
+ * recover from.
  */
 export function grokReadOnlyPermissionRules() {
   const grammarGaps = new Set(["awk", "["]);
@@ -229,7 +230,9 @@ export function grokReadOnlyPermissionRules() {
   const deny = [
     "Bash(*>*)",
     "Bash(python3 *)",
-    "Bash(git -C *)",
+    ...["git", "git --no-pager"].flatMap((prefix) =>
+      ["-C *", "-c *", "--git-dir*", "--work-tree*"].map((option) => `Bash(${prefix} ${option})`),
+    ),
     "Bash(find *-delete*)",
     "Bash(find *-exec*)",
     "Bash(find *-ok*)",

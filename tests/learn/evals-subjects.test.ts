@@ -304,6 +304,17 @@ describe("grok", () => {
     expect(rewriteAssignmentReadChain(command)).toBeNull();
     expect(segments.slice(0, 4).every((segment) => admits(segment))).toBe(true);
     expect(segments.slice(4).every((segment) => !admits(segment) && denies(segment))).toBe(true);
+
+    for (const segment of [
+      "git --no-pager -C /scratch/eval/repo log --oneline -5",
+      "git -c core.pager=cat status",
+      "git --no-pager -c core.pager=cat log",
+      "git --git-dir=/scratch/eval/repo/.git log",
+      "git --work-tree=/scratch/eval/repo status",
+      "git --no-pager --git-dir=/scratch/eval/repo/.git log",
+    ])
+      expect([segment, admits(segment), denies(segment)]).toEqual([segment, false, true]);
+    expect(denies("git log -C --oneline")).toBe(false);
   });
 
   test("the mediator turns an assignment read chain into literal commands the rules admit, and the session is valid", () => {
