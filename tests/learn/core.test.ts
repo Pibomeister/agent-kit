@@ -331,33 +331,33 @@ describe("judge call trace", () => {
   });
 });
 
-describe("judge call outcome", () => {
-  function outcomes(body: string): { reply: Record<string, unknown> | null; rows: JudgeTraceRow[]; failures: number } {
-    const dir = projectScratch();
-    try {
-      const script = join(dir, "judge.sh");
-      writeFileSync(script, body);
-      const config = {
-        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
-        judgeCommand: ["sh", script],
-        judgeTimeoutMs: 10_000,
-      };
-      const reply = commandJudge(config)("prompt", {
-        loop: "review",
-        role: "pattern-maintainer",
-        project: "shop",
-        runId: null,
-      });
-      return {
-        reply,
-        rows: readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl")),
-        failures: judgeTraceSummary(config).failures,
-      };
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+function outcomes(body: string) {
+  const dir = projectScratch();
+  try {
+    const script = join(dir, "judge.sh");
+    writeFileSync(script, body);
+    const config = {
+      ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+      judgeCommand: ["sh", script],
+      judgeTimeoutMs: 10_000,
+    };
+    const reply = commandJudge(config)("prompt", {
+      loop: "review",
+      role: "pattern-maintainer",
+      project: "shop",
+      runId: null,
+    });
+    return {
+      reply,
+      rows: readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl")),
+      failures: judgeTraceSummary(config).failures,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
+}
 
+describe("judge call outcome", () => {
   test("a usable reply is ok and is not a failure", () => {
     const { reply, rows, failures } = outcomes(`echo '{"answer":"kept"}'\n`);
     expect(reply).toEqual({ answer: "kept" });
@@ -407,8 +407,8 @@ describe("judge body retention", () => {
         readJsonl<JudgeTraceRow>(join(config.runtimeDir, name)).map((row) => row.call_id),
       );
       expect(retained).toHaveLength(2);
-      expect(readdirSync(join(config.runtimeDir, "judge-bodies")).sort()).toEqual(
-        retained.flatMap((id) => [`${id}.prompt`, `${id}.reply`]).sort(),
+      expect(readdirSync(join(config.runtimeDir, "judge-bodies")).toSorted()).toEqual(
+        retained.flatMap((id) => [`${id}.prompt`, `${id}.reply`]).toSorted(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

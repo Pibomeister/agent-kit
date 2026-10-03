@@ -71,6 +71,9 @@ const STDERR_TAIL_BYTES = 2 * 1024;
 const TRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const jsonValidator = new Ajv({ strict: false });
 const validateHostEnvelope = jsonValidator.compile<HostEnvelope>({ type: "object" });
+const validateString = jsonValidator.compile<string>({ type: "string" });
+const validateNumber = jsonValidator.compile<number>({ type: "number" });
+const validateBoolean = jsonValidator.compile<boolean>({ type: "boolean" });
 
 export interface JudgeTraceSummary {
   calls: number;
@@ -114,12 +117,24 @@ function hostEnvelope(stdout: string): HostEnvelope {
   }
 }
 
+function stringField(value: JsonValue | undefined): string | null {
+  return validateString(value) ? value : null;
+}
+
+function numberField(value: JsonValue | undefined): number | null {
+  return validateNumber(value) ? value : null;
+}
+
+function booleanField(value: JsonValue | undefined): boolean | null {
+  return validateBoolean(value) ? value : null;
+}
+
 /** The envelope's own model field, or the names its per-model usage is keyed by. */
 function hostModel(envelope: HostEnvelope): string | null {
-  const named = envelope[HOST_MODEL_FIELD];
-  if (typeof named === "string") return named;
+  const named = stringField(envelope[HOST_MODEL_FIELD]);
+  if (named !== null) return named;
   const byModel = envelope.modelUsage;
-  if (byModel === null || typeof byModel !== "object" || Array.isArray(byModel)) return null;
+  if (!validateHostEnvelope(byModel)) return null;
   const names = Object.keys(byModel);
   return names.length === 0 ? null : names.join(",");
 }
@@ -193,9 +208,9 @@ function traceAttempt(
       duration_ms: Date.now() - startedAt,
       [HOST_MODEL_FIELD]: hostModel(envelope),
       usage: envelope.usage ?? null,
-      total_cost_usd: typeof envelope.total_cost_usd === "number" ? envelope.total_cost_usd : null,
-      session_id: typeof envelope.session_id === "string" ? envelope.session_id : null,
-      is_error: typeof envelope.is_error === "boolean" ? envelope.is_error : null,
+      total_cost_usd: numberField(envelope.total_cost_usd),
+      session_id: stringField(envelope.session_id),
+      is_error: booleanField(envelope.is_error),
     };
     const line = `${JSON.stringify(row)}\n`;
     const trace = join(config.runtimeDir, "judge-calls.jsonl");
@@ -206,10 +221,7 @@ function traceAttempt(
       const bodies = join(config.runtimeDir, "judge-bodies");
       mkdirSync(bodies, { recursive: true });
       writeFileSync(join(bodies, `${callId}.prompt`), prompt);
-      writeFileSync(
-        join(bodies, `${callId}.reply`),
-        typeof envelope.result === "string" ? envelope.result : result.stdout,
-      );
+      writeFileSync(join(bodies, `${callId}.reply`), stringField(envelope.result) ?? result.stdout);
     }
   } catch {
     return;
@@ -278,7 +290,7 @@ export function declaredUnavailable(reply: Record<string, unknown> | null): stri
   return typeof why === "string" && Object.keys(reply).length === 1 ? why : null;
 }
 
-function judgeOutcome(result: ReturnType<typeof run>, parsed: Record<string, unknown> | null): JudgeOutcome {
+function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn>): JudgeOutcome {
   if (result.timedOut || result.code !== 0) return "error";
   if (result.stdout.trim() === "") return "empty";
   if (parsed === null) return "unparseable";
