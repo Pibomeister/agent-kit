@@ -70,7 +70,9 @@ the worker's writable scope is what makes an attestation trustworthy; without a 
 Independent verification is declared available when the build gate records the implementer seat.
 Then every counted receipt, `surface: none` included, must name a runner-attested verifier seat
 distinct from that seat. Without that record, only checks bound to a recipe require a verifier seat,
-which keeps older tickets and receipts compatible.
+which keeps older tickets and receipts compatible. A seat recorded at one commit stays declared for
+its descendants; a record whose commit an amend or rebase removed from history no longer counts, so
+the build gate is recorded with the seat again after a history rewrite.
 
 The verifier is never the implementer, change author, spec approver, recipe author for the change or
 a seat already used on the same decision. An ineligible or unfillable seat is `unavailable`; it is
