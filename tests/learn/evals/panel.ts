@@ -230,7 +230,10 @@ export async function grade(
   const text = renderTranscript(transcript);
   const prompt = judgePrompt(text, criteria);
   const judge = options.judge ?? hostJudge(options.prices);
-  const sessions = await Promise.all(panel.members.map((m) => judge(m, prompt)));
+  const settled = await Promise.allSettled(panel.members.map((m) => judge(m, prompt)));
+  const rejected = settled.find((outcome) => outcome.status === "rejected");
+  if (rejected !== undefined) throw rejected.reason;
+  const sessions = settled.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : []));
   const votes: Record<string, Vote> = {};
   const reasons: Record<string, string> = {};
   const usage: Record<string, TokenUsage> = {};

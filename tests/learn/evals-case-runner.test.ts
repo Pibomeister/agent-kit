@@ -364,8 +364,10 @@ describe("execute path", () => {
         },
         judge: async () => {
           if (codexStarted && codexJudged++ > 0) throw new Error("judge panel rejected");
-          if (codexStarted)
+          if (codexStarted) {
+            await new Promise((settle) => setTimeout(settle, 20));
             return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}', costUsd: 0.1 };
+          }
           return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' };
         },
       },
