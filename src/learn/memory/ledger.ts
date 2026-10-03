@@ -44,7 +44,8 @@ export const FAILURE_TYPES = new Set([
   "blocker",
 ]);
 
-const FAILURE_TITLE = /\b(?:bug|broken|crash(?:ed)?|error|fail(?:ed|ing|ure)?|regression|timeout|block(?:ed|er))\b/i;
+const FAILURE_TITLE =
+  /\b(?:bugs?|broken|crash(?:es|ed)?|errors?|fail(?:s|ed|ing|ures?)?|regressions?|timeouts?|block(?:ed|ers?))\b/i;
 
 /** A failure-shaped observation from the types and titles the source actually emits. */
 export function isFailureObservation(row: { type: string; title?: string | null }): boolean {

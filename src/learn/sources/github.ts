@@ -14,6 +14,14 @@ export const ghRunner: GhRunner = (args, cwd) => run(["gh", ...args], { cwd, tim
 
 export interface GhUser {
   login: string;
+  /** `Bot` for an app or automation account, whatever its login spells. */
+  type?: string;
+}
+
+/** The author label of a comment: the login, marked `[bot]` when the host says the account is automation. */
+export function authorLabel(user: GhUser | null): string {
+  const login = user?.login ?? "";
+  return user?.type === "Bot" && !login.endsWith("[bot]") ? `${login}[bot]` : login;
 }
 
 export interface PullRequestRef {

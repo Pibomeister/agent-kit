@@ -64,6 +64,22 @@ describe("github comment parsing", () => {
     expect(event.severity).toBeNull();
   });
 
+  test("an account the host types as Bot is labelled a bot whatever its login spells", () => {
+    const authorOf = (user: ReviewComment["user"]) =>
+      githubCommentEvent({ ...FINDING, user }, new Map(), 42, "x", "alice", "app").author;
+    expect(authorOf({ login: "Copilot", type: "Bot" })).toBe("Copilot[bot]");
+    expect(authorOf({ login: "review-bot[bot]", type: "Bot" })).toBe("review-bot[bot]");
+    expect(authorOf({ login: "carol", type: "User" })).toBe("carol");
+    const issue = {
+      html_url: "https://x.test/1",
+      created_at: "2026-09-16T22:10:00Z",
+      body: "## Review\n\n- late lock",
+    };
+    expect(reportEvent({ ...issue, user: { login: "Copilot", type: "Bot" } }, 42, "s", "app")?.author).toBe(
+      "Copilot[bot]",
+    );
+  });
+
   test("a reply by a third party is a github-reply; an unknown parent leaves no link", () => {
     const event = githubCommentEvent(REPLY, new Map(), 42, "x", "bob", "app");
     expect(event.source).toBe("github-reply");

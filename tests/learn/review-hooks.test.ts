@@ -264,10 +264,14 @@ describe("prompt hook", () => {
       { cwd: repo, prompt: `no, ${"x".repeat(600)}` },
       { cwd: repo, prompt: "<command-message>no, use the other one</command-message>" },
       { cwd: "/x/plugins/cache/y", prompt: "no, use the other one" },
-      { cwd: scratch(), prompt: "no, use the other one" },
       { cwd: repo },
     ];
     for (const payload of skipped) promptHook(ctx, payload, parseLearnArgs([]));
+    const outside = inOutsideRepo((cwd) => {
+      promptHook(ctx, { cwd, prompt: "no, use the other one" }, parseLearnArgs([]));
+      return cwd;
+    });
+    expect(existsSync(reviewLedgerDir(ctx.config, outside))).toBe(false);
     promptHook(
       testContext({ env: { AK_LEARN_DRY_RUN: "1" } }),
       { cwd: repo, prompt: "no, use the other one" },

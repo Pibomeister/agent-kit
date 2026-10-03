@@ -14,6 +14,7 @@ import { projectFolderName, reflectFolderName, registryPath } from "../core/path
 import { nowIso, readJson, writeJson } from "../core/store.ts";
 import { ClaudeMemSource, jsonList, type ObservationRow } from "../sources/claude-mem.ts";
 import {
+  authorLabel,
   GitHubReviewSource,
   type IssueComment,
   type PullRequestRef,
@@ -54,7 +55,7 @@ export function githubCommentEvent(
     project,
     pr,
     sha,
-    author: login,
+    author: authorLabel(comment.user),
     severity: parseSeverity(comment.body),
     path: comment.path ?? null,
     line: comment.line ?? comment.original_line ?? null,
@@ -76,7 +77,7 @@ export function reviewEvent(review: Review, pr: number, sha: string, project: st
     project,
     pr,
     sha,
-    author: review.user?.login ?? "",
+    author: authorLabel(review.user),
     severity: parseSeverity(body),
     path: null,
     line: null,
@@ -100,7 +101,7 @@ export function reportEvent(
     project,
     pr,
     sha,
-    author: comment.user?.login ?? "",
+    author: authorLabel(comment.user),
     severity: null,
     path: null,
     line: null,

@@ -113,14 +113,22 @@ export function statusFor(meta: PageMeta, activeAt: number): PatternStatus {
   const sources = list(meta, "sources");
   const families = new Set(sources.flatMap((source) => sourceFamily(source) ?? [])).size;
   const distinct = Math.max(families, list(meta, "prs").length);
-  const reviewers = new Set(list(meta, "reviewers").filter((reviewer) => !isBotReviewer(reviewer))).size;
+  const reviewers = new Set(list(meta, "reviewers").filter(isIndependentReviewer)).size;
   const trusted = sources.includes("correction") || (distinct >= 2 && reviewers >= 2);
   return num(meta, "count") >= activeAt && trusted ? "active" : "candidate";
 }
 
-/** Host author labels that identify automation rather than an independent reviewer. */
-export function isBotReviewer(reviewer: string): boolean {
-  return /(?:\[bot\]|bot$|^bot(?:[-_.]|$))/i.test(reviewer);
+const BOT_REVIEWER = /(?:\[bot\]|bot$|^bot(?:[-_.]|$))/i;
+
+/** Labels the runtime gives an event that no host account wrote: an observation, a forwarded lesson, a correction. */
+const RUNTIME_AUTHOR = /^(?:observer:.*|learn-memory|user)$/;
+
+/**
+ * A stored reviewer label that stands for one independent person on the review host. Automation and
+ * the runtime's own author labels are not: pages written before reviewers were filtered still carry them.
+ */
+export function isIndependentReviewer(reviewer: string): boolean {
+  return !BOT_REVIEWER.test(reviewer) && !RUNTIME_AUTHOR.test(reviewer);
 }
 
 function union(values: readonly string[], add: string): string[] {

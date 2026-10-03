@@ -12,7 +12,7 @@ import {
   PROCESSED_FILE,
   repeatRate,
 } from "../../src/learn/review/maintain.ts";
-import { addEvidence, loadPatterns, sourceFamily, str } from "../../src/learn/review/patterns.ts";
+import { addEvidence, loadPatterns, sourceFamily, statusFor, str } from "../../src/learn/review/patterns.ts";
 import { propose } from "../../src/learn/review/propose.ts";
 import { scratch, testContext } from "./helpers.ts";
 
@@ -454,6 +454,20 @@ describe("independence gate", () => {
       ev("b3", { source: "github", pr: 3, author: "review-bot", text: "same" }),
     ]).page;
     expect(bots.meta.status).toBe("candidate");
+  });
+
+  test("a host-typed bot beside one human, and runtime author labels on an older page, add no reviewer", () => {
+    const typedBot = run([
+      ev("t1", { source: "github", pr: 1, author: "Copilot[bot]", text: "same" }),
+      ev("t2", { source: "github", pr: 2, author: "alice", text: "same" }),
+    ]).page;
+    expect(typedBot.meta.status).toBe("candidate");
+
+    const stored = { status: "candidate", count: 5, sources: ["claude-mem", "github"], prs: ["1", "2", "3"] };
+    const statusWith = (reviewers: string[]) => statusFor({ ...stored, reviewers }, 2);
+    expect(statusWith(["drive-by", "observer:review-finding"])).toBe("candidate");
+    expect(statusWith(["drive-by", "learn-memory", "observer:gotcha", "user"])).toBe("candidate");
+    expect(statusWith(["drive-by", "carol"])).toBe("active");
   });
 
   test("one bot comment seen by the observer and forwarded by learn-memory is still one opinion, and never promotes", () => {

@@ -197,6 +197,14 @@ describe("episodes", () => {
     mem.session({ sid: "failed", project: "app", started: NOW - D, completed: NOW - D + H });
     mem.observation({ sid: "failed", project: "app", type: "bugfix", title: "repair", at: NOW - D });
     mem.observation({ sid: "failed", project: "app", type: "discovery", title: "tests failed in CI", at: NOW - D });
+    mem.observation({ sid: "failed", project: "app", type: "discovery", title: "3 test failures in CI", at: NOW - D });
+    mem.observation({
+      sid: "failed",
+      project: "app",
+      type: "discovery",
+      title: "Type errors after upgrade",
+      at: NOW - D,
+    });
     mem.observation({ sid: "failed", project: "app", type: "discovery", title: "normal discovery", at: NOW - D });
     mem.close();
     const ledger = ensureMemoryLedger(join(dir, "memory"));
@@ -204,7 +212,7 @@ describe("episodes", () => {
     expect(source).not.toBeNull();
     if (source === null) return;
     try {
-      expect(buildEpisodes(source, ledger, "app", [], { now: NOW })[0]?.failure_signals).toBe(2);
+      expect(buildEpisodes(source, ledger, "app", [], { now: NOW })[0]?.failure_signals).toBe(4);
     } finally {
       source.close();
     }
