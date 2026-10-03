@@ -416,7 +416,7 @@ function lastFlagValue(argv: readonly string[], flag: string): string | undefine
 }
 
 function argumentProblems(argv: readonly string[]): string[] {
-  const valueFlags = new Set(["--subject", "--case", "--matrix", "--json", "--queue", "--bundle"]);
+  const valueFlags = new Set(["--subject", "--case", "--json", "--bundle"]);
   const switches = new Set(["--dry-run", "--execute"]);
   const problems: string[] = [];
   for (let index = 0; index < argv.length; index++) {
@@ -451,7 +451,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     return 2;
   }
   try {
-    const matrix = dependencies.matrix ?? loadMatrix(lastFlagValue(argv, "--matrix") ?? MATRIX_FILE);
+    const matrix = dependencies.matrix ?? loadMatrix(MATRIX_FILE);
     const wanted = new Set(flagValues(argv, "--subject"));
     const subjects = matrix.subjects.filter((subject) => wanted.has(subject.id));
     const absent = [...wanted].filter((id) => !subjects.some((subject) => subject.id === id));
@@ -467,7 +467,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const priced = matrixPrices(matrix.priceTable);
     const outputFile = lastFlagValue(argv, "--json");
     if (outputFile === undefined) throw new Error("--execute requires --json");
-    const queue = lastFlagValue(argv, "--queue") ?? `${outputFile}.queue.jsonl`;
+    const json = resolve(PACKAGE_ROOT, outputFile);
+    const queue = `${json}.queue.jsonl`;
     const start = dependencies.startSubject ?? runSubject;
     const bundles = subjects.map((subject) => join(bundleRoot, BUNDLE_FOR[subject.host]));
     const missing = [...new Set(bundles.filter((bundleDir) => !existsSync(bundleDir)))];
@@ -526,7 +527,6 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
 
     const report = summariseCaseSessions(rows);
     const costUsd = aborted?.cost_usd == null ? report.cost_usd : (report.cost_usd ?? 0) + aborted.cost_usd;
-    const json = resolve(PACKAGE_ROOT, outputFile);
     mkdirSync(dirname(json), { recursive: true });
     const receipt = {
       ...evalInstrument(PACKAGE_ROOT, revision()),
