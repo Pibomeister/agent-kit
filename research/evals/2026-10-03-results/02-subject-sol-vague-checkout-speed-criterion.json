@@ -1,0 +1,28 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-sol",
+  "host": "codex",
+  "requested_model": "gpt-6-sol",
+  "served_model_reported": null,
+  "case": "super-bound-vague-checkout-speed-criterion",
+  "validity": "valid",
+  "graded_outcome": "fail",
+  "score": 0.5714285714285714,
+  "cost_usd": 0.57576404,
+  "elapsed_seconds": 115.001,
+  "host_load": null,
+  "usage": {
+    "input_tokens": 300794,
+    "cached_input_tokens": 278144,
+    "output_tokens": 3095,
+    "reasoning_output_tokens": 695,
+    "total_tokens": 303889
+  },
+  "grader_outcomes": {
+    "runs-the-scorer": "pass",
+    "persists-readiness-before-stop": "fail",
+    "turns-vagueness-into-frontier-question": "needs-human",
+    "readiness-fails-on-criteria": "pass",
+    "no-guessed-implementation-ticket": "pass"
+  }
+}

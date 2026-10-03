@@ -1,0 +1,16 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-grok",
+  "host": "grok",
+  "requested_model": "grok-4.7",
+  "served_model_reported": null,
+  "case": "super-bound-delegated-refresh-token-rotation",
+  "validity": "invalid",
+  "graded_outcome": null,
+  "cost_usd": 0.39004376,
+  "elapsed_seconds": null,
+  "host_load": null,
+  "invalid_reason": "host cancelled refused Bash call",
+  "refusing_rule": "The case supplied --allow Bash(*) but the compound call still required approval; --permission-mode dontAsk refused it. The host emitted no more specific matching-rule explanation.",
+  "refused_command": "export PATH=\"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-case-ZIQQt7:$PATH\"\ncd /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-case-ZIQQt7\necho \"=== which ===\"\ncommand -v ak\ncommand -v advisor\necho \"=== ak ===\"\nak delegation tickets/refresh-rotation.input.json --project project.json > /tmp/ak-delegation.json\ncat /tmp/ak-delegation.json\necho \"=== advisor ===\"\nadvisor | tee /tmp/advisor-consultation.txt\necho \"=== node ===\"\nnode --version\necho \"=== repro ===\"\nnode <<'JS'\nconst { SessionStore } = require('./src/session/store');\n(async () => {\n  let release;\n  const gate = new Promise((r) => { release = r; });\n  let entered;\n  const enteredP = new Promise((r) => { entered = r; });\n  const store = new SessionStore({ now: () => 1000 });\n  const { id } = store.create({ userId: 'u1', expiresAt: 0, token: 'old' });\n  const refreshing = store.refresh(id, 60, async () => {\n    entered();\n    await gate;\n    return 'rotated';\n  });\n  await enteredP;\n  const removed = store.logout(id);\n  release();\n  const updated = await refreshing;\n  console.log(JSON.stringify({\n    removedId: removed && removed.id,\n    refreshReturned: updated,\n    storedAfter: store.get(id)\n  }));\n})();\nJS\necho \"=== ci files ===\"\nls -la .github 2>/dev/null || echo \"no .github\"\necho \"=== HEAD ===\"\ngit rev-parse HEAD\necho \"=== kb ===\"\nfind kb -type f | wc -l\n"
+}

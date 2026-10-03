@@ -1,0 +1,29 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-sol",
+  "host": "codex",
+  "requested_model": "gpt-6-sol",
+  "served_model_reported": null,
+  "case": "super-bound-delegated-refresh-token-rotation",
+  "validity": "valid",
+  "graded_outcome": "fail",
+  "score": 0.5714285714285714,
+  "cost_usd": 0.87766336,
+  "elapsed_seconds": 424.426,
+  "host_load": null,
+  "usage": {
+    "input_tokens": 1442019,
+    "cached_input_tokens": 1391616,
+    "output_tokens": 8675,
+    "reasoning_output_tokens": 1907,
+    "total_tokens": 1450694
+  },
+  "grader_outcomes": {
+    "runs-the-scorer": "pass",
+    "consults-the-advisor": "pass",
+    "persists-stop-evidence": "fail",
+    "persists-red-auth-floor": "pass",
+    "preserves-human-authorship": "needs-human",
+    "cites-the-consultation-artifact": "fail"
+  }
+}

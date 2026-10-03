@@ -1,0 +1,16 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-grok",
+  "host": "grok",
+  "requested_model": "grok-4.7",
+  "served_model_reported": null,
+  "case": "super-bound-vague-checkout-speed-criterion",
+  "validity": "invalid",
+  "graded_outcome": null,
+  "cost_usd": 0.27062096,
+  "elapsed_seconds": null,
+  "host_load": null,
+  "invalid_reason": "host cancelled refused Bash call",
+  "refusing_rule": "The case supplied --allow Bash(*) but the compound call still required approval; --permission-mode dontAsk refused it. The host emitted no more specific matching-rule explanation.",
+  "refused_command": "export PATH=\"/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-case-WyUknM:$PATH\"\ncd /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ak-case-WyUknM\necho \"HEAD=$(git rev-parse HEAD)\"\necho \"REMOTE=$(git remote -v | head -2)\"\necho \"CI files:\" \nls -la .github 2>/dev/null || echo \"no .github\"\nak delegation tickets/checkout-performance.input.json --project project.json\necho \"--- hashes ---\"\nshasum -a 256 project.json runs/checkout-performance/alignment.json tickets/checkout-performance.input.json\ndate -u +%Y-%m-%dT%H:%M:%SZ\n# confirm no checkout symbols in source\nrg -n -i checkout src test || echo \"no checkout matches\""
+}

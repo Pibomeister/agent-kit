@@ -1,0 +1,26 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-sol",
+  "host": "codex",
+  "requested_model": "gpt-6-sol",
+  "served_model_reported": null,
+  "case": "super-bound-refused-oversized-change-split",
+  "validity": "valid",
+  "graded_outcome": "fail",
+  "score": 0.25,
+  "cost_usd": 0.32225344,
+  "elapsed_seconds": 102.731,
+  "host_load": null,
+  "usage": {
+    "input_tokens": 222270,
+    "cached_input_tokens": 202112,
+    "output_tokens": 3463,
+    "reasoning_output_tokens": 826,
+    "total_tokens": 225733
+  },
+  "grader_outcomes": {
+    "runs-the-scorer": "pass",
+    "persists-assessment-before-stop": "needs-human",
+    "orders-a-reversible-stack": "fail"
+  }
+}

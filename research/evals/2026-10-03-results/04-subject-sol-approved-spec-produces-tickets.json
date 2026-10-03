@@ -1,0 +1,27 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-sol",
+  "host": "codex",
+  "requested_model": "gpt-6-sol",
+  "served_model_reported": null,
+  "case": "approved-spec-produces-tickets",
+  "validity": "valid",
+  "graded_outcome": "fail",
+  "score": 0.25,
+  "cost_usd": 0.49037672,
+  "elapsed_seconds": 192.237,
+  "host_load": null,
+  "usage": {
+    "input_tokens": 388060,
+    "cached_input_tokens": 330496,
+    "output_tokens": 6859,
+    "reasoning_output_tokens": 2067,
+    "total_tokens": 394919
+  },
+  "grader_outcomes": {
+    "consumes-hash-bound-approval": "fail",
+    "emits-zero-context-tickets": "fail",
+    "tickets-carry-three-evidence-blocks": "fail",
+    "runs-the-scorer": "pass"
+  }
+}

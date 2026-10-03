@@ -1,0 +1,21 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-grok",
+  "host": "grok",
+  "requested_model": "grok-4.7",
+  "served_model_reported": null,
+  "case": "super-bound-refused-oversized-change-split",
+  "validity": "invalid",
+  "graded_outcome": null,
+  "cost_usd": null,
+  "budget_cost_usd": 0.5,
+  "elapsed_seconds": null,
+  "host_load": null,
+  "invalid_reason": "timeout",
+  "partial_evidence": {
+    "usage_sessions": 0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "case_results": 0
+  }
+}

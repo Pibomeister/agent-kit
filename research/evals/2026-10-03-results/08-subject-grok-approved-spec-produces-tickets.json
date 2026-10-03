@@ -1,0 +1,17 @@
+{
+  "revision": "1fe16d1ec6fba1ca634013fe3f385a0f182c5ebb",
+  "subject": "subject-grok",
+  "host": "grok",
+  "requested_model": "grok-4.7",
+  "served_model_reported": null,
+  "case": "approved-spec-produces-tickets",
+  "validity": "invalid",
+  "graded_outcome": null,
+  "cost_usd": 0.1012316,
+  "elapsed_seconds": null,
+  "host_load": null,
+  "invalid_reason": "host cancelled refused Bash call",
+  "execution_note": "Firstmate's stop-before-session-8 steer arrived after this command had already started. The process was interrupted immediately, but the host had already returned this invalid receipt.",
+  "refusing_rule": "The case supplied --allow Bash(*) but the compound call still required approval; --permission-mode dontAsk refused it. The host emitted no more specific matching-rule explanation.",
+  "refused_command": "ls -la && echo '--- git ---' && git rev-parse HEAD && git status --short && git log -1 --oneline && echo '--- find schemas in workspace ---' && find . -name '*.schema.json' -o -name 'CONTRACT.md' -o -name 'REFERENCE.md' -o -name '*adapter*' 2>/dev/null | head -80 && echo '--- hidden ---' && ls -la .grok .ak runs knowledge-base 2>/dev/null; echo '--- ak help ---'; PATH=\"$PWD:$PATH\" ak 2>&1 | head -20; echo '--- which node ---'; which node; node -v"
+}
