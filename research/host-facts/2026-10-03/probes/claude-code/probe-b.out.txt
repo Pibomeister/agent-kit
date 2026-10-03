@@ -1,0 +1,11 @@
+# Probe B output, claude 2.1.288, session window 2026-10-03T02:35:08Z to 2026-10-03T02:35:11Z
+# A first launch of this probe used a config dir with no credentials copied and stopped at 'Not logged in'
+# before any model call; it is not counted as a session. This is the second launch.
+== reply
+ROOT-TOKEN-omega4
+AGENTS-TOKEN-bravo3
+== InstructionsLoaded log
+{"t":1790994908.56048,"load_reason":"session_start","memory_type":"Project","file_path":"<probe>/C/proj/CLAUDE.md"}
+== debug log, agents-md plugin
+[DEBUG] hooks module cc-plugin-agents-md@builtin loaded (native, environment 2, tier builtin); events: session.start,prompt.context,agent.spawn,tool.call
+[DEBUG] $.fs.ancestors (cc-plugin-agents-md): AGENTS.md, .claude/AGENTS.md found 1 of 8 directories
