@@ -61,9 +61,10 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
 1. **Check how this run was started**, before any other step and before any tool call. It is started
    only when the human's message begins with `/ak:compound`, when a `super-ship` or `autopilot` run
    reached lesson.capture, or when `lesson.publish` runs under a validated grant. A request in prose
-   is not a start, even when it names this skill or the command. With none of the three, stop here:
-   make no tool call, say that this command is human-started, and give the human the line to type,
-   `/ak:compound` and their request.
+   is not a start, even when it names this skill or the command, or asks for this work without
+   naming either. With none of the three, stop before reading the artifacts, checking inputs or
+   answering the task: the only response is to tell the human to type `/ak:compound` followed by
+   their request.
 2. **Find the trigger.** Name the failure, correction or surprising review result, and the artifact
    where it happened. No trigger: stop with no lesson and say so.
 3. **Apply the counterfactual.** If this lesson disappeared, would a future engineer reading the

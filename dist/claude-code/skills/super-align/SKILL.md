@@ -1,6 +1,6 @@
 ---
 name: super-align
-description: "Human-started command: it runs only when the human's message begins with `/ak:super-align`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. Grills an unsettled request into agreed direction: a design tree worked in rounds, named terms, two or three approaches with a recommendation, and an explicit human yes before anything is built. Use when what to build is not yet agreed. Not for a request that already carries acceptance criteria, and not for a single-file fix with no decision in it."
+description: "Human-started command: it runs only when the human's message begins with `/ak:super-align`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this alignment work, do not answer its questions or inspect project context; tell the human to type `/ak:super-align` followed by their request. Grills an unsettled request into agreed direction: a design tree worked in rounds, named terms, two or three approaches with a recommendation, and an explicit human yes before anything is built. Use when what to build is not yet agreed. Not for a request that already carries acceptance criteria, and not for a single-file fix with no decision in it."
 license: MIT
 metadata:
   ak_catalog_id: super-align
@@ -75,9 +75,10 @@ comes from the supervisor through `needs-decision`; the worker never approves it
 1. Check how this run was started, before any other step and before any tool call. It is started
    only when the human's message begins with `/ak:super-align`, when a controller started the phase
    operation `align.run` under a validated grant, or when the bypass check in Authority exits 0. A
-   request in prose is not a start, even when it names this skill or the command. With neither, stop
-   here: make no tool call, say that this command is human-started, and give the human the line to
-   type, `/ak:super-align` and their request.
+   request in prose is not a start, even when it names this skill or the command, or asks for this
+   work without naming either. With neither, stop before answering the task, inspecting project
+   context or checking inputs: the only response is to tell the human to type `/ak:super-align`
+   followed by their request.
 2. Classify the work as **bounded**, **standard** or **architectural** from its ambiguity and how
    far it cuts across the system. Say which and why in one line. Uncertain lands on the heavier
    classification.

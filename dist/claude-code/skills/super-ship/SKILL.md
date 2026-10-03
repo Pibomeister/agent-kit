@@ -1,6 +1,6 @@
 ---
 name: super-ship
-description: "Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. Prepares a verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally and pushing nothing, or publishes under a grant. Not for merging, not for deploying, and not for deciding whether the change is correct."
+description: "Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this publication work on a reviewed change, do not inspect the branch or act; tell the human to type `/ak:super-ship` followed by their request. Prepares a verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become a commit and pull request. Not for merging, not for deploying, and not for deciding whether the change is correct."
 license: MIT
 metadata:
   ak_catalog_id: super-ship
@@ -105,9 +105,9 @@ The project's own release checks, discovered rather than assumed.
    controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
    binding the grant check is the `ak firstmate grant` call in Authority, and under a bypass grant
    it is the bypass check there; a refusal is a stop. A request in prose is not a start, even when
-   it names this skill or the command. With neither, stop here: make no other tool call, say that
-   this command is human-started, and give the human the line to type, `/ak:super-ship` and their
-   request.
+   it names this skill or the command, or asks for this work without naming either. With neither,
+   stop before inspecting the branch, checking prerequisites or answering the task: the only
+   response is to tell the human to type `/ak:super-ship` followed by their request.
 2. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
    `dry-run` stops there.
 3. Confirm the preconditions: receipts bind to the head, the review verdict binds to that head's
