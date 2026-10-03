@@ -8,7 +8,16 @@
  * status, ids or rates.
  */
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
@@ -33,6 +42,9 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 
 type HostEnvelope = Record<string, JsonValue>;
 
+/** What the caller got: `ok` is a usable reply, every other value is a failed call. */
+export type JudgeOutcome = "ok" | "empty" | "unparseable" | "unavailable" | "error";
+
 export interface JudgeTraceRow {
   at: string;
   call_id: string;
@@ -43,6 +55,7 @@ export interface JudgeTraceRow {
   prompt_sha256: string;
   prompt_chars: number;
   attempt: number;
+  outcome: JudgeOutcome;
   exit_code: number;
   timed_out: boolean;
   stderr_tail: string;
@@ -67,21 +80,19 @@ export interface JudgeTraceSummary {
 
 interface JudgeTraceSummaryRow {
   at: string;
-  exit_code: number;
-  timed_out: boolean;
+  call_id: string;
+  outcome: JudgeOutcome;
   total_cost_usd: number | null;
-  is_error: boolean | null;
 }
 
 const validateJudgeTraceSummaryRow = jsonValidator.compile<JudgeTraceSummaryRow>({
   type: "object",
-  required: ["at", "exit_code", "timed_out", "total_cost_usd", "is_error"],
+  required: ["at", "call_id", "outcome", "total_cost_usd"],
   properties: {
     at: { type: "string" },
-    exit_code: { type: "number" },
-    timed_out: { type: "boolean" },
+    call_id: { type: "string", pattern: "^[0-9a-f-]{36}$" },
+    outcome: { enum: ["ok", "empty", "unparseable", "unavailable", "error"] },
     total_cost_usd: { type: ["number", "null"] },
-    is_error: { type: ["boolean", "null"] },
   },
   additionalProperties: true,
 });
@@ -122,6 +133,32 @@ function traceSummaryRow(line: string): JudgeTraceSummaryRow | null {
   }
 }
 
+function traceRows(path: string): JudgeTraceSummaryRow[] {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+  const rows: JudgeTraceSummaryRow[] = [];
+  for (const line of text.split("\n")) {
+    const row = traceSummaryRow(line);
+    if (row !== null) rows.push(row);
+  }
+  return rows;
+}
+
+/** Move the current trace over the previous one, dropping the bodies of the calls that leave with it. */
+function rotateTrace(config: LearnConfig, trace: string): void {
+  const rotated = join(config.runtimeDir, "judge-calls.1.jsonl");
+  const bodies = join(config.runtimeDir, "judge-bodies");
+  for (const row of traceRows(rotated)) {
+    rmSync(join(bodies, `${row.call_id}.prompt`), { force: true });
+    rmSync(join(bodies, `${row.call_id}.reply`), { force: true });
+  }
+  renameSync(trace, rotated);
+}
+
 function traceAttempt(
   config: LearnConfig,
   prompt: string,
@@ -129,6 +166,7 @@ function traceAttempt(
   attempt: number,
   startedAt: number,
   result: ReturnType<typeof run>,
+  outcome: JudgeOutcome,
 ): void {
   try {
     const envelope = hostEnvelope(result.stdout);
@@ -144,6 +182,7 @@ function traceAttempt(
       prompt_sha256: createHash("sha256").update(prompt).digest("hex"),
       prompt_chars: prompt.length,
       attempt,
+      outcome,
       exit_code: result.code,
       timed_out: result.timedOut,
       stderr_tail: stderrTail(result.stderr),
@@ -157,7 +196,7 @@ function traceAttempt(
     const line = `${JSON.stringify(row)}\n`;
     const trace = join(config.runtimeDir, "judge-calls.jsonl");
     if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes)
-      renameSync(trace, join(config.runtimeDir, "judge-calls.1.jsonl"));
+      rotateTrace(config, trace);
     appendFileSync(trace, line);
     if (config.traceFull) {
       const bodies = join(config.runtimeDir, "judge-bodies");
@@ -173,24 +212,16 @@ function traceAttempt(
   }
 }
 
-/** Calls, explicit failures and reported cost in the retained trace over the last 24 hours. */
+/** Calls, calls without a usable reply and reported cost in the retained trace over the last 24 hours. */
 export function judgeTraceSummary(config: LearnConfig, now = Date.now()): JudgeTraceSummary {
   const summary: JudgeTraceSummary = { calls: 0, failures: 0, totalCostUsd: 0 };
   const cutoff = now - TRACE_WINDOW_MS;
   for (const name of ["judge-calls.1.jsonl", "judge-calls.jsonl"]) {
-    let text: string;
-    try {
-      text = readFileSync(join(config.runtimeDir, name), "utf8");
-    } catch {
-      continue;
-    }
-    for (const line of text.split("\n")) {
-      const row = traceSummaryRow(line);
-      if (row === null) continue;
+    for (const row of traceRows(join(config.runtimeDir, name))) {
       const at = Date.parse(row.at);
       if (!Number.isFinite(at) || at < cutoff || at > now) continue;
       summary.calls += 1;
-      if (row.exit_code !== 0 || row.timed_out || row.is_error === true) summary.failures += 1;
+      if (row.outcome !== "ok") summary.failures += 1;
       if (row.total_cost_usd !== null && Number.isFinite(row.total_cost_usd))
         summary.totalCostUsd += row.total_cost_usd;
     }
@@ -243,6 +274,13 @@ export function declaredUnavailable(reply: Record<string, unknown> | null): stri
   return typeof why === "string" && Object.keys(reply).length === 1 ? why : null;
 }
 
+function judgeOutcome(result: ReturnType<typeof run>, parsed: Record<string, unknown> | null): JudgeOutcome {
+  if (result.timedOut || result.code !== 0) return "error";
+  if (result.stdout.trim() === "") return "empty";
+  if (parsed === null) return "unparseable";
+  return declaredUnavailable(parsed) === null ? "ok" : "unavailable";
+}
+
 /** A judge bound to the configured command. One retry on an empty, failed or unparseable reply. */
 export function commandJudge(config: LearnConfig): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
@@ -253,11 +291,11 @@ export function commandJudge(config: LearnConfig): JudgeFn {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const startedAt = Date.now();
       const result = run(config.judgeCommand, { input: prompt, env, timeoutMs: config.judgeTimeoutMs });
-      traceAttempt(config, prompt, context, attempt + 1, startedAt, result);
-      if (result.timedOut) return null;
-      if (result.code !== 0) continue;
-      const parsed = extractJson(result.stdout);
-      if (parsed !== null) return declaredUnavailable(parsed) === null ? parsed : null;
+      const parsed = result.timedOut || result.code !== 0 ? null : extractJson(result.stdout);
+      const outcome = judgeOutcome(result, parsed);
+      traceAttempt(config, prompt, context, attempt + 1, startedAt, result, outcome);
+      if (result.timedOut || outcome === "unavailable") return null;
+      if (outcome === "ok") return parsed;
     }
     return null;
   };

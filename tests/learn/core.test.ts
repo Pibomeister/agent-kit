@@ -3,7 +3,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, uti
 import { join } from "node:path";
 import { DEFAULT_JUDGE, loadConfig, splitCommand } from "../../src/learn/core/config.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
-import { commandJudge, declaredUnavailable, extractJson, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
+import {
+  commandJudge,
+  declaredUnavailable,
+  extractJson,
+  judgeTraceSummary,
+  type JudgeTraceRow,
+} from "../../src/learn/core/judge.ts";
 import { acquireLock, Ledger } from "../../src/learn/core/ledger.ts";
 import { parsePage, patchBody, renderPage } from "../../src/learn/core/pages.ts";
 import { loopDir, projectFolderName, reflectFolderName, rootOf } from "../../src/learn/core/paths.ts";
@@ -304,9 +310,10 @@ describe("judge call trace", () => {
       const script = join(dir, "judge.sh");
       writeFileSync(script, `printf '%s\\n' '{"result":"{\\"answer\\":\\"kept\\"}"}'\n`);
       const config = {
-        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config"), AK_LEARN_TRACE_MAX_BYTES: "800" }),
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
         judgeCommand: ["sh", script],
         judgeTimeoutMs: 10_000,
+        traceMaxBytes: 800,
       };
       const judge = commandJudge(config);
       const context = { loop: "review", role: "pattern-maintainer", project: "shop", runId: null } as const;
@@ -318,6 +325,91 @@ describe("judge call trace", () => {
       expect(statSync(current).size).toBeLessThanOrEqual(800);
       expect(existsSync(join(config.runtimeDir, "judge-calls.1.jsonl"))).toBe(true);
       expect(readFileSync(current, "utf8").trim().split("\n")).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("judge call outcome", () => {
+  function outcomes(body: string): { reply: Record<string, unknown> | null; rows: JudgeTraceRow[]; failures: number } {
+    const dir = projectScratch();
+    try {
+      const script = join(dir, "judge.sh");
+      writeFileSync(script, body);
+      const config = {
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+        judgeCommand: ["sh", script],
+        judgeTimeoutMs: 10_000,
+      };
+      const reply = commandJudge(config)("prompt", {
+        loop: "review",
+        role: "pattern-maintainer",
+        project: "shop",
+        runId: null,
+      });
+      return {
+        reply,
+        rows: readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl")),
+        failures: judgeTraceSummary(config).failures,
+      };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test("a usable reply is ok and is not a failure", () => {
+    const { reply, rows, failures } = outcomes(`echo '{"answer":"kept"}'\n`);
+    expect(reply).toEqual({ answer: "kept" });
+    expect(rows.map((row) => row.outcome)).toEqual(["ok"]);
+    expect(failures).toBe(0);
+  });
+
+  test("prose with no JSON object is unparseable on both attempts and counts as two failures", () => {
+    const { reply, rows, failures } = outcomes("echo 'I could not decide.'\n");
+    expect(reply).toBeNull();
+    expect(rows.map((row) => row.outcome)).toEqual(["unparseable", "unparseable"]);
+    expect(rows.map((row) => row.exit_code)).toEqual([0, 0]);
+    expect(failures).toBe(2);
+  });
+
+  test("an empty reply, a declared unavailable and a failed command are each a failure", () => {
+    const empty = outcomes("exit 0\n");
+    expect(empty.rows.map((row) => row.outcome)).toEqual(["empty", "empty"]);
+    expect(empty.failures).toBe(2);
+    const unavailable = outcomes(`echo '{"unavailable": "observation ids missing"}'\n`);
+    expect(unavailable.reply).toBeNull();
+    expect(unavailable.rows.map((row) => row.outcome)).toEqual(["unavailable"]);
+    expect(unavailable.failures).toBe(1);
+    const failed = outcomes("exit 3\n");
+    expect(failed.rows.map((row) => row.outcome)).toEqual(["error", "error"]);
+    expect(failed.failures).toBe(2);
+  });
+});
+
+describe("judge body retention", () => {
+  test("bodies of calls rotated out of the metadata trace are removed with their rows", () => {
+    const dir = projectScratch();
+    try {
+      const script = join(dir, "judge.sh");
+      writeFileSync(script, `printf '%s\\n' '{"result":"{\\"answer\\":\\"kept\\"}"}'\n`);
+      const config = {
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config"), AK_LEARN_TRACE: "full" }),
+        judgeCommand: ["sh", script],
+        judgeTimeoutMs: 10_000,
+        traceMaxBytes: 800,
+      };
+      const judge = commandJudge(config);
+      const context = { loop: "review", role: "pattern-maintainer", project: "shop", runId: null } as const;
+      for (const prompt of ["first", "second", "third"]) expect(judge(prompt, context)).toEqual({ answer: "kept" });
+
+      const retained = ["judge-calls.1.jsonl", "judge-calls.jsonl"].flatMap((name) =>
+        readJsonl<JudgeTraceRow>(join(config.runtimeDir, name)).map((row) => row.call_id),
+      );
+      expect(retained).toHaveLength(2);
+      expect(readdirSync(join(config.runtimeDir, "judge-bodies")).sort()).toEqual(
+        retained.flatMap((id) => [`${id}.prompt`, `${id}.reply`]).sort(),
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

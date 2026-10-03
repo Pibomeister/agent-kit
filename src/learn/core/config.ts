@@ -18,7 +18,7 @@ export interface LearnConfig {
   judgeTimeoutMs: number;
   /** Write prompt and reply bodies beside the metadata trace. */
   traceFull: boolean;
-  /** Maximum bytes in the current judge-call metadata file before rotation. */
+  /** Maximum bytes in the current judge-call metadata file before rotation. Fixed; not an environment option. */
   traceMaxBytes: number;
   /** claude-mem's SQLite database, opened read-only. */
   memDb: string;
@@ -126,7 +126,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
     judgeCommand: judge,
     judgeTimeoutMs: int(env, "AK_LEARN_JUDGE_TIMEOUT_S", 300) * 1000,
     traceFull: env.AK_LEARN_TRACE === "full",
-    traceMaxBytes: Math.max(1, int(env, "AK_LEARN_TRACE_MAX_BYTES", 10 * 1024 * 1024)),
+    traceMaxBytes: 10 * 1024 * 1024,
     memDb:
       env.AK_LEARN_MEM_DB && env.AK_LEARN_MEM_DB.trim() !== "" ? env.AK_LEARN_MEM_DB : join(memDir, "claude-mem.db"),
     activeAt: int(env, "AK_LEARN_ACTIVE_AT", 2),

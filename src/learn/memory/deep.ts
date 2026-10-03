@@ -262,16 +262,16 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
   const compacted = review === null ? 0 : compactReviewLedger(review);
   const stale = decayLessons(ledger);
   let pairs: PairResult = { merged: [], conflicts: [], confirmed: [] };
+  const runId = `weekly-${todayLocal()}-${nowMs() % 100_000}`;
   if (index !== "(none)") {
     const reply = ctx.judge(deepPrompt(ctx, index), {
-      runId: null,
+      runId,
       loop: "memory",
       role: "lesson-merger",
       project: basename(root),
     });
     if (reply !== null) pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
   }
-  const runId = `weekly-${todayLocal()}-${nowMs() % 100_000}`;
   const lessons = loadLessons(ledger);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];

@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Ledger } from "../../src/learn/core/ledger.ts";
-import { readJson } from "../../src/learn/core/store.ts";
+import { readJson, readJsonl } from "../../src/learn/core/store.ts";
 import { applyConsolidation } from "../../src/learn/memory/consolidate.ts";
 import { applyPairs, compactEvidence, compactReviewLedger, decayLessons, deep } from "../../src/learn/memory/deep.ts";
 import { ensureMemoryLedger, loadLessons, writeLesson } from "../../src/learn/memory/ledger.ts";
@@ -199,6 +199,11 @@ describe("weekly", () => {
     expect(deep(ctx, ledger, root, null)).toBe(
       "weekly: 0 review pattern pages compacted, 0 stale, 1 merged, 0 conflicts",
     );
+    const weeklyRun = readJsonl<{ job: string; id: string }>(ledger.path("runs.jsonl")).find(
+      (row) => row.job === "weekly",
+    );
+    expect(ctx.judgeContexts.map((context) => context?.runId)).toEqual([weeklyRun?.id]);
+    expect(weeklyRun?.id).toStartWith("weekly-");
     const files = readdirSync(ledger.path("proposals"));
     expect(files).toEqual(["learn-shop-ls-001.json"]);
     const record = readJson<{ draft: Record<string, unknown> }>(ledger.path("proposals", files[0]!), { draft: {} });

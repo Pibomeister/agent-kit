@@ -437,7 +437,7 @@ export function consolidate(
   }
   const runId = `nightly-${todayLocal()}-${nowMs() % 100_000}`;
   const reply = ctx.judge(prompt, {
-    runId: null,
+    runId,
     loop: "memory",
     role: "consolidator",
     project: basename(root),

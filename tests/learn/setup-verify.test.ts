@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loopDir } from "../../src/learn/core/paths.ts";
@@ -83,11 +84,11 @@ describe("setup doctor", () => {
     const old = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
     writeFileSync(
       join(ctx.config.runtimeDir, "judge-calls.1.jsonl"),
-      `${JSON.stringify({ at: recent, exit_code: 0, timed_out: false, is_error: false, total_cost_usd: 0.25 })}\n`,
+      `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "ok", total_cost_usd: 0.25 })}\n`,
     );
     writeFileSync(
       join(ctx.config.runtimeDir, "judge-calls.jsonl"),
-      `${JSON.stringify({ at: recent, exit_code: 17, timed_out: false, is_error: true, total_cost_usd: 0.5 })}\n${JSON.stringify({ at: old, exit_code: 17, timed_out: false, is_error: true, total_cost_usd: 99 })}\n`,
+      `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "error", total_cost_usd: 0.5 })}\n${JSON.stringify({ at: old, call_id: randomUUID(), outcome: "error", total_cost_usd: 99 })}\n`,
     );
 
     expect(doctor(ctx, deps)).toBe(0);

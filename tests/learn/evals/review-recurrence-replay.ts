@@ -12,7 +12,7 @@
  */
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { loadConfig } from "../../../src/learn/core/config.ts";
 import type { LearnContext } from "../../../src/learn/core/context.ts";
 import { commandJudge } from "../../../src/learn/core/judge.ts";
@@ -33,7 +33,7 @@ export function replay(ctx: LearnContext, root: string, print: (line: string) =>
   for (const batch of batches) {
     appendEvents(ledger, batch);
     ledger.commit(`ingest: +${batch.length} events`);
-    print(`maintain: ${maintain(ctx, ledger)}`);
+    print(`maintain: ${maintain(ctx, ledger, basename(root))}`);
   }
   const rows = runRows(ledger);
   for (const row of rows) print(row);

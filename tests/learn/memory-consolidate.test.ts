@@ -347,6 +347,11 @@ describe("nightly", () => {
       source.close();
     }
     expect(loadLessons(ledger).get("ls-001")!.meta.status).toBe("confirmed");
+    const nightlyRun = readJsonl<{ job: string; id: string }>(ledger.path("runs.jsonl")).find(
+      (row) => row.job === "nightly",
+    );
+    expect(ctx.judgeContexts.map((context) => context?.runId)).toEqual([nightlyRun?.id]);
+    expect(nightlyRun?.id).toStartWith("nightly-");
     // Consolidation is appended beside the episodes; episodes.jsonl itself is never rewritten.
     expect(readFileSync(ledger.path("episodes.jsonl"), "utf8")).toBe(episodesBefore);
     const marks = readJsonl<{ sid: string; run: string }>(ledger.path(CONSOLIDATED_FILE));
