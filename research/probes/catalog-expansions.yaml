@@ -54,17 +54,22 @@ protocols:
 
 roles:
   baseline: 29
-  catalog: 34
+  catalog: 35
   expansions:
     - ids: [learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
       reason: >-
         The review, memory and skill loops ported from the learning-stack reference each run
         under a role prompt of their own.
       commits: [8e4a0de]
+    - ids: [verifier]
+      reason: >-
+        Runtime verification needs a named non-entrypoint seat outside implementer lineage so
+        receipt authorship and unavailable independence are structurally expressible.
+      commits: [6ef8669]
 
 references:
   baseline: 4
-  catalog: 7
+  catalog: 8
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -77,6 +82,11 @@ references:
         guidance, while project-declared diff checks need separate command and receipt semantics
         that lifecycle bodies can load without duplicating either contract.
       commits: [c5c94bd]
+    - ids: [verification-evidence]
+      reason: >-
+        Surface evidence kinds, recipe semantics and verifier-seat lineage need one host-neutral
+        vocabulary shared by the lifecycle phases that produce or consume them.
+      commits: [6ef8669]
 
 schemas:
   baseline: 14
@@ -127,6 +137,11 @@ schemas:
         Run-record schemas the skill bodies already require, added in the follow-ups plan decision
         "Add real schemas".
       commits: [09dd58d]
+    - ids: [verification-recipe]
+      reason: >-
+        A successful host-neutral setup-through-cleanup path needs a content-addressed artifact
+        shape that projects can declare and later verifier seats can replay.
+      commits: [6ef8669]
 
 profiles:
   baseline: 4
