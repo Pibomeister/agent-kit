@@ -1044,11 +1044,11 @@ function evaluateEvidence(
       requiredKinds.set(criterion, collected);
     }
   }
-  const buildRecord = readRecords(a.dir, a.run, "build-checks")
-    .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
-    .toSorted((x, y) => x.recorded_at.localeCompare(y.recorded_at))
-    .at(-1);
-  const buildSeat = buildRecord?.implementer?.seat_id;
+  const buildSeats = new Set(
+    readRecords(a.dir, a.run, "build-checks")
+      .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
+      .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
+  );
   if (refs.length === 0)
     reasons.push({ code: "missing", detail: "the current verify marker has no verification evidence references" });
 
@@ -1143,7 +1143,7 @@ function evaluateEvidence(
     const required = strings(check?.evidence_required) ?? [];
     const expectedRecipe = object(check?.recipe);
     const surfaceCheck = required.length > 0 || expectedRecipe !== undefined;
-    if (surfaceCheck || buildSeat !== undefined) {
+    if (surfaceCheck || buildSeats.size > 0) {
       const creator = object(receipt.created_by);
       if (creator?.role !== "verifier") {
         reasons.push({
@@ -1162,14 +1162,13 @@ function evaluateEvidence(
       }
       const seat = object(receipt.verifier_seat);
       const seatId = nonempty(seat?.id) ? seat.id : undefined;
-      const implementerSeat = nonempty(seat?.implementer_seat) ? seat.implementer_seat : buildSeat;
       if (seatId === undefined) {
         reasons.push({
           code: "self-verification",
           detail: `receipt ${ref.id} names no verifier seat; an independent verifier seat is required`,
           evidence: ref.id,
         });
-      } else if (seatId === implementerSeat || (buildSeat !== undefined && seatId === buildSeat)) {
+      } else if (seatId === seat?.implementer_seat || buildSeats.has(seatId)) {
         reasons.push({
           code: "self-verification",
           detail: `receipt ${ref.id} was produced by implementer seat ${seatId}; an independent verifier seat is required`,

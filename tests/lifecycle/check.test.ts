@@ -482,6 +482,51 @@ describe("ak lifecycle check, standalone", () => {
     }
   });
 
+  test("a build seat recorded at an earlier commit still requires a verifier seat after a flagless re-record", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "seat-survives-fix-round");
+    const run = openedRun(dir, ticketPath);
+    expect(
+      ak(
+        dir,
+        "record",
+        "--gate",
+        "build-checks",
+        "--class",
+        "green",
+        "--author-kind",
+        "agent",
+        "--host",
+        "codex",
+        "--seat-id",
+        "build-1",
+      ).code,
+    ).toBe(0);
+    git(dir, "add", "src/a.js");
+    git(dir, "commit", "-q", "-m", "fix round");
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const selfCheck = receipt(dir, run, ticketPath, { created_by: { role: "implementer" } });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", selfCheck).code).toBe(0);
+    const refused = ak(dir, "check");
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain(
+      `refused: receipt ${basename(selfCheck, ".json")} was created by implementer; an independent verifier seat is required`,
+    );
+    const sameSeat = receipt(dir, run, ticketPath, {
+      created_by: { role: "verifier" },
+      verifier_seat: {
+        id: "build-1",
+        implementer_seat: "other",
+        isolation: "runner-attested",
+        attestation: { id: "seat-build-1", hash: `sha256:${"9".repeat(64)}` },
+      },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", sameSeat).code).toBe(0);
+    expect(ak(dir, "check").err).toContain(
+      `refused: receipt ${basename(sameSeat, ".json")} was produced by implementer seat build-1`,
+    );
+  });
+
   test("a frontend criterion whose checks omit evidence_required is refused", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "frontend-without-kinds", {

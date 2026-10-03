@@ -99,9 +99,9 @@ outputs:
   - id: verification-receipts
     schema: verification
     summary: >-
-      Implementer self-check receipts, labeled with the implementer seat and never counted by the
-      independent gate, plus the gate-eligible verifier receipts returned by super-verify with
-      recipe, evidence kind and distinct seat lineage.
+      Implementer self-check receipts, labeled `created_by.role: implementer` and never counted once
+      the build gate records the implementer seat, plus the gate-eligible verifier receipts returned
+      by super-verify with recipe, evidence kind and distinct seat lineage.
   - id: ticket-check-result
     schema: finding
     summary: >-

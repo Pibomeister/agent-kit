@@ -132,15 +132,18 @@ absence is recorded (`policies/limits.yaml`).
     stop. A silent discard is forbidden.
 12. Load [verification evidence](../../references/verification-evidence/REFERENCE.md), run the
     ticket's named checks as implementer self-checks and record each receipt with
-    `created_by.role: implementer` and the implementer seat id. They are self-check evidence: once
-    the build gate records that seat they never satisfy the verify gate, and without it they count
-    only for checks no recipe binds. Hand the claim, criteria, frozen revision, project
+    `created_by.role: implementer`. They are self-check evidence: once the build gate records the
+    implementer seat (step 13) they never satisfy the verify gate, and without it they count only
+    for checks no recipe binds. Hand the claim, criteria, frozen revision, project
     recipe and permitted commands to `super-verify`; its verifier seat reruns them and produces
     gate-eligible receipts. Commit the work on the ticket's own branch, then publish the receipts and
     ticket result through the knowledgebase adapter's `publishArtifact` operation. Report every
     written ruling and out-of-scope observation.
 13. When both check seats pass, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate build-checks`
     (the bundle's `bin/`, two directories above this skill). super-ship refuses to ship without it.
+    When a runner assigned the implementer seat, declare it by appending
+    `--class <delegation class> --author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>`;
+    the seat is recorded on this gate, not on a receipt, and stays declared for the run's later commits.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
     A binding's brief supplies `--run` and `--dir` when it has them.
