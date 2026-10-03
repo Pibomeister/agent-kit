@@ -95,14 +95,16 @@ outputs:
       guessed.
   - id: alignment-result
     summary: >-
-      The run artifact align.run returns: the approved direction or the open decision. That
-      operation writes no knowledgebase page.
+      The run artifact align.run returns: the approved direction or the open decision. Observable
+      frontend or backend success names its surface, user path or request and project-declared
+      evidence kinds. That operation writes no knowledgebase page.
 
 side_effects: [artifact-write, scratch-write, kb-draft, kb-publish]
 
 references:
   - domain-modeling
   - codebase-design-vocabulary
+  - verification-evidence
 
 hard_gates:
   - Nothing is implemented before approval; no source file is written, no project is scaffolded and

@@ -21,6 +21,17 @@ describe("the bundled verification predicate", () => {
       "verification.zero-exit-failure.example.json",
     ].map((name) => read(join(ROOT, "templates", name)));
     const valid = structuredClone(templates[0]!);
+    const surface = structuredClone(valid);
+    surface.created_by = { role: "verifier" };
+    surface.recipe = { id: "settings-runtime", hash: `sha256:${"a".repeat(64)}` };
+    surface.evidence_kind = "rendered-screenshot";
+    surface.verifier_seat = {
+      id: "verify-1",
+      implementer_seat: "build-1",
+      isolation: "runner-attested",
+      attestation: { id: "seat-verify-1", hash: `sha256:${"b".repeat(64)}` },
+    };
+    surface.artifacts = [{ path: "settings.png", digest: `sha256:${"c".repeat(64)}`, kind: "screenshot" }];
     const without = (key: string) => {
       const doc = structuredClone(valid);
       delete doc[key];
@@ -39,7 +50,7 @@ describe("the bundled verification predicate", () => {
       { ...structuredClone(valid), ticket: { id: "ticket-1", hash: "not-a-hash" } },
     ];
 
-    for (const receipt of [...fixtures, ...templates, ...malformed]) {
+    for (const receipt of [...fixtures, ...templates, surface, ...malformed]) {
       expect(verificationShapeReasons(receipt).length === 0, JSON.stringify(receipt)).toBe(
         validate(receipt) as boolean,
       );

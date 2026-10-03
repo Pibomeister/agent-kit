@@ -85,6 +85,10 @@ status on this host at all until a parse of the table went looking for them.
 What differs on this host is not which capabilities are supplied but which **restrictions** the
 host can enforce. None of the rows below is a `capability` value:
 
+Native child sessions are useful fresh execution contexts but do not attest what the child saw or
+its excluded lineage. The inherited `independent-context: not-provided` status means host-only
+verifier receipts are `host-unattested`; a runner supplies attested independence.
+
 | Restriction | claude-code | codex | Consequence |
 |---|---|---|---|
 | Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior; not emitted by this package | `agents/openai.yaml` supports `policy.allow_implicit_invocation: false`; not emitted by this package | ADR-0003 keeps every skill model-loadable, so the package deliberately relies on the U skill's authority check rather than either host key. See §3.1 |

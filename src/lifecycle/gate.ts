@@ -192,7 +192,7 @@ export interface GateRecord {
   snapshot: Snapshot;
   recorded_at: string;
   class?: DelegationClass;
-  implementer?: { author_kind: AuthorKind; host: string };
+  implementer?: { author_kind: AuthorKind; host: string; seat_id?: string };
   evidence?: ArtifactRef[];
   /** Present when the phase was started under a bypass grant rather than a typed command (ADR-0008). */
   authority?: GateAuthority;
@@ -407,7 +407,7 @@ export interface RecordArgs {
   project: string;
   receipts?: readonly string[];
   delegationClass?: DelegationClass;
-  implementer?: { author_kind: AuthorKind; host: string };
+  implementer?: { author_kind: AuthorKind; host: string; seat_id?: string };
   bypass?: BypassAttribution;
   now?: () => Date;
 }
@@ -415,7 +415,9 @@ export interface RecordArgs {
 function implementerWellFormed(implementer: GateRecord["implementer"]): boolean {
   return (
     implementer === undefined ||
-    (AUTHOR_KINDS.includes(implementer?.author_kind) && adapterIds().includes(implementer?.host))
+    (AUTHOR_KINDS.includes(implementer?.author_kind) &&
+      adapterIds().includes(implementer?.host) &&
+      (implementer.seat_id === undefined || ARTIFACT_ID.test(implementer.seat_id)))
   );
 }
 
@@ -459,25 +461,30 @@ export function recordGate(
       );
       continue;
     }
+    const artifacts = (Array.isArray(receipt.artifacts) ? receipt.artifacts : []).map(object);
     const output = receipt.output_digest;
-    if (typeof output === "string") {
-      const log = (Array.isArray(receipt.artifacts) ? receipt.artifacts : [])
-        .map(object)
-        .flatMap((entry) =>
-          entry !== undefined && entry.digest === output && typeof entry.path === "string"
-            ? [resolve(dirname(receiptPath), entry.path), resolve(a.project, entry.path)]
-            : [],
+    if (nonempty(output) && !artifacts.some((entry) => entry?.digest === output)) {
+      return {
+        ok: false,
+        reason: `receipt ${receiptPath} names output ${output}, but none of its artifacts entries resolves to a log with that digest`,
+      };
+    }
+    for (const entry of artifacts) {
+      if (entry === undefined || !nonempty(entry.path) || !nonempty(entry.digest)) {
+        return { ok: false, reason: `receipt ${receiptPath} has a malformed artifact entry` };
+      }
+      const artifactBytes = [resolve(dirname(receiptPath), entry.path), resolve(a.project, entry.path)]
+        .flatMap((candidate) =>
+          existsSync(candidate) && statSync(candidate).isFile() ? [readFileSync(candidate)] : [],
         )
-        .filter((candidate) => existsSync(candidate) && statSync(candidate).isFile())
-        .map((candidate) => readFileSync(candidate))
-        .find((candidate) => sha256(candidate) === output);
-      if (log === undefined) {
+        .find((candidate) => sha256(candidate) === entry.digest);
+      if (artifactBytes === undefined) {
         return {
           ok: false,
-          reason: `receipt ${receiptPath} names output ${output}, but none of its artifacts entries resolves to a log with that digest`,
+          reason: `receipt ${receiptPath} artifact ${entry.digest} does not resolve to a file with that digest`,
         };
       }
-      storeArtifact(a.dir, a.run, log);
+      storeArtifact(a.dir, a.run, artifactBytes);
     }
     refs.push({ id: receipt.id, schema: "verification", hash: storeArtifact(a.dir, a.run, bytes) });
   }
@@ -715,6 +722,10 @@ export function verificationShapeReasons(value: unknown): string[] {
     "tracker",
     "kind",
     "check",
+    "recipe",
+    "evidence_kind",
+    "verifier_seat",
+    "api_response",
     "command",
     "probe",
     "manual",
@@ -799,6 +810,49 @@ export function verificationShapeReasons(value: unknown): string[] {
     reasons.push("check is invalid");
   if (receipt.ticket !== undefined && !artifactRefValid(receipt.ticket)) reasons.push("ticket is invalid");
   if (receipt.finding !== undefined && !artifactRefValid(receipt.finding)) reasons.push("finding is invalid");
+  const evidenceKinds = [
+    "rendered-screenshot",
+    "user-path-trial",
+    "trace",
+    "log",
+    "api-response",
+    "dry-run",
+    "smoke-test",
+  ];
+  const evidenceKind = nonempty(receipt.evidence_kind) ? receipt.evidence_kind : undefined;
+  if (receipt.evidence_kind !== undefined && (evidenceKind === undefined || !evidenceKinds.includes(evidenceKind)))
+    reasons.push("evidence_kind is invalid");
+  if (receipt.recipe !== undefined && !artifactRefValid(receipt.recipe)) reasons.push("recipe is invalid");
+  if (receipt.evidence_kind !== undefined) {
+    if (creator?.role !== "verifier") reasons.push("surface evidence was not created by verifier");
+    if (receipt.recipe === undefined) reasons.push("surface evidence has no recipe");
+    const seat = object(receipt.verifier_seat);
+    if (
+      seat === undefined ||
+      !nonempty(seat.id) ||
+      !ARTIFACT_ID.test(seat.id) ||
+      !nonempty(seat.implementer_seat) ||
+      !ARTIFACT_ID.test(seat.implementer_seat) ||
+      !["runner-attested", "host-unattested"].includes(String(seat.isolation)) ||
+      (seat.isolation === "runner-attested" && !artifactRefValid(seat.attestation)) ||
+      (seat.isolation === "host-unattested" && seat.attestation !== null)
+    ) {
+      reasons.push("verifier_seat is invalid");
+    }
+  }
+  if (receipt.evidence_kind === "api-response") {
+    const response = object(receipt.api_response);
+    if (
+      response === undefined ||
+      !Number.isInteger(response.status) ||
+      Number(response.status) < 100 ||
+      Number(response.status) > 599 ||
+      !nonempty(response.body_digest) ||
+      !HASH.test(response.body_digest)
+    ) {
+      reasons.push("api_response is invalid");
+    }
+  }
   const environment = object(receipt.environment);
   if (
     environment === undefined ||
@@ -815,6 +869,41 @@ export function verificationShapeReasons(value: unknown): string[] {
     (typeof output !== "string" || !HASH.test(output))
   ) {
     reasons.push("output_digest is required for a check that ran");
+  }
+  const artifactKinds = ["log", "report", "coverage", "artifact", "screenshot", "trace", "response"];
+  const artifacts = Array.isArray(receipt.artifacts) ? receipt.artifacts.map(object) : [];
+  if (
+    receipt.artifacts !== undefined &&
+    (!Array.isArray(receipt.artifacts) ||
+      artifacts.some(
+        (artifact) =>
+          artifact === undefined ||
+          !nonempty(artifact.path) ||
+          !nonempty(artifact.digest) ||
+          !HASH.test(artifact.digest) ||
+          (artifact.kind !== undefined && (!nonempty(artifact.kind) || !artifactKinds.includes(artifact.kind))),
+      ))
+  ) {
+    reasons.push("artifacts is invalid");
+  }
+  const artifactKind =
+    evidenceKind === "rendered-screenshot"
+      ? "screenshot"
+      : evidenceKind === "trace" || evidenceKind === "log"
+        ? evidenceKind
+        : evidenceKind === "api-response"
+          ? "response"
+          : undefined;
+  if (artifactKind !== undefined && !artifacts.some((artifact) => artifact?.kind === artifactKind))
+    reasons.push(`${evidenceKind} has no ${artifactKind} artifact`);
+  if (receipt.evidence_kind === "api-response") {
+    const response = object(receipt.api_response);
+    if (
+      nonempty(response?.body_digest) &&
+      !artifacts.some((artifact) => artifact?.kind === "response" && artifact.digest === response.body_digest)
+    ) {
+      reasons.push("api_response body_digest has no matching response artifact");
+    }
   }
   if (receipt.kind === "command") {
     const command = object(receipt.command);
@@ -906,16 +995,21 @@ function evaluateEvidence(
       refs: [],
     };
   }
-  const criteria = (Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : [])
-    .map(object)
-    .map((criterion) => criterion?.id)
-    .filter((id): id is string => typeof id === "string" && AC.test(id));
-  const checks = new Set(
-    (Array.isArray(ticket.verification) ? ticket.verification : [])
-      .map(object)
-      .map((check) => check?.id)
-      .filter((id): id is string => typeof id === "string" && KEBAB.test(id)),
+  const criterionRecords = (Array.isArray(ticket.acceptance_criteria) ? ticket.acceptance_criteria : []).flatMap(
+    (value) => {
+      const criterion = object(value);
+      return criterion !== undefined && nonempty(criterion.id) && AC.test(criterion.id)
+        ? [{ id: criterion.id, surface: nonempty(criterion.surface) ? criterion.surface : "none" }]
+        : [];
+    },
   );
+  const criteria = criterionRecords.map((criterion) => criterion.id);
+  const surfaces = new Map(criterionRecords.map((criterion) => [criterion.id, criterion.surface]));
+  const checks = new Map<string, NonNullable<ReturnType<typeof object>>>();
+  for (const value of Array.isArray(ticket.verification) ? ticket.verification : []) {
+    const check = object(value);
+    if (check !== undefined && nonempty(check.id) && KEBAB.test(check.id)) checks.set(check.id, check);
+  }
   if (criteria.length === 0 || checks.size === 0) {
     return {
       outcome: "unavailable",
@@ -938,6 +1032,21 @@ function evaluateEvidence(
   const reasons: DecisionReason[] = [];
   const passed = new Set<string>();
   const failed = new Set<string>();
+  const surfaceCoverage = new Map<string, Set<string>>();
+  const requiredKinds = new Map<string, Set<string>>();
+  for (const check of checks.values()) {
+    const required = strings(check.evidence_required) ?? [];
+    for (const criterion of strings(check.supports) ?? []) {
+      const collected = requiredKinds.get(criterion) ?? new Set<string>();
+      for (const kind of required) collected.add(kind);
+      requiredKinds.set(criterion, collected);
+    }
+  }
+  const buildRecord = readRecords(a.dir, a.run, "build-checks")
+    .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
+    .toSorted((x, y) => x.recorded_at.localeCompare(y.recorded_at))
+    .at(-1);
+  const buildSeat = buildRecord?.implementer?.seat_id;
   if (refs.length === 0)
     reasons.push({ code: "missing", detail: "the current verify marker has no verification evidence references" });
 
@@ -1008,7 +1117,6 @@ function evaluateEvidence(
         evidence: ref.id,
       });
     }
-    const bound = reasons.length === before;
     if (receipt.invalidation !== undefined)
       reasons.push({ code: "invalidated", detail: `receipt ${ref.id} has been invalidated`, evidence: ref.id });
     const output = receipt.output_digest as string | undefined;
@@ -1022,12 +1130,67 @@ function evaluateEvidence(
         });
       }
     }
-    if (typeof receipt.check !== "string" || !checks.has(receipt.check)) {
+    if (!nonempty(receipt.check) || !checks.has(receipt.check)) {
       reasons.push({
         code: "unknown-check",
         detail: `receipt ${ref.id} names unknown check ${String(receipt.check)}`,
         evidence: ref.id,
       });
+    }
+    const check = nonempty(receipt.check) ? checks.get(receipt.check) : undefined;
+    const required = strings(check?.evidence_required) ?? [];
+    const expectedRecipe = object(check?.recipe);
+    if (required.length > 0 || expectedRecipe !== undefined) {
+      const creator = object(receipt.created_by);
+      if (creator?.role !== "verifier") {
+        reasons.push({
+          code: "self-verification",
+          detail: `receipt ${ref.id} was created by ${String(creator?.role)}; an independent verifier seat is required`,
+          evidence: ref.id,
+        });
+      }
+      const recipe = object(receipt.recipe);
+      if (recipe?.id !== expectedRecipe?.id || recipe?.hash !== expectedRecipe?.hash) {
+        reasons.push({
+          code: "recipe-mismatch",
+          detail: `receipt ${ref.id} does not name recipe ${String(expectedRecipe?.id)} at ${String(expectedRecipe?.hash)}`,
+          evidence: ref.id,
+        });
+      }
+      const seat = object(receipt.verifier_seat);
+      const seatId = nonempty(seat?.id) ? seat.id : undefined;
+      const implementerSeat = nonempty(seat?.implementer_seat) ? seat.implementer_seat : buildSeat;
+      if (seatId === undefined) {
+        reasons.push({
+          code: "self-verification",
+          detail: `receipt ${ref.id} names no verifier seat; an independent verifier seat is required`,
+          evidence: ref.id,
+        });
+      } else if (seatId === implementerSeat || (buildSeat !== undefined && seatId === buildSeat)) {
+        reasons.push({
+          code: "self-verification",
+          detail: `receipt ${ref.id} was produced by implementer seat ${seatId}; an independent verifier seat is required`,
+          evidence: ref.id,
+        });
+      }
+      if (seat?.isolation !== "runner-attested") {
+        reasons.push({
+          code: "unattested-verifier",
+          detail: `verifier seat ${String(seatId)} is host-unattested; autonomous ship requires a runner attestation`,
+          evidence: ref.id,
+        });
+      }
+    }
+    for (const artifact of (Array.isArray(receipt.artifacts) ? receipt.artifacts : []).map(object)) {
+      if (artifact === undefined || !nonempty(artifact.digest)) continue;
+      const stored = artifactPath(a.dir, a.run, artifact.digest);
+      if (stored === undefined || !existsSync(stored) || sha256(readFileSync(stored)) !== artifact.digest) {
+        reasons.push({
+          code: "artifact-missing",
+          detail: `receipt ${ref.id} artifact ${artifact.digest} is absent or changed`,
+          evidence: ref.id,
+        });
+      }
     }
     const environment = object(receipt.environment)!;
     const expectedEnvironment = object((run as unknown as Record<string, unknown>).environment);
@@ -1038,9 +1201,15 @@ function evaluateEvidence(
         evidence: ref.id,
       });
     }
-    for (const criterion of bound ? (receipt.supports as string[]) : []) {
+    const valid = reasons.length === before;
+    for (const criterion of valid ? (strings(receipt.supports) ?? []) : []) {
       if (receipt.status === "passed") passed.add(criterion);
       if (receipt.status === "failed") failed.add(criterion);
+      if (receipt.status === "passed" && nonempty(receipt.evidence_kind)) {
+        const coverage = surfaceCoverage.get(criterion) ?? new Set<string>();
+        coverage.add(receipt.evidence_kind);
+        surfaceCoverage.set(criterion, coverage);
+      }
     }
   }
   for (const criterion of criteria) {
@@ -1052,7 +1221,16 @@ function evaluateEvidence(
       });
     else if (failed.has(criterion))
       reasons.push({ code: "failed", detail: `${criterion} has failed evidence at this head`, criterion });
-    else if (!passed.has(criterion))
+    else if ((requiredKinds.get(criterion)?.size ?? 0) > 0) {
+      for (const kind of requiredKinds.get(criterion) ?? []) {
+        if (surfaceCoverage.get(criterion)?.has(kind)) continue;
+        reasons.push({
+          code: "surface-evidence",
+          detail: `criterion ${criterion} requires ${surfaces.get(criterion) ?? "none"} evidence ${kind}, but no current receipt at ${short(head)} carries that evidence kind`,
+          criterion,
+        });
+      }
+    } else if (!passed.has(criterion))
       reasons.push({ code: "uncovered", detail: `${criterion} has no passed evidence at this head`, criterion });
   }
   return { outcome: reasons.length === 0 ? "allowed" : "refused", reasons, refs };
@@ -1152,7 +1330,13 @@ export function checkGates(a: CheckArgs): CheckResult {
     decided_at: (a.now ?? (() => new Date()))().toISOString(),
   };
   const decisionPath = writeDecision(a, decision);
-  for (const reason of judged.reasons) refusals.push(`refused: evidence ${reason.code}: ${reason.detail}`);
+  const directRefusal = new Set(["surface-evidence", "self-verification", "unattested-verifier"]);
+  for (const reason of judged.reasons)
+    refusals.push(
+      directRefusal.has(reason.code)
+        ? `refused: ${reason.detail}`
+        : `refused: evidence ${reason.code}: ${reason.detail}`,
+    );
   return {
     ok: outcome === "allowed",
     head,
@@ -1606,7 +1790,7 @@ export const LIFECYCLE_USAGE = [
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id>] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
@@ -1626,7 +1810,7 @@ export const LIFECYCLE_USAGE = [
 
 const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "dir", "project"],
-  record: ["gate", "receipt", "class", "author-kind", "host", "bypass", "task", "run", "dir", "project"],
+  record: ["gate", "receipt", "class", "author-kind", "host", "seat-id", "bypass", "task", "run", "dir", "project"],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
@@ -1859,9 +2043,18 @@ export function main(
     const classFlag = str("class");
     const authorKindFlag = str("author-kind");
     const host = str("host");
+    const seatId = str("seat-id");
     const identityMembers = [classFlag, authorKindFlag, host].filter((value) => value !== undefined).length;
     if (identityMembers !== 0 && identityMembers !== 3) {
       io.err("ak lifecycle record: --class, --author-kind, and --host must be supplied together");
+      return 2;
+    }
+    if (seatId !== undefined && identityMembers !== 3) {
+      io.err("ak lifecycle record: --seat-id requires --class, --author-kind, and --host");
+      return 2;
+    }
+    if (seatId !== undefined && !ARTIFACT_ID.test(seatId)) {
+      io.err("ak lifecycle record: --seat-id must be an artifact id");
       return 2;
     }
     const delegationClass = DELEGATION_CLASSES.find((known) => known === classFlag);
@@ -1890,7 +2083,11 @@ export function main(
         return 1;
       }
     }
-    const implementer = authorKind !== undefined && host !== undefined ? { author_kind: authorKind, host } : undefined;
+    let implementer: GateRecord["implementer"];
+    if (authorKind !== undefined && host !== undefined) {
+      implementer = { author_kind: authorKind, host };
+      if (seatId !== undefined) implementer.seat_id = seatId;
+    }
     const r = recordGate({
       dir,
       run,

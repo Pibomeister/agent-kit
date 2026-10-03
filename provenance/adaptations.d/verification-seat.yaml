@@ -1,0 +1,28 @@
+adaptations:
+  - path: AUTHORING.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L309-367
+    rationale: The stale closed-role census becomes an explicit declaration gate for the commissioned verifier role.
+  - path: roles/verifier/ROLE.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L95-182
+    rationale: The independent runtime evidence question, frozen packet, excluded lineage and artifact-only return become one non-entrypoint seat.
+  - path: references/verification-evidence/REFERENCE.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-256
+    rationale: Recipe semantics, surface evidence kinds, artifact representation and seat lineage become shared host-neutral vocabulary.
+  - path: schemas/verification.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L130-222
+    rationale: Receipts bind recipe, evidence kind, API response representation and verifier-seat lineage while legacy receipts remain valid.
+  - path: schemas/verification-recipe.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: The successful setup-through-cleanup path becomes a central host-neutral artifact and project declaration shape.
+  - path: adapters/claude-code/CONTRACT.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
+    rationale: Fresh host contexts remain useful but no longer claim attested independence.
+  - path: adapters/codex/CONTRACT.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
+    rationale: Native child sessions inherit the same host-unattested independence limit as the other shipped host.
+  - path: adapters/runner-contract/CONTRACT.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
+    rationale: The runner supplies independence fail-closed and excludes implementer, author, approver, recipe author and reused seats.
+  - path: tests/verification-schemas.test.ts
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
+    rationale: Schema tests exercise the new project, ticket, recipe and receipt records plus invalid evidence and response shapes.

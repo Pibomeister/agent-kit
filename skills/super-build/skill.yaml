@@ -99,8 +99,9 @@ outputs:
   - id: verification-receipts
     schema: verification
     summary: >-
-      One receipt per acceptance criterion, carrying the command or probe, exit status, output
-      digest, revision and environment identity, and naming the criteria it supports.
+      Implementer self-check receipts, labeled with the implementer seat and never counted by the
+      independent gate, plus the gate-eligible verifier receipts returned by super-verify with
+      recipe, evidence kind and distinct seat lineage.
   - id: ticket-check-result
     schema: finding
     summary: >-
@@ -131,6 +132,7 @@ constraints:
 
 references:
   - engineering-principles
+  - verification-evidence
 
 limits:
   fix-rounds: 5
@@ -142,6 +144,9 @@ budget:
     - fix-rounds
 
 hard_gates:
+  - A receipt created by the implementer, change author, spec approver or recipe author is self-check
+    evidence only and never substitutes for the verifier seat (ruling
+    `missing-supervisor-never-implementer`).
   - A ticket typed decision is never executed as implementation work and is never re-typed here to
     make it executable.
   - A finding graded smell, or carrying a null difficulty, is refused as an implementation ticket.

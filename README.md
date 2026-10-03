@@ -125,17 +125,18 @@ Shared phase logic, invoked by skills rather than by humans:
 `phase-operations` · `consensus-plan-gate` · `tdd` · `apply-findings` · `review-delta` ·
 `worktree-ownership` · `attach-pack` · `evidence-gate`
 
-### Roles (34)
+### Roles (35)
 
-4 core (`supervisor`, `implementer`, `reviewer-spec`, `reviewer-standards`) · 15 code-review ·
+5 core (`supervisor`, `implementer`, `verifier`, `reviewer-spec`, `reviewer-standards`) · 15 code-review ·
 7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 5 learn (`learn/pattern-maintainer`,
 `learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`).
 
-### References (7)
+### References (8)
 
 `codebase-design-vocabulary` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
-`tracker-of-record` · `delegation` · `structural-checks`. Loaded on demand, never exposed as slash
-commands. `structural-checks` is declared at `status: contract`; its body is not authored yet.
+`tracker-of-record` · `delegation` · `structural-checks` · `verification-evidence`. Loaded on demand,
+never exposed as slash commands. `structural-checks` is declared at `status: contract`; its body is
+not authored yet.
 
 ## What makes it self-checking
 

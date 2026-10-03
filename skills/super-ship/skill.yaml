@@ -77,6 +77,11 @@ inputs:
       Receipts bound to the shipped head. For an opened run the lifecycle check resolves them by
       content hash and binds them to the run, ticket, named check and environment; missing or
       mismatched evidence stops with needs-input. A v1 phase marker is history, not proof.
+  - id: acceptance-evidence-matrix
+    required: true
+    summary: >-
+      Criterion coverage with recipe references, required surface kinds, verifier-seat lineage and
+      evidence artifact digests. The pull-request payload links this matrix rather than summarizing it.
   - id: review-verdict
     schema: review
     required: true
@@ -105,8 +110,9 @@ outputs:
     schema: ship-evidence
     summary: >-
       A run artifact with envelope schema ship-evidence holding three parts. The pull-request
-      payload: title, description, linked ticket, the receipts and verdict it rests on, and the
-      branch it would be opened from; in dry-run the record holds this payload and the pre-flight
+      payload: title, description, linked ticket, recipe, acceptance-to-evidence matrix, evidence
+      artifact digests, the receipts and verdict it rests on, and the branch it would be opened
+      from; in dry-run the record holds this payload and the pre-flight
       record, and no remote effect. The pre-flight record: the sensitive-data scan, the
       dependency-audit triage and each project release check, with its outcome against this head and
       a reason wherever it did not run. The ship record: which remote effects were performed, the
@@ -138,6 +144,9 @@ constraints:
   lesson-draft-may-be-published-here: false
   project-artifact-may-be-written-to-a-repository-path: false
 
+references:
+  - verification-evidence
+
 limits:
   remote-effects-per-operation: 1
   sensitive-actions-without-charter: 0
@@ -162,6 +171,8 @@ hard_gates:
     trusted evidence, which is gate evidence the runner recorded into the run's evidence store outside
     the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
     evidence, and neither a grant nor a host permission makes them so.
+  - No ship begins with an uncovered criterion, an implementer-authored verifier receipt, a
+    host-unattested verifier in autonomous mode, or a missing project-declared surface evidence kind.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
     dry run.
   - Every remote effect carries an idempotency key derived from the run id, the operation id, the

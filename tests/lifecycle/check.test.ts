@@ -7,7 +7,7 @@ import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
 import { loadCatalog } from "../../src/catalog/load.ts";
@@ -87,7 +87,19 @@ const record = (cwd: string, ...gates: Gate[]) => {
   }
 };
 
-function ticket(cwd: string, id: string): string {
+interface TicketOverrides {
+  acceptance_criteria: readonly { id: string; text: string; surface: "frontend" | "backend" | "none" }[];
+  verification: readonly {
+    id: string;
+    check: string;
+    kind: "command" | "probe" | "manual";
+    supports: readonly string[];
+    recipe: { id: string; hash: string };
+    evidence_required: readonly string[];
+  }[];
+}
+
+function ticket(cwd: string, id: string, overrides?: TicketOverrides): string {
   const path = join(cwd, `${id}.json`);
   writeFileSync(
     path,
@@ -95,21 +107,43 @@ function ticket(cwd: string, id: string): string {
       schema: "ticket",
       schema_version: 1,
       id,
-      acceptance_criteria: [{ id: "AC-1", text: "The behavior is verified." }],
-      verification: [{ id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] }],
+      acceptance_criteria: overrides?.acceptance_criteria ?? [{ id: "AC-1", text: "The behavior is verified." }],
+      verification: overrides?.verification ?? [
+        { id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] },
+      ],
       approvals: [{ role: "human", approved_at: "2026-09-29T00:00:00Z" }],
     })}\n`,
   );
   return path;
 }
 
-function receipt(cwd: string, run: string, ticketPath: string, extra: Record<string, unknown> = {}): string {
+interface AdditionalArtifact {
+  name: string;
+  contents: string;
+  kind: string;
+}
+
+function receipt(
+  cwd: string,
+  run: string,
+  ticketPath: string,
+  extra: Record<string, unknown> = {},
+  additionalArtifacts: readonly AdditionalArtifact[] = [],
+): string {
   const snapshot = takeSnapshot(cwd);
   if (typeof snapshot === "string") throw new Error(snapshot);
   const receiptDir = mkdtempSync(join(tmpdir(), "ak-receipt-"));
   const outputPath = join(receiptDir, "verification-output.log");
   writeFileSync(outputPath, "1 pass, 0 fail\n");
   const outputDigest = `sha256:${createHash("sha256").update(readFileSync(outputPath)).digest("hex")}`;
+  const added = additionalArtifacts.map((artifact) => {
+    writeFileSync(join(receiptDir, artifact.name), artifact.contents);
+    return {
+      path: artifact.name,
+      digest: `sha256:${createHash("sha256").update(artifact.contents).digest("hex")}`,
+      kind: artifact.kind,
+    };
+  });
   const doc = {
     schema: "verification",
     schema_version: 1,
@@ -125,7 +159,7 @@ function receipt(cwd: string, run: string, ticketPath: string, extra: Record<str
     command: { argv: ["bun", "test"] },
     exit_status: 0,
     output_digest: outputDigest,
-    artifacts: [{ path: "verification-output.log", digest: outputDigest, kind: "log" }],
+    artifacts: [{ path: "verification-output.log", digest: outputDigest, kind: "log" }, ...added],
     environment: { id: "test", isolated: true, secrets_policy: "none" },
     supports: ["AC-1"],
     check: "project-check",
@@ -139,6 +173,13 @@ function receipt(cwd: string, run: string, ticketPath: string, extra: Record<str
   const path = join(receiptDir, `${doc.id}.json`);
   writeFileSync(path, `${JSON.stringify(doc, null, 2)}\n`);
   return path;
+}
+
+function openedRun(cwd: string, ticketPath: string): string {
+  const line = ak(cwd, "open", "--ticket", ticketPath).out[0];
+  const run = line?.match(/^opened run (.+)$/)?.[1];
+  if (run === undefined) throw new Error(`open did not return a run id: ${String(line)}`);
+  return run;
 }
 
 function open(cwd: string, id: string): string {
@@ -181,6 +222,205 @@ const pointerPath = (cwd: string, branch: string): string =>
   );
 
 describe("ak lifecycle check, standalone", () => {
+  test("a described-green claim without execution evidence is refused", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "described-green");
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const claimed = receipt(dir, run, ticketPath, {
+      notes: "The suite was green.",
+      output_digest: undefined,
+      artifacts: undefined,
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", claimed).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("output_digest is required for a check that ran");
+  });
+
+  test("a verifier seat that is also the building seat is refused", () => {
+    const dir = repo();
+    const recipeHash = `sha256:${"a".repeat(64)}`;
+    const ticketPath = ticket(dir, "self-verification", {
+      acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Exercise the running service.",
+          kind: "command",
+          supports: ["AC-1"],
+          recipe: { id: "service-runtime", hash: recipeHash },
+          evidence_required: ["smoke-test"],
+        },
+      ],
+    });
+    const run = openedRun(dir, ticketPath);
+    expect(
+      ak(
+        dir,
+        "record",
+        "--gate",
+        "build-checks",
+        "--class",
+        "green",
+        "--author-kind",
+        "agent",
+        "--host",
+        "codex",
+        "--seat-id",
+        "build-1",
+      ).code,
+    ).toBe(0);
+    record(dir, "review-full", "review-readiness");
+    const sameSeat = receipt(dir, run, ticketPath, {
+      created_by: { role: "verifier" },
+      recipe: { id: "service-runtime", hash: recipeHash },
+      evidence_kind: "smoke-test",
+      verifier_seat: {
+        id: "build-1",
+        implementer_seat: "build-1",
+        isolation: "runner-attested",
+        attestation: { id: "seat-build-1", hash: `sha256:${"b".repeat(64)}` },
+      },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", sameSeat).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(
+      "refused: receipt " +
+        basename(sameSeat, ".json") +
+        " was produced by implementer seat build-1; an independent verifier seat is required",
+    );
+  });
+
+  test("a changed recipe digest and a host-unattested verifier are each refused", () => {
+    for (const variant of ["changed-recipe", "host-unattested"] as const) {
+      const dir = repo();
+      const recipeHash = `sha256:${"1".repeat(64)}`;
+      const ticketPath = ticket(dir, variant, {
+        acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
+        verification: [
+          {
+            id: "project-check",
+            check: "Exercise the running service.",
+            kind: "command",
+            supports: ["AC-1"],
+            recipe: { id: "service-runtime", hash: recipeHash },
+            evidence_required: ["smoke-test"],
+          },
+        ],
+      });
+      const run = openedRun(dir, ticketPath);
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const receiptPath = receipt(dir, run, ticketPath, {
+        created_by: { role: "verifier" },
+        recipe: {
+          id: "service-runtime",
+          hash: variant === "changed-recipe" ? `sha256:${"2".repeat(64)}` : recipeHash,
+        },
+        evidence_kind: "smoke-test",
+        verifier_seat: {
+          id: "verify-3",
+          implementer_seat: "build-1",
+          isolation: variant === "host-unattested" ? "host-unattested" : "runner-attested",
+          attestation: variant === "host-unattested" ? null : { id: "seat-verify-3", hash: `sha256:${"3".repeat(64)}` },
+        },
+      });
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+      const checked = ak(dir, "check");
+      expect(checked.code).toBe(1);
+      if (variant === "changed-recipe") {
+        expect(checked.err).toContain("refused: evidence recipe-mismatch");
+      } else {
+        expect(checked.err).toContain(
+          "refused: verifier seat verify-3 is host-unattested; autonomous ship requires a runner attestation",
+        );
+      }
+    }
+  });
+
+  test("a generic passing log does not cover a required screenshot", () => {
+    const dir = repo();
+    const recipeHash = `sha256:${"c".repeat(64)}`;
+    const ticketPath = ticket(dir, "missing-screenshot", {
+      acceptance_criteria: [{ id: "AC-1", text: "The settings route renders.", surface: "frontend" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Drive the settings route.",
+          kind: "probe",
+          supports: ["AC-1"],
+          recipe: { id: "settings-runtime", hash: recipeHash },
+          evidence_required: ["rendered-screenshot"],
+        },
+      ],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const logOnly = receipt(dir, run, ticketPath, {
+      created_by: { role: "verifier" },
+      recipe: { id: "settings-runtime", hash: recipeHash },
+      evidence_kind: "log",
+      verifier_seat: {
+        id: "verify-1",
+        implementer_seat: "build-1",
+        isolation: "runner-attested",
+        attestation: { id: "seat-verify-1", hash: `sha256:${"d".repeat(64)}` },
+      },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", logOnly).code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(
+      `refused: criterion AC-1 requires frontend evidence rendered-screenshot, but no current receipt at`,
+    );
+  });
+
+  test("every declared artifact is copied and re-hashed", () => {
+    const dir = repo();
+    const recipeHash = `sha256:${"e".repeat(64)}`;
+    const ticketPath = ticket(dir, "trace-artifact", {
+      acceptance_criteria: [{ id: "AC-1", text: "The request trace completes.", surface: "backend" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Trace the running request.",
+          kind: "probe",
+          supports: ["AC-1"],
+          recipe: { id: "trace-runtime", hash: recipeHash },
+          evidence_required: ["trace"],
+        },
+      ],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const traceContents = "trace event\n";
+    const traced = receipt(
+      dir,
+      run,
+      ticketPath,
+      {
+        created_by: { role: "verifier" },
+        recipe: { id: "trace-runtime", hash: recipeHash },
+        evidence_kind: "trace",
+        verifier_seat: {
+          id: "verify-2",
+          implementer_seat: "build-1",
+          isolation: "runner-attested",
+          attestation: { id: "seat-verify-2", hash: `sha256:${"f".repeat(64)}` },
+        },
+      },
+      [{ name: "request.trace", contents: traceContents, kind: "trace" }],
+    );
+    const traceDigest = `sha256:${createHash("sha256").update(traceContents).digest("hex")}`;
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", traced).code).toBe(0);
+    expect(ak(dir, "check").code).toBe(0);
+    const stored = join(defaultEvidenceDir(dir), run, "artifacts", traceDigest.replace(/^sha256:/, ""));
+    writeFileSync(stored, "tampered\n");
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("evidence artifact-missing");
+  });
   test("a gate record carries delegation class and implementer author kind plus host", () => {
     const dir = repo();
     const recorded = ak(

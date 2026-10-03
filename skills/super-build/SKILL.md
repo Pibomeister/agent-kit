@@ -130,10 +130,14 @@ absence is recorded (`policies/limits.yaml`).
 11. At the round cap, adjudicate every finding still open, one at a time: park it with a written
     ruling naming why the code stands and what it costs if that is wrong, or rule it load-bearing and
     stop. A silent discard is forbidden.
-12. Run the ticket's named verification and collect the receipts, commit the work on the ticket's own
-    branch, then publish the receipts and the ticket result through the knowledgebase adapter's
-    `publishArtifact` operation with a run-artifact placement. Report the ticket with every written
-    ruling and every out-of-scope observation collected into the report.
+12. Load [verification evidence](../../references/verification-evidence/REFERENCE.md), run the
+    ticket's named checks as implementer self-checks and record each receipt with
+    `created_by.role: implementer` and the implementer seat id. They are self-check evidence and
+    never satisfy the independent verify gate. Hand the claim, criteria, frozen revision, project
+    recipe and permitted commands to `super-verify`; its verifier seat reruns them and produces
+    gate-eligible receipts. Commit the work on the ticket's own branch, then publish the receipts and
+    ticket result through the knowledgebase adapter's `publishArtifact` operation. Report every
+    written ruling and out-of-scope observation.
 13. When both check seats pass, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate build-checks`
     (the bundle's `bin/`, two directories above this skill). super-ship refuses to ship without it.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
@@ -149,6 +153,11 @@ Gate: a finding graded `smell`, or carrying `difficulty: null`, is refused as an
 ticket (`schemas/finding.schema.json`); the shared rule for applying a finding at all is
 `protocols/apply-findings/PROTOCOL.md`. Difficulty without a solution class is not a specification,
 and a re-grading performed by the lane that wants to execute it is the refusal being routed around.
+
+Gate: a receipt created by the implementer, change author, spec approver or recipe author is
+self-check evidence only. It never fills or substitutes for the verifier seat, even when its command
+and output are identical to the later independent run (ruling
+`missing-supervisor-never-implementer`).
 
 Gate: neither check seat emits `autofix_class: safe_auto`. At review time a code edit has no single
 mechanically correct answer, so a seat's classification is a proposal and applying it is the caller's

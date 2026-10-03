@@ -2,6 +2,12 @@
 # Write surface: provenance/adaptations.d/<batch>.yaml, one fragment per batch.
 # Each adapted file is recorded here with an exact donor@commit:path or anchored local: source.
 adaptations:
+  - path: adapters/claude-code/CONTRACT.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
+    rationale: Fresh host contexts remain useful but no longer claim attested independence.
+  - path: adapters/codex/CONTRACT.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
+    rationale: Native child sessions inherit the same host-unattested independence limit as the other shipped host.
   - path: adapters/observation-source/claude-mem/code--review-learning.json
     source: claude-mem@02cd0c9c47e38a849e764477290c571e84dfa043:plugin/modes/code.json
     rationale: "Changed: two observation types (review-finding, review-resolution) and one concept (recurrence) are added to the code mode, with prompt text telling the observer to record a reviewer's finding and its resolution as first-class observations. Named review products and named review skills in the added text are replaced by generic descriptions. The code mode's existing types and concepts are kept as they are."
@@ -11,6 +17,12 @@ adaptations:
   - path: adapters/observation-source/CONTRACT.md
     source: claude-mem@02cd0c9c47e38a849e764477290c571e84dfa043:src/services/sqlite/tool-uses.ts
     rationale: "Changed: the tool-use table is restated as two optional read operations, editedFiles and toolUseCwds, with the contract's behaviour when an observer cannot answer them. No code is copied."
+  - path: adapters/runner-contract/CONTRACT.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
+    rationale: The runner supplies independence fail-closed and excludes implementer, author, approver, recipe author and reused seats.
+  - path: AUTHORING.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L309-367
+    rationale: The stale closed-role census becomes an explicit declaration gate for the commissioned verifier role.
   - path: catalog.yaml
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The report's evidenced factors and four-class rubric define the delegation reference entry without importing its sample cut points as package-wide gates.
@@ -293,6 +305,9 @@ adaptations:
   - path: references/prose-quality/REFERENCE.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-noslop/SKILL.md
     rationale: "The done condition, the never-touch boundaries, the three modes with their default selection, the three registers and the seven tests are adapted. The artifact register stays the default, as in the donor, and is named as the one most of this package's output uses; output delivered in-session to a person defers to the loading skill's contract. The donor's frontmatter, its mode-token argument contract and its in-place file write are not carried: a prose pass here returns text to the loading skill, which publishes project-derived documents through its own knowledgebase operation (ruling `central-kb-owns-project-artifacts`)."
+  - path: references/verification-evidence/REFERENCE.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-256
+    rationale: Recipe semantics, surface evidence kinds, artifact representation and seat lineage become shared host-neutral vocabulary.
   - path: research/sources/engineering-skills-repo-plan.md
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: Release scenario 25 carries the report's rule that sensitive surfaces override a routine-looking change.
@@ -416,9 +431,15 @@ adaptations:
   - path: roles/reviewer-standards/ROLE.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/subagent-driven-development/task-reviewer-prompt.md
     rationale: Code-quality half of the same reviewer template.
+  - path: roles/verifier/ROLE.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L95-182
+    rationale: The independent runtime evidence question, frozen packet, excluded lineage and artifact-only return become one non-entrypoint seat.
   - path: schemas/common.schema.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: Money calculation, movement and reconciliation changes became one explicit sensitive action in the shared authorization vocabulary.
+  - path: schemas/common.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-256
+    rationale: The shared vocabulary gains surfaces, runtime evidence kinds and the recipe artifact id.
   - path: schemas/project.schema.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The sample weights and cut points became explicitly advisory, project-calibrated delegation guidance.
@@ -428,6 +449,9 @@ adaptations:
   - path: schemas/project.schema.json
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L23-45
     rationale: Diff-scoped complexity, duplication, dead-code and boundary checks became project command declarations whose receipts are evidence.
+  - path: schemas/project.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: Projects declare content-addressed runtime facilities instead of lifecycle bodies inventing them.
   - path: schemas/review-event.schema.json
     source: claude-reflect@2c892cab8fe1285d8116216ec18b6b7b44bcd394:scripts/lib/reflect_utils.py
     rationale: The correction record's shape (message, sentiment, timestamp) is adapted into the correction kind of review event, which shares one schema with review findings and resolutions. The donor's confidence score is kept as an optional field and never read as a gate.
@@ -437,6 +461,15 @@ adaptations:
   - path: schemas/ticket.schema.json
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-136
     rationale: The report's six readiness criteria and resolved-assumption procedure became per-criterion evidence and assumption records on tickets.
+  - path: schemas/ticket.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: Criteria name their surface and checks bind recipe hashes to required evidence kinds.
+  - path: schemas/verification-recipe.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: The successful setup-through-cleanup path becomes a central host-neutral artifact and project declaration shape.
+  - path: schemas/verification.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L130-222
+    rationale: Receipts bind recipe, evidence kind, API response representation and verifier-seat lineage while legacy receipts remain valid.
   - path: skills/autopilot/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/lfg/SKILL.md
     rationale: "Carried: nothing is implemented without a work source verified this run, a stop names why, and a stop leaves nothing pushed that was not already pushed. Not carried: proceeding without waiting on reversible work, or a single driver pipeline beside the lifecycle."
@@ -909,6 +942,9 @@ adaptations:
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-brainstorm/references/phase-0.md
     rationale: The coherent-work gate and the classification of a request as bounded, standard or architectural before any round opens. The donor's configured artifact root is dropped because the knowledgebase resolves location.
   - path: skills/super-align/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L446-455
+    rationale: Product success names an observable surface and declared evidence kind without naming a tool.
+  - path: skills/super-align/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/productivity/grilling/SKILL.md
     rationale: The round-based questioning loop, one question at a time, and the refusal to proceed on an answer the questioner supplied. The donor's standalone framing becomes this skill's alignment phase.
   - path: skills/super-align/SKILL.md
@@ -920,6 +956,9 @@ adaptations:
   - path: skills/super-align/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-brainstorm/references/phase-0.md
     rationale: The prerequisites and the classification input the coherent-work gate reads.
+  - path: skills/super-align/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L446-455
+    rationale: The execution contract mirrors the observable-success vocabulary and reference dependency.
   - path: skills/super-align/skill.yaml
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/productivity/grilling/SKILL.md
     rationale: The trigger conditions that open a round and the non-trigger for a request that is already specific, stated as declarations.
@@ -942,6 +981,9 @@ adaptations:
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L138-150
     rationale: The reversible stack order became the slicing sequence, with schema contract isolated as its own ticket and numeric size guidance left advisory.
   - path: skills/super-bound/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L456-474
+    rationale: Bounding selects project-declared recipes and evidence kinds for each surfaced criterion.
+  - path: skills/super-bound/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-spec/SKILL.md
     rationale: The decision-level specification sections, the seams-first rule and the carve-out that admits a prototype-settled fragment. Section names are aligned to this package's acceptance and verification vocabulary and the donor's file write becomes a knowledgebase publish.
   - path: skills/super-bound/SKILL.md
@@ -963,6 +1005,9 @@ adaptations:
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L102-150
     rationale: The execution contract mirrors the body's readiness, assumption and ordered-stack obligations without reproducing their shared rubric.
   - path: skills/super-bound/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L456-474
+    rationale: Ticket outputs mirror recipe hashes, surfaces and evidence requirements.
+  - path: skills/super-bound/skill.yaml
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-spec/SKILL.md
     rationale: The trigger conditions for an approved direction that needs a specification, and the gate that keeps the specification decision-level.
   - path: skills/super-bound/skill.yaml
@@ -978,6 +1023,9 @@ adaptations:
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-work/references/execution-strategy.md
     rationale: "Parallel dispatch is adapted from the donor's parallel-safety check: declared files, shared types and interfaces, migrations, generated artifacts and runtime singletons are read before two tickets with no dependency edge run together, uncertainty is resolved by inspection rather than by default, contention that survives inspection serializes exactly the contending pair, and a workspace change no worker accounts for is preserved for reconciliation rather than discarded. The donor's concurrency batch size is carried as guidance without a number this skill would gate on."
   - path: skills/super-build/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L475-496
+    rationale: Implementer checks become explicitly self-check evidence before independent verification reruns the frozen packet.
+  - path: skills/super-build/SKILL.md
     source: omc@5281b19e0d64f8e6dc6767f2130299a88af2dc71:skills/execute/SKILL.md
     rationale: "Two boundary statements are adapted as gates: unfinished markers and stubbed or skipped tests are blockers rather than progress, and authoring and approval are separate passes so the lane that produced the work never approves it. research/dossiers/build.md names this donor as independent corroboration rather than the primary mechanism, and it is carried that way — the structural reason self-approval fails is the fresh-context requirement adapted above."
   - path: skills/super-build/SKILL.md
@@ -989,6 +1037,9 @@ adaptations:
   - path: skills/super-build/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-work/references/execution-strategy.md
     rationale: The donor's contention surfaces become the ready-set input and the constraint that edgeless tickets may not be assumed independent, and its shared-workspace wave contract becomes the constraint that an unaccounted workspace change is never discarded.
+  - path: skills/super-build/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L475-496
+    rationale: The contract separates self-check receipts from gate-eligible verifier receipts.
   - path: skills/super-build/skill.yaml
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/code-review/SKILL.md
     rationale: "The two-axis split becomes the declared per-ticket check result: findings from each axis with their disposition, emitted as findings rather than as a review artifact, so a later panel never reads a task check as a lane it no longer has to cover."
@@ -1025,9 +1076,15 @@ adaptations:
   - path: skills/super-review/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-code-review/SKILL.md
     rationale: "The donor's pre-PR discovery pass is the shape of pass 1: an immutable snapshot, a panel of seats over it, and a synthesis that does not re-judge what a seat returned. Reviewers cannot edit is kept as a boundary rather than a convention."
+  - path: skills/super-review/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L550-558
+    rationale: Readiness consumes seat and surface coverage without manufacturing missing verification evidence.
   - path: skills/super-review/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-code-review/SKILL.md
     rationale: The declaration's triggers, non-triggers and hard gates condense the same donor text the body adapts, expressed as the machine-checkable contract rather than as prose.
+  - path: skills/super-review/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L550-558
+    rationale: The readiness contract mirrors verifier-lineage and evidence-kind inputs.
   - path: skills/super-review/skill.yaml
     source: omx@cb955b0d5becbef76d2c1f0096b6e1f238e1e7f7:skills/code-review/SKILL.md
     rationale: The donor's two-lane fail-closed review supplies the delta entrypoint's lane pair and the rule that a dirty review may bounce back to planning rather than looping on the last patch.
@@ -1056,11 +1113,17 @@ adaptations:
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-commit-push-pr/SKILL.md
     rationale: The donor's open-pull-request detection contract, its refusal to stage in bulk and its description-only mode are carried as the unknown-is-never-none gate, the named-path staging rule and the generalized dry-run mode.
   - path: skills/super-ship/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L559-568
+    rationale: Ship checks criterion, seat and evidence-kind coverage before preflight and links the recipe, matrix and evidence digests.
+  - path: skills/super-ship/SKILL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/finishing-a-development-branch/SKILL.md
     rationale: The donor's rule that the gate is passed before anything is offered becomes the precondition on receipts and verdict, and its rationalization rows are the basis of this body's table.
   - path: skills/super-ship/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-commit-push-pr/SKILL.md
     rationale: The declaration's triggers, non-triggers, hard gates and limits condense the donor's publication contract into the machine-checkable form, including the mode input that replaces the donor's in-run choice.
+  - path: skills/super-ship/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L559-568
+    rationale: The ship contract mirrors the stronger input predicate and pull-request payload.
   - path: skills/super-ship/skill.yaml
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/finishing-a-development-branch/SKILL.md
     rationale: The donor's completion gate is the declared prerequisite pair — receipts and a verdict bound to the shipped head — and its refusal to offer a finish without them is the needs-input outcome.
@@ -1068,11 +1131,17 @@ adaptations:
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/test-driven-development/SKILL.md
     rationale: The donor's discover-the-stack-first rule becomes the gate that this skill runs the project's own commands rather than an ecosystem default, since the command field on a receipt is only meaningful when it names the command the project actually uses. The donor's red-green-refactor cycle is not carried here; it belongs to the test-first protocol the build lane names.
   - path: skills/super-verify/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L497-549
+    rationale: Verification resolves or discovers a recipe, seats the verifier, drives runnable surfaces and returns artifacts without prose approval.
+  - path: skills/super-verify/SKILL.md
     source: omc@5281b19e0d64f8e6dc6767f2130299a88af2dc71:skills/verify/SKILL.md
     rationale: "Two specifics are adapted, as research/dossiers/build.md directs: the verification order — existing tests, then type check and build, then narrow direct commands, then manual validation — becomes the command-discovery step, and the donor's rule that an absent verification path is stated explicitly rather than bluffed becomes the recorded not-applicable and inconclusive outcomes with their mandatory reason."
   - path: skills/super-verify/SKILL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/verification-before-completion/SKILL.md
     rationale: "The donor's five-step gate becomes this body's workflow spine, as research/dossiers/build.md directs: identify the command that would prove the claim, run it fresh and complete, read the whole output and the exit status, confirm the claim against what the output shows, and claim only what the evidence supports. The donor's common-failures table becomes the anti-rationalization rows, and its rule that skipping a step is lying rather than verifying is carried as the freshness gate and bound to the receipt's revision field, which is what makes staleness checkable rather than remembered."
+  - path: skills/super-verify/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L497-549
+    rationale: The autonomous contract requires independent context and trusted evidence supplied fail-closed by the runner.
   - path: skills/super-verify/skill.yaml
     source: omc@5281b19e0d64f8e6dc6767f2130299a88af2dc71:skills/verify/SKILL.md
     rationale: The donor's honest-failure rule becomes the declared stop condition that a run whose checks all failed is complete, and the constraint that a criterion is never omitted from the matrix.
@@ -1199,6 +1268,9 @@ adaptations:
   - path: src/lifecycle/gate.ts
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
     rationale: The report's author-kind observation became model-free implementer authorship plus the host adapter on a gate record.
+  - path: src/lifecycle/gate.ts
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
+    rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
   - path: templates/charter.amendment.example.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: The amended charter fixture retains the protected money-movement action in its denied set.
@@ -1256,3 +1328,9 @@ adaptations:
   - path: tests/lifecycle/check.test.ts
     source: local:slop-avoidance-agent-prs@sha256:6930d04f3bf49b31f543a9afec9c33feb42961e257d8f9a05c0044f9728a112b#L92-98
     rationale: The lifecycle test proves gate records persist author kind and host without naming a model.
+  - path: tests/lifecycle/check.test.ts
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
+    rationale: Lifecycle tests exercise prose-only green claims, self-verification, stale recipes, missing kinds, unattested seats and artifact tampering.
+  - path: tests/verification-schemas.test.ts
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
+    rationale: Schema tests exercise the new project, ticket, recipe and receipt records plus invalid evidence and response shapes.
