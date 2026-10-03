@@ -295,6 +295,17 @@ describe("grok", () => {
     expect(denies(embedded)).toBe(true);
   });
 
+  test("the A1 compound inspection sends unmatched git -C segments through an explicit refusal", () => {
+    const command =
+      "command -v ak; command -v node; ls /scratch/grok-home/skills/doc-review; ls /scratch/eval; git -C /scratch/eval/repo status --short; git -C /scratch/eval/repo log --oneline -5; git -C /scratch/eval/repo rev-parse HEAD";
+    const segments = command.split("; ");
+
+    expect(readOnlyShell(command)).toBe(true);
+    expect(rewriteAssignmentReadChain(command)).toBeNull();
+    expect(segments.slice(0, 4).every((segment) => admits(segment))).toBe(true);
+    expect(segments.slice(4).every((segment) => !admits(segment) && denies(segment))).toBe(true);
+  });
+
   test("the mediator turns an assignment read chain into literal commands the rules admit, and the session is valid", () => {
     const discovery =
       'SESSION="/scratch/sessions/s1"; find "$SESSION" -maxdepth 3 -type d; echo \'=== FILES ===\'; find "$SESSION" -maxdepth 3 -type f -not -path \'*/terminal/*\' | head -80';
