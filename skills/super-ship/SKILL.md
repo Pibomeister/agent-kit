@@ -128,7 +128,7 @@ The project's own release checks, discovered rather than assumed.
    [verification evidence](../../references/verification-evidence/REFERENCE.md). Where the build
    gate records an implementer seat, independent verification is declared available: every counted
    receipt, `surface: none` included, must name a runner-attested verifier seat distinct from it.
-   Without that record, only checks bound to a recipe need one. Where the ticket marks `frontend` or
+   Without that record the ship is guided: only recipe-bound checks need a verifier seat, and a `host-unattested` one counts as worker-attested evidence; report the gate's note, never promote it. Where the ticket marks `frontend` or
    `backend`, require a check declaring `evidence_required`, every declared kind, and re-hash its
    artifacts. Refuse before preflight with
    `refused: criterion <id> requires <surface> evidence <kind>, but no current receipt at
@@ -185,7 +185,7 @@ worker's reach. Gate records the worker itself wrote are worker-attested, not tr
 neither a grant nor a host permission makes them so.
 
 Gate: no ship begins with an uncovered criterion, an implementer-authored receipt where independent
-verification is declared or a recipe binds the check, an unattested verifier in autonomous mode, or a missing project-declared surface evidence kind. The run
+verification is declared or a recipe binds the check, a host-unattested verifier where the build gate records an implementer seat, or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
 Gate: `dry-run` makes no remote call. Not a reduced one, not a single harmless one — none. A run that

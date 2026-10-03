@@ -293,8 +293,8 @@ describe("ak lifecycle check, standalone", () => {
     );
   });
 
-  test("a changed recipe digest and a host-unattested verifier are each refused", () => {
-    for (const variant of ["changed-recipe", "host-unattested"] as const) {
+  test("a changed recipe digest is refused, and a host-unattested verifier only once the build gate records a seat", () => {
+    for (const variant of ["changed-recipe", "host-unattested", "guided"] as const) {
       const dir = repo();
       const recipeHash = `sha256:${"1".repeat(64)}`;
       const ticketPath = ticket(dir, variant, {
@@ -311,7 +311,12 @@ describe("ak lifecycle check, standalone", () => {
         ],
       });
       const run = openedRun(dir, ticketPath);
-      record(dir, "build-checks", "review-full", "review-readiness");
+      const seatFlags =
+        variant === "host-unattested"
+          ? ["--class", "green", "--author-kind", "agent", "--host", "codex", "--seat-id", "build-1"]
+          : [];
+      expect(ak(dir, "record", "--gate", "build-checks", ...seatFlags).code).toBe(0);
+      record(dir, "review-full", "review-readiness");
       const receiptPath = receipt(dir, run, ticketPath, {
         created_by: { role: "verifier" },
         recipe: {
@@ -322,12 +327,23 @@ describe("ak lifecycle check, standalone", () => {
         verifier_seat: {
           id: "verify-3",
           implementer_seat: "build-1",
-          isolation: variant === "host-unattested" ? "host-unattested" : "runner-attested",
-          attestation: variant === "host-unattested" ? null : { id: "seat-verify-3", hash: `sha256:${"3".repeat(64)}` },
+          isolation: variant === "changed-recipe" ? "runner-attested" : "host-unattested",
+          attestation: variant === "changed-recipe" ? { id: "seat-verify-3", hash: `sha256:${"3".repeat(64)}` } : null,
         },
       });
       expect(ak(dir, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
       const checked = ak(dir, "check");
+      if (variant === "guided") {
+        expect(checked.code).toBe(0);
+        expect(checked.err).toContain(
+          `note: verifier seat verify-3 on receipt ${basename(receiptPath, ".json")} is host-unattested: worker-attested evidence, counted for guided ship only`,
+        );
+        expect(JSON.parse(ak(dir, "check", "--json").out.join("\n"))).toMatchObject({
+          outcome: "allowed",
+          trust: "worker-attested",
+        });
+        continue;
+      }
       expect(checked.code).toBe(1);
       if (variant === "changed-recipe") {
         expect(checked.err).toContain("refused: evidence recipe-mismatch");

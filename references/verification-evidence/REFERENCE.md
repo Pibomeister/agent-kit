@@ -59,7 +59,9 @@ The verifier seat record names its id, the implementer seat, and one isolation s
 - `runner-attested`: the runner recorded distinct context and excluded lineage outside the worker's
   writable scope. This is eligible for autonomous closure.
 - `host-unattested`: the host created a fresh context but cannot attest what it saw or its lineage.
-  This remains useful guided evidence and never claims autonomous independence.
+  This remains useful guided evidence and never claims autonomous independence. The gate counts it
+  for a guided or manual ship with a visible note, as worker-attested evidence, and refuses it once
+  the build gate records the implementer seat. It is never relabeled `runner-attested`.
 
 The local lifecycle gate checks the attestation's shape only: an id and hash are present and the
 seat ids differ. It does not resolve the attestation, and it cannot tell a runner-written record from

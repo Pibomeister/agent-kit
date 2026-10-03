@@ -963,6 +963,7 @@ function recordPath(dir: string, run: string, record: GateRecord): string {
 function evaluateEvidence(
   a: CheckArgs,
   head: Snapshot,
+  notes: string[],
 ): { outcome: DecisionRecord["outcome"]; reasons: DecisionReason[]; refs: ArtifactRef[] } {
   const run = readRunRecord(a.dir, a.run);
   if (run === undefined)
@@ -1175,12 +1176,17 @@ function evaluateEvidence(
           evidence: ref.id,
         });
       }
-      if (seat?.isolation !== "runner-attested") {
-        reasons.push({
-          code: "unattested-verifier",
-          detail: `verifier seat ${String(seatId)} is host-unattested; autonomous ship requires a runner attestation`,
-          evidence: ref.id,
-        });
+      if (seatId !== undefined && seat?.isolation !== "runner-attested") {
+        if (buildSeats.size > 0)
+          reasons.push({
+            code: "unattested-verifier",
+            detail: `verifier seat ${seatId} is host-unattested; autonomous ship requires a runner attestation`,
+            evidence: ref.id,
+          });
+        else
+          notes.push(
+            `note: verifier seat ${seatId} on receipt ${ref.id} is host-unattested: worker-attested evidence, counted for guided ship only`,
+          );
       }
     }
     for (const artifact of (Array.isArray(receipt.artifacts) ? receipt.artifacts : []).map(object)) {
@@ -1318,7 +1324,7 @@ export function checkGates(a: CheckArgs): CheckResult {
   const strengthened = a.evidence === true || readRunRecord(a.dir, a.run) !== undefined;
   if (!strengthened) return { ok: refusals.length === 0, head, refusals, notes: refusals.length === 0 ? notes : [] };
 
-  const judged = evaluateEvidence(a, head);
+  const judged = evaluateEvidence(a, head, notes);
   const phaseReasons: DecisionReason[] = refusals.map((detail) => ({ code: "phase", detail }));
   for (const gate of PRE_SHIP_GATES) {
     if (!a.gates.includes(gate)) {

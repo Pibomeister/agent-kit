@@ -153,8 +153,8 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
     [verification evidence](../../references/verification-evidence/REFERENCE.md), then, where the build
     gate records an implementer seat, require each criterion's current receipt to name a
     runner-attested verifier seat distinct from it (without that record, only recipe-bound checks
-    need one). Each `frontend` or `backend` criterion needs a supporting check that declares
-    `evidence_required`, and receipts carrying every declared kind. A missing seat attestation, a
+    need one, and a `host-unattested` seat counts as guided, worker-attested evidence to disclose). Each `frontend` or `backend` criterion needs a supporting check that declares
+    `evidence_required`, and receipts carrying every declared kind. A missing required attestation, a
     missing declaration or a missing kind makes the verification lane `unavailable`; name the gap.
 11. Set the verdict from the lane results: `approved`, `changes-requested`, `blocked` or
     `unavailable`. Emit the review and its findings, and report what is still open.
