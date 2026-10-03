@@ -376,7 +376,7 @@ describe("ak lifecycle check, standalone", () => {
     );
   });
 
-  test("surface evidence filed under a check that does not require it is seat-checked and does not cover", () => {
+  test("surface evidence filed under a check that does not require it does not cover", () => {
     const dir = repo();
     const recipeHash = `sha256:${"4".repeat(64)}`;
     const ticketPath = ticket(dir, "borrowed-surface", {
@@ -426,10 +426,30 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "record", "--gate", "verify", "--receipt", borrowed).code).toBe(0);
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
-    expect(checked.err).toContain("refused: evidence recipe-mismatch");
-    expect(checked.err).toContain("was produced by implementer seat build-1");
-    expect(checked.err).toContain("refused: verifier seat build-1 is host-unattested");
     expect(checked.err).toContain("refused: criterion AC-1 requires frontend evidence rendered-screenshot");
+  });
+
+  test("a verifier receipt carrying evidence under a recipe-less check covers its criterion", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "recipe-less", {
+      acceptance_criteria: [{ id: "AC-1", text: "The parser accepts the input.", surface: "none" }],
+      verification: [{ id: "project-check", check: "Run the unit tests.", kind: "command", supports: ["AC-1"] }],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const logged = receipt(dir, run, ticketPath, {
+      created_by: { role: "verifier" },
+      recipe: { id: "project-runtime", hash: `sha256:${"6".repeat(64)}` },
+      evidence_kind: "log",
+      verifier_seat: {
+        id: "verify-6",
+        implementer_seat: "build-1",
+        isolation: "runner-attested",
+        attestation: { id: "seat-verify-6", hash: `sha256:${"7".repeat(64)}` },
+      },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", logged).code).toBe(0);
+    expect(ak(dir, "check").code).toBe(0);
   });
 
   test("every declared artifact is copied and re-hashed", () => {

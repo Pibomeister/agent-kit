@@ -1140,7 +1140,7 @@ function evaluateEvidence(
     const check = nonempty(receipt.check) ? checks.get(receipt.check) : undefined;
     const required = strings(check?.evidence_required) ?? [];
     const expectedRecipe = object(check?.recipe);
-    if (required.length > 0 || expectedRecipe !== undefined || receipt.evidence_kind !== undefined) {
+    if (required.length > 0 || expectedRecipe !== undefined) {
       const creator = object(receipt.created_by);
       if (creator?.role !== "verifier") {
         reasons.push({
