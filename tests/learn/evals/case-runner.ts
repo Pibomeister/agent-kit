@@ -474,7 +474,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     if (missing.length > 0) throw new Error(`${missing.join(", ")} missing; run bun run ak build --profile all`);
     const rows: CaseSessionResult[] = [];
     const started: SessionResult[] = [];
-    let aborted: { subject: string; case: string; reason: string; subject_cost_usd: number | null } | null = null;
+    const judge = dependencies.judge ?? hostJudge(priced.prices);
+    let aborted: { subject: string; case: string; reason: string; cost_usd: number | null } | null = null;
     sessions: for (const subject of subjects) {
       const adapter = adapterFor(subject.host);
       const bundleDir = join(bundleRoot, BUNDLE_FOR[subject.host]);
@@ -482,6 +483,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       for (const evalCase of cases) {
         let prepared: PreparedCase | undefined;
         let session: SessionResult | undefined;
+        let judgeSpend: number | undefined;
         try {
           prepared = prepareCase(evalCase);
           const request = requestFor(evalCase, subject, prepared.cwd, bundleDir);
@@ -496,7 +498,11 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
               filesCreated,
               panel,
               queue,
-              judge: dependencies.judge ?? hostJudge(priced.prices),
+              judge: async (reviewer, prompt) => {
+                const judged = await judge(reviewer, prompt);
+                if (judged.costUsd !== undefined) judgeSpend = (judgeSpend ?? 0) + judged.costUsd;
+                return judged;
+              },
               maxTurns: request.maxTurns ?? null,
               command: adapter.command(request, subject.model),
             }),
@@ -506,7 +512,10 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
             subject: subject.id,
             case: evalCase.name,
             reason: error instanceof Error ? error.message : String(error),
-            subject_cost_usd: session?.costUsd ?? null,
+            cost_usd:
+              session?.costUsd === undefined && judgeSpend === undefined
+                ? null
+                : (session?.costUsd ?? 0) + (judgeSpend ?? 0),
           };
         } finally {
           if (prepared !== undefined) rmSync(prepared.cwd, { recursive: true, force: true });
@@ -516,6 +525,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     }
 
     const report = summariseCaseSessions(rows);
+    const costUsd = aborted?.cost_usd == null ? report.cost_usd : (report.cost_usd ?? 0) + aborted.cost_usd;
     const json = resolve(PACKAGE_ROOT, outputFile);
     mkdirSync(dirname(json), { recursive: true });
     const receipt = {
@@ -525,11 +535,11 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       cases: cases.map(({ name, file, sha256 }) => ({ name, file, sha256 })),
       subjects: subjects.map(({ id, host }) => ({ id, host })),
       ...usageReceipt(started),
-      cost_usd: aborted?.subject_cost_usd == null ? report.cost_usd : (report.cost_usd ?? 0) + aborted.subject_cost_usd,
+      cost_usd: costUsd,
       summary: report.summary,
       aborted,
     };
-    writeFileSync(json, `${JSON.stringify({ receipt, ...report }, null, 2)}\n`);
+    writeFileSync(json, `${JSON.stringify({ receipt, ...report, cost_usd: costUsd }, null, 2)}\n`);
     out(JSON.stringify({ receipt, results: report.results, invalid_sessions: report.invalid_sessions }));
     if (aborted !== null) {
       err(`case-runner: ${aborted.subject} ${aborted.case}: ${aborted.reason}`);

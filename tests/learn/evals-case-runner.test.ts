@@ -62,10 +62,12 @@ const isStoredReport = ajv.compile<StoredReport>({
 const isAbortedReport = ajv.compile<{
   receipt: { cost_usd: number | null; aborted: { subject: string; reason: string } };
   results: unknown[];
+  cost_usd: number | null;
 }>({
   type: "object",
-  required: ["receipt", "results"],
+  required: ["receipt", "results", "cost_usd"],
   properties: {
+    cost_usd: { type: ["number", "null"] },
     receipt: {
       type: "object",
       required: ["cost_usd", "aborted"],
@@ -316,6 +318,7 @@ describe("execute path", () => {
     expect(code).toBe(2);
     expect(report.results).toHaveLength(1);
     expect(report.receipt.cost_usd).toBe(0.25);
+    expect(report.cost_usd).toBe(0.25);
     expect(report.receipt.aborted).toMatchObject({
       subject: "subject-codex",
       reason: "host exited before a transcript",
@@ -332,6 +335,7 @@ describe("execute path", () => {
     const json = join(cwd, "result.json");
     const errors: string[] = [];
     let codexStarted = false;
+    let codexJudged = 0;
     const code = await caseRunnerMain(
       [
         "--execute",
@@ -359,7 +363,9 @@ describe("execute path", () => {
             : { ...session("grok", "grok.jsonl"), subject: id, costUsd: 0.25 };
         },
         judge: async () => {
-          if (codexStarted) throw new Error("judge panel rejected");
+          if (codexStarted && codexJudged++ > 0) throw new Error("judge panel rejected");
+          if (codexStarted)
+            return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}', costUsd: 0.1 };
           return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' };
         },
       },
@@ -369,7 +375,8 @@ describe("execute path", () => {
 
     expect(code).toBe(2);
     expect(report.results).toHaveLength(1);
-    expect(report.receipt.cost_usd).toBe(0.75);
+    expect(report.receipt.cost_usd).toBeCloseTo(0.85);
+    expect(report.cost_usd).toBeCloseTo(0.85);
     expect(report.receipt.aborted).toMatchObject({
       subject: "subject-codex",
       reason: "judge panel rejected",
