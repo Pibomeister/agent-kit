@@ -9,7 +9,8 @@
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import type { LearnContext } from "../core/context.ts";
-import type { Ledger } from "../core/ledger.ts";
+import { Ledger } from "../core/ledger.ts";
+import { memoryDir, quarantinedObservationIds } from "../memory/ledger.ts";
 import { projectFolderName, reflectFolderName, registryPath } from "../core/paths.ts";
 import { nowIso, readJson, writeJson } from "../core/store.ts";
 import { ClaudeMemSource, jsonList, type ObservationRow } from "../sources/claude-mem.ts";
@@ -169,12 +170,16 @@ export function observationEvent(row: ObservationRow, project: string): ReviewEv
   return event;
 }
 
-/** Review observations after the ledger's watermark. Returns the new watermark alongside. */
+/**
+ * Review observations after the ledger's watermark, without the ones the memory
+ * loop's reflector quarantined. Returns the new watermark alongside.
+ */
 export function eventsFromClaudeMem(
   ctx: LearnContext,
   ledger: Ledger,
   project: string,
   sinceMs: number,
+  quarantined: ReadonlySet<string>,
 ): { events: ReviewEvent[]; maxId: number } {
   const minId = readJson<{ claude_mem_max_id?: number }>(ledger.path(WATERMARK_FILE), {}).claude_mem_max_id ?? 0;
   const source = ClaudeMemSource.open(ctx.config.memDb);
@@ -184,6 +189,7 @@ export function eventsFromClaudeMem(
     const events: ReviewEvent[] = [];
     for (const row of source.observationsSince(project, minId, { sinceEpochMs: sinceMs })) {
       maxId = Math.max(maxId, row.id);
+      if (quarantined.has(`obs:${row.id}`)) continue;
       const event = observationEvent(row, project);
       if (event !== null) events.push(event);
     }
@@ -304,7 +310,8 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
   }
   let maxId = 0;
   if (options.skipMem !== true) {
-    const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs);
+    const quarantined = quarantinedObservationIds(new Ledger(memoryDir(ctx.config, root)));
+    const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs, quarantined);
     events.push(...mem.events);
     maxId = mem.maxId;
   }

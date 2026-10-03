@@ -8,6 +8,10 @@
  * episodes that fit under the input cap reach the judge, so only they are
  * marked consolidated and only their ids pass the evidence gate.
  *
+ * An episode shows only observations the reflector has already screened (at or
+ * below `last_obs_id_reflected`) and, once a run has consumed it, only those
+ * after the highest id that run consumed. An episode with none to show waits.
+ *
  * A lesson is `confirmed` when its evidence spans two or more sessions and
  * `hypothesis` otherwise. A newly confirmed lesson becomes a knowledgebase
  * draft, never a publication.
@@ -23,7 +27,14 @@ import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens } from "../core/store.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
 import type { ClaudeMemSource, ObservationRow } from "../sources/claude-mem.ts";
-import { type Episode, loadEpisodes, markConsolidated, MEMORY_SOURCE, unconsolidatedEpisodes } from "./episodes.ts";
+import {
+  consumedObsIds,
+  type Episode,
+  loadEpisodes,
+  markConsolidated,
+  MEMORY_SOURCE,
+  unconsolidatedEpisodes,
+} from "./episodes.ts";
 import {
   appendRun,
   cleanTags,
@@ -92,16 +103,14 @@ export function pairFailures<T extends Stratifiable>(failures: readonly T[], all
   return pairs;
 }
 
-/** A session's observations, failures first, then decisions, then the rest; capped. */
-export function fetchObs(
-  source: ClaudeMemSource,
-  sid: string,
-  cap = OBS_PER_EPISODE,
+/** Observations with the quarantined ones dropped, failures first, then decisions, then the rest; capped. */
+export function rankObs(
+  rows: readonly ObservationRow[],
   quarantined: ReadonlySet<string> = new Set(),
+  cap = OBS_PER_EPISODE,
 ): ObservationRow[] {
   const rank = (row: ObservationRow) => (isFailureObservation(row) ? 0 : row.type === "decision" ? 1 : 2);
-  return source
-    .sessionObservations(sid)
+  return rows
     .filter((row) => !quarantined.has(`obs:${row.id}`))
     .sort((a, b) => rank(a) - rank(b) || a.id - b.id)
     .slice(0, cap);
@@ -287,30 +296,21 @@ export function applyConsolidation(
       last_seen: today,
       valid_until: "",
     };
-    const targets = [];
+    const confirmed = meta.status === "confirmed";
+    const supersedes: string[] = [];
     for (const old of strings(lesson.supersedes)) {
       const page = existing.get(old);
-      if (old !== id && page !== undefined) targets.push(page);
-    }
-    const supersedes: string[] = [];
-    if (
-      targets.length > 0 &&
-      meta.status === "confirmed" &&
-      targets.every((page) => page.meta.status === "confirmed")
-    ) {
-      for (const page of targets) {
-        const old = str(page.meta.id);
-        writeLesson(
-          page.path,
-          { ...page.meta, status: "superseded", valid_until: today, superseded_by: id },
-          page.body,
-        );
+      if (old === id || page === undefined) continue;
+      if (page.meta.status !== "hypothesis" && page.meta.status !== "confirmed") continue;
+      if (page.meta.status === "confirmed" && !confirmed) {
+        meta.status = "conflict";
+        page.meta = { ...page.meta, status: "conflict" };
+      } else {
+        page.meta = { ...page.meta, status: "superseded", valid_until: today, superseded_by: id };
         supersedes.push(old);
         summary.superseded.push(old);
       }
-    } else if (targets.length > 0) {
-      meta.status = "conflict";
-      for (const page of targets) writeLesson(page.path, { ...page.meta, status: "conflict" }, page.body);
+      writeLesson(page.path, page.meta, page.body);
     }
     meta.supersedes = supersedes;
     const path = join(ledger.path("lessons"), `${id}.md`);
@@ -448,16 +448,28 @@ export function consolidate(
   const all = loadEpisodes(ledger);
   const pending = unconsolidatedEpisodes(ledger);
   if (pending.length === 0) return "nightly: no unconsolidated episodes";
-  const { chosen, failures } = stratify(pending, ctx.config.batch);
+  const reflected = readState(ledger).last_obs_id_reflected ?? 0;
+  const screened = (sid: string) => source.sessionObservations(sid).filter((row) => row.id <= reflected);
+  const consumed = consumedObsIds(ledger);
+  const unseen = new Map<string, { rows: ObservationRow[]; obs: number; obs_id: number }>();
+  for (const episode of pending) {
+    const seen = screened(episode.sid);
+    const after = consumed.get(episode.sid) ?? 0;
+    const rows = seen.filter((row) => row.id > after);
+    const last = rows.at(-1);
+    if (last !== undefined) unseen.set(episode.sid, { rows, obs: seen.length, obs_id: last.id });
+  }
+  const ready = pending.filter((episode) => unseen.has(episode.sid));
+  if (ready.length === 0) return "nightly: no reflected observations to consolidate";
+  const { chosen, failures } = stratify(ready, ctx.config.batch);
   const pairs = pairFailures(failures, all);
   const quarantined = quarantinedObservationIds(ledger);
   const obsBySid = new Map<string, ObservationRow[]>();
   const obsSessionAll = new Map<string, string>();
-  for (const episode of [...chosen, ...pairs.map(([, success]) => success)]) {
-    const rows = fetchObs(source, episode.sid, OBS_PER_EPISODE, quarantined);
-    obsBySid.set(episode.sid, rows);
-    for (const row of rows) obsSessionAll.set(`obs:${row.id}`, sid8(episode.sid).slice(1));
-  }
+  for (const episode of chosen) obsBySid.set(episode.sid, rankObs(unseen.get(episode.sid)?.rows ?? [], quarantined));
+  for (const [, success] of pairs)
+    if (!obsBySid.has(success.sid)) obsBySid.set(success.sid, rankObs(screened(success.sid), quarantined));
+  for (const [sid, rows] of obsBySid) for (const row of rows) obsSessionAll.set(`obs:${row.id}`, sid8(sid).slice(1));
   const { prompt, included } = consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid);
   if (ctx.config.dryRun) {
     ctx.io.out(prompt);
@@ -481,7 +493,6 @@ export function consolidate(
     logLine(ledger, "nightly failed: no judge output");
     return "nightly: judge call failed";
   }
-  const includedSids = new Set(included.map((episode) => episode.sid));
   const shown = new Set(included.map((episode) => sid8(episode.sid).slice(1)));
   const obsSession = new Map([...obsSessionAll].filter(([, sid]) => shown.has(sid)));
   const valid = new Set([...obsSession.keys(), ...included.map((episode) => sid8(episode.sid))]);
@@ -489,7 +500,16 @@ export function consolidate(
     review: review === null ? undefined : { ledger: review, project: basename(root) },
     runId,
   });
-  markConsolidated(ledger, includedSids, runId);
+  markConsolidated(
+    ledger,
+    new Map(
+      included.flatMap((episode) => {
+        const mark = unseen.get(episode.sid);
+        return mark === undefined ? [] : [[episode.sid, { obs: mark.obs, obs_id: mark.obs_id }] as const];
+      }),
+    ),
+    runId,
+  );
   const corrected = new Set(
     included.filter((episode) => episode.corrections > 0).map((episode) => sid8(episode.sid).slice(1)),
   );

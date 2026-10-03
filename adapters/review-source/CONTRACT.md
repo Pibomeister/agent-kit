@@ -50,7 +50,9 @@ events are delayed rather than lost.
   (protocol `evidence-gate`).
 
 Corrections enter the same raw log from the host side rather than from this adapter; see
-`adapters/claude-code/CONTRACT.md` §7 and `adapters/codex/CONTRACT.md` §6.
+`adapters/claude-code/CONTRACT.md` §7 and `adapters/codex/CONTRACT.md` §6. A lone reviewer on this
+source keeps a pattern at `candidate` however many pull requests they raise it on; the path by which
+one human activates a pattern is an operator's prompt correction.
 
 ---
 

@@ -3,8 +3,8 @@
  * deterministically, each with a priority. Rows are only ever appended; when a
  * resumed session gains observations, its newer row supersedes the older one.
  * Consolidation is recorded beside them in `raw/consolidated.jsonl` as
- * `{sid, run}`, also append-only; a rollback appends the runs it undid to
- * `raw/undone-runs.jsonl`, and their marks stop counting.
+ * `{sid, run, obs, obs_id}`, also append-only; a rollback appends the runs it
+ * undid to `raw/undone-runs.jsonl`, and their marks stop counting.
  *
  *   priority = 0.30*C + 0.20*F + 0.15*R + 0.10*T + 0.10*N + 0.15*A
  *
@@ -42,8 +42,10 @@ export const UNDONE_RUNS_FILE = "raw/undone-runs.jsonl";
 export interface ConsolidationMark {
   sid: string;
   run: string;
-  /** Observation count of the episode revision this run consumed. */
+  /** How many of the session's observations sit at or below `obs_id`; the episode revision's count on older marks. */
   obs?: number;
+  /** Highest observation id this run consumed. Absent on older marks, which consumed from the start. */
+  obs_id?: number;
   ts?: string;
 }
 
@@ -189,13 +191,27 @@ export function unconsolidatedEpisodes(ledger: Ledger): Episode[] {
   return loadEpisodes(ledger).filter((episode) => !done.has(episode.sid));
 }
 
-/** Record that `run` consolidated these sessions. Appends; never rewrites. */
-export function markConsolidated(ledger: Ledger, sids: ReadonlySet<string>, run: string): void {
+/** Per session, the highest observation id a standing run consumed. Sessions with only older marks are absent. */
+export function consumedObsIds(ledger: Ledger): Map<string, number> {
+  const undone = undoneRuns(ledger);
+  const consumed = new Map<string, number>();
+  for (const mark of readJsonl<ConsolidationMark>(ledger.path(CONSOLIDATED_FILE))) {
+    if (mark.obs_id === undefined || undone.has(mark.run)) continue;
+    consumed.set(mark.sid, Math.max(consumed.get(mark.sid) ?? 0, mark.obs_id));
+  }
+  return consumed;
+}
+
+/** Record that `run` consolidated these sessions up to the given observation. Appends; never rewrites. */
+export function markConsolidated(
+  ledger: Ledger,
+  consumed: ReadonlyMap<string, { obs: number; obs_id: number }>,
+  run: string,
+): void {
   const ts = nowIso();
-  const episodes = new Map(loadEpisodes(ledger).map((episode) => [episode.sid, episode]));
   appendJsonl(
     ledger.path(CONSOLIDATED_FILE),
-    [...sids].map((sid) => ({ sid, run, obs: episodes.get(sid)?.obs ?? 0, ts })),
+    [...consumed].map(([sid, mark]) => ({ sid, run, ...mark, ts })),
   );
 }
 

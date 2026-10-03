@@ -102,26 +102,24 @@ function fixtureProject() {
   const mem = new MemFixture(dbPath);
   const now = Date.now();
   mem.session({ sid: "cccc3333-0000", project: "shop", started: now - 86_400_000, completed: now - 86_400_000 + 1000 });
-  mem.observation({
-    sid: "cccc3333-0000",
-    project: "shop",
-    type: "discovery",
-    title: "found it",
-    at: now - 86_400_000 + 500,
-  });
+  const observe = (title: string) =>
+    mem.observation({ sid: "cccc3333-0000", project: "shop", type: "discovery", title, at: now - 86_400_000 + 500 });
+  const reflected = observe("found it");
+  observe("found another");
   mem.toolUse({ sid: "cccc3333-0000", project: "shop", tool: "Bash", cwd: root, at: now - 86_400_000 + 500 });
   mem.close();
-  return { root, ctx: testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath } }) };
+  // Nightly reads only what the reflector has screened; a test that runs it puts `reflected` behind the watermark.
+  return { root, reflected, ctx: testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath } }) };
 }
 
 afterAll(removeProjectScratch);
 
 describe("tick", () => {
   test("an always-failing judge runs once per backoff window and never commits failures", () => {
-    const { root, ctx } = fixtureProject();
+    const { root, reflected, ctx } = fixtureProject();
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     const start = new Date(2026, 8, 18, 2, 10);
-    saveState(ledger, { last_nightly: "2026-09-17", last_weekly: start.getTime() });
+    saveState(ledger, { last_obs_id_reflected: reflected, last_nightly: "2026-09-17", last_weekly: start.getTime() });
     ledger.commit("seed scheduler state");
     try {
       setSystemTime(start);
@@ -162,7 +160,8 @@ describe("tick", () => {
   });
 
   test("force without a job runs every job", () => {
-    const { root, ctx } = fixtureProject();
+    const { root, reflected, ctx } = fixtureProject();
+    saveState(ensureMemoryLedger(memoryDir(ctx.config, root)), { last_obs_id_reflected: reflected });
     expect(tick(ctx, { force: true })).toBe(0);
     const jobs = readJsonl<{ job: string }>(join(memoryDir(ctx.config, root), "runs.jsonl")).map((row) => row.job);
     expect(jobs).toEqual(["episodes", "reflect", "nightly", "weekly"]);

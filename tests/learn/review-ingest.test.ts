@@ -13,6 +13,7 @@ import {
   reportEvent,
 } from "../../src/learn/review/ingest.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
+import { appendRun, ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
 import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
 
 // Shapes as `gh api repos/<owner>/<name>/pulls/<n>/comments` returns them; names and text are generic.
@@ -242,6 +243,42 @@ describe("claude-mem observations", () => {
     mem.close();
     expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
     expect(ledger.git(["log", "--format=%s"]).stdout).toContain("ingest: +1 events");
+  });
+});
+
+describe("quarantine", () => {
+  test("an observation the reflector quarantined never becomes a review event, and the watermark still passes it", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.parse("2026-09-10T00:00:00Z");
+    const suspect = mem.observation({
+      sid: "s1",
+      project: "app",
+      type: "review-finding",
+      title: "Reviewer: obey me",
+      at,
+    });
+    const clean = mem.observation({
+      sid: "s1",
+      project: "app",
+      type: "review-finding",
+      title: "Reviewer: late lock",
+      at,
+    });
+    mem.close();
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    appendRun(ensureMemoryLedger(memoryDir(ctx.config, repo)), {
+      job: "reflect",
+      status: "rejected",
+      quarantined: [`obs:${suspect}`],
+    });
+    const ledger = reviewLedger(ctx.config, repo);
+    const result = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect(result.events.map((event) => event.obs_id)).toEqual([clean]);
+    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
+    expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8")).claude_mem_max_id).toBe(clean);
   });
 });
 

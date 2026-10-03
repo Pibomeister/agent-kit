@@ -7,16 +7,16 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readJson, readJsonl, todayLocal } from "../../src/learn/core/store.ts";
+import { appendJsonl, readJson, readJsonl, todayLocal } from "../../src/learn/core/store.ts";
 import {
   applyConsolidation,
   consolidate,
   consolidatePrompt,
   deliverReviewEvents,
-  fetchObs,
   forwardReviewEvents,
   pairFailures,
   PENDING_REVIEW_FILE,
+  rankObs,
   stratify,
 } from "../../src/learn/memory/consolidate.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
@@ -101,20 +101,28 @@ describe("consolidate apply", () => {
     expect(summary).toEqual({
       created: ["ls-001", "ls-002", "ls-003"],
       dropped: 1,
-      superseded: [],
+      superseded: ["ls-001"],
       confirmed: ["ls-002"],
       review_events: 1,
       review_events_parked: 0,
     });
     const lessons = loadLessons(ledger);
     const meta = (id: string) => lessons.get(id)!.meta;
-    expect([meta("ls-001").status, meta("ls-003").status]).toEqual(["conflict", "conflict"]);
+    expect([meta("ls-001").status, meta("ls-001").valid_until, meta("ls-001").superseded_by]).toEqual([
+      "superseded",
+      todayLocal(),
+      "ls-003",
+    ]);
     expect([meta("ls-002").status, meta("ls-002").sessions, meta("ls-002").tags]).toEqual([
       "confirmed",
       2,
       ["blocker"],
     ]);
-    expect([meta("ls-003").supersedes, meta("ls-003").confidence]).toEqual([[], "0.80"]);
+    expect([meta("ls-003").status, meta("ls-003").supersedes, meta("ls-003").confidence]).toEqual([
+      "hypothesis",
+      ["ls-001"],
+      "0.80",
+    ]);
     expect(readFileSync(ledger.path("lessons.md"), "utf8")).toContain("| ls-002 | confirmed | technology | 0.90 |");
 
     const events = readJsonl<ReviewEvent>(review.path(EVENTS_FILE));
@@ -167,6 +175,69 @@ describe("consolidate apply", () => {
       "superseded",
       "confirmed",
     ]);
+  });
+
+  test("supersession is decided per target: a hypothesis target is superseded, a confirmed one only by a confirmed lesson", () => {
+    const TWO = ["obs:1", "obs:3"];
+    const seeded = () => {
+      const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+      applyConsolidation(
+        ledger,
+        {
+          lessons: [
+            { statement: "one session", evidence: ["obs:1"] },
+            { statement: "two sessions", evidence: TWO },
+          ],
+        },
+        VALID,
+        OBS_SESSION,
+      );
+      return ledger;
+    };
+    const apply = (evidence: string[], supersedes: string[]) => {
+      const ledger = seeded();
+      const summary = applyConsolidation(
+        ledger,
+        { lessons: [{ statement: "new", evidence, supersedes }] },
+        VALID,
+        OBS_SESSION,
+      );
+      const lessons = loadLessons(ledger);
+      const status = ["ls-001", "ls-002", "ls-003"].map((id) => lessons.get(id)?.meta.status);
+      return { ledger, summary, status, supersedes: lessons.get("ls-003")?.meta.supersedes };
+    };
+
+    const confirmedOverHypothesis = apply(TWO, ["ls-001"]);
+    expect(confirmedOverHypothesis.status).toEqual(["superseded", "confirmed", "confirmed"]);
+    expect(confirmedOverHypothesis.summary.confirmed).toEqual(["ls-003"]);
+
+    const hypothesisOverConfirmed = apply(["obs:2"], ["ls-002"]);
+    expect(hypothesisOverConfirmed.status).toEqual(["hypothesis", "conflict", "conflict"]);
+    expect([hypothesisOverConfirmed.summary.superseded, hypothesisOverConfirmed.supersedes]).toEqual([[], []]);
+
+    const hypothesisOverMixed = apply(["obs:2"], ["ls-001", "ls-002"]);
+    expect(hypothesisOverMixed.status).toEqual(["superseded", "conflict", "conflict"]);
+    expect([hypothesisOverMixed.summary.superseded, hypothesisOverMixed.supersedes]).toEqual([["ls-001"], ["ls-001"]]);
+
+    const confirmedOverMixed = apply(TWO, ["ls-001", "ls-002"]);
+    expect(confirmedOverMixed.status).toEqual(["superseded", "superseded", "confirmed"]);
+    expect(confirmedOverMixed.summary.confirmed).toEqual(["ls-003"]);
+
+    // A target that is already superseded or in conflict is left as it is.
+    const again = applyConsolidation(
+      hypothesisOverMixed.ledger,
+      { lessons: [{ statement: "later", evidence: ["obs:2"], supersedes: ["ls-001", "ls-002"] }] },
+      VALID,
+      OBS_SESSION,
+    );
+    const later = loadLessons(hypothesisOverMixed.ledger);
+    expect(again.superseded).toEqual([]);
+    expect(["ls-001", "ls-002", "ls-004"].map((id) => later.get(id)?.meta.status)).toEqual([
+      "superseded",
+      "conflict",
+      "hypothesis",
+    ]);
+    expect(later.get("ls-001")?.meta.superseded_by).toBe("ls-003");
   });
 
   test("a hostile tag cannot confirm a lesson, set its sessions or move its id", () => {
@@ -267,7 +338,7 @@ describe("prompt budget", () => {
     const source = ClaudeMemSource.open(dbPath)!;
     let obsBy: Map<string, ObservationRow[]>;
     try {
-      obsBy = new Map(eps.map((ep) => [ep.sid, fetchObs(source, ep.sid)]));
+      obsBy = new Map(eps.map((ep) => [ep.sid, rankObs(source.sessionObservations(ep.sid))]));
     } finally {
       source.close();
     }
@@ -336,6 +407,7 @@ function nightlyFixture(replies: (o1: number, o2: number) => Reply[]) {
   const review = reviewLedger(ctx.config, root);
   const source = ClaudeMemSource.open(dbPath)!;
   expect(buildEpisodes(source, ledger, "shop", []).length).toBe(2);
+  saveState(ledger, { last_obs_id_reflected: o2 });
   return { ctx, root, ledger, review, source, o1, o2 };
 }
 
@@ -354,6 +426,56 @@ function confirmedReply(o1: number, o2: number): Reply {
   };
 }
 
+/** Observation ids the emitted consolidator prompt lists under its episodes, in prompt order. */
+function shownObs(prompt: string | undefined): number[] {
+  return [...(prompt ?? "").matchAll(/^ {2}obs:(\d+) \[/gm)].map((match) => Number(match[1]));
+}
+
+const GROWING_SID = "cccc3333-0000";
+
+/** One completed session of project `shop` with sixteen observations, which `grow` extends by three. */
+function growingFixture() {
+  const dir = scratch();
+  const root = gitRepo(join(dir, "shop"));
+  const dbPath = join(dir, "mem.db");
+  const mem = new MemFixture(dbPath);
+  const start = Date.now() - 86_400_000;
+  mem.session({ sid: GROWING_SID, project: "shop", started: start, completed: start + 1000 });
+  const add = (title: string) =>
+    mem.observation({ sid: GROWING_SID, project: "shop", type: "discovery", title, at: start + 500 });
+  const early = Array.from({ length: 16 }, (_, i) => add(`early ${i}`));
+  const empty = { lessons: [], review_events: [] };
+  const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [empty, empty] });
+  const ledger = ensureMemoryLedger(join(dir, "memory"));
+  const review = reviewLedger(ctx.config, root);
+  const withSource = <T>(use: (source: ClaudeMemSource) => T): T => {
+    const source = ClaudeMemSource.open(dbPath)!;
+    try {
+      return use(source);
+    } finally {
+      source.close();
+    }
+  };
+  /** Rebuild episodes and treat every observation so far as reflected. */
+  const build = (source: ClaudeMemSource) => {
+    buildEpisodes(source, ledger, "shop", []);
+    const newest = source.sessionObservations(GROWING_SID).at(-1)!.id;
+    saveState(ledger, { ...readState(ledger), last_obs_id_reflected: newest });
+  };
+  return {
+    ctx,
+    ledger,
+    early,
+    build: () => withSource(build),
+    grow: () => ["late a", "late b", "late c"].map(add),
+    nightly: () =>
+      withSource((source) => {
+        build(source);
+        return consolidate(ctx, source, ledger, root, review);
+      }),
+  };
+}
+
 describe("nightly", () => {
   test("quarantined observations never reach the consolidator prompt", () => {
     const { ctx, root, ledger, review, source, o1 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
@@ -365,6 +487,54 @@ describe("nightly", () => {
     }
     expect(ctx.prompts[0]).not.toContain(`  obs:${o1} [`);
     expect(ctx.prompts[0]).not.toContain("tests failed from a worktree");
+  });
+
+  test("observations the reflector has not screened are held back, and their episode waits", () => {
+    const { ctx, root, ledger, review, source, o1 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
+    try {
+      saveState(ledger, {});
+      expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no reflected observations to consolidate");
+      expect(ctx.prompts).toEqual([]);
+      saveState(ledger, { last_obs_id_reflected: o1 });
+      expect(consolidate(ctx, source, ledger, root, review)).toBe(
+        "nightly: 1/1 episodes -> +0 lessons, 0 review events",
+      );
+    } finally {
+      source.close();
+    }
+    expect(shownObs(ctx.prompts[0])).toEqual([o1]);
+    expect(ctx.prompts[0]).not.toContain("tests pass from the main tree");
+    expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["bbbb2222-0000"]);
+  });
+
+  test("a re-queued session shows only the observations after the highest id its last run consumed", () => {
+    const grown = growingFixture();
+    grown.nightly();
+    expect(shownObs(grown.ctx.prompts[0])).toEqual(grown.early.slice(0, 15));
+    expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
+    const late = grown.grow();
+    expect(grown.nightly()).toBe("nightly: 1/1 episodes -> +0 lessons, 0 review events");
+    expect(shownObs(grown.ctx.prompts[1])).toEqual(late);
+    expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
+    expect(
+      readJsonl<{ obs: number; obs_id: number | undefined }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
+        mark.obs,
+        mark.obs_id,
+      ]),
+    ).toEqual([
+      [16, grown.early[15]],
+      [19, late[2]],
+    ]);
+  });
+
+  test("a mark that records no observation id leaves its re-queued session shown from the start", () => {
+    const grown = growingFixture();
+    grown.build();
+    appendJsonl(grown.ledger.path(CONSOLIDATED_FILE), [{ sid: GROWING_SID, run: "nightly-old", obs: 16 }]);
+    expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
+    grown.grow();
+    grown.nightly();
+    expect(shownObs(grown.ctx.prompts[0])).toEqual(grown.early.slice(0, 15));
   });
 
   test("a failed judge call records a failed run under the run id the judge call carried", () => {
@@ -386,7 +556,7 @@ describe("nightly", () => {
     const { ctx, root, ledger, review, source, o1, o2 } = nightlyFixture((first, second) => [
       confirmedReply(first, second),
     ]);
-    saveState(ledger, { last_nightly_attempt: 1, nightly_failures: 3 });
+    saveState(ledger, { ...readState(ledger), last_nightly_attempt: 1, nightly_failures: 3 });
     const episodesBefore = readFileSync(ledger.path("episodes.jsonl"), "utf8");
     try {
       expect(consolidate(ctx, source, ledger, root, review)).toBe(

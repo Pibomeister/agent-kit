@@ -171,7 +171,7 @@ describe("episodes", () => {
     } finally {
       source.close();
     }
-    markConsolidated(ledger, new Set(["growing"]), "nightly-1");
+    markConsolidated(ledger, new Map([["growing", { obs: 1, obs_id: 1 }]]), "nightly-1");
     expect(unconsolidatedEpisodes(ledger)).toEqual([]);
 
     mem.observation({ sid: "growing", project: "app", type: "bugfix", title: "fixed it", at: NOW - 7 * H });
