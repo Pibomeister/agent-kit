@@ -84,6 +84,22 @@ const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
 const READ_ONLY_RULES = grokReadOnlyPermissionRules();
 const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
 
+/**
+ * A case's shared-vocabulary grants onto the rule names the Grok 1.0.46 user guide lists
+ * (`22-permissions-and-safety.md`, Tool Names). A name with no rule there is not emitted: the same
+ * guide says invoking a skill never prompts, so `Skill` needs none.
+ */
+const GRANT_RULES: Record<string, string> = {
+  Bash: "Bash(*)",
+  Read: "Read",
+  Edit: "Edit",
+  Write: "Write",
+  Grep: "Grep",
+  Glob: "Glob",
+  WebFetch: "WebFetch",
+  WebSearch: "WebSearch",
+};
+
 const allowlisted = (env: Record<string, string>) => {
   const clean = cleanEnv(grok.env);
   return Object.entries(env).every(([name, value]) => clean[name] === value);
@@ -97,7 +113,7 @@ export const grok: SubjectAdapter = {
     const allow =
       req.allowedTools === undefined
         ? READ_ONLY_ALLOW
-        : req.allowedTools.map((tool) => (tool === "Bash" ? "Bash(*)" : tool));
+        : req.allowedTools.flatMap((tool) => GRANT_RULES[tool] ?? []);
     const deny = req.allowedTools === undefined ? READ_ONLY_RULES.deny : [];
     return [
       "grok",

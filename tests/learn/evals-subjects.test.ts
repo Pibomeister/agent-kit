@@ -286,9 +286,12 @@ describe("grok", () => {
     const ordinary = grok.command(req, undefined);
     expect(ordinary.filter((value) => value === "--allow").length).toBeGreaterThan(3);
     expect(ordinary).toContain("--deny");
-    const argv = grok.command({ ...req, allowedTools: ["Read", "Bash", "Write"] }, undefined);
+    const argv = grok.command(
+      { ...req, allowedTools: ["Read", "Glob", "Grep", "Bash", "Skill", "Write", "Edit", "Agent"] },
+      undefined,
+    );
     const values = (flag: string) => argv.flatMap((value, index) => (value === flag ? [argv[index + 1]] : []));
-    expect(values("--allow")).toEqual(["Read", "Bash(*)", "Write"]);
+    expect(values("--allow")).toEqual(["Read", "Glob", "Grep", "Bash(*)", "Write", "Edit"]);
     expect(values("--deny")).toEqual([]);
     expect(argv).toContain("dontAsk");
   });
