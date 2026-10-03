@@ -57,6 +57,12 @@ The watermark read. `afterId` is the ledger's `last_obs_id_reflected`
 (`schemas/learn-state.schema.json`). A zero watermark reads newest first so a first run fills from
 recent work; every later run reads oldest first so nothing between two runs is skipped.
 
+Each reflect run records the lowest and highest observation id it was shown (`min_obs_id`,
+`max_obs_id` in `schemas/memory-run.schema.json`). Only an observation inside the range of a run
+that advanced the watermark has been through the reflector's security channel, so nightly
+consolidation and the review loop's ingest read no other: one above the watermark waits for the
+next reflect, and history older than the first run's window is never read by either.
+
 ### `sessions`
 
 ```text

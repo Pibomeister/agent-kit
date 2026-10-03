@@ -300,7 +300,12 @@ export function reflect(
     inputTokens,
     maxObsId,
     ctx.config.memoryTokens,
-    { trigger, observations: observations.length, sessions: sids.length },
+    {
+      trigger,
+      observations: observations.length,
+      sessions: sids.length,
+      min_obs_id: Math.min(...observations.map((row) => row.id)),
+    },
     { observations, summaries },
   );
   const redacted = result.redacted > 0 ? `, ${result.redacted} redacted` : "";

@@ -10,7 +10,7 @@ import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
-import { memoryDir, quarantinedObservationIds } from "../memory/ledger.ts";
+import { isScreened, memoryDir, quarantinedObservationIds, screenedObservationRanges } from "../memory/ledger.ts";
 import { projectFolderName, reflectFolderName, registryPath } from "../core/paths.ts";
 import { nowIso, readJson, writeJson } from "../core/store.ts";
 import { ClaudeMemSource, jsonList, type ObservationRow } from "../sources/claude-mem.ts";
@@ -171,25 +171,30 @@ export function observationEvent(row: ObservationRow, project: string): ReviewEv
 }
 
 /**
- * Review observations after the ledger's watermark, without the ones the memory
- * loop's reflector quarantined. Returns the new watermark alongside.
+ * Review observations after the ledger's watermark that the memory loop's
+ * reflector was shown and did not quarantine. The watermark returned never
+ * passes the newest observation reflected, so one not yet screened waits.
  */
 export function eventsFromClaudeMem(
   ctx: LearnContext,
   ledger: Ledger,
   project: string,
   sinceMs: number,
-  quarantined: ReadonlySet<string>,
+  memory: Ledger,
 ): { events: ReviewEvent[]; maxId: number } {
   const minId = readJson<{ claude_mem_max_id?: number }>(ledger.path(WATERMARK_FILE), {}).claude_mem_max_id ?? 0;
   const source = ClaudeMemSource.open(ctx.config.memDb);
   if (source === null) return { events: [], maxId: minId };
+  const ranges = screenedObservationRanges(memory);
+  const reflected = Math.max(0, ...ranges.map(([, highest]) => highest));
+  const quarantined = quarantinedObservationIds(memory);
   try {
     let maxId = minId;
     const events: ReviewEvent[] = [];
     for (const row of source.observationsSince(project, minId, { sinceEpochMs: sinceMs })) {
-      maxId = Math.max(maxId, row.id);
-      if (quarantined.has(`obs:${row.id}`)) continue;
+      if (row.id > reflected) break;
+      maxId = row.id;
+      if (!isScreened(ranges, row.id) || quarantined.has(`obs:${row.id}`)) continue;
       const event = observationEvent(row, project);
       if (event !== null) events.push(event);
     }
@@ -310,8 +315,7 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
   }
   let maxId = 0;
   if (options.skipMem !== true) {
-    const quarantined = quarantinedObservationIds(new Ledger(memoryDir(ctx.config, root)));
-    const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs, quarantined);
+    const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs, new Ledger(memoryDir(ctx.config, root)));
     events.push(...mem.events);
     maxId = mem.maxId;
   }

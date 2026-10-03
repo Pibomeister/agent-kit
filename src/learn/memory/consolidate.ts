@@ -8,9 +8,11 @@
  * episodes that fit under the input cap reach the judge, so only they are
  * marked consolidated and only their ids pass the evidence gate.
  *
- * An episode shows only observations the reflector has already screened (at or
- * below `last_obs_id_reflected`) and, once a run has consumed it, only those
- * after the highest id that run consumed. An episode with none to show waits.
+ * An episode shows only observations a reflector run was itself shown (inside
+ * the id range that run recorded) and, once a nightly run has consumed it, only
+ * those after the highest id that run consumed. History older than the first
+ * reflect's window was never screened and is never shown. An episode with none
+ * to show waits.
  *
  * A lesson is `confirmed` when its evidence spans two or more sessions and
  * `hypothesis` otherwise. A newly confirmed lesson becomes a knowledgebase
@@ -45,8 +47,10 @@ import {
   logLine,
   oneLine,
   proposeOrSkip,
+  isScreened,
   quarantinedObservationIds,
   readState,
+  screenedObservationRanges,
   rewriteIndex,
   saveState,
   sid8,
@@ -448,8 +452,8 @@ export function consolidate(
   const all = loadEpisodes(ledger);
   const pending = unconsolidatedEpisodes(ledger);
   if (pending.length === 0) return "nightly: no unconsolidated episodes";
-  const reflected = readState(ledger).last_obs_id_reflected ?? 0;
-  const screened = (sid: string) => source.sessionObservations(sid).filter((row) => row.id <= reflected);
+  const ranges = screenedObservationRanges(ledger);
+  const screened = (sid: string) => source.sessionObservations(sid).filter((row) => isScreened(ranges, row.id));
   const consumed = consumedObsIds(ledger);
   const unseen = new Map<string, { rows: ObservationRow[]; obs: number; obs_id: number }>();
   for (const episode of pending) {
