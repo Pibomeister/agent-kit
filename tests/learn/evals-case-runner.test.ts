@@ -17,7 +17,7 @@ import {
 import type { Matrix, Subject } from "./evals/matrix.ts";
 import { buildPanel, type Judge } from "./evals/panel.ts";
 import { adapterFor } from "./evals/subjects/index.ts";
-import type { HostKind, SessionResult } from "./evals/subjects/types.ts";
+import type { HostKind, SessionEvent, SessionResult } from "./evals/subjects/types.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "case-runner");
 const CASE_FILE = join(FIXTURES, "case.yaml");
@@ -172,29 +172,39 @@ function subject(host: HostKind): Subject {
 
 interface GraderReference {
   file: string;
-  good: { reply: string; tools: string[]; passes: string[] };
-  bad: { reply: string; tools: string[]; passes: string[] };
+  surfaces: { file: string[]; reply: string[]; trace: string[] };
+  good: { reply: string; tools: string[] };
+  bad: { reply: string; tools: string[] };
 }
 
 const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
   type: "object",
   additionalProperties: {
     type: "object",
-    required: ["file", "good", "bad"],
+    required: ["file", "surfaces", "good", "bad"],
     properties: {
       file: { type: "string" },
+      surfaces: {
+        type: "object",
+        required: ["file", "reply", "trace"],
+        properties: {
+          file: { $ref: "#/$defs/names" },
+          reply: { $ref: "#/$defs/names" },
+          trace: { $ref: "#/$defs/names" },
+        },
+      },
       good: { $ref: "#/$defs/arm" },
       bad: { $ref: "#/$defs/arm" },
     },
   },
   $defs: {
+    names: { type: "array", items: { type: "string" } },
     arm: {
       type: "object",
-      required: ["reply", "tools", "passes"],
+      required: ["reply", "tools"],
       properties: {
         reply: { type: "string" },
-        tools: { type: "array", items: { type: "string" } },
-        passes: { type: "array", items: { type: "string" } },
+        tools: { $ref: "#/$defs/names" },
       },
     },
   },
@@ -202,13 +212,6 @@ const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
 const parsedReferences: unknown = JSON.parse(readFileSync(GRADER_REFERENCES, "utf8"));
 if (!isGraderReferences(parsedReferences)) throw new Error("grader references do not match their fixture schema");
 const references = parsedReferences;
-
-function stubAllowsGrok(argv: readonly string[], shell: string) {
-  const toolList = argv.at(argv.indexOf("--tools") + 1)?.split(",") ?? [];
-  if (!toolList.includes("run_terminal_command")) return false;
-  if (argv.includes("--always-approve")) return true;
-  return !argv.includes("dontAsk") || !/[;\n]|&&|\|\|/.test(shell);
-}
 
 describe("evaluateCaseSession", () => {
   test.each([
@@ -232,7 +235,7 @@ describe("evaluateCaseSession", () => {
     "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
     "evals/super-bound/refused-oversized-change-split/case.yaml",
     "evals/super-bound/approved-spec-produces-tickets/case.yaml",
-  ])("%s passes its known-good reference and fails its known-bad reference offline", async (caseFile) => {
+  ])("%s reads each judged criterion from the surface its reference declares", async (caseFile) => {
     const evalCase = loadCase(caseFile);
     const reference = references[evalCase.name];
     if (reference === undefined) throw new Error(`${evalCase.name} has no grader reference`);
@@ -243,30 +246,21 @@ describe("evaluateCaseSession", () => {
       const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm}-`)));
       work.push(cwd);
       const selected = reference[arm];
-      const passes = selected.passes;
+      const marker = (names: string[]) => JSON.stringify({ offline_grader_passes: arm === "good" ? names : [] });
       const tools = selected.tools;
-      const reply = `${selected.reply}\n${JSON.stringify({ offline_grader_passes: passes })}`;
+      const reply = `${selected.reply}\n${marker(reference.surfaces.reply)}`;
       const artifact = join(cwd, reference.file);
       mkdirSync(dirname(artifact), { recursive: true });
-      writeFileSync(
-        artifact,
-        `${JSON.stringify({
-          offline_grader_passes: passes,
-          delegation: { class: arm === "good" ? "red" : "green", stage: "ticket", lowered_by: null },
-          readiness: {
-            vague_terms: arm === "good" ? ["faster"] : [],
-            criteria: arm === "good" ? "evidenced" : "absent",
-          },
-          assumptions: arm === "good" ? [{ item: "fixture", resolved_as: "known" }] : [],
-          owner: arm === "good" ? "Maya Chen" : null,
-        })}\n`,
-      );
+      writeFileSync(artifact, `${marker(reference.surfaces.file)}\n`);
       const result = await evaluateCaseSession(
         evalCase,
         {
           subject: "subject-reference",
           host: "claude",
-          events: tools.map((command) => ({ kind: "tool", name: "Bash", raw: "Bash", input: { command } })),
+          events: [
+            ...tools.map((command): SessionEvent => ({ kind: "tool", name: "Bash", raw: "Bash", input: { command } })),
+            { kind: "message", text: marker(reference.surfaces.trace) },
+          ],
           reply,
           rawOutput: reply,
           exitCode: 0,
@@ -409,10 +403,7 @@ describe("host launch safety", () => {
     ]);
   });
 
-  test("a granted Grok case auto-approves compound Bash inside a restricted tool set", () => {
-    const refusedCommand =
-      "ls -la && echo '--- git ---' && git rev-parse HEAD && git status --short && git log -1 --oneline; " +
-      'PATH="$PWD:$PATH" ak 2>&1 | head -20; which node; node -v';
+  test("a granted Grok case launches with --always-approve and a restricted tool set, not dontAsk", () => {
     const command = adapterFor("grok").command(
       {
         prompt: "fixture",
@@ -423,15 +414,7 @@ describe("host launch safety", () => {
       },
       "subject-binding",
     );
-    const legacy = command
-      .filter(
-        (value) =>
-          value !== "--always-approve" && value !== "--tools" && value !== "read_file,run_terminal_command,write",
-      )
-      .concat("--permission-mode", "dontAsk");
 
-    expect(stubAllowsGrok(legacy, refusedCommand)).toBe(false);
-    expect(stubAllowsGrok(command, refusedCommand)).toBe(true);
     expect(command).toContain("--always-approve");
     expect(command).not.toContain("dontAsk");
     expect(command).toContain("--tools");

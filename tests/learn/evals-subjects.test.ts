@@ -145,7 +145,7 @@ describe("claude", () => {
 });
 
 describe("codex", () => {
-  test("the app-server transport retains the resolved model without making a model call in the test", async () => {
+  test("the app-server transport runs its own thread to completion and retains the model and file changes", async () => {
     const stub = join(import.meta.dir, "evals", "fixtures", "case-runner", "codex-app-server-stub.ts");
     const result = await runCodexAppServer(
       { ...req, cwd: PACKAGE_ROOT },
@@ -158,6 +158,11 @@ describe("codex", () => {
     expect(result).toMatchObject({ code: 0, timedOut: false });
     expect(parsed).toMatchObject({ servedModel: "model-under-test", sessionId: "thread-stub", reply: "ok" });
     expect(parsed.usage?.totalTokens).toBe(12);
+    expect(tools(parsed.events).map((e) => [e.name, e.input.file_path, e.input.change])).toEqual([
+      ["Write", "notes/new.md", "add"],
+      ["Edit", "notes/kept.md", "update"],
+      ["Delete", "notes/old.md", "delete"],
+    ]);
   }, 10_000);
 
   test("a live session: the shell cat of SKILL.md is a Bash call and a Read of that path", () => {

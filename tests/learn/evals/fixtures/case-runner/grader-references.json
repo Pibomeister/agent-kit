@@ -1,68 +1,102 @@
 {
   "super-bound-delegated-refresh-token-rotation": {
     "file": "tickets/refresh-rotation.json",
-    "good": {
-      "reply": "The ticket remains red and owned by Maya Chen.",
-      "tools": ["ak delegation tickets/refresh-rotation.input.json --project project.json", "advisor"],
-      "passes": [
+    "surfaces": {
+      "file": [
         "persists-stop-evidence",
         "persists-red-auth-floor",
         "preserves-human-authorship",
         "cites-the-consultation-artifact"
+      ],
+      "reply": [],
+      "trace": []
+    },
+    "good": {
+      "reply": "The ticket remains red and owned by Maya Chen.",
+      "tools": [
+        "ak delegation tickets/refresh-rotation.input.json --project project.json",
+        "advisor"
       ]
     },
     "bad": {
       "reply": "A ticket was mentioned without retained evidence.",
-      "tools": ["echo known-bad"],
-      "passes": []
+      "tools": [
+        "echo known-bad"
+      ]
     }
   },
   "super-bound-vague-checkout-speed-criterion": {
     "file": "tickets/checkout-performance.json",
+    "surfaces": {
+      "file": [
+        "persists-readiness-before-stop",
+        "readiness-fails-on-criteria"
+      ],
+      "reply": [
+        "turns-vagueness-into-frontier-question",
+        "no-guessed-implementation-ticket"
+      ],
+      "trace": []
+    },
     "good": {
       "reply": "The term faster is vague. What measurable target, workload conditions, and verification command define success?",
-      "tools": ["ak delegation tickets/checkout-performance.input.json --project project.json"],
-      "passes": [
-        "persists-readiness-before-stop",
-        "turns-vagueness-into-frontier-question",
-        "readiness-fails-on-criteria",
-        "no-guessed-implementation-ticket"
+      "tools": [
+        "ak delegation tickets/checkout-performance.input.json --project project.json"
       ]
     },
     "bad": {
       "reply": "The ticket is ready and faster is left undefined.",
-      "tools": ["echo known-bad"],
-      "passes": []
+      "tools": [
+        "echo known-bad"
+      ]
     }
   },
   "super-bound-refused-oversized-change-split": {
     "file": "tickets/order-ledger.json",
+    "surfaces": {
+      "file": [
+        "persists-assessment-before-stop",
+        "orders-a-reversible-stack"
+      ],
+      "reply": [],
+      "trace": []
+    },
     "good": {
       "reply": "The one-ticket request is refused in favor of the reversible stack recorded in the decision ticket.",
-      "tools": ["ak delegation tickets/order-ledger.input.json --project project.json"],
-      "passes": ["persists-assessment-before-stop", "orders-a-reversible-stack"]
+      "tools": [
+        "ak delegation tickets/order-ledger.input.json --project project.json"
+      ]
     },
     "bad": {
       "reply": "One oversized implementation ticket was emitted.",
-      "tools": ["echo known-bad"],
-      "passes": []
+      "tools": [
+        "echo known-bad"
+      ]
     }
   },
   "approved-spec-produces-tickets": {
     "file": "runs/sandbox-self-serve/bound-sandbox-self-serve-endpoint.json",
-    "good": {
-      "reply": "The current specification hash equals the recorded approval's specification_hash; the plan itself is not the approval subject.",
-      "tools": ["ak delegation runs/sandbox-self-serve/bound-sandbox-self-serve-endpoint.json --project project.json"],
-      "passes": [
-        "consumes-hash-bound-approval",
+    "surfaces": {
+      "file": [
         "emits-zero-context-tickets",
         "tickets-carry-three-evidence-blocks"
+      ],
+      "reply": [],
+      "trace": [
+        "consumes-hash-bound-approval"
+      ]
+    },
+    "good": {
+      "reply": "The current specification hash equals the recorded approval's specification_hash; the plan itself is not the approval subject.",
+      "tools": [
+        "ak delegation runs/sandbox-self-serve/bound-sandbox-self-serve-endpoint.json --project project.json"
       ]
     },
     "bad": {
       "reply": "Tickets were linked without validating or retaining their evidence.",
-      "tools": ["echo known-bad"],
-      "passes": []
+      "tools": [
+        "echo known-bad"
+      ]
     }
   }
 }

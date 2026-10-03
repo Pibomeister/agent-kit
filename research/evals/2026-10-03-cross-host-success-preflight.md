@@ -49,14 +49,18 @@ to evidence the committed receipt actually retains.
 
 No grader bar was lowered. The repaired criteria remove impossible timing claims from file-only
 surfaces and point evidence claims at the evidence they already required. An offline reference test
-feeds every one of the four cases a known-good transcript/artifact and a known-bad counterpart: all
-good criteria pass and all bad criteria fail without a judge model call.
+runs every one of the four cases with a marker for each judged criterion planted only on the surface
+that criterion is meant to read (the output file, the trace or the final reply), and with no marker
+in a counterpart run. A stub judge passes a criterion only when its marker reaches it, so a grader
+aimed at the wrong surface fails. This proves the grading surfaces, without a judge model call; it
+does not show that a judge model applies the criteria correctly.
 
 ## Free reproduction and verification
 
-The exact refused Bash shape from session 8 is retained in the original receipt. The local stub test
-passes that compound shape through both launch policies: the prior `dontAsk` form refuses it and the
-restricted `--tools` plus `--always-approve` form admits it. The test does not start Grok.
+The exact refused Bash shape from session 8 is retained in the original receipt. The local test
+asserts only the launch argv: a granted case now starts Grok with the restricted `--tools` list plus
+`--always-approve` and without `dontAsk`. It does not start Grok, so whether the host admits the
+compound shape under that argv is not shown here.
 
 ```text
 bun test tests/learn/evals-case-runner.test.ts tests/learn/evals-subjects.test.ts \

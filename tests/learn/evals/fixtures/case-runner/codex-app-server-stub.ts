@@ -26,29 +26,55 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     });
     send({
       jsonrpc: "2.0",
-      method: "item/completed",
-      params: { item: { id: "item-stub", type: "agentMessage", text: "ok" } },
-    });
-    send({
-      jsonrpc: "2.0",
-      method: "thread/tokenUsage/updated",
-      params: {
-        tokenUsage: {
-          total: {
-            inputTokens: 10,
-            cachedInputTokens: 0,
-            cacheWriteInputTokens: 0,
-            outputTokens: 2,
-            reasoningOutputTokens: 0,
-            totalTokens: 12,
-          },
-        },
-      },
-    });
-    send({
-      jsonrpc: "2.0",
       method: "turn/completed",
-      params: { turn: { id: "turn-stub", items: [], status: "completed" } },
+      params: { threadId: "thread-other", turn: { id: "turn-other", items: [], status: "completed" } },
     });
+    setTimeout(finishTurn, 50);
   }
 });
+
+function finishTurn() {
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      threadId: "thread-stub",
+      item: {
+        id: "change-stub",
+        type: "fileChange",
+        status: "completed",
+        changes: [
+          { path: "notes/new.md", kind: { type: "add" }, diff: "" },
+          { path: "notes/kept.md", kind: { type: "update", move_path: null }, diff: "" },
+          { path: "notes/old.md", kind: { type: "delete" }, diff: "" },
+        ],
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: { threadId: "thread-stub", item: { id: "item-stub", type: "agentMessage", text: "ok" } },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "thread/tokenUsage/updated",
+    params: {
+      tokenUsage: {
+        total: {
+          inputTokens: 10,
+          cachedInputTokens: 0,
+          cacheWriteInputTokens: 0,
+          outputTokens: 2,
+          reasoningOutputTokens: 0,
+          totalTokens: 12,
+        },
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread-stub", turn: { id: "turn-stub", items: [], status: "completed" } },
+  });
+}

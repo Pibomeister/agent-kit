@@ -138,7 +138,7 @@ export async function runCodexAppServer(
       child.kill();
       return;
     }
-    if (message.method === "turn/completed") {
+    if (message.method === "turn/completed" && message.params?.threadId === threadId) {
       completed = message.params?.turn?.status === "completed";
       protocolFailed = !completed;
       child.kill();
@@ -191,7 +191,7 @@ interface Item {
   type?: string;
   text?: string;
   command?: string;
-  changes?: Array<{ path?: string; kind?: string }>;
+  changes?: Array<{ path?: string; kind?: string | { type?: string } }>;
   server?: string;
   tool?: string;
   arguments?: unknown;
@@ -268,7 +268,7 @@ function itemEvents(item: Item): SessionEvent[] {
   switch (item.type) {
     case "agent_message":
     case "agentMessage":
-      return typeof item.text === "string" && item.text !== "" ? [{ kind: "message", text: item.text }] : [];
+      return item.text !== undefined && item.text !== "" ? [{ kind: "message", text: item.text }] : [];
     case "command_execution":
     case "commandExecution": {
       const command = unwrap(item.command ?? "");
@@ -285,12 +285,15 @@ function itemEvents(item: Item): SessionEvent[] {
     }
     case "file_change":
     case "fileChange":
-      return (item.changes ?? []).map((c) => ({
-        kind: "tool",
-        name: CHANGE_TOOL[c.kind ?? ""] ?? "Edit",
-        raw: "file_change",
-        input: { file_path: c.path, change: c.kind },
-      }));
+      return (item.changes ?? []).map((c) => {
+        const change = typeof c.kind === "string" ? c.kind : c.kind?.type;
+        return {
+          kind: "tool",
+          name: CHANGE_TOOL[change ?? ""] ?? "Edit",
+          raw: "file_change",
+          input: { file_path: c.path, change },
+        };
+      });
     case "mcp_tool_call":
     case "mcpToolCall":
       return [
