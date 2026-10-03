@@ -7,6 +7,7 @@ import addFormats from "ajv-formats";
 import commonSchema from "../schemas/common.schema.json" with { type: "json" };
 import projectSchema from "../schemas/project.schema.json" with { type: "json" };
 import ticketSchema from "../schemas/ticket.schema.json" with { type: "json" };
+import verificationRecipeSchema from "../schemas/verification-recipe.schema.json" with { type: "json" };
 import type { DelegationClass } from "./lifecycle/gate.ts";
 
 export type DelegationFactorName = "reversibility" | "size" | "complexity" | "spec" | "verification";
@@ -133,6 +134,7 @@ export function scoreDelegationFiles(
   const validation = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
   addFormats(validation);
   validation.addSchema(commonSchema);
+  validation.addSchema(verificationRecipeSchema);
   const ticket = readDocument(ticketPath, validation.compile<DelegationTicket>(ticketSchema), "ticket");
   const project = readDocument(projectPath, validation.compile<DelegationProject>(projectSchema), "project");
   return scoreDelegation(ticket, project);
