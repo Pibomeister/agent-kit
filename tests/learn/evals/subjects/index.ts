@@ -50,22 +50,44 @@ export async function runSubject(
   const isolation = adapter.isolate?.(scratch, req);
   const started = Date.now();
   try {
-    const result = await runAsync(adapter.command(req, model), {
+    const runOptions = {
       cwd: req.cwd,
       env: { ...withoutParentSession(req.env), ...isolation?.env },
       timeoutMs: req.timeoutMs,
-    });
+    };
+    const result =
+      adapter.run === undefined
+        ? await runAsync(adapter.command(req, model), runOptions)
+        : await adapter.run(req, model, runOptions);
     const parsed = adapter.parse(result.stdout);
-    const reported: Pick<SessionResult, "costUsd" | "usage" | "turns" | "model" | "slashCommands" | "stopReason"> = {};
+    const reported: Pick<
+      SessionResult,
+      | "costUsd"
+      | "usage"
+      | "turns"
+      | "model"
+      | "servedModel"
+      | "requestIds"
+      | "sessionId"
+      | "slashCommands"
+      | "stopReason"
+    > = {};
+    const codexPrice =
+      parsed.servedModel === undefined
+        ? model === undefined
+          ? undefined
+          : prices?.models[model]
+        : (prices?.models[parsed.servedModel] ?? (model === undefined ? undefined : prices?.models[model]));
     const estimatedCost =
-      adapter.host === "codex" && model !== undefined && parsed.usage !== undefined
-        ? costOf(parsed.usage, prices?.models[model])
-        : undefined;
+      adapter.host === "codex" && parsed.usage !== undefined ? costOf(parsed.usage, codexPrice) : undefined;
     if (parsed.costUsd !== undefined) reported.costUsd = parsed.costUsd;
     else if (estimatedCost !== undefined) reported.costUsd = estimatedCost;
     if (parsed.usage !== undefined) reported.usage = parsed.usage;
     if (parsed.turns !== undefined) reported.turns = parsed.turns;
     if (parsed.model !== undefined) reported.model = parsed.model;
+    if (parsed.servedModel !== undefined) reported.servedModel = parsed.servedModel;
+    if (parsed.requestIds !== undefined) reported.requestIds = parsed.requestIds;
+    if (parsed.sessionId !== undefined) reported.sessionId = parsed.sessionId;
     if (parsed.slashCommands !== undefined) reported.slashCommands = parsed.slashCommands;
     if (parsed.stopReason !== undefined) reported.stopReason = parsed.stopReason;
     const session: SessionResult = {
@@ -73,6 +95,7 @@ export async function runSubject(
       host: adapter.host,
       events: parsed.events,
       reply: result.timedOut && parsed.reply === "" ? "TIMEOUT" : parsed.reply,
+      rawOutput: result.stdout,
       exitCode: result.code,
       timedOut: result.timedOut,
       ...reported,

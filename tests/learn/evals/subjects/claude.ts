@@ -36,8 +36,10 @@ interface Line {
   type?: string;
   subtype?: string;
   model?: string;
+  request_id?: string;
+  session_id?: string;
   slash_commands?: unknown;
-  message?: { content?: Part[] | string };
+  message?: { content?: Part[] | string; model?: string };
   result?: string;
   total_cost_usd?: number;
   num_turns?: number;
@@ -79,6 +81,9 @@ export const claude: SubjectAdapter = {
       "project,local",
       "--strict-mcp-config",
       "--no-session-persistence",
+      ...(req.allowedTools === undefined
+        ? []
+        : ["--tools", req.allowedTools.join(","), "--allowedTools", req.allowedTools.join(",")]),
       ...(req.bundleDir === undefined ? [] : ["--plugin-dir", req.bundleDir]),
       ...(req.appendSystemPrompt === undefined ? [] : ["--append-system-prompt", req.appendSystemPrompt]),
       req.prompt,
@@ -90,6 +95,8 @@ export const claude: SubjectAdapter = {
     let costUsd: number | undefined;
     let turns: number | undefined;
     let model: string | undefined;
+    let sessionId: string | undefined;
+    const requestIds: string[] = [];
     let slashCommands: string[] | undefined;
     for (const raw of stdout.split("\n")) {
       let line: Line;
@@ -99,11 +106,14 @@ export const claude: SubjectAdapter = {
         continue;
       }
       if (line.type === "system" && line.subtype === "init") {
-        if (typeof line.model === "string") model = line.model;
+        if (line.model !== undefined) model = line.model;
+        if (line.session_id !== undefined) sessionId = line.session_id;
         // A typed `/ak:<id>` expands on the client with no stream line; this list is how the scorer sees it.
         if (Array.isArray(line.slash_commands))
           slashCommands = line.slash_commands.filter((c): c is string => typeof c === "string");
       } else if (line.type === "assistant" && Array.isArray(line.message?.content)) {
+        if (line.message.model !== undefined) model = line.message.model;
+        if (line.request_id !== undefined && !requestIds.includes(line.request_id)) requestIds.push(line.request_id);
         for (const part of line.message.content) {
           if (part.type === "text" && typeof part.text === "string" && part.text !== "")
             events.push({ kind: "message", text: part.text });
@@ -128,7 +138,12 @@ export const claude: SubjectAdapter = {
     const parsed: ReturnType<SubjectAdapter["parse"]> = { events, reply };
     if (costUsd !== undefined) parsed.costUsd = costUsd;
     if (turns !== undefined) parsed.turns = turns;
-    if (model !== undefined) parsed.model = model;
+    if (model !== undefined) {
+      parsed.model = model;
+      parsed.servedModel = model;
+    }
+    if (requestIds.length > 0) parsed.requestIds = requestIds;
+    if (sessionId !== undefined) parsed.sessionId = sessionId;
     if (slashCommands !== undefined) parsed.slashCommands = slashCommands;
     return parsed;
   },

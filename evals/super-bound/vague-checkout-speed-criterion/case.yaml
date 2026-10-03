@@ -24,7 +24,7 @@ graders:
     focus: { source: file, path: tickets/checkout-performance.json }
     weight: 1
     criteria: >-
-      Before returning, the run persists the scorer output, all six readiness criteria with their
+      The final persisted ticket contains the scorer output, all six readiness criteria with their
       evidence, vague_terms containing faster and the assumptions list on the draft or replacement
       decision ticket.
   - name: turns-vagueness-into-frontier-question

@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
   type CaseGrader,
@@ -21,18 +21,36 @@ import type { HostKind, SessionResult } from "./evals/subjects/types.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "case-runner");
 const CASE_FILE = join(FIXTURES, "case.yaml");
+const GRADER_REFERENCES = join(FIXTURES, "grader-references.json");
 const work: string[] = [];
 
 interface StoredReport {
   receipt: { cases: Array<{ sha256: string }> };
-  results: Array<{ command: string[]; files_created: string[]; graders: Array<{ definition: CaseGrader }> }>;
+  results: Array<{
+    command: string[];
+    files_created: string[];
+    artifacts: Record<string, { sha256: string; text?: string; base64?: string }>;
+    graders: Array<{ definition: CaseGrader }>;
+    served_model: string | null;
+    request_ids: string[];
+    session_id: string | null;
+    session: SessionResult;
+  }>;
 }
 
 interface DryPlan {
   mode: "dry-run";
   subject: string;
   case: string;
+  max_turns: number | null;
+  timeout_ms: number;
   command: string[];
+}
+
+interface PreflightOutput {
+  host: HostKind;
+  ok: boolean;
+  checks: Array<{ ok: boolean }>;
 }
 
 const ajv = new Ajv2020({ strict: false });
@@ -49,11 +67,25 @@ const isStoredReport = ajv.compile<StoredReport>({
       type: "array",
       items: {
         type: "object",
-        required: ["command", "files_created", "graders"],
+        required: [
+          "command",
+          "files_created",
+          "artifacts",
+          "graders",
+          "served_model",
+          "request_ids",
+          "session_id",
+          "session",
+        ],
         properties: {
           command: { type: "array", items: { type: "string" } },
           files_created: { type: "array", items: { type: "string" } },
+          artifacts: { type: "object" },
           graders: { type: "array", items: { type: "object", required: ["definition"] } },
+          served_model: { type: ["string", "null"] },
+          request_ids: { type: "array", items: { type: "string" } },
+          session_id: { type: ["string", "null"] },
+          session: { type: "object" },
         },
       },
     },
@@ -85,12 +117,23 @@ const isAbortedReport = ajv.compile<{
 });
 const isDryPlan = ajv.compile<DryPlan>({
   type: "object",
-  required: ["mode", "subject", "case", "command"],
+  required: ["mode", "subject", "case", "max_turns", "timeout_ms", "command"],
   properties: {
     mode: { const: "dry-run" },
     subject: { type: "string" },
     case: { type: "string" },
+    max_turns: { type: ["number", "null"] },
+    timeout_ms: { type: "number" },
     command: { type: "array", items: { type: "string" } },
+  },
+});
+const isPreflightOutput = ajv.compile<PreflightOutput>({
+  type: "object",
+  required: ["host", "ok", "checks"],
+  properties: {
+    host: { enum: ["claude", "codex", "grok"] },
+    ok: { type: "boolean" },
+    checks: { type: "array", items: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
   },
 });
 
@@ -109,11 +152,13 @@ const matrix: Matrix = {
 };
 
 function session(host: HostKind, fixture: string, overrides: Partial<SessionResult> = {}): SessionResult {
-  const parsed = adapterFor(host).parse(readFileSync(join(FIXTURES, fixture), "utf8"));
+  const rawOutput = readFileSync(join(FIXTURES, fixture), "utf8");
+  const parsed = adapterFor(host).parse(rawOutput);
   return {
     subject: `subject-${host}`,
     host,
     ...parsed,
+    rawOutput,
     exitCode: 0,
     timedOut: false,
     durationMs: 10,
@@ -125,10 +170,134 @@ function subject(host: HostKind): Subject {
   return { id: `subject-${host}`, host, model: "subject-binding" };
 }
 
+interface GraderReference {
+  file: string;
+  good: { reply: string; tools: string[]; passes: string[] };
+  bad: { reply: string; tools: string[]; passes: string[] };
+}
+
+const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
+  type: "object",
+  additionalProperties: {
+    type: "object",
+    required: ["file", "good", "bad"],
+    properties: {
+      file: { type: "string" },
+      good: { $ref: "#/$defs/arm" },
+      bad: { $ref: "#/$defs/arm" },
+    },
+  },
+  $defs: {
+    arm: {
+      type: "object",
+      required: ["reply", "tools", "passes"],
+      properties: {
+        reply: { type: "string" },
+        tools: { type: "array", items: { type: "string" } },
+        passes: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
+});
+const parsedReferences: unknown = JSON.parse(readFileSync(GRADER_REFERENCES, "utf8"));
+if (!isGraderReferences(parsedReferences)) throw new Error("grader references do not match their fixture schema");
+const references = parsedReferences;
+
+function stubAllowsGrok(argv: readonly string[], shell: string) {
+  const toolList = argv.at(argv.indexOf("--tools") + 1)?.split(",") ?? [];
+  if (!toolList.includes("run_terminal_command")) return false;
+  if (argv.includes("--always-approve")) return true;
+  return !argv.includes("dontAsk") || !/[;\n]|&&|\|\|/.test(shell);
+}
+
 describe("evaluateCaseSession", () => {
   test.each([
+    [
+      "claude",
+      "../transcripts/claude-skill.jsonl",
+      "subject-model",
+      ["req_011CfQStKt75bT8Ktk3Rd2MY", "req_011CfQStUbEDRW5Zwk25uYVF"],
+    ],
+    ["codex", "codex-app-server.jsonl", "subject-model", []],
+    ["grok", "../transcripts/grok-skill.jsonl", "subject-model", ["e5211715-2051-437b-9c60-77a560681419"]],
+  ] as const)("retains the %s host's served model and request ids", (host, fixture, servedModel, requestIds) => {
+    const parsed = adapterFor(host).parse(readFileSync(join(FIXTURES, fixture), "utf8"));
+
+    expect(parsed.servedModel).toBe(servedModel);
+    expect(parsed.requestIds ?? []).toEqual([...requestIds]);
+  });
+
+  test.each([
+    "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
+    "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
+    "evals/super-bound/refused-oversized-change-split/case.yaml",
+    "evals/super-bound/approved-spec-produces-tickets/case.yaml",
+  ])("%s passes its known-good reference and fails its known-bad reference offline", async (caseFile) => {
+    const evalCase = loadCase(caseFile);
+    const reference = references[evalCase.name];
+    if (reference === undefined) throw new Error(`${evalCase.name} has no grader reference`);
+    const criteriaNames = new Map(
+      evalCase.graders.flatMap((grader) => (grader.type === "llm" ? [[grader.criteria, grader.name] as const] : [])),
+    );
+    for (const arm of ["good", "bad"] as const) {
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm}-`)));
+      work.push(cwd);
+      const selected = reference[arm];
+      const passes = selected.passes;
+      const tools = selected.tools;
+      const reply = `${selected.reply}\n${JSON.stringify({ offline_grader_passes: passes })}`;
+      const artifact = join(cwd, reference.file);
+      mkdirSync(dirname(artifact), { recursive: true });
+      writeFileSync(
+        artifact,
+        `${JSON.stringify({
+          offline_grader_passes: passes,
+          delegation: { class: arm === "good" ? "red" : "green", stage: "ticket", lowered_by: null },
+          readiness: {
+            vague_terms: arm === "good" ? ["faster"] : [],
+            criteria: arm === "good" ? "evidenced" : "absent",
+          },
+          assumptions: arm === "good" ? [{ item: "fixture", resolved_as: "known" }] : [],
+          owner: arm === "good" ? "Maya Chen" : null,
+        })}\n`,
+      );
+      const result = await evaluateCaseSession(
+        evalCase,
+        {
+          subject: "subject-reference",
+          host: "claude",
+          events: tools.map((command) => ({ kind: "tool", name: "Bash", raw: "Bash", input: { command } })),
+          reply,
+          rawOutput: reply,
+          exitCode: 0,
+          timedOut: false,
+          servedModel: "reference-binding",
+          durationMs: 1,
+        },
+        {
+          cwd,
+          filesCreated: [reference.file],
+          panel: buildPanel(matrix, { id: "subject-reference", host: "claude", model: "reference-binding" }),
+          queue: join(cwd, "queue.jsonl"),
+          judge: async (_reviewer, prompt) => {
+            const criteria = /<criteria>\n([\s\S]*?)\n<\/criteria>/.exec(prompt)?.[1];
+            const name = criteria === undefined ? undefined : criteriaNames.get(criteria);
+            const verdict = name !== undefined && prompt.includes(`"${name}"`) ? "PASS" : "FAIL";
+            return { reply: JSON.stringify({ verdict, reason: "offline reference oracle" }) };
+          },
+        },
+      );
+
+      expect(result.graders.map(({ name, verdict }) => [name, verdict])).toEqual(
+        evalCase.graders.map(({ name }) => [name, arm === "good" ? "pass" : "fail"]),
+      );
+      expect(result.result).toBe(arm === "good" ? "pass" : "fail");
+    }
+  });
+
+  test.each([
     ["claude", "claude.jsonl"],
-    ["codex", "codex.jsonl"],
+    ["codex", "codex-app-server.jsonl"],
     ["grok", "grok.jsonl"],
   ] as const)("applies tool, reply and file-focused graders to the %s transcript shape", async (host, fixture) => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-${host}-`)));
@@ -191,16 +360,158 @@ describe("evaluateCaseSession", () => {
     expect(row.invalid_reason).toMatch(/^host cancelled refused Bash call:/);
     expect(row.graders).toEqual([]);
     expect(summariseCaseSessions([row])).toMatchObject({
+      sessions: [{ subject: "subject-grok", validity: "invalid" }],
       results: [],
       invalid_sessions: [{ subject: "subject-grok" }],
     });
+  });
+
+  test("a session with no host-reported served model is invalid before grading", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-no-model-")));
+    work.push(cwd);
+    const row = await evaluateCaseSession(
+      loadCase(CASE_FILE),
+      session("claude", "claude.jsonl", { model: undefined, servedModel: undefined }),
+      {
+        cwd,
+        filesCreated: [],
+        panel: buildPanel(matrix, subject("claude")),
+        queue: join(cwd, "queue.jsonl"),
+        judge: async () => {
+          throw new Error("identity-less session reached a grader");
+        },
+      },
+    );
+
+    expect(row).toMatchObject({ validity: "invalid", invalid_reason: "host did not report served model" });
+    expect(row.graders).toEqual([]);
+  });
+});
+
+describe("host launch safety", () => {
+  test("a granted Claude case restricts and explicitly allows the case tools", () => {
+    const command = adapterFor("claude").command(
+      {
+        prompt: "fixture",
+        cwd: "/fixture",
+        env: {},
+        timeoutMs: 60_000,
+        allowedTools: ["Read", "Bash", "Write"],
+      },
+      "subject-binding",
+    );
+
+    expect(command.slice(command.indexOf("--tools"), command.indexOf("--tools") + 4)).toEqual([
+      "--tools",
+      "Read,Bash,Write",
+      "--allowedTools",
+      "Read,Bash,Write",
+    ]);
+  });
+
+  test("a granted Grok case auto-approves compound Bash inside a restricted tool set", () => {
+    const refusedCommand =
+      "ls -la && echo '--- git ---' && git rev-parse HEAD && git status --short && git log -1 --oneline; " +
+      'PATH="$PWD:$PATH" ak 2>&1 | head -20; which node; node -v';
+    const command = adapterFor("grok").command(
+      {
+        prompt: "fixture",
+        cwd: "/fixture",
+        env: {},
+        timeoutMs: 60_000,
+        allowedTools: ["Read", "Bash", "Write"],
+      },
+      "subject-binding",
+    );
+    const legacy = command
+      .filter(
+        (value) =>
+          value !== "--always-approve" && value !== "--tools" && value !== "read_file,run_terminal_command,write",
+      )
+      .concat("--permission-mode", "dontAsk");
+
+    expect(stubAllowsGrok(legacy, refusedCommand)).toBe(false);
+    expect(stubAllowsGrok(command, refusedCommand)).toBe(true);
+    expect(command).toContain("--always-approve");
+    expect(command).not.toContain("dontAsk");
+    expect(command).toContain("--tools");
+    expect(command.at(command.indexOf("--tools") + 1)).toBe("read_file,run_terminal_command,write");
+  });
+});
+
+describe("preflight", () => {
+  const caseFiles = [
+    "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
+    "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
+    "evals/super-bound/refused-oversized-change-split/case.yaml",
+    "evals/super-bound/approved-spec-produces-tickets/case.yaml",
+  ];
+  const argv = [
+    "--preflight",
+    "--host",
+    "claude",
+    "--host",
+    "codex",
+    "--host",
+    "grok",
+    ...caseFiles.flatMap((file) => ["--case", file]),
+  ];
+
+  test("checks all three hosts without starting a subject", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-")));
+    work.push(cwd);
+    for (const bundle of ["claude-code", "codex"]) {
+      const skill = join(cwd, bundle, "skills", "super-bound", "SKILL.md");
+      mkdirSync(dirname(skill), { recursive: true });
+      writeFileSync(skill, "# Super bound\n");
+    }
+    const lines: string[] = [];
+    let started = 0;
+    const code = await caseRunnerMain(argv, {
+      bundleRoot: cwd,
+      out: (line) => lines.push(line),
+      binaryProbe: () => true,
+      loginProbe: () => true,
+      startSubject: async () => {
+        started += 1;
+        throw new Error("preflight started a subject");
+      },
+    });
+    const rows = lines.map((line) => {
+      const parsed: unknown = JSON.parse(line);
+      if (!isPreflightOutput(parsed)) throw new Error("preflight emitted an invalid row");
+      return parsed;
+    });
+
+    expect(code).toBe(0);
+    expect(started).toBe(0);
+    expect(rows.map(({ host }) => host)).toEqual(["claude", "codex", "grok"]);
+    expect(rows.every(({ ok, checks }) => ok && checks.every((check) => check.ok))).toBe(true);
+  });
+
+  test("fails loudly when a referenced bundle skill is absent", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-red-")));
+    work.push(cwd);
+    const errors: string[] = [];
+    const code = await caseRunnerMain(argv, {
+      bundleRoot: cwd,
+      out: () => {},
+      err: (line) => errors.push(line),
+      binaryProbe: () => true,
+      loginProbe: () => true,
+    });
+
+    expect(code).toBe(2);
+    expect(errors).toContain("case-runner preflight claude bundle-skills: missing super-bound");
+    expect(errors).toContain("case-runner preflight codex bundle-skills: missing super-bound");
+    expect(errors).toContain("case-runner preflight grok bundle-skills: missing super-bound");
   });
 });
 
 describe("execute path", () => {
   test.each([
     ["claude", "claude.jsonl", "claude"],
-    ["codex", "codex.jsonl", "codex"],
+    ["codex", "codex-app-server.jsonl", "codex"],
     ["grok", "grok.jsonl", "grok"],
   ] as const)("runs the %s transcript fixture through the receipt path", async (host, fixture, binary) => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-main-${host}-`)));
@@ -233,6 +544,10 @@ describe("execute path", () => {
     expect(code).toBe(0);
     expect(result.command.at(0)).toBe(binary);
     expect(result.files_created).toContain("tickets/result.json");
+    expect(result.artifacts["tickets/result.json"]?.text).toBe('{"class":"red","owner":"Maya Chen"}\n');
+    expect(result.served_model).toBe(result.session.servedModel ?? null);
+    expect(result.session.servedModel).toBeDefined();
+    expect(result.session.rawOutput).toContain("delegation");
     expect(result.graders.map(({ definition }) => definition)).toEqual(loadCase(CASE_FILE).graders);
     expect(receiptCase.sha256).toBe(loadCase(CASE_FILE).sha256);
   });
@@ -324,7 +639,7 @@ describe("execute path", () => {
           mkdirSync(join(request.cwd, "tickets"));
           writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
           return codexStarted
-            ? { ...session("codex", "codex.jsonl"), subject: id, costUsd: 0.5 }
+            ? { ...session("codex", "codex-app-server.jsonl"), subject: id, costUsd: 0.5 }
             : { ...session("grok", "grok.jsonl"), subject: id, costUsd: 0.25 };
         },
         judge: async () => {
@@ -396,9 +711,11 @@ describe("dry run", () => {
       "subject-c:approved-spec-produces-tickets",
     ]);
     expect(plans.every((plan) => plan.mode === "dry-run" && Array.isArray(plan.command))).toBe(true);
-    expect(plans.at(0)?.command.slice(0, 2)).toEqual(["codex", "exec"]);
+    expect(plans.every((plan) => plan.timeout_ms >= Math.max(600_000, (plan.max_turns ?? 10) * 60_000))).toBe(true);
+    expect(plans.at(0)?.command.slice(0, 2)).toEqual(["codex", "app-server"]);
     const finalCase = cases.at(-1);
     if (finalCase === undefined) throw new Error("the dry-run fixture has no final case");
     expect(plans.at(-1)?.command.slice(0, 3)).toEqual(["grok", "-p", loadCase(finalCase).execution.prompt]);
+    expect(plans.at(-1)?.command).toContain("--always-approve");
   });
 });

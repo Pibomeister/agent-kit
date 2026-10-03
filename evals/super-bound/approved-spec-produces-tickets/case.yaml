@@ -7,6 +7,9 @@ execution:
     revision, but its implementation tickets have not been cut. The specification, resolved review
     and hash-bound approval are under runs/sandbox-self-serve/. The project record is project.json,
     and the repository-local scorer is `ak`; put the repository root on PATH when invoking it.
+    Persist the bounded ticket at
+    runs/sandbox-self-serve/bound-sandbox-self-serve-endpoint.json and the dependency plan at
+    runs/sandbox-self-serve/plan.json.
   max_turns: 32
   timeout_seconds: 600
   allowed_tools: [Read, Glob, Grep, Bash, Skill, Write, Edit]
@@ -15,18 +18,21 @@ context:
 graders:
   - name: consumes-hash-bound-approval
     type: llm
+    focus: trace
     weight: 1
     criteria: >-
       The response uses the recorded human approval only because its specification_hash equals the
       current specification's content hash; it does not bind approval to the whole plan.
   - name: emits-zero-context-tickets
     type: llm
+    focus: { source: file, path: runs/sandbox-self-serve/bound-sandbox-self-serve-endpoint.json }
     weight: 1
     criteria: >-
       The response emits implementation tickets with exact consumed and produced interfaces, owned
       files, acceptance criteria and named verification commands.
   - name: tickets-carry-three-evidence-blocks
     type: llm
+    focus: { source: file, path: runs/sandbox-self-serve/bound-sandbox-self-serve-endpoint.json }
     weight: 1
     criteria: >-
       Every emitted ticket carries the unmodified ak delegation result, all six readiness criteria

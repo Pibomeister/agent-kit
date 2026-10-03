@@ -77,6 +77,8 @@ interface Line {
   total_cost_usd?: number;
   num_turns?: number;
   modelUsage?: Record<string, unknown>;
+  requestId?: string;
+  sessionId?: string;
 }
 
 const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
@@ -102,6 +104,17 @@ const GRANT_RULES = new Map([
   ["WebSearch", "WebSearch"],
 ]);
 
+const GRANT_TOOLS = new Map([
+  ["Bash", "run_terminal_command"],
+  ["Read", "read_file"],
+  ["Edit", "search_replace"],
+  ["Write", "write"],
+  ["Grep", "grep"],
+  ["Glob", "list_dir"],
+  ["WebFetch", "web_fetch"],
+  ["WebSearch", "web_search"],
+]);
+
 const allowlisted = (env: Record<string, string>) => {
   const clean = cleanEnv(grok.env);
   return Object.entries(env).every(([name, value]) => clean[name] === value);
@@ -112,11 +125,12 @@ export const grok: SubjectAdapter = {
   env: ["GROK_HOME"],
   injection: "append-system-prompt",
   command(req: SessionRequest, model: string | undefined): string[] {
+    const grantedTools = req.allowedTools;
+    const granted = grantedTools !== undefined;
     const allow =
-      req.allowedTools === undefined
-        ? READ_ONLY_ALLOW
-        : req.allowedTools.flatMap((tool) => GRANT_RULES.get(tool) ?? []);
-    const deny = req.allowedTools === undefined ? READ_ONLY_RULES.deny : [];
+      grantedTools === undefined ? READ_ONLY_ALLOW : grantedTools.flatMap((tool) => GRANT_RULES.get(tool) ?? []);
+    const deny = !granted ? READ_ONLY_RULES.deny : [];
+    const tools = grantedTools?.flatMap((tool) => GRANT_TOOLS.get(tool) ?? []) ?? [];
     return [
       "grok",
       "-p",
@@ -124,12 +138,12 @@ export const grok: SubjectAdapter = {
       "--output-format",
       "streaming-json",
       ...allow.flatMap((rule) => ["--allow", rule]),
-      ...(req.allowedTools === undefined && allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
+      ...(!granted && allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
       ...deny.flatMap((rule) => ["--deny", rule]),
+      ...(granted ? ["--tools", [...new Set(tools)].join(","), "--always-approve"] : []),
       ...(model === undefined ? [] : ["-m", model]),
       ...(req.maxTurns === undefined ? [] : ["--max-turns", String(req.maxTurns)]),
-      "--permission-mode",
-      "dontAsk",
+      ...(!granted ? ["--permission-mode", "dontAsk"] : []),
       ...(req.appendSystemPrompt === undefined ? [] : ["--rules", req.appendSystemPrompt]),
     ];
   },
@@ -139,6 +153,8 @@ export const grok: SubjectAdapter = {
     let costUsd: number | undefined;
     let turns: number | undefined;
     let model: string | undefined;
+    let sessionId: string | undefined;
+    const requestIds: string[] = [];
     let stopReason: string | undefined;
     const flush = () => {
       if (text.trim() !== "") events.push({ kind: "message", text });
@@ -175,6 +191,8 @@ export const grok: SubjectAdapter = {
         // Usage is keyed by the models that served the session; more than one is kept as a list.
         const served = Object.keys(line.modelUsage ?? {}).sort();
         if (served.length > 0) model = served.join(",");
+        if (line.requestId !== undefined && !requestIds.includes(line.requestId)) requestIds.push(line.requestId);
+        if (line.sessionId !== undefined) sessionId = line.sessionId;
       }
     }
     flush();
@@ -183,7 +201,12 @@ export const grok: SubjectAdapter = {
     const parsed: ReturnType<SubjectAdapter["parse"]> = { events, reply };
     if (costUsd !== undefined) parsed.costUsd = costUsd;
     if (turns !== undefined) parsed.turns = turns;
-    if (model !== undefined) parsed.model = model;
+    if (model !== undefined) {
+      parsed.model = model;
+      parsed.servedModel = model;
+    }
+    if (requestIds.length > 0) parsed.requestIds = requestIds;
+    if (sessionId !== undefined) parsed.sessionId = sessionId;
     if (stopReason !== undefined) parsed.stopReason = stopReason;
     return parsed;
   },

@@ -55,6 +55,8 @@ export interface SessionResult {
   events: SessionEvent[];
   /** The final assistant reply. */
   reply: string;
+  /** Exact host stdout retained so a receipt can be reparsed without another model call. */
+  rawOutput?: string;
   exitCode: number;
   timedOut: boolean;
   costUsd?: number;
@@ -62,6 +64,12 @@ export interface SessionResult {
   turns?: number;
   /** The model the host reported serving the session, as it named it; absent when the host does not say. */
   model?: string;
+  /** Explicit receipt field for the host-reported model. `model` remains as a compatibility alias. */
+  servedModel?: string;
+  /** Provider request ids exposed by the host stream, in encounter order. */
+  requestIds?: string[];
+  /** Host session or thread id, when the host stream exposes one. */
+  sessionId?: string;
   /** The slash commands the host listed for the session (Claude Code's init line); absent when the host does not say. */
   slashCommands?: string[];
   /** Why the host ended the turn, as it named it (grok's `end.stopReason`); absent when the host does not say. */
@@ -96,6 +104,12 @@ export interface SubjectAdapter {
   injection: "append-system-prompt" | "developer-instructions" | "prompt-prefix" | "instructions-file";
   /** The argv this adapter would run, for the receipt. `model` is the matrix binding, passed through opaquely. */
   command(req: SessionRequest, model: string | undefined): string[];
+  /** Optional interactive host transport. The default runner executes `command` as a batch process. */
+  run?(
+    req: SessionRequest,
+    model: string | undefined,
+    options: { cwd: string; env: Record<string, string>; timeoutMs: number },
+  ): Promise<{ code: number; stdout: string; timedOut: boolean }>;
   /** Parse the host's stdout into the shared event shape. Pure, so it is tested on stored transcripts. */
   parse(stdout: string): {
     events: SessionEvent[];
@@ -104,6 +118,9 @@ export interface SubjectAdapter {
     usage?: TokenUsage;
     turns?: number;
     model?: string;
+    servedModel?: string;
+    requestIds?: string[];
+    sessionId?: string;
     slashCommands?: string[];
     stopReason?: string;
   };

@@ -1,0 +1,6 @@
+{"jsonrpc":"2.0","id":1,"result":{"userAgent":"codex-cli fixture","platformOs":"macos","platformArch":"aarch64","version":"fixture"}}
+{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-fixture","sessionId":"session-fixture"},"model":"subject-model","modelProvider":"fixture-provider","cwd":"/fixture","approvalPolicy":"never","approvalsReviewer":"user","sandbox":{"type":"readOnly","networkAccess":false}}}
+{"jsonrpc":"2.0","id":3,"result":{"turn":{"id":"turn-fixture","items":[],"status":"inProgress"}}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-fixture","turnId":"turn-fixture","completedAtMs":1,"item":{"id":"command-fixture","type":"commandExecution","command":"./ak delegation tickets/result.json --project project.json","commandActions":[],"cwd":"/fixture","status":"completed"}}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-fixture","turnId":"turn-fixture","completedAtMs":1,"item":{"id":"item-fixture","type":"agentMessage","text":"The delegation assessment was recorded."}}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-fixture","turn":{"id":"turn-fixture","items":[],"status":"completed"}}}

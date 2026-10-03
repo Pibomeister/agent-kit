@@ -13,7 +13,7 @@ import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
 import { costOf, loadPriceTable } from "./evals/pricing.ts";
 import { claude } from "./evals/subjects/claude.ts";
-import { codex } from "./evals/subjects/codex.ts";
+import { codex, codexThreadStart, runCodexAppServer } from "./evals/subjects/codex.ts";
 import { grok } from "./evals/subjects/grok.ts";
 import { rewriteAssignmentReadChain } from "./evals/subjects/grok-mediator.ts";
 import { privateHome } from "./evals/subjects/home.ts";
@@ -87,6 +87,16 @@ describe("claude", () => {
     expect(claude.parse(result).model).toBeUndefined();
   });
 
+  test("an assistant event's served model supersedes the init binding", () => {
+    const init = JSON.stringify({ type: "system", subtype: "init", model: "initial-binding" });
+    const assistant = JSON.stringify({
+      type: "assistant",
+      message: { model: "served-binding", content: [{ type: "text", text: "ok" }] },
+    });
+
+    expect(claude.parse(`${init}\n${assistant}`).servedModel).toBe("served-binding");
+  });
+
   test("a typed slash command's expansion becomes a user event the scorer reads as a load; tool results do not", () => {
     const expansion = JSON.stringify({
       type: "user",
@@ -135,6 +145,21 @@ describe("claude", () => {
 });
 
 describe("codex", () => {
+  test("the app-server transport retains the resolved model without making a model call in the test", async () => {
+    const stub = join(import.meta.dir, "evals", "fixtures", "case-runner", "codex-app-server-stub.ts");
+    const result = await runCodexAppServer(
+      { ...req, cwd: PACKAGE_ROOT },
+      "model-under-test",
+      { cwd: PACKAGE_ROOT, env: cleanEnv([]), timeoutMs: 5000 },
+      [process.execPath, stub],
+    );
+    const parsed = codex.parse(result.stdout);
+
+    expect(result).toMatchObject({ code: 0, timedOut: false });
+    expect(parsed).toMatchObject({ servedModel: "model-under-test", sessionId: "thread-stub", reply: "ok" });
+    expect(parsed.usage?.totalTokens).toBe(12);
+  }, 10_000);
+
   test("a live session: the shell cat of SKILL.md is a Bash call and a Read of that path", () => {
     const parsed = codex.parse(fixture("codex-skill.jsonl"));
     expect(tools(parsed.events).map((e) => [e.name, e.input.command ?? e.input.file_path])).toEqual([
@@ -175,6 +200,13 @@ describe("codex", () => {
       reasoningOutputTokens: 0,
       totalTokens: 38480,
     });
+  });
+
+  test("a model reroute replaces the app-server thread binding in the receipt", () => {
+    const started = JSON.stringify({ id: 2, result: { model: "initial-binding", thread: { id: "thread" } } });
+    const rerouted = JSON.stringify({ method: "model/rerouted", params: { toModel: "served-binding" } });
+
+    expect(codex.parse(`${started}\n${rerouted}`).servedModel).toBe("served-binding");
   });
 
   test("a completed turn without cache-write or reasoning totals counts them as zero", () => {
@@ -218,14 +250,15 @@ describe("codex", () => {
     ]);
   });
 
-  test("argv: appended context is a developer_instructions TOML string; no turn cap flag exists", () => {
+  test("app-server start carries the resolved model, context and sandbox outside argv", () => {
     const argv = codex.command({ ...req, maxTurns: 4, appendSystemPrompt: 'line "one"\nline two' }, "bound-b");
-    expect(argv.slice(0, 2)).toEqual(["codex", "exec"]);
-    expect(argv).toContain("--json");
-    expect(argv.slice(argv.indexOf("-m"), argv.indexOf("-m") + 2)).toEqual(["-m", "bound-b"]);
-    expect(argv).toContain('developer_instructions="line \\"one\\"\\nline two"');
-    expect(argv.join(" ")).not.toContain("turn");
-    expect(argv.at(-1)).toBe("Load the greet skill.");
+    expect(argv.slice(0, 3)).toEqual(["codex", "app-server", "--stdio"]);
+    expect(argv).not.toContain("bound-b");
+    expect(codexThreadStart({ ...req, appendSystemPrompt: 'line "one"\nline two' }, "bound-b")).toMatchObject({
+      model: "bound-b",
+      developerInstructions: 'line "one"\nline two',
+      sandbox: "read-only",
+    });
     expect(codex.injection).toBe("developer-instructions");
   });
 
@@ -238,15 +271,11 @@ describe("codex", () => {
 
   test("argv: a case that grants mutation runs in the scratch workspace, while an ordinary subject stays read-only", () => {
     const ordinary = codex.command(req, undefined);
-    expect(ordinary.slice(ordinary.indexOf("--sandbox"), ordinary.indexOf("--sandbox") + 2)).toEqual([
-      "--sandbox",
-      "read-only",
-    ]);
+    expect(ordinary.slice(0, 3)).toEqual(["codex", "app-server", "--stdio"]);
     const argv = codex.command({ ...req, allowedTools: ["Read", "Bash"] }, undefined);
-    expect(argv.slice(argv.indexOf("--sandbox"), argv.indexOf("--sandbox") + 2)).toEqual([
-      "--sandbox",
-      "workspace-write",
-    ]);
+    expect(argv).toEqual(ordinary);
+    expect(codexThreadStart(req, undefined).sandbox).toBe("read-only");
+    expect(codexThreadStart({ ...req, allowedTools: ["Read", "Bash"] }, undefined).sandbox).toBe("workspace-write");
   });
 });
 
@@ -281,7 +310,8 @@ describe("grok", () => {
     const values = (flag: string) => argv.flatMap((value, index) => (value === flag ? [argv[index + 1]] : []));
     expect(values("--allow")).toEqual(["Read", "Glob", "Grep", "Bash(*)", "Write", "Edit"]);
     expect(values("--deny")).toEqual([]);
-    expect(argv).toContain("dontAsk");
+    expect(argv).toContain("--always-approve");
+    expect(argv).not.toContain("dontAsk");
   });
 
   test("a live session under dontAsk: the refused write is still an Edit event, and there is no reply", () => {
