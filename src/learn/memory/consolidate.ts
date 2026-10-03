@@ -443,7 +443,7 @@ export function consolidate(
     project: basename(root),
   });
   if (reply === null) {
-    appendRun(ledger, { job: "nightly", status: "failed", reason: "no judge output", trigger });
+    appendRun(ledger, { job: "nightly", id: runId, status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "nightly failed: no judge output");
     ledger.commit("nightly failed: no judge output");
     return "nightly: judge call failed";

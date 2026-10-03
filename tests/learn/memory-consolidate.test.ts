@@ -334,6 +334,21 @@ function confirmedReply(o1: number, o2: number): Reply {
 }
 
 describe("nightly", () => {
+  test("a failed judge call records a failed run under the run id the judge call carried", () => {
+    const { ctx, root, ledger, review, source } = nightlyFixture(() => []);
+    try {
+      expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: judge call failed");
+    } finally {
+      source.close();
+    }
+    const runs = readJsonl<{ job: string; id: string; status: string }>(ledger.path("runs.jsonl")).filter(
+      (row) => row.job === "nightly",
+    );
+    expect(runs.map((row) => row.status)).toEqual(["failed"]);
+    expect(runs[0]?.id).toStartWith("nightly-");
+    expect(ctx.judgeContexts.map((context) => context?.runId)).toEqual([runs[0]?.id]);
+  });
+
   test("a lesson confirmed across two sessions is drafted for the knowledgebase and never published", () => {
     const { ctx, root, ledger, review, source, o1, o2 } = nightlyFixture((first, second) => [
       confirmedReply(first, second),
