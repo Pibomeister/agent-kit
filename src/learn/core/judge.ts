@@ -8,16 +8,7 @@
  * status, ids or rates.
  */
 import { createHash, randomUUID } from "node:crypto";
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
@@ -40,14 +31,7 @@ export type JudgeFn = (prompt: string, context: JudgeCallContext) => Record<stri
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-interface HostEnvelope {
-  result: string;
-  [HOST_MODEL_FIELD]?: string | null;
-  usage?: JsonValue;
-  total_cost_usd?: number | null;
-  session_id?: string | null;
-  is_error?: boolean | null;
-}
+type HostEnvelope = Record<string, JsonValue>;
 
 export interface JudgeTraceRow {
   at: string;
@@ -73,19 +57,7 @@ export interface JudgeTraceRow {
 const STDERR_TAIL_BYTES = 2 * 1024;
 const TRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const jsonValidator = new Ajv({ strict: false });
-const validateHostEnvelope = jsonValidator.compile<HostEnvelope>({
-  type: "object",
-  required: ["result"],
-  properties: {
-    result: { type: "string" },
-    [HOST_MODEL_FIELD]: { type: ["string", "null"] },
-    usage: {},
-    total_cost_usd: { type: ["number", "null"] },
-    session_id: { type: ["string", "null"] },
-    is_error: { type: ["boolean", "null"] },
-  },
-  additionalProperties: true,
-});
+const validateHostEnvelope = jsonValidator.compile<HostEnvelope>({ type: "object" });
 
 export interface JudgeTraceSummary {
   calls: number;
@@ -122,13 +94,23 @@ function stderrTail(stderr: string): string {
   return tail;
 }
 
-function hostEnvelope(stdout: string): HostEnvelope | null {
+function hostEnvelope(stdout: string): HostEnvelope {
   try {
     const parsed: unknown = JSON.parse(stdout.trim());
-    return validateHostEnvelope(parsed) ? parsed : null;
+    return validateHostEnvelope(parsed) ? parsed : {};
   } catch {
-    return null;
+    return {};
   }
+}
+
+/** The envelope's own model field, or the names its per-model usage is keyed by. */
+function hostModel(envelope: HostEnvelope): string | null {
+  const named = envelope[HOST_MODEL_FIELD];
+  if (typeof named === "string") return named;
+  const byModel = envelope.modelUsage;
+  if (byModel === null || typeof byModel !== "object" || Array.isArray(byModel)) return null;
+  const names = Object.keys(byModel);
+  return names.length === 0 ? null : names.join(",");
 }
 
 function traceSummaryRow(line: string): JudgeTraceSummaryRow | null {
@@ -148,42 +130,46 @@ function traceAttempt(
   startedAt: number,
   result: ReturnType<typeof run>,
 ): void {
-  const envelope = hostEnvelope(result.stdout);
-  const callId = randomUUID();
-  mkdirSync(config.runtimeDir, { recursive: true });
-  const row: JudgeTraceRow = {
-    at: new Date(startedAt).toISOString(),
-    call_id: callId,
-    run_id: context.runId,
-    loop: context.loop,
-    role: context.role,
-    project: context.project,
-    prompt_sha256: createHash("sha256").update(prompt).digest("hex"),
-    prompt_chars: prompt.length,
-    attempt,
-    exit_code: result.code,
-    timed_out: result.timedOut,
-    stderr_tail: stderrTail(result.stderr),
-    duration_ms: Date.now() - startedAt,
-    [HOST_MODEL_FIELD]: envelope?.[HOST_MODEL_FIELD] ?? null,
-    usage: envelope?.usage ?? null,
-    total_cost_usd: envelope?.total_cost_usd ?? null,
-    session_id: envelope?.session_id ?? null,
-    is_error: envelope?.is_error ?? null,
-  };
-  const line = `${JSON.stringify(row)}\n`;
-  const trace = join(config.runtimeDir, "judge-calls.jsonl");
-  if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes) {
-    const rotated = join(config.runtimeDir, "judge-calls.1.jsonl");
-    rmSync(rotated, { force: true });
-    renameSync(trace, rotated);
-  }
-  appendFileSync(trace, line);
-  if (config.traceFull) {
-    const bodies = join(config.runtimeDir, "judge-bodies");
-    mkdirSync(bodies, { recursive: true });
-    writeFileSync(join(bodies, `${callId}.prompt`), prompt);
-    writeFileSync(join(bodies, `${callId}.reply`), envelope?.result ?? result.stdout);
+  try {
+    const envelope = hostEnvelope(result.stdout);
+    const callId = randomUUID();
+    mkdirSync(config.runtimeDir, { recursive: true });
+    const row: JudgeTraceRow = {
+      at: new Date(startedAt).toISOString(),
+      call_id: callId,
+      run_id: context.runId,
+      loop: context.loop,
+      role: context.role,
+      project: context.project,
+      prompt_sha256: createHash("sha256").update(prompt).digest("hex"),
+      prompt_chars: prompt.length,
+      attempt,
+      exit_code: result.code,
+      timed_out: result.timedOut,
+      stderr_tail: stderrTail(result.stderr),
+      duration_ms: Date.now() - startedAt,
+      [HOST_MODEL_FIELD]: hostModel(envelope),
+      usage: envelope.usage ?? null,
+      total_cost_usd: typeof envelope.total_cost_usd === "number" ? envelope.total_cost_usd : null,
+      session_id: typeof envelope.session_id === "string" ? envelope.session_id : null,
+      is_error: typeof envelope.is_error === "boolean" ? envelope.is_error : null,
+    };
+    const line = `${JSON.stringify(row)}\n`;
+    const trace = join(config.runtimeDir, "judge-calls.jsonl");
+    if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes)
+      renameSync(trace, join(config.runtimeDir, "judge-calls.1.jsonl"));
+    appendFileSync(trace, line);
+    if (config.traceFull) {
+      const bodies = join(config.runtimeDir, "judge-bodies");
+      mkdirSync(bodies, { recursive: true });
+      writeFileSync(join(bodies, `${callId}.prompt`), prompt);
+      writeFileSync(
+        join(bodies, `${callId}.reply`),
+        typeof envelope.result === "string" ? envelope.result : result.stdout,
+      );
+    }
+  } catch {
+    return;
   }
 }
 
@@ -192,9 +178,13 @@ export function judgeTraceSummary(config: LearnConfig, now = Date.now()): JudgeT
   const summary: JudgeTraceSummary = { calls: 0, failures: 0, totalCostUsd: 0 };
   const cutoff = now - TRACE_WINDOW_MS;
   for (const name of ["judge-calls.1.jsonl", "judge-calls.jsonl"]) {
-    const path = join(config.runtimeDir, name);
-    if (!existsSync(path)) continue;
-    for (const line of readFileSync(path, "utf8").split("\n")) {
+    let text: string;
+    try {
+      text = readFileSync(join(config.runtimeDir, name), "utf8");
+    } catch {
+      continue;
+    }
+    for (const line of text.split("\n")) {
       const row = traceSummaryRow(line);
       if (row === null) continue;
       const at = Date.parse(row.at);

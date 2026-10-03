@@ -176,6 +176,95 @@ describe("judge call trace", () => {
     }
   });
 
+  test("the default host envelope names its model through per-model usage", () => {
+    const dir = projectScratch();
+    try {
+      const script = join(dir, "judge.sh");
+      const envelope = {
+        type: "result",
+        subtype: "success",
+        result: '{"answer":"kept"}',
+        total_cost_usd: 0.2,
+        modelUsage: { "fixture-binding": { inputTokens: 4, outputTokens: 53, costUSD: 0.2 } },
+      };
+      writeFileSync(script, `printf '%s\\n' '${JSON.stringify(envelope)}'\n`);
+      const config = {
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+        judgeCommand: ["sh", script],
+        judgeTimeoutMs: 10_000,
+      };
+
+      expect(
+        commandJudge(config)("prompt", { loop: "skills", role: "skill-scout", project: "shop", runId: null }),
+      ).toEqual({ answer: "kept" });
+
+      const row = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"))[0];
+      if (row === undefined) throw new Error("expected a judge trace row");
+      expect(row).toMatchObject({ model: "fixture-binding", total_cost_usd: 0.2 });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an error envelope without a result keeps every field it does carry", () => {
+    const dir = projectScratch();
+    try {
+      const script = join(dir, "judge.sh");
+      const envelope = {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        usage: { input_tokens: 11, output_tokens: 0 },
+        total_cost_usd: 0.03,
+        session_id: 42,
+      };
+      writeFileSync(script, `printf '%s\\n' '${JSON.stringify(envelope)}'\nexit 1\n`);
+      const config = {
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+        judgeCommand: ["sh", script],
+        judgeTimeoutMs: 10_000,
+      };
+
+      expect(
+        commandJudge(config)("prompt", { loop: "skills", role: "skill-scout", project: "shop", runId: null }),
+      ).toBeNull();
+
+      const row = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"))[0];
+      if (row === undefined) throw new Error("expected a judge trace row");
+      expect(row).toMatchObject({
+        exit_code: 1,
+        model: null,
+        usage: { input_tokens: 11, output_tokens: 0 },
+        total_cost_usd: 0.03,
+        session_id: null,
+        is_error: true,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a trace that cannot be written leaves the judge reply intact", () => {
+    const dir = projectScratch();
+    try {
+      const script = join(dir, "judge.sh");
+      writeFileSync(script, `printf '%s\\n' '{"result":"{\\"answer\\":\\"kept\\"}"}'\n`);
+      const config = {
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+        judgeCommand: ["sh", script],
+        judgeTimeoutMs: 10_000,
+      };
+      mkdirSync(join(config.runtimeDir, ".."), { recursive: true });
+      writeFileSync(config.runtimeDir, "not a directory");
+
+      expect(
+        commandJudge(config)("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId: null }),
+      ).toEqual({ answer: "kept" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("full tracing writes prompt and reply bodies under the call id", () => {
     const dir = projectScratch();
     try {
