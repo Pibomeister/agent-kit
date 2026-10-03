@@ -105,7 +105,9 @@ describe("declared unavailable", () => {
     const script = join(dir, "judge.sh");
     writeFileSync(script, `pwd > '${seen}'\necho '{"ok": true}'\n`);
     const config = { ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }), judgeCommand: ["sh", script] };
-    expect(commandJudge(config)("prompt")).toEqual({ ok: true });
+    expect(
+      commandJudge(config)("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId: null }),
+    ).toEqual({ ok: true });
     expect(readFileSync(seen, "utf8").trim()).toBe(config.runtimeDir);
   });
 });
@@ -271,8 +273,7 @@ describe("judge call trace", () => {
         judgeCommand: ["sh", script],
         judgeTimeoutMs: 10_000,
       };
-      mkdirSync(join(config.runtimeDir, ".."), { recursive: true });
-      writeFileSync(config.runtimeDir, "not a directory");
+      mkdirSync(join(config.runtimeDir, "judge-calls.jsonl"), { recursive: true });
 
       expect(
         commandJudge(config)("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId: null }),
