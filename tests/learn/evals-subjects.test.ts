@@ -132,18 +132,6 @@ describe("claude", () => {
     expect(full.slice(-3)).toEqual(["--append-system-prompt", "ROSTER", "Load the greet skill."]);
     expect(claude.injection).toBe("append-system-prompt");
   });
-
-  test("argv: a case's declared tools become the complete unattended grant", () => {
-    const argv = claude.command({ ...req, allowedTools: ["Read", "Bash", "Write"] }, undefined);
-    expect(argv.slice(argv.indexOf("--allowedTools"), argv.indexOf("--allowedTools") + 4)).toEqual([
-      "--allowedTools",
-      "Read",
-      "Bash",
-      "Write",
-    ]);
-    expect(argv).toContain("dontAsk");
-    expect(argv).toContain("none");
-  });
 });
 
 describe("codex", () => {

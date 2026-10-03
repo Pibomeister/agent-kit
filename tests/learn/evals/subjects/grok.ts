@@ -111,9 +111,7 @@ export const grok: SubjectAdapter = {
   injection: "append-system-prompt",
   command(req: SessionRequest, model: string | undefined): string[] {
     const allow =
-      req.allowedTools === undefined
-        ? READ_ONLY_ALLOW
-        : req.allowedTools.flatMap((tool) => GRANT_RULES[tool] ?? []);
+      req.allowedTools === undefined ? READ_ONLY_ALLOW : req.allowedTools.flatMap((tool) => GRANT_RULES[tool] ?? []);
     const deny = req.allowedTools === undefined ? READ_ONLY_RULES.deny : [];
     return [
       "grok",

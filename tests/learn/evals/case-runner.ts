@@ -395,6 +395,7 @@ function planRow(evalCase: EvalCase, subject: Subject, bundleRoot: string): Plan
 type StartSubject = typeof runSubject;
 export interface MainDependencies {
   matrix?: Matrix;
+  bundleRoot?: string;
   out?: (line: string) => void;
   err?: (line: string) => void;
   startSubject?: StartSubject;
@@ -416,7 +417,7 @@ function lastFlagValue(argv: readonly string[], flag: string): string | undefine
 }
 
 function argumentProblems(argv: readonly string[]): string[] {
-  const valueFlags = new Set(["--subject", "--case", "--json", "--bundle"]);
+  const valueFlags = new Set(["--subject", "--case", "--json"]);
   const switches = new Set(["--dry-run", "--execute"]);
   const problems: string[] = [];
   for (let index = 0; index < argv.length; index++) {
@@ -457,7 +458,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const absent = [...wanted].filter((id) => !subjects.some((subject) => subject.id === id));
     if (absent.length > 0) throw new Error(`matrix has no subject(s): ${absent.join(", ")}`);
     const cases = flagValues(argv, "--case").map(loadCase);
-    const bundleRoot = resolve(PACKAGE_ROOT, lastFlagValue(argv, "--bundle") ?? "dist");
+    const bundleRoot = dependencies.bundleRoot ?? join(PACKAGE_ROOT, "dist");
     if (argv.includes("--dry-run")) {
       for (const subject of subjects)
         for (const evalCase of cases) out(JSON.stringify(planRow(evalCase, subject, bundleRoot)));

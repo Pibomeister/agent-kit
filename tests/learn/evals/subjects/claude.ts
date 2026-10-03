@@ -73,9 +73,6 @@ export const claude: SubjectAdapter = {
       "--verbose",
       ...(model === undefined ? [] : ["--model", model]),
       ...(req.maxTurns === undefined ? [] : ["--max-turns", String(req.maxTurns)]),
-      ...(req.allowedTools === undefined
-        ? []
-        : ["--allowedTools", ...req.allowedTools, "--permission-mode", "dontAsk", "--permission-prompts", "none"]),
       "--settings",
       '{"disableAllHooks":true}',
       "--setting-sources",

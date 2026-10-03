@@ -211,21 +211,19 @@ describe("execute path", () => {
     const json = join(cwd, "result.json");
     const selected = subject(host);
     const start = session(host, fixture);
-    const code = await caseRunnerMain(
-      ["--execute", "--subject", selected.id, "--case", CASE_FILE, "--bundle", bundle, "--json", json],
-      {
-        matrix: { ...matrix, subjects: [selected] },
-        out: () => {},
-        startSubject: async (_adapter, id, _model, request) => {
-          expect(id).toBe(selected.id);
-          expect(request.allowedTools).toEqual(["Read", "Bash", "Write"]);
-          mkdirSync(join(request.cwd, "tickets"));
-          writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
-          return { ...start, subject: id };
-        },
-        judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
+    const code = await caseRunnerMain(["--execute", "--subject", selected.id, "--case", CASE_FILE, "--json", json], {
+      matrix: { ...matrix, subjects: [selected] },
+      bundleRoot: bundle,
+      out: () => {},
+      startSubject: async (_adapter, id, _model, request) => {
+        expect(id).toBe(selected.id);
+        expect(request.allowedTools).toEqual(["Read", "Bash", "Write"]);
+        mkdirSync(join(request.cwd, "tickets"));
+        writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+        return { ...start, subject: id };
       },
-    );
+      judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
+    });
     const parsedReport: unknown = JSON.parse(readFileSync(json, "utf8"));
     if (!isStoredReport(parsedReport)) throw new Error("case runner wrote an invalid test receipt");
     const result = parsedReport.results.at(0);
@@ -248,21 +246,10 @@ describe("execute path", () => {
     const errors: string[] = [];
     let started = 0;
     const code = await caseRunnerMain(
-      [
-        "--execute",
-        "--subject",
-        "subject-grok",
-        "--subject",
-        "subject-codex",
-        "--case",
-        CASE_FILE,
-        "--bundle",
-        bundle,
-        "--json",
-        json,
-      ],
+      ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
         out: () => {},
         err: (line) => errors.push(line),
         startSubject: async () => {
@@ -286,21 +273,10 @@ describe("execute path", () => {
     const json = join(cwd, "result.json");
     const errors: string[] = [];
     const code = await caseRunnerMain(
-      [
-        "--execute",
-        "--subject",
-        "subject-grok",
-        "--subject",
-        "subject-codex",
-        "--case",
-        CASE_FILE,
-        "--bundle",
-        bundle,
-        "--json",
-        json,
-      ],
+      ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
         out: () => {},
         err: (line) => errors.push(line),
         startSubject: async (_adapter, id, _model, request) => {
@@ -337,21 +313,10 @@ describe("execute path", () => {
     let codexStarted = false;
     let codexJudged = 0;
     const code = await caseRunnerMain(
-      [
-        "--execute",
-        "--subject",
-        "subject-grok",
-        "--subject",
-        "subject-codex",
-        "--case",
-        CASE_FILE,
-        "--bundle",
-        bundle,
-        "--json",
-        json,
-      ],
+      ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
         out: () => {},
         err: (line) => errors.push(line),
         startSubject: async (_adapter, id, _model, request) => {
