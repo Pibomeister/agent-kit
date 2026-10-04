@@ -1050,10 +1050,12 @@ function evaluateEvidence(
       .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
       .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
   );
-  const everGranted = ["bypass", "grants"].some((kind) => {
-    const at = join(a.dir, safeRunId(a.run), kind);
-    return existsSync(at) && readdirSync(at).length > 0;
-  });
+  const everGranted = [a.run, run.branch].some((id) =>
+    ["bypass", "grants"].some((kind) => {
+      const at = join(a.dir, safeRunId(id), kind);
+      return existsSync(at) && readdirSync(at).length > 0;
+    }),
+  );
   if (refs.length === 0)
     reasons.push({ code: "missing", detail: "the current verify marker has no verification evidence references" });
 

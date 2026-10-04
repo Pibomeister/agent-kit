@@ -230,7 +230,7 @@ describe("bypass granted: phases start without a typed command", () => {
 
 describe("start only: approvals, merge and deploy are never covered", () => {
   test("a host-unattested verifier receipt is refused once a checked gate started under the grant", () => {
-    for (const start of ["typed", "bypass", "ship-use"] as const) {
+    for (const start of ["typed", "bypass", "ship-use", "before-open"] as const) {
       const { worktree, ledger, grantPath } = granted();
       const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
       const ticket = {
@@ -252,6 +252,10 @@ describe("start only: approvals, merge and deploy are never covered", () => {
       };
       const ticketPath = join(worktree, "T-1.json");
       writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
+      if (start === "before-open")
+        expect(
+          ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-align").code,
+        ).toBe(0);
       const run = ak(worktree, ledger, "open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
       if (run === undefined) throw new Error("open did not return a run id");
       const grantFlags = start === "bypass" ? ["--bypass", grantPath, "--task", "T-1"] : [];
