@@ -13,137 +13,243 @@ metadata:
   ak_catalog_id: super-bound
 ---
 
-Requirements, specification, plan, dependency graph, ownership, acceptance criteria and verification.
-A decision ticket is never executable work.
+Requirements and specification, implementation plan, dependency graph, ownership boundaries,
+acceptance criteria and verification commands. A decision ticket is never an implementation ticket.
 
 ## When to use
 
-Use for an approved direction that still needs decision-level specification and zero-context tickets.
+- An approved direction exists and the work needs a specification, a plan and tickets before anyone
+  builds.
+- A specification exists but nobody has settled the slicing, the blocking edges or which ticket owns
+  which file.
+- The approved direction covers several modules and no capability map has been drawn.
+- A delegated controller holds a charter naming the `spec-approval` checkpoint and an approved
+  alignment result binds to the current source revision.
 
 ## Not for
 
-Do not use to choose a direction, re-bound an approved ticket, chart a multi-session effort or handle
-a mechanical rename.
+- Deciding what to build. An unsettled direction goes back to a human-started alignment run; this
+  skill starts from an approved result and does not reopen it.
+- A reviewed ticket that already carries its acceptance criteria and verification command. That
+  work enters at build, and re-bounding it re-decides what a reviewer already accepted.
+- Charting a multi-session effort into decision tickets and fog. That is `wayfind`.
+- Reviewing the specification for coherence or decision readiness. This skill calls `/ak:doc-review`
+  for that rather than grading its own artifact.
+- A single mechanical rename with one call site and one test.
 
 ## Authority
 
-Authority is `explicit` at the public entrypoint and `delegated-grant` at `bound.run`. Start only when
-the human's message begins with `/ak:super-bound`, a controller holds a runner-validated grant covering
-`spec-approval` plus `ticket-approval` when tickets will be emitted, or the bypass check below exits 0.
-Prose mentioning the skill is not a start. An unverifiable grant stops for explicit invocation
-(ruling `entrypoint-phase-operation-split`).
+Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
+`bound.run`. A human starts the public entrypoint by typing `/ak:super-bound`. A request in prose
+is not a start, even when it names this skill or the command. A delegated controller starts
+`bound.run` only under a runner-validated grant covering `spec-approval`, and only with a second
+grant covering `ticket-approval` when the operation emits implementation tickets
+(`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate a grant, the operation
+stops for explicit invocation rather than approving on the controller's word (ruling
+`entrypoint-phase-operation-split`). No skill starts this skill directly; it calls `doc-review`,
+which is model-invoked, and that direction is the legal one.
 
-For a supervisor bypass grant, run from the task worktree:
-`node <skill-dir>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id> --phase super-bound`.
-Refusal is `needs-decision`. The grant starts the phase only; the supervisor must still approve the
-specification hash and each ticket hash, and the worker never approves either.
+Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
+task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
+--phase super-bound`: exit 0 is the start, and a refusal is a stop with
+`needs-decision`. The grant starts the phase and nothing else. The specification approval at step 8
+and every ticket approval still come from the supervisor through `needs-decision`; the worker never
+approves its own specification or tickets.
 
 ## Inputs
 
-Require an approved alignment result bound to the current source revision; project `prd`, settled
-`adr` pages and glossary via `readContext`; delegation guidance; and, at `bound.run`, a charter covering
-the required checkpoints. Missing or stale approval, delegation guidance or charter is `needs-input`.
-An empty context is a fact; an unreachable knowledgebase is `failed`. Missing change-size or test-shape
-guidance leaves the project-configured starting points advisory rather than enforced.
+- An approved alignment result that binds to the current source revision. Absent, or bound to a
+  different revision: return `needs-input`. A direction approved against other code is not an
+  approval of this one.
+- Recorded project context, read through the knowledgebase adapter's `readContext`: the `prd` in
+  scope, the settled `adr` pages, and the glossary the vocabulary was agreed in. An empty result is
+  a fact; an unreachable knowledgebase returns `failed`.
+- The project record's configured guidance (`schemas/project.schema.json`) for change size and test
+  shape. Absent: the starting points below are advisory and nothing enforces them.
+- Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are
+  never invented.
+- At `bound.run` only: a `charter` (`schemas/charter.schema.json`) listing `spec-approval`, and
+  `ticket-approval` where tickets will be emitted. Absent: `needs-input`.
 
 ## Workflow
 
-1. Validate the start before any tool call but the bypass check. Unless the run began with
-   `/ak:super-bound`, a validated grant or the bypass check in Authority exiting 0, stop, read
-   nothing and respond only with the command the human must type.
-2. Detect before asking: inspect dependency, test, lint and continuous-integration configuration;
-   report what exists in two lines and ask only what remains.
-3. For work spanning modules, gate a capability map of stable kebab-case module ids, responsibilities
-   and dependencies before writing a module specification.
-4. Write problem, solution, non-goals, acceptance criteria, test seams, verification commands and out
-   of scope at decision level. Turn each vague criterion into a frontier question that proposes how
-   the answer would be verified. Include no paths or code except an exactly prototype-settled fragment.
-5. Choose slices only after the fewest viable, highest test seams. Preserve established vocabulary via
-   [the domain-modeling reference](../../references/domain-modeling/REFERENCE.md).
-6. If given a draft or scorer input, load the delegation reference and run
-   `ak delegation <ticket> --project <project-record>`. A current `ak` on `PATH` is a prerequisite;
-   a missing or incompatible command is a named prerequisite, not a scoring result. Persist its
-   complete output, readiness and assumptions before review; the draft is not an implementation ticket.
-7. Run `/ak:doc-review`. A receipt satisfies review only when bound to this specification and every
-   decision is answered. If any specification, assumption or review decision remains open, return it
-   and stop; create, draft and publish no implementation ticket.
-8. Record human approval as `specification_approval` bound to `specification_hash`. A changed hash needs
-   new approval. Under bypass, return `needs-decision` with the hash and stop for the supervisor.
-9. Load [the delegation reference](../../references/delegation/REFERENCE.md). Follow its ordered-stack,
-   readiness, assumption, authorship-boundary and evidence-reference rules for every slice.
-10. Populate the floor, evidenced factors and permitted class seed, run
-    `ak delegation <ticket> --project <project-record>` for each ticket, and persist its complete JSON
-    plus readiness and assumptions, including before `needs-input`.
-11. Give each ticket exact consumed and produced interfaces, blocking edges, exclusive file ownership,
-    shared generated artifacts, global numbering constraints, acceptance criteria and verification.
-12. Re-read each ticket from an empty context. Reshape an incomplete ticket or reclassify it
-    `type: decision`; never ask the implementer to discover an unresolved decision.
-13. Before publishing, prove every criterion is covered, interfaces connect exactly and no ticket uses
-    unfinished-content language or another ticket as a substitute. Under bypass, return
-    `needs-decision` with ticket hashes and stop for supervisor approval.
+1. Check how this run was started, before any other step and before any tool call. It is started
+   only when the human's message begins with `/ak:super-bound`, when a controller started the phase
+   operation `bound.run` under a validated grant, or when the bypass check in Authority exits 0. A
+   request in prose is not a start, even when it names this skill or the command, or asks for this
+   work without naming either. With neither, stop before reading the repository, checking inputs or
+   answering the task: the only response is to tell the human to type `/ak:super-bound` followed by
+   their request.
+2. Detect before you ask. Read what the repository already states — its dependency manifest, its
+   test runner, its lint configuration, its continuous-integration configuration — report what you
+   found in two lines, and ask only what is left.
+3. When the approved direction spans more than one module, draw the capability map first: a table of
+   stable kebab-case module ids, each with its responsibility and what it depends on. The map is
+   gated like every other step; a human reviews it before any module's specification is written.
+4. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
+   test seams, verification commands, out of scope. No file paths and no code, except a fragment a
+   prototype already settled exactly — a state machine, a reducer, a schema, a type shape. Turn
+   each vague criterion into a frontier question that proposes how the answer would be verified.
+5. Choose the test seams before the slices. The fewer seams the feature is verified across the
+   better, and the ideal number is one; name the seam you chose and why it is the highest one
+   available. Use the vocabulary the alignment run already established with
+   [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) rather than
+   renaming the same things here.
+6. When the caller supplies a draft ticket or scorer input, load the delegation reference and run
+   `ak delegation <ticket> --project <project-record>` now. A current `ak` on `PATH` is a
+   prerequisite: a missing command, or a usage error from an older `ak`, is reported as
+   `needs-input` naming that prerequisite, not as a scoring failure. Persist the scorer output,
+   readiness and assumptions on the evidence-bearing draft before document review; the draft is not
+   an approved implementation ticket.
+7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
+   ticket. A current review receipt bound to this specification with every decision answered
+   satisfies this step; otherwise open decisions return to the human and stop the run.
+   While any specification, assumption or review decision is open, the evidence-bearing draft is
+   kept and retyped `decision`; no implementation ticket is created or published until those
+   decisions are answered.
+8. Take the specification approval. A recorded human approval whose artifact hash equals the
+   current specification hash satisfies this step. Otherwise the plan record takes approval as
+   `specification_approval`, bound to `specification_hash`, so later slicing does not void it.
+   Under a bypass grant, report `needs-decision` naming the specification hash and stop; only the
+   supervisor's answer is the approval.
+9. Load [the delegation reference pack](../../references/delegation/REFERENCE.md) and follow its
+   ordered stack, readiness, assumptions, authorship-boundary and advisor procedures for every
+   zero-context slice.
+10. Run `ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
+   factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
+   `assumptions` before returning, including on `needs-input`. Never derive the class in this body.
+11. Give every ticket its interfaces: what it consumes from earlier tickets with exact signatures,
+    and what it produces that later tickets rely on with exact names, parameters and return types.
+    Write for a skilled developer who knows almost nothing about this toolset or problem domain.
+12. Declare the blocking edges, and then declare what the edges do not cover: exclusive file
+    ownership per ticket, shared generated artifacts, and global migration numbering. Two tickets
+    with no edge between them are still unsafe in parallel when they write the same file.
+13. Type-check every ticket. An implementer opening it with an empty context window who still
+    cannot do it is not holding an implementation ticket: reshape it, or reclassify it
+    `type: decision` and send it back.
+14. Self-review, then publish: every acceptance criterion is covered by a ticket, no ticket carries
+    an unfinished-content marker or a "same as the earlier ticket" instruction, and each ticket's
+    produced names and types match the next one's consumed names exactly. Under a bypass grant,
+    report `needs-decision` listing the tickets and their hashes and stop before publishing; only
+    the supervisor's answer approves them.
 
 ## Hard gates
 
-- Every ticket carries exact scorer output, all six readiness criteria plus `vague_terms`, and
-  assumptions with `text` and `resolved_as`. Each criterion records what was checked and where; every
-  readiness or stop state cites that evidence. A bare boolean, total or hand-derived class is invalid
-  (ruling `delegation-class-is-authority-not-finding`). No factor or lowering crosses the sensitive
-  floor (ruling `sensitive-surface-sets-the-floor`).
-- Every ticket states what the agent may do and what it must not do. Naming a human owner alone is not
-  a human-authorship boundary.
-- An unresolved vague term becomes a frontier question with a proposed observable, fixture or workload,
-  measurement or oracle, and pass condition as applicable. Never invent the missing target.
-- Where independently deployable phases apply, record this exact ordered, reversible recommendation:
-  pure refactor; additive schema expand; behavior behind a flag; consumer; backfill; schema contract.
-  Schema contract is separate. Refusal adds a decision ticket after the recommendation; it never turns
-  the result into a choice between the stack and an exception. Size alone remains guidance.
-- Required consultation is cited in `kb_refs` by transcript or receipt id/ref plus a one-line note
-  explaining the judgment evidence. A bare path, name or URL is not evidence. Unsupported hosts cite
-  none (ruling `advisor-consultation-follows-class`).
-- No implementation ticket exists while a specification, assumption or review decision is open. A
-  decision ticket may carry the fork, but is never executable work.
-- Approval binds to the specification hash. New evidence contradicting a settled decision stops the
-  write with that decision and evidence named; it is never resolved silently.
-- Enter [the consensus plan gate](../../protocols/consensus-plan-gate/PROTOCOL.md) only for genuine
-  architectural disagreement, declared high risk or review-driven replan, never routine breakdown.
-- No ticket substitutes vague error handling, unnamed edge cases, an unfinished-content marker or a
-  pointer to another ticket for concrete work.
+Gate: a decision ticket is never emitted as executable work. A ticket that fails the zero-context
+check is reclassified, never shipped as an implementation ticket because the deadline is close.
+
+Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
+`vague_terms`, and `assumptions` items using `text` and `resolved_as`. Vagueness, an open assumption
+or scorer failure stops it; no total, hand-derived class or request to delegate substitutes (ruling
+`delegation-class-is-authority-not-finding`). No factor or lowering crosses the sensitive floor
+(ruling `sensitive-surface-sets-the-floor`).
+
+Gate: each readiness criterion's evidence states what was checked and where. No readiness or stop
+flag is persisted outside the schema: readiness is the six scored criteria with evidence, and the
+stop is stated in the result.
+
+Gate: a ticket whose class makes a human the author puts permitted agent work in `allowed_changes`,
+prohibited agent work in `non_goals` and stops in `stop_conditions`. Naming a human owner alone is
+not that boundary.
+
+Gate: each unresolved vague term becomes a frontier question that proposes the observable, the
+workload or fixture, the measurement or oracle and the pass condition, as applicable, that would
+verify the answer. Never invent the missing target.
+
+Gate: a direction spanning independently deployable stack phases records this exact ordered,
+reversible recommendation: pure refactor; additive schema expand; behavior behind a flag; consumer;
+backfill; schema contract, with schema contract a separate ticket. Refusal to split adds a decision
+ticket after the recommendation; it never turns the result into a choice between the stack and an
+exception. Size alone is guidance.
+
+Gate: on a supporting host, a ticket whose class requires consultation is not approved until its
+`kb_refs` cites the consultation artifact as the delegation reference defines: a `transcript` or
+`receipt` evidence reference with a one-line note explaining the judgment evidence. A bare path, name
+or URL is not evidence; an unsupported host cites none (ruling `advisor-consultation-follows-class`).
+
+Gate: approval binds to the specification's hash, not the whole plan's. A changed specification
+does not inherit the old approval; take it again.
+
+Gate: while any specification, assumption or review decision is open, the evidence-bearing draft is
+kept and retyped `decision`; no implementation ticket is created or published until those decisions
+are answered.
+
+Gate: no ticket ships with an unfinished-content marker, with "add appropriate error handling" or
+"handle the edge cases" in place of the specifics, or with a pointer to another ticket in place of
+the work.
+
+Gate: evidence that invalidates a decision settled earlier in this session stops the write. Return a
+blocked-or-replan result naming the settled decision and the new evidence; never resolve it
+silently.
+
+Gate: the consensus plan gate is entered only on genuine architectural disagreement, declared high
+risk, or a review-driven replan — never automatically on a routine breakdown. It is a protocol this
+skill enters, not a skill it starts:
+[the consensus plan gate protocol](../../protocols/consensus-plan-gate/PROTOCOL.md).
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
-| "The readiness flag is enough." | A flag hides what was checked and cannot justify a stop. | Persist criterion-level evidence and cite it from the state. |
-| "The owner is human, so authorship is clear." | Ownership does not say what agent work is allowed. | State what the agent may and must not do. |
-| "The requester refused the stack, so I can offer an exception." | Refusal does not erase independently deployable boundaries. | Record the exact ordered recommendation, then a decision ticket for the refusal. |
+| "The ticket is obvious to me, so it is written clearly enough." | The implementer knows almost nothing about this toolset or problem domain. "Obvious to the author" names exactly the context the ticket fails to carry. | Write the consumed and produced signatures and the verification command, then reread the ticket as someone who has seen nothing else. |
+| "This ticket is basically the earlier one — I'll say 'similar to' and save the repetition." | A pointer to another ticket is context the implementer's window does not contain. | Repeat the specifics in full in this ticket. |
+| "I'll put the file paths in the specification so nobody has to guess." | A path in the specification settles an implementation decision the specification has not made, and the first refactor makes it wrong while it still reads authoritative. | Keep the specification at decision level; paths belong in the ticket, and only where a prototype settled them. |
+| "New evidence contradicts what we settled an hour ago — I'll just take the better answer." | A decision settled earlier in the session is not the planner's to overturn quietly; the human who settled it is not in the write. | Stop the write and return a blocked-or-replan result naming the settled decision and the evidence against it. |
+| "Their guidance is about a hundred lines a change, so this has to become three tickets." | Change size is a configurable starting point, not a gate, and neither it nor the test split is grounds for a finding on its own (ruling `numeric-heuristics-are-guidance`). | Slice on verifiable behavior. Where the natural slice exceeds the project's own guidance, record the exception in the project record. |
+| "They insist on one ticket for the whole migration, so I'll keep it together." | Refactor, expand, flagged behavior, consumer, backfill and contract are independently deployable delivery boundaries; a request cannot collapse them. | Record the exact ordered recommendation with contract separate, then emit a decision ticket naming the refusal. |
+| "The readiness flag is enough." | A flag hides what was checked, and the ticket schema has no field for it. | Persist the six scored criteria with their evidence and state the stop in the result. |
+| "The owner is human, so authorship is clear." | Ownership does not say what agent work is allowed. | Put permitted agent work in `allowed_changes`, prohibited agent work in `non_goals` and stops in `stop_conditions`. |
 
 ## Outputs
 
-- A `prd` page published by scope through `publishArtifact`; the knowledgebase chooses its location
-  (ruling `central-kb-owns-project-artifacts`).
-- A `plan-record` run artifact with specification, seams, slicing and dependency graph, linked from the
-  `prd`.
-- One `ticket` per slice: `type: implementation`, id `bound-<spec>-<slice>`, with interfaces, ownership,
-  edges, criteria, verification, readiness, resolved assumptions and exact ticket-time delegation.
-- A `type: decision` ticket for an unresolved fork, carrying any completed evidence blocks in place of
-  the implementation ticket. At `bound.run`, these outputs remain drafts.
+- `prd` page — the requirements when they are newly stated, published through the knowledgebase
+  adapter's `publishArtifact` under a `kb-document` placement naming kind `prd` and the scope. The
+  knowledgebase resolves the location and this skill supplies no path (ruling
+  `central-kb-owns-project-artifacts`).
+- Plan record, a run artifact with envelope schema `plan-record`
+  (`schemas/plan-record.schema.json`) — the specification, the seams, the slicing and the dependency
+  graph, published under a `run-artifact` placement and linked from the `prd`.
+- `ticket` (`schemas/ticket.schema.json`), `type: implementation`, id `bound-<spec>-<slice>` — one
+  per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
+  `assumptions` and the exact ticket-time `delegation` output.
+- `ticket`, `type: decision` — emitted for an open fork, with the three evidence blocks persisted in
+  place of the implementation ticket that could not be written.
+- At `bound.run`: the same artifacts as drafts. That operation drafts to the knowledgebase and does
+  not publish.
 
 ## Side effects
 
-Effects are `artifact-write`, `scratch-write`, `kb-draft` and `kb-publish`; the working repository is
-not modified.
-For publish, derive the idempotency key from run, operation, record identity and artifact hash; read
-before writing and confirm the returned ref and stored hash afterward. Missing read-back is `failed`.
+`artifact-write`, `scratch-write`, `kb-draft`, `kb-publish`. No `workspace-write`: this skill plans
+the change and never makes it.
+
+`kb-publish` is a remote side effect. Its idempotency key derives from the run, the operation, the
+knowledgebase record identity and the published artifact's hash; the read-back is the record ref and
+stored hash `publishArtifact` returns, read before the write and confirmed after it
+(`adapters/runner-contract/CONTRACT.md`, "Idempotency"). A publication whose read-back cannot be
+performed is `failed`, never complete.
 
 ## Stop conditions
 
-- `complete`: hash-bound approval, criterion coverage, three evidence blocks per implementation ticket
-  and matching publication read-backs.
-- `needs-input`: invalid start; missing or stale inputs; failed scorer; vague criterion; open assumption
-  or review decision; or new evidence invalidating a settled decision. Preserve completed evidence.
-- `cap-reached`: five consensus rounds or the runner-supplied ticket budget; return the unresolved
-  architectural question or remainder. Never invent an absent ticket budget.
-- `cancelled`: the human ends the run before approval. `failed`: knowledgebase or read-back failure.
+- `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
+  ticket, every implementation ticket carries the three evidence blocks, and every published
+  artifact's read-back matched what was sent.
+- `needs-input` — a start by neither the typed command nor a validated grant, which returns the
+  command to type and nothing else; no approved alignment result, an approval bound to a different
+  revision, missing project guidance or grant at `bound.run`, a failed scorer, an unresolved
+  assumption or vague criterion, a document-review decision left open, or a settled decision that
+  new evidence invalidated.
+  When assessment ran, the returned draft retains `delegation`, `readiness` and `assumptions`.
+- `cap-reached` — the consensus plan gate reached its round cap, or the runner-supplied ticket
+  budget ran out. Returns the unresolved architectural question or the undecomposed remainder.
+- `cancelled` — the human ended the run before approving the specification.
+- `failed` — the knowledgebase is unreachable, or a publication's read-back cannot be performed.
 
 ## Limits
 
-Prefer one highest viable test seam. Change size and test-shape values are project-configured guidance,
-not gates or findings (ruling `numeric-heuristics-are-guidance`).
+- Consensus plan-gate rounds: 5 (gate, `policies/limits.yaml`).
+- Implementation tickets started per run: the runner-supplied `ticket-budget` (gate when supplied).
+  A cap the runner did not supply is not enforced and not guessed; the run records that it was
+  absent.
+- Test seams a feature is verified across: as few as the feature allows, ideally one (guidance).
+- Change size: roughly one hundred lines where that is natural, and test shape: roughly 80 / 15 / 5
+  across unit, integration and end-to-end tests. Both are configurable starting points carried in
+  the project record, neither is enforced here, and neither is grounds for a finding on its own
+  (ruling `numeric-heuristics-are-guidance`).

@@ -120,11 +120,14 @@ hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context
     check is reclassified, not shipped.
   - Every ticket carries all six named readiness criteria plus vague_terms, assumptions items using
-    text and resolved_as, and exact successful ak delegation output. Each readiness or stop state
-    cites what was checked and where; a bare boolean is invalid, and missing evidence stops after
+    text and resolved_as, and exact successful ak delegation output; missing evidence stops after
     persistence.
-  - Every ticket states what the agent may do and what it must not do; naming a human owner without
-    both parts is not a human-authorship boundary.
+  - Each readiness criterion's evidence states what was checked and where. No readiness or stop
+    flag is persisted outside the schema; readiness is the six scored criteria with evidence, and
+    the stop is stated in the result.
+  - A ticket whose class makes a human the author puts permitted agent work in allowed_changes,
+    prohibited agent work in non_goals and stops in stop_conditions; naming a human owner alone is
+    not that boundary.
   - Each unresolved vague term becomes a frontier question that also proposes the observable,
     workload or fixture, measurement or oracle and pass condition needed to verify the answer.
   - A direction spanning independently deployable stack phases records the exact ordered reversible
@@ -139,8 +142,9 @@ hard_gates:
     place of the specifics, or with a pointer to another ticket in place of the work.
   - Evidence that invalidates a decision settled earlier in the session stops the write and returns
     a blocked-or-replan result, never a silent override.
-  - No implementation ticket is created, drafted or published while a specification, assumption or
-    review decision remains open; a decision ticket may carry the unresolved fork.
+  - While any specification, assumption or review decision is open, the evidence-bearing draft is
+    kept and retyped `decision`; no implementation ticket is created or published until those
+    decisions are answered.
   - The consensus plan gate is entered only on genuine architectural disagreement, declared high
     risk or a review-driven replan, never automatically on a routine breakdown.
 

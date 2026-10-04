@@ -24,10 +24,11 @@ may raise the class without producing a finding (ruling
 never as an implementation identity.
 
 The class changes authorship and checkpoint authority, not whether bounding produces a ticket.
-Every ticket states the authorship boundary in two explicit parts: what the agent may do and what it
-must not do. A `red` result produces a human-owned implementation ticket; its boundary may permit
-bounded research or regression tests, but must prohibit the agent from authoring the implementation.
-Naming a human owner without both parts is not an authorship boundary.
+A `red` result produces a human-owned implementation ticket. A ticket whose class makes a human the
+author states the authorship boundary in existing fields: permitted agent work, such as bounded
+research or regression tests, in `allowed_changes`; prohibited agent work, including authoring the
+implementation, in `non_goals`; and stops in `stop_conditions`. Naming a human owner alone is not
+that boundary.
 
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A
 never-dropped pack or required sensitive action sets a floor that no factor or lowering may cross;
@@ -97,9 +98,10 @@ absence is recorded; a body does not invent either measurement.
 
 Every ticket records all six criteria separately. Each criterion carries its own score and evidence
 stating what was checked and the artifact, field, command or repository location checked. A boolean,
-status word or total never substitutes for criterion evidence. Any persisted readiness or stop flag
-must cite the criterion evidence that makes it true. A criterion score is an integer from 0 to 2,
-where a higher score means the criterion is more fully met and 0 means it is absent.
+status word or total never substitutes for criterion evidence. No readiness or stop flag is persisted
+outside the schema: readiness is the six scored criteria with evidence, and the stop is stated in
+the result. A criterion score is an integer from 0 to 2, where a higher score means the criterion is
+more fully met and 0 means it is absent.
 
 | Criterion | Evidence expected |
 | --- | --- |
@@ -128,8 +130,11 @@ An `open` assumption is not implementation latitude. Resolve it before implement
 decision ticket and stop the affected slice at the zero-context gate.
 
 Persist `delegation`, `readiness` and `assumptions` on the draft ticket before any `needs-input`
-return reached after this assessment. The stop cites the failed criteria and their evidence; it does
-not erase the draft, reduce the result to prose or persist an unexplained stop boolean.
+return reached after this assessment. The stop is stated in the result and cites the failed criteria
+and their evidence; it does not erase the draft or reduce the result to prose.
+While any specification, assumption or review decision is open, the evidence-bearing draft is kept
+and retyped `decision`; no implementation ticket is created or published until those decisions are
+answered.
 
 ## Stack construction
 
