@@ -459,9 +459,8 @@ function growingFixture() {
       source.close();
     }
   };
-  /** Rebuild episodes and treat every observation so far as reflected. */
-  const build = (source: ClaudeMemSource) => {
-    buildEpisodes(source, ledger, "shop", []);
+  /** Treat every observation so far as reflected. */
+  const screen = (source: ClaudeMemSource) => {
     const observations = source.sessionObservations(GROWING_SID);
     const newest = observations.at(-1);
     if (!newest) throw new Error(`session ${GROWING_SID} has no observations`);
@@ -472,6 +471,11 @@ function growingFixture() {
       screenedThrough = newest.id;
     }
   };
+  /** Rebuild episodes and treat every observation so far as reflected. */
+  const build = (source: ClaudeMemSource) => {
+    buildEpisodes(source, ledger, "shop", []);
+    screen(source);
+  };
   return {
     ctx,
     ledger,
@@ -481,6 +485,12 @@ function growingFixture() {
     nightly: () =>
       withSource((source) => {
         build(source);
+        return consolidate(ctx, source, ledger, root, review);
+      }),
+    /** A nightly whose episodes were recorded before the newest observations were written and reflected. */
+    nightlyOnRecordedEpisodes: () =>
+      withSource((source) => {
+        screen(source);
         return consolidate(ctx, source, ledger, root, review);
       }),
   };
@@ -550,6 +560,21 @@ describe("nightly", () => {
         mark.obs_id,
       ]),
     ).toEqual([[grown.early.length, newest]]);
+    expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
+  });
+
+  test("an episode that grew after it was recorded stays consolidated once its new observations are consumed", () => {
+    const grown = growingFixture();
+    grown.build();
+    const late = grown.grow();
+    expect(grown.nightlyOnRecordedEpisodes()).toBe("nightly: 1/1 episodes -> +0 lessons, 0 review events");
+    expect(
+      readJsonl<{ obs: number; obs_id: number }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
+        mark.obs,
+        mark.obs_id,
+      ]),
+    ).toEqual([[grown.early.length + late.length, late[2]]]);
+    grown.build();
     expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
   });
 

@@ -460,7 +460,7 @@ export function consolidate(
     const rows = seen.filter((row) => row.id > after);
     const last = rows.at(-1);
     if (last !== undefined) {
-      const obs = Math.min(episode.obs, allRows.filter((row) => row.id <= last.id).length);
+      const obs = allRows.filter((row) => row.id <= last.id).length;
       unseen.set(episode.sid, { rows, obs, obs_id: last.id });
     }
   }
