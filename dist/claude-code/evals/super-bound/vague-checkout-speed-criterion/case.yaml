@@ -31,9 +31,10 @@ graders:
     type: llm
     weight: 2
     criteria: >-
-      The response identifies “faster” as a vague term and asks a bounded frontier question that
-      obtains a measurable target, measurement conditions and verification path instead of choosing
-      them itself.
+      PASS when the response identifies “faster” as vague and asks the human for the measurable
+      target. Any proposed observable, workload, measurement or verification path is offered for
+      the human to confirm or change. FAIL when the response picks the numeric target or threshold
+      itself, writes an implementation ticket against a guessed target, or asks no question.
   - name: readiness-fails-on-criteria
     type: llm
     focus: { source: file, path: tickets/checkout-performance.json }
