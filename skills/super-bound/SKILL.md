@@ -104,9 +104,10 @@ approves its own specification or tickets.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
-   While any specification, assumption or review decision is open, an evidence-bearing draft, where
-   one exists, is kept and retyped `decision`; no implementation ticket is created or published
-   until those decisions are answered.
+   While a specification or review decision is open, an evidence-bearing draft, where one exists, is
+   kept and retyped `decision`, and no implementation ticket exists. An open assumption is per
+   slice; that slice becomes a decision ticket at the zero-context gate and unrelated slices
+   proceed.
 8. Take the specification approval. A recorded human approval whose artifact hash equals the
    current specification hash satisfies this step. Otherwise the plan record takes approval as
    `specification_approval`, bound to `specification_hash`, so later slicing does not void it.
@@ -174,9 +175,9 @@ used for. A bare path, name or URL is not evidence; an unsupported host cites no
 Gate: approval binds to the specification's hash, not the whole plan's. A changed specification
 does not inherit the old approval; take it again.
 
-Gate: while any specification, assumption or review decision is open, an evidence-bearing draft,
-where one exists, is kept and retyped `decision`; no implementation ticket is created or published
-until those decisions are answered.
+Gate: while a specification or review decision is open, an evidence-bearing draft, where one exists,
+is kept and retyped `decision`, and no implementation ticket exists. An open assumption is per
+slice; that slice becomes a decision ticket at the zero-context gate and unrelated slices proceed.
 
 Gate: no ticket ships with an unfinished-content marker, with "add appropriate error handling" or
 "handle the edge cases" in place of the specifics, or with a pointer to another ticket in place of

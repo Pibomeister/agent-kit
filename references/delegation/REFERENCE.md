@@ -135,12 +135,12 @@ decision ticket and stop the affected slice at the zero-context gate.
 Persist `delegation`, `readiness` and `assumptions` on the draft ticket before any `needs-input`
 return reached after this assessment. The stop is stated in the result and cites the failed criteria
 and their evidence; it does not erase the draft or reduce the result to prose.
-While any specification, assumption or review decision is open, an evidence-bearing draft, where one
-exists, is kept and retyped `decision`; no implementation ticket is created or published until those
-decisions are answered. Retyping is more than the `type` value: add the `decision` object the ticket schema
-requires, carrying the open question, and drop `allowed_changes`, `write_ownership` and
-`integration_owner`, which a decision ticket may not carry. `delegation`, `readiness` and
-`assumptions` stay.
+While a specification or review decision is open, an evidence-bearing draft, where one exists, is
+kept and retyped `decision`, and no implementation ticket exists. An open assumption is per slice;
+that slice becomes a decision ticket at the zero-context gate and unrelated slices proceed.
+Retyping is more than the `type` value: add the `decision` object the ticket schema requires,
+carrying the open question, and drop `allowed_changes`, `write_ownership` and `integration_owner`,
+which a decision ticket may not carry. `delegation`, `readiness` and `assumptions` stay.
 
 ## Stack construction
 
