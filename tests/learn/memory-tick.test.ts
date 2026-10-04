@@ -210,7 +210,7 @@ describe("tick", () => {
     };
     const calls = (role: string) => ctx.prompts.filter((prompt) => prompt.includes(`# learn/${role}`)).length;
     const runs = () =>
-      readJsonl<{ job: string; status: string; min_obs_id?: number; max_obs_id?: number }>(ledger.path("runs.jsonl"));
+      readJsonl<{ job: string; status: string; min_obs_id?: number; obs_ids?: number[] }>(ledger.path("runs.jsonl"));
     const minutes = (n: number) => new Date(now + n * 60_000);
     try {
       expect(tickAt(NOON)).toBe("unscreened 0 unconsolidated 0 due reflect");
@@ -230,8 +230,11 @@ describe("tick", () => {
       expect(calls("consolidator")).toBe(0);
       const backfills = runs().filter((row) => row.job === "backfill");
       expect(backfills.map((row) => row.status)).toEqual(["ok", "ok"]);
-      expect(backfills.map((row) => row.max_obs_id)).toEqual([window - 1, (backfills[0]?.min_obs_id ?? 0) - 1]);
-      expect(backfills[1]?.min_obs_id).toBe(oldest[0]);
+      expect(backfills.flatMap((row) => row.obs_ids ?? []).toSorted((a, b) => a - b)).toEqual(
+        [...oldest, ...older, ...newest].filter((id) => id < window),
+      );
+      expect(backfills[0]?.obs_ids?.at(-1)).toBe(window - 1);
+      expect(backfills[1]?.obs_ids?.[0]).toBe(oldest[0]);
       expect(readState(ledger).last_obs_id_reflected).toBe(watermark);
 
       const nextNight = new Date(2026, 8, 19, 2, 10);
@@ -311,6 +314,65 @@ describe("tick", () => {
       for (const minute of [45, 60]) expect(tickAt(minute)).toBe("unscreened 0 unconsolidated 0 due none");
       expect(calls("consolidator")).toBe(1);
       expect(calls("reflector")).toBe(2);
+    } finally {
+      setSystemTime();
+      source.close();
+    }
+  });
+
+  test("old history no episode or deferred review id reaches is never backfilled", () => {
+    const root = gitRepo(join(projectScratch(), "archive"));
+    const dbPath = join(scratch(), "mem.db");
+    const mem = new MemFixture(dbPath);
+    const now = NOON.getTime();
+    const old = now - 60 * 86_400_000;
+    mem.session({ sid: "aaaa1111-0000", project: "archive", started: old, completed: old + 1000 });
+    const archived = Array.from({ length: 150 }, (_, index) =>
+      mem.observation({
+        sid: "aaaa1111-0000",
+        project: "archive",
+        type: "discovery",
+        title: `archived ${index}`,
+        facts: ["f".repeat(600)],
+        at: old + 500,
+      }),
+    );
+    mem.session({ sid: "bbbb2222-0000", project: "archive", started: now - 86_400_000, completed: now - 86_399_000 });
+    const recent = Array.from({ length: 3 }, (_, index) =>
+      mem.observation({
+        sid: "bbbb2222-0000",
+        project: "archive",
+        type: "discovery",
+        title: `recent ${index}`,
+        at: now - 600_000,
+      }),
+    );
+    mem.close();
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: dbPath },
+      replies: Array.from({ length: 4 }, () => (prompt: string) => reflectorReply(prompt)),
+    });
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    saveState(ledger, { last_nightly: "2026-09-18", last_weekly: now });
+    const source = ClaudeMemSource.open(dbPath);
+    if (source === null) throw new Error(`claude-mem source did not open at ${dbPath}`);
+    const tickAt = (minute: number) => {
+      setSystemTime(new Date(now + minute * 60_000));
+      const line = runProject(ctx, source, root, "archive").find((entry) => entry.startsWith("idle "));
+      return line?.slice(line.indexOf("unscreened"));
+    };
+    try {
+      expect(tickAt(0)).toBe("unscreened 0 unconsolidated 0 due reflect");
+      const runs = readJsonl<{ job: string; min_obs_id?: number }>(ledger.path("runs.jsonl"));
+      const window = runs.find((row) => row.job === "reflect")?.min_obs_id ?? 0;
+      expect(window).toBeGreaterThan(archived[0] ?? Infinity);
+      expect(window).toBeLessThan(recent[0] ?? 0);
+      expect(readState(ledger).last_obs_id_reflected).toBe(recent.at(-1));
+
+      for (const minute of [15, 30, 45]) expect(tickAt(minute)).toBe("unscreened 0 unconsolidated 1 due none");
+      expect(ctx.prompts).toHaveLength(1);
+      expect(readJsonl<{ job: string }>(ledger.path("runs.jsonl")).filter((row) => row.job === "backfill")).toEqual([]);
     } finally {
       setSystemTime();
       source.close();

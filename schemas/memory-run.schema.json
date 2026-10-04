@@ -24,14 +24,19 @@
     "tokens_in": { "type": "integer", "minimum": 0 },
     "tokens_out": { "type": "integer", "minimum": 0 },
     "min_obs_id": {
-      "description": "The lowest observation id shown to this reflect or backfill run. Together with max_obs_id on an accepted run, this is the exact range screened for downstream learning; an accepted run without it screened nothing downstream learning relies on.",
+      "description": "The lowest observation id shown to this reflect run. Together with max_obs_id on an accepted run, this is the exact range screened for downstream learning; an accepted reflect run without it screened nothing downstream learning relies on.",
       "type": "integer",
       "minimum": 0
     },
     "max_obs_id": {
-      "description": "The highest observation id shown to this reflect or backfill run.",
+      "description": "The highest observation id shown to this reflect run.",
       "type": "integer",
       "minimum": 0
+    },
+    "obs_ids": {
+      "description": "The observation ids shown to this backfill run. On an accepted run these exact ids, and no id between them, are screened for downstream learning.",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 }
     },
     "episodes": { "type": "integer", "minimum": 0 },
     "selected": { "type": "integer", "minimum": 0 },

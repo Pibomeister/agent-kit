@@ -8,6 +8,7 @@ import { GitHubReviewSource, paginatedArray, type ReviewComment } from "../../sr
 import { appendEvents, eventHash, loadEvents, makeEvent, parseSeverity } from "../../src/learn/review/events.ts";
 import {
   correctionEvent,
+  deferredObservationIds,
   githubCommentEvent,
   ingest,
   observationEvent,
@@ -335,14 +336,15 @@ describe("quarantine", () => {
     if (source === null) throw new Error(`claude-mem source did not open at ${memDb}`);
     try {
       expect(reflect(ctx, source, memory, "app")).toStartWith("reflect: ok");
-      expect(unscreenedIds(source, memory, "app")).toContain(history);
+      expect(unscreenedIds(source, memory, deferredObservationIds(ledger))).toEqual([history, suspect]);
       const windowed = run();
       expect([windowed.fresh, windowed.deferred]).toEqual([1, 2]);
       expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
       expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [history, suspect] });
 
-      while (unscreenedIds(source, memory, "app").length > 0)
-        expect(backfill(ctx, source, memory, "app")).toStartWith("backfill: ok");
+      expect(backfill(ctx, source, memory, "app", deferredObservationIds(ledger))).toBe("backfill: ok (2 obs, 0 left)");
+      expect(ctx.prompts.at(-1)).not.toContain("filler");
+      expect(backfill(ctx, source, memory, "app", deferredObservationIds(ledger))).toBe("backfill: nothing unscreened");
     } finally {
       source.close();
     }

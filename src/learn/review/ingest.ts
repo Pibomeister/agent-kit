@@ -170,6 +170,11 @@ export function observationEvent(row: ObservationRow, project: string): ReviewEv
   return event;
 }
 
+/** The review observation ids an ingest left waiting for the memory loop to screen. */
+export function deferredObservationIds(ledger: Ledger): number[] {
+  return readJson<{ deferred?: number[] }>(ledger.path(WATERMARK_FILE), {}).deferred ?? [];
+}
+
 /**
  * Review observations after the ledger's watermark, and the ones an earlier
  * run deferred. A review-shaped row becomes an event once an accepted reflect
@@ -184,9 +189,8 @@ export function eventsFromClaudeMem(
   sinceMs: number,
   memory: Ledger,
 ): { events: ReviewEvent[]; maxId: number; deferred: number[] } {
-  const mark = readJson<{ claude_mem_max_id?: number; deferred?: number[] }>(ledger.path(WATERMARK_FILE), {});
-  const minId = mark.claude_mem_max_id ?? 0;
-  const waiting = mark.deferred ?? [];
+  const minId = readJson<{ claude_mem_max_id?: number }>(ledger.path(WATERMARK_FILE), {}).claude_mem_max_id ?? 0;
+  const waiting = deferredObservationIds(ledger);
   const source = ClaudeMemSource.open(ctx.config.memDb);
   if (source === null) return { events: [], maxId: minId, deferred: waiting };
   const ranges = screenedObservationRanges(memory);

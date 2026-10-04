@@ -12,11 +12,12 @@
  * present rather than replaying history. Rejected and failed attempts keep a
  * separate exponential backoff without advancing the observation watermark.
  *
- * The backfill screens what that start skipped: observations at or below the
- * watermark that no accepted run was shown, one fixed batch per call, newest
- * first. It runs the same judge and the same quarantine, records the range it
- * screened and the observations it quarantined, and writes neither `memory.md`
- * nor the watermark.
+ * The backfill screens what that start skipped and a consumer waits on:
+ * observations at or below the watermark that no accepted run was shown,
+ * belonging to an unconsolidated episode or deferred by review ingest, one
+ * fixed batch per call, newest first. It runs the same judge and the same
+ * quarantine, records the ids it screened and the observations it
+ * quarantined, and writes neither `memory.md` nor the watermark.
  */
 import { existsSync, writeFileSync } from "node:fs";
 import type { LearnContext } from "../core/context.ts";
@@ -24,6 +25,7 @@ import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowMs, readText, todayLocal, tokens } from "../core/store.ts";
 import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
+import { EPISODE_WINDOW_MS, unconsolidatedEpisodes } from "./episodes.ts";
 import {
   appendRun,
   citedIds,
@@ -81,12 +83,22 @@ export function fetchNew(
   return fit(source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 }), inputChars);
 }
 
-/** Observation ids at or below the watermark that no accepted reflect or backfill run was shown, oldest first. */
-export function unscreenedIds(source: ClaudeMemSource, ledger: Ledger, memProject: string): number[] {
+/**
+ * Observation ids at or below the watermark that no accepted reflect or
+ * backfill run was shown and a consumer is waiting on, oldest first: those of
+ * an unconsolidated episode inside the episode window, and the review ids an
+ * ingest `deferred`. History no consumer reads is never listed.
+ */
+export function unscreenedIds(source: ClaudeMemSource, ledger: Ledger, deferred: readonly number[]): number[] {
   const ranges = screenedObservationRanges(ledger);
-  return source
-    .observationIds(memProject, readState(ledger).last_obs_id_reflected ?? 0)
-    .filter((id) => !isScreened(ranges, id));
+  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
+  const since = nowMs() - EPISODE_WINDOW_MS;
+  const ids = new Set(deferred);
+  for (const episode of unconsolidatedEpisodes(ledger)) {
+    if (episode.started < since) continue;
+    for (const row of source.sessionObservations(episode.sid)) ids.add(row.id);
+  }
+  return [...ids].filter((id) => id <= watermark && !isScreened(ranges, id)).toSorted((a, b) => a - b);
 }
 
 const field = (value: string | null) => (value ?? "").slice(0, 600);
@@ -361,18 +373,13 @@ export function backfill(
   source: ClaudeMemSource,
   ledger: Ledger,
   memProject: string,
+  deferred: readonly number[],
   trigger = "tick",
 ): string {
-  const pending = unscreenedIds(source, ledger, memProject);
-  const batch = pending.slice(-BACKFILL_BATCH);
-  const oldest = batch[0];
-  const newest = batch.at(-1);
-  if (oldest === undefined || newest === undefined) return "backfill: nothing unscreened";
-  const wanted = new Set(batch);
+  const pending = unscreenedIds(source, ledger, deferred);
+  if (pending.length === 0) return "backfill: nothing unscreened";
   const observations = fit(
-    source
-      .observationsSince(memProject, oldest - 1, { throughId: newest, newestFirst: true })
-      .filter((row) => wanted.has(row.id)),
+    source.observationsById(pending.slice(-BACKFILL_BATCH)).toReversed(),
     INPUT_CHARS - SUMMARY_CHARS,
   );
   const sids = [...new Set(observations.map((row) => row.memory_session_id))].toSorted();
@@ -395,23 +402,20 @@ export function backfill(
     observations,
     summaries,
   });
-  const minObsId = Math.min(...observations.map((row) => row.id));
-  const maxObsId = Math.max(...observations.map((row) => row.id));
   appendRun(ledger, {
     job: "backfill",
     status: "ok",
     ...security,
     tokens_in: tokens(observations.map(formatObservation).join("")),
-    min_obs_id: minObsId,
-    max_obs_id: maxObsId,
+    obs_ids: observations.map((row) => row.id),
     trigger,
     observations: observations.length,
     sessions: sids.length,
   });
   logLine(
     ledger,
-    `backfill ok: screened obs:${minObsId}..obs:${maxObsId}, ${security.quarantined.length} observation(s) quarantined`,
+    `backfill ok: screened ${observations.length} observation(s), ${security.quarantined.length} quarantined`,
   );
-  ledger.commit(`backfill: screened obs:${minObsId}..obs:${maxObsId}`);
+  ledger.commit(`backfill: screened ${observations.length} observation(s)`);
   return `backfill: ok (${observations.length} obs, ${pending.length - observations.length} left)`;
 }

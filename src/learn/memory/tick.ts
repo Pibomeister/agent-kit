@@ -16,6 +16,7 @@ import { acquireLock, Ledger } from "../core/ledger.ts";
 import { tickLogPath } from "../core/paths.ts";
 import { nowIso, nowMs, todayLocal } from "../core/store.ts";
 import { loadEvents } from "../review/events.ts";
+import { deferredObservationIds } from "../review/ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "../review/ledger.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { consolidate, readyEpisodes } from "./consolidate.ts";
@@ -42,7 +43,7 @@ export interface DecideInput {
   idleS: number;
   newTokens: number;
   newObs: number;
-  /** Observations at or below the reflect watermark that no accepted run was shown. */
+  /** Observations at or below the reflect watermark that no accepted run was shown and a consumer waits on. */
   unscreened: number;
   /** Unconsolidated episodes with screened observations to show; one still waiting on a screen is not counted. */
   unconsolidated: number;
@@ -70,7 +71,7 @@ function backoffElapsed(state: MemoryState, job: "reflect" | "nightly", now: num
  * | Job | Due when |
  * |---|---|
  * | reflect | idle and new discovery tokens reach the threshold, or any new observation 6h after the last reflect |
- * | backfill | idle and an observation behind the watermark is unscreened; one batch per tick |
+ * | backfill | idle and an observation an episode or review ingest waits on is unscreened; one batch per tick |
  * | nightly | past the nightly hour, not yet run today, one ready episode; or a backlog of 25 ready while idle |
  * | weekly | idle and a week since the last |
  *
@@ -146,7 +147,9 @@ export function runProject(
       return [...out, `no claude-mem observations under project '${memProject}'; check the folder basename matches`];
     const idleS = (nowMs() - lastActivity) / 1000;
     const { tokens: newTokens, count: newObs } = source.newTokensSince(memProject, state.last_obs_id_reflected ?? 0);
-    const unscreened = unscreenedIds(source, ledger, memProject).length;
+    const existingReview = new Ledger(reviewLedgerDir(ctx.config, root));
+    const deferred = deferredObservationIds(existingReview);
+    const unscreened = unscreenedIds(source, ledger, deferred).length;
     const unconsolidated = readyEpisodes(source, ledger, unconsolidatedEpisodes(ledger)).size;
     const force = options.force === true ? (options.job ?? "all") : null;
     let due = decide(
@@ -160,10 +163,9 @@ export function runProject(
       `idle ${Math.floor(idleS)}s new_tokens ${newTokens} new_obs ${newObs} unscreened ${unscreened} unconsolidated ${unconsolidated} due ${dueText}`,
     );
     const trigger = options.force === true ? "force" : "tick";
-    const existingReview = new Ledger(reviewLedgerDir(ctx.config, root));
     const runners: Record<Job, () => string> = {
       reflect: () => reflect(ctx, source, ledger, memProject, trigger),
-      backfill: () => backfill(ctx, source, ledger, memProject, trigger),
+      backfill: () => backfill(ctx, source, ledger, memProject, deferred, trigger),
       // Forwarding findings seeds the review ledger when it is missing; compaction only touches one that exists.
       nightly: () => consolidate(ctx, source, ledger, root, dryRun ? null : reviewLedger(ctx.config, root), trigger),
       weekly: () => deep(ctx, ledger, root, existingReview.initialized ? existingReview : null, trigger),

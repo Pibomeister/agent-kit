@@ -484,7 +484,7 @@ function growingFixture() {
     early,
     build: () => withSource(build),
     grow: () => ["late a", "late b", "late c"].map(add),
-    backfill: () => withSource((source) => backfill(ctx, source, ledger, "shop")),
+    backfill: () => withSource((source) => backfill(ctx, source, ledger, "shop", [])),
     nightly: () =>
       withSource((source) => {
         build(source);
@@ -544,11 +544,11 @@ describe("nightly", () => {
       expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no reflected observations to consolidate");
       expect(ctx.prompts).toEqual([]);
       expect(readState(ledger).last_nightly).toBe(todayLocal());
-      expect(unscreenedIds(source, ledger, "shop")).toEqual([o1, o2]);
-      expect(backfill(ctx, source, ledger, "shop")).toBe("backfill: ok (2 obs, 0 left)");
+      expect(unscreenedIds(source, ledger, [])).toEqual([o1, o2]);
+      expect(backfill(ctx, source, ledger, "shop", [])).toBe("backfill: ok (2 obs, 0 left)");
       expect(readState(ledger).last_obs_id_reflected).toBe(o2);
       expect(readFileSync(ledger.path("memory.md"), "utf8")).toBe(memory);
-      expect(backfill(ctx, source, ledger, "shop")).toBe("backfill: nothing unscreened");
+      expect(backfill(ctx, source, ledger, "shop", [])).toBe("backfill: nothing unscreened");
       expect(consolidate(ctx, source, ledger, root, review)).toBe(
         "nightly: 2/2 episodes -> +0 lessons, 0 review events",
       );

@@ -50,8 +50,7 @@ Distinct project names, with any worktree or subdirectory suffix folded into its
 ### `observationsSince`
 
 ```text
-observationsSince(project, afterId, { sinceEpochMs?, newestFirst?, throughId? }) -> ObservationRow[]
-observationIds(project, throughId) -> ObservationId[]
+observationsSince(project, afterId, { sinceEpochMs?, newestFirst? }) -> ObservationRow[]
 observationsById(ids) -> ObservationRow[]
 ```
 
@@ -66,14 +65,18 @@ the watermark is outside them, so a session the first window cut in two is shown
 backfill has screened the rest, and never consumed in part. Its mark counts the session's
 observations through the consumed id, matching `episode.obs`.
 
-What the watermark passed without an accepted run being shown it is screened by the backfill job:
-the history older than a first window, and whatever an accepted run from before `min_obs_id`
-covered, since such a run contributes no range. `observationIds` finds those ids and `throughId`
-bounds the read to one batch, newest first, one batch per idle tick. A backfill run calls the same
-judge under the same input cap, applies the same quarantine and records its own range; it writes
-neither the memory nor the watermark, and a muted project runs none. The scheduler counts an
-unconsolidated episode toward nightly only once nightly would show it, so an episode waiting on the
-backfill never makes nightly due.
+What the watermark passed without an accepted run being shown it is screened by the backfill job,
+and only where a consumer is waiting: the observations of an unconsolidated episode whose session
+started inside the 30-day episode window, and the review observations in the `deferred` list below.
+That covers the history older than a first window and whatever an accepted run from before
+`min_obs_id` covered, since such a run contributes no range. Older history no consumer reads is
+never sent to the judge, and with nothing waiting the backfill is not due. It reads its batch by id
+(`observationsById`), newest first, one batch per idle tick. A backfill run calls the same judge
+under the same input cap, applies the same quarantine and records the exact ids it was shown
+(`obs_ids`), so an id between two of them is not counted as screened; it writes neither the memory
+nor the watermark, and a muted project runs none. The scheduler counts an unconsolidated episode
+toward nightly only once nightly would show it, so an episode waiting on the backfill never makes
+nightly due.
 
 Review ingest moves its watermark past an unscreened review observation and carries that
 observation's id in the watermark file's `deferred` list. Each ingest re-reads only those ids

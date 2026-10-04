@@ -66,6 +66,8 @@ export const MEMORY_SOURCE = "learn-memory";
 export const STALE_ACTIVE_MS = 6 * 3600 * 1000;
 const WINDOW_MS = 30 * 86_400_000;
 const DAY_MS = 86_400_000;
+/** How far back a session may have started and still be recorded as an episode. */
+export const EPISODE_WINDOW_MS = 30 * DAY_MS;
 
 function isoToMs(ts: string | undefined): number | null {
   if (typeof ts !== "string" || ts.length < 19) return null;
@@ -227,7 +229,11 @@ export function buildEpisodes(
   const existing = loadEpisodes(ledger);
   const known = new Map(existing.map((episode) => [episode.sid, episode]));
   const raw: Array<Omit<Episode, "priority">> = [];
-  for (const session of source.sessions(memProject, now - (options.days ?? 30) * DAY_MS, now - STALE_ACTIVE_MS)) {
+  for (const session of source.sessions(
+    memProject,
+    now - (options.days === undefined ? EPISODE_WINDOW_MS : options.days * DAY_MS),
+    now - STALE_ACTIVE_MS,
+  )) {
     const previous = known.get(session.memory_session_id);
     if (previous !== undefined && session.observation_count <= previous.obs) continue;
     const episode = rawEpisode(source, session, events);
