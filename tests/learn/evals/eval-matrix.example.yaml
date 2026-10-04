@@ -19,3 +19,4 @@ reviewers:
 panels:
   independent-of: subject
   min-reviewers: 3
+  size: 3

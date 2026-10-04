@@ -40,7 +40,12 @@ describe("matrix", () => {
     expect(prices.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(Object.keys(prices.models).length).toBeGreaterThan(0);
     expect(m.reviewers.map((r) => r.host)).toEqual(["claude", "codex", "grok", "kimi"]);
-    expect(m.panels).toEqual({ "independent-of": "subject", "min-reviewers": 3 });
+    expect(m.panels).toEqual({ "independent-of": "subject", "min-reviewers": 3, size: 3 });
+    for (const subject of m.subjects) {
+      const panel = buildPanel(m, subject);
+      expect(panel.status).toBe("available");
+      expect(panel.members.length).toBe(3);
+    }
     // No line of the example starts with a `model:` key, the shape the catalog's routing scan looks for.
     expect(text.split("\n").some((line) => /^\s*-?\s*model\s*[:=]/.test(line))).toBe(false);
   });
