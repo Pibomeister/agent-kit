@@ -116,7 +116,8 @@ applied finding. A `common#/$defs/escalation` when the run blocks — need, opti
 default, charter rule, blocked finding id — in the same shape every phase operation escalates
 with. Recorded rulings and lessons are published through the knowledgebase adapter's
 `recordDecision` and `proposeLesson`, never to a path in the working repository (ruling
-`central-kb-owns-project-artifacts`).
+`central-kb-owns-project-artifacts`). Their commands are in the
+[knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Side effects
 

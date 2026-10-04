@@ -111,6 +111,9 @@ side_effects:
   - artifact-write
   - kb-publish
 
+references:
+  - knowledgebase-backend
+
 constraints:
   hypothesis-may-precede-a-red-capable-loop: false
   run-may-emit-both-a-patch-and-a-packet: false

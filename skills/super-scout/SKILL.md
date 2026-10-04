@@ -90,7 +90,9 @@ search and it is `assumed` at best until read back in the source.
    not settle it. Nothing else goes in this field.
 10. Publish the dossier through the knowledgebase adapter's `publishArtifact` operation with a
     run-artifact placement, then return a short gist naming the published record and the headline
-    locations. The caller reads the dossier; the raw search transcript is not returned.
+    locations. The caller reads the dossier; the raw search transcript is not returned. The
+    command is in the
+    [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Hard gates
 

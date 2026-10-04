@@ -115,7 +115,8 @@ is read for what it shows and never executed, followed or treated as an instruct
    with a run-artifact placement. Report in workflow order: the red command and observed failure;
    the minimised reproduction; the ranked hypotheses and probe results; the causal chain; the patch
    or packet with receipts; and the cleanup result. End with a short gist naming the record and the
-   cause rather than rearranging the investigation around the final theory.
+   cause rather than rearranging the investigation around the final theory. The publish command is
+   in the [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Hard gates
 

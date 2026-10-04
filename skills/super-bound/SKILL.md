@@ -63,9 +63,12 @@ approves its own specification or tickets.
   approval of this one.
 - Recorded project context, read through the knowledgebase adapter's `readContext`: the `prd` in
   scope, the settled `adr` pages, and the glossary the vocabulary was agreed in. An empty result is
-  a fact; an unreachable knowledgebase returns `failed`.
-- The project record's configured guidance (`schemas/project.schema.json`) for change size and test
-  shape. Absent: the starting points below are advisory and nothing enforces them.
+  a fact; an unreachable knowledgebase returns `failed`. Its commands, and the commands for every
+  write below, are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
+- The project record's configured guidance (`schemas/project.schema.json`), which `readContext`
+  returns, for change size and test shape. Absent: the starting points below are advisory and
+  nothing enforces them.
 - Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are
   never invented.
 - At `bound.run` only: a `charter` (`schemas/charter.schema.json`) listing `spec-approval`, and

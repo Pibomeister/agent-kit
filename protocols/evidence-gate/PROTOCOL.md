@@ -122,8 +122,8 @@ Gate: a degenerate rewrite is rejected whole. A gutted memory is worse than a st
 Only what passed: pattern pages with runtime-computed counts and status, a working memory whose
 every bullet cites a shown id and repeats nothing a quarantined observation alone said, lesson pages whose evidence is a subset of the input, and a run-log
 line (`schemas/memory-run.schema.json`) naming what was dropped or why the reply was rejected.
-Promotions leave as candidate drafts through the knowledgebase adapter's `proposeLesson`. Nothing
-is written inside a project repository.
+Promotions leave as candidate drafts through the knowledgebase adapter's `proposeLesson`, whose
+command is in the [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md). Nothing is written inside a project repository.
 
 ## Side effects
 

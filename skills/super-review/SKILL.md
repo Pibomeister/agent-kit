@@ -89,9 +89,10 @@ no comparison base is an opinion about a file tree.
 The requirements the change claims to satisfy, by id, for the spec axis. Where none can be resolved,
 the spec lane returns `unavailable` rather than inventing an intent to review against.
 
-The project's declared standards, discovered from the project's own record. Where a project declares
-none, the standards seat returns an empty result; absent standards never become invented preferences
-(`policies/review.yaml`).
+The project's declared standards, discovered from the project record that the knowledgebase
+adapter's `readContext` returns; the command is in the
+[knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md). Where a project declares none, the standards seat returns an empty
+result; absent standards never become invented preferences (`policies/review.yaml`).
 
 The test evidence that exists for the change, and the packs the change earned. Packs are the artifact
 evidence that selects conditional seats; they are read, never guessed at from file names alone.

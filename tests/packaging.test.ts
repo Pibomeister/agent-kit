@@ -10,6 +10,7 @@ import { checkCompleteness } from "../src/validation/completeness.ts";
 import { HOST_IDS, RESTRICTIONS, loadHostCapabilities } from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
 import {
+  BUNDLED_BACKENDS,
   INSTALL_FILE,
   checkInstallConfig,
   describeInstall,
@@ -2191,7 +2192,7 @@ describe("the adapters an install attaches, and what they lift", () => {
   test("the description names the file, or says the default applied", () => {
     const absent = ctxWith([]);
     expect(describeInstall(loadInstallConfig(absent.root, absent.catalog))).toBe(
-      "no ak.install.yaml: default, all fail-closed adapters attached (knowledgebase)",
+      "no ak.install.yaml: default, all fail-closed adapters attached (knowledgebase); knowledgebase: no backend, reads unavailable, writes refuse",
     );
     const empty = ctxWith([], "attached: []\n");
     expect(describeInstall(loadInstallConfig(empty.root, empty.catalog))).toBe("ak.install.yaml: attached none");
@@ -2357,7 +2358,7 @@ describe("tracker-access follows the system-of-record chain", () => {
       return describeInstall(loadInstallConfig(ctx.root, ctx.catalog));
     };
     expect(summaryFor()).toBe(
-      "no ak.install.yaml: default, all fail-closed adapters attached (knowledgebase, tracker); tracker: no backend, kb-write fallback (knowledgebase)",
+      "no ak.install.yaml: default, all fail-closed adapters attached (knowledgebase, tracker); knowledgebase: no backend, reads unavailable, writes refuse; tracker: no backend, kb-write fallback (knowledgebase)",
     );
     expect(summaryFor("attached: [tracker]\n")).toBe(
       "ak.install.yaml: attached tracker; tracker: no backend, kb-write fallback, which no attached adapter supplies",
@@ -2365,6 +2366,165 @@ describe("tracker-access follows the system-of-record chain", () => {
     expect(summaryFor("attached: [tracker]\ntracker:\n  backend: some-tracker\n")).toBe(
       "ak.install.yaml: attached tracker; tracker: backend some-tracker",
     );
-    expect(summaryFor("attached: [knowledgebase]\n")).toBe("ak.install.yaml: attached knowledgebase");
+    expect(summaryFor("attached: [knowledgebase]\n")).toBe(
+      "ak.install.yaml: attached knowledgebase; knowledgebase: no backend, reads unavailable, writes refuse",
+    );
+  });
+});
+
+/** A file from this repository's own tree, read as the packager would read it. */
+function readRepoFile(path: string): string {
+  return readFileSync(join(REPO, path), "utf8");
+}
+
+/**
+ * The knowledgebase backend a bundle carries (ruling `kb-backend-bundled-at-build`;
+ * `adapters/knowledgebase/CONTRACT.md` §6).
+ *
+ * Fixture roots only, like the two blocks above. beta links the reference pack
+ * the way a real skill does, and the pack links its BACKEND.md, so every case
+ * reaches the slot through the same two links a real bundle does.
+ */
+describe("the knowledgebase backend a bundle carries", () => {
+  const CATALOG_WITH_KB = CATALOG.replace(
+    "  - id: codex\n    status: authored\n",
+    "  - id: codex\n    status: authored\n  - id: knowledgebase\n    status: authored\n",
+  );
+  const SLOT = "references/knowledgebase-backend/BACKEND.md";
+  const PUBLISHED_SLOT = `references/shared/${SLOT}`;
+  const UNCONFIGURED = "# No knowledgebase backend\n\nEvery read is unavailable and every write refuses.\n";
+  // Links back to the contract, so the case shows the document's links are
+  // resolved from where it lives rather than from the slot.
+  const BACKEND_DOC = "# some-kb\n\nThe rules are in [the contract](../CONTRACT.md).\n";
+
+  const TREE_FILES = {
+    "catalog.yaml": CATALOG_WITH_KB,
+    "adapters/knowledgebase/CONTRACT.md": [
+      "# knowledgebase",
+      "",
+      "## 1. Capabilities",
+      "",
+      "| Capability | Unconfigured | What the refusal is |",
+      "|---|---|---|",
+      "| `kb-write` | `fails-closed` | Refuses |",
+      "",
+      "## 6. Backends",
+      "",
+    ].join("\n"),
+    "skills/beta/SKILL.md": `${HEAD("beta")}\nCommands: [the pack](../../references/knowledgebase-backend/REFERENCE.md).\n`,
+    "references/knowledgebase-backend/REFERENCE.md":
+      "# Knowledgebase backend\n\nThe commands are in [BACKEND.md](./BACKEND.md).\n",
+    [SLOT]: UNCONFIGURED,
+    "adapters/knowledgebase/backends/some-kb.md": BACKEND_DOC,
+  };
+  const ctxWith = (install?: string, extra: Record<string, string> = {}) =>
+    ctxFor(install === undefined ? { ...TREE_FILES, ...extra } : { ...TREE_FILES, [INSTALL_FILE]: install, ...extra });
+  const CONFIGURED = "attached: [knowledgebase]\nknowledgebase:\n  backend: some-kb\n";
+  const slotOf = (plan: ReturnType<typeof planBundle>) => plan.files.get(PUBLISHED_SLOT);
+
+  test("with no backend the bundle carries the unconfigured statement as written", () => {
+    for (const install of [undefined, "attached: [knowledgebase]\n"]) {
+      const ctx = ctxWith(install);
+      const plan = planBundle(ctx, "claude-code", {});
+      expect(hasErrors(plan.issues)).toBe(false);
+      expect(slotOf(plan)?.contents).toBe(UNCONFIGURED);
+      expect(slotOf(plan)?.source).toBe(SLOT);
+      expect(recordOf(plan)).toHaveProperty(["install", "backends"], {});
+      expect(describeInstall(loadInstallConfig(ctx.root, ctx.catalog))).toContain(
+        "knowledgebase: no backend, reads unavailable, writes refuse",
+      );
+    }
+  });
+
+  test("a configured backend's document is emitted in the slot, with its own links resolved from where it lives", () => {
+    const ctx = ctxWith(CONFIGURED);
+    const plan = planBundle(ctx, "claude-code", {});
+    expect(hasErrors(plan.issues)).toBe(false);
+    expect(slotOf(plan)?.source).toBe("adapters/knowledgebase/backends/some-kb.md");
+    // ../CONTRACT.md from backends/ is the contract; from the slot's published
+    // path it is written two directories up into the shared tree.
+    expect(slotOf(plan)?.contents).toBe(
+      "# some-kb\n\nThe rules are in [the contract](../../adapters/knowledgebase/CONTRACT.md).\n",
+    );
+    expect(plan.files.has("references/shared/adapters/knowledgebase/CONTRACT.md")).toBe(true);
+    // The unconfigured statement is replaced, not shipped beside the backend.
+    expect([...plan.files.values()].some((f) => f.contents === UNCONFIGURED)).toBe(false);
+    expect(recordOf(plan)).toHaveProperty(["install", "backends"], { knowledgebase: "some-kb" });
+    expect(describeInstall(loadInstallConfig(ctx.root, ctx.catalog))).toBe(
+      "ak.install.yaml: attached knowledgebase; knowledgebase: backend some-kb",
+    );
+  });
+
+  test("the slot is the only file a backend changes, and no mode moves", () => {
+    for (const host of HOST_IDS) {
+      const without = planBundle(ctxWith("attached: [knowledgebase]\n"), host, {});
+      const withBackend = planBundle(ctxWith(CONFIGURED), host, {});
+      const changed = [...withBackend.files.keys()].filter(
+        (path) => withBackend.files.get(path)?.contents !== without.files.get(path)?.contents,
+      );
+      const record = host === "codex" ? ".codex-plugin/ak.json" : ".claude-plugin/ak.json";
+      // The slot, the contract its links pulled in, and the build record that
+      // names the backend: nothing else, and no skill body.
+      expect(changed.toSorted()).toEqual(
+        [PUBLISHED_SLOT, "references/shared/adapters/knowledgebase/CONTRACT.md", record].toSorted(),
+      );
+      expect(withBackend.decisions).toEqual(without.decisions);
+    }
+  });
+
+  test("a backend with no document is an error, and the bundle keeps the unconfigured statement", () => {
+    const ctx = ctxWith("attached: [knowledgebase]\nknowledgebase:\n  backend: missing-kb\n");
+    const config = loadInstallConfig(ctx.root, ctx.catalog);
+    expect(config.backends.size).toBe(0);
+    expect(config.bundled.size).toBe(0);
+    const issue = config.issues.find((i) => i.rule === "packaging.install-backend-undocumented");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("adapters/knowledgebase/backends/missing-kb.md");
+    expect(issue?.message).toContain("kb-backend-bundled-at-build");
+    expect(checkInstallConfig(ctx).map((i) => i.rule)).toContain("packaging.install-backend-undocumented");
+    expect(slotOf(planBundle(ctx, "claude-code", {}))?.contents).toBe(UNCONFIGURED);
+  });
+
+  test("a backend for an unattached knowledgebase is an error, and nothing is substituted", () => {
+    const ctx = ctxWith("attached: []\nknowledgebase:\n  backend: some-kb\n");
+    const config = loadInstallConfig(ctx.root, ctx.catalog);
+    expect(config.bundled.size).toBe(0);
+    const issue = config.issues.find((i) => i.rule === "packaging.install-backend-unattached");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("kb-backend-bundled-at-build");
+    expect(slotOf(planBundle(ctx, "claude-code", {}))?.contents).toBe(UNCONFIGURED);
+  });
+
+  test("a backend id that is not a kebab-case id names no file, even one that exists", () => {
+    const ctx = ctxWith("attached: [knowledgebase]\nknowledgebase:\n  backend: ../backends/some-kb\n");
+    const config = loadInstallConfig(ctx.root, ctx.catalog);
+    expect(config.bundled.size).toBe(0);
+    expect(config.backends.size).toBe(0);
+    // The schema reports the shape; this reads nothing and substitutes nothing.
+    expect(config.issues).toEqual([]);
+    expect(slotOf(planBundle(ctx, "claude-code", {}))?.contents).toBe(UNCONFIGURED);
+  });
+
+  test("a backend document that links a source-only path is refused like any bundled file", () => {
+    const ctx = ctxWith(CONFIGURED, {
+      "adapters/knowledgebase/backends/some-kb.md": "# some-kb\n\nSee [the binding code](../../../src/x.ts).\n",
+      "src/x.ts": "export {};\n",
+    });
+    const refused = planBundle(ctx, "claude-code", {}).issues.find((i) => i.rule === "packaging.not-bundleable");
+    expect(refused?.file).toBe("adapters/knowledgebase/backends/some-kb.md");
+  });
+
+  test("the real tree's reference pack reaches the slot the packager substitutes", () => {
+    const real = readRepoFile;
+    const reference = "references/knowledgebase-backend/REFERENCE.md";
+    const contract = "adapters/knowledgebase/CONTRACT.md";
+    for (const slot of BUNDLED_BACKENDS) {
+      const plan = planBundle(
+        ctxWith(undefined, { [reference]: real(reference), [slot.slot]: real(slot.slot), [contract]: real(contract) }),
+        "claude-code",
+        {},
+      );
+      expect(plan.files.get(`references/shared/${slot.slot}`)?.contents).toBe(real(slot.slot));
+    }
   });
 });

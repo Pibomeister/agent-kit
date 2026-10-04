@@ -658,12 +658,20 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     if (done.has(next.source) || files.has(next.published)) continue;
     done.add(next.source);
 
-    const text = readTextIfPresent(join(root, next.source));
+    /**
+     * A configured bundled backend's document is emitted at its slot's
+     * published path, so every link to the slot reaches it and nothing that
+     * links the slot changes (`adapters/knowledgebase/CONTRACT.md` §6; ruling
+     * `kb-backend-bundled-at-build`). Its own links are resolved from where the
+     * document lives, which is what they were written against.
+     */
+    const from = install.bundled.get(next.source) ?? next.source;
+    const text = readTextIfPresent(join(root, from));
     if (text === null) continue; // checkSourceLinks owns the dangling-source case.
 
-    const rewritten = rewriteLinks(next.source, next.published, text, included, next.source);
+    const rewritten = rewriteLinks(from, next.published, text, included, from);
     issues.push(...rewritten.issues);
-    files.set(next.published, { path: next.published, contents: rewritten.text, source: next.source });
+    files.set(next.published, { path: next.published, contents: rewritten.text, source: from });
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
       if (published !== null) pending.push({ source: dep, published });
@@ -1097,7 +1105,9 @@ function buildRecord(
      * would describe a build nobody else could reproduce from it. `file` is
      * `null` when the default applied. `backends` because the same attached
      * list lifts `tracker-access` with a backend and borrows `kb-write`
-     * without one (`adapters/tracker/CONTRACT.md` §1).
+     * without one (`adapters/tracker/CONTRACT.md` §1), and carries one
+     * knowledgebase backend's commands or the unconfigured statement
+     * (`adapters/knowledgebase/CONTRACT.md` §6).
      */
     install: { file: install.file, attached: [...install.attached], backends: Object.fromEntries(install.backends) },
     /**

@@ -54,7 +54,9 @@ authority to apply a correction rides on the caller's authorization, recorded on
   `none`. Absent is not a stop — `none` is a real value and it changes which persona sections run.
 - Prior round state, at a later round: the open `review` run, its findings and their dispositions.
 - Recorded context: the settled decision pages and the glossary whose vocabulary the document is
-  supposed to be using, read through the knowledgebase adapter's `readContext`.
+  supposed to be using, read through the knowledgebase adapter's `readContext`. Its commands, and
+  the command that publishes the review, are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - Declared risk, where the project declares it. Absent, the conditional lanes are selected from
   artifact evidence alone.
 

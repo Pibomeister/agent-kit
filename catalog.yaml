@@ -22,7 +22,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.11
+  version: 0.1.12
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not
@@ -813,7 +813,7 @@ roles:
       candidate for each. Repeated corrections become guardrails, not skills.
 
 # ---------------------------------------------------------------------------
-# References — 7. Loaded on demand. Never exposed as slash commands.
+# References — 8. Loaded on demand. Never exposed as slash commands.
 # ---------------------------------------------------------------------------
 references:
   - id: codebase-design-vocabulary
@@ -852,6 +852,16 @@ references:
     summary: >-
       Which ticket system is the record, the rules every tracker binding obeys, and the
       linear-linearis setup and guarded invocation, shipped inside the plugin.
+  - id: knowledgebase-backend
+    batch: 5
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-align, super-bound, super-scout, super-build, super-verify, super-ship,
+                compound, compound-refresh, doc-review, diagnose, wayfind, super-review, explain]
+    summary: >-
+      Where this build's commands for the seven knowledgebase operations are, what each returns
+      with nothing to reach, and the rules every backend obeys. Its BACKEND.md is the configured
+      backend's document, or the unconfigured statement when the build names none.
   - id: delegation
     batch: 11
     provenance_origin: conversation
@@ -987,8 +997,9 @@ schemas:
     batch: 5
     status: authored
     summary: >-
-      The local, uncommitted ak.install.yaml: which adapters one install attaches. Absent, every
-      adapter that supplies a capability and fails closed on it is attached.
+      The local, uncommitted ak.install.yaml: which adapters one install attaches, and the tracker
+      and knowledgebase backends it names. Absent, every adapter that supplies a capability and
+      fails closed on it is attached, and no backend is named.
   - id: firstmate-binding
     batch: 5
     status: authored

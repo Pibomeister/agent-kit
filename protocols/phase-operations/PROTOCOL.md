@@ -102,7 +102,8 @@ and — when the status is not `complete` — a `common#/$defs/escalation` or th
 the artifacts the phase's own protocol emits, each under its schema in `schemas/`. Project-derived
 content is published through the knowledgebase adapter's `publishArtifact`, never to a path in
 the working repository (ruling `central-kb-owns-project-artifacts`;
-`adapters/knowledgebase/CONTRACT.md`).
+`adapters/knowledgebase/CONTRACT.md`). The publish command is in the
+[knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Side effects
 

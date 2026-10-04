@@ -124,7 +124,8 @@ seats, the per-finding `ADDRESSED` / `NOT ADDRESSED` dispositions, `new_findings
 `novelty_evidence`, `fix_cycles`, `verdict`, and `baseline_reset` when one was triggered. Open
 findings keep their evidence. Out-of-scope observations are ledgered on the record, not looped.
 Anything published as project knowledge goes through the knowledgebase adapter (ruling
-`central-kb-owns-project-artifacts`).
+`central-kb-owns-project-artifacts`), whose publish command is in the
+[knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Side effects
 

@@ -28,7 +28,8 @@ quality problems — cited rule by rule, and nothing about whether the change sa
   working tree.
 - The project's designated standards, read through the knowledgebase adapter's `readContext`, or
   an explicit statement that the project designates none. Those are different inputs and they
-  produce different results.
+  produce different results. The read's commands are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - The prior-finding packet: each finding's id, `fingerprint`, recorded disposition and evidence.
 - Not the implementer's narrative, rationale or self-review.
 

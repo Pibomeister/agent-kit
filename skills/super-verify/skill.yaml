@@ -98,6 +98,9 @@ side_effects:
   - artifact-write
   - kb-publish
 
+references:
+  - knowledgebase-backend
+
 constraints:
   description-of-a-run-may-be-a-receipt: false
   receipt-may-outlive-its-revision: false

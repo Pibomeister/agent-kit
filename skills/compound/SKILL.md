@@ -51,7 +51,8 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
 - The run's evidence: the failure, the correction or the review finding, referenced by artifact id
   and hash. Absent: `complete` with no lesson, and the report says there was no trigger.
 - The knowledgebase adapter's `readContext`, to find an existing lesson on the same subject.
-  Unavailable: `needs-input`.
+  Unavailable: `needs-input`. Its commands, and the `proposeLesson` command, are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - Optional, under the `learning` profile: `ak learn review report` for the repository's active
   review patterns and guardrail drafts, and `ak learn memory show` for its working memory and
   confirmed lessons. A pattern or lesson there is admitted as supporting evidence only where the

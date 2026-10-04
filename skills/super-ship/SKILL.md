@@ -153,7 +153,8 @@ The project's own release checks, discovered rather than assumed.
     being answered in the pipeline (ruling `no-mistakes-as-ship-transport`). The mechanics are in
     `./references/transport-no-mistakes.md`.
 11. Draft the lesson candidate through the knowledgebase adapter's draft operation. It stays a draft:
-    publishing it is a separate authority this run does not hold.
+    publishing it is a separate authority this run does not hold. The draft command is in the
+    [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 12. Hand the open pull request to the watch lane, and report the ship as prepared rather than
     finished until that lane owns it.
 13. Report what was done, what was skipped and why, and every action declined for want of a charter

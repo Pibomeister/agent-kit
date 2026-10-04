@@ -128,6 +128,9 @@ side_effects:
   - kb-draft
   - artifact-write
 
+references:
+  - knowledgebase-backend
+
 constraints:
   dry-run-may-make-a-remote-call: false
   run-may-merge-or-deploy: false

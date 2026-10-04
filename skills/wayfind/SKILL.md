@@ -66,7 +66,9 @@ back rather than resolved here.
   - Nothing available: `needs-input`, because a map nobody else can read is not a shared map. The
     map is never kept in the session or written into the working repository instead.
   The binding and its guarded invocation are in the
-  [tracker-of-record reference pack](../../references/tracker-of-record/REFERENCE.md).
+  [tracker-of-record reference pack](../../references/tracker-of-record/REFERENCE.md). The
+  knowledgebase's commands, for the fallback and for publishing the map, are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - At `wayfind.map` only: a `charter` (`schemas/charter.schema.json`) listing `ticket-approval`.
   Absent: `needs-input`.
 

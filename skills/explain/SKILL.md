@@ -47,7 +47,8 @@ command.
 - The repository at a readable revision. Unreadable: `needs-input`.
 - Knowledgebase context through the adapter's `readContext`: decision records, `concept` and
   `system` pages, the glossary. Optional. Unavailable: the explanation says so and rests on the
-  repository alone.
+  repository alone. Its commands are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - The intended readers, when the request names them. Depth follows the request, never the caller's
   identity alone.
 

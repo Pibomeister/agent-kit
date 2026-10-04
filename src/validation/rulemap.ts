@@ -130,6 +130,7 @@ export const SCHEMA_RULE_IMPLEMENTATIONS: Readonly<Record<string, RuleImplementa
   // install.schema.json
   "install.attached-names-an-attachable-adapter": ["packaging.install-unknown-adapter"],
   "install.backend-names-an-attached-adapter": ["packaging.install-backend-unattached"],
+  "install.knowledgebase-backend-has-a-document": ["packaging.install-backend-undocumented"],
 
   // lesson.schema.json
   "lesson.duplicate-of-an-existing-lesson-is-refused": ["lesson.duplicate-of-an-existing-lesson-is-refused"],

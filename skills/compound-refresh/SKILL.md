@@ -43,7 +43,8 @@ and names the slash command (ruling `entrypoint-phase-operation-split`).
 - The scope: a subject, a module, or a set of lesson ids. Absent: the lessons touching what changed
   most recently in the knowledgebase's context for this project.
 - The lessons in scope, through the knowledgebase adapter's `readContext`. Unavailable:
-  `needs-input`.
+  `needs-input`. Its commands, and the commands for every change proposed below, are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - The current codebase, read-only, as the evidence each lesson is checked against.
 - Optional, under the `learning` profile: `ak learn review report` for review patterns and their
   guardrail status, and `ak learn memory show` for working memory and lessons. The runtime is an

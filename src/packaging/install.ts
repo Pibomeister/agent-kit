@@ -49,6 +49,66 @@ const FALLBACK_HEADER = /^\|\s*Capability\s*\|\s*Unconfigured\s*\|\s*Falls back 
 const FALLBACK_CELL = /^`([^`]+)`$/;
 const NO_FALLBACK = "none";
 
+/**
+ * An adapter whose backend travels inside the bundle, rather than being bound
+ * by a project folder when an operation runs.
+ *
+ * `adapters/knowledgebase/CONTRACT.md` §6 is the case. A bundled skill works
+ * from the package's own files alone, so the commands behind the seven
+ * knowledgebase operations have to be in the bundle, and which knowledgebase
+ * they reach is therefore decided when the bundle is built (ruling
+ * `kb-backend-bundled-at-build`).
+ */
+export interface BundledBackendSlot {
+  adapter: string;
+  /** Where a backend's document lives: `<documents>/<backend>.md`. */
+  documents: string;
+  /**
+   * The source file a configured backend's document is emitted in place of.
+   * As written it is the unconfigured statement, which is what the bundle
+   * carries when no backend is named.
+   */
+  slot: string;
+  /** What the unconfigured statement amounts to, for the summary line. */
+  unconfigured: string;
+  /** Where the contract says what a backend document states. */
+  contract: string;
+  /** The ruling a message about this slot cites. */
+  ruling: string;
+}
+
+/**
+ * Written here rather than parsed out of the contract, unlike the supply
+ * tables: these are paths the packager reads and emits, and a path parsed out
+ * of prose is one rewording away from pointing nowhere.
+ */
+export const BUNDLED_BACKENDS: ReadonlyArray<BundledBackendSlot> = [
+  {
+    adapter: "knowledgebase",
+    documents: "adapters/knowledgebase/backends",
+    slot: "references/knowledgebase-backend/BACKEND.md",
+    unconfigured: "reads unavailable, writes refuse",
+    contract: "adapters/knowledgebase/CONTRACT.md §6",
+    ruling: "kb-backend-bundled-at-build",
+  },
+];
+
+export function backendDocument(slot: BundledBackendSlot, backend: string): string {
+  return `${slot.documents}/${backend}.md`;
+}
+
+/**
+ * `common.schema.json#/$defs/kebab_id`, which the schema already enforces on
+ * the key. Checked again here because a bundled backend's id becomes a path the
+ * packager reads, and the schema's error does not stop `planBundle` from
+ * reading whatever `../` in an id would reach.
+ */
+const KEBAB_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+function bundledSlotFor(adapter: string): BundledBackendSlot | undefined {
+  return BUNDLED_BACKENDS.find((slot) => slot.adapter === adapter);
+}
+
 export interface AdapterSupply {
   adapter: string;
   /** The contract the capabilities were read from. */
@@ -144,11 +204,19 @@ export interface InstallConfig {
   attachable: string[];
   /**
    * Adapter -> the backend this install configured behind it, for the adapters
-   * whose §1 names a fallback. Free-form ids: the file names which backend the
-   * operator's environment binds, and the package holds no list of vendors to
-   * check it against (`adapters/tracker/CONTRACT.md` §1).
+   * whose §1 names a fallback and the adapters in `BUNDLED_BACKENDS`. Free-form
+   * ids: the file names which backend the operator's environment binds, and the
+   * package holds no list of vendors to check it against
+   * (`adapters/tracker/CONTRACT.md` §1). A bundled backend is listed only when
+   * its document exists, because a backend the bundle carries no document for
+   * is not one it reaches.
    */
   backends: Map<string, string>;
+  /**
+   * Slot -> the backend document the packager emits in its place, for each
+   * configured bundled backend. Read by `planBundle`.
+   */
+  bundled: Map<string, string>;
   /**
    * Adapter -> the capabilities its no-backend path consumes, for every
    * attachable adapter whose §1 names one. Read by `describeInstall`.
@@ -178,7 +246,12 @@ export function loadInstallConfig(root: string, catalog: Catalog): InstallConfig
   for (const { adapter, fallsBackOn } of adapters) {
     if (fallsBackOn.size > 0) fallbacks.set(adapter, [...new Set(fallsBackOn.values())]);
   }
-  const done = (file: string | null, attached: string[], backends = new Map<string, string>()): InstallConfig => {
+  const done = (
+    file: string | null,
+    attached: string[],
+    backends = new Map<string, string>(),
+    bundled = new Map<string, string>(),
+  ): InstallConfig => {
     // A configured backend is the system of record, so its adapter's fallback
     // is not what an operation reaches and borrows nothing
     // (`adapters/tracker/CONTRACT.md` §2).
@@ -193,6 +266,7 @@ export function loadInstallConfig(root: string, catalog: Catalog): InstallConfig
       attached,
       attachable,
       backends,
+      bundled,
       fallbacks,
       supply: { attached: new Set(attached), suppliers, fallbacks: borrowed },
       issues,
@@ -254,15 +328,25 @@ export function loadInstallConfig(root: string, catalog: Catalog): InstallConfig
   // produce the same build record.
   const attached = attachable.filter((id) => wanted.has(id));
 
-  // One key per adapter whose §1 names a fallback, spelled as the adapter's
-  // id: `tracker: { backend: <id> }`. The shape is the schema's to report; a
-  // key this reads and cannot use is left to it rather than reported twice.
+  // One key per adapter with a backend, spelled as the adapter's id:
+  // `tracker: { backend: <id> }` for an adapter whose §1 names a fallback, and
+  // `knowledgebase: { backend: <id> }` for one in `BUNDLED_BACKENDS`. Catalog
+  // order, so the summary line does not depend on which set an adapter is in.
+  // The shape is the schema's to report; a key this reads and cannot use is
+  // left to it rather than reported twice.
+  const withBackend = catalog
+    .bySection("adapters")
+    .map((e) => e.id)
+    .filter((id) => fallbacks.has(id) || bundledSlotFor(id) !== undefined);
   const backends = new Map<string, string>();
-  for (const adapter of fallbacks.keys()) {
+  const bundled = new Map<string, string>();
+  for (const adapter of withBackend) {
     const section = (doc as Record<string, unknown>)[adapter];
     const backend =
       section !== null && typeof section === "object" ? (section as Record<string, unknown>)["backend"] : undefined;
     if (typeof backend !== "string" || backend.length === 0) continue;
+    const slot = bundledSlotFor(adapter);
+    const ruling = slot?.ruling ?? "tracker-of-record-falls-back-to-kb";
     if (!attached.includes(adapter)) {
       // Not quietly honoured and not quietly dropped: the file says both that
       // this install has a backend and that it does not attach the adapter
@@ -272,14 +356,31 @@ export function loadInstallConfig(root: string, catalog: Catalog): InstallConfig
         error(
           "packaging.install-backend-unattached",
           INSTALL_FILE,
-          `${adapter}: names backend '${backend}', and attached: does not list '${adapter}', so nothing would reach that backend. Add '${adapter}' to attached:, or remove the ${adapter}: key (ruling \`tracker-of-record-falls-back-to-kb\`).`,
+          `${adapter}: names backend '${backend}', and attached: does not list '${adapter}', so nothing would reach that backend. Add '${adapter}' to attached:, or remove the ${adapter}: key (ruling \`${ruling}\`).`,
         ),
       );
       continue;
     }
+    if (slot !== undefined) {
+      if (!KEBAB_ID.test(backend)) continue; // schemas.document-invalid reports it; nothing is read.
+      const document = backendDocument(slot, backend);
+      if (readTextIfPresent(join(root, document)) === null) {
+        // The bundle keeps the unconfigured statement rather than shipping a
+        // slot with nothing in it, and the error blocks the build either way.
+        issues.push(
+          error(
+            "packaging.install-backend-undocumented",
+            INSTALL_FILE,
+            `${adapter}: names backend '${backend}', and ${document} does not exist, so the bundle would carry no commands for it. A backend is added by writing that document (${slot.contract}); until then the bundle carries ${slot.slot} as written (ruling \`${slot.ruling}\`).`,
+          ),
+        );
+        continue;
+      }
+      bundled.set(slot.slot, document);
+    }
     backends.set(adapter, backend);
   }
-  return done(INSTALL_FILE, attached, backends);
+  return done(INSTALL_FILE, attached, backends, bundled);
 }
 
 /**
@@ -305,14 +406,25 @@ export function describeInstall(config: InstallConfig): string {
  * fallback consumes is attached. Stated in terms of attached adapters and not
  * of the lift itself, which also depends on the host's own table, and this
  * line is shared by every host the build packages.
+ *
+ * And one per attached adapter in `BUNDLED_BACKENDS`, because the same attached
+ * list builds a bundle whose knowledgebase commands reach a backend or refuse,
+ * depending on the key alone. That changes no mode, but it changes what the
+ * bundle says, so a figure quoted without it names a build nobody can rebuild.
  */
 function backendStates(config: InstallConfig): string[] {
   const states: string[] = [];
-  for (const [adapter, needs] of config.fallbacks) {
-    if (!config.attached.includes(adapter)) continue;
+  for (const adapter of config.attached) {
+    const needs = config.fallbacks.get(adapter);
+    const slot = bundledSlotFor(adapter);
+    if (needs === undefined && slot === undefined) continue;
     const backend = config.backends.get(adapter);
     if (backend !== undefined) {
       states.push(`${adapter}: backend ${backend}`);
+      continue;
+    }
+    if (needs === undefined) {
+      states.push(`${adapter}: no backend, ${slot?.unconfigured ?? "unconfigured"}`);
       continue;
     }
     const each = needs.map((capability) => {

@@ -108,6 +108,7 @@ side_effects: [artifact-write, scratch-write, kb-draft, kb-publish]
 
 references:
   - prose-quality
+  - knowledgebase-backend
 
 hard_gates:
   - A correction that changes what the document decides, rather than how it says it, is never

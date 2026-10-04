@@ -84,6 +84,9 @@ outputs:
 
 side_effects: [artifact-write, kb-draft, kb-publish, process-exec]
 
+references:
+  - knowledgebase-backend
+
 hard_gates:
   - Nothing is deleted; retirement and supersession keep the record and its provenance.
   - Age alone is not staleness, and an unverifiable claim is not a false one.

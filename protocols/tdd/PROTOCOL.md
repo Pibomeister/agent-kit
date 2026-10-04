@@ -105,7 +105,8 @@ One `schemas/verification.schema.json` receipt per cycle, bound to the revision 
 linked to the ticket's acceptance criterion. Plus the tests themselves, inside the ticket's
 `allowed_changes`. Receipts are recorded as artifacts; project-derived narrative about them is
 published through the knowledgebase adapter, never to a path in the working repository
-(ruling `central-kb-owns-project-artifacts`).
+(ruling `central-kb-owns-project-artifacts`). The publish command is in the
+[knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Side effects
 

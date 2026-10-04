@@ -71,7 +71,9 @@ comes from the supervisor through `needs-decision`; the worker never approves it
   continue. An unavailable adapter is a coverage limit: name missing `kb-read`, continue the
   interview through the six-field restatement, then stop before publication with `needs-input`
   naming both `kb-read` and `kb-write`. A configured knowledgebase that fails or cannot be reached
-  returns `failed`; stop and report it rather than proceeding from memory.
+  returns `failed`; stop and report it rather than proceeding from memory. Its commands, and the
+  commands for every write below, are in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - At `align.run` only: a `charter` (`schemas/charter.schema.json`) listing the `align-answer`
   checkpoint category. Absent, or listing a different category: `needs-input`.
 - Facts about the codebase are this skill's own job to find. A fact the agent could look up is

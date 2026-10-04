@@ -162,6 +162,7 @@ packs:
 
 references:
   - engineering-principles
+  - knowledgebase-backend
 
 roles:
   - code-review/correctness

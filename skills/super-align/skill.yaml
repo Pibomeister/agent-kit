@@ -103,6 +103,7 @@ side_effects: [artifact-write, scratch-write, kb-draft, kb-publish]
 references:
   - domain-modeling
   - codebase-design-vocabulary
+  - knowledgebase-backend
 
 hard_gates:
   - Nothing is implemented before approval; no source file is written, no project is scaffolded and

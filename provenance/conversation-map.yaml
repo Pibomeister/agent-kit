@@ -1202,6 +1202,24 @@ capabilities:
       (adapters/tracker/CONTRACT.md §2 and §5, ruling tracker-of-record-falls-back-to-kb); this
       pack condenses them so they survive packaging.
 
+  - id: knowledgebase-backend
+    capability: Reaching the central knowledgebase from an installed plugin through the one backend its build carries, and reading the project record through it
+    disposition: reference
+    destination: references/knowledgebase-backend
+    locator: plan §8; plan §1.2
+    origin: conversation
+    acceptance_test: >-
+      Loaded on demand by the skills that perform knowledgebase operations; it has no invocation of
+      its own. Packaged into the plugin's references/shared/, with BACKEND.md replaced by the
+      configured backend's document, so an installed plugin carries its commands, or the refusal,
+      without adapters/knowledgebase/, which does not ship.
+    note: >-
+      Plan §8 names the seven operations and says they describe proposed operations, not existing
+      APIs, and §1.2 puts project facts and standards in the central knowledgebase. Neither says
+      how a bundle reaches one. The slot and the backend document are this package's
+      (adapters/knowledgebase/CONTRACT.md §6, ruling kb-backend-bundled-at-build); this pack
+      condenses them so they survive packaging.
+
   - id: domain-modeling
     capability: Modelling the domain before modelling the storage
     disposition: reference

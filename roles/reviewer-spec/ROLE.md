@@ -42,7 +42,8 @@ change under review — not whether the change is well written.
 - The spec source it read, identified in a fixed priority order: commit references on the
   reviewed change; an explicit requirements reference supplied with the review request; the
   requirements the project record designates, read through the knowledgebase adapter's
-  `readContext`; otherwise ask. A spec this seat reconstructed is not a spec source.
+  `readContext`; otherwise ask. A spec this seat reconstructed is not a spec source. The read's
+  commands are in the [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 - For an issue in an untouched but affected caller: the impact path from the change to that
   caller. The delta is bounded by affected behavior, not by changed lines (ruling
   `delta-scope-affected-behavior`).

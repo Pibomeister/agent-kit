@@ -294,11 +294,12 @@ rather than as a broken instrument.
 `bunfig.toml` makes `tests/` the canonical test root: `bun test` runs every test there and excludes the `evals/super-build/_fixtures/**/*.test.js` scaffolds (the eval runner exercises them) and the `dist/` copies, so its population does not depend on whether the tree has been built.
 
 The install configuration is part of the instrument too: a skill's packaged mode depends on which
-adapters `ak.install.yaml` attaches and on whether it configures a tracker backend, so the summary
-line of `ak validate` and `ak build` ends with an `install:` clause naming the file or the default and
-the tracker's state, and a quoted figure keeps it. The pre-push gate and
-`validate-figure.sh` measure the default install, with no such file in the extract (ruling
-`fail-closed-adapter-lifts-ceiling`).
+adapters `ak.install.yaml` attaches and on whether it configures a tracker backend, and the bundle's
+knowledgebase commands depend on whether it names a knowledgebase backend (ruling
+`kb-backend-bundled-at-build`). So the summary line of `ak validate` and `ak build` ends with an
+`install:` clause naming the file or the default and each backend's state, and a quoted figure keeps
+it. The pre-push gate and `validate-figure.sh` measure the default install, with no such file in the
+extract (ruling `fail-closed-adapter-lifts-ceiling`).
 
 Commit messages end with the session's configured `Co-Authored-By:` attribution trailer. The
 assistant identity in that trailer is supplied by the harness at commit time; it is deliberately

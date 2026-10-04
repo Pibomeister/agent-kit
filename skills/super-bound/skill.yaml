@@ -115,6 +115,7 @@ side_effects: [artifact-write, scratch-write, kb-draft, kb-publish]
 references:
   - domain-modeling
   - delegation
+  - knowledgebase-backend
 
 hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context

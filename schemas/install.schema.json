@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/install.schema.json",
   "title": "Install configuration",
-  "description": "The shape of ak.install.yaml, the local and uncommitted file at the tree root that says which adapters one install attaches. `ak build` and `ak validate` read it; a `git archive` extract never carries it, so a figure measured there is the default's. Absent, every adapter whose contract states a capability it supplies and fails closed on is attached, which is the default ruling `fail-closed-adapter-lifts-ceiling` sets. Present, exactly the listed adapters are attached, and `attached: []` is the host alone; an optional `tracker:` names the ticket backend. This schema states shape. Which ids an install may attach is read out of each adapter contract's §1 by src/packaging/install.ts (`loadAdapterSupplies`), and restating that list here would be a copy that parts from the contracts the first time one of them gains a row.",
+  "description": "The shape of ak.install.yaml, the local and uncommitted file at the tree root that says which adapters one install attaches. `ak build` and `ak validate` read it; a `git archive` extract never carries it, so a figure measured there is the default's. Absent, every adapter whose contract states a capability it supplies and fails closed on is attached, which is the default ruling `fail-closed-adapter-lifts-ceiling` sets. Present, exactly the listed adapters are attached, and `attached: []` is the host alone; an optional `tracker:` names the ticket backend, and an optional `knowledgebase:` names the knowledgebase backend whose commands the bundle carries. This schema states shape. Which ids an install may attach is read out of each adapter contract's §1 by src/packaging/install.ts (`loadAdapterSupplies`), and restating that list here would be a copy that parts from the contracts the first time one of them gains a row.",
   "type": "object",
   "additionalProperties": false,
   "required": ["attached"],
@@ -24,6 +24,22 @@
           "description": "Which backend binding the operator's environment supplies, as a kebab-case id. Free-form on purpose: the package names no vendors and keeps no list of them, so any tracker the operator binds is legal here. Naming a backend while attached: leaves out `tracker` is an error, because nothing would reach it.",
           "$ref": "common.schema.json#/$defs/kebab_id",
           "x-validator-rule": "install.backend-names-an-attached-adapter"
+        }
+      }
+    },
+    "knowledgebase": {
+      "description": "Which knowledgebase backend this install's bundle carries (adapters/knowledgebase/CONTRACT.md §6). The packager emits adapters/knowledgebase/backends/<backend>.md in place of references/knowledgebase-backend/BACKEND.md, so every skill that loads the knowledgebase-backend reference pack reads this backend's commands. With no knowledgebase: key the bundle carries BACKEND.md as written, where every read returns unavailable and every write refuses (ruling `kb-backend-bundled-at-build`). It changes what the bundle says and no packaged mode: kb-write fails closed with a backend or without one. Credentials and endpoint are the operator's and never appear here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend"],
+      "properties": {
+        "backend": {
+          "description": "The backend document's name under adapters/knowledgebase/backends/, as a kebab-case id. Free-form on purpose: the package names no knowledgebase and ships no backend, and a downstream tree adds one by adding that document. Naming a backend with no document there is an error, and so is naming one while attached: leaves out `knowledgebase`.",
+          "$ref": "common.schema.json#/$defs/kebab_id",
+          "x-validator-rule": [
+            "install.backend-names-an-attached-adapter",
+            "install.knowledgebase-backend-has-a-document"
+          ]
         }
       }
     }

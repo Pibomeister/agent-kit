@@ -31,7 +31,8 @@ contradicts a lesson the project recorded.
 - Access to the project's recorded knowledge through the knowledgebase adapter's `readContext`,
   not a repository path. Directory names under the knowledgebase root are configurable and the
   seat never walks a local documentation tree in their place (ruling
-  `central-kb-owns-project-artifacts`; `adapters/knowledgebase/CONTRACT.md`).
+  `central-kb-owns-project-artifacts`; `adapters/knowledgebase/CONTRACT.md`). The read's commands
+  are in the [knowledgebase-backend reference pack](../../../references/knowledgebase-backend/REFERENCE.md).
 - The project's own vocabulary as the knowledgebase exposes it, so a search is grounded in the
   terms this project uses rather than in generic ones.
 - Where the opt-in `learning` profile is installed (ruling `learning-runtime-is-host-adapter`), the

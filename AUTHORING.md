@@ -559,11 +559,11 @@ forbids it on `schemas`, `policies`, `profiles` and `adapters`, whose entries cl
 the question "is there a donor file behind it" has an answer for authored content and not for a
 schema or a profile. So where a capability lands in one of those four kinds there is no entry to
 declare `provenance_origin: conversation` on, the field cannot be added, and the map row is the
-whole of the record. Fourteen rows sit there today, the four `knowledgebase-*` rows among them,
-and the pairing check above never reaches them: it runs from the catalog side and skips an entry
-with no origin to read (`src/validation/provenance.ts`). Their locators are parsed and range-checked
-like any other row's; what is unchecked is whether the row exists at all, because no entry declares
-the capability that would be missing. Omitting one here is the silent case.
+whole of the record. Fourteen rows sit there today, the four destined for `adapters/knowledgebase`
+among them, and the pairing check above never reaches them: it runs from the catalog side and skips
+an entry with no origin to read (`src/validation/provenance.ts`). Their locators are parsed and
+range-checked like any other row's; what is unchecked is whether the row exists at all, because no
+entry declares the capability that would be missing. Omitting one here is the silent case.
 
 The map has three origins, so "not conversation" is not "donor". `src/validation/provenance.ts`
 refuses that narrowing deliberately, in a comment sitting directly above the branch — *"with three
@@ -581,12 +581,12 @@ written carefully.
 document that is not in this tree, so `plan §N` never denotes it. Nor is a document reference a
 fallback for a range that could not be found: the grammar admits it because the design's precedence
 puts the document above the transcript, which makes it the stronger citation rather than the weaker
-one (`src/validation/provenance.ts`). Four live
-`conversation` rows record knowledgebase capabilities against `plan §8` and `plan §1.2; plan §8`
-because the transcript does not contain them at all: measured, its 2,264 lines carry zero
-occurrences of `knowledgebase`, `knowledge base`, `knowledge-base`, `central KB` or `KB`. A `G:L`
-for those would have to be invented, which is the fabrication this section forbids under **Never
-fabricate a source path**.
+one (`src/validation/provenance.ts`). Five live
+`conversation` rows record knowledgebase capabilities against `plan §8`, `plan §1.2; plan §8` and
+`plan §8; plan §1.2` because the transcript does not contain them at all: measured, its 2,264
+lines carry zero occurrences of `knowledgebase`, `knowledge base`, `knowledge-base`, `central KB`
+or `KB`. A `G:L` for those would have to be invented, which is the fabrication this section forbids
+under **Never fabricate a source path**.
 
 **A donor-origin entry may still contain design-originated capabilities, and the route for them is
 the same one.** The two granularities are independent: `provenance_origin` classifies the *entry*,

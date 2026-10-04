@@ -1,6 +1,6 @@
 # adapters/knowledgebase — host contract
 
-Contract only. No implementation lives here.
+Contract only. No implementation lives here, and the package ships no backend (§6).
 
 Project-derived material — context, standards, decisions, requirements, plans, ticket artifacts,
 review ledgers, solutions and lessons — is owned by a **central knowledgebase**, not by the
@@ -62,7 +62,8 @@ records. `ak validate` scans skill bodies for the retired write targets (`src/de
 ### Substitutability
 
 agent-kit does not depend on one KB implementation. The adapter is the boundary: any KB satisfying
-the seven operations in §2 and supporting the nine kinds is substitutable.
+the seven operations in §2 and supporting the nine kinds is substitutable, and §6 is how one is
+bound.
 
 ---
 
@@ -100,6 +101,26 @@ an explicit unavailable result and the run continues past it, so its absence is 
 refused. That is honest, but it is not failing closed, and a skill requiring `kb-read` stays capped
 at `guided` on a host that lacks it, attached knowledgebase or not.
 
+### Which backend a bundle carries
+
+A bundled skill works from the package's own files alone, so the commands behind the seven
+operations travel in the bundle, and which knowledgebase they reach is decided when it is built
+(§6; ruling `kb-backend-bundled-at-build`). The install states it in `ak.install.yaml`
+(`schemas/install.schema.json`):
+
+```yaml
+attached: [runner-contract, knowledgebase]
+knowledgebase:
+  backend: <kebab-case id>
+```
+
+The key selects what the bundle says, not a mode. `kb-write` fails closed with a backend or without
+one, so the table above lifts the same skills either way; what changes is whether an operation
+reaches a knowledgebase or refuses. With no `knowledgebase:` key, and with no install file at all,
+the bundle carries the unconfigured statement. Naming a backend while `attached:` leaves this
+adapter out is an error (`packaging.install-backend-unattached`), and so is naming one that has no
+document (`packaging.install-backend-undocumented`).
+
 ---
 
 ## 2. The seven operations
@@ -129,6 +150,15 @@ readContext(project: ProjectRef, selector: ContextSelector) -> Result<KBDocument
   record → an **empty result**, which is a fact, not an error; a skill that needs context and finds
   none stops rather than inventing it. Partial results (some types unavailable) are returned with an
   explicit coverage limitation, never silently truncated.
+- **The project record** — `selector` may name the project record instead of kinds. The result is
+  the one `project` artifact (`schemas/project.schema.json`) with the same record id, content hash
+  and revision, or an empty result where the project has none. Every consumer of the project's own
+  declarations reads it here: the review seats' standards and requirements, the project-scoped packs
+  and guidance values `attach-pack` reads, and the tracker chain's system of record
+  (`adapters/tracker/CONTRACT.md` §2). The backend supplies it, stored or derived from the
+  knowledgebase's own configuration, and its document says which (§6). A derived record meets the
+  schema as a stored one does; a required field the backend cannot derive is a coverage limitation
+  naming that field, never a value filled in.
 - **Side effects** — none. Read-only.
 
 ### `recordDecision`
@@ -303,9 +333,68 @@ implement locking in its body.
 
 ---
 
-## 6. Testing
+## 6. Backends: how a bundle reaches a knowledgebase
 
-Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
+A **backend** is one knowledgebase implementation's binding of §2: the commands each operation
+runs, and what that knowledgebase can and cannot do. The package ships none and names none. Each
+backend is one document, and a bundle carries at most one (ruling `kb-backend-bundled-at-build`).
+
+### Where it lives and how it reaches the bundle
+
+`adapters/knowledgebase/backends/<id>.md`, named by the install's `knowledgebase.backend` (§1).
+The skills that perform these operations load `references/knowledgebase-backend/REFERENCE.md`,
+which carries the rules every backend obeys and sends a skill to
+`references/knowledgebase-backend/BACKEND.md` beside it for the commands. As written, `BACKEND.md`
+is the unconfigured statement: every read `unavailable`, every write refused, never a write to the
+working repository (§3). That is what a bundle with no backend carries. With one configured,
+`ak build` emits the backend's document at `BACKEND.md`'s place in the bundle, so no skill body and
+no link changes (`BUNDLED_BACKENDS` in `src/packaging/install.ts`, read by `planBundle`). The
+document's relative links are resolved from `backends/`, and what they reach is bundled like any
+other dependency.
+
+The directory is the registry. A backend is added by adding its document: no row here, no catalog
+entry and no schema names one, so a downstream tree binds its knowledgebase with a new file and an
+install key, and edits nothing the package owns. The document is checked like the rest of
+`adapters/`: its links must resolve, its ruling citations must name rows that exist, and it must
+pass the model-routing denylist.
+
+### What a backend document states
+
+It is written for the agent that loads it mid-task, in the terms of §2.
+
+1. **The locator.** How a command finds the knowledgebase from the working directory, and what an
+   operation returns when it cannot: `unavailable` for a read, a refusal for a write.
+2. **Each operation's commands.** One entry per operation in §2. An operation the document does
+   not map refuses with `needs-input` naming the gap, and is never approximated with a
+   neighbouring command.
+3. **Results.** How each command's exit status and output map onto
+   `common#/$defs/operation_status`, the empty result and the coverage limitation, so that a
+   project with no records, an unreachable knowledgebase and a partial answer stay three results.
+4. **The kinds it writes.** Which of the nine it can write. A kind it cannot write is refused with
+   `needs-input` and never written as a neighbouring kind. ADR-0001 §3's assignment of kinds to
+   skills applies on top of it and is not widened by it.
+5. **Draft and publish.** Which writes draft (`kb-draft`) and which publish (`kb-publish`). For a
+   write it can only draft, the result says drafted and the calling skill reports a draft, never a
+   publication; §4's paired-PR honesty is the same rule for the merge.
+6. **The project record.** Where it comes from, stored or derived, and each field's source when it
+   is derived (§2).
+7. **Run artifacts.** Where the backend stores them, or that it stores none. With no store,
+   `publishArtifact` under a `run-artifact` placement does not publish: the result says so and the
+   skill reports the artifact unpublished. What the document does instead, if anything, such as
+   linking the artifact's digest from a page, links material kept outside the working repository's
+   tracked tree and never creates a store inside it (§3).
+8. **Credentials.** How the operator's environment supplies any credential, and that no command
+   carries one on its command line.
+
+A backend that cannot honour a rule of §2–§4 says so in its document and refuses the affected
+operation; it does not narrow the rule. Nothing in §0–§5 names a backend or depends on one.
+
+---
+
+## 7. Testing
+
+Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`, except items 13–15, which are
+in `tests/packaging.test.ts`:
 
 1. **No local docs tree** — for every skill whose outputs are project-derived, a fixture run leaves
    the working repository free of any documentation directory (scenario 21).
@@ -334,3 +423,11 @@ Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
 12. **Rollback independence** — rolling back a published skill revision leaves the supporting lesson
     and evidence history intact (scenario 24), because lessons are KB pages with supersession and
     skills are package files.
+13. **The unconfigured statement is the default** — with no `knowledgebase:` key, the bundle carries
+    `BACKEND.md` as written, and the summary line says so (§6).
+14. **A configured backend replaces the slot and nothing else** — its document is emitted at
+    `BACKEND.md`'s published path with its links rewritten, the build record names it, and the
+    skill bodies are byte-identical to an unconfigured build (§6).
+15. **A backend is attached and documented** — naming one while the adapter is unattached, or with
+    no document under `backends/`, is an error, and the bundle keeps the unconfigured statement
+    (§1).

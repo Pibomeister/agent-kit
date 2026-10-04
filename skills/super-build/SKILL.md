@@ -133,7 +133,8 @@ absence is recorded (`policies/limits.yaml`).
 12. Run the ticket's named verification and collect the receipts, commit the work on the ticket's own
     branch, then publish the receipts and the ticket result through the knowledgebase adapter's
     `publishArtifact` operation with a run-artifact placement. Report the ticket with every written
-    ruling and every out-of-scope observation collected into the report.
+    ruling and every out-of-scope observation collected into the report. The publish command is in
+    the [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 13. When both check seats pass, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate build-checks`
     (the bundle's `bin/`, two directories above this skill). super-ship refuses to ship without it.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the

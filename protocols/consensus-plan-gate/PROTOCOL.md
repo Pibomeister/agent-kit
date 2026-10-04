@@ -95,7 +95,8 @@ One whole-plan result bound to the snapshot hash: the verdict, the round number,
 judgment, the critic's judgment, and the decision record the synthesis produced. It carries no
 finding buckets. The decision record is published through the knowledgebase adapter's
 `recordDecision` in the proposed state, never written to a path in the working repository
-(ruling `central-kb-owns-project-artifacts`; `adapters/knowledgebase/CONTRACT.md`).
+(ruling `central-kb-owns-project-artifacts`; `adapters/knowledgebase/CONTRACT.md`). Its command
+is in the [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 ## Side effects
 

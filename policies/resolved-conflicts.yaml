@@ -9,7 +9,9 @@
 # the first raised by a user requirement: that the package work with any ticket tracker. Rows
 # 25-27 bound the opt-in learning runtime: where it runs, who judges for it, and what form its
 # output takes. Rows 28-32 govern delegation class, sensitive floors, independent acceptance
-# oracles, project-declared checks and host-conditional advisor consultation.
+# oracles, project-declared checks and host-conditional advisor consultation. Row 33 is the
+# second raised by a user requirement: that a downstream tree bind its own knowledgebase without
+# editing what the package owns.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -191,7 +193,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 32
+rows: 33
 
 conflicts:
 
@@ -1296,3 +1298,49 @@ conflicts:
       D10 decision is recorded in `research/dossiers/delegation.md`.
     source:
       plan: "§10"
+
+  - id: kb-backend-bundled-at-build
+    tension: >-
+      Plan §8 gives the knowledgebase a narrow adapter whose operation names describe proposed
+      operations, not existing APIs, and the knowledgebase contract keeps the package independent
+      of any one implementation. A bundled skill works from the package's own files alone, so a
+      bundle carrying the contract and nothing else has no command for any operation: every write
+      fails closed in every install, and nothing states where one team's knowledgebase commands
+      would go without editing the package's contract, references and skill bodies, which a tree
+      tracking the package would then have to re-edit on every update.
+    ruling: >-
+      A knowledgebase backend is one document, adapters/knowledgebase/backends/<id>.md, and a
+      bundle carries at most one, chosen when the bundle is built by the install's knowledgebase:
+      { backend } key. The skills that perform knowledgebase operations load one reference pack,
+      knowledgebase-backend, whose REFERENCE.md holds the rules every backend obeys and sends a
+      skill to BACKEND.md beside it for the commands. The package ships no backend and names no
+      knowledgebase: as written, BACKEND.md is the unconfigured statement, where every read returns
+      unavailable and every write refuses, never a write to the working repository. With a backend
+      configured the packager emits its document in BACKEND.md's place, so no skill body and no
+      link changes. The directory is the registry: a downstream tree binds its knowledgebase by
+      adding the document and the key, with no row, catalog entry or schema edit, and a key naming
+      no document is an error. A backend that cannot perform an operation or write a kind refuses
+      it with needs-input rather than approximating it. The key changes what the bundle says and
+      never a packaged mode, because kb-write fails closed with a backend or without one. The
+      project record is a readContext result the backend supplies, stored or derived; a required
+      field it cannot derive is a coverage limitation, never a guessed value.
+    discharged_in: [inputs]
+    binds:
+      references: [knowledgebase-backend]
+      schemas: [install]
+      adapters: [knowledgebase]
+    scenario: 21
+    coverage: indirect
+    note: >-
+      `inputs` because what a bound skill takes from this row is where its commands and the project
+      record come from. Rejected `hard-gates`: the refusal with no backend is kb-write's, already
+      discharged by fail-closed-adapter-lifts-ceiling, and this row adds no check to a body.
+      Rejected `side-effects`: kb-draft and kb-publish were already declared and keyed by
+      runner-contract §5. No skill is bound. The skills link the reference pack and would read the
+      same had the backend been bound per project folder at run time instead, as the tracker is;
+      what would change is the pack, the contract and the install schema, which are bound.
+      Scenario 21 is the neighbouring case: the unconfigured statement ends in a refusal and never
+      in a file in the working repository. The slot is BACKEND.md rather than REFERENCE.md so that
+      a backend document replaces the commands and cannot drop the rules every backend obeys.
+    source:
+      plan: "§8"

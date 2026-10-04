@@ -107,7 +107,8 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
    when. The old receipt stays readable; what changes is whether it still describes the current state.
 10. Claim exactly what the receipts support, and publish the matrix and the receipts through the
     knowledgebase adapter's `publishArtifact` operation with a run-artifact placement. Return the
-    verdict per criterion, not a summary sentence over them.
+    verdict per criterion, not a summary sentence over them. The publish command is in the
+    [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 11. When every criterion is confirmed, record the gate with every receipt file recorded at this
     head: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate verify --receipt <file>`
     (repeat `--receipt` for each receipt). The bundle's gate copies each receipt and its digested

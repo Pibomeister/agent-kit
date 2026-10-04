@@ -127,6 +127,7 @@ failure_outcomes:
 
 references:
   - prose-quality
+  - knowledgebase-backend
 
 limits:
   lessons-per-run: 1

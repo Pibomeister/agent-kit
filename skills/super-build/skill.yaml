@@ -131,6 +131,7 @@ constraints:
 
 references:
   - engineering-principles
+  - knowledgebase-backend
 
 limits:
   fix-rounds: 5

@@ -103,6 +103,7 @@ side_effects: [artifact-write, scratch-write, kb-draft, kb-publish, tracker-writ
 
 references:
   - tracker-of-record
+  - knowledgebase-backend
 
 hard_gates:
   - A decision ticket is never dispatched to an implementer as though approved; an open decision is

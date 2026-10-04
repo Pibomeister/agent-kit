@@ -41,7 +41,9 @@ A protocol holds no authority of its own and never widens the authority it was c
 - The available packs, each a `schemas/pack.schema.json` record whose `activation` rules each
   carry an `id`, the `artifact_kinds` they apply to, and the `semantics` that must hold. A rule
   with only `paths` and no `semantics` is not a valid activation rule.
-- The project record, for any project-scoped pack and for the configured guidance values.
+- The project record, for any project-scoped pack and for the configured guidance values. It is
+  the knowledgebase adapter's `readContext` result, whose command is in the
+  [knowledgebase-backend reference pack](../../references/knowledgebase-backend/REFERENCE.md).
 
 A pack whose tree links outside its own source is not a published pack. It is rejected whole,
 with a per-entry error, never trimmed one file at a time.
