@@ -46,22 +46,21 @@ function git(cwd: string, ...args: string[]) {
   ).toBe(0);
 }
 
-function waitForPath(path: string) {
-  if (existsSync(path)) return Promise.resolve();
+function waitForPath(path: string, owner: { exited: Promise<number> }) {
   return new Promise<void>((resolve, reject) => {
     const watcher = watch(dirname(path), () => {
-      if (!existsSync(path)) return;
-      watcher.close();
-      resolve();
+      if (existsSync(path)) settle();
     });
-    watcher.once("error", (error) => {
+    function settle(error?: Error) {
       watcher.close();
-      reject(error);
-    });
-    if (existsSync(path)) {
-      watcher.close();
-      resolve();
+      if (error === undefined) resolve();
+      else reject(error);
     }
+    watcher.once("error", settle);
+    void owner.exited.then((code) =>
+      settle(existsSync(path) ? undefined : new Error(`process exited ${code} before creating ${path}`)),
+    );
+    if (existsSync(path)) settle();
   });
 }
 
@@ -400,8 +399,7 @@ describe("runner guards", () => {
     };
     let server = Bun.spawn(launch, serverOptions);
     try {
-      await waitForPath(socket);
-      expect(existsSync(socket)).toBe(true);
+      await waitForPath(socket, server);
       const firstmateHome = process.env["AK_RUNNER_STOCK_FM_HOME"];
       if (firstmateHome !== undefined) {
         const stock = preflightStock(firstmateHome, f.worker, "codex", root, join(root, "dist", "codex"), socket);
@@ -476,19 +474,17 @@ describe("runner guards", () => {
       expect(packet.stdout.toString()).toContain('"operation": "align.run"');
       expect(packet.stdout.toString()).toContain('"approve": "yes"');
       expect(packet.stdout.toString()).not.toContain('"judgments"');
-      const launcherReady = waitForPath(launches);
       const first = Bun.spawn(
         ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
         { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
       );
-      await launcherReady;
-      expect(existsSync(launches)).toBe(true);
+      await waitForPath(launches, first);
       const second = Bun.spawn(
         ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
         { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
       );
-      writeFileSync(`${launches}.open`, "");
       expect(call("status", workerToken).exitCode).toBe(0);
+      writeFileSync(`${launches}.open`, "");
       expect(await first.exited).toBe(0);
       expect(await new Response(first.stdout).text()).toContain('"status": "complete"');
       expect(await second.exited).toBe(0);
@@ -1619,8 +1615,7 @@ describe("runner guards", () => {
       },
     );
     try {
-      await waitForPath(socket);
-      expect(existsSync(socket)).toBe(true);
+      await waitForPath(socket, server);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
@@ -1757,7 +1752,7 @@ describe("runner guards", () => {
       { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
     );
     try {
-      await waitForPath(socket);
+      await waitForPath(socket, server);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
