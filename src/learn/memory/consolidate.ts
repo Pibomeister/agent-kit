@@ -8,9 +8,9 @@
  * episodes that fit under the input cap reach the judge, so only they are
  * marked consolidated and only their ids pass the evidence gate.
  *
- * An episode shows only observations the reflector has already screened (at or
- * below `last_obs_id_reflected`) and, once a run has consumed it, only those
- * after the highest id that run consumed. An episode with none to show waits.
+ * An episode shows only observations inside an accepted reflector run's exact
+ * id range and, once a run has consumed it, only those after the highest id
+ * that run consumed. An episode with none to show waits.
  *
  * A lesson is `confirmed` when its evidence spans two or more sessions and
  * `hypothesis` otherwise. A newly confirmed lesson becomes a knowledgebase
@@ -45,8 +45,10 @@ import {
   logLine,
   oneLine,
   proposeOrSkip,
+  isScreened,
   quarantinedObservationIds,
   readState,
+  screenedObservationRanges,
   rewriteIndex,
   saveState,
   sid8,
@@ -448,16 +450,19 @@ export function consolidate(
   const all = loadEpisodes(ledger);
   const pending = unconsolidatedEpisodes(ledger);
   if (pending.length === 0) return "nightly: no unconsolidated episodes";
-  const reflected = readState(ledger).last_obs_id_reflected ?? 0;
-  const screened = (sid: string) => source.sessionObservations(sid).filter((row) => row.id <= reflected);
+  const ranges = screenedObservationRanges(ledger);
   const consumed = consumedObsIds(ledger);
   const unseen = new Map<string, { rows: ObservationRow[]; obs: number; obs_id: number }>();
   for (const episode of pending) {
-    const seen = screened(episode.sid);
+    const allRows = source.sessionObservations(episode.sid);
+    const seen = allRows.filter((row) => isScreened(ranges, row.id));
     const after = consumed.get(episode.sid) ?? 0;
     const rows = seen.filter((row) => row.id > after);
     const last = rows.at(-1);
-    if (last !== undefined) unseen.set(episode.sid, { rows, obs: seen.length, obs_id: last.id });
+    if (last !== undefined) {
+      const obs = Math.min(episode.obs, allRows.filter((row) => row.id <= last.id).length);
+      unseen.set(episode.sid, { rows, obs, obs_id: last.id });
+    }
   }
   const ready = pending.filter((episode) => unseen.has(episode.sid));
   if (ready.length === 0) return "nightly: no reflected observations to consolidate";

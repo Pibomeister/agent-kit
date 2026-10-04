@@ -292,6 +292,7 @@ export function reflect(
   }
   const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
   const inputTokens = tokens(observations.map(formatObservation).join(""));
+  const minObsId = Math.min(...observations.map((row) => row.id));
   const maxObsId = Math.max(...observations.map((row) => row.id));
   const result = applyReflection(
     ledger,
@@ -300,7 +301,7 @@ export function reflect(
     inputTokens,
     maxObsId,
     ctx.config.memoryTokens,
-    { trigger, observations: observations.length, sessions: sids.length },
+    { trigger, observations: observations.length, sessions: sids.length, min_obs_id: minObsId },
     { observations, summaries },
   );
   const redacted = result.redacted > 0 ? `, ${result.redacted} redacted` : "";

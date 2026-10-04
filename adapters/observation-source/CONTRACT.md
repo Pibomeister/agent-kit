@@ -57,6 +57,14 @@ The watermark read. `afterId` is the ledger's `last_obs_id_reflected`
 (`schemas/learn-state.schema.json`). A zero watermark reads newest first so a first run fills from
 recent work; every later run reads oldest first so nothing between two runs is skipped.
 
+Each accepted reflect run records the lowest and highest observation id it was shown (`min_obs_id`
+and `max_obs_id` in `schemas/memory-run.schema.json`). Downstream judges receive only observations
+inside those exact ranges. Nightly marks still count the session's full observation population
+through the consumed id, matching `episode.obs` even when the first window started after older
+history. Review ingest keeps its watermark before an unscreened review observation and replays that
+row until a later accepted range screens it; screened later rows may be admitted meanwhile, so
+pre-window review history is deferred rather than dropped.
+
 ### `sessions`
 
 ```text

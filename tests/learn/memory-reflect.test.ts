@@ -315,6 +315,12 @@ describe("reflect", () => {
     }
     expect(ctx.prompts[0]).toContain(`obs:${ids[0]}`);
     expect(readState(ledger).last_obs_id_reflected).toBe(ids[2]);
+    expect(
+      readJsonl<{ min_obs_id?: number; max_obs_id?: number }>(ledger.path("runs.jsonl")).map((run) => [
+        run.min_obs_id,
+        run.max_obs_id,
+      ]),
+    ).toEqual([[ids[0], ids[2]]]);
     expect(readFileSync(ledger.path("memory.md"), "utf8")).toContain("- latest finding");
   });
 

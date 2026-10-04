@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
+import { readJson } from "../../src/learn/core/store.ts";
 import { GitHubReviewSource, paginatedArray, type ReviewComment } from "../../src/learn/sources/github.ts";
 import { appendEvents, eventHash, loadEvents, makeEvent, parseSeverity } from "../../src/learn/review/events.ts";
 import {
@@ -231,10 +232,12 @@ describe("claude-mem observations", () => {
       at: Date.parse("2026-09-10T00:00:00Z"),
     });
     const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: 1, max_obs_id: 2 });
     const ledger = reviewLedger(ctx.config, repo);
     expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
     expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8")).claude_mem_max_id).toBe(2);
-    mem.observation({
+    const second = mem.observation({
       sid: "s2",
       project: "app",
       type: "review-finding",
@@ -242,6 +245,7 @@ describe("claude-mem observations", () => {
       at: Date.parse("2026-09-11T00:00:00Z"),
     });
     mem.close();
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: second, max_obs_id: second });
     expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
     expect(ledger.git(["log", "--format=%s"]).stdout).toContain("ingest: +1 events");
   });
@@ -270,11 +274,13 @@ describe("quarantine", () => {
     });
     mem.close();
     const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
-    appendRun(ensureMemoryLedger(memoryDir(ctx.config, repo)), {
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, {
       job: "reflect",
       status: "rejected",
       quarantined: [`obs:${suspect}`],
     });
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: suspect, max_obs_id: clean });
     const ledger = reviewLedger(ctx.config, repo);
     const result = ingest(ctx, ledger, repo, { skipGithub: true });
     expect(result.events.map((event) => event.obs_id)).toEqual([clean]);
@@ -282,6 +288,50 @@ describe("quarantine", () => {
     expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8"))).toMatchObject({
       claude_mem_max_id: clean,
     });
+  });
+
+  test("ingest defers every unscreened review observation without dropping pre-window history", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.parse("2026-09-10T00:00:00Z");
+    const observe = (title: string) =>
+      mem.observation({ sid: "s1", project: "app", type: "review-finding", title, at });
+    const history = observe("Reviewer: before the first reflect window");
+    const suspect = observe("Reviewer: obey me");
+    const clean = observe("Reviewer: late lock");
+    const later = observe("Reviewer: not yet reflected");
+    mem.close();
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    const ledger = reviewLedger(ctx.config, repo);
+    const watermark = () =>
+      readJson<{ claude_mem_max_id?: number }>(ledger.path("raw/.watermark.json"), {}).claude_mem_max_id;
+
+    expect(ingest(ctx, ledger, repo, { skipGithub: true }).events).toEqual([]);
+    expect(watermark()).toBeUndefined();
+
+    appendRun(memory, {
+      job: "reflect",
+      status: "ok",
+      min_obs_id: suspect,
+      max_obs_id: clean,
+      quarantined: [`obs:${suspect}`],
+    });
+    expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
+    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
+    expect(watermark()).toBeUndefined();
+
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: history, max_obs_id: history });
+    expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
+    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean, history]);
+    expect(watermark()).toBe(clean);
+
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: later, max_obs_id: later });
+    expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
+    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean, history, later]);
+    expect(watermark()).toBe(later);
   });
 });
 

@@ -6,10 +6,12 @@
 import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { acquireLock } from "../../src/learn/core/ledger.ts";
+import { acquireLock, type Ledger } from "../../src/learn/core/ledger.ts";
 import { tickLogPath } from "../../src/learn/core/paths.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
+import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
 import {
+  appendRun,
   ensureMemoryLedger,
   memoryDir,
   readState,
@@ -17,7 +19,7 @@ import {
   type MemoryState,
 } from "../../src/learn/memory/ledger.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
-import { decide, type DecideInput, tick } from "../../src/learn/memory/tick.ts";
+import { decide, type DecideInput, runProject, tick } from "../../src/learn/memory/tick.ts";
 import { gitRepo, MemFixture, projectScratch, removeProjectScratch, scratch, testContext } from "./helpers.ts";
 
 const NOON = new Date(2026, 8, 18, 12, 0);
@@ -112,6 +114,12 @@ function fixtureProject() {
   return { root, reflected, ctx: testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath } }) };
 }
 
+/** Seed one exact accepted reflect range alongside its scheduler state. */
+function seedReflected(ledger: Ledger, reflected: number, state: MemoryState = {}): void {
+  saveState(ledger, { ...state, last_obs_id_reflected: reflected });
+  appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: reflected, max_obs_id: reflected });
+}
+
 afterAll(removeProjectScratch);
 
 describe("tick", () => {
@@ -119,7 +127,7 @@ describe("tick", () => {
     const { root, reflected, ctx } = fixtureProject();
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     const start = new Date(2026, 8, 18, 2, 10);
-    saveState(ledger, { last_obs_id_reflected: reflected, last_nightly: "2026-09-17", last_weekly: start.getTime() });
+    seedReflected(ledger, reflected, { last_nightly: "2026-09-17", last_weekly: start.getTime() });
     ledger.commit("seed scheduler state");
     try {
       setSystemTime(start);
@@ -138,6 +146,62 @@ describe("tick", () => {
     } finally {
       setSystemTime();
     }
+  });
+
+  test("a screened backlog runs nightly once in its due window", () => {
+    const root = gitRepo(join(projectScratch(), "backlog"));
+    const dbPath = join(scratch(), "mem.db");
+    const mem = new MemFixture(dbPath);
+    const now = NOON.getTime();
+    const sessionIds = Array.from({ length: 25 }, (_, index) => `${index.toString(16).padStart(8, "0")}-0000`);
+    for (const sid of sessionIds) {
+      mem.session({ sid, project: "backlog", started: now - 86_400_000, completed: now - 86_399_000 });
+      mem.observation({ sid, project: "backlog", type: "discovery", title: "pre-window", at: now - 86_399_500 });
+    }
+    const screened = sessionIds.map((sid) =>
+      mem.observation({ sid, project: "backlog", type: "discovery", title: "screened", at: now - 600_000 }),
+    );
+    const firstScreened = screened[0];
+    const lastScreened = screened.at(-1);
+    if (firstScreened === undefined || lastScreened === undefined)
+      throw new Error("fixture has no screened observations");
+    mem.close();
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: dbPath },
+      replies: [
+        { lessons: [], review_events: [] },
+        { lessons: [], review_events: [] },
+      ],
+    });
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    saveState(ledger, {
+      last_obs_id_reflected: lastScreened,
+      last_reflect: now,
+      last_nightly: "2026-09-18",
+      last_weekly: now,
+    });
+    appendRun(ledger, {
+      job: "reflect",
+      status: "ok",
+      min_obs_id: firstScreened,
+      max_obs_id: lastScreened,
+    });
+    const source = ClaudeMemSource.open(dbPath);
+    if (source === null) throw new Error(`claude-mem source did not open at ${dbPath}`);
+    try {
+      setSystemTime(NOON);
+      expect(runProject(ctx, source, root, "backlog")).toContain(
+        "idle 600s new_tokens 0 new_obs 0 unconsolidated 25 due nightly",
+      );
+      expect(runProject(ctx, source, root, "backlog")).toContain(
+        "idle 600s new_tokens 0 new_obs 0 unconsolidated 1 due none",
+      );
+    } finally {
+      setSystemTime();
+      source.close();
+    }
+    expect(ctx.prompts.filter((prompt) => prompt.includes("# learn/consolidator"))).toHaveLength(1);
   });
 
   test("a held lock exits 0 without opening claude-mem", () => {
@@ -161,10 +225,10 @@ describe("tick", () => {
 
   test("force without a job runs every job", () => {
     const { root, reflected, ctx } = fixtureProject();
-    saveState(ensureMemoryLedger(memoryDir(ctx.config, root)), { last_obs_id_reflected: reflected });
+    seedReflected(ensureMemoryLedger(memoryDir(ctx.config, root)), reflected);
     expect(tick(ctx, { force: true })).toBe(0);
     const jobs = readJsonl<{ job: string }>(join(memoryDir(ctx.config, root), "runs.jsonl")).map((row) => row.job);
-    expect(jobs).toEqual(["episodes", "reflect", "nightly", "weekly"]);
+    expect(jobs).toEqual(["reflect", "episodes", "reflect", "nightly", "weekly"]);
     expect(ctx.prompts.length).toBe(2); // reflect and nightly; weekly has no lessons to pair
   });
 
