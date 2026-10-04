@@ -4,7 +4,13 @@
  *   grok -p PROMPT --output-format streaming-json --allow RULE... --deny RULE... [-m M]
  *     [--max-turns N] --permission-mode dontAsk [--rules TEXT]
  *
- * `--rules` appends to the system prompt. `dontAsk` refuses any call that would need approval
+ * With a case grant (`allowedTools`) the launch is instead:
+ *
+ *   grok -p PROMPT --output-format streaming-json --allow RULE... --tools LIST --always-approve
+ *     [-m M] [--max-turns N] [--rules TEXT]
+ *
+ * `--rules` appends to the system prompt. Everything below up to the case-grant sentence describes
+ * the ungranted launch. `dontAsk` refuses any call that would need approval
  * instead of waiting for one. An explicit deny returns a tool failure the model can recover from,
  * as the recorded redirect probe did; an unlisted call falls through to `dontAsk`. The adapter
  * therefore supplies `--allow` rules generated from the scorer's read-only program, git and gh
@@ -31,7 +37,10 @@
  * `cleanEnv` yields for this adapter; a request carrying anything more, such as the influence eval's canary,
  * leaves `env` to `dontAsk`. Whether the live host expands variables before permission matching is unverified.
  * A request carrying a case grant (`allowedTools`) replaces those generated rules: the `--allow`
- * rules are the grant's `GRANT_RULES` entries alone, with no deny rules and no `env` rule.
+ * rules are the grant's `GRANT_RULES` entries alone, with no deny rules and no `env` rule. It also
+ * drops `dontAsk`: `--tools` restricts the session to the grant's `GRANT_TOOLS` entries and
+ * `--always-approve` approves every call from that set, including any shell command when Bash is
+ * granted. `dontAsk` applies only to ungranted requests.
  * A cancelled turn leaves the session invalid, and the receipt names the last attempted call. The
  * read-only sandbox
  * remains unsuitable on a machine whose `/var/run/docker.sock` is a symlink. The parse reports `stopReason`. Isolation is a
@@ -45,6 +54,7 @@
  *
  * Grok loads a skill by reading its SKILL.md with `read_file`, which maps to Read.
  */
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -77,6 +87,26 @@ interface Line {
   total_cost_usd?: number;
   num_turns?: number;
   modelUsage?: Record<string, unknown>;
+  requestId?: string;
+  sessionId?: string;
+  id?: number;
+  error?: unknown;
+  params?: { update?: { ["_meta"]?: { tools?: string[] } } };
+}
+
+interface AcpRequest {
+  jsonrpc: "2.0";
+  id: number;
+  method: string;
+  params: object;
+}
+
+function parseLine(raw: string): Line | undefined {
+  try {
+    return JSON.parse(raw) as Line;
+  } catch {
+    return undefined;
+  }
 }
 
 const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
@@ -90,6 +120,11 @@ const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
  * A case's shared-vocabulary grants onto the rule names the Grok 1.0.46 user guide lists
  * (`22-permissions-and-safety.md`, Tool Names). A name with no rule there is not emitted: the same
  * guide says invoking a skill never prompts, so `Skill` needs none.
+ *
+ * `GRANT_TOOLS` maps the same grants onto the tool ids `--tools` restricts the session to. The ids
+ * are the ones the CLI advertises for a new session (`grokToolList`); preflight checks every emitted
+ * id against that list. The CLI has no skill tool and no glob tool: a skill is loaded with
+ * `read_file`, so `Skill` keeps that id in the set, and `Glob` is served by `list_dir`.
  */
 const GRANT_RULES = new Map([
   ["Bash", "Bash(*)"],
@@ -102,6 +137,73 @@ const GRANT_RULES = new Map([
   ["WebSearch", "WebSearch"],
 ]);
 
+const GRANT_TOOLS = new Map([
+  ["Bash", "run_terminal_command"],
+  ["Read", "read_file"],
+  ["Edit", "search_replace"],
+  ["Write", "write"],
+  ["Grep", "grep"],
+  ["Glob", "list_dir"],
+  ["Skill", "read_file"],
+  ["WebFetch", "web_fetch"],
+  ["WebSearch", "web_search"],
+]);
+
+/**
+ * The tool ids the installed CLI advertises for a new session. This is an ACP handshake
+ * (`initialize`, then `session/new`) that sends no prompt, so no model turn starts. An empty list
+ * means the CLI reported none before `timeoutMs`.
+ */
+export async function grokToolList(options: {
+  cwd: string;
+  env: Record<string, string>;
+  timeoutMs: number;
+}): Promise<string[]> {
+  const child = spawn("grok", ["agent", "--no-leader", "stdio"], {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["pipe", "pipe", "ignore"],
+  });
+  const send = (request: AcpRequest) => {
+    child.stdin.write(`${JSON.stringify(request)}\n`);
+  };
+  let buffered = "";
+  let tools: string[] = [];
+  const handle = (raw: string) => {
+    const line = parseLine(raw);
+    if (line === undefined) return;
+    const advertised = line.params?.update?.["_meta"]?.tools;
+    if (advertised !== undefined) {
+      tools = advertised;
+      child.kill();
+    } else if (line.error !== undefined) child.kill();
+    else if (line.id === 1)
+      send({ jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: options.cwd, mcpServers: [] } });
+  };
+  return await new Promise((resolveTools, reject) => {
+    const timer = setTimeout(() => child.kill(), options.timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      buffered += chunk;
+      for (;;) {
+        const newline = buffered.indexOf("\n");
+        if (newline < 0) break;
+        handle(buffered.slice(0, newline));
+        buffered = buffered.slice(newline + 1);
+      }
+    });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolveTools(tools);
+    });
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
+  });
+}
+
 const allowlisted = (env: Record<string, string>) => {
   const clean = cleanEnv(grok.env);
   return Object.entries(env).every(([name, value]) => clean[name] === value);
@@ -111,12 +213,14 @@ export const grok: SubjectAdapter = {
   host: "grok",
   env: ["GROK_HOME"],
   injection: "append-system-prompt",
+  requestIds: true,
   command(req: SessionRequest, model: string | undefined): string[] {
+    const grantedTools = req.allowedTools;
+    const granted = grantedTools !== undefined;
     const allow =
-      req.allowedTools === undefined
-        ? READ_ONLY_ALLOW
-        : req.allowedTools.flatMap((tool) => GRANT_RULES.get(tool) ?? []);
-    const deny = req.allowedTools === undefined ? READ_ONLY_RULES.deny : [];
+      grantedTools === undefined ? READ_ONLY_ALLOW : grantedTools.flatMap((tool) => GRANT_RULES.get(tool) ?? []);
+    const deny = !granted ? READ_ONLY_RULES.deny : [];
+    const tools = grantedTools?.flatMap((tool) => GRANT_TOOLS.get(tool) ?? []) ?? [];
     return [
       "grok",
       "-p",
@@ -124,12 +228,12 @@ export const grok: SubjectAdapter = {
       "--output-format",
       "streaming-json",
       ...allow.flatMap((rule) => ["--allow", rule]),
-      ...(req.allowedTools === undefined && allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
+      ...(!granted && allowlisted(req.env) ? ["--allow", "Bash(env)"] : []),
       ...deny.flatMap((rule) => ["--deny", rule]),
+      ...(granted ? ["--tools", [...new Set(tools)].join(","), "--always-approve"] : []),
       ...(model === undefined ? [] : ["-m", model]),
       ...(req.maxTurns === undefined ? [] : ["--max-turns", String(req.maxTurns)]),
-      "--permission-mode",
-      "dontAsk",
+      ...(!granted ? ["--permission-mode", "dontAsk"] : []),
       ...(req.appendSystemPrompt === undefined ? [] : ["--rules", req.appendSystemPrompt]),
     ];
   },
@@ -139,18 +243,16 @@ export const grok: SubjectAdapter = {
     let costUsd: number | undefined;
     let turns: number | undefined;
     let model: string | undefined;
+    let sessionId: string | undefined;
+    const requestIds: string[] = [];
     let stopReason: string | undefined;
     const flush = () => {
       if (text.trim() !== "") events.push({ kind: "message", text });
       text = "";
     };
     for (const raw of stdout.split("\n")) {
-      let line: Line;
-      try {
-        line = JSON.parse(raw) as Line;
-      } catch {
-        continue;
-      }
+      const line = parseLine(raw);
+      if (line === undefined) continue;
       if (line.type === "text" && typeof line.data === "string") {
         text += line.data;
       } else if (line.type === "tool_call" && typeof line.toolName === "string") {
@@ -175,6 +277,8 @@ export const grok: SubjectAdapter = {
         // Usage is keyed by the models that served the session; more than one is kept as a list.
         const served = Object.keys(line.modelUsage ?? {}).sort();
         if (served.length > 0) model = served.join(",");
+        if (line.requestId !== undefined && !requestIds.includes(line.requestId)) requestIds.push(line.requestId);
+        if (line.sessionId !== undefined) sessionId = line.sessionId;
       }
     }
     flush();
@@ -183,7 +287,12 @@ export const grok: SubjectAdapter = {
     const parsed: ReturnType<SubjectAdapter["parse"]> = { events, reply };
     if (costUsd !== undefined) parsed.costUsd = costUsd;
     if (turns !== undefined) parsed.turns = turns;
-    if (model !== undefined) parsed.model = model;
+    if (model !== undefined) {
+      parsed.model = model;
+      parsed.servedModel = model;
+    }
+    if (requestIds.length > 0) parsed.requestIds = requestIds;
+    if (sessionId !== undefined) parsed.sessionId = sessionId;
     if (stopReason !== undefined) parsed.stopReason = stopReason;
     return parsed;
   },

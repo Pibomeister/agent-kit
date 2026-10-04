@@ -122,16 +122,37 @@ hard_gates:
   - Every ticket carries all six named readiness criteria plus vague_terms, assumptions items using
     text and resolved_as, and exact successful ak delegation output; missing evidence stops after
     persistence.
+  - Each readiness criterion's evidence states what was checked and where. No readiness or stop
+    flag is persisted outside the schema; readiness is the six scored criteria with evidence, and
+    the stop is stated in the result.
+  - On a ticket whose class makes a human the author, allowed_changes remains the full write scope
+    for the implementer. Name the agent's permitted file and symbol subset in text, in goal or
+    stop_conditions, alongside non-file assistance such as research; put prohibited agent work in
+    non_goals. On a decision ticket the boundary lives in goal and non_goals. Naming a human owner
+    alone is not that boundary.
+  - Each unresolved vague term becomes a frontier question that proposes the observable, the
+    workload or fixture, the measurement or oracle and the pass condition, as applicable, that would
+    verify the answer. Express the pass condition against the value the human supplies, for example
+    `p95 of <observable> on <workload> is at or below the target you name`; never choose a number or
+    otherwise invent the missing target.
   - A direction spanning independently deployable stack phases is split in order with schema
-    contract separate; refusal emits a decision ticket rather than one zero-context failure.
+    contract separate; refusal emits a decision ticket rather than one zero-context failure. That
+    decision ticket itself carries the full ordered stack as the recommended option, in its decision
+    question or its goal, with no exception alternative.
   - On a supporting host, a ticket whose class requires consultation is not approved until its
-    kb_refs cites the consultation artifact; an unsupported host remains valid and cites none.
+    kb_refs cites the consultation artifact as a transcript or receipt ref whose one-line note
+    names it judgment evidence and says what it was used for; a bare path is not evidence, and an
+    unsupported host remains valid and cites none.
   - Approval binds to the specification's hash, not the whole plan's; a changed specification does
     not inherit the old approval.
   - No ticket ships with an unfinished-content marker, with a vague error-handling instruction in
     place of the specifics, or with a pointer to another ticket in place of the work.
   - Evidence that invalidates a decision settled earlier in the session stops the write and returns
     a blocked-or-replan result, never a silent override.
+  - While a specification or review decision is open, an evidence-bearing draft, where one exists,
+    is kept and retyped `decision`, and no implementation ticket exists. An open assumption is per
+    slice; that slice becomes a decision ticket at the zero-context gate and unrelated slices
+    proceed.
   - The consensus plan gate is entered only on genuine architectural disagreement, declared high
     risk or a review-driven replan, never automatically on a routine breakdown.
 

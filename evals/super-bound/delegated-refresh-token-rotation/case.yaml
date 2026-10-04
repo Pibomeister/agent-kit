@@ -31,8 +31,8 @@ graders:
     focus: { source: file, path: tickets/refresh-rotation.json }
     weight: 1
     criteria: >-
-      Before returning, the run updates tickets/refresh-rotation.json with the complete scorer
-      output, all readiness criteria with evidence, assumptions and Maya Chen as the human owner.
+      The final persisted tickets/refresh-rotation.json contains the complete scorer output, all
+      readiness criteria with evidence, assumptions and Maya Chen as the human owner.
   - name: persists-red-auth-floor
     type: llm
     focus: { source: file, path: tickets/refresh-rotation.json }

@@ -828,7 +828,7 @@
     "unicorn(no-array-sort)": 2
   },
   "tests/learn/evals/subjects/claude.ts": {
-    "anti-slop(no-runtime-typeof)": 6,
+    "anti-slop(no-runtime-typeof)": 5,
     "anti-slop(no-unsafe-dictionary-type)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "typescript(no-unsafe-type-assertion)": 1
