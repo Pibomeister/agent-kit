@@ -23,9 +23,11 @@ may raise the class without producing a finding (ruling
 `delegation-class-is-authority-not-finding`). Record downstream authorship as author kind plus host,
 never as an implementation identity.
 
-The class changes authorship and checkpoint authority, not whether bounding produces a ticket. A
-`red` result produces a human-owned implementation ticket and limits agent participation to the
-bounded assistance the ticket names.
+The class changes authorship and checkpoint authority, not whether bounding produces a ticket.
+Every ticket states the authorship boundary in two explicit parts: what the agent may do and what it
+must not do. A `red` result produces a human-owned implementation ticket; its boundary may permit
+bounded research or regression tests, but must prohibit the agent from authoring the implementation.
+Naming a human owner without both parts is not an authorship boundary.
 
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A
 never-dropped pack or required sensitive action sets a floor that no factor or lowering may cross;
@@ -93,9 +95,11 @@ absence is recorded; a body does not invent either measurement.
 
 ## Readiness and vague terms
 
-Every ticket records all six criteria separately. Each criterion carries its own score and evidence;
-a total never substitutes for a failed criterion. A criterion score is an integer from 0 to 2, where
-a higher score means the criterion is more fully met and 0 means it is absent.
+Every ticket records all six criteria separately. Each criterion carries its own score and evidence
+stating what was checked and the artifact, field, command or repository location checked. A boolean,
+status word or total never substitutes for criterion evidence. Any persisted readiness or stop flag
+must cite the criterion evidence that makes it true. A criterion score is an integer from 0 to 2,
+where a higher score means the criterion is more fully met and 0 means it is absent.
 
 | Criterion | Evidence expected |
 | --- | --- |
@@ -107,9 +111,10 @@ a higher score means the criterion is more fully met and 0 means it is absent.
 | `verification_path` | The test level and fixture or data source are named. |
 
 `vague_terms` records each detected word or phrase, including terms such as “fast”, “clean up” and
-“as needed”. Turn every unresolved hit into a frontier question. A criterion that remains ambiguous
-fails on its own evidence; do not turn a readiness total into a finding or use it to fill in the
-missing decision.
+“as needed”. Turn every unresolved hit into a frontier question that asks for the missing boundary
+and proposes a concrete verification path: observable, workload or fixture, measurement or oracle,
+and pass condition as applicable. A criterion that remains ambiguous fails on its own evidence; do
+not turn a readiness total into a finding or use it to fill in the missing decision.
 
 ## Assumptions
 
@@ -123,30 +128,33 @@ An `open` assumption is not implementation latitude. Resolve it before implement
 decision ticket and stop the affected slice at the zero-context gate.
 
 Persist `delegation`, `readiness` and `assumptions` on the draft ticket before any `needs-input`
-return reached after this assessment. The stop carries the evidence that justified it; it does not
-erase the draft or reduce the result to prose.
+return reached after this assessment. The stop cites the failed criteria and their evidence; it does
+not erase the draft, reduce the result to prose or persist an unexplained stop boolean.
 
 ## Stack construction
 
 Slice on independently verifiable behavior, not on a universal line count. Each slice is a narrow
 but complete path through every layer, independently verifiable and sized for one fresh context
-window. Order a stack as pure refactor, additive schema expand, behavior behind a flag, consumer,
-backfill, then schema contract. The schema-contract change is a separate ticket. Where one
+window. Record this exact ordered, reversible recommendation whenever those phases apply: pure
+refactor; additive schema expand; behavior behind a flag; consumer; backfill; schema contract. The
+schema-contract change is a separate ticket. Where one
 mechanical change breaks call sites across the tree and no vertical slice can land green, use the
 wide-refactor shape instead: expand, then migrate in batches with each batch its own ticket blocked
 by the expand, then contract, blocked by every batch. Each ticket names its criteria, interfaces,
 ownership and verification.
 When the direction already spans these independently deployable phases, their boundaries require
-the ordered stack. A request to keep them in one ticket becomes an open decision; it does not erase
-the boundaries.
+that ordered recommendation. A request to keep them in one ticket adds an open decision after the
+recommendation; it does not replace the stack with an exception option or erase the boundaries.
 
 ## Advisor consultation
 
 On a host that offers an advisor facility, consultation is required and recorded as judgment
 evidence for `yellow-owner` and `red`, recommended for `yellow-agent`, and silent for `green`.
 The record surface is the knowledgebase consultation artifact: store the advisor's result there, and
-cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt` whose
-`note` names it judgment evidence. The ticket carries the citation, never the consultation itself.
+cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt`, with
+the artifact id/ref and a one-line `note` explaining the judgment evidence used. A filesystem path,
+document name or URL by itself is not evidence. The ticket carries the citation, never the
+consultation itself.
 Consultation adds judgment evidence only: it never lowers `delegation.class`, authorizes a sensitive
 action, closes a finding or substitutes for a required independent lane. A host without the
 facility remains valid and records no invented consultation evidence (ruling
