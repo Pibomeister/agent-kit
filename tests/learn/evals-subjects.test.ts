@@ -932,6 +932,7 @@ describe("runSubject", () => {
     const fakeCodex: SubjectAdapter = {
       ...codex,
       command: () => ["printf", "%s", "ignored"],
+      run: undefined,
       parse: () => ({ events: [], reply: "ok", usage }),
       isolate: undefined,
     };
