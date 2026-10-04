@@ -91,6 +91,10 @@ The head being shipped, named. Verification receipts that bind to that head
 The mode: `dry-run` or `publish`. `dry-run` is a supported mode of this skill, not a flag an operator
 has to remember; it is the mode in which nothing leaves the machine.
 
+The transport, where the caller names one: `direct` or `no-mistakes`. A Firstmate binding's transport
+and the project's own conventions come before it, and where nothing names one the run stops with
+`needs-input` naming the choice (ruling `direct-push-as-ship-transport`).
+
 The charter, where one exists (`schemas/charter.schema.json`), with the actions it names and the
 approval bound to its hash. Absent, the run has no sensitive-action authority and does not acquire
 any by running.
