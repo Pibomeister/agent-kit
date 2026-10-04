@@ -61,9 +61,10 @@ recent work; every later run reads oldest first so nothing between two runs is s
 
 Each accepted reflect run records the lowest and highest observation id it was shown (`min_obs_id`
 and `max_obs_id` in `schemas/memory-run.schema.json`). Downstream judges receive only observations
-inside those exact ranges. Nightly marks still count the session's full observation population
-through the consumed id, matching `episode.obs` even when the first window started after older
-history.
+inside those exact ranges. Nightly holds an episode back while any of its observations at or below
+the watermark is outside them, so a session the first window cut in two is shown whole once the
+backfill has screened the rest, and never consumed in part. Its mark counts the session's
+observations through the consumed id, matching `episode.obs`.
 
 What the watermark passed without an accepted run being shown it is screened by the backfill job:
 the history older than a first window, and whatever an accepted run from before `min_obs_id`
@@ -71,7 +72,8 @@ covered, since such a run contributes no range. `observationIds` finds those ids
 bounds the read to one batch, newest first, one batch per idle tick. A backfill run calls the same
 judge under the same input cap, applies the same quarantine and records its own range; it writes
 neither the memory nor the watermark, and a muted project runs none. The scheduler counts an
-unconsolidated episode toward nightly only once it has a screened observation to show.
+unconsolidated episode toward nightly only once nightly would show it, so an episode waiting on the
+backfill never makes nightly due.
 
 Review ingest moves its watermark past an unscreened review observation and carries that
 observation's id in the watermark file's `deferred` list. Each ingest re-reads only those ids

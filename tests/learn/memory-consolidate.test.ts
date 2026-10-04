@@ -446,8 +446,9 @@ function growingFixture() {
   const add = (title: string) =>
     mem.observation({ sid: GROWING_SID, project: "shop", type: "discovery", title, at: start + 500 });
   const early = Array.from({ length: 16 }, (_, i) => add(`early ${i}`));
-  const empty = { lessons: [], review_events: [] };
-  const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [empty, empty] });
+  const judge = (prompt: string) =>
+    prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
+  const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [judge, judge] });
   const ledger = ensureMemoryLedger(join(dir, "memory"));
   const review = reviewLedger(ctx.config, root);
   let screenedThrough = 0;
@@ -483,6 +484,7 @@ function growingFixture() {
     early,
     build: () => withSource(build),
     grow: () => ["late a", "late b", "late c"].map(add),
+    backfill: () => withSource((source) => backfill(ctx, source, ledger, "shop")),
     nightly: () =>
       withSource((source) => {
         build(source);
@@ -573,7 +575,7 @@ describe("nightly", () => {
     expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["aaaa1111-0000"]);
   });
 
-  test("a sparse first screen records the episode's full observation count through the consumed id", () => {
+  test("a session the first screen reached only in part waits for the backfill, then is consumed whole", () => {
     const grown = growingFixture();
     grown.build();
     const newest = grown.early.at(-1);
@@ -581,7 +583,11 @@ describe("nightly", () => {
     writeFileSync(grown.ledger.path("runs.jsonl"), "");
     appendRun(grown.ledger, { job: "reflect", status: "ok", min_obs_id: newest, max_obs_id: newest });
 
+    expect(grown.nightly()).toBe("nightly: no reflected observations to consolidate");
+    expect(readJsonl(grown.ledger.path(CONSOLIDATED_FILE))).toEqual([]);
+    expect(grown.backfill()).toBe("backfill: ok (15 obs, 0 left)");
     expect(grown.nightly()).toBe("nightly: 1/1 episodes -> +0 lessons, 0 review events");
+    expect(shownObs(grown.ctx.prompts[1])).toEqual(grown.early.slice(0, 15));
     expect(
       readJsonl<{ obs: number; obs_id: number }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
         mark.obs,

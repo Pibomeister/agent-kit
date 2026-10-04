@@ -219,10 +219,10 @@ describe("tick", () => {
       const window = runs().find((row) => row.job === "reflect")?.min_obs_id ?? 0;
       expect(window).toBeGreaterThan(older.at(-1) ?? Infinity);
 
-      // Only the session the window reached is ready; the two behind it wait for the backfill instead of holding nightly due.
-      expect(tickAt(minutes(15))).toBe(`unscreened ${window - 1} unconsolidated 1 due backfill`);
+      // The session the window cut and the two behind it all wait for the backfill instead of holding nightly due.
+      expect(tickAt(minutes(15))).toBe(`unscreened ${window - 1} unconsolidated 0 due backfill`);
       expect(calls("reflector")).toBe(2);
-      expect(tickAt(minutes(30))?.endsWith("unconsolidated 3 due backfill")).toBe(true);
+      expect(tickAt(minutes(30))?.endsWith("unconsolidated 2 due backfill")).toBe(true);
       expect(calls("reflector")).toBe(3);
 
       for (const n of [45, 60, 75]) expect(tickAt(minutes(n))).toBe("unscreened 0 unconsolidated 3 due none");
@@ -241,6 +241,76 @@ describe("tick", () => {
       expect(unconsolidatedEpisodes(ledger)).toEqual([]);
       expect(tickAt(new Date(nextNight.getTime() + 15 * 60_000))).toBe("unscreened 0 unconsolidated 0 due none");
       expect(calls("consolidator")).toBe(1);
+    } finally {
+      setSystemTime();
+      source.close();
+    }
+  });
+
+  test("a session the first window cut at obs 50 of 40..60 is held from nightly until the backfill screens 40..49", () => {
+    const root = gitRepo(join(projectScratch(), "partial"));
+    const dbPath = join(scratch(), "mem.db");
+    const mem = new MemFixture(dbPath);
+    const now = NOON.getTime();
+    const session = (sid: string, count: number, title: string) => {
+      mem.session({ sid, project: "partial", started: now - 86_400_000, completed: now - 86_399_000 });
+      return Array.from({ length: count }, () =>
+        mem.observation({ sid, project: "partial", type: "discovery", title, at: now - 60_000 }),
+      );
+    };
+    const behind = session("aaaa1111-0000", 39, "behind the window");
+    const cut = session("bbbb2222-0000", 21, "t".repeat(3400));
+    mem.close();
+    expect([behind[0], behind.at(-1), cut[0], cut.at(-1)]).toEqual([1, 39, 40, 60]);
+    const judge = (prompt: string) =>
+      prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: dbPath },
+      replies: Array.from({ length: 6 }, () => judge),
+    });
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    saveState(ledger, { last_nightly: "2026-09-17", last_weekly: now });
+    const source = ClaudeMemSource.open(dbPath);
+    if (source === null) throw new Error(`claude-mem source did not open at ${dbPath}`);
+    const tickAt = (minute: number) => {
+      setSystemTime(new Date(now + minute * 60_000));
+      const line = runProject(ctx, source, root, "partial").find((entry) => entry.startsWith("idle "));
+      return line?.slice(line.indexOf("unscreened"));
+    };
+    const calls = (role: string) => ctx.prompts.filter((prompt) => prompt.includes(`# learn/${role}`)).length;
+    const marks = () =>
+      readJsonl<{ sid: string; obs: number; obs_id: number }>(ledger.path("raw/consolidated.jsonl")).map((mark) => [
+        mark.sid,
+        mark.obs,
+        mark.obs_id,
+      ]);
+    try {
+      expect(tickAt(0)).toBe("unscreened 0 unconsolidated 0 due reflect");
+      const runs = readJsonl<{ job: string; min_obs_id?: number; max_obs_id?: number }>(ledger.path("runs.jsonl"));
+      expect(runs.filter((row) => row.job === "reflect").map((row) => [row.min_obs_id, row.max_obs_id])).toEqual([
+        [50, 60],
+      ]);
+
+      // Past the nightly hour with no nightly yet today, and busy, so no backfill: neither held session makes nightly due.
+      for (const minute of [1, 2, 3]) expect(tickAt(minute)).toBe("unscreened 49 unconsolidated 0 due none");
+      expect(calls("consolidator")).toBe(0);
+      expect(marks()).toEqual([]);
+      expect(readState(ledger).last_nightly).toBe("2026-09-17");
+
+      expect(tickAt(15)).toBe("unscreened 49 unconsolidated 0 due backfill");
+      expect(calls("consolidator")).toBe(0);
+      expect(tickAt(30)).toBe("unscreened 0 unconsolidated 2 due nightly");
+      expect(calls("consolidator")).toBe(1);
+      expect(ctx.prompts.at(-1)).toContain("  obs:40 [");
+      expect(ctx.prompts.at(-1)).toContain("  obs:50 [");
+      expect(marks().toSorted()).toEqual([
+        ["aaaa1111-0000", 39, 39],
+        ["bbbb2222-0000", 21, 60],
+      ]);
+      for (const minute of [45, 60]) expect(tickAt(minute)).toBe("unscreened 0 unconsolidated 0 due none");
+      expect(calls("consolidator")).toBe(1);
+      expect(calls("reflector")).toBe(2);
     } finally {
       setSystemTime();
       source.close();

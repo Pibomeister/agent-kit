@@ -10,7 +10,9 @@
  *
  * An episode shows only observations inside an accepted reflect or backfill
  * run's exact id range and, once a run has consumed it, only those after the
- * highest id that run consumed. An episode with none to show waits.
+ * highest id that run consumed. An episode with none to show waits, and so
+ * does one with any observation behind the reflect watermark still unscreened:
+ * it is shown whole once the backfill reaches it, never consumed in part.
  *
  * A lesson is `confirmed` when its evidence spans two or more sessions and
  * `hypothesis` otherwise. A newly confirmed lesson becomes a knowledgebase
@@ -443,7 +445,7 @@ export interface ReadyEpisode {
   obs_id: number;
 }
 
-/** The pending episodes that have something to show the consolidator, by session id. */
+/** The pending episodes that have something to show the consolidator and nothing left for the backfill to screen, by session id. */
 export function readyEpisodes(
   source: ClaudeMemSource,
   ledger: Ledger,
@@ -451,9 +453,11 @@ export function readyEpisodes(
 ): Map<string, ReadyEpisode> {
   const ranges = screenedObservationRanges(ledger);
   const consumed = consumedObsIds(ledger);
+  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
   const ready = new Map<string, ReadyEpisode>();
   for (const episode of pending) {
     const allRows = source.sessionObservations(episode.sid);
+    if (allRows.some((row) => row.id <= watermark && !isScreened(ranges, row.id))) continue;
     const after = consumed.get(episode.sid) ?? 0;
     const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
     const last = rows.at(-1);
