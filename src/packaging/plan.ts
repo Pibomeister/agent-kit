@@ -10,7 +10,7 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, note, unavailable, type Issue } from "../validation/types.ts";
 import { generateHostFrontmatter } from "./frontmatter.ts";
 import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } from "./capability-table.ts";
-import { loadHostCapabilities, type HostId, type SkillMode } from "./hosts.ts";
+import { loadHostCapabilities, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { resolveProfile } from "./profiles.ts";
@@ -548,6 +548,10 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   const ordered = catalog.bySection("skills").filter((e) => included.has(e.id));
+  const userSkillIds = catalog
+    .bySection("skills")
+    .filter((entry) => entry.invocation === "U")
+    .map((entry) => entry.id);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
 
@@ -711,8 +715,14 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
     const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, bodyPath);
     issues.push(...rewritten.issues);
+    const hostSkill = rewriteExplicitStarts(
+      `${generated.text}${rewritten.text}`,
+      host,
+      catalog.package.namespace,
+      userSkillIds,
+    );
 
-    files.set(bodyPath, { path: bodyPath, contents: `${generated.text}${rewritten.text}`, source: bodyPath });
+    files.set(bodyPath, { path: bodyPath, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);

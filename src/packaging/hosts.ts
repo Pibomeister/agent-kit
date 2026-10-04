@@ -9,6 +9,46 @@ export type HostId = "claude-code" | "codex";
 export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
 
 /**
+ * Render the explicit human start a packaged skill recognizes on this host.
+ *
+ * The canonical command remains catalog.package.namespace + skill id. Source
+ * validation and the invocation graph read that one spelling. Packaging owns
+ * the host translation so canonical skills never need a list of host syntaxes
+ * and a prose request still matches none of them (ADR-0009).
+ */
+export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
+  return host === "codex" ? `$${skillId}` : `${namespace}${skillId}`;
+}
+
+function escapeForPattern(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Rewrite exact canonical U-skill command references in host-facing prose.
+ *
+ * A longer id is not a match: `/ak:compound-refresh` must not be translated as
+ * the command `/ak:compound` followed by text. M ids are absent from the input,
+ * so their automatic-invocation contract is not converted into an explicit
+ * gate by packaging.
+ */
+export function rewriteExplicitStarts(
+  text: string,
+  host: HostId,
+  namespace: string,
+  userSkillIds: ReadonlyArray<string>,
+): string {
+  let rewritten = text;
+  for (const skillId of userSkillIds) {
+    const canonical = `${namespace}${skillId}`;
+    const native = explicitStartForHost(host, namespace, skillId);
+    if (canonical === native) continue;
+    rewritten = rewritten.replace(new RegExp(`${escapeForPattern(canonical)}(?![a-z0-9]|-[a-z0-9])`, "gi"), native);
+  }
+  return rewritten;
+}
+
+/**
  * How much of itself a skill is allowed to run on a given host.
  *
  * The vocabulary is `schemas/skill.schema.json`'s `packaging.hosts[].mode`
