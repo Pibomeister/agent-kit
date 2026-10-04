@@ -59,9 +59,9 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * authority step, as it always was on codex.
  *
  * codex gets neither of the two claude-code keys. `adapters/codex/CONTRACT.md`
- * §3: no per-skill model-invocation suppression is verified on this host, and
- * tool restriction "is not emitted" because the host's confinement is an
- * OS-level sandbox the operator owns. §5 makes a key from one host's set
+ * §3: the host's per-skill model-invocation suppression is "not emitted by
+ * this package", and tool restriction is "Not emitted" because the host's
+ * confinement is an OS-level sandbox the operator owns. §5 makes a key from one host's set
  * appearing in the other's bundle a failure in its own right.
  *
  * `argument-hint` is on both lists because neither contract takes it away from

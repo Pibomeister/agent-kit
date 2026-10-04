@@ -1796,9 +1796,9 @@ describe("the mode a skill is packaged in, per host", () => {
  * what the codex bundle contains: "For every U skill in the codex bundle" the
  * description carries the non-trigger clause, the authority check is the first
  * step, and "Every U skill's `packaging.hosts[]` entry for `adapter: codex`
- * records this explicitly: `mode: manual`". The host has no manual-invocation
- * flag, so a U skill exposed as anything but manual there is a skill the model
- * may start on a host that cannot be told not to.
+ * records this explicitly: `mode: manual`". The package emits no suppression
+ * key there, so a U skill exposed as anything but manual is a skill the model
+ * may start on a host that has not been told not to.
  *
  * This became reachable and therefore necessary in the same change. While every
  * skill shipped `manual` by accident the bundle satisfied §3.1 without anyone
@@ -1808,7 +1808,7 @@ describe("the mode a skill is packaged in, per host", () => {
  * error, because a declaration that says `guided` where §3.1 requires `manual`
  * is precisely the weakening §3.1 says the declaration exists to notice.
  */
-describe("a U skill on a host that cannot suppress model invocation", () => {
+describe("a U skill on a host that does not suppress model invocation", () => {
   /** A skill.yaml for `alpha`, which the catalog declares U. */
   const alpha = (rows: string, invocation = "invocation: U\n") => ({
     "skills/alpha/skill.yaml": `id: alpha\nversion: 0.1.0\n${invocation}packaging:\n  hosts:\n${rows}`,
@@ -1924,10 +1924,10 @@ describe("a U skill on a host that cannot suppress model invocation", () => {
   });
 
   test("follows the capability rather than the host's name, in both directions", () => {
-    // The rule's subject is "a host with no manual-invocation flag", not "codex".
+    // The rule's subject is "a host that does not enforce suppression", not "codex".
     // Keyed on the host id it would be a rule that happens to be right about the
     // two hosts that exist today and silently wrong about the third, and it
-    // would keep firing at codex after codex grew the flag. Both directions,
+    // would keep firing at codex after its bundle enforced suppression. Both directions,
     // because either alone is satisfied by a constant: claude-code declaring it
     // enforces nothing forces the U skill to manual there, and codex declaring
     // it enforces no-model-invocation leaves the declared mode alone.

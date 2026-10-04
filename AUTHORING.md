@@ -369,7 +369,7 @@ to compound, compound-refresh, diagnose, bakeoff and super-review that no output
 today.
 
 The `description` is the activation surface. It carries the trigger and at least one explicit
-non-trigger clause, because on a host that cannot suppress model invocation the description is the
+non-trigger clause, because on a host where model invocation is not suppressed the description is the
 only thing standing between a U skill and an unrequested start. For a user-invoked skill the
 non-trigger clause is fixed in form and checked: the description opens `Human-started command: it
 runs only when the human's message begins with /ak:<id>` (where the skill has phase operations, the

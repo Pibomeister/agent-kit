@@ -875,7 +875,7 @@ conflicts:
       no adapter supplies, or one the host's capability table does not list, fails the build.
       The rule lifts capability ceilings only. It grants no authority, does not reach a
       restriction that is not a capability, and leaves every user-invoked skill manual on a host
-      that cannot suppress model invocation.
+      that does not suppress model invocation.
     discharged_in: [hard-gates]
     binds:
       schemas: [install]

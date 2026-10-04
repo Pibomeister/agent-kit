@@ -120,7 +120,7 @@ For every U skill in the codex bundle:
    above hold the text, not the behavior.
 
 Every U skill's `packaging.hosts[]` entry for `adapter: codex` records this explicitly:
-`mode: manual`, with the unsuppressible model invocation named in `unsupported`
+`mode: manual`, with the unsuppressed model invocation named in `unsupported`
 (`schemas/skill.schema.json`). A U skill declaring anything but `manual` on this host is an
 `ak build` error, `packaging.u-skill-not-manual`, and is packaged `manual` regardless; `ak validate`
 does not report it, because the packager's plan is where it is decided — the declaration is the
