@@ -66,8 +66,9 @@ backfill has screened the rest, and never consumed in part. Its mark counts the 
 observations through the consumed id, matching `episode.obs`.
 
 What the watermark passed without an accepted run being shown it is screened by the backfill job,
-and only where a consumer is waiting: the observations of an unconsolidated episode whose session
-started inside the 30-day episode window, and the review observations in the `deferred` list below.
+and only where a consumer is waiting: the observations of a recorded episode, from the tick that
+records it until nightly consolidates it however long that takes, and the review observations in
+the `deferred` list below. A session too old to be recorded as an episode is not a consumer.
 That covers the history older than a first window and whatever an accepted run from before
 `min_obs_id` covered, since such a run contributes no range. Older history no consumer reads is
 never sent to the judge, and with nothing waiting the backfill is not due. It reads its batch by id

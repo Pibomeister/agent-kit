@@ -25,7 +25,7 @@ import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowMs, readText, todayLocal, tokens } from "../core/store.ts";
 import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
-import { EPISODE_WINDOW_MS, unconsolidatedEpisodes } from "./episodes.ts";
+import { unconsolidatedEpisodes } from "./episodes.ts";
 import {
   appendRun,
   citedIds,
@@ -86,18 +86,15 @@ export function fetchNew(
 /**
  * Observation ids at or below the watermark that no accepted reflect or
  * backfill run was shown and a consumer is waiting on, oldest first: those of
- * an unconsolidated episode inside the episode window, and the review ids an
- * ingest `deferred`. History no consumer reads is never listed.
+ * a recorded episode until it is consolidated, and the review ids an ingest
+ * `deferred`. History no consumer reads is never listed.
  */
 export function unscreenedIds(source: ClaudeMemSource, ledger: Ledger, deferred: readonly number[]): number[] {
   const ranges = screenedObservationRanges(ledger);
   const watermark = readState(ledger).last_obs_id_reflected ?? 0;
-  const since = nowMs() - EPISODE_WINDOW_MS;
   const ids = new Set(deferred);
-  for (const episode of unconsolidatedEpisodes(ledger)) {
-    if (episode.started < since) continue;
+  for (const episode of unconsolidatedEpisodes(ledger))
     for (const row of source.sessionObservations(episode.sid)) ids.add(row.id);
-  }
   return [...ids].filter((id) => id <= watermark && !isScreened(ranges, id)).toSorted((a, b) => a - b);
 }
 

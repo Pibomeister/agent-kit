@@ -379,6 +379,68 @@ describe("tick", () => {
     }
   });
 
+  test("an episode that ages past the 30-day window while it waits is still screened and consolidated", () => {
+    const root = gitRepo(join(projectScratch(), "aging"));
+    const dbPath = join(scratch(), "mem.db");
+    const mem = new MemFixture(dbPath);
+    const now = NOON.getTime();
+    const day = 86_400_000;
+    mem.session({ sid: "aaaa1111-0000", project: "aging", started: now - 29 * day, completed: now - 29 * day + 1000 });
+    const waiting = Array.from({ length: 5 }, (_, index) =>
+      mem.observation({
+        sid: "aaaa1111-0000",
+        project: "aging",
+        type: "discovery",
+        title: `waiting ${index}`,
+        at: now - 29 * day + 500,
+      }),
+    );
+    mem.session({ sid: "bbbb2222-0000", project: "aging", started: now - day, completed: now - day + 1000 });
+    for (let index = 0; index < 70; index += 1)
+      mem.observation({
+        sid: "bbbb2222-0000",
+        project: "aging",
+        type: "discovery",
+        title: `recent ${index}`,
+        facts: ["f".repeat(600)],
+        at: now - 600_000,
+      });
+    mem.close();
+    const judge = (prompt: string) =>
+      prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: dbPath },
+      replies: Array.from({ length: 4 }, () => judge),
+    });
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    saveState(ledger, { last_nightly: "2026-09-18", last_weekly: now });
+    const source = ClaudeMemSource.open(dbPath);
+    if (source === null) throw new Error(`claude-mem source did not open at ${dbPath}`);
+    const tickAt = (at: number) => {
+      setSystemTime(new Date(at));
+      const line = runProject(ctx, source, root, "aging").find((entry) => entry.startsWith("idle "));
+      return line?.slice(line.indexOf("unscreened"));
+    };
+    try {
+      expect(tickAt(now)).toBe("unscreened 0 unconsolidated 0 due reflect");
+      const runs = readJsonl<{ job: string; min_obs_id?: number }>(ledger.path("runs.jsonl"));
+      const window = runs.find((row) => row.job === "reflect")?.min_obs_id ?? 0;
+      expect(window).toBeGreaterThan(waiting.at(-1) ?? Infinity);
+      expect(unconsolidatedEpisodes(ledger).map((episode) => episode.sid)).toEqual(["aaaa1111-0000", "bbbb2222-0000"]);
+
+      const later = now + 2 * day;
+      expect(tickAt(later)).toBe(`unscreened ${window - 1} unconsolidated 0 due backfill`);
+      expect(ctx.prompts.at(-1)).toContain(`obs:${waiting[0]} `);
+      expect(tickAt(later + 15 * 60_000)).toBe("unscreened 0 unconsolidated 2 due nightly");
+      expect(ctx.prompts.at(-1)).toContain(`  obs:${waiting[0]} [`);
+      expect(unconsolidatedEpisodes(ledger)).toEqual([]);
+    } finally {
+      setSystemTime();
+      source.close();
+    }
+  });
+
   test("a held lock exits 0 without opening claude-mem", () => {
     const ctx = testContext();
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
