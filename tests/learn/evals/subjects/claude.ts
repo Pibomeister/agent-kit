@@ -4,8 +4,11 @@
  *
  *   claude -p --output-format stream-json --verbose [--model M] [--max-turns N]
  *     --settings '{"disableAllHooks":true}' --setting-sources project,local --strict-mcp-config
- *     --no-session-persistence
+ *     --no-session-persistence [--tools LIST --allowedTools LIST]
  *     [--plugin-dir BUNDLE] [--append-system-prompt TEXT] PROMPT
+ *
+ * A case grant (`allowedTools`) is passed as both `--tools` and `--allowedTools`; without one
+ * neither flag is passed.
  *
  * Isolation is argv only. A scratch CLAUDE_CONFIG_DIR loses the keychain login unless an API key
  * is in the environment, so the session keeps the caller's config dir; `--setting-sources` without

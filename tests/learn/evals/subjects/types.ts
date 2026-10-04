@@ -88,8 +88,8 @@ export interface SessionRequest {
   timeoutMs: number;
   maxTurns?: number;
   /**
-   * The case's complete tool grant. Absent keeps the adapter's ordinary evaluator policy. Only the
-   * Codex and Grok adapters read it; the Claude adapter keeps its ordinary policy either way.
+   * The case's complete tool grant. Absent keeps the adapter's ordinary evaluator policy. Each
+   * adapter's header says how it applies the grant on its host.
    */
   allowedTools?: readonly string[];
   /** A packaged bundle (`dist/claude-code` or `dist/codex`) installed for this session only. */
