@@ -59,7 +59,7 @@ includes:
   references: []
   rationale_for_empty: >-
     Every constraint and reference these skills load already ships with core: `pack-delete` and
-    `pack-deps` for retirement work, `codebase-design` for module surgery, `prose-quality` for
+    `pack-deps` for retirement work, `codebase-design-vocabulary` for module surgery, `prose-quality` for
     skill and lesson prose, `engineering-principles` for simplification.
 
   capabilities:
