@@ -36,8 +36,9 @@ catalog.package.namespace + catalog skill id
 Canonical validation continues to require that exact value in every U skill's description and first
 workflow step. The invocation graph also continues to parse the canonical namespace. Host packaging
 then rewrites exact references to U commands in each emitted `SKILL.md`, including its generated
-frontmatter, into that adapter's native explicit-start form. It does not add an authority check to M
-skills and does not rewrite ordinary prose into a start.
+frontmatter, in each skill-local `references/` and `assets/` file, and in each shared file published
+under `references/shared/`, into that adapter's native explicit-start form. It does not add an
+authority check to M skills and does not rewrite ordinary prose into a start.
 
 The host forms are:
 
@@ -68,7 +69,8 @@ stops.
 - ADR-0003 stays intact: every skill is model-loadable, and U still means human-started.
 - Canonical skills remain host-neutral and `ak validate` keeps one strict command grammar.
 - The Codex bundle now says `$<id>` in the description, Authority section, first workflow step and
-  other U-command references. The Claude Code bundle keeps `/ak:<id>`.
+  other U-command references, in `SKILL.md`, skill-local files and `references/shared/` alike. The
+  Claude Code bundle keeps `/ak:<id>`.
 - Bundle parity means the same skill set and equivalent canonical content, not byte-identical U
   bodies after host rendering. M bodies without U-command references remain byte-identical.
 - Offline packaging tests prove the emitted positive marker, the retained prose refusal and the

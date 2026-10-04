@@ -70,7 +70,7 @@ dist/codex/
 ├── .claude-plugin/marketplace.json # local marketplace registration for Codex CLI
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
 ├── skills/<id>/SKILL.md        # generated keys plus Codex-native U explicit-start markers
-├── skills/<id>/references/
+├── skills/<id>/references/     # U explicit-start markers rendered here and in references/shared/
 ├── LICENSES/                   # licence texts of the packages inlined into bin/ak (NOTICE)
 ├── provenance/licenses/        # claude-mem LICENSE and NOTICE (NOTICE)
 └── NOTICE, LICENSE
