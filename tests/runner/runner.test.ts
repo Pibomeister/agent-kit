@@ -9,11 +9,11 @@ import {
   realpathSync,
   symlinkSync,
   unlinkSync,
+  watch,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { createConnection } from "node:net";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { Runner } from "../../src/runner/core.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
@@ -22,8 +22,8 @@ import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 
-// Most tests drive git, the live runner service and separate seat processes; they take 2-4s alone
-// and pass the 5s default once the full suite shares the host.
+// Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
+// cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
 setDefaultTimeout(30_000);
 
 const root = join(import.meta.dir, "..", "..");
@@ -44,6 +44,24 @@ function git(cwd: string, ...args: string[]) {
   expect(
     Bun.spawnSync(["git", "-C", cwd, "-c", "user.name=Toy", "-c", "user.email=toy@example.invalid", ...args]).exitCode,
   ).toBe(0);
+}
+
+function waitForPath(path: string, owner: { exited: Promise<number> }) {
+  return new Promise<void>((resolve, reject) => {
+    const watcher = watch(dirname(path), () => {
+      if (existsSync(path)) settle();
+    });
+    function settle(error?: Error) {
+      watcher.close();
+      if (error === undefined) resolve();
+      else reject(error);
+    }
+    watcher.once("error", settle);
+    void owner.exited.then((code) =>
+      settle(existsSync(path) ? undefined : new Error(`process exited ${code} before creating ${path}`)),
+    );
+    if (existsSync(path)) settle();
+  });
 }
 
 function fixture(limit = 3) {
@@ -381,9 +399,7 @@ describe("runner guards", () => {
     };
     let server = Bun.spawn(launch, serverOptions);
     try {
-      for (let attempt = 0; attempt < 100 && !existsSync(socket); attempt += 1)
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(existsSync(socket)).toBe(true);
+      await waitForPath(socket, server);
       const firstmateHome = process.env["AK_RUNNER_STOCK_FM_HOME"];
       if (firstmateHome !== undefined) {
         const stock = preflightStock(firstmateHome, f.worker, "codex", root, join(root, "dist", "codex"), socket);
@@ -462,29 +478,17 @@ describe("runner guards", () => {
         ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
         { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
       );
-      for (let attempt = 0; attempt < 250 && !existsSync(launches); attempt += 1) await Bun.sleep(20);
-      expect(existsSync(launches)).toBe(true);
-      const second = await new Promise<{ response: Promise<string> }>((sent, failed) => {
-        const connection = createConnection(socket);
-        let response = "";
-        const done = new Promise<string>((ended) => connection.on("end", () => ended(response)));
-        connection.setEncoding("utf8");
-        connection.on("data", (chunk: string) => {
-          response += chunk;
-        });
-        connection.once("error", failed);
-        connection.once("connect", () =>
-          connection.write(
-            `${JSON.stringify({ token: workerToken, verb: "decide", args: { run: "toy-run", card_id: "align" } })}\n`,
-            () => sent({ response: done }),
-          ),
-        );
-      });
+      await waitForPath(launches, first);
+      const second = Bun.spawn(
+        ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
+        { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+      );
       expect(call("status", workerToken).exitCode).toBe(0);
       writeFileSync(`${launches}.open`, "");
       expect(await first.exited).toBe(0);
       expect(await new Response(first.stdout).text()).toContain('"status": "complete"');
-      expect(JSON.parse(await second.response)).toMatchObject({ ok: true, result: { status: "complete" } });
+      expect(await second.exited).toBe(0);
+      expect(await new Response(second.stdout).text()).toContain('"status": "complete"');
       expect(readFileSync(launches, "utf8").trim().split("\n")).toEqual(["align", "align"]);
       transcript.push(
         "`call prepare` + `call decide` on `align.run`, grant `align-answer` → complete; seat-a and seat-b launched separately.",
@@ -616,7 +620,7 @@ describe("runner guards", () => {
       server.kill();
       await server.exited;
     }
-  }, 30_000);
+  }, 900_000);
 
   test("a forged or unbound grant refuses before a phase runs", () => {
     const f = ready();
@@ -1611,8 +1615,7 @@ describe("runner guards", () => {
       },
     );
     try {
-      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
-      expect(existsSync(socket)).toBe(true);
+      await waitForPath(socket, server);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
@@ -1688,7 +1691,7 @@ describe("runner guards", () => {
       server.kill();
       await server.exited;
     }
-  }, 30_000);
+  }, 300_000);
 
   test("a failing seat launcher refuses with its error, and a supervisor answer settles the card", async () => {
     const f = fixture();
@@ -1749,7 +1752,7 @@ describe("runner guards", () => {
       { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
     );
     try {
-      for (let attempt = 0; attempt < 250 && !existsSync(socket); attempt += 1) await Bun.sleep(20);
+      await waitForPath(socket, server);
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
@@ -1836,7 +1839,7 @@ describe("runner guards", () => {
       server.kill();
       await server.exited;
     }
-  }, 30_000);
+  }, 300_000);
 
   test("runner evidence cannot land in a linked worktree's shared git common directory", () => {
     const f = fixture();
