@@ -38,7 +38,7 @@ interface StoredReport {
     raw: { path: string; sha256: string };
     aborted: null | {
       subject: string;
-      reason: string;
+      stage: string;
       files_created: string[];
       artifacts: Record<string, { sha256: string }>;
       served_model: string | null;
@@ -47,10 +47,11 @@ interface StoredReport {
   };
   sessions: Array<{
     validity: "valid" | "invalid";
-    command: string[];
+    invalid_reason: string | null;
+    command: { program: string | null; sha256: string };
     files_created: string[];
     artifacts: Record<string, { sha256: string }>;
-    graders: Array<{ definition: CaseGrader }>;
+    graders: Array<{ definition: CaseGrader; verdict: string }>;
     served_model: string | null;
     request_ids: string[];
     session_id: string | null;
@@ -61,10 +62,17 @@ interface StoredReport {
 interface RawReport {
   sessions: Array<{
     subject: string;
+    command: string[];
+    invalid_reason: string | null;
+    graders: Array<{ reasons?: Record<string, string> }>;
     session: SessionResult;
     artifacts: Record<string, { sha256: string; text?: string }>;
   }>;
-  aborted: null | { session: SessionResult | null; artifacts: Record<string, { sha256: string; text?: string }> };
+  aborted: null | {
+    reason: string;
+    session: SessionResult | null;
+    artifacts: Record<string, { sha256: string; text?: string }>;
+  };
 }
 
 interface DryPlan {
@@ -124,10 +132,14 @@ const isStoredReport = ajv.compile<StoredReport>({
         },
         aborted: {
           type: ["object", "null"],
-          required: ["subject", "reason", "files_created", "artifacts", "served_model", "session"],
+          required: ["subject", "stage", "files_created", "artifacts", "served_model", "session"],
+          additionalProperties: false,
           properties: {
             subject: { type: "string" },
-            reason: { type: "string" },
+            case: { type: "string" },
+            stage: { enum: ["scaffold", "subject", "grading"] },
+            cost_usd: { type: ["number", "null"] },
+            session_id: { type: ["string", "null"] },
             files_created: { type: "array", items: { type: "string" } },
             artifacts: artifactHashes,
             served_model: { type: ["string", "null"] },
@@ -153,10 +165,19 @@ const isStoredReport = ajv.compile<StoredReport>({
         ],
         properties: {
           validity: { enum: ["valid", "invalid"] },
-          command: { type: "array", items: { type: "string" } },
+          invalid_reason: { type: ["string", "null"] },
+          command: {
+            type: "object",
+            required: ["program", "sha256"],
+            additionalProperties: false,
+            properties: { program: { type: ["string", "null"] }, sha256: { type: "string" } },
+          },
           files_created: { type: "array", items: { type: "string" } },
           artifacts: artifactHashes,
-          graders: { type: "array", items: { type: "object", required: ["definition"] } },
+          graders: {
+            type: "array",
+            items: { type: "object", required: ["definition", "verdict"], not: { required: ["reasons"] } },
+          },
           served_model: { type: ["string", "null"] },
           request_ids: { type: "array", items: { type: "string" } },
           session_id: { type: ["string", "null"] },
@@ -174,14 +195,21 @@ const isRawReport = ajv.compile<RawReport>({
       type: "array",
       items: {
         type: "object",
-        required: ["subject", "session", "artifacts"],
-        properties: { subject: { type: "string" }, session: { type: "object" }, artifacts: { type: "object" } },
+        required: ["subject", "command", "invalid_reason", "graders", "session", "artifacts"],
+        properties: {
+          subject: { type: "string" },
+          command: { type: "array", items: { type: "string" } },
+          invalid_reason: { type: ["string", "null"] },
+          graders: { type: "array", items: { type: "object" } },
+          session: { type: "object" },
+          artifacts: { type: "object" },
+        },
       },
     },
     aborted: {
       type: ["object", "null"],
-      required: ["session", "artifacts"],
-      properties: { session: { type: ["object", "null"] }, artifacts: { type: "object" } },
+      required: ["reason", "session", "artifacts"],
+      properties: { reason: { type: "string" }, session: { type: ["object", "null"] }, artifacts: { type: "object" } },
     },
   },
 });
@@ -769,7 +797,7 @@ describe("execute path", () => {
         writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
         return { ...start, subject: id };
       },
-      judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
+      judge: async () => ({ reply: '{"verdict":"PASS","reason":"the file names Maya Chen as owner"}' }),
     });
     const committed = readFileSync(json, "utf8");
     const report = storedReport(json);
@@ -780,11 +808,20 @@ describe("execute path", () => {
     if (result === undefined || rawSession === undefined || receiptCase === undefined)
       throw new Error("case runner wrote no test result");
     const artifact = '{"class":"red","owner":"Maya Chen"}\n';
+    const prompt = loadCase(CASE_FILE).execution.prompt;
 
     expect(code).toBe(0);
     expect(report.sessions).toHaveLength(1);
     expect(result.validity).toBe("valid");
-    expect(result.command.at(0)).toBe(binary);
+    expect(result.command).toEqual({ program: binary, sha256: sha256(JSON.stringify(rawSession.command)) });
+    if (host !== "codex") expect(rawSession.command).toContain(prompt);
+    if (host === "claude") expect(rawSession.command).toContain(join(bundle, "claude-code"));
+    expect(committed).not.toContain(bundle);
+    expect(committed).not.toContain(JSON.stringify(prompt).slice(1, -1));
+    expect(committed).not.toContain("as owner");
+    expect(rawSession.graders.flatMap(({ reasons }) => Object.values(reasons ?? {}))).toContain(
+      "the file names Maya Chen as owner",
+    );
     expect(result.files_created).toContain("tickets/result.json");
     expect(result.artifacts["tickets/result.json"]).toEqual({ sha256: sha256(artifact) });
     expect(result.served_model).toBe(start.servedModel ?? null);
@@ -800,6 +837,7 @@ describe("execute path", () => {
     expect(printed).toHaveLength(1);
     expect(printed.at(0)).not.toContain("Maya Chen");
     expect(printed.at(0)).not.toContain("delegation assessment");
+    expect(printed.at(0)).not.toContain("as owner");
     expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({
       summary: { passed: 1, failed: 0, ungraded: 0, invalid: 0 },
       sessions: [{ subject: selected.id, validity: "valid", result: "pass", served_model: result.served_model }],
@@ -842,16 +880,17 @@ describe("execute path", () => {
     mkdirSync(join(bundle, "codex"), { recursive: true });
     const json = join(cwd, "result.json");
     const errors: string[] = [];
+    const printed: string[] = [];
     const code = await caseRunnerMain(
       ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
         bundleRoot: bundle,
         rawDir: join(cwd, "raw"),
-        out: () => {},
+        out: (line) => printed.push(line),
         err: (line) => errors.push(line),
         startSubject: async (_adapter, id, _model, request) => {
-          if (id === "subject-codex") throw new Error("host exited before a transcript");
+          if (id === "subject-codex") throw new Error(`host exited before a transcript in ${request.cwd}`);
           mkdirSync(join(request.cwd, "tickets"));
           writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
           return { ...session("grok", "grok.jsonl"), subject: id, costUsd: 0.25 };
@@ -859,17 +898,60 @@ describe("execute path", () => {
         judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
       },
     );
+    const committed = readFileSync(json, "utf8");
     const report = storedReport(json);
+    const raw = rawReport(join(cwd, "raw", "result.raw.json"));
 
     expect(code).toBe(2);
     expect(report.sessions).toHaveLength(1);
     expect(report.receipt.cost_usd).toBe(0.25);
-    expect(report.receipt.aborted).toMatchObject({
-      subject: "subject-codex",
-      reason: "host exited before a transcript",
-      session: null,
-    });
+    expect(report.receipt.aborted).toMatchObject({ subject: "subject-codex", stage: "subject", session: null });
+    expect(committed).not.toContain("host exited before a transcript");
+    expect(printed.join("\n")).not.toContain("host exited before a transcript");
+    expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({ aborted: { subject: "subject-codex", stage: "subject" } });
+    expect(raw.aborted?.reason).toStartWith("host exited before a transcript in ");
     expect(errors.join("\n")).toContain("host exited before a transcript");
+  });
+
+  test("commits the class of an invalid reason and keeps the refused call it quotes in the raw receipt", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-invalid-")));
+    work.push(cwd);
+    const bundle = join(cwd, "dist");
+    mkdirSync(join(bundle, "claude-code"), { recursive: true });
+    const json = join(cwd, "result.json");
+    const printed: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", "--subject", "subject-claude", "--case", CASE_FILE, "--json", json],
+      {
+        matrix: { ...matrix, subjects: [subject("claude")] },
+        bundleRoot: bundle,
+        rawDir: join(cwd, "raw"),
+        out: (line) => printed.push(line),
+        startSubject: async (_adapter, id) => ({
+          ...session("claude", "claude.jsonl"),
+          subject: id,
+          stopReason: "cancelled",
+          events: [{ kind: "tool", name: "Bash", raw: "Bash", input: { command: "cat /home/maya/ledger.csv" } }],
+        }),
+        judge: async () => {
+          throw new Error("an invalid session reached a grader");
+        },
+      },
+    );
+    const committed = readFileSync(json, "utf8");
+    const raw = rawReport(join(cwd, "raw", "result.raw.json"));
+
+    expect(code).toBe(1);
+    expect(storedReport(json).sessions.at(0)).toMatchObject({
+      validity: "invalid",
+      invalid_reason: "host cancelled refused Bash call",
+    });
+    expect(committed).not.toContain("ledger.csv");
+    expect(printed.join("\n")).not.toContain("ledger.csv");
+    expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({
+      sessions: [{ validity: "invalid", invalid_reason: "host cancelled refused Bash call" }],
+    });
+    expect(raw.sessions.at(0)?.invalid_reason).toBe("host cancelled refused Bash call: cat /home/maya/ledger.csv");
   });
 
   test("keeps the raw stream and artifacts of a session whose grading throws in the raw receipt only", async () => {
@@ -920,7 +1002,7 @@ describe("execute path", () => {
     expect(report.receipt.cost_usd).toBeCloseTo(0.85);
     expect(report.receipt.aborted).toMatchObject({
       subject: "subject-codex",
-      reason: "judge panel rejected",
+      stage: "grading",
       served_model: "subject-model",
       files_created: ["tickets/result.json"],
       artifacts: { "tickets/result.json": { sha256: sha256(artifact) } },
@@ -932,8 +1014,11 @@ describe("execute path", () => {
     expect(raw.aborted?.artifacts["tickets/result.json"]?.text).toBe(artifact);
     expect(printed.join("\n")).not.toContain("Maya Chen");
     expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({
-      aborted: { subject: "subject-codex", reason: "judge panel rejected" },
+      aborted: { subject: "subject-codex", stage: "grading" },
     });
+    expect(committed).not.toContain("judge panel rejected");
+    expect(printed.join("\n")).not.toContain("judge panel rejected");
+    expect(raw.aborted?.reason).toBe("judge panel rejected");
     expect(errors.join("\n")).toContain("judge panel rejected");
   });
 });

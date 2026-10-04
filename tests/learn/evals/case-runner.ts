@@ -355,10 +355,25 @@ function sessionFacts(session: SessionResult) {
   };
 }
 
-/** The committable form of a row: hashes of the host stream and of each artifact, never their content. */
+/** An invalid-session reason without the host call it may quote after its colon. */
+function reasonClass(reason: string | null): string | null {
+  return reason === null ? null : (reason.split(":").at(0) ?? reason);
+}
+
+/**
+ * The committable form of a row: verdicts, identity and hashes. The host stream, artifact contents,
+ * launch argv, judge reasons and the quoted part of an invalid reason stay in the raw receipt.
+ */
 function committedRow(row: CaseSessionResult) {
-  const { session, artifacts, ...facts } = row;
-  return { ...facts, artifacts: artifactHashes(artifacts), session: sessionFacts(session) };
+  const { session, artifacts, command, graders, invalid_reason: invalidReason, ...facts } = row;
+  return {
+    ...facts,
+    invalid_reason: reasonClass(invalidReason),
+    command: { program: command.at(0) ?? null, sha256: sha256Hex(JSON.stringify(command)) },
+    graders: graders.map(({ reasons: _reasons, ...verdict }) => verdict),
+    artifacts: artifactHashes(artifacts),
+    session: sessionFacts(session),
+  };
 }
 
 /**
@@ -873,6 +888,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     let aborted: {
       subject: string;
       case: string;
+      stage: "scaffold" | "subject" | "grading";
       reason: string;
       cost_usd: number | null;
       session: SessionResult | null;
@@ -915,6 +931,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           aborted = {
             subject: subject.id,
             case: evalCase.name,
+            stage: prepared === undefined ? "scaffold" : session === undefined ? "subject" : "grading",
             reason: error instanceof Error ? error.message : String(error),
             cost_usd:
               session?.costUsd === undefined && judgeSpend === undefined
@@ -936,21 +953,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const rawText = `${JSON.stringify(
       {
         receipt: relative(PACKAGE_ROOT, json),
-        sessions: rows.map(({ subject, case: name, session, artifacts }) => ({
-          subject,
-          case: name,
-          session,
-          artifacts,
-        })),
-        aborted:
-          aborted === null
-            ? null
-            : {
-                subject: aborted.subject,
-                case: aborted.case,
-                session: aborted.session,
-                artifacts: aborted.artifacts,
-              },
+        sessions: rows,
+        aborted,
       },
       null,
       2,
@@ -974,7 +978,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           : {
               subject: aborted.subject,
               case: aborted.case,
-              reason: aborted.reason,
+              stage: aborted.stage,
               cost_usd: aborted.cost_usd,
               files_created: aborted.files_created,
               artifacts: artifactHashes(aborted.artifacts),
@@ -996,10 +1000,10 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           case: row.case,
           validity: row.validity,
           result: row.result,
-          invalid_reason: row.invalid_reason,
+          invalid_reason: reasonClass(row.invalid_reason),
           served_model: row.served_model,
         })),
-        aborted: aborted === null ? null : { subject: aborted.subject, case: aborted.case, reason: aborted.reason },
+        aborted: aborted === null ? null : { subject: aborted.subject, case: aborted.case, stage: aborted.stage },
       }),
     );
     if (aborted !== null) {
