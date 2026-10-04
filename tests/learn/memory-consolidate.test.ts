@@ -449,7 +449,8 @@ function growingFixture() {
   const ledger = ensureMemoryLedger(join(dir, "memory"));
   const review = reviewLedger(ctx.config, root);
   const withSource = <T>(use: (source: ClaudeMemSource) => T): T => {
-    const source = ClaudeMemSource.open(dbPath)!;
+    const source = ClaudeMemSource.open(dbPath);
+    if (!source) throw new Error(`no claude-mem database at ${dbPath}`);
     try {
       return use(source);
     } finally {
@@ -459,8 +460,9 @@ function growingFixture() {
   /** Rebuild episodes and treat every observation so far as reflected. */
   const build = (source: ClaudeMemSource) => {
     buildEpisodes(source, ledger, "shop", []);
-    const newest = source.sessionObservations(GROWING_SID).at(-1)!.id;
-    saveState(ledger, { ...readState(ledger), last_obs_id_reflected: newest });
+    const newest = source.sessionObservations(GROWING_SID).at(-1);
+    if (!newest) throw new Error(`session ${GROWING_SID} has no observations`);
+    saveState(ledger, { ...readState(ledger), last_obs_id_reflected: newest.id });
   };
   return {
     ctx,

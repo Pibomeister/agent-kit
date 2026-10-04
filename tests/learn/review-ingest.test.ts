@@ -46,6 +46,9 @@ function ok(stdout: string): RunResult {
   return { code: 0, stdout, stderr: "", timedOut: false };
 }
 
+const authorOf = (user: ReviewComment["user"]) =>
+  githubCommentEvent({ ...FINDING, user }, new Map(), 42, "x", "alice", "app").author;
+
 describe("github comment parsing", () => {
   test("badge severity, author, line fallback, stripped text and a stable hash", () => {
     const event = githubCommentEvent(FINDING, new Map([[FINDING.id, FINDING]]), 42, "122fc42b", "alice", "app");
@@ -66,8 +69,6 @@ describe("github comment parsing", () => {
   });
 
   test("an account the host types as Bot is labelled a bot whatever its login spells", () => {
-    const authorOf = (user: ReviewComment["user"]) =>
-      githubCommentEvent({ ...FINDING, user }, new Map(), 42, "x", "alice", "app").author;
     expect(authorOf({ login: "Copilot", type: "Bot" })).toBe("Copilot[bot]");
     expect(authorOf({ login: "review-bot[bot]", type: "Bot" })).toBe("review-bot[bot]");
     expect(authorOf({ login: "carol", type: "User" })).toBe("carol");
@@ -278,7 +279,9 @@ describe("quarantine", () => {
     const result = ingest(ctx, ledger, repo, { skipGithub: true });
     expect(result.events.map((event) => event.obs_id)).toEqual([clean]);
     expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
-    expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8")).claude_mem_max_id).toBe(clean);
+    expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8"))).toMatchObject({
+      claude_mem_max_id: clean,
+    });
   });
 });
 
