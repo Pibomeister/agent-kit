@@ -24,8 +24,8 @@ graders:
     focus: { source: file, path: tickets/order-ledger.json }
     weight: 1
     criteria: >-
-      Before returning, the run persists the scorer output, criterion-level readiness evidence and
-      assumptions on the draft ticket or on the decision ticket that replaces it.
+      The final persisted draft or replacement decision ticket contains the scorer output,
+      criterion-level readiness evidence and assumptions.
   - name: orders-a-reversible-stack
     type: llm
     focus: { source: file, path: tickets/order-ledger.json }
