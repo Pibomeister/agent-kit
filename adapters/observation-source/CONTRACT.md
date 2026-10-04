@@ -73,9 +73,10 @@ That covers the history older than a first window and whatever an accepted run f
 `min_obs_id` covered, since such a run contributes no range. Older history no consumer reads is
 never sent to the judge, and with nothing waiting the backfill is not due. It reads its batch by id
 (`observationsById`), newest first, one batch per idle tick. A backfill run calls the same judge
-under the same input cap, applies the same quarantine and records the exact ids it was shown
-(`obs_ids`), so an id between two of them is not counted as screened; it writes neither the memory
-nor the watermark, and a muted project runs none. The scheduler counts an unconsolidated episode
+under the same input cap, applies the same quarantine and the same acceptance gates, and records
+the exact ids it was shown (`obs_ids`), so an id between two of them is not counted as screened. A
+reply reflect would reject is a rejected backfill: it screens nothing and backs off as a rejected
+reflect does. A backfill writes neither the memory nor the watermark, and a muted project runs none. The scheduler counts an unconsolidated episode
 toward nightly only once nightly would show it, so an episode waiting on the backfill never makes
 nightly due.
 

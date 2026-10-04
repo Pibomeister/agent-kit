@@ -202,20 +202,33 @@ export interface ReflectInputs {
   summaries?: readonly SummaryRow[];
 }
 
-/** The provenance gate and the quarantine over one reflector reply, with the security fields its run row records. */
+/**
+ * The provenance gate, the quarantine and the acceptance gates over one
+ * reflector reply, with the security fields its run row records.
+ *
+ * Every guard reads the reflector's sanitized text, before the runtime's
+ * security bullet is added, so that bullet can neither mask a gutted reply nor
+ * push a near-cap one over: the cap keeps room for it. The more-than-half rule
+ * counts the lines the reflector meant as memory, which excludes bullets citing
+ * a quarantined observation (the runtime's bullet replaces them), and counts as
+ * lost both provenance drops and bullets dropped for carrying quarantined text.
+ */
 function screenReply(
   ledger: Ledger,
   reply: ReflectReply,
   valid: ReadonlySet<string>,
   previous: string,
+  inputTokens: number,
+  cap: number,
   inputs: ReflectInputs,
 ) {
   const allowed = new Set([...valid, ...citedIds(previous)]);
   const { kept, dropped, candidates } = provenanceGate(splitLines(reply.memory), allowed);
   const { notes, rejected } = parseSecurityNotes(reply.security_notes, valid);
   if (rejected > 0) logLine(ledger, `reflect: ${rejected} security note(s) dropped, citing no observation shown`);
+  const observations = inputs.observations ?? [];
   const red = redact(kept, {
-    observations: inputs.observations ?? [],
+    observations,
     summaries: inputs.summaries ?? [],
     previous,
     notes,
@@ -226,7 +239,24 @@ function screenReply(
     security_notes_rejected: rejected,
     quarantined: [...new Set(red.quarantine.map((n) => n.obs))].sort(),
   };
-  return { dropped, candidates, red, security };
+  const sessionOf = (obs: string) => {
+    const row = observations.find((r) => `obs:${r.id}` === obs);
+    return row === undefined ? null : sid8(row.memory_session_id);
+  };
+  const record = securityRecord(red.quarantine, sessionOf);
+  const written = `${red.kept.join("\n").trim()}\n`;
+  let reason = degenerate(written, previous, inputTokens, cap, record === null ? 0 : tokens(record));
+  // A gutted memory is worse than a stale one.
+  const meant = candidates - red.flagged;
+  const lost = dropped + red.tokens;
+  if (reason === null && meant > 0 && lost > meant / 2) {
+    reason =
+      red.tokens === 0
+        ? `provenance dropped ${dropped}/${meant} lines`
+        : `gates dropped ${lost}/${meant} lines (${dropped} provenance, ${red.tokens} redaction)`;
+  }
+  const outcome = { dropped_by_provenance: dropped, dropped_by_redaction: red.flagged + red.tokens, ...security };
+  return { red, record, reason, outcome };
 }
 
 /** The reflector's reply, or null when it carries no memory text. */
@@ -237,16 +267,7 @@ function askReflector(ctx: LearnContext, prompt: string, memProject: string): Re
   return { memory, security_notes: reply?.security_notes };
 }
 
-/**
- * Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit.
- *
- * Every guard reads the reflector's sanitized text, before the runtime's
- * security bullet is added, so that bullet can neither mask a gutted reply nor
- * push a near-cap one over: the cap keeps room for it. The more-than-half rule
- * counts the lines the reflector meant as memory, which excludes bullets citing
- * a quarantined observation (the runtime's bullet replaces them), and counts as
- * lost both provenance drops and bullets dropped for carrying quarantined text.
- */
+/** Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit. */
 export function applyReflection(
   ledger: Ledger,
   reply: string | ReflectReply,
@@ -259,33 +280,18 @@ export function applyReflection(
 ): ReflectResult {
   const memoryPath = ledger.path("memory.md");
   const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
-  const { dropped, candidates, red, security } = screenReply(
+  const { red, record, reason, outcome } = screenReply(
     ledger,
     typeof reply === "string" ? { memory: reply } : reply,
     valid,
     previous,
+    inputTokens,
+    cap,
     inputs,
   );
-  const observations = inputs.observations ?? [];
-  const redacted = red.flagged + red.tokens;
-  const sessionOf = (obs: string) => {
-    const row = observations.find((r) => `obs:${r.id}` === obs);
-    return row === undefined ? null : sid8(row.memory_session_id);
-  };
-  const record = securityRecord(red.quarantine, sessionOf);
-  const written = `${red.kept.join("\n").trim()}\n`;
+  const dropped = outcome.dropped_by_provenance;
+  const redacted = outcome.dropped_by_redaction;
   const text = `${withSecurityRecord(red.kept, record).join("\n").trim()}\n`;
-  const outcome = { dropped_by_provenance: dropped, dropped_by_redaction: redacted, ...security };
-  let reason = degenerate(written, previous, inputTokens, cap, record === null ? 0 : tokens(record));
-  // A gutted memory is worse than a stale one.
-  const meant = candidates - red.flagged;
-  const lost = dropped + red.tokens;
-  if (reason === null && meant > 0 && lost > meant / 2) {
-    reason =
-      red.tokens === 0
-        ? `provenance dropped ${dropped}/${meant} lines`
-        : `gates dropped ${lost}/${meant} lines (${dropped} provenance, ${red.tokens} redaction)`;
-  }
   if (reason !== null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "rejected", reason, ...outcome, ...meta });
@@ -311,7 +317,7 @@ export function applyReflection(
   });
   logLine(
     ledger,
-    `reflect ok: ${tokens(text)} tokens, ${dropped} bullets dropped by provenance, ${redacted} by redaction, ${security.quarantined.length} observation(s) quarantined, watermark obs:${maxObsId}`,
+    `reflect ok: ${tokens(text)} tokens, ${dropped} bullets dropped by provenance, ${redacted} by redaction, ${outcome.quarantined.length} observation(s) quarantined, watermark obs:${maxObsId}`,
   );
   ledger.commit(`reflect: watermark obs:${maxObsId}`);
   return { ok: true, reason: null, dropped, redacted };
@@ -362,8 +368,8 @@ export function reflect(
 
 /**
  * Screen one batch of the observations the watermark passed without an
- * accepted run being shown them. The reply's memory is read only by the
- * quarantine; nothing it says is written.
+ * accepted run being shown them. The reply passes reflect's gates or the
+ * batch stays unscreened; nothing it says is written.
  */
 export function backfill(
   ctx: LearnContext,
@@ -395,15 +401,22 @@ export function backfill(
     return "backfill: judge call failed";
   }
   const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
-  const { security } = screenReply(ledger, reply, valid, previous, {
+  const inputTokens = tokens(observations.map(formatObservation).join(""));
+  const { reason, outcome } = screenReply(ledger, reply, valid, previous, inputTokens, ctx.config.memoryTokens, {
     observations,
     summaries,
   });
+  if (reason !== null) {
+    markAttempt(ledger);
+    appendRun(ledger, { job: "backfill", status: "rejected", reason, ...outcome, trigger });
+    logLine(ledger, `backfill rejected: ${reason}`);
+    return `backfill: rejected: ${reason}`;
+  }
   appendRun(ledger, {
     job: "backfill",
     status: "ok",
-    ...security,
-    tokens_in: tokens(observations.map(formatObservation).join("")),
+    ...outcome,
+    tokens_in: inputTokens,
     obs_ids: observations.map((row) => row.id),
     trigger,
     observations: observations.length,
@@ -411,7 +424,7 @@ export function backfill(
   });
   logLine(
     ledger,
-    `backfill ok: screened ${observations.length} observation(s), ${security.quarantined.length} quarantined`,
+    `backfill ok: screened ${observations.length} observation(s), ${outcome.quarantined.length} quarantined`,
   );
   ledger.commit(`backfill: screened ${observations.length} observation(s)`);
   return `backfill: ok (${observations.length} obs, ${pending.length - observations.length} left)`;

@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
-import { readJson } from "../../src/learn/core/store.ts";
+import { readJson, readJsonl } from "../../src/learn/core/store.ts";
 import { GitHubReviewSource, paginatedArray, type ReviewComment } from "../../src/learn/sources/github.ts";
 import { appendEvents, eventHash, loadEvents, makeEvent, parseSeverity } from "../../src/learn/review/events.ts";
 import {
@@ -22,6 +22,8 @@ import {
   quarantinedObservationIds,
   readState,
 } from "../../src/learn/memory/ledger.ts";
+import { readyEpisodes } from "../../src/learn/memory/consolidate.ts";
+import { buildEpisodes, unconsolidatedEpisodes } from "../../src/learn/memory/episodes.ts";
 import { backfill, reflect, unscreenedIds } from "../../src/learn/memory/reflect.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
 import { gitRepo, MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
@@ -355,6 +357,62 @@ describe("quarantine", () => {
     expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean, history]);
     expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [] });
     expect(run().events).toEqual([]);
+  });
+
+  test("an off-contract backfill reply screens nothing and releases neither a pending episode nor a deferred review row", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.now() - 86_400_000;
+    const sid = "dddd4444-0000";
+    mem.session({ sid, project: "app", started: at, completed: at + 1000 });
+    const history = mem.observation({
+      sid,
+      project: "app",
+      type: "review-finding",
+      title: "Reviewer: before the first reflect window",
+      at,
+    });
+    for (let n = 0; n < 70; n += 1)
+      mem.observation({ sid, project: "app", type: "discovery", title: `filler ${n}`, facts: ["f".repeat(600)], at });
+    mem.close();
+    const ctx = testContext({
+      env: { AK_LEARN_MEM_DB: memDb },
+      replies: [(prompt: string) => reflectorReply(prompt), { memory: "I can't help with that" }],
+    });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    const ledger = reviewLedger(ctx.config, repo);
+    const run = () => ingest(ctx, ledger, repo, { skipGithub: true });
+    const source = ClaudeMemSource.open(memDb);
+    if (source === null) throw new Error(`claude-mem source did not open at ${memDb}`);
+    try {
+      expect(buildEpisodes(source, memory, "app", []).map((episode) => episode.sid)).toEqual([sid]);
+      expect(reflect(ctx, source, memory, "app")).toStartWith("reflect: ok");
+      expect(run().deferred).toBe(1);
+      const waiting = unscreenedIds(source, memory, deferredObservationIds(ledger));
+      expect(waiting[0]).toBe(history);
+      const written = readFileSync(memory.path("memory.md"), "utf8");
+
+      expect(backfill(ctx, source, memory, "app", deferredObservationIds(ledger))).toStartWith("backfill: rejected: ");
+      expect(ctx.prompts.length).toBe(2);
+      const rejected = readJsonl<{ job: string; status: string; obs_ids?: number[] }>(memory.path("runs.jsonl")).filter(
+        (row) => row.job === "backfill",
+      );
+      expect(rejected.map((row) => [row.status, row.obs_ids])).toEqual([["rejected", undefined]]);
+      expect(unscreenedIds(source, memory, deferredObservationIds(ledger))).toEqual(waiting);
+      expect(readState(memory).reflect_failures).toBe(1);
+      expect(readFileSync(memory.path("memory.md"), "utf8")).toBe(written);
+
+      expect(readyEpisodes(source, memory, unconsolidatedEpisodes(memory)).size).toBe(0);
+      expect(unconsolidatedEpisodes(memory).map((episode) => episode.sid)).toEqual([sid]);
+      const after = run();
+      expect([after.events, after.deferred]).toEqual([[], 1]);
+      expect(loadEvents(ledger)).toEqual([]);
+      expect(deferredObservationIds(ledger)).toEqual([history]);
+    } finally {
+      source.close();
+    }
   });
 });
 
