@@ -31,6 +31,7 @@ import {
   logLine,
   provenanceGate,
   readState,
+  type MemoryState,
   saveState,
   screenedObservationRanges,
   SECTIONS,
@@ -172,6 +173,12 @@ function markAttempt(ledger: Ledger): void {
   });
 }
 
+/** The state with the failure backoff an accepted run ends. */
+function withoutBackoff(state: MemoryState): MemoryState {
+  const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...rest } = state;
+  return rest;
+}
+
 export interface ReflectResult {
   ok: boolean;
   reason: string | null;
@@ -218,6 +225,14 @@ function screenReply(
     quarantined: [...new Set(red.quarantine.map((n) => n.obs))].sort(),
   };
   return { dropped, candidates, red, security };
+}
+
+/** The reflector's reply, or null when it carries no memory text. */
+function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectReply | null {
+  const reply = ctx.judge(prompt, { runId: null, loop: "memory", role: "reflector", project: memProject });
+  const memory = reply?.memory;
+  if (typeof memory !== "string" || memory.trim() === "") return null;
+  return { memory, security_notes: reply?.security_notes };
 }
 
 /**
@@ -276,11 +291,10 @@ export function applyReflection(
     return { ok: false, reason, dropped, redacted };
   }
   writeFileSync(memoryPath, text);
-  const state = readState(ledger);
-  const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
+  const state = withoutBackoff(readState(ledger));
   saveState(ledger, {
-    ...withoutBackoff,
-    last_obs_id_reflected: Math.max(withoutBackoff.last_obs_id_reflected ?? 0, maxObsId),
+    ...state,
+    last_obs_id_reflected: Math.max(state.last_obs_id_reflected ?? 0, maxObsId),
     last_reflect: nowMs(),
   });
   appendRun(ledger, {
@@ -318,14 +332,8 @@ export function reflect(
     ctx.io.out(prompt);
     return `reflect: dry run (${observations.length} observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = ctx.judge(prompt, {
-    runId: null,
-    loop: "memory",
-    role: "reflector",
-    project: memProject,
-  });
-  const text = reply?.memory;
-  if (typeof text !== "string" || text.trim() === "") {
+  const reply = askReflector(ctx, prompt, memProject);
+  if (reply === null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "reflect failed: no judge output");
@@ -337,7 +345,7 @@ export function reflect(
   const maxObsId = Math.max(...observations.map((row) => row.id));
   const result = applyReflection(
     ledger,
-    { memory: text, security_notes: reply?.security_notes },
+    reply,
     valid,
     inputTokens,
     maxObsId,
@@ -373,7 +381,7 @@ export function backfill(
       .filter((row) => wanted.has(row.id)),
     INPUT_CHARS - SUMMARY_CHARS,
   );
-  const sids = [...new Set(observations.map((row) => row.memory_session_id))].sort();
+  const sids = [...new Set(observations.map((row) => row.memory_session_id))].toSorted();
   const previous = readText(ledger.path("memory.md"));
   const summaries = source.summaries(sids);
   const prompt = reflectPrompt(ctx, previous, observations, summaries);
@@ -381,26 +389,21 @@ export function backfill(
     ctx.io.out(prompt);
     return `backfill: dry run (${observations.length} of ${pending.length} unscreened observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = ctx.judge(prompt, {
-    runId: null,
-    loop: "memory",
-    role: "reflector",
-    project: memProject,
-  });
-  const text = reply?.memory;
-  if (typeof text !== "string" || text.trim() === "") {
+  const reply = askReflector(ctx, prompt, memProject);
+  if (reply === null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "backfill", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "backfill failed: no judge output");
     return "backfill: judge call failed";
   }
   const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
-  const { security } = screenReply(ledger, { memory: text, security_notes: reply?.security_notes }, valid, previous, {
+  const { security } = screenReply(ledger, reply, valid, previous, {
     observations,
     summaries,
   });
   const minObsId = Math.min(...observations.map((row) => row.id));
   const maxObsId = Math.max(...observations.map((row) => row.id));
+  saveState(ledger, withoutBackoff(readState(ledger)));
   appendRun(ledger, {
     job: "backfill",
     status: "ok",
