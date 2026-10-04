@@ -39,17 +39,25 @@
       "trace": []
     },
     "good": {
-      "reply": "The term faster is vague. What measurable target, workload conditions, and verification command define success?",
+      "reply": "The term faster is vague. What measurable target should define success? I suggest checkout latency for the current benchmark workload, measured before and after the change with the existing benchmark command; please confirm or change that observable, workload, measurement, and verification path.",
       "tools": [
         "ak delegation tickets/checkout-performance.input.json --project project.json"
       ]
     },
-    "bad": {
-      "reply": "The ticket is ready and faster is left undefined.",
-      "tools": [
-        "echo known-bad"
-      ]
-    }
+    "bad": [
+      {
+        "reply": "The target is a 20% reduction in checkout latency; use the existing benchmark command to verify it.",
+        "tools": [
+          "echo known-bad-number"
+        ]
+      },
+      {
+        "reply": "The implementation ticket is ready: optimize checkout until it is faster, then run the benchmark.",
+        "tools": [
+          "echo known-bad-ticket"
+        ]
+      }
+    ]
   },
   "super-bound-refused-oversized-change-split": {
     "file": "tickets/order-ledger.json",

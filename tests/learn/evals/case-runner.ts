@@ -82,6 +82,7 @@ export interface GraderResult {
   verdict: "pass" | "fail" | "needs-human" | "unavailable";
   definition: CaseGrader;
   votes?: Record<string, string>;
+  split?: true;
   reasons?: Record<string, string>;
   usage?: Record<string, TokenUsage>;
   cost_usd?: Record<string, number>;
@@ -204,6 +205,16 @@ function judgeCost(result: GraderResult): number {
   return Object.values(result.cost_usd ?? {}).reduce((sum, cost) => sum + cost, 0);
 }
 
+function strictMajority(votes: Readonly<Record<string, string>>): "PASS" | "FAIL" | null {
+  const cast = Object.values(votes);
+  if (cast.length === 0 || cast.some((vote) => vote !== "PASS" && vote !== "FAIL")) return null;
+  const passes = cast.filter((vote) => vote === "PASS").length;
+  const fails = cast.length - passes;
+  if (passes > cast.length / 2) return "PASS";
+  if (fails > cast.length / 2) return "FAIL";
+  return null;
+}
+
 /** Names the host identity a session failed to report: served model, session or thread id, request id. */
 function identityProblem(session: SessionResult): string | null {
   if (session.servedModel === undefined) return "host did not report served model";
@@ -284,12 +295,13 @@ export async function evaluateCaseSession(
         queue: options.queue,
         judge: options.judge,
       });
+      const majority = common.scored && judged.verdict === "needs-human" ? strictMajority(judged.votes) : null;
       const graderResult: GraderResult = {
         ...common,
         verdict:
-          judged.verdict === "PASS"
+          judged.verdict === "PASS" || majority === "PASS"
             ? "pass"
-            : judged.verdict === "FAIL"
+            : judged.verdict === "FAIL" || majority === "FAIL"
               ? "fail"
               : judged.verdict === "needs-human"
                 ? "needs-human"
@@ -299,7 +311,10 @@ export async function evaluateCaseSession(
         usage: judged.usage,
         cost_usd: judged.cost_usd,
       };
-      if (judged.reason !== undefined) graderResult.reason = judged.reason;
+      if (majority !== null) {
+        graderResult.split = true;
+        graderResult.reason = `strict reviewer majority: ${Object.values(judged.votes).filter((vote) => vote === majority).length} ${majority}, ${Object.keys(judged.votes).length} total`;
+      } else if (judged.reason !== undefined) graderResult.reason = judged.reason;
       graders.push(graderResult);
       undecided = common.scored && graderResult.verdict !== "pass" && graderResult.verdict !== "fail";
       continue;

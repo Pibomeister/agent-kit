@@ -57,7 +57,12 @@ interface StoredReport {
     command: { program: string | null; sha256: string };
     files_created: string[];
     artifacts: Record<string, { sha256: string }>;
-    graders: Array<{ definition: CaseGrader; verdict: string }>;
+    graders: Array<{
+      definition: CaseGrader;
+      verdict: string;
+      votes?: Record<string, string>;
+      split?: boolean;
+    }>;
     served_model: string | null;
     request_ids: string[];
     session_id: string | null;
@@ -356,7 +361,7 @@ interface GraderReference {
   file: string;
   surfaces: { file: string[]; reply: string[]; trace: string[] };
   good: { reply: string; tools: string[] };
-  bad: { reply: string; tools: string[] };
+  bad: { reply: string; tools: string[] } | Array<{ reply: string; tools: string[] }>;
 }
 
 const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
@@ -376,7 +381,7 @@ const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
         },
       },
       good: { $ref: "#/$defs/arm" },
-      bad: { $ref: "#/$defs/arm" },
+      bad: { oneOf: [{ $ref: "#/$defs/arm" }, { type: "array", minItems: 1, items: { $ref: "#/$defs/arm" } }] },
     },
   },
   $defs: {
@@ -424,13 +429,20 @@ describe("evaluateCaseSession", () => {
     const criteriaNames = new Map(
       evalCase.graders.flatMap((grader) => (grader.type === "llm" ? [[grader.criteria, grader.name] as const] : [])),
     );
-    for (const arm of ["good", "bad"] as const) {
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm}-`)));
+    const arms = [
+      { name: "good", selected: reference.good, passes: true },
+      ...(Array.isArray(reference.bad) ? reference.bad : [reference.bad]).map((selected, index) => ({
+        name: `bad-${index + 1}`,
+        selected,
+        passes: false,
+      })),
+    ];
+    for (const arm of arms) {
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm.name}-`)));
       work.push(cwd);
-      const selected = reference[arm];
-      const marker = (names: string[]) => JSON.stringify({ offline_grader_passes: arm === "good" ? names : [] });
-      const tools = selected.tools;
-      const reply = `${selected.reply}\n${marker(reference.surfaces.reply)}`;
+      const marker = (names: string[]) => JSON.stringify({ offline_grader_passes: arm.passes ? names : [] });
+      const tools = arm.selected.tools;
+      const reply = `${arm.selected.reply}\n${marker(reference.surfaces.reply)}`;
       const artifact = join(cwd, reference.file);
       mkdirSync(dirname(artifact), { recursive: true });
       writeFileSync(artifact, `${marker(reference.surfaces.file)}\n`);
@@ -467,9 +479,9 @@ describe("evaluateCaseSession", () => {
       );
 
       expect(result.graders.map(({ name, verdict }) => [name, verdict])).toEqual(
-        evalCase.graders.map(({ name }) => [name, arm === "good" ? "pass" : "fail"]),
+        evalCase.graders.map(({ name }) => [name, arm.passes ? "pass" : "fail"]),
       );
-      expect(result.result).toBe(arm === "good" ? "pass" : "fail");
+      expect(result.result).toBe(arm.passes ? "pass" : "fail");
     }
   });
 
@@ -567,7 +579,37 @@ describe("evaluateCaseSession", () => {
     expect(asked).toBe(0);
   });
 
-  test("reviewers who disagree on one judged grader are not asked about the next", async () => {
+  test.each([
+    ["pass", ["PASS", "PASS", "FAIL"]],
+    ["fail", ["FAIL", "FAIL", "PASS"]],
+  ] as const)("a 2-1 reviewer majority produces a %s verdict and records the split", async (verdict, votes) => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-majority-${verdict}-`)));
+    work.push(cwd);
+    mkdirSync(join(cwd, "tickets"));
+    writeFileSync(join(cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+    let asked = 0;
+    const panel = buildPanel({ ...matrix, panels: { ...matrix.panels, size: 3 } }, subject("claude"));
+    const row = await evaluateCaseSession(loadCase(CASE_FILE), session("claude", "claude.jsonl"), {
+      cwd,
+      filesCreated: ["tickets/result.json"],
+      panel,
+      queue: join(cwd, "queue.jsonl"),
+      judge: async () => {
+        const vote = votes[asked % votes.length];
+        asked += 1;
+        return { reply: JSON.stringify({ verdict: vote, reason: "stub vote" }) };
+      },
+    });
+
+    expect(row).toMatchObject({ validity: "valid", result: verdict });
+    for (const grader of row.graders.slice(1)) {
+      expect(grader).toMatchObject({ verdict, split: true });
+      expect(Object.values(grader.votes ?? {}).toSorted()).toEqual([...votes].toSorted());
+    }
+    expect(asked).toBe(2 * panel.members.length);
+  });
+
+  test("a 1-1 reviewer tie stays ungraded and later graders are not judged", async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-disagree-")));
     work.push(cwd);
     mkdirSync(join(cwd, "tickets"));
@@ -1019,6 +1061,33 @@ describe("execute path", () => {
       summary: { passed: 1, failed: 0, ungraded: 0, invalid: 0 },
       sessions: [{ subject: selected.id, validity: "valid", result: "pass", served_model: result.served_model }],
       aborted: null,
+    });
+  });
+
+  test("keeps majority votes and the split marker in the compact receipt", async () => {
+    const { cwd, bundle, json, rawDir } = stage("majority-receipt");
+    const selected = subject("grok");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", "--subject", selected.id, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [selected], panels: { ...matrix.panels, size: 3 } },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: stubHost(started, {}),
+        judge: async (reviewer) => ({
+          reply: JSON.stringify({ verdict: reviewer.id === "reviewer-c" ? "FAIL" : "PASS", reason: "stub vote" }),
+        }),
+      },
+    );
+    const judged = storedReport(json).sessions[0]?.graders.find((grader) => grader.definition.type === "llm");
+
+    expect(code).toBe(0);
+    expect(judged).toMatchObject({
+      verdict: "pass",
+      split: true,
+      votes: { "reviewer-a": "PASS", "reviewer-b": "PASS", "reviewer-c": "FAIL" },
     });
   });
 
