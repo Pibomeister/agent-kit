@@ -15,9 +15,13 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
  * validation and the invocation graph read that one spelling. Packaging owns
  * the host translation so canonical skills never need a list of host syntaxes
  * and a prose request still matches none of them (ADR-0009).
+ *
+ * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
+ * leading `$`; the namespace already carries that `<plugin>:` stem after its
+ * slash (adapters/codex/CONTRACT.md §3.1 records the probe).
  */
 export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
-  return host === "codex" ? `$${skillId}` : `${namespace}${skillId}`;
+  return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
 }
 
 function escapeForPattern(text: string): string {
@@ -43,7 +47,7 @@ export function rewriteExplicitStarts(
     const canonical = `${namespace}${skillId}`;
     const native = explicitStartForHost(host, namespace, skillId);
     if (canonical === native) continue;
-    rewritten = rewritten.replace(new RegExp(`${escapeForPattern(canonical)}(?![a-z0-9]|-[a-z0-9])`, "gi"), native);
+    rewritten = rewritten.replace(new RegExp(`${escapeForPattern(canonical)}(?![a-z0-9]|-[a-z0-9])`, "g"), native);
   }
   return rewritten;
 }

@@ -197,7 +197,7 @@ function storedRun(): { receipt: string; copy: string; dumpDir: string; loadedCa
         host: "codex",
         results: [
           result(loadedCase, "Written.", [loadedCase.expected[0]!]),
-          result(quietCase, `Only you can start this: please type /ak:${quietCase.expected[0]} yourself.`, []),
+          result(quietCase, `Only you can start this: please type $ak:${quietCase.expected[0]} yourself.`, []),
           result(negative, "Here is the answer.", []),
           result(routed, "Loaded it.", [routed.skill]),
           result(brokenCase, "", [], { exit_code: 1 }),
@@ -310,6 +310,9 @@ describe("loading stored runs and the label file", () => {
       expect(labelled.id).toMatch(/^[0-9a-f]{12}$/);
       expect(labelled.transcript).toContain(`[prompt] ${labelled.prompt}`);
     }
+    // The subject ran on codex and named that host's start; the reviewer reads it as `CRITERIA` names it.
+    const asked = labels.items.find((i) => i.suggested.outcome === "recommended")!;
+    expect(asked.transcript).toContain(`please type /ak:${asked.skill} yourself`);
     const violated = labels.items.find((i) => i.stratum.startsWith("violated/"))!;
     expect(violated).toMatchObject({
       events_recorded: true,

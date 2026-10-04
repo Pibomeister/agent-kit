@@ -78,6 +78,7 @@ import { loadMatrix, MATRIX_FILE, type Matrix, type Seat, type Subject } from ".
 import { buildPanel, grade, type Grade, type GradeOptions, type Judge, type Panel, type Vote } from "./panel.ts";
 import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { type KappaRow, kappaTable, rng } from "./stats.ts";
+import { startsFor } from "./explicit-start.ts";
 import type { HostKind, SessionEvent, TokenUsage } from "./subjects/types.ts";
 import {
   bodyFingerprint,
@@ -226,6 +227,9 @@ export function suggestedOf(scored: Scored): Suggested {
       return { verdict: null, outcome, reason: reason || outcome };
   }
 }
+
+/** `text` as `CRITERIA` and the graders name commands; unchanged when the run did not record its host. */
+const canonicalOn = (host: HostKind | null, text: string) => (host === null ? text : startsFor(host).canonical(text));
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
 
@@ -443,8 +447,9 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
   const add = (cand: Candidate) => {
     const known = seen.get(cand.source);
     if (known === undefined) seen.set(cand.source, cand);
-    // A dump input does not name its host; its eligible receipt for the same session does.
-    else if (known.host === null) known.host = cand.host;
+    // A dump input does not name its host; its eligible receipt for the same session does, and the
+    // host decides how the reply is read, so the receipt's reading replaces the dump's.
+    else if (known.host === null) seen.set(cand.source, cand);
   };
   const fromDump = (subject: string, host: HostKind | null, file: string, arm: ScoreOptions["arm"]) => {
     const dump = JSON.parse(readFileSync(file, "utf8")) as Dump;
@@ -464,7 +469,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
       case: dump.case,
       events: dump.events,
       reply: dump.reply,
-      scored: scoreCase(dump.case, dump.events, dump.reply, { ...scoring, arm }),
+      scored: scoreCase(dump.case, dump.events, canonicalOn(host, dump.reply), { ...scoring, arm }),
     });
   };
   const receipts = new Map<
@@ -539,7 +544,7 @@ export function loadRuns(paths: readonly string[], scoring: ScoreOptions): Loade
           case: c,
           events: null,
           reply: result.reply,
-          scored: scoreCase(c, [], result.reply, { ...scoring, arm }),
+          scored: scoreCase(c, [], canonicalOn(subject.host, result.reply), { ...scoring, arm }),
         });
       }
     }
@@ -574,7 +579,11 @@ export function buildLabels(
     stratum,
     prompt: cand.case.prompt,
     events_recorded: cand.events !== null,
-    transcript: renderItem(cand.case, cand.events, cand.reply),
+    transcript: renderItem(
+      cand.case,
+      cand.events?.map((e) => (e.kind === "tool" ? e : { ...e, text: canonicalOn(cand.host, e.text) })) ?? null,
+      canonicalOn(cand.host, cand.reply),
+    ),
     suggested: suggestedOf(cand.scored),
     label: null,
     note: "",

@@ -77,7 +77,7 @@ dist/codex/
 ```
 
 One canonical source tree, with host differences generated at the packaging boundary. Frontmatter
-keys follow §3, and exact canonical U-command references are rendered as `$<id>` for this host
+keys follow §3, and exact canonical U-command references are rendered as `$ak:<id>` for this host
 (ADR-0009). Ordinary prose is unchanged.
 
 ---
@@ -120,21 +120,28 @@ For every U skill in the codex bundle:
 
 1. The `description`, rendered from the canonical `SKILL.md`, opens by naming the skill's
    typed command and its class — `Human-started command: it runs only when the human's message
-   begins with $<id>`, followed where the skill has phase operations by the other authority that
+   begins with $ak:<id>`, followed where the skill has phase operations by the other authority that
    may start it — and says what to do on any other request: do not load or follow it, tell the human
    to type that command. Because the package intentionally emits no host suppression key, the
    description is the first layer between a U skill and an unrequested start, so it is written to
    be read that way. `ak validate`'s `human-start` check fails a U skill whose description omits the command
    (`invocation.description-omits-command`) or the class (`invocation.description-omits-class`).
 2. The skill's own `## Authority` section names the command and states that a prose request is
-   not a start, and its first workflow step is the stop: it names `$<id>`, and started without
+   not a start, and its first workflow step is the stop: it names `$ak:<id>`, and started without
    the human's message beginning with it — or, where the skill has phase operations, without a
    runner-validated grant covering the phase — the skill stops, names the command and does nothing
    else. `human-start` fails a U skill whose first workflow step does not name the command or does
    not say to stop (`invocation.first-step-not-stop`).
    Selecting the skill through `/skills` is explicit only when the resulting human turn delivered
-   to the skill begins with that `$<id>` mention (ADR-0009). Selection state without the marker, a
+   to the skill begins with that `$ak:<id>` mention (ADR-0009). Selection state without the marker, a
    later mention in prose, or the model choosing the skill from its description is not a start.
+
+   The form is `$ak:<id>` because that is the name this host gives a plugin's skill. Probe, with no
+   model turn, on `codex-cli 0.159.2`: `codex plugin marketplace add <dist/codex>` and `codex plugin
+   add ak@agent-kit` in a scratch `CODEX_HOME`, then `codex debug prompt-input '$ak:super-align …'`.
+   The rendered skill list names every skill `ak:<id>` and the user turn is delivered verbatim. The
+   probe does not show mention resolution, so a bare `$<id>` resolving to a plugin skill is neither
+   confirmed nor relied on: the packaged gate does not accept it.
 3. The non-trigger eval case for that skill is a **required** gate for this bundle rather than an
    advisory one, because it is the only observation of the property in a live session: the checks
    above hold the text, not the behavior.
@@ -230,7 +237,7 @@ the published branch, so `bun test` does not run it:
    The local form, `codex plugin marketplace add <dist/codex>`, relies on the marketplace manifest
    the bundle carries.
 6. **Explicit-start rendering** — a packaged U description and first workflow step accept a leading
-   `$<id>`, retain the ordinary-prose refusal, and contain no canonical `/ak:<id>` for that U skill.
+   `$ak:<id>`, retain the ordinary-prose refusal, and contain no canonical `/ak:<id>` for that U skill.
    An M skill remains automatically discoverable and receives no U authority gate.
 
 **Reported honestly, not worked around:** with no verified host-native eval runner for this host, the

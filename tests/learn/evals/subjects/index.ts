@@ -5,6 +5,7 @@
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { HostId } from "../../../../src/packaging/hosts.ts";
 import { runAsync } from "../session.ts";
 import { costOf, type PriceTable } from "../pricing.ts";
 import { claude } from "./claude.ts";
@@ -19,7 +20,7 @@ const ADAPTERS: Record<HostKind, SubjectAdapter> = { claude, codex, grok, kimi }
  * Which `dist/` bundle each host installs. Grok reads Claude Code skill frontmatter. Kimi is a
  * reviewer-only host and installs none: its entry only completes the record.
  */
-export const BUNDLE_FOR: Record<HostKind, string> = {
+export const BUNDLE_FOR: Record<HostKind, HostId> = {
   claude: "claude-code",
   codex: "codex",
   grok: "claude-code",

@@ -122,6 +122,7 @@ import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/lear
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
 import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
 import { matrixPrices, usageReceipt } from "./pricing.ts";
+import { startsFor } from "./explicit-start.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
@@ -1537,6 +1538,7 @@ async function main(argv: string[]): Promise<number> {
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
     const maxTurns = effectiveMaxTurns(subject);
+    const starts = startsFor(subject.host);
     // The package's skills reach the host only through its packaged bundle; `ak build` writes it.
     const bundleDir = bundleOn ? join(PACKAGE_ROOT, "dist", BUNDLE_FOR[subject.host]) : undefined;
     if (bundleDir !== undefined && !existsSync(bundleDir) && !dryRun) {
@@ -1554,9 +1556,14 @@ async function main(argv: string[]): Promise<number> {
       return 2;
     }
     const request = (c: Case): SessionRequest => {
-      const req: SessionRequest = { prompt: promptFor(c, arm), cwd, env: cleanEnv(adapter.env), timeoutMs: 300_000 };
+      const req: SessionRequest = {
+        prompt: starts.typed(promptFor(c, arm)),
+        cwd,
+        env: cleanEnv(adapter.env),
+        timeoutMs: 300_000,
+      };
       if (maxTurns !== undefined) req.maxTurns = maxTurns;
-      if (injected !== "") req.appendSystemPrompt = injected;
+      if (injected !== "") req.appendSystemPrompt = starts.typed(injected);
       if (bundleDir !== undefined) req.bundleDir = bundleDir;
       return req;
     };
@@ -1581,7 +1588,13 @@ async function main(argv: string[]): Promise<number> {
     const evaluated = sessions.map((session, index) => {
       const evalCase = cases[index];
       if (evalCase === undefined) throw new Error(`completed session has no case at index ${index}`);
-      const scored = scoreCase(evalCase, session.events, session.reply, scoring, session.slashCommands);
+      const scored = scoreCase(
+        evalCase,
+        session.events,
+        starts.canonical(session.reply),
+        scoring,
+        session.slashCommands,
+      );
       const invalid = invalidSession(session, maxTurns);
       return { case: evalCase, session, result: invalid === null ? scored : { ...scored, invalid } };
     });

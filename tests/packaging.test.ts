@@ -1408,8 +1408,8 @@ describe("the two host bundles, compared", () => {
     const alphaInCodex = codex.files.get("skills/alpha/SKILL.md")?.contents ?? "";
 
     expect(alphaInClaude.match(/`\/ak:alpha`/g)?.length).toBe(3);
-    expect(alphaInClaude).not.toContain("`$alpha`");
-    expect(alphaInCodex.match(/`\$alpha`/g)?.length).toBe(3);
+    expect(alphaInClaude).not.toContain("`$ak:alpha`");
+    expect(alphaInCodex.match(/`\$ak:alpha`/g)?.length).toBe(3);
     expect(alphaInCodex).not.toContain("`/ak:alpha`");
     expect(bodyOf(claude, "alpha")).toContain("A request in prose is not a start.");
     expect(bodyOf(codex, "alpha")).toContain("A request in prose is not a start.");
@@ -1449,17 +1449,23 @@ describe("the two host bundles, compared", () => {
     const ctx = ctxFor({
       "skills/alpha/references/setup.md": "Remind the human to run `/ak:alpha`.\n",
       "protocols/tdd/PROTOCOL.md": "# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n",
+      "skills/alpha/assets/note.md": "Only the exact lowercase command is one: `/AK:Alpha` is prose.\n",
     });
     const claude = planBundle(ctx, "claude-code", {});
     const codex = planBundle(ctx, "codex", {});
     const shared = "references/shared/protocols/tdd/PROTOCOL.md";
 
-    expect(codex.files.get("skills/alpha/references/setup.md")?.contents).toBe("Remind the human to run `$alpha`.\n");
-    expect(codex.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `$alpha`, not `/ak:alpha-next`.\n");
+    expect(codex.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Remind the human to run `$ak:alpha`.\n",
+    );
+    expect(codex.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `$ak:alpha`, not `/ak:alpha-next`.\n");
     expect(claude.files.get("skills/alpha/references/setup.md")?.contents).toBe(
       "Remind the human to run `/ak:alpha`.\n",
     );
     expect(claude.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n");
+    expect(codex.files.get("skills/alpha/assets/note.md")?.contents).toBe(
+      "Only the exact lowercase command is one: `/AK:Alpha` is prose.\n",
+    );
   });
 
   test("neither host's own frontmatter keys leak into the other host's bundle", () => {
@@ -1511,7 +1517,7 @@ describe("portable explicit-start authority in the real catalog", () => {
       const canonical = `${catalog.package.namespace}${entry.id}`;
       for (const [plan, command] of [
         [claude, canonical],
-        [codex, `$${entry.id}`],
+        [codex, `$ak:${entry.id}`],
       ] as const) {
         const text = packagedSkillText(plan, entry.id);
         const parsed = packagedSkill(plan, entry.id);
@@ -1541,7 +1547,7 @@ describe("portable explicit-start authority in the real catalog", () => {
     expect(offenders).toEqual([]);
 
     const setup = codex.files.get("skills/product-pulse/references/setup.md")?.contents ?? "";
-    expect(setup).toContain("`$product-pulse`");
+    expect(setup).toContain("`$ak:product-pulse`");
     expect(claude.files.get("skills/product-pulse/references/setup.md")?.contents).toContain("`/ak:product-pulse`");
   });
 
