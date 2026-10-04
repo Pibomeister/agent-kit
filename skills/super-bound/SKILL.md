@@ -48,8 +48,9 @@ guidance leaves the project-configured starting points advisory rather than enfo
 
 ## Workflow
 
-1. Validate the start before any other tool call. Unless the run began with `/ak:super-bound` or a
-   validated grant, stop, read nothing and respond only with the command the human must type.
+1. Validate the start before any tool call but the bypass check. Unless the run began with
+   `/ak:super-bound`, a validated grant or the bypass check in Authority exiting 0, stop, read
+   nothing and respond only with the command the human must type.
 2. Detect before asking: inspect dependency, test, lint and continuous-integration configuration;
    report what exists in two lines and ask only what remains.
 3. For work spanning modules, gate a capability map of stable kebab-case module ids, responsibilities
