@@ -62,8 +62,11 @@ The verifier seat record names its id, the implementer seat, and one isolation s
   This remains useful guided evidence and never claims autonomous independence. The gate counts it
   only for a human-typed ship, with a visible note, as worker-attested evidence. It refuses it once
   the build gate records the implementer seat, or once the run holds any bypass or delegated grant
-  record. That holds for the rest of the run, even after a person takes over: guided shipping by
-  hand needs a fresh run. It is never relabeled `runner-attested`.
+  record, and the refusal names the record. A bypass check made before the run was opened attaches
+  to the first run opened afterward on that branch. A delegated grant is found through the binding
+  the run was opened with (`open --binding <binding file>`); a run opened without it does not see
+  the binding's grants. The mark holds for the rest of the run, even after a person takes over:
+  guided shipping by hand needs a fresh run. It is never relabeled `runner-attested`.
 
 The local lifecycle gate checks the attestation's shape only: an id and hash are present and the
 seat ids differ. It does not resolve the attestation, and it cannot tell a runner-written record from

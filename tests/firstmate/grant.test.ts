@@ -101,7 +101,7 @@ describe("ak firstmate grant", () => {
   });
 
   test("a host-unattested verifier receipt ships by hand until the run holds a delegated grant", () => {
-    const { project, ledger, bindingPath, binding } = bound();
+    const { project, worktree, ledger, bindingPath, binding } = bound();
     const store = binding.evidence.location;
     const lifecycle = (...argv: string[]) => {
       const out: string[] = [];
@@ -132,7 +132,9 @@ describe("ak firstmate grant", () => {
     };
     const ticketPath = join(makeDir(), "ticket.json");
     writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
-    const run = lifecycle("open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
+    const run = lifecycle("open", "--ticket", ticketPath, "--binding", bindingPath).out.match(
+      /^opened run (.+)$/m,
+    )?.[1];
     if (run === undefined) throw new Error("open did not return a run id");
     for (const gate of ["build-checks", "review-full", "review-readiness"])
       expect(lifecycle("record", "--gate", gate, "--run", run).code).toBe(0);
@@ -173,12 +175,11 @@ describe("ak firstmate grant", () => {
     const byHand = lifecycle("check", "--run", run);
     expect(byHand.err).toContain("note: verifier seat verify-1 on receipt verification-1 is host-unattested");
     expect(byHand.code).toBe(0);
-    rewrite(ledger, bindingPath, { ...binding, run_id: run });
-    expect(grant(ledger, bindingPath, "ship.prepare", project).code).toBe(0);
+    expect(grant(ledger, bindingPath, "ship.prepare", worktree).code).toBe(0);
     const delegated = lifecycle("check", "--run", run);
     expect(delegated.code).toBe(1);
     expect(delegated.err).toContain(
-      "refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation",
+      `refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation (the run holds grant record ${join(store, binding.run_id, "grants", "ship.prepare.json")})`,
     );
   }, 120_000);
 

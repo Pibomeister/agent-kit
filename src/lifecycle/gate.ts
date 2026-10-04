@@ -210,6 +210,7 @@ export interface RunRecord {
   opened_at: string;
   branch: string;
   base: string;
+  binding_run_id?: string;
   closed_at?: string;
 }
 
@@ -336,6 +337,7 @@ export interface OpenArgs {
   dir: string;
   project: string;
   ticket: string;
+  binding?: string;
 }
 
 export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false; reason: string } {
@@ -352,6 +354,12 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   }
   const id = (ticket as { id?: unknown } | null)?.id;
   if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
+  const binding = a.binding === undefined ? undefined : readObject(a.binding);
+  if (
+    a.binding !== undefined &&
+    (binding?.schema !== "firstmate-binding" || typeof binding.run_id !== "string" || binding.run_id === "")
+  )
+    return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
 
   const openedAt = new Date().toISOString();
   const canonical = new TextEncoder().encode(
@@ -375,8 +383,14 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     opened_at: openedAt,
     branch: branch.text,
     base: head.text,
+    ...(typeof binding?.run_id === "string" ? { binding_run_id: binding.run_id } : {}),
   };
   atomicJson(runRecordPath(a.dir, runId), run);
+  const beforeOpen = join(a.dir, safeRunId(branch.text), "bypass");
+  if (existsSync(beforeOpen)) {
+    mkdirSync(join(a.dir, runId), { recursive: true });
+    renameSync(beforeOpen, join(a.dir, runId, "bypass"));
+  }
   storeArtifact(a.dir, runId, canonical);
   atomicJson(branchPointerPath(a.dir, branch.text), { run_id: runId });
   return { ok: true, run };
@@ -1050,12 +1064,10 @@ function evaluateEvidence(
       .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
       .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
   );
-  const everGranted = [a.run, run.branch].some((id) =>
-    ["bypass", "grants"].some((kind) => {
-      const at = join(a.dir, safeRunId(id), kind);
-      return existsSync(at) && readdirSync(at).length > 0;
-    }),
-  );
+  const grantRecord = [a.run, ...(typeof run.binding_run_id === "string" ? [run.binding_run_id] : [])]
+    .flatMap((id) => ["bypass", "grants"].map((kind) => join(a.dir, safeRunId(id), kind)))
+    .flatMap((at) => (existsSync(at) ? readdirSync(at).map((name) => join(at, name)) : []))
+    .toSorted()[0];
   if (refs.length === 0)
     reasons.push({ code: "missing", detail: "the current verify marker has no verification evidence references" });
 
@@ -1183,10 +1195,10 @@ function evaluateEvidence(
         });
       }
       if (seatId !== undefined && seat?.isolation !== "runner-attested") {
-        if (buildSeats.size > 0 || everGranted)
+        if (buildSeats.size > 0 || grantRecord !== undefined)
           reasons.push({
             code: "unattested-verifier",
-            detail: `verifier seat ${seatId} is host-unattested; autonomous ship requires a runner attestation`,
+            detail: `verifier seat ${seatId} is host-unattested; autonomous ship requires a runner attestation${grantRecord === undefined ? "" : ` (the run holds grant record ${grantRecord})`}`,
             evidence: ref.id,
           });
         else
@@ -1814,7 +1826,7 @@ export const LIFECYCLE_USAGE = [
   "From an installed bundle run each command as `node <bundle>/bin/ak-gate.mjs <subcommand> …`; `ak lifecycle`",
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
-  "  ak lifecycle open --ticket <file> [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle open --ticket <file> [--binding <file>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
@@ -1834,7 +1846,7 @@ export const LIFECYCLE_USAGE = [
 ];
 
 const FLAGS: Record<string, readonly string[]> = {
-  open: ["ticket", "dir", "project"],
+  open: ["ticket", "binding", "dir", "project"],
   record: ["gate", "receipt", "class", "author-kind", "host", "seat-id", "bypass", "task", "run", "dir", "project"],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
@@ -1933,7 +1945,13 @@ export function main(
       io.err("ak lifecycle open: --ticket needs a value");
       return 2;
     }
-    const opened = openRun({ dir, project, ticket: resolve(cwd, ticket) });
+    const binding = str("binding");
+    const opened = openRun({
+      dir,
+      project,
+      ticket: resolve(cwd, ticket),
+      ...(binding === undefined ? {} : { binding: resolve(cwd, binding) }),
+    });
     if (!opened.ok) {
       io.err(`ak lifecycle open: ${opened.reason}`);
       return 1;
