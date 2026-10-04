@@ -31,7 +31,6 @@ import {
   logLine,
   provenanceGate,
   readState,
-  type MemoryState,
   saveState,
   screenedObservationRanges,
   SECTIONS,
@@ -173,12 +172,6 @@ function markAttempt(ledger: Ledger): void {
   });
 }
 
-/** The state with the failure backoff an accepted run ends. */
-function withoutBackoff(state: MemoryState): MemoryState {
-  const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...rest } = state;
-  return rest;
-}
-
 export interface ReflectResult {
   ok: boolean;
   reason: string | null;
@@ -291,10 +284,11 @@ export function applyReflection(
     return { ok: false, reason, dropped, redacted };
   }
   writeFileSync(memoryPath, text);
-  const state = withoutBackoff(readState(ledger));
+  const state = readState(ledger);
+  const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
   saveState(ledger, {
-    ...state,
-    last_obs_id_reflected: Math.max(state.last_obs_id_reflected ?? 0, maxObsId),
+    ...withoutBackoff,
+    last_obs_id_reflected: Math.max(withoutBackoff.last_obs_id_reflected ?? 0, maxObsId),
     last_reflect: nowMs(),
   });
   appendRun(ledger, {
@@ -403,7 +397,6 @@ export function backfill(
   });
   const minObsId = Math.min(...observations.map((row) => row.id));
   const maxObsId = Math.max(...observations.map((row) => row.id));
-  saveState(ledger, withoutBackoff(readState(ledger)));
   appendRun(ledger, {
     job: "backfill",
     status: "ok",

@@ -575,23 +575,6 @@ describe("nightly", () => {
     expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["aaaa1111-0000"]);
   });
 
-  test("an accepted backfill ends the backoff its own failed call started", () => {
-    const { ctx, ledger, source, o2 } = nightlyFixture(() => [{}, (prompt: string) => reflectorReply(prompt)]);
-    writeFileSync(ledger.path("runs.jsonl"), "");
-    saveState(ledger, { last_obs_id_reflected: o2 });
-    try {
-      expect(backfill(ctx, source, ledger, "shop")).toBe("backfill: judge call failed");
-      expect(readState(ledger).reflect_failures).toBe(1);
-      expect(readState(ledger).last_reflect_attempt).toBeDefined();
-      expect(backfill(ctx, source, ledger, "shop")).toBe("backfill: ok (2 obs, 0 left)");
-    } finally {
-      source.close();
-    }
-    expect(readState(ledger).reflect_failures).toBeUndefined();
-    expect(readState(ledger).last_reflect_attempt).toBeUndefined();
-    expect(readState(ledger).last_obs_id_reflected).toBe(o2);
-  });
-
   test("a session the first screen reached only in part waits for the backfill, then is consumed whole", () => {
     const grown = growingFixture();
     grown.build();
