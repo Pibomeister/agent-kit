@@ -7,7 +7,7 @@
   "required": ["ts", "job", "status"],
   "properties": {
     "ts": { "$ref": "common.schema.json#/$defs/timestamp" },
-    "job": { "enum": ["reflect", "nightly", "weekly", "episodes"] },
+    "job": { "enum": ["reflect", "backfill", "nightly", "weekly", "episodes"] },
     "status": {
       "description": "'ok' was written; 'rejected' passed parsing but failed the gate and left the previous state in place; 'failed' produced nothing usable.",
       "enum": ["ok", "rejected", "failed"]
@@ -23,7 +23,21 @@
     "quarantined": { "type": "array", "items": { "type": "string", "pattern": "^obs:[0-9]+$" } },
     "tokens_in": { "type": "integer", "minimum": 0 },
     "tokens_out": { "type": "integer", "minimum": 0 },
-    "max_obs_id": { "type": "integer", "minimum": 0 },
+    "min_obs_id": {
+      "description": "The lowest observation id shown to this reflect run. Together with max_obs_id on an accepted run, this is the exact range screened for downstream learning; an accepted reflect run without it screened nothing downstream learning relies on.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "max_obs_id": {
+      "description": "The highest observation id shown to this reflect run.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "obs_ids": {
+      "description": "The observation ids shown to this backfill run. On an accepted run these exact ids, and no id between them, are screened for downstream learning.",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 }
+    },
     "episodes": { "type": "integer", "minimum": 0 },
     "selected": { "type": "integer", "minimum": 0 },
     "compacted_pages": { "type": "integer", "minimum": 0 },

@@ -11,6 +11,8 @@ import { loadConfig } from "../../src/learn/core/config.ts";
 import type { LearnContext } from "../../src/learn/core/context.ts";
 import type { JudgeCallContext, JudgeFn } from "../../src/learn/core/judge.ts";
 import { run } from "../../src/learn/core/proc.ts";
+import { SECTIONS } from "../../src/learn/memory/ledger.ts";
+import type { ReflectReply } from "../../src/learn/memory/reflect.ts";
 
 /** A fresh directory with one canonical spelling (macOS `/var` is a symlink). */
 export function scratch(prefix = "ak-learn-"): string {
@@ -127,6 +129,28 @@ export function testContext(
     prompts,
     judgeContexts,
   };
+}
+
+/**
+ * A reflector reply every gate accepts: one bullet citing the newest
+ * observation the prompt showed that is not in `flagged`, and a security note
+ * for each flagged observation the prompt showed.
+ */
+export function reflectorReply(prompt: string, flagged: readonly number[] = []) {
+  const shown = [...prompt.matchAll(/^obs:(\d+) /gm)].map((match) => Number(match[1]));
+  const cited = shown.findLast((id) => !flagged.includes(id));
+  const [first, ...rest] = SECTIONS;
+  return {
+    memory: `${first}\n${cited === undefined ? "" : `- seen [obs:${cited}]\n`}${rest.join("\n")}\n`,
+    security_notes: flagged.flatMap((id) =>
+      shown.includes(id) ? [{ obs: `obs:${id}`, kind: "instruction-in-data" }] : [],
+    ),
+  } satisfies ReflectReply;
+}
+
+/** A judge that answers the reflector with `reflectorReply` and every other role with an empty batch. */
+export function reflectorOrEmptyJudge(prompt: string) {
+  return prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
 }
 
 /** The subset of claude-mem's schema the runtime reads. Column names match upstream exactly. */

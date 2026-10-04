@@ -35,11 +35,12 @@ import {
   readState,
   saveState,
 } from "../../src/learn/memory/ledger.ts";
+import { backfill, unscreenedIds } from "../../src/learn/memory/reflect.ts";
 import { lessonsBlock } from "../../src/learn/memory/session-context.ts";
 import { EVENTS_FILE, reviewLedger } from "../../src/learn/review/ledger.ts";
 import type { ReviewEvent } from "../../src/learn/review/events.ts";
 import { ClaudeMemSource, type ObservationRow } from "../../src/learn/sources/claude-mem.ts";
-import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
+import { gitRepo, MemFixture, reflectorOrEmptyJudge, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 const REPLY = {
   lessons: [
@@ -378,7 +379,7 @@ describe("stratify", () => {
 type Reply = Record<string, unknown>;
 
 /** Two completed sessions of project `shop`, one observation each, and a judge scripted with `replies`. */
-function nightlyFixture(replies: (o1: number, o2: number) => Reply[]) {
+function nightlyFixture(replies: (o1: number, o2: number) => Array<Reply | ((prompt: string) => Reply)>) {
   const dir = scratch();
   const root = gitRepo(join(dir, "shop"));
   const dbPath = join(dir, "mem.db");
@@ -408,6 +409,7 @@ function nightlyFixture(replies: (o1: number, o2: number) => Reply[]) {
   const source = ClaudeMemSource.open(dbPath)!;
   expect(buildEpisodes(source, ledger, "shop", []).length).toBe(2);
   saveState(ledger, { last_obs_id_reflected: o2 });
+  appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: o1, max_obs_id: o2 });
   return { ctx, root, ledger, review, source, o1, o2 };
 }
 
@@ -444,10 +446,14 @@ function growingFixture() {
   const add = (title: string) =>
     mem.observation({ sid: GROWING_SID, project: "shop", type: "discovery", title, at: start + 500 });
   const early = Array.from({ length: 16 }, (_, i) => add(`early ${i}`));
-  const empty = { lessons: [], review_events: [] };
-  const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [empty, empty] });
+  const ctx = testContext({
+    cwd: root,
+    env: { AK_LEARN_MEM_DB: dbPath },
+    replies: [reflectorOrEmptyJudge, reflectorOrEmptyJudge],
+  });
   const ledger = ensureMemoryLedger(join(dir, "memory"));
   const review = reviewLedger(ctx.config, root);
+  let screenedThrough = 0;
   const withSource = <T>(use: (source: ClaudeMemSource) => T): T => {
     const source = ClaudeMemSource.open(dbPath);
     if (!source) throw new Error(`no claude-mem database at ${dbPath}`);
@@ -457,12 +463,22 @@ function growingFixture() {
       source.close();
     }
   };
+  /** Treat every observation so far as reflected. */
+  const screen = (source: ClaudeMemSource) => {
+    const observations = source.sessionObservations(GROWING_SID);
+    const newest = observations.at(-1);
+    if (!newest) throw new Error(`session ${GROWING_SID} has no observations`);
+    saveState(ledger, { ...readState(ledger), last_obs_id_reflected: newest.id });
+    const first = observations.find((row) => row.id > screenedThrough);
+    if (first !== undefined) {
+      appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: first.id, max_obs_id: newest.id });
+      screenedThrough = newest.id;
+    }
+  };
   /** Rebuild episodes and treat every observation so far as reflected. */
   const build = (source: ClaudeMemSource) => {
     buildEpisodes(source, ledger, "shop", []);
-    const newest = source.sessionObservations(GROWING_SID).at(-1);
-    if (!newest) throw new Error(`session ${GROWING_SID} has no observations`);
-    saveState(ledger, { ...readState(ledger), last_obs_id_reflected: newest.id });
+    screen(source);
   };
   return {
     ctx,
@@ -470,9 +486,16 @@ function growingFixture() {
     early,
     build: () => withSource(build),
     grow: () => ["late a", "late b", "late c"].map(add),
+    backfill: () => withSource((source) => backfill(ctx, source, ledger, "shop", [])),
     nightly: () =>
       withSource((source) => {
         build(source);
+        return consolidate(ctx, source, ledger, root, review);
+      }),
+    /** A nightly whose episodes were recorded before the newest observations were written and reflected. */
+    nightlyOnRecordedEpisodes: () =>
+      withSource((source) => {
+        screen(source);
         return consolidate(ctx, source, ledger, root, review);
       }),
   };
@@ -495,9 +518,11 @@ describe("nightly", () => {
     const { ctx, root, ledger, review, source, o1 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
     try {
       saveState(ledger, {});
+      writeFileSync(ledger.path("runs.jsonl"), "");
       expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no reflected observations to consolidate");
       expect(ctx.prompts).toEqual([]);
       saveState(ledger, { last_obs_id_reflected: o1 });
+      appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: o1, max_obs_id: o1 });
       expect(consolidate(ctx, source, ledger, root, review)).toBe(
         "nightly: 1/1 episodes -> +0 lessons, 0 review events",
       );
@@ -507,6 +532,86 @@ describe("nightly", () => {
     expect(shownObs(ctx.prompts[0])).toEqual([o1]);
     expect(ctx.prompts[0]).not.toContain("tests pass from the main tree");
     expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["bbbb2222-0000"]);
+  });
+
+  test("a ledger whose accepted reflect run recorded no lower bound is screened again before nightly shows it", () => {
+    const { ctx, root, ledger, review, source, o1, o2 } = nightlyFixture(() => [
+      (prompt: string) => reflectorReply(prompt),
+      { lessons: [], review_events: [] },
+    ]);
+    writeFileSync(ledger.path("runs.jsonl"), "");
+    appendRun(ledger, { job: "reflect", status: "ok", max_obs_id: o2 });
+    const memory = readFileSync(ledger.path("memory.md"), "utf8");
+    try {
+      expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no reflected observations to consolidate");
+      expect(ctx.prompts).toEqual([]);
+      expect(readState(ledger).last_nightly).toBe(todayLocal());
+      expect(unscreenedIds(source, ledger, [])).toEqual([o1, o2]);
+      expect(backfill(ctx, source, ledger, "shop", [])).toBe("backfill: ok (2 obs, 0 left)");
+      expect(readState(ledger).last_obs_id_reflected).toBe(o2);
+      expect(readFileSync(ledger.path("memory.md"), "utf8")).toBe(memory);
+      expect(backfill(ctx, source, ledger, "shop", [])).toBe("backfill: nothing unscreened");
+      expect(consolidate(ctx, source, ledger, root, review)).toBe(
+        "nightly: 2/2 episodes -> +0 lessons, 0 review events",
+      );
+    } finally {
+      source.close();
+    }
+    expect(shownObs(ctx.prompts[1])).toEqual([o1, o2]);
+    expect(unconsolidatedEpisodes(ledger)).toEqual([]);
+  });
+
+  test("a first reflect window exposes only the observations the reflector was shown", () => {
+    const { ctx, root, ledger, review, source, o2 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
+    writeFileSync(ledger.path("runs.jsonl"), "");
+    appendRun(ledger, { job: "reflect", status: "ok", min_obs_id: o2, max_obs_id: o2 });
+    try {
+      expect(consolidate(ctx, source, ledger, root, review)).toBe(
+        "nightly: 1/1 episodes -> +0 lessons, 0 review events",
+      );
+    } finally {
+      source.close();
+    }
+    expect(shownObs(ctx.prompts[0])).toEqual([o2]);
+    expect(ctx.prompts[0]).not.toContain("tests failed from a worktree");
+    expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["aaaa1111-0000"]);
+  });
+
+  test("a session the first screen reached only in part waits for the backfill, then is consumed whole", () => {
+    const grown = growingFixture();
+    grown.build();
+    const newest = grown.early.at(-1);
+    if (newest === undefined) throw new Error("fixture has no observations");
+    writeFileSync(grown.ledger.path("runs.jsonl"), "");
+    appendRun(grown.ledger, { job: "reflect", status: "ok", min_obs_id: newest, max_obs_id: newest });
+
+    expect(grown.nightly()).toBe("nightly: no reflected observations to consolidate");
+    expect(readJsonl(grown.ledger.path(CONSOLIDATED_FILE))).toEqual([]);
+    expect(grown.backfill()).toBe("backfill: ok (15 obs, 0 left)");
+    expect(grown.nightly()).toBe("nightly: 1/1 episodes -> +0 lessons, 0 review events");
+    expect(shownObs(grown.ctx.prompts[1])).toEqual(grown.early.slice(0, 15));
+    expect(
+      readJsonl<{ obs: number; obs_id: number }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
+        mark.obs,
+        mark.obs_id,
+      ]),
+    ).toEqual([[grown.early.length, newest]]);
+    expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
+  });
+
+  test("an episode that grew after it was recorded stays consolidated once its new observations are consumed", () => {
+    const grown = growingFixture();
+    grown.build();
+    const late = grown.grow();
+    expect(grown.nightlyOnRecordedEpisodes()).toBe("nightly: 1/1 episodes -> +0 lessons, 0 review events");
+    expect(
+      readJsonl<{ obs: number; obs_id: number | undefined }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
+        mark.obs,
+        mark.obs_id,
+      ]),
+    ).toEqual([[grown.early.length + late.length, late[2]]]);
+    grown.build();
+    expect(unconsolidatedEpisodes(grown.ledger)).toEqual([]);
   });
 
   test("a re-queued session shows only the observations after the highest id its last run consumed", () => {

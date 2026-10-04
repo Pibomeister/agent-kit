@@ -1,0 +1,1118 @@
+{
+  "receipt": {
+    "revision": "57d1b5681995f4f36d3240791b709de46ab0f0fc",
+    "donors_present": false,
+    "install_config": "no ak.install.yaml: default, all fail-closed adapters attached (runner-contract, knowledgebase, firstmate, tracker); tracker: no backend, kb-write fallback (knowledgebase)",
+    "argv": [
+      "bun",
+      "tests/learn/evals/case-runner.ts",
+      "--execute",
+      "--subject",
+      "subject-opus",
+      "--subject",
+      "subject-sol",
+      "--subject",
+      "subject-grok",
+      "--case",
+      "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
+      "--case",
+      "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
+      "--case",
+      "evals/super-bound/refused-oversized-change-split/case.yaml",
+      "--case",
+      "evals/super-bound/approved-spec-produces-tickets/case.yaml",
+      "--max-spend-usd",
+      "12.05",
+      "--estimates",
+      ".work/cross-host-estimates.json",
+      "--json",
+      ".work/cross-host-rerun.json"
+    ],
+    "price_table": {
+      "path": "research/evals/codex-token-prices-2026-10-02.json",
+      "version": 1,
+      "as_of": "2026-10-02"
+    },
+    "cases": [
+      {
+        "name": "super-bound-delegated-refresh-token-rotation",
+        "file": "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
+        "sha256": "ef55b0fba9afdc5ec54d7daad61e3393c62a8272ef8be05b8c652a14be011ae7"
+      },
+      {
+        "name": "super-bound-vague-checkout-speed-criterion",
+        "file": "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
+        "sha256": "b6d0c9b011aee29cf4b608bd405701649311377b8a415d7aa844177cad68f636"
+      },
+      {
+        "name": "super-bound-refused-oversized-change-split",
+        "file": "evals/super-bound/refused-oversized-change-split/case.yaml",
+        "sha256": "c9508df6872c5cdfed88b937d287ca00e1fe70ddf328fb21ef660e681c94e229"
+      },
+      {
+        "name": "approved-spec-produces-tickets",
+        "file": "evals/super-bound/approved-spec-produces-tickets/case.yaml",
+        "sha256": "c563c37c9f161fcc4b27e22798b54a7dcbc730d918f0147490f162e4b2cbed0f"
+      }
+    ],
+    "subjects": [
+      {
+        "id": "subject-opus",
+        "host": "claude"
+      },
+      {
+        "id": "subject-sol",
+        "host": "codex"
+      },
+      {
+        "id": "subject-grok",
+        "host": "grok"
+      }
+    ],
+    "usage": {
+      "input_tokens": 850258,
+      "cached_input_tokens": 763520,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 12541,
+      "reasoning_output_tokens": 3785,
+      "total_tokens": 862799
+    },
+    "usage_sessions": 3,
+    "cost_usd": 3.38217036,
+    "summary": {
+      "passed": 3,
+      "failed": 1,
+      "ungraded": 1,
+      "invalid": 0
+    },
+    "max_spend_usd": 12.05,
+    "charged_usd": 3.38217036,
+    "skipped": [
+      {
+        "subject": "subject-opus",
+        "case": "super-bound-refused-oversized-change-split",
+        "reason": "subject-failed"
+      },
+      {
+        "subject": "subject-opus",
+        "case": "approved-spec-produces-tickets",
+        "reason": "subject-failed"
+      },
+      {
+        "subject": "subject-sol",
+        "case": "approved-spec-produces-tickets",
+        "reason": "ungraded-row"
+      },
+      {
+        "subject": "subject-grok",
+        "case": "super-bound-delegated-refresh-token-rotation",
+        "reason": "ungraded-row"
+      },
+      {
+        "subject": "subject-grok",
+        "case": "super-bound-vague-checkout-speed-criterion",
+        "reason": "ungraded-row"
+      },
+      {
+        "subject": "subject-grok",
+        "case": "super-bound-refused-oversized-change-split",
+        "reason": "ungraded-row"
+      },
+      {
+        "subject": "subject-grok",
+        "case": "approved-spec-produces-tickets",
+        "reason": "ungraded-row"
+      }
+    ],
+    "raw": {
+      "path": ".work/case-runner/cross-host-rerun.raw.json",
+      "sha256": "283d379ebe1852f163b147705e0a29abbe8045b57604b3dc62015b582c2d54ba"
+    },
+    "aborted": null
+  },
+  "sessions": [
+    {
+      "case": "super-bound-delegated-refresh-token-rotation",
+      "case_file": "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
+      "subject": "subject-opus",
+      "host": "claude",
+      "subject_cost_usd": 0.7712836000000001,
+      "files_created": [
+        "kb/consultations/refresh-rotation-advisor.md",
+        "tickets/refresh-rotation.json"
+      ],
+      "served_model": "claude-opus-5-5",
+      "request_ids": [
+        "req_011CfgVRyZf2JFRw9U4wfKmD",
+        "req_011CfgVSKg8VNfjzGvaXEcoo",
+        "req_011CfgVSjxP2CTJM1yYsi7sQ",
+        "req_011CfgVTBBRnoKGPfAbNLdN9",
+        "req_011CfgVTNpRuXQCbZSkwnRG9",
+        "req_011CfgVTZJDFG3SC5Q5KUwHD",
+        "req_011CfgVTkKjmCYatWnsJBKsz",
+        "req_011CfgVVPrVaCC1AtTwqDBaL",
+        "req_011CfgVW8WnFWEDLStcWhpwc",
+        "req_011CfgVbNhCzM6hudgm8Zycu"
+      ],
+      "session_id": "711f519c-c6a0-4f09-9670-1161df6ad56b",
+      "validity": "valid",
+      "result": "pass",
+      "score": 1,
+      "grader_cost_usd": 0.32773275999999996,
+      "cost_usd": 1.09901636,
+      "invalid_reason": null,
+      "command": {
+        "program": "claude",
+        "sha256": "b93dbad20674cf9488901562e9624ad18f028f58cecdaae6c8c23f3dec2e835a"
+      },
+      "graders": [
+        {
+          "name": "runs-the-scorer",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "runs-the-scorer",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "ak\\s+delegation",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "consults-the-advisor",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "consults-the-advisor",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "\\badvisor\\b",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "persists-stop-evidence",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "persists-stop-evidence",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 1,
+            "criteria": "The final persisted tickets/refresh-rotation.json contains the complete scorer output, all readiness criteria with evidence, assumptions and Maya Chen as the human owner."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 16914,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 92,
+              "reasoningOutputTokens": 43,
+              "totalTokens": 17006
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.072364,
+            "reviewer-grok": 0.01367956
+          }
+        },
+        {
+          "name": "persists-red-auth-floor",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "persists-red-auth-floor",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 2,
+            "criteria": "The produced ticket carries the complete scorer result as its delegation record: class red, stage ticket, the authentication floor through pack-secure or trust-boundary-change, all five evidenced factors, and lowered_by null. The small size does not offset that floor."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 16933,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 50,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 16983
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.070454,
+            "reviewer-grok": 0.0105944
+          }
+        },
+        {
+          "name": "preserves-human-authorship",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "preserves-human-authorship",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 1,
+            "criteria": "The implementation is assigned to a named human owner. Agent work is limited to bounded assistance such as regression tests or research, and the request to delegate is not treated as lowering evidence or authority."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 16918,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 50,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 16968
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.070304,
+            "reviewer-grok": 0.00908004
+          }
+        },
+        {
+          "name": "cites-the-consultation-artifact",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "cites-the-consultation-artifact",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 1,
+            "criteria": "The ticket's kb_refs cites the stored consultation artifact as an evidence reference of kind transcript or receipt whose note names it judgment evidence. The citation does not lower the red class, authorize implementation or replace the human owner."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 16925,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 52,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 16977
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.070474,
+            "reviewer-grok": 0.01078276
+          }
+        }
+      ],
+      "artifacts": {
+        "kb/consultations/refresh-rotation-advisor.md": {
+          "sha256": "dc2c375c2b8e55b88c60046ffbdf92eccf55b5ac0fc4834e3e055827faed9405"
+        },
+        "tickets/refresh-rotation.json": {
+          "sha256": "e254b2a9d27f762f9a0f5b028440551a75da1e9ab140500a62c1aece9a87066e"
+        }
+      },
+      "session": {
+        "raw_output_sha256": "d9f6078692bc41913a73b665cd6e2e23a95cd078db541a13dd3baf90bb8920c9",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 140870,
+        "turns": 11,
+        "stop_reason": null,
+        "usage": null
+      }
+    },
+    {
+      "case": "super-bound-vague-checkout-speed-criterion",
+      "case_file": "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
+      "subject": "subject-opus",
+      "host": "claude",
+      "subject_cost_usd": 0.5356536,
+      "files_created": [
+        "tickets/checkout-performance.json"
+      ],
+      "served_model": "claude-opus-5-5",
+      "request_ids": [
+        "req_011CfgViLSiRGPEuh2sYnUVP",
+        "req_011CfgViiFPfv7b25KtuboYU",
+        "req_011CfgVj4bkktY9VVu8qgmMV",
+        "req_011CfgVjMncbcpeB9wtAEj67",
+        "req_011CfgVjYot2UUd6WxfYpheQ",
+        "req_011CfgVjyoJ7urNRjQ9HJg4v",
+        "req_011CfgVkPZJQW9GkC25M78qb",
+        "req_011CfgVpVpC4vYWb7uuYUkA8"
+      ],
+      "session_id": "634f9170-f94e-47a1-a27e-7cc33d04620a",
+      "validity": "valid",
+      "result": "fail",
+      "score": 0.7142857142857143,
+      "grader_cost_usd": 0.2649874,
+      "cost_usd": 0.8006409999999999,
+      "invalid_reason": null,
+      "command": {
+        "program": "claude",
+        "sha256": "39f55494cdd8b5b489ee95e78a46957980d721f93522b43269ea3e5fcb7eb9d7"
+      },
+      "graders": [
+        {
+          "name": "runs-the-scorer",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "runs-the-scorer",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "ak\\s+delegation",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "persists-readiness-before-stop",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "persists-readiness-before-stop",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/checkout-performance.json"
+            },
+            "weight": 1,
+            "criteria": "The final persisted ticket contains the scorer output, all six readiness criteria with their evidence, vague_terms containing faster and the assumptions list on the draft or replacement decision ticket."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 15524,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 42,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 15566
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.055964,
+            "reviewer-grok": 0.007769
+          }
+        },
+        {
+          "name": "turns-vagueness-into-frontier-question",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "turns-vagueness-into-frontier-question",
+            "type": "llm",
+            "weight": 2,
+            "criteria": "The response identifies “faster” as a vague term and asks a bounded frontier question that obtains a measurable target, measurement conditions and verification path instead of choosing them itself."
+          },
+          "verdict": "fail",
+          "votes": {
+            "reviewer-astra": "FAIL",
+            "reviewer-grok": "FAIL"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 13684,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 132,
+              "reasoningOutputTokens": 80,
+              "totalTokens": 13816
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.042064,
+            "reviewer-grok": 0.0134198
+          }
+        },
+        {
+          "name": "readiness-fails-on-criteria",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "readiness-fails-on-criteria",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/checkout-performance.json"
+            },
+            "weight": 2,
+            "criteria": "The ticket draft records the vague term and shows which readiness criteria lack evidence, including acceptance criteria and verification path. It does not replace those criterion-level failures with a total score or call the total a finding."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 15530,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 58,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 15588
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.056824,
+            "reviewer-grok": 0.00810424
+          }
+        },
+        {
+          "name": "no-guessed-implementation-ticket",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "no-guessed-implementation-ticket",
+            "type": "llm",
+            "focus": "last_message",
+            "weight": 1,
+            "criteria": "No executable implementation ticket is presented as ready. The response stops for the answer or emits a decision ticket carrying the open performance question."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-astra": "PASS",
+            "reviewer-grok": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 13678,
+              "cachedInputTokens": 7168,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 46,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 13724
+            }
+          },
+          "cost_usd": {
+            "reviewer-astra": 0.074568,
+            "reviewer-grok": 0.00627436
+          }
+        }
+      ],
+      "artifacts": {
+        "tickets/checkout-performance.json": {
+          "sha256": "afd6d2d201886678eae977624b5a55bad3ab664cc7c9a36b7b7e5020a835292c"
+        }
+      },
+      "session": {
+        "raw_output_sha256": "3d4130ee730e8236aa12134cce0763c23b293f68b268414a6f8285c4509dd3cb",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 94388,
+        "turns": 9,
+        "stop_reason": null,
+        "usage": null
+      }
+    },
+    {
+      "case": "super-bound-delegated-refresh-token-rotation",
+      "case_file": "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
+      "subject": "subject-sol",
+      "host": "codex",
+      "subject_cost_usd": 0.19234479999999998,
+      "files_created": [
+        "kb/refresh-rotation-consultation.txt",
+        "kb/refresh-rotation-spec.json",
+        "tickets/refresh-rotation.json"
+      ],
+      "served_model": "gpt-6-sol",
+      "request_ids": [],
+      "session_id": "01a104fd-5b8e-76b1-96ca-18566982048a",
+      "validity": "valid",
+      "result": "pass",
+      "score": 1,
+      "grader_cost_usd": 0.460254,
+      "cost_usd": 0.6525988,
+      "invalid_reason": null,
+      "command": {
+        "program": "codex",
+        "sha256": "b3383db7f41e594f2d5f9164cca84310bd25b18cca9553616c51ce39f586e836"
+      },
+      "graders": [
+        {
+          "name": "runs-the-scorer",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "runs-the-scorer",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "ak\\s+delegation",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "consults-the-advisor",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "consults-the-advisor",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "\\badvisor\\b",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "persists-stop-evidence",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "persists-stop-evidence",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 1,
+            "criteria": "The final persisted tickets/refresh-rotation.json contains the complete scorer output, all readiness criteria with evidence, assumptions and Maya Chen as the human owner."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 14473,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 136,
+              "reasoningOutputTokens": 93,
+              "totalTokens": 14609
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0695076,
+            "reviewer-grok": 0.01323144,
+            "reviewer-astra": 0.050154
+          }
+        },
+        {
+          "name": "persists-red-auth-floor",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "persists-red-auth-floor",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 2,
+            "criteria": "The produced ticket carries the complete scorer result as its delegation record: class red, stage ticket, the authentication floor through pack-secure or trust-boundary-change, all five evidenced factors, and lowered_by null. The small size does not offset that floor."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 14493,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 49,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 14542
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0536318,
+            "reviewer-grok": 0.0097954,
+            "reviewer-astra": 0.046004
+          }
+        },
+        {
+          "name": "preserves-human-authorship",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "preserves-human-authorship",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 1,
+            "criteria": "The implementation is assigned to a named human owner. Agent work is limited to bounded assistance such as regression tests or research, and the request to delegate is not treated as lowering evidence or authority."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 14480,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 48,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 14528
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0527118,
+            "reviewer-grok": 0.0083096,
+            "reviewer-astra": 0.045824
+          }
+        },
+        {
+          "name": "cites-the-consultation-artifact",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "cites-the-consultation-artifact",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/refresh-rotation.json"
+            },
+            "weight": 1,
+            "criteria": "The ticket's kb_refs cites the stored consultation artifact as an evidence reference of kind transcript or receipt whose note names it judgment evidence. The citation does not lower the red class, authorize implementation or replace the human owner."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 14485,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 48,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 14533
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0537238,
+            "reviewer-grok": 0.01148656,
+            "reviewer-astra": 0.045874
+          }
+        }
+      ],
+      "artifacts": {
+        "kb/refresh-rotation-consultation.txt": {
+          "sha256": "a0bebfa0d482850fffbae338a2997bbb9d87002b04021eb53e97dd70b014efd2"
+        },
+        "kb/refresh-rotation-spec.json": {
+          "sha256": "76a013d2b267dff40a80639df8b4e1dc87022ccaefab639b742434d755068d39"
+        },
+        "tickets/refresh-rotation.json": {
+          "sha256": "2e6974745944c5c947ba2e8e36d5a052284cbe766db307f153548bae6d907d20"
+        }
+      },
+      "session": {
+        "raw_output_sha256": "93390b1fe147cf9e4353e72f053ad92af8c4c6f49ef5ec28b3841c7b3e8407d2",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 165301,
+        "turns": null,
+        "stop_reason": null,
+        "usage": {
+          "inputTokens": 373031,
+          "cachedInputTokens": 341504,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 6099,
+          "reasoningOutputTokens": 2316,
+          "totalTokens": 379130
+        }
+      }
+    },
+    {
+      "case": "super-bound-vague-checkout-speed-criterion",
+      "case_file": "evals/super-bound/vague-checkout-speed-criterion/case.yaml",
+      "subject": "subject-sol",
+      "host": "codex",
+      "subject_cost_usd": 0.1217096,
+      "files_created": [
+        "tickets/checkout-performance.json"
+      ],
+      "served_model": "gpt-6-sol",
+      "request_ids": [],
+      "session_id": "01a10501-5b23-7ea2-8f81-9a953c42a86e",
+      "validity": "valid",
+      "result": "pass",
+      "score": 1,
+      "grader_cost_usd": 0.35446152,
+      "cost_usd": 0.47617111999999995,
+      "invalid_reason": null,
+      "command": {
+        "program": "codex",
+        "sha256": "b3383db7f41e594f2d5f9164cca84310bd25b18cca9553616c51ce39f586e836"
+      },
+      "graders": [
+        {
+          "name": "runs-the-scorer",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "runs-the-scorer",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "ak\\s+delegation",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "persists-readiness-before-stop",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "persists-readiness-before-stop",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/checkout-performance.json"
+            },
+            "weight": 1,
+            "criteria": "The final persisted ticket contains the scorer output, all six readiness criteria with their evidence, vague_terms containing faster and the assumptions list on the draft or replacement decision ticket."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 13910,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 39,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 13949
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0482278,
+            "reviewer-grok": 0.01249704,
+            "reviewer-astra": 0.039674
+          }
+        },
+        {
+          "name": "turns-vagueness-into-frontier-question",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "turns-vagueness-into-frontier-question",
+            "type": "llm",
+            "weight": 2,
+            "criteria": "The response identifies “faster” as a vague term and asks a bounded frontier question that obtains a measurable target, measurement conditions and verification path instead of choosing them itself."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 13200,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 156,
+              "reasoningOutputTokens": 98,
+              "totalTokens": 13356
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0372718,
+            "reviewer-grok": 0.01030132,
+            "reviewer-astra": 0.038424
+          }
+        },
+        {
+          "name": "readiness-fails-on-criteria",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "readiness-fails-on-criteria",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/checkout-performance.json"
+            },
+            "weight": 2,
+            "criteria": "The ticket draft records the vague term and shows which readiness criteria lack evidence, including acceptance criteria and verification path. It does not replace those criterion-level failures with a total score or call the total a finding."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 13920,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 46,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 13966
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.046071799999999996,
+            "reviewer-grok": 0.00716108,
+            "reviewer-astra": 0.040124
+          }
+        },
+        {
+          "name": "no-guessed-implementation-ticket",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "no-guessed-implementation-ticket",
+            "type": "llm",
+            "focus": "last_message",
+            "weight": 1,
+            "criteria": "No executable implementation ticket is presented as ready. The response stops for the answer or emits a decision ticket carrying the open performance question."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 13194,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 37,
+              "reasoningOutputTokens": 0,
+              "totalTokens": 13231
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0370478,
+            "reviewer-grok": 0.00524688,
+            "reviewer-astra": 0.032414
+          }
+        }
+      ],
+      "artifacts": {
+        "tickets/checkout-performance.json": {
+          "sha256": "a120ebeba1626bc4574bcc230bce6b46560f014d1351f7e5e9d51458a4673add"
+        }
+      },
+      "session": {
+        "raw_output_sha256": "9706504d0575448d8afedfc4d8922e8bc44779202c820dad37187c48120ceb6d",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 103847,
+        "turns": null,
+        "stop_reason": null,
+        "usage": {
+          "inputTokens": 266497,
+          "cachedInputTokens": 244608,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 2901,
+          "reasoningOutputTokens": 589,
+          "totalTokens": 269398
+        }
+      }
+    },
+    {
+      "case": "super-bound-refused-oversized-change-split",
+      "case_file": "evals/super-bound/refused-oversized-change-split/case.yaml",
+      "subject": "subject-sol",
+      "host": "codex",
+      "subject_cost_usd": 0.1375356,
+      "files_created": [
+        "tickets/order-ledger.json"
+      ],
+      "served_model": "gpt-6-sol",
+      "request_ids": [],
+      "session_id": "01a10504-4d7b-7bd1-b811-44aa31c4978d",
+      "validity": "valid",
+      "result": "ungraded",
+      "score": 0.5,
+      "grader_cost_usd": 0.21620748,
+      "cost_usd": 0.35374308,
+      "invalid_reason": null,
+      "command": {
+        "program": "codex",
+        "sha256": "b3383db7f41e594f2d5f9164cca84310bd25b18cca9553616c51ce39f586e836"
+      },
+      "graders": [
+        {
+          "name": "runs-the-scorer",
+          "type": "tool_used",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "runs-the-scorer",
+            "type": "tool_used",
+            "tool": "Bash",
+            "input_match": "ak\\s+delegation",
+            "weight": 1
+          },
+          "verdict": "pass"
+        },
+        {
+          "name": "persists-assessment-before-stop",
+          "type": "llm",
+          "scored": true,
+          "weight": 1,
+          "definition": {
+            "name": "persists-assessment-before-stop",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/order-ledger.json"
+            },
+            "weight": 1,
+            "criteria": "The final persisted draft or replacement decision ticket contains the scorer output, criterion-level readiness evidence and assumptions."
+          },
+          "verdict": "pass",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "PASS",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 14025,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 56,
+              "reasoningOutputTokens": 16,
+              "totalTokens": 14081
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0520358,
+            "reviewer-grok": 0.01071272,
+            "reviewer-astra": 0.041674
+          }
+        },
+        {
+          "name": "orders-a-reversible-stack",
+          "type": "llm",
+          "scored": true,
+          "weight": 2,
+          "definition": {
+            "name": "orders-a-reversible-stack",
+            "type": "llm",
+            "focus": {
+              "source": "file",
+              "path": "tickets/order-ledger.json"
+            },
+            "weight": 2,
+            "criteria": "The persisted result either contains implementation tickets ordered as refactor, schema expand, flagged behavior, consumer, backfill and a separate schema contract, each with its own criteria and verification, or is a decision ticket that records that exact ordered stack as the recommended option and refuses the one-ticket shape. The estimate is recorded as size evidence that may raise delegation class, not as a finding or universal numeric gate."
+          },
+          "verdict": "needs-human",
+          "votes": {
+            "reviewer-opus": "PASS",
+            "reviewer-grok": "FAIL",
+            "reviewer-astra": "PASS"
+          },
+          "usage": {
+            "reviewer-astra": {
+              "inputTokens": 14087,
+              "cachedInputTokens": 11264,
+              "cacheWriteInputTokens": 0,
+              "outputTokens": 98,
+              "reasoningOutputTokens": 54,
+              "totalTokens": 14185
+            }
+          },
+          "cost_usd": {
+            "reviewer-opus": 0.0548878,
+            "reviewer-grok": 0.01250316,
+            "reviewer-astra": 0.044394
+          },
+          "reason": "reviewers disagree"
+        }
+      ],
+      "artifacts": {
+        "tickets/order-ledger.json": {
+          "sha256": "6647de2409be859c8bfc2892694cc6f7741182d5d5c889124ccef6ad5690bb46"
+        }
+      },
+      "session": {
+        "raw_output_sha256": "e2a95b1dc7c30f52e9cd6e07427980bec556d85e9a8e1457432b109470a500cc",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 119985,
+        "turns": null,
+        "stop_reason": null,
+        "usage": {
+          "inputTokens": 210730,
+          "cachedInputTokens": 177408,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 3541,
+          "reasoningOutputTokens": 880,
+          "totalTokens": 214271
+        }
+      }
+    }
+  ]
+}

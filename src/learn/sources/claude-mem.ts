@@ -116,6 +116,23 @@ export class ClaudeMemSource {
       .all(...this.args(project), afterId, options.sinceEpochMs ?? 0);
   }
 
+  /** The observations with these ids, oldest first. Unknown ids are absent. */
+  observationsById(ids: readonly number[]): ObservationRow[] {
+    const out: ObservationRow[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      out.push(
+        ...this.db
+          .query<ObservationRow, number[]>(
+            `select ${OBSERVATION_COLUMNS} from observations o left join sdk_sessions s on s.memory_session_id = o.memory_session_id
+             where o.id in (${chunk.map(() => "?").join(", ")})`,
+          )
+          .all(...chunk),
+      );
+    }
+    return out.toSorted((a, b) => a.id - b.id);
+  }
+
   sessionObservations(memorySessionId: string): ObservationRow[] {
     return this.db
       .query<ObservationRow, [string]>(

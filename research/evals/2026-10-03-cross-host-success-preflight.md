@@ -198,4 +198,5 @@ Two steps stay with the operator, and the runner does not enforce them: rebuild 
 at the exact revision immediately before the first paid session, and do not rerun a stopped session
 or substitute a binding without a new approval.
 
-The paid rerun has not started and remains a separate approval decision.
+The paid rerun had not started when this record was written. It was later approved and run once;
+[`2026-10-03-cross-host-rerun.md`](2026-10-03-cross-host-rerun.md) records its result.

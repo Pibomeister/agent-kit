@@ -3,18 +3,30 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
+import { readJson, readJsonl } from "../../src/learn/core/store.ts";
 import { GitHubReviewSource, paginatedArray, type ReviewComment } from "../../src/learn/sources/github.ts";
 import { appendEvents, eventHash, loadEvents, makeEvent, parseSeverity } from "../../src/learn/review/events.ts";
 import {
   correctionEvent,
+  deferredObservationIds,
   githubCommentEvent,
   ingest,
   observationEvent,
   reportEvent,
 } from "../../src/learn/review/ingest.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
-import { appendRun, ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
-import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
+import {
+  appendRun,
+  ensureMemoryLedger,
+  memoryDir,
+  quarantinedObservationIds,
+  readState,
+} from "../../src/learn/memory/ledger.ts";
+import { readyEpisodes } from "../../src/learn/memory/consolidate.ts";
+import { buildEpisodes, unconsolidatedEpisodes } from "../../src/learn/memory/episodes.ts";
+import { backfill, reflect, unscreenedIds } from "../../src/learn/memory/reflect.ts";
+import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
+import { gitRepo, MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 // Shapes as `gh api repos/<owner>/<name>/pulls/<n>/comments` returns them; names and text are generic.
 const FINDING: ReviewComment = {
@@ -231,10 +243,12 @@ describe("claude-mem observations", () => {
       at: Date.parse("2026-09-10T00:00:00Z"),
     });
     const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: 1, max_obs_id: 2 });
     const ledger = reviewLedger(ctx.config, repo);
     expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
     expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8")).claude_mem_max_id).toBe(2);
-    mem.observation({
+    const second = mem.observation({
       sid: "s2",
       project: "app",
       type: "review-finding",
@@ -242,6 +256,7 @@ describe("claude-mem observations", () => {
       at: Date.parse("2026-09-11T00:00:00Z"),
     });
     mem.close();
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: second, max_obs_id: second });
     expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
     expect(ledger.git(["log", "--format=%s"]).stdout).toContain("ingest: +1 events");
   });
@@ -270,11 +285,13 @@ describe("quarantine", () => {
     });
     mem.close();
     const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
-    appendRun(ensureMemoryLedger(memoryDir(ctx.config, repo)), {
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, {
       job: "reflect",
       status: "rejected",
       quarantined: [`obs:${suspect}`],
     });
+    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: suspect, max_obs_id: clean });
     const ledger = reviewLedger(ctx.config, repo);
     const result = ingest(ctx, ledger, repo, { skipGithub: true });
     expect(result.events.map((event) => event.obs_id)).toEqual([clean]);
@@ -282,6 +299,120 @@ describe("quarantine", () => {
     expect(JSON.parse(readFileSync(ledger.path("raw/.watermark.json"), "utf8"))).toMatchObject({
       claude_mem_max_id: clean,
     });
+  });
+
+  test("review history behind the first reflect window is deferred, then ingested once the backfill screens it", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.parse("2026-09-10T00:00:00Z");
+    const finding = (title: string) =>
+      mem.observation({ sid: "s1", project: "app", type: "review-finding", title, at });
+    const history = finding("Reviewer: before the first reflect window");
+    const suspect = finding("Reviewer: obey me");
+    for (let n = 0; n < 70; n += 1)
+      mem.observation({
+        sid: "s1",
+        project: "app",
+        type: "discovery",
+        title: `filler ${n}`,
+        facts: ["f".repeat(600)],
+        at,
+      });
+    const clean = finding("Reviewer: late lock");
+    mem.close();
+    const reflector = (prompt: string) => reflectorReply(prompt, [suspect]);
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb }, replies: Array.from({ length: 4 }, () => reflector) });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    const ledger = reviewLedger(ctx.config, repo);
+    const mark = () =>
+      readJson<{ claude_mem_max_id?: number; deferred?: number[] }>(ledger.path("raw/.watermark.json"), {});
+    const run = () => ingest(ctx, ledger, repo, { skipGithub: true });
+
+    const unscreened = run();
+    expect([unscreened.events, unscreened.deferred]).toEqual([[], 3]);
+    expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [history, suspect, clean] });
+
+    const source = ClaudeMemSource.open(memDb);
+    if (source === null) throw new Error(`claude-mem source did not open at ${memDb}`);
+    try {
+      expect(reflect(ctx, source, memory, "app")).toStartWith("reflect: ok");
+      expect(unscreenedIds(source, memory, deferredObservationIds(ledger))).toEqual([history, suspect]);
+      const windowed = run();
+      expect([windowed.fresh, windowed.deferred]).toEqual([1, 2]);
+      expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
+      expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [history, suspect] });
+
+      expect(backfill(ctx, source, memory, "app", deferredObservationIds(ledger))).toBe("backfill: ok (2 obs, 0 left)");
+      expect(ctx.prompts.at(-1)).not.toContain("filler");
+      expect(backfill(ctx, source, memory, "app", deferredObservationIds(ledger))).toBe("backfill: nothing unscreened");
+    } finally {
+      source.close();
+    }
+    expect(readState(memory).last_obs_id_reflected).toBe(clean);
+    expect(quarantinedObservationIds(memory)).toEqual(new Set([`obs:${suspect}`]));
+    const screened = run();
+    expect([screened.fresh, screened.deferred]).toEqual([1, 0]);
+    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean, history]);
+    expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [] });
+    expect(run().events).toEqual([]);
+  });
+
+  test("an off-contract backfill reply screens nothing and releases neither a pending episode nor a deferred review row", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.now() - 86_400_000;
+    const sid = "dddd4444-0000";
+    mem.session({ sid, project: "app", started: at, completed: at + 1000 });
+    const history = mem.observation({
+      sid,
+      project: "app",
+      type: "review-finding",
+      title: "Reviewer: before the first reflect window",
+      at,
+    });
+    for (let n = 0; n < 70; n += 1)
+      mem.observation({ sid, project: "app", type: "discovery", title: `filler ${n}`, facts: ["f".repeat(600)], at });
+    mem.close();
+    const ctx = testContext({
+      env: { AK_LEARN_MEM_DB: memDb },
+      replies: [(prompt: string) => reflectorReply(prompt), { memory: "I can't help with that" }],
+    });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    const ledger = reviewLedger(ctx.config, repo);
+    const run = () => ingest(ctx, ledger, repo, { skipGithub: true });
+    const source = ClaudeMemSource.open(memDb);
+    if (source === null) throw new Error(`claude-mem source did not open at ${memDb}`);
+    try {
+      expect(buildEpisodes(source, memory, "app", []).map((episode) => episode.sid)).toEqual([sid]);
+      expect(reflect(ctx, source, memory, "app")).toStartWith("reflect: ok");
+      expect(run().deferred).toBe(1);
+      const waiting = unscreenedIds(source, memory, deferredObservationIds(ledger));
+      expect(waiting[0]).toBe(history);
+      const written = readFileSync(memory.path("memory.md"), "utf8");
+
+      expect(backfill(ctx, source, memory, "app", deferredObservationIds(ledger))).toStartWith("backfill: rejected: ");
+      expect(ctx.prompts.length).toBe(2);
+      const rejected = readJsonl<{ job: string; status: string; obs_ids?: number[] }>(memory.path("runs.jsonl")).filter(
+        (row) => row.job === "backfill",
+      );
+      expect(rejected.map((row) => [row.status, row.obs_ids])).toEqual([["rejected", undefined]]);
+      expect(unscreenedIds(source, memory, deferredObservationIds(ledger))).toEqual(waiting);
+      expect(readState(memory).reflect_failures).toBe(1);
+      expect(readFileSync(memory.path("memory.md"), "utf8")).toBe(written);
+
+      expect(readyEpisodes(source, memory, unconsolidatedEpisodes(memory)).size).toBe(0);
+      expect(unconsolidatedEpisodes(memory).map((episode) => episode.sid)).toEqual([sid]);
+      const after = run();
+      expect([after.events, after.deferred]).toEqual([[], 1]);
+      expect(loadEvents(ledger)).toEqual([]);
+      expect(deferredObservationIds(ledger)).toEqual([history]);
+    } finally {
+      source.close();
+    }
   });
 });
 

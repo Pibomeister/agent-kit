@@ -11,6 +11,13 @@
  * and sets the watermark past everything older, so memory starts from the
  * present rather than replaying history. Rejected and failed attempts keep a
  * separate exponential backoff without advancing the observation watermark.
+ *
+ * The backfill screens what that start skipped and a consumer waits on:
+ * observations at or below the watermark that no accepted run was shown,
+ * belonging to an unconsolidated episode or deferred by review ingest, one
+ * fixed batch per call, newest first. It runs the same judge and the same
+ * quarantine, records the ids it screened and the observations it
+ * quarantined, and writes neither `memory.md` nor the watermark.
  */
 import { existsSync, writeFileSync } from "node:fs";
 import type { LearnContext } from "../core/context.ts";
@@ -18,13 +25,16 @@ import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowMs, readText, todayLocal, tokens } from "../core/store.ts";
 import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
+import { unconsolidatedEpisodes } from "./episodes.ts";
 import {
   appendRun,
   citedIds,
+  isScreened,
   logLine,
   provenanceGate,
   readState,
   saveState,
+  screenedObservationRanges,
   SECTIONS,
   sid8,
   splitLines,
@@ -35,6 +45,8 @@ import { parseSecurityNotes, redact, SECURITY_KINDS, securityRecord, withSecurit
 export const INPUT_CHARS = 60_000;
 /** The share of `INPUT_CHARS` held back from observations for session summaries. */
 export const SUMMARY_CHARS = 20_000;
+/** The most observations one backfill call screens. */
+export const BACKFILL_BATCH = 100;
 
 /** Observation id, time, type, session, title, subtitle, and facts cut at 600 characters. */
 export function formatObservation(row: ObservationRow): string {
@@ -48,14 +60,8 @@ export function formatObservation(row: ObservationRow): string {
   return `${bits.join("\n")}\n`;
 }
 
-/** Observations after the watermark, under the input cap less the summaries' share. A zero watermark fills from the newest. Returned oldest first. */
-export function fetchNew(
-  source: ClaudeMemSource,
-  memProject: string,
-  watermark: number,
-  inputChars = INPUT_CHARS - SUMMARY_CHARS,
-): ObservationRow[] {
-  const rows = source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 });
+/** The leading rows that fit under the cap, at least one. Returned oldest first. */
+function fit(rows: readonly ObservationRow[], inputChars: number): ObservationRow[] {
   const out: ObservationRow[] = [];
   let used = 0;
   for (const row of rows) {
@@ -65,6 +71,31 @@ export function fetchNew(
     out.push(row);
   }
   return out.sort((a, b) => a.id - b.id);
+}
+
+/** Observations after the watermark, under the input cap less the summaries' share. A zero watermark fills from the newest. Returned oldest first. */
+export function fetchNew(
+  source: ClaudeMemSource,
+  memProject: string,
+  watermark: number,
+  inputChars = INPUT_CHARS - SUMMARY_CHARS,
+): ObservationRow[] {
+  return fit(source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 }), inputChars);
+}
+
+/**
+ * Observation ids at or below the watermark that no accepted reflect or
+ * backfill run was shown and a consumer is waiting on, oldest first: those of
+ * a recorded episode until it is consolidated, and the review ids an ingest
+ * `deferred`. History no consumer reads is never listed.
+ */
+export function unscreenedIds(source: ClaudeMemSource, ledger: Ledger, deferred: readonly number[]): number[] {
+  const ranges = screenedObservationRanges(ledger);
+  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
+  const ids = new Set(deferred);
+  for (const episode of unconsolidatedEpisodes(ledger))
+    for (const row of source.sessionObservations(episode.sid)) ids.add(row.id);
+  return [...ids].filter((id) => id <= watermark && !isScreened(ranges, id)).toSorted((a, b) => a - b);
 }
 
 const field = (value: string | null) => (value ?? "").slice(0, 600);
@@ -172,7 +203,8 @@ export interface ReflectInputs {
 }
 
 /**
- * Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit.
+ * The provenance gate, the quarantine and the acceptance gates over one
+ * reflector reply, with the security fields its run row records.
  *
  * Every guard reads the reflector's sanitized text, before the runtime's
  * security bullet is added, so that bullet can neither mask a gutted reply nor
@@ -181,43 +213,38 @@ export interface ReflectInputs {
  * a quarantined observation (the runtime's bullet replaces them), and counts as
  * lost both provenance drops and bullets dropped for carrying quarantined text.
  */
-export function applyReflection(
+function screenReply(
   ledger: Ledger,
-  reply: string | ReflectReply,
+  reply: ReflectReply,
   valid: ReadonlySet<string>,
+  previous: string,
   inputTokens: number,
-  maxObsId: number,
   cap: number,
-  meta: Record<string, unknown> = {},
-  inputs: ReflectInputs = {},
-): ReflectResult {
-  const { memory: newText, security_notes } =
-    typeof reply === "string" ? { memory: reply, security_notes: undefined } : reply;
-  const memoryPath = ledger.path("memory.md");
-  const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
+  inputs: ReflectInputs,
+) {
   const allowed = new Set([...valid, ...citedIds(previous)]);
-  const { kept, dropped, candidates } = provenanceGate(splitLines(newText), allowed);
-  const { notes, rejected } = parseSecurityNotes(security_notes, valid);
+  const { kept, dropped, candidates } = provenanceGate(splitLines(reply.memory), allowed);
+  const { notes, rejected } = parseSecurityNotes(reply.security_notes, valid);
   if (rejected > 0) logLine(ledger, `reflect: ${rejected} security note(s) dropped, citing no observation shown`);
   const observations = inputs.observations ?? [];
-  const red = redact(kept, { observations, summaries: inputs.summaries ?? [], previous, notes });
-  const redacted = red.flagged + red.tokens;
+  const red = redact(kept, {
+    observations,
+    summaries: inputs.summaries ?? [],
+    previous,
+    notes,
+  });
+  const security = {
+    security_notes: new Set(notes.map((n) => n.obs)).size,
+    security_inferred: red.inferred.length,
+    security_notes_rejected: rejected,
+    quarantined: [...new Set(red.quarantine.map((n) => n.obs))].sort(),
+  };
   const sessionOf = (obs: string) => {
     const row = observations.find((r) => `obs:${r.id}` === obs);
     return row === undefined ? null : sid8(row.memory_session_id);
   };
   const record = securityRecord(red.quarantine, sessionOf);
   const written = `${red.kept.join("\n").trim()}\n`;
-  const text = `${withSecurityRecord(red.kept, record).join("\n").trim()}\n`;
-  const quarantined = [...new Set(red.quarantine.map((n) => n.obs))].sort();
-  const outcome = {
-    dropped_by_provenance: dropped,
-    dropped_by_redaction: redacted,
-    security_notes: new Set(notes.map((n) => n.obs)).size,
-    security_inferred: red.inferred.length,
-    security_notes_rejected: rejected,
-    quarantined,
-  };
   let reason = degenerate(written, previous, inputTokens, cap, record === null ? 0 : tokens(record));
   // A gutted memory is worse than a stale one.
   const meant = candidates - red.flagged;
@@ -228,6 +255,43 @@ export function applyReflection(
         ? `provenance dropped ${dropped}/${meant} lines`
         : `gates dropped ${lost}/${meant} lines (${dropped} provenance, ${red.tokens} redaction)`;
   }
+  const outcome = { dropped_by_provenance: dropped, dropped_by_redaction: red.flagged + red.tokens, ...security };
+  return { red, record, reason, outcome };
+}
+
+/** The reflector's reply, or null when it carries no memory text. */
+function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectReply | null {
+  const reply = ctx.judge(prompt, { runId: null, loop: "memory", role: "reflector", project: memProject });
+  const memory = reply?.memory;
+  if (typeof memory !== "string" || memory.trim() === "") return null;
+  return { memory, security_notes: reply?.security_notes };
+}
+
+/** Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit. */
+export function applyReflection(
+  ledger: Ledger,
+  reply: string | ReflectReply,
+  valid: ReadonlySet<string>,
+  inputTokens: number,
+  maxObsId: number,
+  cap: number,
+  meta: Record<string, unknown> = {},
+  inputs: ReflectInputs = {},
+): ReflectResult {
+  const memoryPath = ledger.path("memory.md");
+  const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
+  const { red, record, reason, outcome } = screenReply(
+    ledger,
+    typeof reply === "string" ? { memory: reply } : reply,
+    valid,
+    previous,
+    inputTokens,
+    cap,
+    inputs,
+  );
+  const dropped = outcome.dropped_by_provenance;
+  const redacted = outcome.dropped_by_redaction;
+  const text = `${withSecurityRecord(red.kept, record).join("\n").trim()}\n`;
   if (reason !== null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "rejected", reason, ...outcome, ...meta });
@@ -253,7 +317,7 @@ export function applyReflection(
   });
   logLine(
     ledger,
-    `reflect ok: ${tokens(text)} tokens, ${dropped} bullets dropped by provenance, ${redacted} by redaction, ${quarantined.length} observation(s) quarantined, watermark obs:${maxObsId}`,
+    `reflect ok: ${tokens(text)} tokens, ${dropped} bullets dropped by provenance, ${redacted} by redaction, ${outcome.quarantined.length} observation(s) quarantined, watermark obs:${maxObsId}`,
   );
   ledger.commit(`reflect: watermark obs:${maxObsId}`);
   return { ok: true, reason: null, dropped, redacted };
@@ -277,14 +341,8 @@ export function reflect(
     ctx.io.out(prompt);
     return `reflect: dry run (${observations.length} observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = ctx.judge(prompt, {
-    runId: null,
-    loop: "memory",
-    role: "reflector",
-    project: memProject,
-  });
-  const text = reply?.memory;
-  if (typeof text !== "string" || text.trim() === "") {
+  const reply = askReflector(ctx, prompt, memProject);
+  if (reply === null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "reflect failed: no judge output");
@@ -292,17 +350,82 @@ export function reflect(
   }
   const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
   const inputTokens = tokens(observations.map(formatObservation).join(""));
+  const minObsId = Math.min(...observations.map((row) => row.id));
   const maxObsId = Math.max(...observations.map((row) => row.id));
   const result = applyReflection(
     ledger,
-    { memory: text, security_notes: reply?.security_notes },
+    reply,
     valid,
     inputTokens,
     maxObsId,
     ctx.config.memoryTokens,
-    { trigger, observations: observations.length, sessions: sids.length },
+    { trigger, observations: observations.length, sessions: sids.length, min_obs_id: minObsId },
     { observations, summaries },
   );
   const redacted = result.redacted > 0 ? `, ${result.redacted} redacted` : "";
   return `reflect: ${result.ok ? "ok" : `rejected: ${result.reason}`} (${observations.length} obs, ${result.dropped} dropped${redacted})`;
+}
+
+/**
+ * Screen one batch of the observations the watermark passed without an
+ * accepted run being shown them. The reply passes reflect's gates or the
+ * batch stays unscreened; nothing it says is written.
+ */
+export function backfill(
+  ctx: LearnContext,
+  source: ClaudeMemSource,
+  ledger: Ledger,
+  memProject: string,
+  deferred: readonly number[],
+  trigger = "tick",
+): string {
+  const pending = unscreenedIds(source, ledger, deferred);
+  if (pending.length === 0) return "backfill: nothing unscreened";
+  const observations = fit(
+    source.observationsById(pending.slice(-BACKFILL_BATCH)).toReversed(),
+    INPUT_CHARS - SUMMARY_CHARS,
+  );
+  const sids = [...new Set(observations.map((row) => row.memory_session_id))].toSorted();
+  const previous = readText(ledger.path("memory.md"));
+  const summaries = source.summaries(sids);
+  const prompt = reflectPrompt(ctx, previous, observations, summaries);
+  if (ctx.config.dryRun) {
+    ctx.io.out(prompt);
+    return `backfill: dry run (${observations.length} of ${pending.length} unscreened observations, ${tokens(prompt)} prompt tokens)`;
+  }
+  const reply = askReflector(ctx, prompt, memProject);
+  if (reply === null) {
+    markAttempt(ledger);
+    appendRun(ledger, { job: "backfill", status: "failed", reason: "no judge output", trigger });
+    logLine(ledger, "backfill failed: no judge output");
+    return "backfill: judge call failed";
+  }
+  const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
+  const inputTokens = tokens(observations.map(formatObservation).join(""));
+  const { reason, outcome } = screenReply(ledger, reply, valid, previous, inputTokens, ctx.config.memoryTokens, {
+    observations,
+    summaries,
+  });
+  if (reason !== null) {
+    markAttempt(ledger);
+    appendRun(ledger, { job: "backfill", status: "rejected", reason, ...outcome, trigger });
+    logLine(ledger, `backfill rejected: ${reason}`);
+    return `backfill: rejected: ${reason}`;
+  }
+  appendRun(ledger, {
+    job: "backfill",
+    status: "ok",
+    ...outcome,
+    tokens_in: inputTokens,
+    obs_ids: observations.map((row) => row.id),
+    trigger,
+    observations: observations.length,
+    sessions: sids.length,
+  });
+  logLine(
+    ledger,
+    `backfill ok: screened ${observations.length} observation(s), ${outcome.quarantined.length} quarantined`,
+  );
+  ledger.commit(`backfill: screened ${observations.length} observation(s)`);
+  return `backfill: ok (${observations.length} obs, ${pending.length - observations.length} left)`;
 }

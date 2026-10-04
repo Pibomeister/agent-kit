@@ -51,11 +51,41 @@ Distinct project names, with any worktree or subdirectory suffix folded into its
 
 ```text
 observationsSince(project, afterId, { sinceEpochMs?, newestFirst? }) -> ObservationRow[]
+observationsById(ids) -> ObservationRow[]
 ```
 
 The watermark read. `afterId` is the ledger's `last_obs_id_reflected`
 (`schemas/learn-state.schema.json`). A zero watermark reads newest first so a first run fills from
 recent work; every later run reads oldest first so nothing between two runs is skipped.
+
+Each accepted reflect run records the lowest and highest observation id it was shown (`min_obs_id`
+and `max_obs_id` in `schemas/memory-run.schema.json`). Downstream judges receive only observations
+inside those exact ranges. Nightly holds an episode back while any of its observations at or below
+the watermark is outside them, so a session the first window cut in two is shown whole once the
+backfill has screened the rest, and never consumed in part. Its mark counts the session's
+observations through the consumed id, matching `episode.obs`.
+
+What the watermark passed without an accepted run being shown it is screened by the backfill job,
+and only where a consumer is waiting: the observations of a recorded episode, from the tick that
+records it until nightly consolidates it however long that takes, and the review observations in
+the `deferred` list below. A session too old to be recorded as an episode is not a consumer.
+That covers the history older than a first window and whatever an accepted run from before
+`min_obs_id` covered, since such a run contributes no range. Older history no consumer reads is
+never sent to the judge, and with nothing waiting the backfill is not due. It reads its batch by id
+(`observationsById`), newest first, one batch per idle tick. A backfill run calls the same judge
+under the same input cap, applies the same quarantine and the same acceptance gates, and records
+the exact ids it was shown (`obs_ids`), so an id between two of them is not counted as screened. A
+reply reflect would reject is a rejected backfill: it screens nothing and backs off as a rejected
+reflect does. A backfill writes neither the memory nor the watermark, and a muted project is
+scheduled none; a forced run still runs one. The scheduler counts an unconsolidated episode toward
+nightly only once nightly would show it, so an episode waiting on the backfill never makes nightly
+due.
+
+Review ingest moves its watermark past an unscreened review observation and carries that
+observation's id in the watermark file's `deferred` list. Each ingest re-reads only those ids
+(`observationsById`) beside the rows after the watermark, so pre-window review history is deferred
+rather than dropped and the replay stays as small as the list. The count still waiting is reported
+by the ingest and by `setup seed`'s dry ingest.
 
 ### `sessions`
 

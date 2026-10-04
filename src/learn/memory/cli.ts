@@ -31,7 +31,7 @@ function rootFor(args: LearnArgs, ctx: LearnContext): string | null {
 function jobFlag(args: LearnArgs, ctx: LearnContext): Job | "all" | null {
   const job = flag(args, "job") ?? "all";
   if (job === "all" || (JOBS as readonly string[]).includes(job)) return job as Job | "all";
-  ctx.io.err(`ak learn memory: --job wants reflect, nightly, weekly or all, got ${job}`);
+  ctx.io.err(`ak learn memory: --job wants reflect, backfill, nightly, weekly or all, got ${job}`);
   return null;
 }
 
@@ -167,7 +167,8 @@ export const memoryArea: LearnArea = {
   summary: "claude-mem observations -> working memory and lessons, merged into the session-start block",
   verbs: {
     tick: {
-      usage: "memory tick [--force] [--job reflect|nightly|weekly|all]   the scheduled pass over every active project",
+      usage:
+        "memory tick [--force] [--job reflect|backfill|nightly|weekly|all]   the scheduled pass over every active project",
       run: (args, ctx) => {
         const job = jobFlag(args, ctx);
         if (job === null) return 2;
@@ -176,7 +177,8 @@ export const memoryArea: LearnArea = {
       },
     },
     run: {
-      usage: "memory run [--job reflect|nightly|weekly|all] [--repo PATH]   run the jobs now for one repo, due or not",
+      usage:
+        "memory run [--job reflect|backfill|nightly|weekly|all] [--repo PATH]   run the jobs now for one repo, due or not",
       run: (args, ctx) => {
         const job = jobFlag(args, ctx);
         if (job === null) return 2;

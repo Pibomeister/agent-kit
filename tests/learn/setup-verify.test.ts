@@ -144,6 +144,19 @@ describe("setup seed", () => {
     expect(run(["git", "status", "--porcelain"], { cwd: repo }).stdout).toBe("");
   });
 
+  test("the dry ingest counts review observations the memory loop has not screened yet", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    mem.observation({ sid: "s1", project: "repo", type: "review-finding", title: "Reviewer: late lock", at: 1000 });
+    mem.close();
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    expect(seed(ctx, gitRepo(join(base, "repo")), { skipGithub: true })).toBe(0);
+    expect(ctx.out).toContain(
+      "dry ingest: 0 events visible; 1 claude-mem review observation(s) wait for the memory loop to screen them; nothing written",
+    );
+  });
+
   test("outside a repository it refuses", () => {
     const ctx = testContext();
     expect(inOutsideRepo((cwd) => seed(ctx, cwd, { skipGithub: true }))).toBe(1);
