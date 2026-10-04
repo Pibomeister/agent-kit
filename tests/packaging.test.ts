@@ -861,16 +861,16 @@ describe("the two fields package.json is a party to, and the two it is not", () 
  * The shape is taken from the donor the contract cites,
  * `compound-engineering@05c42da:.claude-plugin/marketplace.json`, read at the
  * pin rather than remembered. Every field this package emits has a value the
- * tree already states. The donor's `homepage`, `tags` and
- * `metadata.description` are omitted because this tree states no value for
- * them, and a plausible-looking invented one is the failure mode this package
- * has already produced once.
+ * tree already states. The donor's `homepage` and `tags` are omitted because
+ * this tree states no value for them. Claude's strict marketplace validator
+ * requires `metadata.description`, so it is derived from the catalog package
+ * description already used by the plugin manifests.
  */
 describe("the marketplace entry each host bundle carries", () => {
   interface MarketplaceFixture {
     name: string;
     owner?: { name: string };
-    metadata: { version: string; description?: string };
+    metadata: { version: string; description: string };
     plugins: [
       {
         name: string;
@@ -964,6 +964,7 @@ describe("the marketplace entry each host bundle carries", () => {
     expect(market.owner).toEqual(manifest.author);
     expect(market.plugins[0].author).toEqual(manifest.author);
     expect(market.metadata.version).toBe(manifest.version);
+    expect(market.metadata.description).toBe(manifest.description);
     expect(market.plugins[0].name).toBe(manifest.name);
   });
 
@@ -989,15 +990,12 @@ describe("the marketplace entry each host bundle carries", () => {
   });
 
   test("it carries no field this tree has no value for", () => {
-    // The donor carries `homepage`, `tags` and a `metadata.description`. This
-    // tree states none of them, and emitting a plausible one is how a manifest
-    // ends up asserting something nobody checked. Absence is the honest answer
-    // until a value exists, and this test is what stops one being invented
-    // later without a source.
+    // The donor carries `homepage` and `tags`, but this tree states neither.
+    // Absence is the honest answer until a value exists, and this test stops
+    // either field being invented later without a source.
     const market = marketplaceIn(planBundle(ctxFor(), "claude-code", {}));
     expect("homepage" in market.plugins[0]).toBe(false);
     expect("tags" in market.plugins[0]).toBe(false);
-    expect("description" in market.metadata).toBe(false);
     expect("description" in market).toBe(false);
   });
 

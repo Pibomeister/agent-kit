@@ -975,10 +975,10 @@ function checkManifestParity(root: string, manifest: HostManifest): Issue[] {
  * inventing an owner, which would be a claim about a real party in a file that
  * gets distributed.
  *
- * The donor's `homepage`, `tags` and `metadata.description` are not emitted.
- * This tree states no value for any of them, and the failure this package has
- * already produced once is a plausible value nobody checked -- so the fields
- * are absent until something in the tree says what they are.
+ * The donor's `homepage` and `tags` are not emitted because this tree states no
+ * value for them. `metadata.description` is the catalog package description:
+ * Claude's strict marketplace validator requires it, and deriving it from the
+ * same source as the plugin manifest prevents the two descriptions drifting.
  */
 function marketplace(ctx: CheckContext): string {
   const pkg = ctx.catalog.package;
@@ -986,7 +986,7 @@ function marketplace(ctx: CheckContext): string {
   const doc = {
     name: pkg.name,
     owner: author,
-    metadata: { version: pkg.version },
+    metadata: { version: pkg.version, description: pkg.description },
     plugins: [{ name: pkg.id, description: pkg.name, author, source: "./" }],
   };
   return `${JSON.stringify(doc, null, 2)}\n`;
