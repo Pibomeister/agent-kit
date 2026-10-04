@@ -49,6 +49,10 @@
       "mode": "manual"
     },
     {
+      "skill": "codebase-design",
+      "mode": "autonomous"
+    },
+    {
       "skill": "verify",
       "mode": "manual"
     },

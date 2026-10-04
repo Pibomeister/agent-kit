@@ -1,6 +1,6 @@
 {
   "name": "ak",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "One engineering lifecycle, amalgamated from nine donors: eight MIT, one Apache-2.0.",
   "author": {
     "name": "agent-kit maintainers"
@@ -14,6 +14,7 @@
     "./skills/super-verify",
     "./skills/super-review",
     "./skills/super-ship",
+    "./skills/codebase-design",
     "./skills/verify",
     "./skills/visual-edit",
     "./skills/compound",

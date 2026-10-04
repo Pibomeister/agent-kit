@@ -1,0 +1,26 @@
+schema_version: "1.1"
+name: codebase-design-bounded-interface-question-uses-vocabulary
+tags: [positive]
+execution:
+  prompt: >-
+    Use codebase-design to assess an OrderProcessor module. Its public surface has twelve methods,
+    callers must construct a payment client and retry policy, and tests replace the payment client
+    with an in-memory implementation. Is the interface deep enough, and where is the payment seam?
+  max_turns: 8
+  allowed_tools: [Skill, Read, Glob, Grep]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?codebase-design"'
+    arm: with-only
+    weight: 1
+  - name: applies-the-shared-vocabulary
+    type: llm
+    weight: 3
+    focus: last_message
+    criteria: >-
+      The answer uses module, interface, depth, seam, adapter, leverage and locality with the
+      meanings in the skill's reference pack. It treats the twelve-method surface and caller-owned
+      construction as design evidence, recognizes the production and in-memory implementations as
+      two adapters at a real payment seam, and makes no code change.
