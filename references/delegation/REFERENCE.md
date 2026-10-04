@@ -115,8 +115,9 @@ more fully met and 0 means it is absent.
 `vague_terms` records each detected word or phrase, including terms such as “fast”, “clean up” and
 “as needed”. Turn every unresolved hit into a frontier question that asks for the missing boundary
 and proposes a concrete verification path: observable, workload or fixture, measurement or oracle,
-and pass condition as applicable. A criterion that remains ambiguous fails on its own evidence; do
-not turn a readiness total into a finding or use it to fill in the missing decision.
+and pass condition as applicable. Never invent the missing target. A criterion that remains
+ambiguous fails on its own evidence; do not turn a readiness total into a finding or use it to fill
+in the missing decision.
 
 ## Assumptions
 
@@ -134,7 +135,10 @@ return reached after this assessment. The stop is stated in the result and cites
 and their evidence; it does not erase the draft or reduce the result to prose.
 While any specification, assumption or review decision is open, the evidence-bearing draft is kept
 and retyped `decision`; no implementation ticket is created or published until those decisions are
-answered.
+answered. Retyping is more than the `type` value: add the `decision` object the ticket schema
+requires, carrying the open question, and drop `allowed_changes`, `write_ownership` and
+`integration_owner`, which a decision ticket may not carry. `delegation`, `readiness` and
+`assumptions` stay.
 
 ## Stack construction
 

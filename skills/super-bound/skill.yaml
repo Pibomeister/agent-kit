@@ -128,8 +128,9 @@ hard_gates:
   - A ticket whose class makes a human the author puts permitted agent work in allowed_changes,
     prohibited agent work in non_goals and stops in stop_conditions; naming a human owner alone is
     not that boundary.
-  - Each unresolved vague term becomes a frontier question that also proposes the observable,
-    workload or fixture, measurement or oracle and pass condition needed to verify the answer.
+  - Each unresolved vague term becomes a frontier question that proposes the observable, the
+    workload or fixture, the measurement or oracle and the pass condition, as applicable, that would
+    verify the answer. Never invent the missing target.
   - A direction spanning independently deployable stack phases records the exact ordered reversible
     recommendation with schema contract separate. Refusal adds a decision ticket and never replaces
     the recommendation with an exception option.
