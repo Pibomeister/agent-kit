@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -142,7 +142,7 @@ const isStoredReport = ajv.compile<StoredReport>({
             properties: {
               subject: { type: "string" },
               case: { type: "string" },
-              reason: { enum: ["spend-cap", "invalid-row", "aborted", "subject-failed"] },
+              reason: { enum: ["spend-cap", "invalid-row", "ungraded-row", "aborted", "subject-failed"] },
             },
           },
         },
@@ -323,6 +323,29 @@ function budget(cwd: string, cap: number, estimate = 0.5): string[] {
   const perCase = { "cross-host-runner-fixture": estimate };
   writeFileSync(file, JSON.stringify({ "subject-claude": perCase, "subject-codex": perCase, "subject-grok": perCase }));
   return ["--max-spend-usd", String(cap), "--estimates", file];
+}
+
+const UNRUNNABLE_GRADERS = [
+  [
+    "a judged grader that reads mock calls only",
+    "  - name: reads-mock-calls\n    type: llm\n    focus: mock_calls\n    criteria: The mock was called.\n",
+    "unrunnable-grader-fixture reads-mock-calls: llm grader reads mock calls only",
+  ],
+  [
+    "a grader type with no local evaluator",
+    "  - name: compares-baseline\n    type: baseline\n    baseline_file: baseline.md\n    criteria: Beats it.\n",
+    "unrunnable-grader-fixture compares-baseline: grader type baseline is not locally executable",
+  ],
+] as const;
+
+/** A copy of the fixture case, renamed, with one more grader appended. */
+function caseWith(grader: string): string {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-unrunnable-")));
+  work.push(cwd);
+  const file = join(cwd, "case.yaml");
+  const text = readFileSync(CASE_FILE, "utf8").replace("cross-host-runner-fixture", "unrunnable-grader-fixture");
+  writeFileSync(file, `${text.trimEnd()}\n${grader}`);
+  return file;
 }
 
 function subject(host: HostKind): Subject {
@@ -656,19 +679,22 @@ describe("preflight", () => {
   ];
   const argv = [
     "--preflight",
-    "--host",
-    "claude",
-    "--host",
-    "codex",
-    "--host",
-    "grok",
+    "--subject",
+    "subject-claude",
+    "--subject",
+    "subject-codex",
+    "--subject",
+    "subject-grok",
     ...caseFiles.flatMap((file) => ["--case", file]),
   ];
 
-  async function preflight(overrides: Parameters<typeof caseRunnerMain>[1] = {}) {
+  const THREE_HOSTS = { ...matrix, subjects: [subject("claude"), subject("codex"), subject("grok")] };
+
+  async function preflight(overrides: Parameters<typeof caseRunnerMain>[1] = {}, selected: string[] = argv) {
     const lines: string[] = [];
     const errors: string[] = [];
-    const code = await caseRunnerMain(argv, {
+    const code = await caseRunnerMain(selected, {
+      matrix: THREE_HOSTS,
       bundleRoot: bundles(),
       out: (line) => lines.push(line),
       err: (line) => errors.push(line),
@@ -699,9 +725,12 @@ describe("preflight", () => {
     expect(code).toBe(0);
     expect(started).toBe(0);
     expect(rows.map(({ host, checks }) => [host, checks.map(({ name }) => name)])).toEqual([
-      ["claude", ["binary", "login", "bundle-skills", "case-fixtures", "cli-flags"]],
-      ["codex", ["binary", "login", "bundle-skills", "case-fixtures", "cli-flags", "thread-identity"]],
-      ["grok", ["binary", "login", "bundle-skills", "case-fixtures", "cli-flags", "tool-names"]],
+      ["claude", ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "cli-flags"]],
+      [
+        "codex",
+        ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "cli-flags", "thread-identity"],
+      ],
+      ["grok", ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "cli-flags", "tool-names"]],
     ]);
     expect(rows.every(({ ok, checks }) => ok && checks.every((check) => check.ok))).toBe(true);
     expect(rows.at(0)?.checks.at(-1)?.detail).toContain(
@@ -786,6 +815,31 @@ describe("preflight", () => {
       "case-runner preflight codex thread-identity: probe failed: spawn codex ENOENT",
       "case-runner preflight grok tool-names: probe failed: spawn grok ENOENT",
     ]);
+  });
+
+  test("goes red for the hosts whose subject cannot seat a reviewer panel", async () => {
+    const { code, errors, rows } = await preflight({
+      matrix: { ...THREE_HOSTS, panels: { ...matrix.panels, "min-reviewers": 4 } },
+    });
+
+    expect(code).toBe(2);
+    expect(rows.map(({ host, ok }) => [host, ok])).toEqual([
+      ["claude", false],
+      ["codex", false],
+      ["grok", false],
+    ]);
+    expect(errors).toHaveLength(3);
+    expect(errors.at(0)).toStartWith(
+      "case-runner preflight claude grader-readiness: subject-claude: reviewer panel unavailable",
+    );
+  });
+
+  test.each(UNRUNNABLE_GRADERS)("goes red for %s", async (_label, grader, problem) => {
+    const { code, errors } = await preflight({}, [...argv, "--case", caseWith(grader)]);
+
+    expect(code).toBe(2);
+    expect(errors).toHaveLength(3);
+    expect(errors.at(0)).toBe(`case-runner preflight claude grader-readiness: ${problem}`);
   });
 
   test("fails when the Codex handshake returns no served model", async () => {
@@ -1292,6 +1346,105 @@ describe("stop rules", () => {
       ["subject-grok", "aborted"],
       ["subject-codex", "aborted"],
       ["subject-codex", "aborted"],
+    ]);
+  });
+
+  test("an unseatable reviewer panel refuses the whole run before any session starts", async () => {
+    const { cwd, bundle, json, rawDir } = stage("no-panel");
+    const started: string[] = [];
+    const errors: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: {
+          ...matrix,
+          subjects: [subject("grok"), subject("codex")],
+          panels: { ...matrix.panels, "min-reviewers": 4 },
+        },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        err: (line) => errors.push(line),
+        startSubject: stubHost(started, {}),
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+
+    expect(code).toBe(2);
+    expect(started).toEqual([]);
+    expect(existsSync(json)).toBe(false);
+    expect(errors.join("\n")).toContain("subject-grok: reviewer panel unavailable");
+    expect(errors.join("\n")).toContain("subject-codex: reviewer panel unavailable");
+  });
+
+  test.each(UNRUNNABLE_GRADERS)(
+    "%s refuses the whole run before any session starts",
+    async (_label, grader, problem) => {
+      const { cwd, bundle, json, rawDir } = stage("unrunnable");
+      const started: string[] = [];
+      const errors: string[] = [];
+      const file = caseWith(grader);
+      const estimates = join(cwd, "estimates.json");
+      const perCase = { "cross-host-runner-fixture": 0.5, "unrunnable-grader-fixture": 0.5 };
+      writeFileSync(estimates, JSON.stringify({ "subject-grok": perCase, "subject-codex": perCase }));
+      const code = await caseRunnerMain(
+        [
+          "--execute",
+          ...GROK_THEN_CODEX,
+          "--case",
+          CASE_FILE,
+          "--case",
+          file,
+          "--json",
+          json,
+          "--max-spend-usd",
+          "10",
+          "--estimates",
+          estimates,
+        ],
+        {
+          matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+          bundleRoot: bundle,
+          rawDir,
+          out: () => {},
+          err: (line) => errors.push(line),
+          startSubject: stubHost(started, {}),
+          judge: async () => ({ reply: PASS }),
+        },
+      );
+
+      expect(code).toBe(2);
+      expect(started).toEqual([]);
+      expect(existsSync(json)).toBe(false);
+      expect(errors.join("\n")).toContain(problem);
+    },
+  );
+
+  test("an ungraded result stops the whole run before another launch", async () => {
+    const { cwd, bundle, json, rawDir } = stage("ungraded-stop");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: stubHost(started, {}),
+        judge: async () => ({ reply: "no verdict here" }),
+      },
+    );
+    const { receipt, sessions } = storedReport(json);
+
+    expect(code).toBe(1);
+    expect(started).toEqual(["subject-grok"]);
+    expect(sessions.map((row) => [row.subject, row.validity, row.result])).toEqual([
+      ["subject-grok", "valid", "ungraded"],
+    ]);
+    expect(receipt.skipped.map((row) => [row.subject, row.reason])).toEqual([
+      ["subject-grok", "ungraded-row"],
+      ["subject-codex", "ungraded-row"],
+      ["subject-codex", "ungraded-row"],
     ]);
   });
 

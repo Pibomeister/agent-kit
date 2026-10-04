@@ -330,6 +330,33 @@ export async function evaluateCaseSession(
   };
 }
 
+/**
+ * What would leave a selected session ungraded whatever the subject does: a reviewer panel that
+ * cannot be seated, a grader type with no local evaluator, or a judged grader that reads mock calls.
+ */
+export function readinessProblems(
+  matrix: Pick<Matrix, "reviewers" | "panels">,
+  subjects: readonly Subject[],
+  evalCases: readonly EvalCase[],
+): string[] {
+  const panels = subjects.flatMap((subject) => {
+    const panel = buildPanel(matrix, subject);
+    return panel.status === "unavailable" ? [`${subject.id}: reviewer panel unavailable, ${panel.reason}`] : [];
+  });
+  const graders = evalCases.flatMap((evalCase) =>
+    evalCase.graders.flatMap((grader) => {
+      if (grader.type === "llm")
+        return grader.focus === "mock_calls"
+          ? [`${evalCase.name} ${grader.name}: llm grader reads mock calls only`]
+          : [];
+      return evaluate(grader, { toolCalls: [], lastMessage: "", filesCreated: [] }) === null
+        ? [`${evalCase.name} ${grader.name}: grader type ${grader.type} is not locally executable`]
+        : [];
+    }),
+  );
+  return [...panels, ...graders];
+}
+
 /** One list of every started session, valid or not, with the counts read from each row's own validity. */
 export function summariseCaseSessions(rows: readonly CaseSessionResult[]) {
   const count = (expectedResult: CaseSessionResult["result"]) =>
@@ -506,7 +533,7 @@ function lastFlagValue(argv: readonly string[], flag: string): string | undefine
 }
 
 function argumentProblems(argv: readonly string[]): string[] {
-  const valueFlags = new Set(["--subject", "--host", "--case", "--json", "--max-spend-usd", "--estimates"]);
+  const valueFlags = new Set(["--subject", "--case", "--json", "--max-spend-usd", "--estimates"]);
   const switches = new Set(["--dry-run", "--execute", "--preflight"]);
   const problems: string[] = [];
   for (let index = 0; index < argv.length; index++) {
@@ -523,10 +550,7 @@ function argumentProblems(argv: readonly string[]): string[] {
   }
   const modes = ["--dry-run", "--execute", "--preflight"].filter((mode) => argv.includes(mode));
   if (modes.length !== 1) problems.push("choose exactly one of --dry-run, --execute or --preflight");
-  if (!argv.includes("--preflight") && flagValues(argv, "--subject").length === 0)
-    problems.push("at least one --subject is required");
-  if (argv.includes("--preflight") && flagValues(argv, "--host").length === 0)
-    problems.push("at least one --host is required");
+  if (flagValues(argv, "--subject").length === 0) problems.push("at least one --subject is required");
   if (flagValues(argv, "--case").length === 0) problems.push("at least one --case is required");
   if (argv.includes("--execute") && lastFlagValue(argv, "--json") === undefined)
     problems.push("--execute requires --json");
@@ -561,7 +585,7 @@ function loadEstimates(file: string, subjects: readonly Subject[], cases: readon
   return parsed;
 }
 
-type SkipReason = "spend-cap" | "invalid-row" | "aborted" | "subject-failed";
+type SkipReason = "spend-cap" | "invalid-row" | "ungraded-row" | "aborted" | "subject-failed";
 
 interface PreflightCheck {
   name: string;
@@ -803,7 +827,8 @@ async function probed(name: string, check: () => PreflightCheck | Promise<Prefli
 }
 
 export async function preflightHosts(
-  hosts: readonly HostKind[],
+  matrix: Pick<Matrix, "reviewers" | "panels">,
+  subjects: readonly Subject[],
   evalCases: readonly EvalCase[],
   bundleRoot: string,
   probes: PreflightProbes = {},
@@ -812,7 +837,12 @@ export async function preflightHosts(
   const login = probes.login ?? defaultLoginProbe;
   const cli = probes.cli ?? defaultCliProbe;
   const rows: PreflightRow[] = [];
-  for (const host of hosts) {
+  for (const host of new Set(subjects.map((subject) => subject.host))) {
+    const unready = readinessProblems(
+      matrix,
+      subjects.filter((subject) => subject.host === host),
+      evalCases,
+    );
     const bundle = join(bundleRoot, BUNDLE_FOR[host]);
     const skills = skillIds(evalCases);
     const missingSkills = skills.filter((id) => !existsSync(join(bundle, "skills", id, "SKILL.md")));
@@ -841,6 +871,11 @@ export async function preflightHosts(
             ? `${evalCases.length} scaffold(s) resolve`
             : `missing ${missingFixtures.join(", ")}`,
       },
+      {
+        name: "grader-readiness",
+        ok: unready.length === 0,
+        detail: unready.length === 0 ? "every panel seats and every grader runs locally" : unready.join("; "),
+      },
       await probed("cli-flags", () => flagCheck(host, evalCases, bundle, cli)),
     ];
     if (host === "grok")
@@ -857,12 +892,6 @@ export async function preflightHosts(
   }
   return rows;
 }
-
-const HOST_KIND = new Map<string, HostKind>([
-  ["claude", "claude"],
-  ["codex", "codex"],
-  ["grok", "grok"],
-]);
 
 /** CLI coordinator. A paid subject can start only on the explicit `--execute` branch. */
 export async function main(argv: string[], dependencies: MainDependencies = {}): Promise<number> {
@@ -882,14 +911,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const cases = flagValues(argv, "--case").map(loadCase);
     const bundleRoot = dependencies.bundleRoot ?? join(PACKAGE_ROOT, "dist");
     if (argv.includes("--preflight")) {
-      const hostValues = flagValues(argv, "--host");
-      const invalidHosts = hostValues.filter((host) => HOST_KIND.get(host) === undefined);
-      if (invalidHosts.length > 0) throw new Error(`unknown host(s): ${invalidHosts.join(", ")}`);
-      const hosts = hostValues.flatMap((host) => {
-        const parsed = HOST_KIND.get(host);
-        return parsed === undefined ? [] : [parsed];
-      });
-      const rows = await preflightHosts(hosts, cases, bundleRoot, {
+      const rows = await preflightHosts(matrix, subjects, cases, bundleRoot, {
         binary: dependencies.binaryProbe,
         login: dependencies.loginProbe,
         cli: dependencies.cliProbe,
@@ -908,6 +930,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       return 0;
     }
 
+    const unready = readinessProblems(matrix, subjects, cases);
+    if (unready.length > 0) throw new Error(`no session started: ${unready.join("; ")}`);
     const priced = matrixPrices(matrix.priceTable);
     const outputFile = lastFlagValue(argv, "--json");
     if (outputFile === undefined) throw new Error("--execute requires --json");
@@ -979,7 +1003,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           rows.push(row);
           chargedUsd += (row.subject_cost_usd ?? estimate) + row.grader_cost_usd;
           if (row.validity === "invalid") stop = "invalid-row";
-          else if (row.result !== "pass") subjectFailed = true;
+          else if (row.result === "ungraded") stop = "ungraded-row";
+          else if (row.result === "fail") subjectFailed = true;
         } catch (error) {
           stop = "aborted";
           chargedUsd += (prepared === undefined ? 0 : (session?.costUsd ?? estimate)) + (judgeSpend ?? 0);

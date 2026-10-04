@@ -70,28 +70,36 @@ compound shape under that argv is not shown here.
 ```text
 bun test tests/learn/evals-case-runner.test.ts tests/learn/evals-subjects.test.ts \
   tests/grader-lint.test.ts tests/schemas.test.ts tests/typecheck.test.ts
-481 pass, 0 fail
+488 pass, 0 fail
 ```
 
 The zero-cost preflight command was run after `bun run ak build --profile all`:
 
 ```sh
 bun tests/learn/evals/case-runner.ts --preflight \
-  --host claude --host codex --host grok \
+  --subject <claude subject> --subject <codex subject> --subject <grok subject> \
   --case evals/super-bound/delegated-refresh-token-rotation/case.yaml \
   --case evals/super-bound/vague-checkout-speed-criterion/case.yaml \
   --case evals/super-bound/refused-oversized-change-split/case.yaml \
   --case evals/super-bound/approved-spec-produces-tickets/case.yaml
 ```
 
-All three hosts returned `ok: true` for every check, at Claude Code 2.1.289, Codex 0.159.2 and Grok
-1.0.46:
+Preflight takes the same `--subject` selection `--execute` will run, from the local
+`.work/eval-matrix.yaml`, and probes each selected subject's host once. The host checks below
+returned `ok: true` on all three hosts at Claude Code 2.1.289, Codex 0.159.2 and Grok 1.0.46. That
+run predates the `grader-readiness` check and selected the hosts by name; the host checks themselves
+are unchanged.
 
 ```text
 claude  binary login bundle-skills case-fixtures cli-flags
 codex   binary login bundle-skills case-fixtures cli-flags thread-identity
 grok    binary login bundle-skills case-fixtures cli-flags tool-names
 ```
+
+`grader-readiness` now sits in each host row. It fails when a selected subject's reviewer panel
+cannot be seated from the matrix, when a selected case has a grader type with no local evaluator, or
+when a judged grader reads mock calls only. It has not been run against the operator's matrix here,
+because this worktree has no `.work/eval-matrix.yaml`; the tests drive it with a stub matrix.
 
 Each login check is local and redacts the credential content. The other host checks probe the
 installed CLI:
@@ -152,20 +160,24 @@ rerun is approved.
 Stop rules. `--execute` enforces every rule in this list; `tests/learn/evals-case-runner.test.ts`
 drives each one against stub hosts.
 
-1. `--execute` refuses to start without `--max-spend-usd <cap>` and `--estimates <file>`. The file
+1. `--execute` runs the same readiness check as preflight's `grader-readiness` over the whole
+   selected subject and case set, and refuses the run with exit 2, no session and no receipt when it
+   finds a problem.
+2. `--execute` refuses to start without `--max-spend-usd <cap>` and `--estimates <file>`. The file
    maps each subject id to each case name to the table amount above, and a selected subject-case
    pair it does not cover stops the run before any session.
-2. Sessions run strictly one at a time, in subject then case order. Nothing is retried: a session
+3. Sessions run strictly one at a time, in subject then case order. Nothing is retried: a session
    that throws ends the run with exit 2 and every remaining pair is listed as skipped.
-3. Before each launch the runner adds that pair's estimate to the spend charged so far and stops the
+4. Before each launch the runner adds that pair's estimate to the spend charged so far and stops the
    whole run if the sum exceeds the cap. A completed session is charged its reported subject cost
    plus its grader cost; a session that reports no subject cost is charged its estimate.
-4. An invalid row stops the whole run before another launch. A row is invalid on a timeout, a
+5. An invalid row stops the whole run before another launch. A row is invalid on a timeout, a
    host-refused call, a non-zero host exit, an empty reply, a reached turn cap, a missing served
    model, a missing session or thread id, or a missing request id on a host whose stream emits one.
-5. A valid row whose result is not a pass, whether a graded failure or an ungraded result, stops
-   that subject: its remaining cases are skipped and the runner goes on to the next subject unless
-   rule 3 or rule 4 has fired.
+6. An ungraded result stops the whole run before another launch. A row is ungraded when a judged
+   grader's file is absent, the reviewers disagree, or a reviewer gives no readable verdict.
+7. A graded failure stops that subject: its remaining cases are skipped and the runner goes on to
+   the next subject unless rule 4, 5 or 6 has fired.
 
 Request ids are a host capability, declared per adapter as `requestIds`. The Claude stream carries a
 `request_id` on each assistant line and the Grok stream carries a `requestId` on its end line, so a
@@ -173,7 +185,7 @@ session from either host without one is invalid. The Codex app-server stream car
 request id, so a Codex row is identified by its thread id and served model alone.
 
 The receipt records `max_spend_usd`, `charged_usd` and a `skipped` list naming each pair that did
-not run and why (`spend-cap`, `invalid-row`, `aborted` or `subject-failed`). A run with any skipped
+not run and why (`spend-cap`, `invalid-row`, `ungraded-row`, `aborted` or `subject-failed`). A run with any skipped
 pair exits non-zero.
 
 Two steps stay with the operator, and the runner does not enforce them: rebuild and rerun preflight
