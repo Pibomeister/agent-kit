@@ -133,9 +133,9 @@ decision ticket and stop the affected slice at the zero-context gate.
 Persist `delegation`, `readiness` and `assumptions` on the draft ticket before any `needs-input`
 return reached after this assessment. The stop is stated in the result and cites the failed criteria
 and their evidence; it does not erase the draft or reduce the result to prose.
-While any specification, assumption or review decision is open, the evidence-bearing draft is kept
-and retyped `decision`; no implementation ticket is created or published until those decisions are
-answered. Retyping is more than the `type` value: add the `decision` object the ticket schema
+While any specification, assumption or review decision is open, an evidence-bearing draft, where one
+exists, is kept and retyped `decision`; no implementation ticket is created or published until those
+decisions are answered. Retyping is more than the `type` value: add the `decision` object the ticket schema
 requires, carrying the open question, and drop `allowed_changes`, `write_ownership` and
 `integration_owner`, which a decision ticket may not carry. `delegation`, `readiness` and
 `assumptions` stay.
@@ -161,7 +161,8 @@ On a host that offers an advisor facility, consultation is required and recorded
 evidence for `yellow-owner` and `red`, recommended for `yellow-agent`, and silent for `green`.
 The record surface is the knowledgebase consultation artifact: store the advisor's result there, and
 cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt`, with
-the artifact id/ref and a one-line `note` explaining the judgment evidence used. A filesystem path,
+the artifact id/ref and a one-line `note` that names it judgment evidence and says what it was used
+for. A filesystem path,
 document name or URL by itself is not evidence. The ticket carries the citation, never the
 consultation itself.
 Consultation adds judgment evidence only: it never lowers `delegation.class`, authorizes a sensitive

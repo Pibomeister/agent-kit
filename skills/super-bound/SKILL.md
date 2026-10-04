@@ -104,9 +104,9 @@ approves its own specification or tickets.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
-   While any specification, assumption or review decision is open, the evidence-bearing draft is
-   kept and retyped `decision`; no implementation ticket is created or published until those
-   decisions are answered.
+   While any specification, assumption or review decision is open, an evidence-bearing draft, where
+   one exists, is kept and retyped `decision`; no implementation ticket is created or published
+   until those decisions are answered.
 8. Take the specification approval. A recorded human approval whose artifact hash equals the
    current specification hash satisfies this step. Otherwise the plan record takes approval as
    `specification_approval`, bound to `specification_hash`, so later slicing does not void it.
@@ -164,15 +164,16 @@ exception. Size alone is guidance.
 
 Gate: on a supporting host, a ticket whose class requires consultation is not approved until its
 `kb_refs` cites the consultation artifact as the delegation reference defines: a `transcript` or
-`receipt` evidence reference with a one-line note explaining the judgment evidence. A bare path, name
-or URL is not evidence; an unsupported host cites none (ruling `advisor-consultation-follows-class`).
+`receipt` evidence reference whose one-line `note` names it judgment evidence and says what it was
+used for. A bare path, name or URL is not evidence; an unsupported host cites none (ruling
+`advisor-consultation-follows-class`).
 
 Gate: approval binds to the specification's hash, not the whole plan's. A changed specification
 does not inherit the old approval; take it again.
 
-Gate: while any specification, assumption or review decision is open, the evidence-bearing draft is
-kept and retyped `decision`; no implementation ticket is created or published until those decisions
-are answered.
+Gate: while any specification, assumption or review decision is open, an evidence-bearing draft,
+where one exists, is kept and retyped `decision`; no implementation ticket is created or published
+until those decisions are answered.
 
 Gate: no ticket ships with an unfinished-content marker, with "add appropriate error handling" or
 "handle the edge cases" in place of the specifics, or with a pointer to another ticket in place of

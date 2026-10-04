@@ -143,9 +143,9 @@ hard_gates:
     place of the specifics, or with a pointer to another ticket in place of the work.
   - Evidence that invalidates a decision settled earlier in the session stops the write and returns
     a blocked-or-replan result, never a silent override.
-  - While any specification, assumption or review decision is open, the evidence-bearing draft is
-    kept and retyped `decision`; no implementation ticket is created or published until those
-    decisions are answered.
+  - While any specification, assumption or review decision is open, an evidence-bearing draft,
+    where one exists, is kept and retyped `decision`; no implementation ticket is created or
+    published until those decisions are answered.
   - The consensus plan gate is entered only on genuine architectural disagreement, declared high
     risk or a review-driven replan, never automatically on a routine breakdown.
 
