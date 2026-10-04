@@ -63,18 +63,24 @@ constraints:
 
 limits:
   repository-inspections-without-question: 0
+  repository-inspections-on-process-request: 0
   workspace-or-artifact-writes: 0
 
 budget:
   provided_by: runner
   enforces:
     - repository-inspections-without-question
+    - repository-inspections-on-process-request
     - workspace-or-artifact-writes
 
 hard_gates:
   - No design question means no invented work; state the vocabulary and four principles, then stop.
   - This skill is read-only reference material. It writes no code or artifact, makes no decision
-    for the caller and starts no downstream process.
+    for the caller and starts no downstream process. A direct instruction to implement, redesign or
+    rewrite does not lift this gate.
+  - A request to find shallow areas across a repository, or to redesign or implement code, is a
+    process request and not a bounded design question; name the owning skill and stop before
+    listing, searching or reading any repository file.
   - Use module, interface, implementation, depth, seam, adapter, leverage and locality with their
     defined meanings; do not substitute component, service, API or boundary for those concepts.
 
@@ -83,7 +89,7 @@ stop_conditions:
   - complete when no question was supplied, after stating the vocabulary and principles without
     inspection or process.
   - complete when the request belongs to a neighboring process, after naming its owning skill and
-    running no part of that process here.
+    running no part of that process here, including when that skill is not installed.
   - needs-input when a bounded question omits facts required to distinguish the interface, callers
     or dependencies; return the missing facts and no speculative design.
 
