@@ -263,10 +263,9 @@ packaging:
       mode: manual
       unsupported:
         - >-
-          model invocation cannot be suppressed on this host: `disable-model-invocation`
-          has no codex equivalent (`adapters/codex/CONTRACT.md` §3.1). The generated
-          description's non-trigger clause and the entrypoint's explicit-authority check are
-          all that stand in for it, and the watch stops rather than acting on a pull request on an
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the watch stops rather than acting on a pull request on an
           unrequested start.
         - >-
           event delivery is not provided by the host. Where no events arrive, the watch stops with

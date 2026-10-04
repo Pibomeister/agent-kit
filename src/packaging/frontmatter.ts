@@ -20,8 +20,8 @@ export interface GeneratedFrontmatter {
  * `host` is a parameter because it was not one, and a function that generates
  * host frontmatter without knowing the host generated the same frontmatter for
  * both: the codex bundle shipped `disable-model-invocation` and `allowed-tools`
- * verbatim, two keys `adapters/codex/CONTRACT.md` §3 records as having no
- * verified equivalent on that host.
+ * verbatim, two keys `adapters/codex/CONTRACT.md` §3 records as not emitted
+ * on that host.
  *
  * Removing them takes no protection away, which is the part worth stating
  * plainly. The key was never honored there, so what it changed was the bundle's

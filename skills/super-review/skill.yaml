@@ -279,10 +279,9 @@ packaging:
       mode: manual
       unsupported:
         - >-
-          model invocation cannot be suppressed on this host: `disable-model-invocation`
-          has no codex equivalent (`adapters/codex/CONTRACT.md` §3.1). The generated
-          description's non-trigger clause and the entrypoint's explicit-authority check are
-          all that stand in for it, and the run stops rather than convening a panel on an
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
           unrequested start.
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per

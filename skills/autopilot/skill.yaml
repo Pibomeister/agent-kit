@@ -262,9 +262,9 @@ packaging:
       mode: manual
       unsupported:
         - >-
-          model invocation cannot be suppressed on this host: `disable-model-invocation` has no
-          codex equivalent (`adapters/codex/CONTRACT.md` §3.1). The description's non-trigger
-          clause and the authority step stand in for it.
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/codex/CONTRACT.md` §3.1). The description's non-trigger clause and the
+          authority step are the gate.
         - >-
           grant validation is the runner's. Where the host cannot validate a grant, the run stops
           for explicit invocation rather than deciding a checkpoint on an unchecked claim.

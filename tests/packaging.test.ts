@@ -1264,10 +1264,10 @@ describe("the two host bundles, compared", () => {
   });
 
   /**
-   * Contract §5, test 3, which this adapter owns and did not have: "the codex
-   * bundle contains no `disable-model-invocation` and no `allowed-tools`; the
-   * claude-code bundle contains both where required. A key from one host's set
-   * appearing in the other's bundle is a failure."
+   * Contract §5, test 3, which this adapter owns and did not have: "neither
+   * bundle contains `disable-model-invocation`, and the codex bundle contains
+   * no `allowed-tools`; the claude-code bundle contains `allowed-tools` where
+   * required. A key outside a host's generated set is a failure."
    *
    * It was failing in the direction that leaves no trace. Both keys were
    * reaching the codex bundle, because `generateHostFrontmatter` took no host
@@ -1865,13 +1865,13 @@ describe("a U skill on a host that does not suppress model invocation", () => {
     // built, the mode here reads `guided` and looks like a rule having worked.
     const ctx = ctxFor(
       alpha(
-        "    - adapter: codex\n      mode: autonomous\n      unsupported:\n        - model invocation cannot be suppressed on this host.\n",
+        "    - adapter: codex\n      mode: autonomous\n      unsupported:\n        - model invocation is not suppressed on this host.\n",
       ),
     );
     const decision = decisionFor(planBundle(ctx, "codex", {}), "alpha");
     expect(decision?.mode).toBe("manual");
     expect(decision?.rejected).toEqual(["autonomous"]);
-    expect(decision?.unenforceable).toEqual(["model invocation cannot be suppressed on this host."]);
+    expect(decision?.unenforceable).toEqual(["model invocation is not suppressed on this host."]);
   });
 
   test("leaves an M skill's codex row alone, because the rule is about who may start the skill", () => {
@@ -1914,7 +1914,7 @@ describe("a U skill on a host that does not suppress model invocation", () => {
   test("says nothing about a U skill that declares manual, which is what §3.1 asks for", () => {
     const ctx = ctxFor(
       alpha(
-        "    - adapter: codex\n      mode: manual\n      unsupported:\n        - model invocation cannot be suppressed on this host.\n",
+        "    - adapter: codex\n      mode: manual\n      unsupported:\n        - model invocation is not suppressed on this host.\n",
       ),
     );
     const plan = planBundle(ctx, "codex", {});
