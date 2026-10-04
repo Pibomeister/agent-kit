@@ -20,7 +20,7 @@
     },
     "reviewers": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 3,
       "items": {
         "$ref": "#/$defs/seat"
       }
@@ -39,7 +39,7 @@
         },
         "min-reviewers": {
           "type": "integer",
-          "minimum": 2,
+          "minimum": 3,
           "description": "Fewer independent reviewers than this and the panel is unavailable."
         },
         "size": {
@@ -113,7 +113,8 @@
           "enum": [
             "claude",
             "codex",
-            "grok"
+            "grok",
+            "kimi"
           ]
         },
         "model": {

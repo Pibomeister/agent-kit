@@ -10,12 +10,18 @@ import { costOf, type PriceTable } from "../pricing.ts";
 import { claude } from "./claude.ts";
 import { codex } from "./codex.ts";
 import { grok } from "./grok.ts";
+import { kimi } from "./kimi.ts";
 import type { HostKind, SessionRequest, SessionResult, SubjectAdapter } from "./types.ts";
 
-const ADAPTERS: Record<HostKind, SubjectAdapter> = { claude, codex, grok };
+const ADAPTERS: Record<HostKind, SubjectAdapter> = { claude, codex, grok, kimi };
 
 /** Which `dist/` bundle each host installs. Grok reads Claude Code skill frontmatter. */
-export const BUNDLE_FOR: Record<HostKind, string> = { claude: "claude-code", codex: "codex", grok: "claude-code" };
+export const BUNDLE_FOR: Record<HostKind, string> = {
+  claude: "claude-code",
+  codex: "codex",
+  grok: "claude-code",
+  kimi: "claude-code",
+};
 
 export function adapterFor(host: HostKind): SubjectAdapter {
   const adapter = ADAPTERS[host];

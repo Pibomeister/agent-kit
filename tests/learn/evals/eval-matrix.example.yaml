@@ -15,6 +15,7 @@ reviewers:
   - { id: reviewer-a, host: claude, model: runner-binds-reviewer-a }
   - { id: reviewer-b, host: codex, model: runner-binds-reviewer-b }
   - { id: reviewer-c, host: grok, model: runner-binds-reviewer-c }
+  - { id: reviewer-d, host: kimi, model: runner-binds-reviewer-d }
 panels:
   independent-of: subject
-  min-reviewers: 2
+  min-reviewers: 3

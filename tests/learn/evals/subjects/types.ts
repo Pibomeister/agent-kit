@@ -8,7 +8,7 @@
  */
 
 /** The host CLIs a subject adapter exists for. */
-export type HostKind = "claude" | "codex" | "grok";
+export type HostKind = "claude" | "codex" | "grok" | "kimi";
 
 /** One tool call, normalised across hosts. `name` uses the Claude tool vocabulary where a mapping exists. */
 export interface ToolEvent {
