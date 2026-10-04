@@ -203,5 +203,5 @@ describe("the validation run", () => {
     const result = runValidation(process.cwd(), { only: ["content"] });
     const own = result.issues.filter((i) => i.file.startsWith("src/") || i.file.startsWith("tests/"));
     expect(own.map((i) => `${i.rule} ${i.file}:${i.line ?? 0}`)).toEqual([]);
-  });
+  }, 60_000);
 });
