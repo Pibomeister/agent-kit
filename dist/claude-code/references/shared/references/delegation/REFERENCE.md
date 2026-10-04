@@ -25,7 +25,12 @@ never as an implementation identity.
 
 The class changes authorship and checkpoint authority, not whether bounding produces a ticket. A
 `red` result produces a human-owned implementation ticket and limits agent participation to the
-bounded assistance the ticket names.
+bounded assistance the ticket names. A ticket whose class makes a human the author states the
+authorship boundary in existing fields. `allowed_changes` remains the ticket's
+full write scope for the implementer. Name the agent's permitted file and symbol subset in text, in
+`goal` or `stop_conditions`, alongside non-file assistance such as research; put prohibited agent
+work, including authoring the implementation, in `non_goals`. On a decision ticket the boundary
+lives in `goal` and `non_goals`. Naming a human owner alone is not that boundary.
 
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A
 never-dropped pack or required sensitive action sets a floor that no factor or lowering may cross;
@@ -94,8 +99,11 @@ absence is recorded; a body does not invent either measurement.
 ## Readiness and vague terms
 
 Every ticket records all six criteria separately. Each criterion carries its own score and evidence;
-a total never substitutes for a failed criterion. A criterion score is an integer from 0 to 2, where
-a higher score means the criterion is more fully met and 0 means it is absent.
+a total never substitutes for a failed criterion. The evidence states what was checked and the
+artifact, field, command or repository location checked; a boolean or status word never substitutes
+for it. No readiness or stop flag is persisted outside the schema: readiness is the six scored
+criteria with evidence, and the stop is stated in the result. A criterion score is an integer from
+0 to 2, where a higher score means the criterion is more fully met and 0 means it is absent.
 
 | Criterion | Evidence expected |
 | --- | --- |
@@ -107,9 +115,12 @@ a higher score means the criterion is more fully met and 0 means it is absent.
 | `verification_path` | The test level and fixture or data source are named. |
 
 `vague_terms` records each detected word or phrase, including terms such as “fast”, “clean up” and
-“as needed”. Turn every unresolved hit into a frontier question. A criterion that remains ambiguous
-fails on its own evidence; do not turn a readiness total into a finding or use it to fill in the
-missing decision.
+“as needed”. Turn every unresolved hit into a frontier question that asks for the missing boundary
+and proposes a concrete verification path: observable, workload or fixture, measurement or oracle,
+and pass condition as applicable. Express the pass condition against the value the human supplies,
+for example `p95 of <observable> on <workload> is at or below the target you name`; never choose a
+number or otherwise invent the missing target. A criterion that remains ambiguous fails on its own
+evidence; do not turn a readiness total into a finding or use it to fill in the missing decision.
 
 ## Assumptions
 
@@ -124,7 +135,14 @@ decision ticket and stop the affected slice at the zero-context gate.
 
 Persist `delegation`, `readiness` and `assumptions` on the draft ticket before any `needs-input`
 return reached after this assessment. The stop carries the evidence that justified it; it does not
-erase the draft or reduce the result to prose.
+erase the draft or reduce the result to prose. It is stated in the result and cites the failed
+criteria and their evidence.
+While a specification or review decision is open, an evidence-bearing draft, where one exists, is
+kept and retyped `decision`, and no implementation ticket exists. An open assumption is per slice;
+that slice becomes a decision ticket at the zero-context gate and unrelated slices proceed.
+Retyping is more than the `type` value: add the `decision` object the ticket schema requires,
+carrying the open question, and drop `allowed_changes`, `write_ownership` and `integration_owner`,
+which a decision ticket may not carry. `delegation`, `readiness` and `assumptions` stay.
 
 ## Stack construction
 
@@ -138,7 +156,8 @@ by the expand, then contract, blocked by every batch. Each ticket names its crit
 ownership and verification.
 When the direction already spans these independently deployable phases, their boundaries require
 the ordered stack. A request to keep them in one ticket becomes an open decision; it does not erase
-the boundaries.
+the boundaries. The decision ticket itself carries the full ordered stack as the recommended option,
+in its `decision` question or its `goal`, with no exception alternative.
 
 ## Advisor consultation
 
@@ -146,7 +165,9 @@ On a host that offers an advisor facility, consultation is required and recorded
 evidence for `yellow-owner` and `red`, recommended for `yellow-agent`, and silent for `green`.
 The record surface is the knowledgebase consultation artifact: store the advisor's result there, and
 cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt` whose
-`note` names it judgment evidence. The ticket carries the citation, never the consultation itself.
+`note` names it judgment evidence. Its `ref` is the artifact's reference and its one-line `note`
+also says what it was used for. A filesystem path, document name or URL by itself is not evidence.
+The ticket carries the citation, never the consultation itself.
 Consultation adds judgment evidence only: it never lowers `delegation.class`, authorizes a sensitive
 action, closes a finding or substitutes for a required independent lane. A host without the
 facility remains valid and records no invented consultation evidence (ruling

@@ -83,7 +83,8 @@ approves its own specification or tickets.
    gated like every other step; a human reviews it before any module's specification is written.
 4. Write the specification at decision level: problem, solution, non-goals, acceptance criteria,
    test seams, verification commands, out of scope. No file paths and no code, except a fragment a
-   prototype already settled exactly — a state machine, a reducer, a schema, a type shape.
+   prototype already settled exactly — a state machine, a reducer, a schema, a type shape. Turn
+   each vague criterion into a frontier question that proposes how the answer would be verified.
 5. Choose the test seams before the slices. The fewer seams the feature is verified across the
    better, and the ideal number is one; name the seam you chose and why it is the highest one
    available. Use the vocabulary the alignment run already established with
@@ -98,13 +99,18 @@ approves its own specification or tickets.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
+   While a specification or review decision is open, an evidence-bearing draft, where one exists, is
+   kept and retyped `decision`, and no implementation ticket exists. An open assumption is per
+   slice; that slice becomes a decision ticket at the zero-context gate and unrelated slices
+   proceed.
 8. Take the specification approval. A recorded human approval whose artifact hash equals the
    current specification hash satisfies this step. Otherwise the plan record takes approval as
    `specification_approval`, bound to `specification_hash`, so later slicing does not void it.
    Under a bypass grant, report `needs-decision` naming the specification hash and stop; only the
    supervisor's answer is the approval.
 9. Load [the delegation reference pack](../../references/shared/references/delegation/REFERENCE.md) and follow its
-   ordered stack, readiness, assumptions and advisor procedures for every zero-context slice.
+   ordered stack, readiness, assumptions, authorship-boundary and advisor procedures for every
+   zero-context slice.
 10. Run `ak delegation <ticket> --project <project-record>` after populating its floor, evidenced
    factors and the `class` seed the reference names; persist its complete JSON with `readiness` and
    `assumptions` before returning, including on `needs-input`. Never derive the class in this body.
@@ -134,15 +140,39 @@ or scorer failure stops it; no total, hand-derived class or request to delegate 
 `delegation-class-is-authority-not-finding`). No factor or lowering crosses the sensitive floor
 (ruling `sensitive-surface-sets-the-floor`).
 
+Gate: each readiness criterion's evidence states what was checked and where. No readiness or stop
+flag is persisted outside the schema: readiness is the six scored criteria with evidence, and the
+stop is stated in the result.
+
+Gate: on a ticket whose class makes a human the author, `allowed_changes` remains the full write
+scope for the implementer. Name the agent's permitted file and symbol subset in text, in `goal` or
+`stop_conditions`, alongside non-file assistance such as research; put prohibited agent work in
+`non_goals`. On a decision ticket the boundary lives in `goal` and `non_goals`. Naming a human owner
+alone is not that boundary.
+
+Gate: each unresolved vague term becomes a frontier question that proposes the observable, the
+workload or fixture, the measurement or oracle and the pass condition, as applicable, that would
+verify the answer. Express the pass condition against the value the human supplies, for example
+`p95 of <observable> on <workload> is at or below the target you name`; never choose a number or
+otherwise invent the missing target.
+
 Gate: a direction spanning independently deployable stack phases is split in the reference's order,
-with schema contract separate. Refusal to split emits a decision ticket; size alone is guidance.
+with schema contract separate. Refusal to split emits a decision ticket that itself carries the full
+ordered stack as the recommended option, in its `decision` question or its `goal`, with no exception
+alternative; size alone is guidance.
 
 Gate: on a supporting host, a ticket whose class requires consultation is not approved until its
-`kb_refs` cites the consultation artifact as the delegation reference defines; an unsupported host
-cites none (ruling `advisor-consultation-follows-class`).
+`kb_refs` cites the consultation artifact as the delegation reference defines: a `transcript` or
+`receipt` evidence reference whose one-line `note` names it judgment evidence and says what it was
+used for. A bare path, name or URL is not evidence; an unsupported host cites none (ruling
+`advisor-consultation-follows-class`).
 
 Gate: approval binds to the specification's hash, not the whole plan's. A changed specification
 does not inherit the old approval; take it again.
+
+Gate: while a specification or review decision is open, an evidence-bearing draft, where one exists,
+is kept and retyped `decision`, and no implementation ticket exists. An open assumption is per
+slice; that slice becomes a decision ticket at the zero-context gate and unrelated slices proceed.
 
 Gate: no ticket ships with an unfinished-content marker, with "add appropriate error handling" or
 "handle the edge cases" in place of the specifics, or with a pointer to another ticket in place of
@@ -164,7 +194,9 @@ skill enters, not a skill it starts:
 | "I'll put the file paths in the specification so nobody has to guess." | A path in the specification settles an implementation decision the specification has not made, and the first refactor makes it wrong while it still reads authoritative. | Keep the specification at decision level; paths belong in the ticket, and only where a prototype settled them. |
 | "New evidence contradicts what we settled an hour ago — I'll just take the better answer." | A decision settled earlier in the session is not the planner's to overturn quietly; the human who settled it is not in the write. | Stop the write and return a blocked-or-replan result naming the settled decision and the evidence against it. |
 | "Their guidance is about a hundred lines a change, so this has to become three tickets." | Change size is a configurable starting point, not a gate, and neither it nor the test split is grounds for a finding on its own (ruling `numeric-heuristics-are-guidance`). | Slice on verifiable behavior. Where the natural slice exceeds the project's own guidance, record the exception in the project record. |
-| "They insist on one ticket for the whole migration, so I'll keep it together." | Refactor, expand, flagged behavior, consumer, backfill and contract are independently deployable delivery boundaries; a request cannot collapse them. | Order the stack with contract separate, or emit a decision ticket naming the refusal when the zero-context gate cannot pass. |
+| "They insist on one ticket for the whole migration, so I'll keep it together." | Refactor, expand, flagged behavior, consumer, backfill and contract are independently deployable delivery boundaries; a request cannot collapse them. | Order the stack with contract separate. On refusal, emit a decision ticket that itself carries the full ordered stack as the recommended option, with no exception alternative. |
+| "The readiness flag is enough." | A flag hides what was checked, and the ticket schema has no field for it. | Persist the six scored criteria with their evidence and state the stop in the result. |
+| "The owner is human, so authorship is clear." | Ownership does not say what agent work is allowed. | Keep `allowed_changes` the implementer's full write scope; name the agent's permitted file and symbol subset and any non-file assistance in `goal` or `stop_conditions`, and prohibited agent work in `non_goals`. |
 
 ## Outputs
 
