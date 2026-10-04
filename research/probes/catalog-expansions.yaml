@@ -21,7 +21,7 @@
 
 skills:
   baseline: 33
-  catalog: 35
+  catalog: 36
   expansions:
     - ids: [verify]
       reason: >-
@@ -34,6 +34,12 @@ skills:
         that applies the pending revision through source and receipts it, which no existing skill
         covers: prototype answers unbuilt questions and super-build needs an approved ticket.
       commits: [f13b193]
+    - ids: [codebase-design]
+      reason: >-
+        The adopted deep-module vocabulary needs a read-only reference skill with an explicit
+        no-question stopping rule, while repository surveys, alignment, review and implementation
+        remain with their existing lifecycle owners.
+      commits: [3b5a907]
 
 protocols:
   baseline: 7
