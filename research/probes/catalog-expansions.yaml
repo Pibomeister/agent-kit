@@ -64,7 +64,7 @@ roles:
 
 references:
   baseline: 4
-  catalog: 7
+  catalog: 8
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -77,6 +77,12 @@ references:
         guidance, while project-declared diff checks need separate command and receipt semantics
         that lifecycle bodies can load without duplicating either contract.
       commits: [c5c94bd]
+    - ids: [knowledgebase-backend]
+      reason: >-
+        A tree binds its own knowledgebase by naming a backend in ak.install.yaml, and the skills
+        that perform knowledgebase operations reach that backend's commands through one reference
+        pack whose BACKEND.md slot the packager fills (ruling `kb-backend-bundled-at-build`).
+      commits: [2a68f48]
 
 schemas:
   baseline: 14
