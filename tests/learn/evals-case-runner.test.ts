@@ -361,7 +361,7 @@ interface GraderReference {
   file: string;
   surfaces: { file: string[]; reply: string[]; trace: string[] };
   good: { reply: string; tools: string[] };
-  bad: { reply: string; tools: string[] } | Array<{ reply: string; tools: string[] }>;
+  bad: { reply: string; tools: string[] };
 }
 
 const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
@@ -381,7 +381,7 @@ const isGraderReferences = ajv.compile<Record<string, GraderReference>>({
         },
       },
       good: { $ref: "#/$defs/arm" },
-      bad: { oneOf: [{ $ref: "#/$defs/arm" }, { type: "array", minItems: 1, items: { $ref: "#/$defs/arm" } }] },
+      bad: { $ref: "#/$defs/arm" },
     },
   },
   $defs: {
@@ -429,20 +429,13 @@ describe("evaluateCaseSession", () => {
     const criteriaNames = new Map(
       evalCase.graders.flatMap((grader) => (grader.type === "llm" ? [[grader.criteria, grader.name] as const] : [])),
     );
-    const arms = [
-      { name: "good", selected: reference.good, passes: true },
-      ...(Array.isArray(reference.bad) ? reference.bad : [reference.bad]).map((selected, index) => ({
-        name: `bad-${index + 1}`,
-        selected,
-        passes: false,
-      })),
-    ];
-    for (const arm of arms) {
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm.name}-`)));
+    for (const arm of ["good", "bad"] as const) {
+      const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm}-`)));
       work.push(cwd);
-      const marker = (names: string[]) => JSON.stringify({ offline_grader_passes: arm.passes ? names : [] });
-      const tools = arm.selected.tools;
-      const reply = `${arm.selected.reply}\n${marker(reference.surfaces.reply)}`;
+      const selected = reference[arm];
+      const marker = (names: string[]) => JSON.stringify({ offline_grader_passes: arm === "good" ? names : [] });
+      const tools = selected.tools;
+      const reply = `${selected.reply}\n${marker(reference.surfaces.reply)}`;
       const artifact = join(cwd, reference.file);
       mkdirSync(dirname(artifact), { recursive: true });
       writeFileSync(artifact, `${marker(reference.surfaces.file)}\n`);
@@ -479,9 +472,9 @@ describe("evaluateCaseSession", () => {
       );
 
       expect(result.graders.map(({ name, verdict }) => [name, verdict])).toEqual(
-        evalCase.graders.map(({ name }) => [name, arm.passes ? "pass" : "fail"]),
+        evalCase.graders.map(({ name }) => [name, arm === "good" ? "pass" : "fail"]),
       );
-      expect(result.result).toBe(arm.passes ? "pass" : "fail");
+      expect(result.result).toBe(arm === "good" ? "pass" : "fail");
     }
   });
 

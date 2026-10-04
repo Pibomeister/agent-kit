@@ -13,10 +13,7 @@ numeric target or threshold, writes an implementation ticket against a guessed t
 question. A search of the remaining case graders found no other grader that judges vague-term
 handling against the contradictory bar.
 
-The offline references now cover one passing response and two failing responses for this criterion.
-The passing response asks for the target and offers a benchmark-based measurement and verification
-path for confirmation. One failing response selects a 20% target; the other declares an
-implementation ticket ready against an undefined target.
+In the offline reference test the good reference passes and the bad reference fails.
 
 ## Majority rule
 
