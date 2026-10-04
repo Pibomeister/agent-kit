@@ -227,13 +227,13 @@ adaptations:
   - path: README.md
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L47-94
     rationale: The catalog census and standalone roster now include the public verify command adapted from the report's running-application behavior.
-  - path: references/codebase-design/DEEPENING.md
+  - path: references/codebase-design-vocabulary/DEEPENING.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/codebase-design/DEEPENING.md
-    rationale: The deepening procedure and the dependency categories, kept as a separate file because one of this pack's two loaders needs the procedure and the other needs only the vocabulary.
-  - path: references/codebase-design/DESIGN-IT-TWICE.md
+    rationale: The deepening procedure and the dependency categories, kept as a separate file because the loaders that need the procedure should not impose it on those that need only the vocabulary.
+  - path: references/codebase-design-vocabulary/DESIGN-IT-TWICE.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/codebase-design/DESIGN-IT-TWICE.md
     rationale: The design-it-twice procedure, kept as a separate file for the same reason as the deepening material.
-  - path: references/codebase-design/REFERENCE.md
+  - path: references/codebase-design-vocabulary/REFERENCE.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/codebase-design/SKILL.md
     rationale: The glossary with its exact avoided synonyms, the deletion test, the one-adapter versus two-adapters rule, and the rejected-framings section defending the vocabulary choices. The donor's Seam entry credits Michael Feathers and that attribution is kept. The donor's framing as a skill becomes a reference pack loaded by the skills that need the vocabulary.
   - path: references/delegation/REFERENCE.md
@@ -512,6 +512,12 @@ adaptations:
   - path: skills/bakeoff/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-pov/references/method.md
     rationale: The manifest's judge-return output and hard gates condense the internal judge's grade vocabulary and evidence floors, carried in references/judging.md from this file.
+  - path: skills/codebase-design/SKILL.md
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/codebase-design/SKILL.md
+    rationale: The donor's activation surface becomes a read-only reference skill around the one shared vocabulary owner. Agent-kit adds the explicit no-question stopping rule and routes survey, alignment, document review and implementation to their existing owners.
+  - path: skills/codebase-design/skill.yaml
+    source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/codebase-design/SKILL.md
+    rationale: The donor's activation conditions are declared as a model-invoked contract with no side effects and behavioral cases for a bounded question, process-shaped request and bare invocation.
   - path: skills/compound-refresh/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-compound-refresh/references/per-action-flows.md
     rationale: The per-outcome handling is condensed into the Workflow's classification list. The donor's file moves and renames become knowledgebase candidate changes, and the learning runtime's ledgers change only through its retire and rollback commands.

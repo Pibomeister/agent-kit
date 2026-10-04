@@ -3,7 +3,7 @@
 One engineering lifecycle, amalgamated from nine donors (eight MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**35 public skills · 8 domain packs · 8 protocols · 34 role prompts · 7 reference packs · 30 schemas**,
+**36 public skills · 8 domain packs · 8 protocols · 34 role prompts · 7 reference packs · 30 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -96,13 +96,13 @@ still go to the supervisor, and merge and deploy are never on it (`docs/decision
 Every entry is declared in `catalog.yaml`. The validator fails on an entry with no directory and on a
 directory with no entry.
 
-### Skills (35)
+### Skills (36)
 
 | Group | Members |
 |---|---|
 | **Lifecycle** (7) | `super-align` U · `super-bound` U · `super-scout` M · `super-build` M · `super-verify` M · `super-review` U/M · `super-ship` U |
 | **Supervisor** (1) | `autopilot` U |
-| **Standalone** (21) | `verify` U · `visual-edit` U · `compound` U · `compound-refresh` U · `ideate` U · `pov` U · `bakeoff` U · `doc-review` M · `receiving-review` U · `diagnose` M · `improve-architecture` U · `doubt-driven` U · `simplify` M · `research` M · `source-driven` M · `deprecate` U · `explain` U · `triage` U · `strategy` U · `product-pulse` U · `writing-skills` U |
+| **Standalone** (22) | `codebase-design` M · `verify` U · `visual-edit` U · `compound` U · `compound-refresh` U · `ideate` U · `pov` U · `bakeoff` U · `doc-review` M · `receiving-review` U · `diagnose` M · `improve-architecture` U · `doubt-driven` U · `simplify` M · `research` M · `source-driven` M · `deprecate` U · `explain` U · `triage` U · `strategy` U · `product-pulse` U · `writing-skills` U |
 | **Primitives** (4) | `prototype` M · `handoff` M · `wait-what` M · `wayfind` U |
 | **Operational** (2) | `babysit-pr` U · `ultraqa` U |
 
@@ -133,7 +133,7 @@ Shared phase logic, invoked by skills rather than by humans:
 
 ### References (7)
 
-`codebase-design` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
+`codebase-design-vocabulary` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
 `tracker-of-record` · `delegation` · `structural-checks`. Loaded on demand, never exposed as slash
 commands. `structural-checks` is declared at `status: contract`; its body is not authored yet.
 

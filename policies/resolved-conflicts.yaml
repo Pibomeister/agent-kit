@@ -542,7 +542,7 @@ conflicts:
     discharged_in: [when-to-use, inputs]
     binds:
       profiles: [core, autonomy, product, maintainer, learning]
-      references: [codebase-design, domain-modeling, engineering-principles, prose-quality]
+      references: [codebase-design-vocabulary, domain-modeling, engineering-principles, prose-quality]
       doctrine: [AUTHORING.md]
     scenario: 24
     coverage: indirect

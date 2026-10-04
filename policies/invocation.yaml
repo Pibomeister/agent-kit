@@ -88,9 +88,10 @@ entrypoints:
       - ultraqa
 
   model_invoked:
-    count: 11
+    count: 12
     authority: model
     skills:
+      - codebase-design
       - super-scout
       - super-build
       - super-verify
@@ -371,13 +372,13 @@ no_operation_exposed:
     These user-invoked skills expose no phase operation. No controller, grant or charter entry
     can start them. A controller that needs their effect stops and names the slash command.
   note: >-
-    This list covers user-invoked skills only, and is complete for them. The eleven skills in
+    This list covers user-invoked skills only, and is complete for them. The twelve skills in
     `entrypoints.model_invoked` are absent by construction rather than by omission: a controller
     already invokes a model-invoked skill directly, which is what the M mode means, so there is
     no forbidden edge for an operation to open and nothing to withhold. A phase operation exists
     only where a human entrypoint would otherwise be the only way in. Read together, the two
     lists account for every skill in catalog.yaml: 24 user-invoked, of which these 15 expose no
-    operation and the rest do, plus 11 model-invoked that need none.
+    operation and the rest do, plus 12 model-invoked that need none.
   skills:
     - autopilot
     - compound-refresh

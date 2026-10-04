@@ -1,7 +1,8 @@
 # Survey guide
 
 Loaded on demand by `improve-architecture` at workflow steps 3 and 4. The design vocabulary itself
-is in `references/codebase-design/`; this file holds only the survey questions and the card shape.
+is in `references/codebase-design-vocabulary/`; this file holds only the survey questions and the
+card shape.
 
 ## Exploration questions
 

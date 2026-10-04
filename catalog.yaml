@@ -38,7 +38,7 @@ package:
   license: MIT
 
 # ---------------------------------------------------------------------------
-# Skills — 35 public entrypoints
+# Skills — 36 public entrypoints
 # ---------------------------------------------------------------------------
 skills:
 
@@ -150,6 +150,17 @@ skills:
       authority.
 
   # --- Standalone supporting skills (arch 2.3) ------------------------------
+  - id: codebase-design
+    kind: standalone
+    invocation: M
+    profiles: [core]
+    batch: 12
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Shared vocabulary and principles for deep-module design. Answers a bounded design question,
+      or states the vocabulary and stops when no question is supplied; it never invents a process.
+
   - id: verify
     kind: standalone
     invocation: U
@@ -805,11 +816,11 @@ roles:
 # References — 7. Loaded on demand. Never exposed as slash commands.
 # ---------------------------------------------------------------------------
 references:
-  - id: codebase-design
+  - id: codebase-design-vocabulary
     batch: 3
     provenance_origin: donor
     status: authored
-    loaded_by: [super-align, improve-architecture]
+    loaded_by: [codebase-design, super-align, improve-architecture]
     summary: Deep-module vocabulary for interface design and where a seam goes.
   - id: domain-modeling
     batch: 3

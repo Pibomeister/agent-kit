@@ -23,9 +23,9 @@ why_it_exists: >-
 
 includes:
   skills:
-    count: 22
+    count: 23
     lifecycle: [super-align, super-bound, super-scout, super-build, super-verify, super-review, super-ship]
-    standalone: [verify, visual-edit, compound, doc-review, receiving-review, diagnose, doubt-driven, simplify, research, source-driven, explain]
+    standalone: [codebase-design, verify, visual-edit, compound, doc-review, receiving-review, diagnose, doubt-driven, simplify, research, source-driven, explain]
     primitives: [prototype, handoff, wait-what, wayfind]
 
   packs:
@@ -79,7 +79,7 @@ includes:
 
   references:
     count: 4
-    entries: [codebase-design, domain-modeling, engineering-principles, prose-quality]
+    entries: [codebase-design-vocabulary, domain-modeling, engineering-principles, prose-quality]
     rationale: Loaded on demand by the core skills that declare them; never exposed as commands.
 
   capabilities:

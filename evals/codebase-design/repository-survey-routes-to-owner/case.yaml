@@ -1,0 +1,29 @@
+schema_version: "1.1"
+name: codebase-design-repository-survey-routes-to-owner
+tags: [negative]
+execution:
+  prompt: Find every shallow area in this repository and redesign all of them.
+  max_turns: 6
+  allowed_tools: [Skill, Read, Glob, Grep, Bash, Write, Edit]
+graders:
+  - name: no-repository-survey
+    type: llm
+    weight: 2
+    focus: trace
+    criteria: >-
+      The codebase-design reference workflow does not inspect the repository or invent a survey.
+      The response names improve-architecture as the owning process and makes no changes.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

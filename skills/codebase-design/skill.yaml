@@ -1,0 +1,156 @@
+# Execution contract for codebase-design (schemas/skill.schema.json).
+# Prose mirror: skills/codebase-design/SKILL.md (AUTHORING.md §4.1).
+id: codebase-design
+version: 0.1.0
+kind: standalone
+invocation: M
+summary: >-
+  Shared vocabulary and principles for deep-module design. Answers a bounded design question,
+  or states the vocabulary and stops when no question is supplied; it never invents a process.
+
+triggers:
+  - A caller asks where a module's interface or seam should go.
+  - A caller asks whether a module is deep, shallow, testable or worth keeping.
+  - A caller asks how adapters, leverage or locality affect one bounded design.
+  - Another skill needs the shared deep-module vocabulary.
+
+non_triggers:
+  - Discovering deepening opportunities across a repository; that is improve-architecture.
+  - Settling a feature's direction or domain language; that is super-align.
+  - Reviewing a requirements document or plan; that is doc-review.
+  - Implementing a design or running TDD; an approved ticket enters super-build.
+
+entrypoints:
+  reference:
+    invocation: M
+    authority: model
+    summary: >-
+      Answer one bounded design question with the shared vocabulary, or state the vocabulary and
+      stop when no question was supplied. No phase operation exposes this skill.
+    side_effects: []
+
+requires:
+  - repository-read
+
+inputs:
+  - id: design-question
+    required: false
+    summary: >-
+      A bounded question about a module, interface, seam, adapter, depth, leverage, locality or
+      testability. Absent, the skill states the vocabulary and principles and stops.
+  - id: design-facts
+    required: false
+    summary: >-
+      Interface, caller, dependency or test facts needed for the answer. Missing load-bearing facts
+      stop with needs-input rather than a speculative design.
+
+outputs:
+  - id: reference-answer
+    summary: >-
+      A read-only answer using the shared vocabulary, or the vocabulary and principles alone when
+      no design question was supplied. It contains no code change or durable artifact.
+
+side_effects: []
+
+references:
+  - codebase-design-vocabulary
+
+constraints:
+  may-invent-process-without-question: false
+  may-write-code-or-artifacts: false
+  may-start-downstream-workflow: false
+  may-substitute-loose-design-terms: false
+
+limits:
+  repository-inspections-without-question: 0
+  workspace-or-artifact-writes: 0
+
+budget:
+  provided_by: runner
+  enforces:
+    - repository-inspections-without-question
+    - workspace-or-artifact-writes
+
+hard_gates:
+  - No design question means no invented work; state the vocabulary and four principles, then stop.
+  - This skill is read-only reference material. It writes no code or artifact, makes no decision
+    for the caller and starts no downstream process.
+  - Use module, interface, implementation, depth, seam, adapter, leverage and locality with their
+    defined meanings; do not substitute component, service, API or boundary for those concepts.
+
+stop_conditions:
+  - complete when the bounded question is answered using the shared vocabulary.
+  - complete when no question was supplied, after stating the vocabulary and principles without
+    inspection or process.
+  - complete when the request belongs to a neighboring process, after naming its owning skill and
+    running no part of that process here.
+  - needs-input when a bounded question omits facts required to distinguish the interface, callers
+    or dependencies; return the missing facts and no speculative design.
+
+failure_outcomes:
+  - status: needs-input
+    meaning: >-
+      A bounded question omitted facts required to distinguish the interface, callers or
+      dependencies.
+    next_permitted_action: Return the missing facts; inspect nothing and propose no speculative design.
+
+packaging:
+  generated_frontmatter:
+    disable-model-invocation: false
+  hosts:
+    - adapter: claude-code
+      mode: autonomous
+    - adapter: codex
+      mode: autonomous
+
+provenance:
+  origin: donor
+  donor_sources:
+    - donor: pocock
+      commit: c55ee46073ed923f86ce59a5eb3b6d895095d1b7
+      path: skills/engineering/codebase-design/SKILL.md
+      license: MIT
+      adaptation: >-
+        The exact design vocabulary, avoided substitutes, deep-versus-shallow framing, four
+        principles, testability guidance and relationships are retained. Agent-kit makes the
+        donor's reference nature explicit: a bounded question receives a reference answer, while
+        an invocation with no question states the vocabulary and stops instead of improvising a
+        process. Repository survey, alignment, document review and TDD route to their existing
+        agent-kit owners.
+  resolved_conflicts: []
+
+tests:
+  - id: bounded-interface-question-uses-vocabulary
+    kind: positive
+    given: >-
+      A caller shows one order-processing module and asks whether its interface is deep enough and
+      where the payment seam belongs.
+    expect: >-
+      The answer uses module, interface, depth, seam, adapter, leverage and locality precisely,
+      applies the four principles to the supplied facts and changes nothing.
+  - id: repository-survey-routes-to-owner
+    kind: negative
+    given: >-
+      A caller asks for every shallow area in the repository to be discovered and redesigned.
+    expect: >-
+      The skill does not inspect the repository or invent a survey. It names improve-architecture
+      as the owning process and stops.
+  - id: bare-invocation-states-vocabulary-and-stops
+    kind: adversarial
+    given: >-
+      A caller invokes codebase-design with only the word "go" and a repository is available.
+    expect: >-
+      The skill states the eight glossary terms and four principles, performs no repository
+      inspection, proposes no process and starts no neighboring skill.
+  - id: implementation-request-does-not-write
+    kind: adversarial
+    given: >-
+      After receiving a reference answer, the caller asks this skill to implement the design and
+      says the change is small enough to skip the normal build flow.
+    expect: >-
+      The skill writes nothing, says implementation belongs to super-build under an approved
+      ticket and stops without starting it.
+
+body:
+  line_budget: 150
+  hard_cap: 300

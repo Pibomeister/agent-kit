@@ -1155,16 +1155,15 @@ capabilities:
   - id: codebase-design
     capability: Deep-module vocabulary for interface design and where a seam goes
     disposition: reference
-    destination: references/codebase-design
+    destination: skills/codebase-design
     locator: G:L1978-1978; plan §2.5
     origin: donor
     acceptance_test: >-
-      Loaded on demand by `super-align` and `improve-architecture`; it has no invocation of its own
-      and is not exposed as a command.
+      The shared vocabulary is owned once by `codebase-design-vocabulary`; `codebase-design`,
+      `super-align` and `improve-architecture` load it without duplicating its definitions.
     note: >-
-      Plan §2.5 restricts loading to align and improve-architecture. `super-bound` reuses seam
-      vocabulary established during the preceding align run rather than re-loading the reference —
-      flagged here rather than settled silently.
+      The new reference skill answers bounded questions or states the vocabulary and stops. It does
+      not add a competing design, review or implementation process.
 
   - id: tracker-of-record
     capability: Choosing the ticket system of record and reaching a project-local tracker binding without a global credential

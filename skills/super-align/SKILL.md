@@ -96,7 +96,7 @@ comes from the supervisor through `needs-decision`; the worker never approves it
 4. State a hypothesis for what the human wants and a confidence number for it. Below roughly 70,
    state the reason on the same line.
 5. Load [the domain-modeling reference pack](../../references/domain-modeling/REFERENCE.md) before
-   naming any term, and [the codebase-design reference pack](../../references/codebase-design/REFERENCE.md)
+   naming any term, and [the codebase-design reference pack](../../references/codebase-design-vocabulary/REFERENCE.md)
    when the question turns on where a seam or an interface goes.
 6. Build the design tree: each decision branches into the decisions that hang off it. The frontier
    is every decision whose prerequisites are already settled.

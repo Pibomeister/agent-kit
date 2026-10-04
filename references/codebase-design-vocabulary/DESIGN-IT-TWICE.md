@@ -47,8 +47,8 @@ Each exploration returns:
 ## 3. Present and compare
 
 Present the designs one at a time so the human can absorb each before the next, then compare them in
-prose on three axes: **depth** (leverage at the interface), **locality** (where change
-concentrates), and **seam placement**.
+prose on three axes: **depth** (leverage at the interface), **locality** (where change concentrates),
+and **seam placement**.
 
 Finish with a recommendation — which design is strongest and why. Where elements of two would
 combine well, propose the hybrid explicitly. A menu is not a recommendation.

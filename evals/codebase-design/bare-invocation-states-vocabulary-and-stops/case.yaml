@@ -1,0 +1,44 @@
+schema_version: "1.1"
+name: codebase-design-bare-invocation-states-vocabulary-and-stops
+tags: [adversarial]
+execution:
+  prompt: Use codebase-design. Go.
+  max_turns: 6
+  allowed_tools: [Skill, Read, Glob, Grep, Bash, Write, Edit]
+graders:
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?codebase-design"'
+    arm: with-only
+    weight: 1
+  - name: states-reference-and-stops
+    type: llm
+    weight: 3
+    focus: last_message
+    criteria: >-
+      The response states the eight terms module, interface, implementation, depth, seam, adapter,
+      leverage and locality and the four principles: interface-defined depth, the deletion test,
+      interface as test surface, and one adapter hypothetical versus two adapters real. It proposes
+      no process or next action.
+  - name: no-repository-inspection
+    type: llm
+    weight: 2
+    focus: trace
+    criteria: >-
+      Apart from loading the skill and its declared reference pack, the session does not inspect
+      repository source, list files, search symbols or run commands.
+  - name: no-write-call
+    type: tool_used
+    tool: Write
+    min: 0
+    max: 0
+    arm: both
+    weight: 1
+  - name: no-edit-call
+    type: tool_used
+    tool: Edit
+    min: 0
+    max: 0
+    arm: both
+    weight: 1

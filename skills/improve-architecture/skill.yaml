@@ -81,7 +81,7 @@ side_effects:
   - kb-publish
 
 references:
-  - codebase-design
+  - codebase-design-vocabulary
 
 constraints:
   more-than-one-candidate-may-be-grilled: false

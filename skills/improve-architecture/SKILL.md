@@ -45,7 +45,7 @@ is named for the human rather than begun here.
   `readContext` for `adr` and `concept` pages in the area. Unavailable: `needs-input`; a survey that
   cannot see what was already decided will re-litigate it.
 - The design vocabulary in
-  [the codebase-design reference pack](../../references/codebase-design/REFERENCE.md): module,
+  [the codebase-design reference pack](../../references/codebase-design-vocabulary/REFERENCE.md): module,
   interface, depth, seam, adapter, leverage, locality, and the deletion test.
 
 ## Workflow
@@ -73,7 +73,7 @@ is named for the human rather than begun here.
 7. **Grill the chosen candidate** inline, one question at a time, using the host's blocking-question
    tool where one is listed and numbered options in chat otherwise: constraints, dependencies, the
    shape of the deepened module, what sits behind the seam, which tests survive. Use the
-   [deepening guide](../../references/codebase-design/DEEPENING.md) for dependency categories and
+   [deepening guide](../../references/codebase-design-vocabulary/DEEPENING.md) for dependency categories and
    seam discipline.
 8. **Record what was decided.** When the grilling settles a shape, publish it as a proposed `adr`.
    When the human rejects the candidate for a load-bearing reason a future survey would need, offer

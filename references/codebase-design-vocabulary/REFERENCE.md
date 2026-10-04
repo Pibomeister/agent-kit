@@ -4,10 +4,12 @@ Shared vocabulary for designing **deep modules**: a large amount of behaviour be
 interface, placed at a clean seam, testable through that interface. The aim is leverage for callers,
 locality for maintainers, and testability for everyone.
 
-`super-align` loads this to keep an alignment conversation precise about what a module is and where
-a seam goes, before any of it is built. `improve-architecture` loads the same language plus the
-deepening material below to restructure code that already exists. The glossary is the part both
-need; the two files under "Going deeper" are the part only the second one runs.
+`codebase-design` loads this for a bounded reference answer or to state the vocabulary and stop.
+`super-align` loads it to keep an alignment conversation precise about what a module is and where a
+seam goes, before any of it is built. `improve-architecture` loads the same language plus the
+deepening material below to restructure code that already exists. The glossary is the part all
+three need; the two files under "Going deeper" are loaded only for the relevant question or
+deepening work.
 
 ## Glossary
 
