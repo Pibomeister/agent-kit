@@ -150,7 +150,7 @@ function safeFile(cwd: string, path: string): string | null {
   const file = resolve(cwd, path);
   const fromCwd = relative(cwd, file);
   if (fromCwd.startsWith("..") || isAbsolute(fromCwd)) return null;
-  if (!existsSync(file)) return "";
+  if (!existsSync(file)) return null;
   const realRoot = realpathSync(cwd);
   const realFile = realpathSync(file);
   const realRelative = relative(realRoot, realFile);
@@ -265,7 +265,7 @@ export async function evaluateCaseSession(
         graders.push({
           ...common,
           verdict: "unavailable",
-          reason: `unsupported focus ${JSON.stringify(definition.focus)}`,
+          reason: `no surface for focus ${JSON.stringify(definition.focus)}`,
         });
         continue;
       }

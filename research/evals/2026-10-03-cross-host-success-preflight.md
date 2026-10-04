@@ -70,7 +70,7 @@ compound shape under that argv is not shown here.
 ```text
 bun test tests/learn/evals-case-runner.test.ts tests/learn/evals-subjects.test.ts \
   tests/grader-lint.test.ts tests/schemas.test.ts tests/typecheck.test.ts
-488 pass, 0 fail
+491 pass, 0 fail
 ```
 
 The zero-cost preflight command was run after `bun run ak build --profile all`:
@@ -175,7 +175,9 @@ drives each one against stub hosts.
    host-refused call, a non-zero host exit, an empty reply, a reached turn cap, a missing served
    model, a missing session or thread id, or a missing request id on a host whose stream emits one.
 6. An ungraded result stops the whole run before another launch. A row is ungraded when a judged
-   grader's file is absent, the reviewers disagree, or a reviewer gives no readable verdict.
+   grader's file is absent, leaves the session directory or is not a regular file, when the
+   reviewers disagree, or when a reviewer gives no readable verdict. No reviewer is asked about a
+   file that is absent; a file that exists and is empty is judged as written.
 7. A graded failure stops that subject: its remaining cases are skipped and the runner goes on to
    the next subject unless rule 4, 5 or 6 has fired.
 

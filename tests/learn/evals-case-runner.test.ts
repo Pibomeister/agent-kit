@@ -505,6 +505,38 @@ describe("evaluateCaseSession", () => {
     expect(prompts.some((prompt) => prompt.includes('"owner":"Maya Chen"'))).toBe(true);
   });
 
+  test.each([
+    ["absent", null, "unavailable", "ungraded", 1],
+    ["empty", "", "pass", "pass", 2],
+  ] as const)("a judged file that is %s gives a %s grader", async (_label, content, verdict, result, judged) => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-file-focus-")));
+    work.push(cwd);
+    if (content !== null) {
+      mkdirSync(join(cwd, "tickets"));
+      writeFileSync(join(cwd, "tickets", "result.json"), content);
+    }
+    let asked = 0;
+    const row = await evaluateCaseSession(loadCase(CASE_FILE), session("claude", "claude.jsonl"), {
+      cwd,
+      filesCreated: [],
+      panel: buildPanel(matrix, subject("claude")),
+      queue: join(cwd, "queue.jsonl"),
+      judge: async () => {
+        asked += 1;
+        return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' };
+      },
+    });
+    const reviewers = buildPanel(matrix, subject("claude")).members.length;
+
+    expect(row).toMatchObject({ validity: "valid", result });
+    expect(row.graders.map((grader) => [grader.name, grader.verdict])).toEqual([
+      ["runs-the-scorer", "pass"],
+      ["reports-the-result", "pass"],
+      ["persists-the-result", verdict],
+    ]);
+    expect(asked).toBe(judged * reviewers);
+  });
+
   test("a host-cancelled session is listed once as invalid without calling a grader", async () => {
     const parsed = adapterFor("grok").parse(
       readFileSync(join(import.meta.dir, "evals", "fixtures", "transcripts", "grok-cancelled-read.jsonl"), "utf8"),
@@ -1445,6 +1477,38 @@ describe("stop rules", () => {
       ["subject-grok", "ungraded-row"],
       ["subject-codex", "ungraded-row"],
       ["subject-codex", "ungraded-row"],
+    ]);
+  });
+
+  test("a judged file the subject never wrote stops the whole run without asking a reviewer about it", async () => {
+    const { cwd, bundle, json, rawDir } = stage("absent-file");
+    const started: string[] = [];
+    let asked = 0;
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: async (_adapter, id) => {
+          started.push(id);
+          return { ...session("grok", "grok.jsonl"), subject: id };
+        },
+        judge: async () => {
+          asked += 1;
+          return { reply: PASS };
+        },
+      },
+    );
+    const { receipt, sessions } = storedReport(json);
+
+    expect(code).toBe(1);
+    expect(started).toEqual(["subject-grok"]);
+    expect(asked).toBe(2);
+    expect(sessions.map((row) => [row.subject, row.result])).toEqual([["subject-grok", "ungraded"]]);
+    expect(receipt.skipped).toEqual([
+      { subject: "subject-codex", case: "cross-host-runner-fixture", reason: "ungraded-row" },
     ]);
   });
 
