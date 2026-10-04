@@ -740,6 +740,15 @@ async function codexIdentityCheck(
   };
 }
 
+/** A probe that throws, such as a CLI that cannot be spawned, is a failed check in its host's row. */
+async function probed(name: string, check: () => PreflightCheck | Promise<PreflightCheck>): Promise<PreflightCheck> {
+  try {
+    return await check();
+  } catch (error) {
+    return { name, ok: false, detail: `probe failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
 export async function preflightHosts(
   hosts: readonly HostKind[],
   evalCases: readonly EvalCase[],
@@ -779,11 +788,18 @@ export async function preflightHosts(
             ? `${evalCases.length} scaffold(s) resolve`
             : `missing ${missingFixtures.join(", ")}`,
       },
-      flagCheck(host, evalCases, bundle, cli),
+      await probed("cli-flags", () => flagCheck(host, evalCases, bundle, cli)),
     ];
-    if (host === "grok") checks.push(await grokToolCheck(evalCases, bundle, probes.grokTools ?? defaultGrokTools));
+    if (host === "grok")
+      checks.push(
+        await probed("tool-names", () => grokToolCheck(evalCases, bundle, probes.grokTools ?? defaultGrokTools)),
+      );
     if (host === "codex")
-      checks.push(await codexIdentityCheck(evalCases, bundle, probes.codexHandshake ?? defaultCodexHandshake));
+      checks.push(
+        await probed("thread-identity", () =>
+          codexIdentityCheck(evalCases, bundle, probes.codexHandshake ?? defaultCodexHandshake),
+        ),
+      );
     rows.push({ mode: "preflight", host, ok: checks.every(({ ok }) => ok), checks });
   }
   return rows;

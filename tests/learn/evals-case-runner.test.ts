@@ -698,6 +698,38 @@ describe("preflight", () => {
     expect(errors).toEqual(["case-runner preflight grok tool-names: the CLI advertised no tool list"]);
   });
 
+  test("a probe that cannot reach its CLI fails that check and keeps every host row", async () => {
+    const { code, errors, rows } = await preflight({
+      cliProbe: (probe) => {
+        if (probe.at(0) === "claude") throw new Error("spawn claude ENOENT");
+        return hostCli(HELP)(probe);
+      },
+      grokToolsProbe: async () => {
+        throw new Error("spawn grok ENOENT");
+      },
+      codexHandshakeProbe: async () => {
+        throw new Error("spawn codex ENOENT");
+      },
+    });
+
+    expect(code).toBe(2);
+    expect(rows.map(({ host, ok }) => [host, ok])).toEqual([
+      ["claude", false],
+      ["codex", false],
+      ["grok", false],
+    ]);
+    expect(rows.map(({ checks }) => checks.filter((check) => !check.ok).map(({ name }) => name))).toEqual([
+      ["cli-flags"],
+      ["thread-identity"],
+      ["tool-names"],
+    ]);
+    expect(errors).toEqual([
+      "case-runner preflight claude cli-flags: probe failed: spawn claude ENOENT",
+      "case-runner preflight codex thread-identity: probe failed: spawn codex ENOENT",
+      "case-runner preflight grok tool-names: probe failed: spawn grok ENOENT",
+    ]);
+  });
+
   test("fails when the Codex handshake returns no served model", async () => {
     const { code, errors } = await preflight({
       codexHandshakeProbe: async () => CODEX_HANDSHAKE.replaceAll('"model":"subject-model",', ""),
