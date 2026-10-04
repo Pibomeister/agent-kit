@@ -70,7 +70,7 @@ compound shape under that argv is not shown here.
 ```text
 bun test tests/learn/evals-case-runner.test.ts tests/learn/evals-subjects.test.ts \
   tests/grader-lint.test.ts tests/schemas.test.ts tests/typecheck.test.ts
-491 pass, 0 fail
+494 pass, 0 fail
 ```
 
 The zero-cost preflight command was run after `bun run ak build --profile all`:
@@ -174,12 +174,16 @@ drives each one against stub hosts.
 5. An invalid row stops the whole run before another launch. A row is invalid on a timeout, a
    host-refused call, a non-zero host exit, an empty reply, a reached turn cap, a missing served
    model, a missing session or thread id, or a missing request id on a host whose stream emits one.
-6. An ungraded result stops the whole run before another launch. A row is ungraded when a judged
-   grader's file is absent, leaves the session directory or is not a regular file, when the
-   reviewers disagree, or when a reviewer gives no readable verdict. No reviewer is asked about a
-   file that is absent; a file that exists and is empty is judged as written.
+6. An ungraded result stops the whole run before another launch. A row is ungraded when any scored
+   grader has no pass or fail verdict, even if another grader in the same row failed. A judged
+   grader has no verdict when its file is absent, leaves the session directory or is not a regular
+   file, when the reviewers disagree, or when a reviewer gives no readable verdict. A file that
+   exists and is empty is judged as written. If any scored judged grader's surface is missing, no
+   reviewer is asked about that row at all; once reviewers leave one scored judged grader without a
+   verdict, they are not asked about the graders after it.
 7. A graded failure stops that subject: its remaining cases are skipped and the runner goes on to
-   the next subject unless rule 4, 5 or 6 has fired.
+   the next subject unless rule 4, 5 or 6 has fired. A row is a graded failure only when every
+   scored grader reached a pass or fail verdict and at least one failed.
 
 Request ids are a host capability, declared per adapter as `requestIds`. The Claude stream carries a
 `request_id` on each assistant line and the Grok stream carries a `requestId` on its end line, so a

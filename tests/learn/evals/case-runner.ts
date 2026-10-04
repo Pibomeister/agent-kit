@@ -249,6 +249,12 @@ export async function evaluateCaseSession(
 
   const transcript = deterministicTranscript(session, options.filesCreated);
   const graders: GraderResult[] = [];
+  let undecided = evalCase.graders.some(
+    (definition) =>
+      definition.type === "llm" &&
+      definition.arm !== "with-only" &&
+      focusSurface(definition, session, options.cwd, options.filesCreated) === null,
+  );
   for (const definition of evalCase.graders) {
     const name = definition.name;
     const type = definition.type;
@@ -267,6 +273,10 @@ export async function evaluateCaseSession(
           verdict: "unavailable",
           reason: `no surface for focus ${JSON.stringify(definition.focus)}`,
         });
+        continue;
+      }
+      if (undecided) {
+        graders.push({ ...common, verdict: "unavailable", reason: "not judged: the row is already ungraded" });
         continue;
       }
       const judged = await grade(options.panel, surface, definition.criteria, {
@@ -291,6 +301,7 @@ export async function evaluateCaseSession(
       };
       if (judged.reason !== undefined) graderResult.reason = judged.reason;
       graders.push(graderResult);
+      undecided = common.scored && graderResult.verdict !== "pass" && graderResult.verdict !== "fail";
       continue;
     }
     const verdict = evaluate(definition, transcript);
@@ -309,11 +320,7 @@ export async function evaluateCaseSession(
   const hasFailure = scored.some((grader) => grader.verdict === "fail");
   const complete =
     scored.length > 0 && scored.every((grader) => grader.verdict === "pass" || grader.verdict === "fail");
-  const result = hasFailure
-    ? "fail"
-    : complete && scored.every((grader) => grader.verdict === "pass")
-      ? "pass"
-      : "ungraded";
+  const result = !complete ? "ungraded" : hasFailure ? "fail" : "pass";
   const graderCost = graders.reduce((sum, grader) => sum + judgeCost(grader), 0);
   const costs = [session.costUsd, graderCost > 0 ? graderCost : undefined].filter(
     (cost): cost is number => cost !== undefined,

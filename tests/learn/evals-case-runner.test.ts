@@ -506,7 +506,7 @@ describe("evaluateCaseSession", () => {
   });
 
   test.each([
-    ["absent", null, "unavailable", "ungraded", 1],
+    ["absent", null, "unavailable", "ungraded", 0],
     ["empty", "", "pass", "pass", 2],
   ] as const)("a judged file that is %s gives a %s grader", async (_label, content, verdict, result, judged) => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-file-focus-")));
@@ -531,10 +531,66 @@ describe("evaluateCaseSession", () => {
     expect(row).toMatchObject({ validity: "valid", result });
     expect(row.graders.map((grader) => [grader.name, grader.verdict])).toEqual([
       ["runs-the-scorer", "pass"],
-      ["reports-the-result", "pass"],
+      ["reports-the-result", verdict],
       ["persists-the-result", verdict],
     ]);
     expect(asked).toBe(judged * reviewers);
+  });
+
+  test("a row with a failed deterministic grader and an absent judged file is ungraded, with no reviewer asked", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-mixed-")));
+    work.push(cwd);
+    let asked = 0;
+    const row = await evaluateCaseSession(
+      loadCase(CASE_FILE),
+      session("claude", "claude.jsonl", {
+        events: [{ kind: "message", text: "The delegation assessment was recorded." }],
+      }),
+      {
+        cwd,
+        filesCreated: [],
+        panel: buildPanel(matrix, subject("claude")),
+        queue: join(cwd, "queue.jsonl"),
+        judge: async () => {
+          asked += 1;
+          return { reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' };
+        },
+      },
+    );
+
+    expect(row).toMatchObject({ validity: "valid", result: "ungraded" });
+    expect(row.graders.map((grader) => [grader.name, grader.verdict])).toEqual([
+      ["runs-the-scorer", "fail"],
+      ["reports-the-result", "unavailable"],
+      ["persists-the-result", "unavailable"],
+    ]);
+    expect(asked).toBe(0);
+  });
+
+  test("reviewers who disagree on one judged grader are not asked about the next", async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-disagree-")));
+    work.push(cwd);
+    mkdirSync(join(cwd, "tickets"));
+    writeFileSync(join(cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+    let asked = 0;
+    const row = await evaluateCaseSession(loadCase(CASE_FILE), session("claude", "claude.jsonl"), {
+      cwd,
+      filesCreated: ["tickets/result.json"],
+      panel: buildPanel(matrix, subject("claude")),
+      queue: join(cwd, "queue.jsonl"),
+      judge: async () => {
+        asked += 1;
+        return { reply: JSON.stringify({ verdict: asked % 2 === 0 ? "FAIL" : "PASS", reason: "stub vote" }) };
+      },
+    });
+
+    expect(row).toMatchObject({ validity: "valid", result: "ungraded" });
+    expect(row.graders.map((grader) => [grader.name, grader.verdict])).toEqual([
+      ["runs-the-scorer", "pass"],
+      ["reports-the-result", "needs-human"],
+      ["persists-the-result", "unavailable"],
+    ]);
+    expect(asked).toBe(buildPanel(matrix, subject("claude")).members.length);
   });
 
   test("a host-cancelled session is listed once as invalid without calling a grader", async () => {
@@ -1505,7 +1561,37 @@ describe("stop rules", () => {
 
     expect(code).toBe(1);
     expect(started).toEqual(["subject-grok"]);
-    expect(asked).toBe(2);
+    expect(asked).toBe(0);
+    expect(sessions.map((row) => [row.subject, row.result])).toEqual([["subject-grok", "ungraded"]]);
+    expect(receipt.skipped).toEqual([
+      { subject: "subject-codex", case: "cross-host-runner-fixture", reason: "ungraded-row" },
+    ]);
+  });
+
+  test("a failed deterministic grader beside an absent judged file still stops the whole run", async () => {
+    const { cwd, bundle, json, rawDir } = stage("mixed-row");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: async (_adapter, id) => {
+          started.push(id);
+          return {
+            ...session("grok", "grok.jsonl", { events: [{ kind: "message", text: "Nothing was run." }] }),
+            subject: id,
+          };
+        },
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+    const { receipt, sessions } = storedReport(json);
+
+    expect(code).toBe(1);
+    expect(started).toEqual(["subject-grok"]);
     expect(sessions.map((row) => [row.subject, row.result])).toEqual([["subject-grok", "ungraded"]]);
     expect(receipt.skipped).toEqual([
       { subject: "subject-codex", case: "cross-host-runner-fixture", reason: "ungraded-row" },
