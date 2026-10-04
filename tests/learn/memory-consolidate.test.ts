@@ -40,7 +40,7 @@ import { lessonsBlock } from "../../src/learn/memory/session-context.ts";
 import { EVENTS_FILE, reviewLedger } from "../../src/learn/review/ledger.ts";
 import type { ReviewEvent } from "../../src/learn/review/events.ts";
 import { ClaudeMemSource, type ObservationRow } from "../../src/learn/sources/claude-mem.ts";
-import { gitRepo, MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
+import { gitRepo, MemFixture, reflectorOrEmptyJudge, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 const REPLY = {
   lessons: [
@@ -446,9 +446,11 @@ function growingFixture() {
   const add = (title: string) =>
     mem.observation({ sid: GROWING_SID, project: "shop", type: "discovery", title, at: start + 500 });
   const early = Array.from({ length: 16 }, (_, i) => add(`early ${i}`));
-  const judge = (prompt: string) =>
-    prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
-  const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [judge, judge] });
+  const ctx = testContext({
+    cwd: root,
+    env: { AK_LEARN_MEM_DB: dbPath },
+    replies: [reflectorOrEmptyJudge, reflectorOrEmptyJudge],
+  });
   const ledger = ensureMemoryLedger(join(dir, "memory"));
   const review = reviewLedger(ctx.config, root);
   let screenedThrough = 0;

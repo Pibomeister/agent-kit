@@ -25,6 +25,7 @@ import {
   gitRepo,
   MemFixture,
   projectScratch,
+  reflectorOrEmptyJudge,
   reflectorReply,
   removeProjectScratch,
   scratch,
@@ -192,12 +193,10 @@ describe("tick", () => {
     const older = session("bbbb2222-0000", 30);
     const newest = session("cccc3333-0000", 70);
     mem.close();
-    const judge = (prompt: string) =>
-      prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
     const ctx = testContext({
       cwd: root,
       env: { AK_LEARN_MEM_DB: dbPath },
-      replies: Array.from({ length: 12 }, () => judge),
+      replies: Array.from({ length: 12 }, () => reflectorOrEmptyJudge),
     });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     saveState(ledger, { last_nightly: "2026-09-18", last_weekly: now });
@@ -265,12 +264,10 @@ describe("tick", () => {
     const cut = session("bbbb2222-0000", 21, "t".repeat(3400));
     mem.close();
     expect([behind[0], behind.at(-1), cut[0], cut.at(-1)]).toEqual([1, 39, 40, 60]);
-    const judge = (prompt: string) =>
-      prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
     const ctx = testContext({
       cwd: root,
       env: { AK_LEARN_MEM_DB: dbPath },
-      replies: Array.from({ length: 6 }, () => judge),
+      replies: Array.from({ length: 6 }, () => reflectorOrEmptyJudge),
     });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     saveState(ledger, { last_nightly: "2026-09-17", last_weekly: now });
@@ -307,7 +304,7 @@ describe("tick", () => {
       expect(calls("consolidator")).toBe(1);
       expect(ctx.prompts.at(-1)).toContain("  obs:40 [");
       expect(ctx.prompts.at(-1)).toContain("  obs:50 [");
-      expect(marks().toSorted()).toEqual([
+      expect(marks().toSorted(([a], [b]) => String(a).localeCompare(String(b)))).toEqual([
         ["aaaa1111-0000", 39, 39],
         ["bbbb2222-0000", 21, 60],
       ]);
@@ -406,12 +403,10 @@ describe("tick", () => {
         at: now - 600_000,
       });
     mem.close();
-    const judge = (prompt: string) =>
-      prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
     const ctx = testContext({
       cwd: root,
       env: { AK_LEARN_MEM_DB: dbPath },
-      replies: Array.from({ length: 4 }, () => judge),
+      replies: Array.from({ length: 4 }, () => reflectorOrEmptyJudge),
     });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     saveState(ledger, { last_nightly: "2026-09-18", last_weekly: now });

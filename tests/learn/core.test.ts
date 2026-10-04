@@ -597,8 +597,9 @@ describe("claude-mem source", () => {
     expect(mem.newTokensSince("app", 0)).toEqual({ tokens: 15, count: 2 });
     expect(mem.observationsSince("app", 0).map((row) => row.title)).toEqual(["one", "two"]);
     expect(mem.observationsSince("app", 0, { newestFirst: true })[0]!.title).toBe("two");
-    const ids = mem.observationsSince("app", 0).map((row) => row.id);
-    expect(mem.observationsById([ids[1]!, ids[0]!, 9999]).map((row) => row.title)).toEqual(["one", "two"]);
+    const [firstId, secondId] = mem.observationsSince("app", 0).map((row) => row.id);
+    if (firstId === undefined || secondId === undefined) throw new Error("fixture holds fewer than two observations");
+    expect(mem.observationsById([secondId, firstId, 9999]).map((row) => row.title)).toEqual(["one", "two"]);
     expect(mem.lastActivityMs("app")).toBe(1600);
     expect(mem.sessions("app", 0, 0).map((row) => row.memory_session_id)).toEqual(["s-1"]);
     expect(mem.editedFiles("s-1")).toEqual(["b.ts"]);
