@@ -20,7 +20,7 @@
     },
     "reviewers": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 2,
       "items": {
         "$ref": "#/$defs/seat"
       }
@@ -39,7 +39,7 @@
         },
         "min-reviewers": {
           "type": "integer",
-          "minimum": 3,
+          "minimum": 2,
           "description": "Fewer independent reviewers than this and the panel is unavailable."
         },
         "size": {

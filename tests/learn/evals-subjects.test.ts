@@ -611,6 +611,7 @@ describe("kimi", () => {
       "Load the greet skill.",
       "--output-format",
       "text",
+      "--plan",
       "--model",
       "bound-d",
     ]);
@@ -620,6 +621,39 @@ describe("kimi", () => {
     });
     expect(kimi.requestIds).toBe(false);
     expect(kimi.injection).toBe("prompt-prefix");
+  });
+
+  test("a session runs read-only against an empty skills directory that is removed afterwards", async () => {
+    const bin = join(scratch, "kimi-bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(
+      join(bin, "kimi"),
+      '#!/bin/sh\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done\n' +
+        'while [ "$#" -gt 0 ]; do [ "$1" = "--skills-dir" ] && dir="$2"; shift; done\n' +
+        "printf 'entries=%s\\n' \"$(ls -A \"$dir\" | wc -l | tr -d ' ')\"\n",
+      { mode: 0o755 },
+    );
+    const result = await runSubject(kimi, "reviewer-d", "bound-d", {
+      ...req,
+      cwd: scratch,
+      env: { PATH: `${bin}:${process.env.PATH ?? ""}` },
+      maxTurns: 1,
+    });
+    const lines = result.reply.split("\n");
+    const skills = lines[lines.indexOf("--skills-dir") + 1] ?? "";
+    expect(lines.slice(0, lines.indexOf("--skills-dir"))).toEqual([
+      "--prompt",
+      "Load the greet skill.",
+      "--output-format",
+      "text",
+      "--plan",
+      "--model",
+      "bound-d",
+    ]);
+    expect(lines.slice(lines.indexOf("--skills-dir") + 2)).toEqual(["entries=0"]);
+    expect(isAbsolute(skills)).toBe(true);
+    expect(existsSync(skills)).toBe(false);
+    expect(result).toMatchObject({ host: "kimi", exitCode: 0, timedOut: false });
   });
 });
 

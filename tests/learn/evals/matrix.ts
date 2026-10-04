@@ -115,7 +115,7 @@ export function parseMatrix(text: string, source = "eval matrix"): Matrix {
 export const DEFAULT_MATRIX: Matrix = {
   subjects: [{ id: "subject-default", host: "claude", model: undefined }],
   reviewers: [],
-  panels: { "independent-of": "subject", "min-reviewers": 3 },
+  panels: { "independent-of": "subject", "min-reviewers": 2 },
 };
 
 /** The bound matrix at `file`, or a copy of `DEFAULT_MATRIX` when the file is absent. */

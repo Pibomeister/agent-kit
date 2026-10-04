@@ -50,15 +50,21 @@ describe("matrix", () => {
     expect(text.split("\n").some((line) => /^\s*-?\s*model\s*[:=]/.test(line))).toBe(false);
   });
 
-  test("rejects an unknown host, a panel under three reviewers, a duplicate id and another independence rule", () => {
+  test("rejects an unknown host, a panel under two reviewers, a duplicate id and another independence rule", () => {
     const bad = (yaml: string) => () => parseMatrix(yaml);
     const ok =
       "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}, {id: r-c, host: kimi, model: z}]\npanels: {independent-of: subject, min-reviewers: 3}\n";
     expect(bad(`subjects: [{id: s-a, host: other, model: m}]\n${ok}`)).toThrow(/host/);
     expect(bad(`subjects: [{id: s-a, host: kimi, model: m}]\n${ok}`)).toThrow(/host/);
     expect(
-      bad(`subjects: [{id: s-a, host: claude, model: m}]\n${ok.replace("min-reviewers: 3", "min-reviewers: 2")}`),
+      bad(`subjects: [{id: s-a, host: claude, model: m}]\n${ok.replace("min-reviewers: 3", "min-reviewers: 1")}`),
     ).toThrow(/min-reviewers/);
+    const two =
+      "subjects: [{id: s-a, host: claude, model: m}]\n" +
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\n" +
+      "panels: {independent-of: subject, min-reviewers: 2}\n";
+    expect(parseMatrix(two).panels["min-reviewers"]).toBe(2);
+    expect(bad(two.replace(", {id: r-b, host: grok, model: y}", ""))).toThrow(/reviewers/);
     expect(bad(`subjects: [{id: r-a, host: claude, model: m}]\n${ok}`)).toThrow(/appears twice/);
     expect(bad(`subjects: [{id: s-a, host: claude, model: m}]\n${ok.replace("subject", "author")}`)).toThrow(
       /independent-of/,
