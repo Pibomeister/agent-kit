@@ -23,9 +23,10 @@ may raise the class without producing a finding (ruling
 `delegation-class-is-authority-not-finding`). Record downstream authorship as author kind plus host,
 never as an implementation identity.
 
-The class changes authorship and checkpoint authority, not whether bounding produces a ticket.
-A `red` result produces a human-owned implementation ticket. A ticket whose class makes a human the
-author states the authorship boundary in existing fields. `allowed_changes` remains the ticket's
+The class changes authorship and checkpoint authority, not whether bounding produces a ticket. A
+`red` result produces a human-owned implementation ticket and limits agent participation to the
+bounded assistance the ticket names. A ticket whose class makes a human the author states the
+authorship boundary in existing fields. `allowed_changes` remains the ticket's
 full write scope for the implementer. Name the agent's permitted file and symbol subset in text, in
 `goal` or `stop_conditions`, alongside non-file assistance such as research; put prohibited agent
 work, including authoring the implementation, in `non_goals`. On a decision ticket the boundary
@@ -97,12 +98,12 @@ absence is recorded; a body does not invent either measurement.
 
 ## Readiness and vague terms
 
-Every ticket records all six criteria separately. Each criterion carries its own score and evidence
-stating what was checked and the artifact, field, command or repository location checked. A boolean,
-status word or total never substitutes for criterion evidence. No readiness or stop flag is persisted
-outside the schema: readiness is the six scored criteria with evidence, and the stop is stated in
-the result. A criterion score is an integer from 0 to 2, where a higher score means the criterion is
-more fully met and 0 means it is absent.
+Every ticket records all six criteria separately. Each criterion carries its own score and evidence;
+a total never substitutes for a failed criterion. The evidence states what was checked and the
+artifact, field, command or repository location checked; a boolean or status word never substitutes
+for it. No readiness or stop flag is persisted outside the schema: readiness is the six scored
+criteria with evidence, and the stop is stated in the result. A criterion score is an integer from
+0 to 2, where a higher score means the criterion is more fully met and 0 means it is absent.
 
 | Criterion | Evidence expected |
 | --- | --- |
@@ -133,8 +134,9 @@ An `open` assumption is not implementation latitude. Resolve it before implement
 decision ticket and stop the affected slice at the zero-context gate.
 
 Persist `delegation`, `readiness` and `assumptions` on the draft ticket before any `needs-input`
-return reached after this assessment. The stop is stated in the result and cites the failed criteria
-and their evidence; it does not erase the draft or reduce the result to prose.
+return reached after this assessment. The stop carries the evidence that justified it; it does not
+erase the draft or reduce the result to prose. It is stated in the result and cites the failed
+criteria and their evidence.
 While a specification or review decision is open, an evidence-bearing draft, where one exists, is
 kept and retyped `decision`, and no implementation ticket exists. An open assumption is per slice;
 that slice becomes a decision ticket at the zero-context gate and unrelated slices proceed.
@@ -162,11 +164,10 @@ in its `decision` question or its `goal`, with no exception alternative.
 On a host that offers an advisor facility, consultation is required and recorded as judgment
 evidence for `yellow-owner` and `red`, recommended for `yellow-agent`, and silent for `green`.
 The record surface is the knowledgebase consultation artifact: store the advisor's result there, and
-cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt`, with
-the artifact id/ref and a one-line `note` that names it judgment evidence and says what it was used
-for. A filesystem path,
-document name or URL by itself is not evidence. The ticket carries the citation, never the
-consultation itself.
+cite it from the ticket's `kb_refs` as an evidence reference of kind `transcript` or `receipt` whose
+`note` names it judgment evidence. Its `ref` is the artifact's reference and its one-line `note`
+also says what it was used for. A filesystem path, document name or URL by itself is not evidence.
+The ticket carries the citation, never the consultation itself.
 Consultation adds judgment evidence only: it never lowers `delegation.class`, authorizes a sensitive
 action, closes a finding or substitutes for a required independent lane. A host without the
 facility remains valid and records no invented consultation evidence (ruling

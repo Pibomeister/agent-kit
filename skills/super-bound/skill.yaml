@@ -136,11 +136,13 @@ hard_gates:
     `p95 of <observable> on <workload> is at or below the target you name`; never choose a number or
     otherwise invent the missing target.
   - A direction spanning independently deployable stack phases is split in order with schema
-    contract separate. Refusal emits a decision ticket that itself carries the full ordered stack as
-    the recommended option, in its decision question or its goal, with no exception alternative.
+    contract separate; refusal emits a decision ticket rather than one zero-context failure. That
+    decision ticket itself carries the full ordered stack as the recommended option, in its decision
+    question or its goal, with no exception alternative.
   - On a supporting host, a ticket whose class requires consultation is not approved until its
-    kb_refs cites a transcript or receipt id/ref with a one-line judgment-evidence note; a bare path
-    is not evidence, and an unsupported host remains valid and cites none.
+    kb_refs cites the consultation artifact as a transcript or receipt ref whose one-line note
+    names it judgment evidence and says what it was used for; a bare path is not evidence, and an
+    unsupported host remains valid and cites none.
   - Approval binds to the specification's hash, not the whole plan's; a changed specification does
     not inherit the old approval.
   - No ticket ships with an unfinished-content marker, with a vague error-handling instruction in
