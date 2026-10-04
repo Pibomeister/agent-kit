@@ -67,7 +67,7 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol `phase-oper
      one reviewer. There are two families: review threads (the inline comment, the reply, the author's reply and
      the summary report are one family) and user corrections. Every other source, the session
      observer and the nightly consolidation included, only corroborates: it leaves evidence and
-     raises the count, but adds no family and no pull request, because it recorded or forwarded what
+     raises the count, but adds no family, no pull request and no reviewer, because it recorded or forwarded what
      a review thread already said. One bot comment seen three ways is still one opinion.
    - A resolution event leaves an evidence line and nothing else. It changes no count, source, pull
      request or status, because a reply saying a finding was handled is not a second sighting.
@@ -104,15 +104,15 @@ claim, never repaired, guessed or matched to the nearest real id.
 Gate: the judge never sets a count, a status, an id or a rate (ruling
 `learning-judge-is-runner-bound`). A value of that kind in a reply is ignored, not trusted.
 
-Gate: nothing is promoted below its threshold, and nothing becomes active from one source however
-often it repeats.
+Gate: nothing is promoted below its threshold, and nothing becomes active from one reviewer, or from
+automation alone, however often it repeats.
 
 Gate: a degenerate rewrite is rejected whole. A gutted memory is worse than a stale one.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "The judge cited `obs:1204` and the input had `obs:1240`; it obviously meant that one." | Repairing an id is inventing evidence with extra steps, and the gate cannot tell a typo from a fabrication. | Drop the bullet. The next run can cite it correctly. |
-| "Five events all say the same thing; that is plenty to make the pattern active." | Five events from one source are one opinion repeated, and a bot's comment, its summary and the author's "done" on one pull request are one source. Distinct pull requests or source families are what make it a pattern. | Keep it a candidate until a second pull request or source family agrees. |
+| "Five events all say the same thing; that is plenty to make the pattern active." | Five events from one source are one opinion repeated, and a bot's comment, its summary and the author's "done" on one pull request are one source. A second independent reviewer on another pull request, or a user correction, is what makes it a pattern (step 4). | Keep it a candidate until step 4's condition holds. |
 | "The reply already says count 4 and status active; recomputing is redundant." | A count the judge set is a count nobody checked. | Recompute from the kept events and ignore the reply's value. |
 | "The rewrite is only missing one section; keeping the rest is better than nothing." | A partial memory silently loses whatever that section held, and the next rewrite builds on the loss. | Reject it, keep the previous memory, record the reason. |
 | "This lesson is clearly right; it only has one session behind it." | One session is a hypothesis however confident it reads. | Record it as `hypothesis`. It is confirmed when a second session supports it. |
@@ -139,7 +139,7 @@ is written inside a project repository.
 
 ## Limits
 
-- Active threshold: `AK_LEARN_ACTIVE_AT`, default 2 events from at least 2 distinct pull requests or source families (gate).
+- Active threshold: `AK_LEARN_ACTIVE_AT`, default 2 events, under the independence condition of step 4 (gate).
 - Promote threshold: `AK_LEARN_PROMOTE_AT`, default 3 events (gate).
 - Confirmation: evidence from at least 2 sessions (gate).
 - Known ceiling: the gate catches invented ids, not misattributed ones. A judge that cites a real
