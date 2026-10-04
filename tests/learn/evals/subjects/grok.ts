@@ -54,6 +54,7 @@
  *
  * Grok loads a skill by reading its SKILL.md with `read_file`, which maps to Read.
  */
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -88,6 +89,24 @@ interface Line {
   modelUsage?: Record<string, unknown>;
   requestId?: string;
   sessionId?: string;
+  id?: number;
+  error?: unknown;
+  params?: { update?: { ["_meta"]?: { tools?: string[] } } };
+}
+
+interface AcpRequest {
+  jsonrpc: "2.0";
+  id: number;
+  method: string;
+  params: object;
+}
+
+function parseLine(raw: string): Line | undefined {
+  try {
+    return JSON.parse(raw) as Line;
+  } catch {
+    return undefined;
+  }
 }
 
 const COMPAT_OFF = ["CLAUDE", "CURSOR"].flatMap((vendor) =>
@@ -101,6 +120,11 @@ const READ_ONLY_ALLOW = ["Read", "Grep", ...READ_ONLY_RULES.allow] as const;
  * A case's shared-vocabulary grants onto the rule names the Grok 1.0.46 user guide lists
  * (`22-permissions-and-safety.md`, Tool Names). A name with no rule there is not emitted: the same
  * guide says invoking a skill never prompts, so `Skill` needs none.
+ *
+ * `GRANT_TOOLS` maps the same grants onto the tool ids `--tools` restricts the session to. The ids
+ * are the ones the CLI advertises for a new session (`grokToolList`); preflight checks every emitted
+ * id against that list. The CLI has no skill tool and no glob tool: a skill is loaded with
+ * `read_file`, so `Skill` keeps that id in the set, and `Glob` is served by `list_dir`.
  */
 const GRANT_RULES = new Map([
   ["Bash", "Bash(*)"],
@@ -120,9 +144,65 @@ const GRANT_TOOLS = new Map([
   ["Write", "write"],
   ["Grep", "grep"],
   ["Glob", "list_dir"],
+  ["Skill", "read_file"],
   ["WebFetch", "web_fetch"],
   ["WebSearch", "web_search"],
 ]);
+
+/**
+ * The tool ids the installed CLI advertises for a new session. This is an ACP handshake
+ * (`initialize`, then `session/new`) that sends no prompt, so no model turn starts. An empty list
+ * means the CLI reported none before `timeoutMs`.
+ */
+export async function grokToolList(options: {
+  cwd: string;
+  env: Record<string, string>;
+  timeoutMs: number;
+}): Promise<string[]> {
+  const child = spawn("grok", ["agent", "--no-leader", "stdio"], {
+    cwd: options.cwd,
+    env: options.env,
+    stdio: ["pipe", "pipe", "ignore"],
+  });
+  const send = (request: AcpRequest) => {
+    child.stdin.write(`${JSON.stringify(request)}\n`);
+  };
+  let buffered = "";
+  let tools: string[] = [];
+  const handle = (raw: string) => {
+    const line = parseLine(raw);
+    if (line === undefined) return;
+    const advertised = line.params?.update?.["_meta"]?.tools;
+    if (advertised !== undefined) {
+      tools = advertised;
+      child.kill();
+    } else if (line.error !== undefined) child.kill();
+    else if (line.id === 1)
+      send({ jsonrpc: "2.0", id: 2, method: "session/new", params: { cwd: options.cwd, mcpServers: [] } });
+  };
+  return await new Promise((resolveTools, reject) => {
+    const timer = setTimeout(() => child.kill(), options.timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      buffered += chunk;
+      for (;;) {
+        const newline = buffered.indexOf("\n");
+        if (newline < 0) break;
+        handle(buffered.slice(0, newline));
+        buffered = buffered.slice(newline + 1);
+      }
+    });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("close", () => {
+      clearTimeout(timer);
+      resolveTools(tools);
+    });
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: 1, clientCapabilities: {} } });
+  });
+}
 
 const allowlisted = (env: Record<string, string>) => {
   const clean = cleanEnv(grok.env);
@@ -170,12 +250,8 @@ export const grok: SubjectAdapter = {
       text = "";
     };
     for (const raw of stdout.split("\n")) {
-      let line: Line;
-      try {
-        line = JSON.parse(raw) as Line;
-      } catch {
-        continue;
-      }
+      const line = parseLine(raw);
+      if (line === undefined) continue;
       if (line.type === "text" && typeof line.data === "string") {
         text += line.data;
       } else if (line.type === "tool_call" && typeof line.toolName === "string") {

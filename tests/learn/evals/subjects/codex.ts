@@ -79,11 +79,14 @@ export function codexThreadStart(req: SessionRequest, model: string | undefined)
   };
 }
 
-/** Run one app-server turn and retain the host's JSON-RPC stream verbatim for parsing and receipts. */
+/**
+ * Run one app-server turn and retain the host's JSON-RPC stream verbatim for parsing and receipts.
+ * `handshakeOnly` stops after the `thread/start` response: no turn starts and no model is called.
+ */
 export async function runCodexAppServer(
   req: SessionRequest,
   model: string | undefined,
-  options: { cwd: string; env: Record<string, string>; timeoutMs: number },
+  options: { cwd: string; env: Record<string, string>; timeoutMs: number; handshakeOnly?: boolean },
   launch?: readonly string[],
 ): Promise<{ code: number; stdout: string; timedOut: boolean }> {
   const command = launch ?? codex.command(req, model);
@@ -122,6 +125,11 @@ export async function runCodexAppServer(
       threadId = message.result?.thread?.id;
       if (threadId === undefined || message.result?.model === undefined) {
         protocolFailed = true;
+        child.kill();
+        return;
+      }
+      if (options.handshakeOnly === true) {
+        completed = true;
         child.kill();
         return;
       }

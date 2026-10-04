@@ -165,6 +165,22 @@ describe("codex", () => {
     ]);
   }, 10_000);
 
+  test("the handshake-only transport returns the served model and thread id without starting a turn", async () => {
+    const stub = join(import.meta.dir, "evals", "fixtures", "case-runner", "codex-app-server-stub.ts");
+    const result = await runCodexAppServer(
+      { ...req, cwd: PACKAGE_ROOT },
+      "model-under-test",
+      { cwd: PACKAGE_ROOT, env: cleanEnv([]), timeoutMs: 5000, handshakeOnly: true },
+      [process.execPath, stub],
+    );
+    const parsed = codex.parse(result.stdout);
+
+    expect(result).toMatchObject({ code: 0, timedOut: false });
+    expect(parsed).toMatchObject({ servedModel: "model-under-test", sessionId: "thread-stub", reply: "" });
+    expect(parsed.events).toEqual([]);
+    expect(result.stdout).not.toContain("turn-stub");
+  }, 10_000);
+
   test("a live session: the shell cat of SKILL.md is a Bash call and a Read of that path", () => {
     const parsed = codex.parse(fixture("codex-skill.jsonl"));
     expect(tools(parsed.events).map((e) => [e.name, e.input.command ?? e.input.file_path])).toEqual([

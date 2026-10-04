@@ -2,8 +2,11 @@
 
 This record repairs the setup behind
 [`2026-10-03-cross-host-receipts.md`](2026-10-03-cross-host-receipts.md). It makes no paid or
-authenticated model call. The only host commands run were version, help and local login-status
-checks. Subject execution remains behind `--execute` and needs separate approval.
+authenticated model turn. The host commands run were version, help and local login-status checks,
+one flag given without its value to read the argument parser's reply, and two handshakes that send
+no prompt: Codex `initialize` plus `thread/start`, and Grok `initialize` plus `session/new`. Both
+handshakes use the copied login. Subject execution remains behind `--execute` and needs separate
+approval.
 
 ## Earliest divergence
 
@@ -13,9 +16,9 @@ It did not test permission fallback, host identity fields, receipt retention or 
 | Chain | Trigger | Mask | Visible symptom | Repair |
 | --- | --- | --- | --- | --- |
 | Grok permission | A model emits one multiline or compound Bash call. | The grant emits `Bash(*)`, but `dontAsk` rejects a call that still requires approval. | Three sessions end `cancelled` after a refused Bash call. | Case grants now restrict the built-in tool set with `--tools` and use `--always-approve` inside the disposable case sandbox. The ordinary read-only path keeps `dontAsk` and its deny rules. |
-| Grok timeout | The 16-turn case runs against the default 600-second wall clock. | The receipt filters invalid rows down to one reason and discards partial events. | Session 7 says only `timeout`, with no duration, transcript, cost or identity. | Effective timeout is at least 600 seconds and 60 seconds per declared turn, so this case receives 960 seconds. Every invalid row and its raw stream now remains in `sessions`, and a session whose grading aborts the run keeps its raw stream and artifact snapshots under `aborted`. |
+| Grok timeout | The 16-turn case runs against the default 600-second wall clock. | The receipt filters invalid rows down to one reason and discards partial events. | Session 7 says only `timeout`, with no duration, transcript, cost or identity. | The wall clock is the case's `timeout_seconds` raised to a floor of 600 seconds and of 60 seconds per declared turn, so this 16-turn case receives 960 seconds. `timeout_seconds` is a minimum: it can lengthen a run past the floor and cannot shorten it. Every started session, valid or not, is one row of the single `sessions` list with its own `validity`, duration, exit code and stream hash. A session whose grading aborts the run is recorded under `aborted` the same way. |
 | Served identity | The runner uses Codex `exec --json`. | That stream exposes the thread id and usage but no resolved model; the other adapters store their model under an ambiguous internal field. | Compact receipts carry only requested bindings and cannot prove which models served. | Codex uses the app-server handshake, whose `thread/start` response returns the resolved model. Claude and Grok retain their host model plus provider request ids. Every result exposes `servedModel`, request ids where available and a session/thread id. Missing served identity makes an otherwise valid session invalid. |
-| Grader evidence | A criterion describes persisted content or an action. | Several graders read the last reply, or ask a final-file surface to prove event ordering. Created artifact contents are then deleted with the scaffold. | Correct evidence can be graded as absent, and the receipt cannot be regraded offline. | Persisted-content criteria read the final file; the approved-spec hash check reads the trace; its ticket graders read the named ticket. Receipts retain raw host output and content-addressed artifact snapshots. |
+| Grader evidence | A criterion describes persisted content or an action. | Several graders read the last reply, or ask a final-file surface to prove event ordering. Created artifact contents are then deleted with the scaffold. | Correct evidence can be graded as absent, and the receipt cannot be regraded offline. | Persisted-content criteria read the final file; the approved-spec hash check reads the trace; its ticket graders read the named ticket. The raw host output and the artifact contents are written to an ignored `.work/case-runner/<name>.raw.json`; the receipt given to `--json` carries only their SHA-256 hashes and that file's path and hash. |
 
 The installed Codex CLI is `0.159.2`. Its `exec --json` contract has no model field in
 `ThreadStartedEvent`, while `ThreadStartResponse` from app-server has required `model` and
@@ -67,7 +70,7 @@ compound shape under that argv is not shown here.
 ```text
 bun test tests/learn/evals-case-runner.test.ts tests/learn/evals-subjects.test.ts \
   tests/grader-lint.test.ts tests/schemas.test.ts tests/typecheck.test.ts
-455 pass, 0 fail
+462 pass, 0 fail
 ```
 
 The zero-cost preflight command was run after `bun run ak build --profile all`:
@@ -81,16 +84,43 @@ bun tests/learn/evals/case-runner.ts --preflight \
   --case evals/super-bound/approved-spec-produces-tickets/case.yaml
 ```
 
-All three hosts returned `ok: true` for all seven checks:
+All three hosts returned `ok: true` for every check, at Claude Code 2.1.289, Codex 0.159.2 and Grok
+1.0.46:
 
 ```text
-claude  binary login bundle-skills case-fixtures tool-permissions served-identity-fixture timeouts
-codex   binary login bundle-skills case-fixtures tool-permissions served-identity-fixture timeouts
-grok    binary login bundle-skills case-fixtures tool-permissions served-identity-fixture timeouts
+claude  binary login bundle-skills case-fixtures cli-flags
+codex   binary login bundle-skills case-fixtures cli-flags thread-identity
+grok    binary login bundle-skills case-fixtures cli-flags tool-names
 ```
 
-Each login check is local and redacts the credential content. The identity check parses stored host
-output fixtures. Preflight never starts a subject or reviewer.
+Each login check is local and redacts the credential content. The other host checks probe the
+installed CLI:
+
+- `cli-flags` takes every flag the adapter would pass for the selected cases and looks for it in the
+  CLI's own help (`claude --help`, `codex app-server --help`, `grok --help`). Claude's help omits
+  `--max-turns`. For a flag the help omits, the check runs the CLI with that flag alone and accepts
+  it only when the argument parser answers that its value is missing; an unknown flag gets a
+  different reply. That is how `--max-turns` passed, and the check says so in its detail.
+- `tool-names` reads the tool ids Grok advertises for a new session from an ACP handshake that sends
+  no prompt, and requires every id in a case's `--tools` set to be among them. It also requires every
+  granted tool to contribute an id, and a case that loads a skill to keep `read_file`. The 27
+  advertised ids include `run_terminal_command`, `read_file`, `search_replace`, `write`, `grep`,
+  `list_dir`, `web_search` and `web_fetch`. There is no skill tool and no glob tool: Grok loads a
+  skill with `read_file`, and `Glob` is served by `list_dir`. The `Skill` grant previously
+  contributed no id, so a case granting `Skill` without `Read` would have lost skill loading; it now
+  maps to `read_file`. The four cases here grant `Read` as well, so their `--tools` set is unchanged.
+- `thread-identity` runs Codex `initialize` plus each case's `thread/start` request and requires the
+  response to carry a model and a thread id. It starts no turn. The Codex identity fixture the tests
+  parse, `codex-handshake.jsonl`, is that handshake's output with paths, ids, account fields and the
+  model name replaced.
+
+The checks do not show that a model can complete a case under these flags; only a paid session
+does. Claude and Grok served identity is not probed, because neither host reports it without a
+turn; their parsers are tested on streams captured from earlier live sessions. Preflight never
+starts a subject or reviewer turn.
+
+The wall-clock floor has no preflight check. It is computed in one place and the dry run prints the
+resulting `timeout_ms` for each session.
 
 The full unpaid suite was also run. Its first run reported 2,899 passes and one skip. Three
 typecheck failures observed in that run were fixed and the complete typecheck file then passed. The

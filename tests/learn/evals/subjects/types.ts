@@ -55,7 +55,7 @@ export interface SessionResult {
   events: SessionEvent[];
   /** The final assistant reply. */
   reply: string;
-  /** Exact host stdout retained so a receipt can be reparsed without another model call. */
+  /** Exact host stdout, kept in the ignored raw receipt so a session can be reparsed without another model call. */
   rawOutput?: string;
   exitCode: number;
   timedOut: boolean;

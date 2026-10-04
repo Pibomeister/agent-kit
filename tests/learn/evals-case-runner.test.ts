@@ -3,6 +3,7 @@
  * parses one fixture, while judge replies are deterministic test doubles.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -24,18 +25,46 @@ const CASE_FILE = join(FIXTURES, "case.yaml");
 const GRADER_REFERENCES = join(FIXTURES, "grader-references.json");
 const work: string[] = [];
 
+interface SessionFacts {
+  raw_output_sha256: string | null;
+  exit_code: number;
+  timed_out: boolean;
+}
+
 interface StoredReport {
-  receipt: { cases: Array<{ sha256: string }> };
-  results: Array<{
+  receipt: {
+    cases: Array<{ sha256: string }>;
+    cost_usd: number | null;
+    raw: { path: string; sha256: string };
+    aborted: null | {
+      subject: string;
+      reason: string;
+      files_created: string[];
+      artifacts: Record<string, { sha256: string }>;
+      served_model: string | null;
+      session: SessionFacts | null;
+    };
+  };
+  sessions: Array<{
+    validity: "valid" | "invalid";
     command: string[];
     files_created: string[];
-    artifacts: Record<string, { sha256: string; text?: string; base64?: string }>;
+    artifacts: Record<string, { sha256: string }>;
     graders: Array<{ definition: CaseGrader }>;
     served_model: string | null;
     request_ids: string[];
     session_id: string | null;
-    session: SessionResult;
+    session: SessionFacts;
   }>;
+}
+
+interface RawReport {
+  sessions: Array<{
+    subject: string;
+    session: SessionResult;
+    artifacts: Record<string, { sha256: string; text?: string }>;
+  }>;
+  aborted: null | { session: SessionResult | null; artifacts: Record<string, { sha256: string; text?: string }> };
 }
 
 interface DryPlan {
@@ -50,24 +79,69 @@ interface DryPlan {
 interface PreflightOutput {
   host: HostKind;
   ok: boolean;
-  checks: Array<{ ok: boolean }>;
+  checks: Array<{ name: string; ok: boolean; detail: string }>;
 }
 
 const ajv = new Ajv2020({ strict: false });
+const sessionFacts = {
+  type: "object",
+  required: ["raw_output_sha256", "exit_code", "timed_out"],
+  additionalProperties: false,
+  properties: {
+    raw_output_sha256: { type: ["string", "null"] },
+    exit_code: { type: "number" },
+    timed_out: { type: "boolean" },
+    duration_ms: { type: "number" },
+    turns: { type: ["number", "null"] },
+    stop_reason: { type: ["string", "null"] },
+    usage: { type: ["object", "null"] },
+  },
+};
+const artifactHashes = {
+  type: "object",
+  additionalProperties: {
+    type: "object",
+    required: ["sha256"],
+    additionalProperties: false,
+    properties: { sha256: { type: "string" } },
+  },
+};
 const isStoredReport = ajv.compile<StoredReport>({
   type: "object",
-  required: ["receipt", "results"],
+  required: ["receipt", "sessions"],
+  additionalProperties: false,
   properties: {
     receipt: {
       type: "object",
-      required: ["cases"],
-      properties: { cases: { type: "array", items: { type: "object", required: ["sha256"] } } },
+      required: ["cases", "cost_usd", "raw", "aborted"],
+      properties: {
+        cases: { type: "array", items: { type: "object", required: ["sha256"] } },
+        cost_usd: { type: ["number", "null"] },
+        raw: {
+          type: "object",
+          required: ["path", "sha256"],
+          properties: { path: { type: "string" }, sha256: { type: "string" } },
+        },
+        aborted: {
+          type: ["object", "null"],
+          required: ["subject", "reason", "files_created", "artifacts", "served_model", "session"],
+          properties: {
+            subject: { type: "string" },
+            reason: { type: "string" },
+            files_created: { type: "array", items: { type: "string" } },
+            artifacts: artifactHashes,
+            served_model: { type: ["string", "null"] },
+            session: { anyOf: [{ type: "null" }, sessionFacts] },
+          },
+        },
+      },
     },
-    results: {
+    sessions: {
       type: "array",
       items: {
         type: "object",
         required: [
+          "validity",
           "command",
           "files_created",
           "artifacts",
@@ -78,43 +152,57 @@ const isStoredReport = ajv.compile<StoredReport>({
           "session",
         ],
         properties: {
+          validity: { enum: ["valid", "invalid"] },
           command: { type: "array", items: { type: "string" } },
           files_created: { type: "array", items: { type: "string" } },
-          artifacts: { type: "object" },
+          artifacts: artifactHashes,
           graders: { type: "array", items: { type: "object", required: ["definition"] } },
           served_model: { type: ["string", "null"] },
           request_ids: { type: "array", items: { type: "string" } },
           session_id: { type: ["string", "null"] },
-          session: { type: "object" },
+          session: sessionFacts,
         },
       },
     },
   },
 });
-const isAbortedReport = ajv.compile<{
-  receipt: { cost_usd: number | null; aborted: { subject: string; reason: string } };
-  results: unknown[];
-  cost_usd: number | null;
-}>({
+const isRawReport = ajv.compile<RawReport>({
   type: "object",
-  required: ["receipt", "results", "cost_usd"],
+  required: ["sessions", "aborted"],
   properties: {
-    cost_usd: { type: ["number", "null"] },
-    receipt: {
-      type: "object",
-      required: ["cost_usd", "aborted"],
-      properties: {
-        cost_usd: { type: ["number", "null"] },
-        aborted: {
-          type: "object",
-          required: ["subject", "reason"],
-          properties: { subject: { type: "string" }, reason: { type: "string" } },
-        },
+    sessions: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["subject", "session", "artifacts"],
+        properties: { subject: { type: "string" }, session: { type: "object" }, artifacts: { type: "object" } },
       },
     },
-    results: { type: "array" },
+    aborted: {
+      type: ["object", "null"],
+      required: ["session", "artifacts"],
+      properties: { session: { type: ["object", "null"] }, artifacts: { type: "object" } },
+    },
   },
 });
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function storedReport(file: string): StoredReport {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!isStoredReport(parsed))
+    throw new Error(`case runner wrote an invalid receipt: ${ajv.errorsText(isStoredReport.errors)}`);
+  return parsed;
+}
+
+function rawReport(file: string): RawReport {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!isRawReport(parsed)) throw new Error("case runner wrote an invalid raw receipt");
+  return parsed;
+}
+
 const isDryPlan = ajv.compile<DryPlan>({
   type: "object",
   required: ["mode", "subject", "case", "max_turns", "timeout_ms", "command"],
@@ -133,7 +221,14 @@ const isPreflightOutput = ajv.compile<PreflightOutput>({
   properties: {
     host: { enum: ["claude", "codex", "grok"] },
     ok: { type: "boolean" },
-    checks: { type: "array", items: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
+    checks: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["name", "ok", "detail"],
+        properties: { name: { type: "string" }, ok: { type: "boolean" }, detail: { type: "string" } },
+      },
+    },
   },
 });
 
@@ -151,8 +246,16 @@ const matrix: Matrix = {
   panels: { "independent-of": "subject", "min-reviewers": 2, size: 2 },
 };
 
+const CODEX_HANDSHAKE = readFileSync(join(FIXTURES, "codex-handshake.jsonl"), "utf8");
+
+/** The codex stream is the handshake captured from the installed host followed by a stored turn. */
+function fixtureText(fixture: string): string {
+  const text = readFileSync(join(FIXTURES, fixture), "utf8");
+  return fixture === "codex-turn.jsonl" ? `${CODEX_HANDSHAKE}${text}` : text;
+}
+
 function session(host: HostKind, fixture: string, overrides: Partial<SessionResult> = {}): SessionResult {
-  const rawOutput = readFileSync(join(FIXTURES, fixture), "utf8");
+  const rawOutput = fixtureText(fixture);
   const parsed = adapterFor(host).parse(rawOutput);
   return {
     subject: `subject-${host}`,
@@ -221,7 +324,7 @@ describe("evaluateCaseSession", () => {
       "subject-model",
       ["req_011CfQStKt75bT8Ktk3Rd2MY", "req_011CfQStUbEDRW5Zwk25uYVF"],
     ],
-    ["codex", "codex-app-server.jsonl", "subject-model", []],
+    ["codex", "codex-handshake.jsonl", "subject-model", []],
     ["grok", "../transcripts/grok-skill.jsonl", "subject-model", ["e5211715-2051-437b-9c60-77a560681419"]],
   ] as const)("retains the %s host's served model and request ids", (host, fixture, servedModel, requestIds) => {
     const parsed = adapterFor(host).parse(readFileSync(join(FIXTURES, fixture), "utf8"));
@@ -291,7 +394,7 @@ describe("evaluateCaseSession", () => {
 
   test.each([
     ["claude", "claude.jsonl"],
-    ["codex", "codex-app-server.jsonl"],
+    ["codex", "codex-turn.jsonl"],
     ["grok", "grok.jsonl"],
   ] as const)("applies tool, reply and file-focused graders to the %s transcript shape", async (host, fixture) => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-${host}-`)));
@@ -321,7 +424,7 @@ describe("evaluateCaseSession", () => {
     expect(prompts.some((prompt) => prompt.includes('"owner":"Maya Chen"'))).toBe(true);
   });
 
-  test("a host-cancelled session is listed as invalid and excluded from results without calling a grader", async () => {
+  test("a host-cancelled session is listed once as invalid without calling a grader", async () => {
     const parsed = adapterFor("grok").parse(
       readFileSync(join(import.meta.dir, "evals", "fixtures", "transcripts", "grok-cancelled-read.jsonl"), "utf8"),
     );
@@ -353,11 +456,11 @@ describe("evaluateCaseSession", () => {
     expect(row).toMatchObject({ validity: "invalid", result: null });
     expect(row.invalid_reason).toMatch(/^host cancelled refused Bash call:/);
     expect(row.graders).toEqual([]);
-    expect(summariseCaseSessions([row])).toMatchObject({
-      sessions: [{ subject: "subject-grok", validity: "invalid" }],
-      results: [],
-      invalid_sessions: [{ subject: "subject-grok" }],
-    });
+    const report = summariseCaseSessions([row]);
+    expect(Object.keys(report).toSorted()).toEqual(["cost_usd", "sessions", "summary"]);
+    expect(report.sessions).toHaveLength(1);
+    expect(report.sessions.at(0)).toMatchObject({ subject: "subject-grok", validity: "invalid" });
+    expect(report.summary).toEqual({ passed: 0, failed: 0, ungraded: 0, invalid: 1 });
   });
 
   test("a session with no host-reported served model is invalid before grading", async () => {
@@ -422,6 +525,70 @@ describe("host launch safety", () => {
   });
 });
 
+describe("grok grant", () => {
+  test("a case that grants Skill keeps the tool the host loads a skill with", () => {
+    const command = adapterFor("grok").command(
+      { prompt: "fixture", cwd: "/fixture", env: {}, timeoutMs: 60_000, allowedTools: ["Skill", "Glob"] },
+      "subject-binding",
+    );
+
+    expect(command.at(command.indexOf("--tools") + 1)).toBe("read_file,list_dir");
+  });
+});
+
+const HELP = new Map([
+  [
+    "claude",
+    [
+      "  -p, --print",
+      "  --output-format <format>",
+      "  --verbose",
+      "  --model <model>",
+      "  --settings <file-or-json>",
+      "  --setting-sources <sources>",
+      "  --strict-mcp-config",
+      "  --no-session-persistence",
+      "  --tools <tools...>",
+      "  --allowedTools, --allowed-tools <tools...>",
+      "  --plugin-dir <path>",
+      "  --append-system-prompt <prompt>",
+    ].join("\n"),
+  ],
+  ["codex", ["      --stdio", "      --disable <FEATURE>"].join("\n")],
+  [
+    "grok",
+    [
+      "  -p, --single <PROMPT>",
+      "      --output-format <OUTPUT_FORMAT>",
+      "      --allow <ALLOW>",
+      "      --tools <TOOLS>",
+      "      --always-approve",
+      "  -m, --model <MODEL>",
+      "      --max-turns <MAX_TURNS>",
+      "      --rules <RULES>",
+    ].join("\n"),
+  ],
+]);
+const hostCli = (help: ReadonlyMap<string, string>) => (probe: readonly string[]) => {
+  const flag = probe.at(-1) ?? "";
+  if (flag === "--help") return help.get(probe.at(0) ?? "") ?? "";
+  return flag === "--max-turns"
+    ? "error: option '--max-turns <turns>' argument missing"
+    : `error: unknown option '${flag}'`;
+};
+const GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "list_dir", "grep", "write"];
+
+function bundles(): string {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-")));
+  work.push(cwd);
+  for (const bundle of ["claude-code", "codex"]) {
+    const skill = join(cwd, bundle, "skills", "super-bound", "SKILL.md");
+    mkdirSync(dirname(skill), { recursive: true });
+    writeFileSync(skill, "# Super bound\n");
+  }
+  return cwd;
+}
+
 describe("preflight", () => {
   const caseFiles = [
     "evals/super-bound/delegated-refresh-token-rotation/case.yaml",
@@ -440,61 +607,112 @@ describe("preflight", () => {
     ...caseFiles.flatMap((file) => ["--case", file]),
   ];
 
-  test("checks all three hosts without starting a subject", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-")));
-    work.push(cwd);
-    for (const bundle of ["claude-code", "codex"]) {
-      const skill = join(cwd, bundle, "skills", "super-bound", "SKILL.md");
-      mkdirSync(dirname(skill), { recursive: true });
-      writeFileSync(skill, "# Super bound\n");
-    }
+  async function preflight(overrides: Parameters<typeof caseRunnerMain>[1] = {}) {
     const lines: string[] = [];
-    let started = 0;
+    const errors: string[] = [];
     const code = await caseRunnerMain(argv, {
-      bundleRoot: cwd,
+      bundleRoot: bundles(),
       out: (line) => lines.push(line),
+      err: (line) => errors.push(line),
       binaryProbe: () => true,
       loginProbe: () => true,
-      startSubject: async () => {
-        started += 1;
-        throw new Error("preflight started a subject");
-      },
+      cliProbe: hostCli(HELP),
+      grokToolsProbe: async () => GROK_TOOLS,
+      codexHandshakeProbe: async () => CODEX_HANDSHAKE,
+      ...overrides,
     });
     const rows = lines.map((line) => {
       const parsed: unknown = JSON.parse(line);
       if (!isPreflightOutput(parsed)) throw new Error("preflight emitted an invalid row");
       return parsed;
     });
+    return { code, errors, rows };
+  }
+
+  test("probes all three hosts without starting a subject", async () => {
+    let started = 0;
+    const { code, rows } = await preflight({
+      startSubject: async () => {
+        started += 1;
+        throw new Error("preflight started a subject");
+      },
+    });
 
     expect(code).toBe(0);
     expect(started).toBe(0);
-    expect(rows.map(({ host }) => host)).toEqual(["claude", "codex", "grok"]);
+    expect(rows.map(({ host, checks }) => [host, checks.map(({ name }) => name)])).toEqual([
+      ["claude", ["binary", "login", "bundle-skills", "case-fixtures", "cli-flags"]],
+      ["codex", ["binary", "login", "bundle-skills", "case-fixtures", "cli-flags", "thread-identity"]],
+      ["grok", ["binary", "login", "bundle-skills", "case-fixtures", "cli-flags", "tool-names"]],
+    ]);
     expect(rows.every(({ ok, checks }) => ok && checks.every((check) => check.ok))).toBe(true);
+    expect(rows.at(0)?.checks.at(-1)?.detail).toContain(
+      "--max-turns absent from help, accepted by the argument parser",
+    );
   });
 
   test("fails loudly when a referenced bundle skill is absent", async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-red-")));
     work.push(cwd);
-    const errors: string[] = [];
-    const code = await caseRunnerMain(argv, {
-      bundleRoot: cwd,
-      out: () => {},
-      err: (line) => errors.push(line),
-      binaryProbe: () => true,
-      loginProbe: () => true,
-    });
+    const { code, errors } = await preflight({ bundleRoot: cwd });
 
     expect(code).toBe(2);
     expect(errors).toContain("case-runner preflight claude bundle-skills: missing super-bound");
     expect(errors).toContain("case-runner preflight codex bundle-skills: missing super-bound");
     expect(errors).toContain("case-runner preflight grok bundle-skills: missing super-bound");
   });
+
+  test("fails when an installed CLI's help does not list a flag the adapter passes", async () => {
+    const { code, errors } = await preflight({
+      cliProbe: hostCli(new Map([...HELP, ["grok", (HELP.get("grok") ?? "").replace("--always-approve", "--yolo")]])),
+    });
+
+    expect(code).toBe(2);
+    expect(errors).toEqual(["case-runner preflight grok cli-flags: `grok --help` does not list --always-approve"]);
+  });
+
+  test("fails when the argument parser rejects a flag the help omits", async () => {
+    const { code, errors } = await preflight({
+      cliProbe: (probe) => (probe.at(-1) === "--help" ? (HELP.get(probe.at(0) ?? "") ?? "") : "error: unknown option"),
+    });
+
+    expect(code).toBe(2);
+    expect(errors).toEqual(["case-runner preflight claude cli-flags: `claude --help` does not list --max-turns"]);
+  });
+
+  test("fails when a restricted Grok tool id is not one the installed CLI advertises", async () => {
+    const { code, errors } = await preflight({
+      grokToolsProbe: async () => GROK_TOOLS.filter((id) => id !== "list_dir"),
+    });
+
+    expect(code).toBe(2);
+    expect(errors).toHaveLength(1);
+    expect(errors.at(0)).toStartWith("case-runner preflight grok tool-names: ");
+    expect(errors.at(0)).toContain("the CLI has no tool list_dir");
+  });
+
+  test("fails when the Grok CLI advertises no tool list", async () => {
+    const { code, errors } = await preflight({ grokToolsProbe: async () => [] });
+
+    expect(code).toBe(2);
+    expect(errors).toEqual(["case-runner preflight grok tool-names: the CLI advertised no tool list"]);
+  });
+
+  test("fails when the Codex handshake returns no served model", async () => {
+    const { code, errors } = await preflight({
+      codexHandshakeProbe: async () => CODEX_HANDSHAKE.replaceAll('"model":"subject-model",', ""),
+    });
+
+    expect(code).toBe(2);
+    expect(errors.at(0)).toStartWith("case-runner preflight codex thread-identity: ");
+    expect(errors.at(0)).toContain("thread/start returned no model or thread id");
+  });
 });
 
 describe("execute path", () => {
   test.each([
     ["claude", "claude.jsonl", "claude"],
-    ["codex", "codex-app-server.jsonl", "codex"],
+    ["codex", "codex-turn.jsonl", "codex"],
     ["grok", "grok.jsonl", "grok"],
   ] as const)("runs the %s transcript fixture through the receipt path", async (host, fixture, binary) => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-main-${host}-`)));
@@ -503,12 +721,15 @@ describe("execute path", () => {
     mkdirSync(join(bundle, "claude-code"), { recursive: true });
     mkdirSync(join(bundle, "codex"), { recursive: true });
     const json = join(cwd, "result.json");
+    const rawDir = join(cwd, "raw");
     const selected = subject(host);
     const start = session(host, fixture);
+    const printed: string[] = [];
     const code = await caseRunnerMain(["--execute", "--subject", selected.id, "--case", CASE_FILE, "--json", json], {
       matrix: { ...matrix, subjects: [selected] },
       bundleRoot: bundle,
-      out: () => {},
+      rawDir,
+      out: (line) => printed.push(line),
       startSubject: async (_adapter, id, _model, request) => {
         expect(id).toBe(selected.id);
         expect(request.allowedTools).toEqual(["Read", "Bash", "Write"]);
@@ -518,21 +739,40 @@ describe("execute path", () => {
       },
       judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
     });
-    const parsedReport: unknown = JSON.parse(readFileSync(json, "utf8"));
-    if (!isStoredReport(parsedReport)) throw new Error("case runner wrote an invalid test receipt");
-    const result = parsedReport.results.at(0);
-    const receiptCase = parsedReport.receipt.cases.at(0);
-    if (result === undefined || receiptCase === undefined) throw new Error("case runner wrote no test result");
+    const committed = readFileSync(json, "utf8");
+    const report = storedReport(json);
+    const raw = rawReport(join(rawDir, "result.raw.json"));
+    const result = report.sessions.at(0);
+    const rawSession = raw.sessions.at(0);
+    const receiptCase = report.receipt.cases.at(0);
+    if (result === undefined || rawSession === undefined || receiptCase === undefined)
+      throw new Error("case runner wrote no test result");
+    const artifact = '{"class":"red","owner":"Maya Chen"}\n';
 
     expect(code).toBe(0);
+    expect(report.sessions).toHaveLength(1);
+    expect(result.validity).toBe("valid");
     expect(result.command.at(0)).toBe(binary);
     expect(result.files_created).toContain("tickets/result.json");
-    expect(result.artifacts["tickets/result.json"]?.text).toBe('{"class":"red","owner":"Maya Chen"}\n');
-    expect(result.served_model).toBe(result.session.servedModel ?? null);
-    expect(result.session.servedModel).toBeDefined();
-    expect(result.session.rawOutput).toContain("delegation");
+    expect(result.artifacts["tickets/result.json"]).toEqual({ sha256: sha256(artifact) });
+    expect(result.served_model).toBe(start.servedModel ?? null);
+    expect(result.served_model).not.toBeNull();
+    expect(result.session.raw_output_sha256).toBe(sha256(start.rawOutput ?? ""));
+    expect(committed).not.toContain("Maya Chen");
+    expect(committed).not.toContain("The delegation assessment was recorded.");
+    expect(report.receipt.raw.sha256).toBe(sha256(readFileSync(join(rawDir, "result.raw.json"), "utf8")));
+    expect(rawSession.session.rawOutput).toBe(start.rawOutput);
+    expect(rawSession.artifacts["tickets/result.json"]?.text).toBe(artifact);
     expect(result.graders.map(({ definition }) => definition)).toEqual(loadCase(CASE_FILE).graders);
     expect(receiptCase.sha256).toBe(loadCase(CASE_FILE).sha256);
+    expect(printed).toHaveLength(1);
+    expect(printed.at(0)).not.toContain("Maya Chen");
+    expect(printed.at(0)).not.toContain("delegation assessment");
+    expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({
+      summary: { passed: 1, failed: 0, ungraded: 0, invalid: 0 },
+      sessions: [{ subject: selected.id, validity: "valid", result: "pass", served_model: result.served_model }],
+      aborted: null,
+    });
   });
 
   test("checks every subject's bundle before starting any session", async () => {
@@ -575,6 +815,7 @@ describe("execute path", () => {
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
         bundleRoot: bundle,
+        rawDir: join(cwd, "raw"),
         out: () => {},
         err: (line) => errors.push(line),
         startSubject: async (_adapter, id, _model, request) => {
@@ -586,21 +827,20 @@ describe("execute path", () => {
         judge: async () => ({ reply: '{"verdict":"PASS","reason":"fixture satisfies the criterion"}' }),
       },
     );
-    const report: unknown = JSON.parse(readFileSync(json, "utf8"));
-    if (!isAbortedReport(report)) throw new Error("case runner wrote an invalid aborted receipt");
+    const report = storedReport(json);
 
     expect(code).toBe(2);
-    expect(report.results).toHaveLength(1);
+    expect(report.sessions).toHaveLength(1);
     expect(report.receipt.cost_usd).toBe(0.25);
-    expect(report.cost_usd).toBe(0.25);
     expect(report.receipt.aborted).toMatchObject({
       subject: "subject-codex",
       reason: "host exited before a transcript",
+      session: null,
     });
     expect(errors.join("\n")).toContain("host exited before a transcript");
   });
 
-  test("retains the spend, raw stream and artifacts of a paid session whose grading throws", async () => {
+  test("keeps the raw stream and artifacts of a session whose grading throws in the raw receipt only", async () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-judge-abort-")));
     work.push(cwd);
     const bundle = join(cwd, "dist");
@@ -610,19 +850,21 @@ describe("execute path", () => {
     const errors: string[] = [];
     let codexStarted = false;
     let codexJudged = 0;
+    const printed: string[] = [];
     const code = await caseRunnerMain(
       ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
         bundleRoot: bundle,
-        out: () => {},
+        rawDir: join(cwd, "raw"),
+        out: (line) => printed.push(line),
         err: (line) => errors.push(line),
         startSubject: async (_adapter, id, _model, request) => {
           codexStarted = id === "subject-codex";
           mkdirSync(join(request.cwd, "tickets"));
           writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
           return codexStarted
-            ? { ...session("codex", "codex-app-server.jsonl"), subject: id, costUsd: 0.5 }
+            ? { ...session("codex", "codex-turn.jsonl"), subject: id, costUsd: 0.5 }
             : { ...session("grok", "grok.jsonl"), subject: id, costUsd: 0.25 };
         },
         judge: async () => {
@@ -635,23 +877,30 @@ describe("execute path", () => {
         },
       },
     );
-    const report: unknown = JSON.parse(readFileSync(json, "utf8"));
-    if (!isAbortedReport(report)) throw new Error("case runner wrote an invalid aborted receipt");
+    const committed = readFileSync(json, "utf8");
+    const report = storedReport(json);
+    const raw = rawReport(join(cwd, "raw", "result.raw.json"));
+    const artifact = '{"class":"red","owner":"Maya Chen"}\n';
+    const codexStream = fixtureText("codex-turn.jsonl");
 
     expect(code).toBe(2);
-    expect(report.results).toHaveLength(1);
+    expect(report.sessions).toHaveLength(1);
     expect(report.receipt.cost_usd).toBeCloseTo(0.85);
-    expect(report.cost_usd).toBeCloseTo(0.85);
     expect(report.receipt.aborted).toMatchObject({
       subject: "subject-codex",
       reason: "judge panel rejected",
-      session: {
-        subject: "subject-codex",
-        servedModel: "subject-model",
-        rawOutput: readFileSync(join(FIXTURES, "codex-app-server.jsonl"), "utf8"),
-      },
+      served_model: "subject-model",
       files_created: ["tickets/result.json"],
-      artifacts: { "tickets/result.json": { text: '{"class":"red","owner":"Maya Chen"}\n' } },
+      artifacts: { "tickets/result.json": { sha256: sha256(artifact) } },
+      session: { raw_output_sha256: sha256(codexStream) },
+    });
+    expect(committed).not.toContain("Maya Chen");
+    expect(committed).not.toContain("The delegation assessment was recorded.");
+    expect(raw.aborted?.session?.rawOutput).toBe(codexStream);
+    expect(raw.aborted?.artifacts["tickets/result.json"]?.text).toBe(artifact);
+    expect(printed.join("\n")).not.toContain("Maya Chen");
+    expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({
+      aborted: { subject: "subject-codex", reason: "judge panel rejected" },
     });
     expect(errors.join("\n")).toContain("judge panel rejected");
   });

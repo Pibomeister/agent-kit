@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
 import { run } from "../../../src/learn/core/proc.ts";
@@ -26,8 +26,9 @@ import { effectiveMaxTurns, loadMatrix, MATRIX_FILE, type Matrix, type Subject }
 import { buildPanel, grade, hostJudge, renderTranscript, type Judge, type Panel } from "./panel.ts";
 import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { cleanEnv, evalInstrument } from "./session.ts";
-import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
-import { codexThreadStart } from "./subjects/codex.ts";
+import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./subjects/index.ts";
+import { runCodexAppServer } from "./subjects/codex.ts";
+import { grokToolList } from "./subjects/grok.ts";
 import type { HostKind, SessionRequest, SessionResult, TokenUsage, ToolEvent } from "./subjects/types.ts";
 import { invalidSession } from "./trigger-eval.ts";
 
@@ -87,6 +88,8 @@ export interface GraderResult {
   reason?: string;
 }
 
+type Artifacts = Record<string, { sha256: string; text?: string; base64?: string }>;
+
 export interface CaseSessionResult {
   case: string;
   case_file: string;
@@ -102,7 +105,7 @@ export interface CaseSessionResult {
   cost_usd: number | null;
   command: string[];
   files_created: string[];
-  artifacts: Record<string, { sha256: string; text?: string; base64?: string }>;
+  artifacts: Artifacts;
   served_model: string | null;
   request_ids: string[];
   session_id: string | null;
@@ -180,7 +183,7 @@ function deterministicTranscript(session: SessionResult, filesCreated: string[])
 }
 
 function snapshotArtifacts(cwd: string, filesCreated: readonly string[]) {
-  const artifacts: Record<string, { sha256: string; text?: string; base64?: string }> = {};
+  const artifacts: Artifacts = {};
   const realRoot = realpathSync(cwd);
   for (const path of filesCreated) {
     const file = resolve(cwd, path);
@@ -319,30 +322,50 @@ export async function evaluateCaseSession(
   };
 }
 
+/** One list of every started session, valid or not, with the counts read from each row's own validity. */
 export function summariseCaseSessions(rows: readonly CaseSessionResult[]) {
-  const results = rows.filter((row) => row.validity === "valid");
-  const invalid_sessions = rows.flatMap((row) =>
-    row.validity === "invalid"
-      ? [{ subject: row.subject, host: row.host, case: row.case, reason: row.invalid_reason }]
-      : [],
-  );
   const count = (expectedResult: CaseSessionResult["result"]) =>
-    results.filter((row) => row.result === expectedResult).length;
+    rows.filter((row) => row.validity === "valid" && row.result === expectedResult).length;
   const costs = rows.flatMap((row) => (row.cost_usd === null ? [] : [row.cost_usd]));
   return {
     sessions: [...rows],
-    results,
-    invalid_sessions,
     summary: {
       passed: count("pass"),
       failed: count("fail"),
       ungraded: count("ungraded"),
-      invalid: invalid_sessions.length,
+      invalid: rows.filter((row) => row.validity === "invalid").length,
     },
     cost_usd: costs.length === 0 ? null : costs.reduce((sum, cost) => sum + cost, 0),
   };
 }
 
+function artifactHashes(artifacts: Artifacts): Record<string, { sha256: string }> {
+  return Object.fromEntries(Object.entries(artifacts).map(([path, { sha256 }]) => [path, { sha256 }]));
+}
+
+function sessionFacts(session: SessionResult) {
+  return {
+    raw_output_sha256: session.rawOutput === undefined ? null : sha256Hex(session.rawOutput),
+    exit_code: session.exitCode,
+    timed_out: session.timedOut,
+    duration_ms: session.durationMs,
+    turns: session.turns ?? null,
+    stop_reason: session.stopReason ?? null,
+    usage: session.usage ?? null,
+  };
+}
+
+/** The committable form of a row: hashes of the host stream and of each artifact, never their content. */
+function committedRow(row: CaseSessionResult) {
+  const { session, artifacts, ...facts } = row;
+  return { ...facts, artifacts: artifactHashes(artifacts), session: sessionFacts(session) };
+}
+
+/**
+ * The wall clock is the case's `timeout_seconds` raised to a floor of 600 seconds and of 60 seconds
+ * per declared turn. `timeout_seconds` is therefore a minimum: it can lengthen the run past the
+ * floor and can never shorten it below the floor.
+ */
 function requestFor(evalCase: EvalCase, subject: Subject, cwd: string, bundleDir: string): SessionRequest {
   const adapter = adapterFor(subject.host);
   const cap = effectiveMaxTurns(subject, evalCase.execution.max_turns);
@@ -438,6 +461,11 @@ export interface MainDependencies {
   judge?: Judge;
   binaryProbe?: (host: HostKind) => boolean;
   loginProbe?: (host: HostKind) => boolean;
+  cliProbe?: (argv: readonly string[]) => string;
+  grokToolsProbe?: () => Promise<string[]>;
+  codexHandshakeProbe?: (request: SessionRequest) => Promise<string>;
+  /** Where the raw receipt and the human-label queue go. Defaults to the ignored `.work/case-runner`. */
+  rawDir?: string;
 }
 
 function flagValues(argv: readonly string[], flag: string): string[] {
@@ -495,12 +523,6 @@ interface PreflightRow {
   checks: PreflightCheck[];
 }
 
-const IDENTITY_FIXTURE: Record<HostKind, string> = {
-  claude: join(PACKAGE_ROOT, "tests/learn/evals/fixtures/transcripts/claude-skill.jsonl"),
-  codex: join(PACKAGE_ROOT, "tests/learn/evals/fixtures/case-runner/codex-app-server.jsonl"),
-  grok: join(PACKAGE_ROOT, "tests/learn/evals/fixtures/transcripts/grok-skill.jsonl"),
-};
-
 function defaultBinaryProbe(host: HostKind): boolean {
   const result = run([host, "--version"], { cwd: PACKAGE_ROOT, timeoutMs: 10_000 });
   return result.code === 0;
@@ -546,44 +568,189 @@ function skillIds(evalCases: readonly EvalCase[]): string[] {
   ];
 }
 
-function permissionCheck(host: HostKind, evalCases: readonly EvalCase[], bundleRoot: string): PreflightCheck {
-  const failures: string[] = [];
-  for (const evalCase of evalCases) {
-    const subject: Subject = { id: `preflight-${host}`, host, model: undefined };
-    const request = requestFor(evalCase, subject, "<preflight-scaffold>", join(bundleRoot, BUNDLE_FOR[host]));
-    const command = adapterFor(host).command(request, undefined);
-    if (host === "grok") {
-      if (!command.includes("--always-approve"))
-        failures.push(`${evalCase.name}: compound calls are not auto-approved`);
-      if (!command.includes("--tools")) failures.push(`${evalCase.name}: granted tools are not restricted`);
-    }
-    if (host === "claude") {
-      if (!command.includes("--tools")) failures.push(`${evalCase.name}: granted tools are not restricted`);
-      if (!command.includes("--allowedTools")) failures.push(`${evalCase.name}: case tools are not pre-approved`);
-    }
-    if (host === "codex") {
-      const start = codexThreadStart(request, undefined);
-      const mutates = evalCase.execution.allowed_tools.some((tool) => ["Bash", "Edit", "Write"].includes(tool));
-      if (mutates && start.sandbox !== "workspace-write")
-        failures.push(`${evalCase.name}: workspace writes are blocked`);
-    }
+export interface PreflightProbes {
+  binary?: (host: HostKind) => boolean;
+  login?: (host: HostKind) => boolean;
+  /** Run a host argv that starts no session (`--help`, or one flag with its value withheld) and return what it printed. */
+  cli?: (argv: readonly string[]) => string;
+  /** The tool ids the installed Grok CLI advertises for a new session. */
+  grokTools?: () => Promise<string[]>;
+  /** The Codex app-server stream for `initialize` plus this request's `thread/start`, with no turn. */
+  codexHandshake?: (request: SessionRequest) => Promise<string>;
+}
+
+function defaultCliProbe(argv: readonly string[]): string {
+  const result = run(argv, { cwd: PACKAGE_ROOT, timeoutMs: 10_000 });
+  return `${result.stdout}\n${result.stderr}`;
+}
+
+async function inPrivateHome<T>(
+  host: HostKind,
+  request: SessionRequest,
+  use: (options: { cwd: string; env: Record<string, string>; timeoutMs: number }) => Promise<T>,
+): Promise<T> {
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), `ak-preflight-${host}-`)));
+  const cwd = join(scratch, "cwd");
+  mkdirSync(cwd);
+  const isolation = adapterFor(host).isolate?.(scratch, request);
+  try {
+    return await use({ cwd, env: { ...withoutParentSession(request.env), ...isolation?.env }, timeoutMs: 60_000 });
+  } finally {
+    isolation?.release();
+    rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+function preflightRequest(host: HostKind): SessionRequest {
+  return { prompt: "", cwd: PACKAGE_ROOT, env: cleanEnv(adapterFor(host).env), timeoutMs: 60_000 };
+}
+
+function defaultGrokTools(): Promise<string[]> {
+  return inPrivateHome("grok", preflightRequest("grok"), grokToolList);
+}
+
+function defaultCodexHandshake(request: SessionRequest): Promise<string> {
+  const bare: SessionRequest = { ...preflightRequest("codex"), prompt: request.prompt };
+  if (request.allowedTools !== undefined) bare.allowedTools = request.allowedTools;
+  if (request.appendSystemPrompt !== undefined) bare.appendSystemPrompt = request.appendSystemPrompt;
+  return inPrivateHome("codex", bare, async (options) => {
+    const result = await runCodexAppServer({ ...bare, cwd: options.cwd }, undefined, {
+      ...options,
+      handshakeOnly: true,
+    });
+    return result.stdout;
+  });
+}
+
+const FLAG = /^--?[A-Za-z][A-Za-z-]*$/;
+const VALUE_WITHHELD = /argument missing|a value is required/i;
+
+function preflightCommands(host: HostKind, evalCases: readonly EvalCase[], bundle: string) {
+  const subject: Subject = { id: `preflight-${host}`, host, model: "preflight-binding" };
+  return evalCases.map((evalCase) => {
+    const request = requestFor(evalCase, subject, "<preflight-scaffold>", bundle);
+    return { evalCase, request, command: adapterFor(host).command(request, subject.model) };
+  });
+}
+
+/**
+ * Every flag the adapter would pass for these cases, checked against the installed CLI. A flag is
+ * accepted when the CLI's own help lists it. A flag the help omits is accepted only when it takes a
+ * value and the CLI, given the flag alone, answers that the value is missing: that reply comes from
+ * the argument parser before any session starts, and an unknown flag gets a different one.
+ */
+function flagCheck(
+  host: HostKind,
+  evalCases: readonly EvalCase[],
+  bundle: string,
+  cli: (argv: readonly string[]) => string,
+): PreflightCheck {
+  const flags = new Map<string, boolean>();
+  let program: string[] = [host];
+  for (const { command } of preflightCommands(host, evalCases, bundle)) {
+    const first = command.findIndex((token) => FLAG.test(token));
+    program = command.slice(0, first < 0 ? command.length : first);
+    command.forEach((token, index) => {
+      if (!FLAG.test(token)) return;
+      const next = command.at(index + 1);
+      flags.set(token, next !== undefined && !FLAG.test(next));
+    });
+  }
+  const help = cli([...program, "--help"]);
+  const unlisted = [...flags].filter(([flag]) => !new RegExp(`(^|[\\s,])${flag}(?=[\\s,=<[]|$)`, "m").test(help));
+  const parsed = unlisted.filter(([flag, takesValue]) => {
+    if (!takesValue) return false;
+    const reply = cli([...program, flag]);
+    return reply.includes(flag) && VALUE_WITHHELD.test(reply);
+  });
+  const rejected = unlisted.flatMap((entry) => (parsed.includes(entry) ? [] : [entry[0]]));
+  const source = `\`${program.join(" ")} --help\``;
   return {
-    name: "tool-permissions",
-    ok: failures.length === 0,
-    detail: failures.length === 0 ? "case grants cover required commands" : failures.join("; "),
+    name: "cli-flags",
+    ok: rejected.length === 0,
+    detail:
+      rejected.length > 0
+        ? `${source} does not list ${rejected.join(", ")}`
+        : `${flags.size - parsed.length} flag(s) listed by ${source}${
+            parsed.length === 0
+              ? ""
+              : `; ${parsed.map(([flag]) => flag).join(", ")} absent from help, accepted by the argument parser`
+          }`,
   };
 }
 
-export function preflightHosts(
+function restricted(command: readonly string[]): string[] {
+  return (lastFlagValue(command, "--tools") ?? "").split(",").filter((id) => id !== "");
+}
+
+/**
+ * Every tool id a case's `--tools` set carries must be one the installed CLI advertises, every
+ * granted tool must contribute an id, and a case that loads a skill must keep `read_file`, which is
+ * how the CLI loads one.
+ */
+async function grokToolCheck(
+  evalCases: readonly EvalCase[],
+  bundle: string,
+  grokTools: () => Promise<string[]>,
+): Promise<PreflightCheck> {
+  const advertised = new Set(await grokTools());
+  const failures: string[] = [];
+  if (advertised.size === 0) failures.push("the CLI advertised no tool list");
+  for (const { evalCase, request, command } of advertised.size === 0
+    ? []
+    : preflightCommands("grok", evalCases, bundle)) {
+    const ids = restricted(command);
+    const unknown = ids.filter((id) => !advertised.has(id));
+    if (unknown.length > 0) failures.push(`${evalCase.name}: the CLI has no tool ${unknown.join(", ")}`);
+    const unmapped = evalCase.execution.allowed_tools.filter(
+      (tool) => restricted(adapterFor("grok").command({ ...request, allowedTools: [tool] }, undefined)).length === 0,
+    );
+    if (unmapped.length > 0) failures.push(`${evalCase.name}: grant ${unmapped.join(", ")} restricts to no tool`);
+    if (/\/ak:[a-z0-9-]+/.test(evalCase.execution.prompt) && !ids.includes("read_file"))
+      failures.push(`${evalCase.name}: loads a skill without read_file`);
+  }
+  return {
+    name: "tool-names",
+    ok: failures.length === 0,
+    detail:
+      failures.length === 0
+        ? `every --tools id is among the ${advertised.size} the CLI advertises`
+        : failures.join("; "),
+  };
+}
+
+async function codexIdentityCheck(
+  evalCases: readonly EvalCase[],
+  bundle: string,
+  handshake: (request: SessionRequest) => Promise<string>,
+): Promise<PreflightCheck> {
+  const failures: string[] = [];
+  for (const { evalCase, request } of preflightCommands("codex", evalCases, bundle)) {
+    const parsed = adapterFor("codex").parse(await handshake(request));
+    if (parsed.servedModel === undefined || parsed.sessionId === undefined)
+      failures.push(`${evalCase.name}: thread/start returned no model or thread id`);
+  }
+  return {
+    name: "thread-identity",
+    ok: failures.length === 0,
+    detail:
+      failures.length === 0
+        ? `thread/start returned a model and thread id for ${evalCases.length} case request(s), no turn started`
+        : failures.join("; "),
+  };
+}
+
+export async function preflightHosts(
   hosts: readonly HostKind[],
   evalCases: readonly EvalCase[],
   bundleRoot: string,
-  probes: { binary?: (host: HostKind) => boolean; login?: (host: HostKind) => boolean } = {},
-): PreflightRow[] {
+  probes: PreflightProbes = {},
+): Promise<PreflightRow[]> {
   const binary = probes.binary ?? defaultBinaryProbe;
   const login = probes.login ?? defaultLoginProbe;
-  return hosts.map((host) => {
+  const cli = probes.cli ?? defaultCliProbe;
+  const rows: PreflightRow[] = [];
+  for (const host of hosts) {
     const bundle = join(bundleRoot, BUNDLE_FOR[host]);
     const skills = skillIds(evalCases);
     const missingSkills = skills.filter((id) => !existsSync(join(bundle, "skills", id, "SKILL.md")));
@@ -592,15 +759,6 @@ export function preflightHosts(
       if (scaffold === undefined) return [];
       const file = resolve(PACKAGE_ROOT, dirname(evalCase.file), scaffold);
       return existsSync(file) ? [] : [evalCase.name];
-    });
-    const parsedIdentity = adapterFor(host).parse(readFileSync(IDENTITY_FIXTURE[host], "utf8"));
-    const identityOk =
-      parsedIdentity.servedModel !== undefined &&
-      (host === "codex" ? parsedIdentity.sessionId !== undefined : (parsedIdentity.requestIds?.length ?? 0) > 0);
-    const shortTimeouts = evalCases.filter((evalCase) => {
-      const subject: Subject = { id: `preflight-${host}`, host, model: undefined };
-      const request = requestFor(evalCase, subject, "<preflight-scaffold>", bundle);
-      return request.timeoutMs < Math.max(600_000, evalCase.execution.max_turns * 60_000);
     });
     const checks: PreflightCheck[] = [
       { name: "binary", ok: binary(host), detail: "host CLI resolves locally" },
@@ -621,25 +779,14 @@ export function preflightHosts(
             ? `${evalCases.length} scaffold(s) resolve`
             : `missing ${missingFixtures.join(", ")}`,
       },
-      permissionCheck(host, evalCases, bundleRoot),
-      {
-        name: "served-identity-fixture",
-        ok: identityOk,
-        detail: identityOk
-          ? "served model and host correlation id parse"
-          : "served model or host correlation id is absent",
-      },
-      {
-        name: "timeouts",
-        ok: shortTimeouts.length === 0,
-        detail:
-          shortTimeouts.length === 0
-            ? "effective timeouts cover case turn budgets"
-            : `short ${shortTimeouts.map(({ name }) => name).join(", ")}`,
-      },
+      flagCheck(host, evalCases, bundle, cli),
     ];
-    return { mode: "preflight", host, ok: checks.every(({ ok }) => ok), checks };
-  });
+    if (host === "grok") checks.push(await grokToolCheck(evalCases, bundle, probes.grokTools ?? defaultGrokTools));
+    if (host === "codex")
+      checks.push(await codexIdentityCheck(evalCases, bundle, probes.codexHandshake ?? defaultCodexHandshake));
+    rows.push({ mode: "preflight", host, ok: checks.every(({ ok }) => ok), checks });
+  }
+  return rows;
 }
 
 const HOST_KIND = new Map<string, HostKind>([
@@ -673,9 +820,12 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
         const parsed = HOST_KIND.get(host);
         return parsed === undefined ? [] : [parsed];
       });
-      const rows = preflightHosts(hosts, cases, bundleRoot, {
+      const rows = await preflightHosts(hosts, cases, bundleRoot, {
         binary: dependencies.binaryProbe,
         login: dependencies.loginProbe,
+        cli: dependencies.cliProbe,
+        grokTools: dependencies.grokToolsProbe,
+        codexHandshake: dependencies.codexHandshakeProbe,
       });
       for (const row of rows) out(JSON.stringify(row));
       for (const row of rows)
@@ -693,7 +843,10 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const outputFile = lastFlagValue(argv, "--json");
     if (outputFile === undefined) throw new Error("--execute requires --json");
     const json = resolve(PACKAGE_ROOT, outputFile);
-    const queue = `${json}.queue.jsonl`;
+    const rawDir = dependencies.rawDir ?? join(PACKAGE_ROOT, ".work", "case-runner");
+    const stem = basename(json).replace(/\.json$/, "");
+    const raw = join(rawDir, `${stem}.raw.json`);
+    const queue = join(rawDir, `${stem}.queue.jsonl`);
     const start = dependencies.startSubject ?? runSubject;
     const bundles = subjects.map((subject) => join(bundleRoot, BUNDLE_FOR[subject.host]));
     const missing = [...new Set(bundles.filter((bundleDir) => !existsSync(bundleDir)))];
@@ -708,7 +861,7 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       cost_usd: number | null;
       session: SessionResult | null;
       files_created: string[];
-      artifacts: ReturnType<typeof snapshotArtifacts>;
+      artifacts: Artifacts;
     } | null = null;
     sessions: for (const subject of subjects) {
       const adapter = adapterFor(subject.host);
@@ -764,7 +917,31 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
 
     const report = summariseCaseSessions(rows);
     const costUsd = aborted?.cost_usd == null ? report.cost_usd : (report.cost_usd ?? 0) + aborted.cost_usd;
-    mkdirSync(dirname(json), { recursive: true });
+    const rawText = `${JSON.stringify(
+      {
+        receipt: relative(PACKAGE_ROOT, json),
+        sessions: rows.map(({ subject, case: name, session, artifacts }) => ({
+          subject,
+          case: name,
+          session,
+          artifacts,
+        })),
+        aborted:
+          aborted === null
+            ? null
+            : {
+                subject: aborted.subject,
+                case: aborted.case,
+                session: aborted.session,
+                artifacts: aborted.artifacts,
+              },
+      },
+      null,
+      2,
+    )}\n`;
+    mkdirSync(rawDir, { recursive: true });
+    writeFileSync(raw, rawText);
+    const rawReference = { path: relative(PACKAGE_ROOT, raw), sha256: sha256Hex(rawText) };
     const receipt = {
       ...evalInstrument(PACKAGE_ROOT, revision()),
       argv: ["bun", "tests/learn/evals/case-runner.ts", ...argv],
@@ -774,10 +951,41 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       ...usageReceipt(started),
       cost_usd: costUsd,
       summary: report.summary,
-      aborted,
+      raw: rawReference,
+      aborted:
+        aborted === null
+          ? null
+          : {
+              subject: aborted.subject,
+              case: aborted.case,
+              reason: aborted.reason,
+              cost_usd: aborted.cost_usd,
+              files_created: aborted.files_created,
+              artifacts: artifactHashes(aborted.artifacts),
+              served_model: aborted.session?.servedModel ?? null,
+              session_id: aborted.session?.sessionId ?? null,
+              session: aborted.session === null ? null : sessionFacts(aborted.session),
+            },
     };
-    writeFileSync(json, `${JSON.stringify({ receipt, ...report, cost_usd: costUsd }, null, 2)}\n`);
-    out(JSON.stringify({ receipt, results: report.results, invalid_sessions: report.invalid_sessions }));
+    mkdirSync(dirname(json), { recursive: true });
+    writeFileSync(json, `${JSON.stringify({ receipt, sessions: report.sessions.map(committedRow) }, null, 2)}\n`);
+    out(
+      JSON.stringify({
+        receipt: relative(PACKAGE_ROOT, json),
+        raw: rawReference.path,
+        summary: report.summary,
+        cost_usd: costUsd,
+        sessions: rows.map((row) => ({
+          subject: row.subject,
+          case: row.case,
+          validity: row.validity,
+          result: row.result,
+          invalid_reason: row.invalid_reason,
+          served_model: row.served_model,
+        })),
+        aborted: aborted === null ? null : { subject: aborted.subject, case: aborted.case, reason: aborted.reason },
+      }),
+    );
     if (aborted !== null) {
       err(`case-runner: ${aborted.subject} ${aborted.case}: ${aborted.reason}`);
       return 2;
