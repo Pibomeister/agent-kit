@@ -111,7 +111,7 @@ inputs:
     summary: >-
       For readiness: current receipts with recipe, evidence kind and verifier-seat lineage. A
       missing required kind, or a missing runner attestation where the build gate records an
-      implementer seat or a gate started under a grant, makes the verification lane unavailable.
+      implementer seat or the run ever held a grant, makes the verification lane unavailable.
 
 outputs:
   - id: review-record
@@ -226,7 +226,7 @@ hard_gates:
   - Change size and test ratios are guidance carried per project and are never grounds for a finding
     on their own (ruling `numeric-heuristics-are-guidance`).
   - Readiness never substitutes review judgment for a verifier-seat attestation the recorded build
-    seat or a grant-started gate requires, or a project-declared surface evidence kind; it names the
+    seat or a run that ever held a grant requires, or a project-declared surface evidence kind; it names the
     criterion and gap as unavailable.
 
 stop_conditions:

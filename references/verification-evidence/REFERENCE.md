@@ -61,8 +61,9 @@ The verifier seat record names its id, the implementer seat, and one isolation s
 - `host-unattested`: the host created a fresh context but cannot attest what it saw or its lineage.
   This remains useful guided evidence and never claims autonomous independence. The gate counts it
   only for a human-typed ship, with a visible note, as worker-attested evidence. It refuses it once
-  the build gate records the implementer seat or a checked gate started under a bypass or delegated
-  grant. It is never relabeled `runner-attested`.
+  the build gate records the implementer seat, or once the run holds any bypass or delegated grant
+  record. That holds for the rest of the run, even after a person takes over: guided shipping by
+  hand needs a fresh run. It is never relabeled `runner-attested`.
 
 The local lifecycle gate checks the attestation's shape only: an id and hash are present and the
 seat ids differ. It does not resolve the attestation, and it cannot tell a runner-written record from

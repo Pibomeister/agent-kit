@@ -9,9 +9,12 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { ENV_FILE, type LedgerRecord } from "../../src/firstmate/constants.ts";
+import { takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { artifactHash } from "../../src/util/hash.ts";
 import { FIXED_NOW, makeBundle, makeDir, makeHome, makeProject, REPO } from "./fixture.ts";
 
 const sha256 = (bytes: string | Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -96,6 +99,88 @@ describe("ak firstmate grant", () => {
       });
     }
   });
+
+  test("a host-unattested verifier receipt ships by hand until the run holds a delegated grant", () => {
+    const { project, ledger, bindingPath, binding } = bound();
+    const store = binding.evidence.location;
+    const lifecycle = (...argv: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = runCli(["lifecycle", ...argv, "--dir", store], {
+        cwd: project,
+        io: { out: (l) => out.push(l), err: (l) => err.push(l) },
+      });
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: binding.task_id,
+      acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Exercise the running service.",
+          kind: "command",
+          supports: ["AC-1"],
+          recipe,
+          evidence_required: ["smoke-test"],
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-09-29T00:00:00Z" }],
+    };
+    const ticketPath = join(makeDir(), "ticket.json");
+    writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
+    const run = lifecycle("open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
+    if (run === undefined) throw new Error("open did not return a run id");
+    for (const gate of ["build-checks", "review-full", "review-readiness"])
+      expect(lifecycle("record", "--gate", gate, "--run", run).code).toBe(0);
+    const snapshot = takeSnapshot(project);
+    if (typeof snapshot === "string") throw new Error(snapshot);
+    const receiptDir = makeDir();
+    const log = "1 pass, 0 fail\n";
+    writeFileSync(join(receiptDir, "verification-output.log"), log);
+    const receiptPath = join(receiptDir, "verification-1.json");
+    writeFileSync(
+      receiptPath,
+      `${JSON.stringify({
+        schema: "verification",
+        schema_version: 1,
+        id: "verification-1",
+        project: { id: "demo" },
+        run_id: run,
+        created_by: { role: "verifier" },
+        inputs: [],
+        source_revision: snapshot,
+        created_at: "2026-09-29T00:00:00Z",
+        status: "passed",
+        kind: "command",
+        command: { argv: ["bun", "test"] },
+        exit_status: 0,
+        output_digest: sha256(log),
+        artifacts: [{ path: "verification-output.log", digest: sha256(log), kind: "log" }],
+        environment: { id: "test", isolated: true, secrets_policy: "none" },
+        supports: ["AC-1"],
+        check: "project-check",
+        ticket: { id: binding.task_id, schema: "ticket", hash: artifactHash(ticket) },
+        recipe,
+        evidence_kind: "smoke-test",
+        verifier_seat: { id: "verify-1", implementer_seat: "build-1", isolation: "host-unattested", attestation: null },
+      })}\n`,
+    );
+    expect(lifecycle("record", "--gate", "verify", "--receipt", receiptPath, "--run", run).code).toBe(0);
+    const byHand = lifecycle("check", "--run", run);
+    expect(byHand.err).toContain("note: verifier seat verify-1 on receipt verification-1 is host-unattested");
+    expect(byHand.code).toBe(0);
+    rewrite(ledger, bindingPath, { ...binding, run_id: run });
+    expect(grant(ledger, bindingPath, "ship.prepare", project).code).toBe(0);
+    const delegated = lifecycle("check", "--run", run);
+    expect(delegated.code).toBe(1);
+    expect(delegated.err).toContain(
+      "refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation",
+    );
+  }, 120_000);
 
   test("grants a binding bind wrote under a data-dir override, outside the home", () => {
     const { worktree, ledger, bindingPath } = bound({

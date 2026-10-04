@@ -87,7 +87,8 @@ host can enforce. None of the rows below is a `capability` value:
 
 Native child sessions are useful fresh execution contexts but do not attest what the child saw or
 its excluded lineage. The inherited `independent-context: not-provided` status means host-only
-verifier receipts are `host-unattested`; a runner supplies attested independence.
+verifier receipts are `host-unattested`; a runner supplies attested independence. The gate counts
+such a receipt only in a run that never held a bypass or delegated grant.
 
 | Restriction | claude-code | codex | Consequence |
 |---|---|---|---|

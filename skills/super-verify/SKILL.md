@@ -71,8 +71,8 @@ publish a recipe only after its complete build, launch, readiness, drive and cle
 
 One runner-assigned verifier context (`independent-context`) and trusted evidence storage for the
 autonomous form. A fresh host context without attestation remains valid in guided mode and records
-`host-unattested`; the gate refuses it once the build gate records an implementer seat or a checked
-gate started under a bypass or delegated grant.
+`host-unattested`; the gate refuses it once the build gate records an implementer seat or the run
+holds any bypass or delegated grant record, for the rest of that run.
 
 The environment the checks run in, identified (`schemas/verification.schema.json`). Test execution
 belongs in the appropriate isolated environment, and repository test code does not receive production
