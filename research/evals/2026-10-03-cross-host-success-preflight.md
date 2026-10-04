@@ -70,7 +70,7 @@ compound shape under that argv is not shown here.
 ```text
 bun test tests/learn/evals-case-runner.test.ts tests/learn/evals-subjects.test.ts \
   tests/grader-lint.test.ts tests/schemas.test.ts tests/typecheck.test.ts
-462 pass, 0 fail
+481 pass, 0 fail
 ```
 
 The zero-cost preflight command was run after `bun run ak build --profile all`:
@@ -149,17 +149,35 @@ Estimated total: **$9.90543316**. A conservative ceiling takes the larger observ
 case and applies it to all three models: **$12.04467552**. Round that to a **$12.05 hard cap** if the
 rerun is approved.
 
-Stop rules:
+Stop rules. `--execute` enforces every rule in this list; `tests/learn/evals-case-runner.test.ts`
+drives each one against stub hosts.
 
-1. Rebuild and rerun preflight at the exact revision immediately before the first paid session. Any
-   red check stops the run.
-2. Run one session at a time. A missing `servedModel`, missing host correlation id, permission
-   refusal, timeout, non-zero host exit, unavailable grader or ungraded result stops the whole run.
-3. A graded failure stops the remaining cases for that model because that model can no longer pass
-   the four-case proof set.
-4. Before each launch, stop if cumulative reported spend plus the next session's table amount would
-   exceed the approved cap. A session with no cost is charged its table amount for this gate.
-5. Do not retry a session or substitute a binding without a new approval. Requested bindings never
-   stand in for the receipt's served identity.
+1. `--execute` refuses to start without `--max-spend-usd <cap>` and `--estimates <file>`. The file
+   maps each subject id to each case name to the table amount above, and a selected subject-case
+   pair it does not cover stops the run before any session.
+2. Sessions run strictly one at a time, in subject then case order. Nothing is retried: a session
+   that throws ends the run with exit 2 and every remaining pair is listed as skipped.
+3. Before each launch the runner adds that pair's estimate to the spend charged so far and stops the
+   whole run if the sum exceeds the cap. A completed session is charged its reported subject cost
+   plus its grader cost; a session that reports no subject cost is charged its estimate.
+4. An invalid row stops the whole run before another launch. A row is invalid on a timeout, a
+   host-refused call, a non-zero host exit, an empty reply, a reached turn cap, a missing served
+   model, a missing session or thread id, or a missing request id on a host whose stream emits one.
+5. A valid row whose result is not a pass, whether a graded failure or an ungraded result, stops
+   that subject: its remaining cases are skipped and the runner goes on to the next subject unless
+   rule 3 or rule 4 has fired.
+
+Request ids are a host capability, declared per adapter as `requestIds`. The Claude stream carries a
+`request_id` on each assistant line and the Grok stream carries a `requestId` on its end line, so a
+session from either host without one is invalid. The Codex app-server stream carries no provider
+request id, so a Codex row is identified by its thread id and served model alone.
+
+The receipt records `max_spend_usd`, `charged_usd` and a `skipped` list naming each pair that did
+not run and why (`spend-cap`, `invalid-row`, `aborted` or `subject-failed`). A run with any skipped
+pair exits non-zero.
+
+Two steps stay with the operator, and the runner does not enforce them: rebuild and rerun preflight
+at the exact revision immediately before the first paid session, and do not rerun a stopped session
+or substitute a binding without a new approval.
 
 The paid rerun has not started and remains a separate approval decision.

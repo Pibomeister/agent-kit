@@ -204,6 +204,15 @@ function judgeCost(result: GraderResult): number {
   return Object.values(result.cost_usd ?? {}).reduce((sum, cost) => sum + cost, 0);
 }
 
+/** Names the host identity a session failed to report: served model, session or thread id, request id. */
+function identityProblem(session: SessionResult): string | null {
+  if (session.servedModel === undefined) return "host did not report served model";
+  if (session.sessionId === undefined) return "host did not report session id";
+  if (adapterFor(session.host).requestIds && (session.requestIds ?? []).length === 0)
+    return "host did not report request id";
+  return null;
+}
+
 /** Apply the loaded case's grader objects to one valid subject session. */
 export async function evaluateCaseSession(
   evalCase: EvalCase,
@@ -211,8 +220,7 @@ export async function evaluateCaseSession(
   options: EvaluateOptions,
 ): Promise<CaseSessionResult> {
   const cap = options.maxTurns === null ? undefined : (options.maxTurns ?? evalCase.execution.max_turns);
-  const invalid =
-    invalidSession(session, cap) ?? (session.servedModel === undefined ? "host did not report served model" : null);
+  const invalid = invalidSession(session, cap) ?? identityProblem(session);
   const base = {
     case: evalCase.name,
     case_file: evalCase.file,
@@ -466,7 +474,7 @@ function planRow(evalCase: EvalCase, subject: Subject, bundleRoot: string): Plan
   };
 }
 
-type StartSubject = typeof runSubject;
+export type StartSubject = typeof runSubject;
 export interface MainDependencies {
   matrix?: Matrix;
   bundleRoot?: string;
@@ -498,7 +506,7 @@ function lastFlagValue(argv: readonly string[], flag: string): string | undefine
 }
 
 function argumentProblems(argv: readonly string[]): string[] {
-  const valueFlags = new Set(["--subject", "--host", "--case", "--json"]);
+  const valueFlags = new Set(["--subject", "--host", "--case", "--json", "--max-spend-usd", "--estimates"]);
   const switches = new Set(["--dry-run", "--execute", "--preflight"]);
   const problems: string[] = [];
   for (let index = 0; index < argv.length; index++) {
@@ -522,8 +530,38 @@ function argumentProblems(argv: readonly string[]): string[] {
   if (flagValues(argv, "--case").length === 0) problems.push("at least one --case is required");
   if (argv.includes("--execute") && lastFlagValue(argv, "--json") === undefined)
     problems.push("--execute requires --json");
+  if (argv.includes("--execute") && lastFlagValue(argv, "--estimates") === undefined)
+    problems.push("--execute requires --estimates");
+  const cap = lastFlagValue(argv, "--max-spend-usd");
+  if (argv.includes("--execute") && (cap === undefined || !/^\d+(\.\d+)?$/.test(cap)))
+    problems.push("--execute requires --max-spend-usd with a non-negative amount");
   return problems;
 }
+
+type Estimates = Record<string, Record<string, number>>;
+
+const validateEstimates = schemas.ajv.compile<Estimates>({
+  type: "object",
+  additionalProperties: {
+    type: "object",
+    additionalProperties: { type: "number", minimum: 0 },
+  },
+});
+
+/** Reads the per-subject, per-case spend estimates and refuses a selection it does not cover. */
+function loadEstimates(file: string, subjects: readonly Subject[], cases: readonly EvalCase[]): Estimates {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!validateEstimates(parsed)) throw new Error(`${file} is not a subject to case to USD estimate map`);
+  const absent = subjects.flatMap((subject) =>
+    cases.flatMap((evalCase) =>
+      parsed[subject.id]?.[evalCase.name] === undefined ? [`${subject.id} ${evalCase.name}`] : [],
+    ),
+  );
+  if (absent.length > 0) throw new Error(`${file} has no estimate for: ${absent.join(", ")}`);
+  return parsed;
+}
+
+type SkipReason = "spend-cap" | "invalid-row" | "aborted" | "subject-failed";
 
 interface PreflightCheck {
   name: string;
@@ -873,6 +911,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     const priced = matrixPrices(matrix.priceTable);
     const outputFile = lastFlagValue(argv, "--json");
     if (outputFile === undefined) throw new Error("--execute requires --json");
+    const maxSpendUsd = Number(lastFlagValue(argv, "--max-spend-usd"));
+    const estimates = loadEstimates(resolve(PACKAGE_ROOT, lastFlagValue(argv, "--estimates") ?? ""), subjects, cases);
     const json = resolve(PACKAGE_ROOT, outputFile);
     const rawDir = dependencies.rawDir ?? join(PACKAGE_ROOT, ".work", "case-runner");
     const stem = basename(json).replace(/\.json$/, "");
@@ -895,11 +935,22 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       files_created: string[];
       artifacts: Artifacts;
     } | null = null;
-    sessions: for (const subject of subjects) {
+    const skipped: Array<{ subject: string; case: string; reason: SkipReason }> = [];
+    let chargedUsd = 0;
+    let stop: Exclude<SkipReason, "subject-failed"> | null = null;
+    for (const subject of subjects) {
       const adapter = adapterFor(subject.host);
       const bundleDir = join(bundleRoot, BUNDLE_FOR[subject.host]);
       const panel = buildPanel(matrix, subject);
+      let subjectFailed = false;
       for (const evalCase of cases) {
+        const estimate = estimates[subject.id]?.[evalCase.name] ?? 0;
+        if (stop === null && !subjectFailed && chargedUsd + estimate > maxSpendUsd) stop = "spend-cap";
+        const skip = stop ?? (subjectFailed ? "subject-failed" : null);
+        if (skip !== null) {
+          skipped.push({ subject: subject.id, case: evalCase.name, reason: skip });
+          continue;
+        }
         let prepared: PreparedCase | undefined;
         let session: SessionResult | undefined;
         let judgeSpend: number | undefined;
@@ -912,22 +963,26 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           const after = filesUnder(prepared.cwd);
           const before = prepared.before;
           filesCreated = [...after].filter((file) => !before.has(file)).toSorted();
-          rows.push(
-            await evaluateCaseSession(evalCase, session, {
-              cwd: prepared.cwd,
-              filesCreated,
-              panel,
-              queue,
-              judge: async (reviewer, prompt) => {
-                const judged = await judge(reviewer, prompt);
-                if (judged.costUsd !== undefined) judgeSpend = (judgeSpend ?? 0) + judged.costUsd;
-                return judged;
-              },
-              maxTurns: request.maxTurns ?? null,
-              command: adapter.command(request, subject.model),
-            }),
-          );
+          const row = await evaluateCaseSession(evalCase, session, {
+            cwd: prepared.cwd,
+            filesCreated,
+            panel,
+            queue,
+            judge: async (reviewer, prompt) => {
+              const judged = await judge(reviewer, prompt);
+              if (judged.costUsd !== undefined) judgeSpend = (judgeSpend ?? 0) + judged.costUsd;
+              return judged;
+            },
+            maxTurns: request.maxTurns ?? null,
+            command: adapter.command(request, subject.model),
+          });
+          rows.push(row);
+          chargedUsd += (row.subject_cost_usd ?? estimate) + row.grader_cost_usd;
+          if (row.validity === "invalid") stop = "invalid-row";
+          else if (row.result !== "pass") subjectFailed = true;
         } catch (error) {
+          stop = "aborted";
+          chargedUsd += (prepared === undefined ? 0 : (session?.costUsd ?? estimate)) + (judgeSpend ?? 0);
           aborted = {
             subject: subject.id,
             case: evalCase.name,
@@ -944,7 +999,6 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
         } finally {
           if (prepared !== undefined) rmSync(prepared.cwd, { recursive: true, force: true });
         }
-        if (aborted !== null) break sessions;
       }
     }
 
@@ -971,6 +1025,9 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       ...usageReceipt(started),
       cost_usd: costUsd,
       summary: report.summary,
+      max_spend_usd: maxSpendUsd,
+      charged_usd: chargedUsd,
+      skipped,
       raw: rawReference,
       aborted:
         aborted === null
@@ -1003,6 +1060,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           invalid_reason: reasonClass(row.invalid_reason),
           served_model: row.served_model,
         })),
+        charged_usd: chargedUsd,
+        skipped,
         aborted: aborted === null ? null : { subject: aborted.subject, case: aborted.case, stage: aborted.stage },
       }),
     );
@@ -1010,7 +1069,9 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
       err(`case-runner: ${aborted.subject} ${aborted.case}: ${aborted.reason}`);
       return 2;
     }
-    return report.summary.failed > 0 || report.summary.invalid > 0 || report.summary.ungraded > 0 ? 1 : 0;
+    return report.summary.failed > 0 || report.summary.invalid > 0 || report.summary.ungraded > 0 || skipped.length > 0
+      ? 1
+      : 0;
   } catch (error) {
     err(`case-runner: ${error instanceof Error ? error.message : String(error)}`);
     return 2;

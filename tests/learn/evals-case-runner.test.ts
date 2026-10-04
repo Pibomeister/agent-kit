@@ -13,6 +13,7 @@ import {
   evaluateCaseSession,
   loadCase,
   main as caseRunnerMain,
+  type StartSubject,
   summariseCaseSessions,
 } from "./evals/case-runner.ts";
 import type { Matrix, Subject } from "./evals/matrix.ts";
@@ -35,6 +36,9 @@ interface StoredReport {
   receipt: {
     cases: Array<{ sha256: string }>;
     cost_usd: number | null;
+    max_spend_usd: number;
+    charged_usd: number;
+    skipped: Array<{ subject: string; case: string; reason: string }>;
     raw: { path: string; sha256: string };
     aborted: null | {
       subject: string;
@@ -46,6 +50,8 @@ interface StoredReport {
     };
   };
   sessions: Array<{
+    subject: string;
+    result: string | null;
     validity: "valid" | "invalid";
     invalid_reason: string | null;
     command: { program: string | null; sha256: string };
@@ -121,10 +127,25 @@ const isStoredReport = ajv.compile<StoredReport>({
   properties: {
     receipt: {
       type: "object",
-      required: ["cases", "cost_usd", "raw", "aborted"],
+      required: ["cases", "cost_usd", "max_spend_usd", "charged_usd", "skipped", "raw", "aborted"],
       properties: {
         cases: { type: "array", items: { type: "object", required: ["sha256"] } },
         cost_usd: { type: ["number", "null"] },
+        max_spend_usd: { type: "number" },
+        charged_usd: { type: "number" },
+        skipped: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["subject", "case", "reason"],
+            additionalProperties: false,
+            properties: {
+              subject: { type: "string" },
+              case: { type: "string" },
+              reason: { enum: ["spend-cap", "invalid-row", "aborted", "subject-failed"] },
+            },
+          },
+        },
         raw: {
           type: "object",
           required: ["path", "sha256"],
@@ -297,6 +318,13 @@ function session(host: HostKind, fixture: string, overrides: Partial<SessionResu
   };
 }
 
+function budget(cwd: string, cap: number, estimate = 0.5): string[] {
+  const file = join(cwd, "estimates.json");
+  const perCase = { "cross-host-runner-fixture": estimate };
+  writeFileSync(file, JSON.stringify({ "subject-claude": perCase, "subject-codex": perCase, "subject-grok": perCase }));
+  return ["--max-spend-usd", String(cap), "--estimates", file];
+}
+
 function subject(host: HostKind): Subject {
   return { id: `subject-${host}`, host, model: "subject-binding" };
 }
@@ -397,6 +425,8 @@ describe("evaluateCaseSession", () => {
           exitCode: 0,
           timedOut: false,
           servedModel: "reference-binding",
+          sessionId: "reference-session",
+          requestIds: ["reference-request"],
           durationMs: 1,
         },
         {
@@ -785,20 +815,23 @@ describe("execute path", () => {
     const selected = subject(host);
     const start = session(host, fixture);
     const printed: string[] = [];
-    const code = await caseRunnerMain(["--execute", "--subject", selected.id, "--case", CASE_FILE, "--json", json], {
-      matrix: { ...matrix, subjects: [selected] },
-      bundleRoot: bundle,
-      rawDir,
-      out: (line) => printed.push(line),
-      startSubject: async (_adapter, id, _model, request) => {
-        expect(id).toBe(selected.id);
-        expect(request.allowedTools).toEqual(["Read", "Bash", "Write"]);
-        mkdirSync(join(request.cwd, "tickets"));
-        writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
-        return { ...start, subject: id };
+    const code = await caseRunnerMain(
+      ["--execute", "--subject", selected.id, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [selected] },
+        bundleRoot: bundle,
+        rawDir,
+        out: (line) => printed.push(line),
+        startSubject: async (_adapter, id, _model, request) => {
+          expect(id).toBe(selected.id);
+          expect(request.allowedTools).toEqual(["Read", "Bash", "Write"]);
+          mkdirSync(join(request.cwd, "tickets"));
+          writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+          return { ...start, subject: id };
+        },
+        judge: async () => ({ reply: '{"verdict":"PASS","reason":"the file names Maya Chen as owner"}' }),
       },
-      judge: async () => ({ reply: '{"verdict":"PASS","reason":"the file names Maya Chen as owner"}' }),
-    });
+    );
     const committed = readFileSync(json, "utf8");
     const report = storedReport(json);
     const raw = rawReport(join(rawDir, "result.raw.json"));
@@ -826,6 +859,8 @@ describe("execute path", () => {
     expect(result.artifacts["tickets/result.json"]).toEqual({ sha256: sha256(artifact) });
     expect(result.served_model).toBe(start.servedModel ?? null);
     expect(result.served_model).not.toBeNull();
+    expect(result.session_id).not.toBeNull();
+    expect(result.request_ids.length > 0).toBe(adapterFor(host).requestIds);
     expect(result.session.raw_output_sha256).toBe(sha256(start.rawOutput ?? ""));
     expect(committed).not.toContain("Maya Chen");
     expect(committed).not.toContain("The delegation assessment was recorded.");
@@ -854,7 +889,18 @@ describe("execute path", () => {
     const errors: string[] = [];
     let started = 0;
     const code = await caseRunnerMain(
-      ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
+      [
+        "--execute",
+        "--subject",
+        "subject-grok",
+        "--subject",
+        "subject-codex",
+        "--case",
+        CASE_FILE,
+        "--json",
+        json,
+        ...budget(cwd, 10),
+      ],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
         bundleRoot: bundle,
@@ -882,7 +928,18 @@ describe("execute path", () => {
     const errors: string[] = [];
     const printed: string[] = [];
     const code = await caseRunnerMain(
-      ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
+      [
+        "--execute",
+        "--subject",
+        "subject-grok",
+        "--subject",
+        "subject-codex",
+        "--case",
+        CASE_FILE,
+        "--json",
+        json,
+        ...budget(cwd, 10),
+      ],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
         bundleRoot: bundle,
@@ -921,7 +978,7 @@ describe("execute path", () => {
     const json = join(cwd, "result.json");
     const printed: string[] = [];
     const code = await caseRunnerMain(
-      ["--execute", "--subject", "subject-claude", "--case", CASE_FILE, "--json", json],
+      ["--execute", "--subject", "subject-claude", "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
       {
         matrix: { ...matrix, subjects: [subject("claude")] },
         bundleRoot: bundle,
@@ -966,7 +1023,18 @@ describe("execute path", () => {
     let codexJudged = 0;
     const printed: string[] = [];
     const code = await caseRunnerMain(
-      ["--execute", "--subject", "subject-grok", "--subject", "subject-codex", "--case", CASE_FILE, "--json", json],
+      [
+        "--execute",
+        "--subject",
+        "subject-grok",
+        "--subject",
+        "subject-codex",
+        "--case",
+        CASE_FILE,
+        "--json",
+        json,
+        ...budget(cwd, 10),
+      ],
       {
         matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
         bundleRoot: bundle,
@@ -1020,6 +1088,239 @@ describe("execute path", () => {
     expect(printed.join("\n")).not.toContain("judge panel rejected");
     expect(raw.aborted?.reason).toBe("judge panel rejected");
     expect(errors.join("\n")).toContain("judge panel rejected");
+  });
+});
+
+function stage(tag: string) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-${tag}-`)));
+  work.push(cwd);
+  const bundle = join(cwd, "dist");
+  mkdirSync(join(bundle, "claude-code"), { recursive: true });
+  mkdirSync(join(bundle, "codex"), { recursive: true });
+  return { cwd, bundle, json: join(cwd, "result.json"), rawDir: join(cwd, "raw") };
+}
+
+function stubHost(started: string[], grok: Partial<SessionResult>): StartSubject {
+  return async (_adapter, id, _model, request) => {
+    started.push(id);
+    mkdirSync(join(request.cwd, "tickets"));
+    writeFileSync(join(request.cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
+    return id === "subject-grok"
+      ? { ...session("grok", "grok.jsonl", grok), subject: id }
+      : { ...session("codex", "codex-turn.jsonl"), subject: id };
+  };
+}
+
+describe("stop rules", () => {
+  const PASS = '{"verdict":"PASS","reason":"fixture satisfies the criterion"}';
+  const FAIL = '{"verdict":"FAIL","reason":"fixture misses the criterion"}';
+  const GROK_THEN_CODEX = ["--subject", "subject-grok", "--subject", "subject-codex"];
+
+  test.each([
+    ["no cap and no estimates", (_cwd: string) => []],
+    ["no cap", (cwd: string) => budget(cwd, 10).slice(2)],
+    ["no estimates", (cwd: string) => budget(cwd, 10).slice(0, 2)],
+    ["a cap that is not an amount", (cwd: string) => ["--max-spend-usd", "plenty", ...budget(cwd, 10).slice(2)]],
+  ] as const)("refuses to execute with %s", async (_label, flags) => {
+    const { cwd, bundle, json, rawDir } = stage("uncapped");
+    const started: string[] = [];
+    const errors: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--json", json, ...flags(cwd)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        err: (line) => errors.push(line),
+        startSubject: stubHost(started, {}),
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+
+    expect(code).toBe(2);
+    expect(started).toEqual([]);
+    expect(errors.join("\n")).toMatch(/--max-spend-usd|--estimates/);
+  });
+
+  test("refuses a selection the estimates do not cover before any session starts", async () => {
+    const { cwd, bundle, json, rawDir } = stage("uncovered");
+    const estimates = join(cwd, "partial.json");
+    writeFileSync(estimates, JSON.stringify({ "subject-grok": { "cross-host-runner-fixture": 0.5 } }));
+    const started: string[] = [];
+    const errors: string[] = [];
+    const code = await caseRunnerMain(
+      [
+        "--execute",
+        ...GROK_THEN_CODEX,
+        "--case",
+        CASE_FILE,
+        "--json",
+        json,
+        "--max-spend-usd",
+        "10",
+        "--estimates",
+        estimates,
+      ],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        err: (line) => errors.push(line),
+        startSubject: stubHost(started, {}),
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+
+    expect(code).toBe(2);
+    expect(started).toEqual([]);
+    expect(errors.join("\n")).toContain("subject-codex cross-host-runner-fixture");
+  });
+
+  test.each([
+    ["a first launch whose estimate passes the cap", 0.4, { costUsd: 0.25 }, [], 0],
+    ["a later launch whose estimate would pass the cap", 0.6, { costUsd: 0.25 }, ["subject-grok"], 0.25],
+    ["a later launch after a session that reported no cost", 0.75, { costUsd: undefined }, ["subject-grok"], 0.5],
+  ] as const)("stops before %s", async (_label, cap, grok, ran, charged) => {
+    const { cwd, bundle, json, rawDir } = stage("cap");
+    const started: string[] = [];
+    const printed: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--json", json, ...budget(cwd, cap)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: (line) => printed.push(line),
+        startSubject: stubHost(started, grok),
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+    const { receipt, sessions } = storedReport(json);
+    const skipped = ["subject-grok", "subject-codex"].flatMap((id) =>
+      ran.some((done) => done === id) ? [] : [{ subject: id, case: "cross-host-runner-fixture", reason: "spend-cap" }],
+    );
+
+    expect(code).toBe(1);
+    expect(started).toEqual([...ran]);
+    expect(sessions.map((row) => row.subject)).toEqual([...ran]);
+    expect(receipt.max_spend_usd).toBe(cap);
+    expect(receipt.charged_usd).toBeCloseTo(charged);
+    expect(receipt.skipped).toEqual(skipped);
+    expect(JSON.parse(printed.at(0) ?? "")).toMatchObject({ skipped });
+  });
+
+  test("launches the next session when reported spend plus its estimate fits the cap", async () => {
+    const { cwd, bundle, json, rawDir } = stage("fits");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--json", json, ...budget(cwd, 0.75)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: stubHost(started, { costUsd: 0.25 }),
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(started).toEqual(["subject-grok", "subject-codex"]);
+    expect(storedReport(json).receipt.skipped).toEqual([]);
+  });
+
+  test.each([
+    ["a timeout", { timedOut: true }, "timeout"],
+    ["a permission refusal", { stopReason: "cancelled" }, "host cancelled refused Bash call"],
+    ["a non-zero exit", { exitCode: 1 }, "exit 1"],
+    ["a missing served model", { servedModel: undefined }, "host did not report served model"],
+    ["a missing session id", { sessionId: undefined }, "host did not report session id"],
+    ["a missing request id on a host that emits one", { requestIds: undefined }, "host did not report request id"],
+  ] as const)("%s stops the whole run before another launch", async (_label, grok, reason) => {
+    const { cwd, bundle, json, rawDir } = stage("invalid-stop");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: stubHost(started, grok),
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+    const { receipt, sessions } = storedReport(json);
+
+    expect(code).toBe(1);
+    expect(started).toEqual(["subject-grok"]);
+    expect(sessions).toHaveLength(1);
+    expect(sessions.at(0)).toMatchObject({ validity: "invalid", invalid_reason: reason });
+    expect(receipt.skipped.map((row) => [row.subject, row.reason])).toEqual([
+      ["subject-grok", "invalid-row"],
+      ["subject-codex", "invalid-row"],
+      ["subject-codex", "invalid-row"],
+    ]);
+  });
+
+  test("a session that throws stops the whole run and is not retried", async () => {
+    const { cwd, bundle, json, rawDir } = stage("abort-stop");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        err: () => {},
+        startSubject: async (_adapter, id) => {
+          started.push(id);
+          throw new Error("host exited before a transcript");
+        },
+        judge: async () => ({ reply: PASS }),
+      },
+    );
+    const { receipt } = storedReport(json);
+
+    expect(code).toBe(2);
+    expect(started).toEqual(["subject-grok"]);
+    expect(receipt.charged_usd).toBeCloseTo(0.5);
+    expect(receipt.skipped.map((row) => [row.subject, row.reason])).toEqual([
+      ["subject-grok", "aborted"],
+      ["subject-codex", "aborted"],
+      ["subject-codex", "aborted"],
+    ]);
+  });
+
+  test("a graded failure skips that subject's remaining cases and the next subject still runs", async () => {
+    const { cwd, bundle, json, rawDir } = stage("subject-stop");
+    const started: string[] = [];
+    const code = await caseRunnerMain(
+      ["--execute", ...GROK_THEN_CODEX, "--case", CASE_FILE, "--case", CASE_FILE, "--json", json, ...budget(cwd, 10)],
+      {
+        matrix: { ...matrix, subjects: [subject("grok"), subject("codex")] },
+        bundleRoot: bundle,
+        rawDir,
+        out: () => {},
+        startSubject: stubHost(started, {}),
+        judge: async () => ({ reply: started.at(-1) === "subject-grok" ? FAIL : PASS }),
+      },
+    );
+    const { receipt, sessions } = storedReport(json);
+
+    expect(code).toBe(1);
+    expect(started).toEqual(["subject-grok", "subject-codex", "subject-codex"]);
+    expect(sessions.map((row) => [row.subject, row.validity, row.result])).toEqual([
+      ["subject-grok", "valid", "fail"],
+      ["subject-codex", "valid", "pass"],
+      ["subject-codex", "valid", "pass"],
+    ]);
+    expect(receipt.skipped).toEqual([
+      { subject: "subject-grok", case: "cross-host-runner-fixture", reason: "subject-failed" },
+    ]);
   });
 });
 

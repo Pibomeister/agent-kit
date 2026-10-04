@@ -324,6 +324,7 @@ export const codex: SubjectAdapter = {
   host: "codex",
   env: ["CODEX_HOME"],
   injection: "developer-instructions",
+  requestIds: false,
   command(_req: SessionRequest, _model: string | undefined): string[] {
     return [
       "codex",

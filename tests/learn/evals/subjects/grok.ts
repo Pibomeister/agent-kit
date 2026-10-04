@@ -213,6 +213,7 @@ export const grok: SubjectAdapter = {
   host: "grok",
   env: ["GROK_HOME"],
   injection: "append-system-prompt",
+  requestIds: true,
   command(req: SessionRequest, model: string | undefined): string[] {
     const grantedTools = req.allowedTools;
     const granted = grantedTools !== undefined;

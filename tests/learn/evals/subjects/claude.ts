@@ -66,6 +66,7 @@ export const claude: SubjectAdapter = {
     ];
   },
   injection: "append-system-prompt",
+  requestIds: true,
   command(req: SessionRequest, model: string | undefined): string[] {
     return [
       "claude",

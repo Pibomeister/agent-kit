@@ -102,6 +102,8 @@ export interface SubjectAdapter {
   env: readonly string[];
   /** How context was injected on this host, recorded in every receipt. */
   injection: "append-system-prompt" | "developer-instructions" | "prompt-prefix" | "instructions-file";
+  /** Whether this host's stream carries a provider request id. A session from a host that does must report one. */
+  requestIds: boolean;
   /** The argv this adapter would run, for the receipt. `model` is the matrix binding, passed through opaquely. */
   command(req: SessionRequest, model: string | undefined): string[];
   /** Optional interactive host transport. The default runner executes `command` as a batch process. */
