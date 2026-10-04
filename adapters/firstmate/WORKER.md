@@ -36,11 +36,17 @@ A receipt or a verdict is evidence only for the revision and diff hash it names.
 is stale and the gate runs again. The fix-cycle cap is the lifecycle's; at the cap you stop and report,
 you do not start another cycle.
 
+Before implementation, super-build opens your lifecycle run from your worktree with
+`{{gate_cmd}} open --ticket <ticket-file> --binding {{binding_path}} --dir {{evidence_dir}}`. The run
+record names this binding, so the gate finds the grants below and the audit finds the run. Every later
+gate command passes `--dir {{evidence_dir}}` and no `--run`: it resolves the opened run from your
+branch.
+
 Each phase leaves a gate record when its own gates pass. Record it with
-`{{gate_cmd}} record --run {{run_id}} --dir {{evidence_dir}} --gate <gate>`: `build-checks` after
+`{{gate_cmd}} record --dir {{evidence_dir}} --gate <gate>`: `build-checks` after
 super-build, `verify` after super-verify, `review-full`, `review-delta` and `review-readiness` after
 the matching super-review mode, and `ship-preflight` after super-ship's preconditions hold. Before it
-ships, super-ship runs `{{gate_cmd}} check --run {{run_id}} --dir {{evidence_dir}}`; a refusal names
+ships, super-ship runs `{{gate_cmd}} check --dir {{evidence_dir}}`; a refusal names
 the phase you skipped or whose evidence went stale, and you go back and run it. Skipping a phase is
 not a shortcut: `done` is refused without its record.
 

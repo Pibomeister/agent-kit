@@ -19,7 +19,8 @@
  * history and never counts as evidence.
  *
  * This is core. It needs no Firstmate: a standalone session keeps its records under the repository's
- * git common directory, and a Firstmate worker passes the binding's evidence store and run id instead.
+ * git common directory, and a Firstmate worker opens its run with `--binding <file> --dir <the binding's
+ * evidence store>`, so the run record names the binding and the store its grants are kept in.
  *
  * The file imports only `node:` built-ins, because `ak build` type-strips it into each plugin bundle as
  * `bin/ak-gate.mjs`, where a session without this checkout runs it with `node`. `ak lifecycle` runs the
@@ -211,6 +212,7 @@ export interface RunRecord {
   branch: string;
   base: string;
   binding_run_id?: string;
+  binding_evidence_location?: string;
   closed_at?: string;
 }
 
@@ -354,12 +356,20 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   }
   const id = (ticket as { id?: unknown } | null)?.id;
   if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
-  const binding = a.binding === undefined ? undefined : readObject(a.binding);
-  if (
-    a.binding !== undefined &&
-    (binding?.schema !== "firstmate-binding" || typeof binding.run_id !== "string" || binding.run_id === "")
-  )
-    return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
+  let bound: { binding_run_id: string; binding_evidence_location: string } | undefined;
+  if (a.binding !== undefined) {
+    const binding = readObject(a.binding);
+    const location = (binding?.evidence as { location?: unknown } | null | undefined)?.location;
+    if (
+      binding?.schema !== "firstmate-binding" ||
+      typeof binding.run_id !== "string" ||
+      binding.run_id === "" ||
+      typeof location !== "string" ||
+      location === ""
+    )
+      return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
+    bound = { binding_run_id: binding.run_id, binding_evidence_location: location };
+  }
 
   const openedAt = new Date().toISOString();
   const canonical = new TextEncoder().encode(
@@ -383,7 +393,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     opened_at: openedAt,
     branch: branch.text,
     base: head.text,
-    ...(typeof binding?.run_id === "string" ? { binding_run_id: binding.run_id } : {}),
+    ...bound,
   };
   atomicJson(runRecordPath(a.dir, runId), run);
   const beforeOpen = join(a.dir, safeRunId(branch.text), "bypass");
@@ -394,6 +404,16 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   storeArtifact(a.dir, runId, canonical);
   atomicJson(branchPointerPath(a.dir, branch.text), { run_id: runId });
   return { ok: true, run };
+}
+
+/** The latest run in `dir` opened with the binding whose run id is `bindingRunId`. */
+export function boundRun(dir: string, bindingRunId: string): string | undefined {
+  const runs = join(dir, "runs");
+  if (!existsSync(runs)) return undefined;
+  return readdirSync(runs)
+    .flatMap((name) => readRunRecord(dir, name) ?? [])
+    .filter((run) => run.binding_run_id === bindingRunId)
+    .toSorted((x, y) => y.opened_at.localeCompare(x.opened_at))[0]?.run_id;
 }
 
 function closeRun(dir: string, run: string, closedAt: string): void {
@@ -1064,8 +1084,13 @@ function evaluateEvidence(
       .filter((record) => same(record.snapshot, head) || isAncestor(a.project, record.snapshot.revision, head.revision))
       .flatMap((record) => (record.implementer?.seat_id === undefined ? [] : [record.implementer.seat_id])),
   );
-  const grantRecord = [a.run, ...(typeof run.binding_run_id === "string" ? [run.binding_run_id] : [])]
-    .flatMap((id) => ["bypass", "grants"].map((kind) => join(a.dir, safeRunId(id), kind)))
+  const grantRecord = [
+    join(a.dir, safeRunId(a.run)),
+    ...(typeof run.binding_run_id === "string" && typeof run.binding_evidence_location === "string"
+      ? [join(run.binding_evidence_location, safeRunId(run.binding_run_id))]
+      : []),
+  ]
+    .flatMap((at) => ["bypass", "grants"].map((kind) => join(at, kind)))
     .flatMap((at) => (existsSync(at) ? readdirSync(at).map((name) => join(at, name)) : []))
     .toSorted()[0];
   if (refs.length === 0)
@@ -1835,7 +1860,7 @@ export const LIFECYCLE_USAGE = [
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
-  "  <git common dir>/agent-kit/evidence. Under Firstmate pass the binding's run id and evidence store.",
+  "  <git common dir>/agent-kit/evidence. Under Firstmate open with --binding and pass the binding's evidence store.",
   `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant as \`node <bundle>/bin/ak-gate.mjs bypass grant\``,
   "  from its own home, never under bun from a project directory; the worker",
   "  runs check before each phase and passes --bypass <file> --task <id> to record, from the",

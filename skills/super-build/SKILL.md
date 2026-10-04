@@ -99,8 +99,9 @@ absence is recorded (`policies/limits.yaml`).
    On the standalone path, open the task-bound run next, from inside that worktree with the
    ticket's branch checked out and before implementation:
    `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. A worker that
-   holds a Firstmate binding and opens a run appends `--binding <binding file>`, so the run records
-   the binding's run id and the gate finds its delegated grants. The run binds
+   holds a Firstmate binding opens the run with the command its brief gives, which appends
+   `--binding <binding file> --dir <evidence store>`, so the run records the binding and the gate
+   finds its delegated grants. The run binds
    to the branch checked out where it runs, and later gate commands on that branch resolve the
    pointer it writes. A run never closed by `ship-preflight` stays the branch's default until a
    new `open`, and the gate does not tell an earlier task's unclosed run from this one, so every

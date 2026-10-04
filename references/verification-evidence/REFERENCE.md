@@ -64,8 +64,9 @@ The verifier seat record names its id, the implementer seat, and one isolation s
   the build gate records the implementer seat, or once the run holds any bypass or delegated grant
   record, and the refusal names the record. A bypass check made before the run was opened attaches
   to the first run opened afterward on that branch. A delegated grant is found through the binding
-  the run was opened with (`open --binding <binding file>`); a run opened without it does not see
-  the binding's grants. The mark holds for the rest of the run, even after a person takes over:
+  the run was opened with (`open --binding <binding file>`): the run record keeps the binding's run
+  id and evidence store, and the gate reads the grant records there whatever store the run itself
+  uses. A run opened without it does not see the binding's grants. The mark holds for the rest of the run, even after a person takes over:
   guided shipping by hand needs a fresh run. It is never relabeled `runner-attested`.
 
 The local lifecycle gate checks the attestation's shape only: an id and hash are present and the
