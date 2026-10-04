@@ -25,10 +25,11 @@ never as an implementation identity.
 
 The class changes authorship and checkpoint authority, not whether bounding produces a ticket.
 A `red` result produces a human-owned implementation ticket. A ticket whose class makes a human the
-author states the authorship boundary in existing fields: permitted agent work, such as bounded
-research or regression tests, in `allowed_changes`; prohibited agent work, including authoring the
-implementation, in `non_goals`; and stops in `stop_conditions`. Naming a human owner alone is not
-that boundary.
+author states the authorship boundary in existing fields. `allowed_changes` remains the ticket's
+full write scope for the implementer. Name the agent's permitted file and symbol subset in text, in
+`goal` or `stop_conditions`, alongside non-file assistance such as research; put prohibited agent
+work, including authoring the implementation, in `non_goals`. On a decision ticket the boundary
+lives in `goal` and `non_goals`. Naming a human owner alone is not that boundary.
 
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A
 never-dropped pack or required sensitive action sets a floor that no factor or lowering may cross;
@@ -115,9 +116,10 @@ more fully met and 0 means it is absent.
 `vague_terms` records each detected word or phrase, including terms such as “fast”, “clean up” and
 “as needed”. Turn every unresolved hit into a frontier question that asks for the missing boundary
 and proposes a concrete verification path: observable, workload or fixture, measurement or oracle,
-and pass condition as applicable. Never invent the missing target. A criterion that remains
-ambiguous fails on its own evidence; do not turn a readiness total into a finding or use it to fill
-in the missing decision.
+and pass condition as applicable. Express the pass condition against the value the human supplies,
+for example `p95 of <observable> on <workload> is at or below the target you name`; never choose a
+number or otherwise invent the missing target. A criterion that remains ambiguous fails on its own
+evidence; do not turn a readiness total into a finding or use it to fill in the missing decision.
 
 ## Assumptions
 
@@ -144,16 +146,16 @@ requires, carrying the open question, and drop `allowed_changes`, `write_ownersh
 
 Slice on independently verifiable behavior, not on a universal line count. Each slice is a narrow
 but complete path through every layer, independently verifiable and sized for one fresh context
-window. Record this exact ordered, reversible recommendation whenever those phases apply: pure
-refactor; additive schema expand; behavior behind a flag; consumer; backfill; schema contract. The
-schema-contract change is a separate ticket. Where one
+window. Order a stack as pure refactor, additive schema expand, behavior behind a flag, consumer,
+backfill, then schema contract. The schema-contract change is a separate ticket. Where one
 mechanical change breaks call sites across the tree and no vertical slice can land green, use the
 wide-refactor shape instead: expand, then migrate in batches with each batch its own ticket blocked
 by the expand, then contract, blocked by every batch. Each ticket names its criteria, interfaces,
 ownership and verification.
 When the direction already spans these independently deployable phases, their boundaries require
-that ordered recommendation. A request to keep them in one ticket adds an open decision after the
-recommendation; it does not replace the stack with an exception option or erase the boundaries.
+the ordered stack. A request to keep them in one ticket becomes an open decision; it does not erase
+the boundaries. The decision ticket itself carries the full ordered stack as the recommended option,
+in its `decision` question or its `goal`, with no exception alternative.
 
 ## Advisor consultation
 

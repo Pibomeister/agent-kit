@@ -125,15 +125,19 @@ hard_gates:
   - Each readiness criterion's evidence states what was checked and where. No readiness or stop
     flag is persisted outside the schema; readiness is the six scored criteria with evidence, and
     the stop is stated in the result.
-  - A ticket whose class makes a human the author puts permitted agent work in allowed_changes,
-    prohibited agent work in non_goals and stops in stop_conditions; naming a human owner alone is
-    not that boundary.
+  - On a ticket whose class makes a human the author, allowed_changes remains the full write scope
+    for the implementer. Name the agent's permitted file and symbol subset in text, in goal or
+    stop_conditions, alongside non-file assistance such as research; put prohibited agent work in
+    non_goals. On a decision ticket the boundary lives in goal and non_goals. Naming a human owner
+    alone is not that boundary.
   - Each unresolved vague term becomes a frontier question that proposes the observable, the
     workload or fixture, the measurement or oracle and the pass condition, as applicable, that would
-    verify the answer. Never invent the missing target.
-  - A direction spanning independently deployable stack phases records the exact ordered reversible
-    recommendation with schema contract separate. Refusal adds a decision ticket and never replaces
-    the recommendation with an exception option.
+    verify the answer. Express the pass condition against the value the human supplies, for example
+    `p95 of <observable> on <workload> is at or below the target you name`; never choose a number or
+    otherwise invent the missing target.
+  - A direction spanning independently deployable stack phases is split in order with schema
+    contract separate. Refusal emits a decision ticket that itself carries the full ordered stack as
+    the recommended option, in its decision question or its goal, with no exception alternative.
   - On a supporting host, a ticket whose class requires consultation is not approved until its
     kb_refs cites a transcript or receipt id/ref with a one-line judgment-evidence note; a bare path
     is not evidence, and an unsupported host remains valid and cites none.
