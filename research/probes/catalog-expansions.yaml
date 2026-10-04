@@ -39,7 +39,7 @@ skills:
         The adopted deep-module vocabulary needs a read-only reference skill with an explicit
         no-question stopping rule, while repository surveys, alignment, review and implementation
         remain with their existing lifecycle owners.
-      commits: [3b5a907]
+      commits: [5980127]
 
 protocols:
   baseline: 7
