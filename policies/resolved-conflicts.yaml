@@ -9,7 +9,8 @@
 # the first raised by a user requirement: that the package work with any ticket tracker. Rows
 # 25-27 bound the opt-in learning runtime: where it runs, who judges for it, and what form its
 # output takes. Rows 28-32 govern delegation class, sensitive floors, independent acceptance
-# oracles, project-declared checks and host-conditional advisor consultation.
+# oracles, project-declared checks and host-conditional advisor consultation. Row 33 is the first
+# raised by publishing with no supervisor and no gate at all.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -191,7 +192,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 32
+rows: 33
 
 conflicts:
 
@@ -1296,3 +1297,46 @@ conflicts:
       D10 decision is recorded in `research/dossiers/delegation.md`.
     source:
       plan: "§10"
+
+  - id: direct-push-as-ship-transport
+    tension: >-
+      Plan §2.1 gives super-ship an authorized commit, push and open-PR action, and ruling
+      no-mistakes-as-ship-transport has no-mistakes perform it: the pipeline re-checks the shipped
+      head, pushes, opens the pull request and creates no commit of its own. A project that does not
+      ship through no-mistakes, published by a person with no supervisor, is then left with no
+      stated way to ship. Read strictly, super-ship cannot publish there. Read loosely, it improvises
+      a push that keeps none of what the transport guaranteed, and a project's own commit hooks can
+      rewrite staged files as the commit is made, which ships a commit the review never saw.
+    ruling: >-
+      super-ship may publish directly, with git and the forge's command-line client, and needs no
+      supervisor to do so. The transport is named, never inferred from whichever one works: a
+      Firstmate binding's transport first, then the project's own conventions, then the caller.
+      Where nothing names one, the ship stops for the choice. A chosen gate that is not configured
+      stops the ship rather than falling back to the direct push, and the direct push is never a way
+      around a gate the project names. With no pipeline to re-check the head, super-ship's own
+      release checks, recorded against the head, are the re-check. The commit must hold exactly what
+      was staged: a hook that rewrites staged files makes a new head, which needs a new run that
+      re-runs every gated phase before any push. Hooks are never skipped and the push never forces.
+      Base, assignee and body shape come from the project's conventions, never from this package.
+      Before any outward effect is repeated, the remote branch and the open pull request are read
+      back under the runner contract's idempotency key. Merge is never part of this transport.
+    discharged_in: [inputs, workflow]
+    binds:
+      skills: [super-ship]
+    scenario: 10
+    coverage: indirect
+    note: >-
+      `inputs` because the transport is something super-ship consumes and has to name, with the
+      caller's choice ranked below the binding and the project's conventions, and `workflow`
+      because the commit, push and pull-request steps and the return of a rewritten commit to the
+      lifecycle are ordered obligations. Rejected `hard-gates` and `stop-conditions`: a rewritten
+      commit adds no refusal and no terminal state. It is a head the existing precondition no
+      longer covers, and the run halts under the needs-input condition super-ship already names for
+      receipts bound to another revision. Rejected `side-effects`: remote-push and pr-open were
+      already declared and already keyed by runner-contract §5, and this transport performs them
+      without adding one. The firstmate adapter is not bound: its binding's transport is always
+      no-mistakes, so it would read the same had this row been decided the other way. Scenario 10
+      is the neighbouring case: a hook that rewrites a staged file is a code change made after the
+      green evidence was taken, and this row is what keeps that evidence from shipping the new head.
+    source:
+      plan: "§2.1, §7.4"

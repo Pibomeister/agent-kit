@@ -1046,6 +1046,15 @@ adaptations:
   - path: skills/super-scout/skill.yaml
     source: omx@cb955b0d5becbef76d2c1f0096b6e1f238e1e7f7:skills/analyze/SKILL.md
     rationale: The donor's stop conditions become this manifest's hard_gates and constraints — no edit, no recommendation the evidence cannot support, report the limit rather than manufacture certainty. Its evidence-labelling vocabulary becomes the confirmed/assumed constraint rows.
+  - path: skills/super-ship/references/transport-direct.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-commit-push-pr/references/apply-and-handoff.md
+    rationale: The lookup is repeated immediately before the create so a pull request that appeared since is not duplicated, and the body goes through `--body-file` because a body on standard input can arrive empty while `gh` exits 0. The donor's description preview, explainer archival and watcher handoff are not carried; the handoff is super-ship's watch-lane step.
+  - path: skills/super-ship/references/transport-direct.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-commit-push-pr/references/commit-and-push.md
+    rationale: "The commit names its paths after `--` so anything else already in the index stays out, and the branch is re-read immediately before the push. The donor's automatic branch creation and its grouping into several commits are not carried: a detached head or the base branch stops the run with needs-input."
+  - path: skills/super-ship/references/transport-direct.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-commit-push-pr/references/context.md
+    rationale: "The open-pull-request lookup is adapted: the branch name only, because `--head <owner>:<branch>` silently returns an empty list; the base repository targeted on a fork; a detached head never looked up, because an empty `--head` drops the filter; rows matched on head owner and branch, with an ambiguous match stopping rather than taking the first. The donor's fallback to a guessed default branch is not carried: an unresolved base stops the run."
   - path: skills/super-ship/SKILL.md
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/security-and-hardening/SKILL.md
     rationale: "The donor's pre-commit secret scan is the gate that stops the run, and its rotation rule is kept: a secret already in history is reported for rotation rather than only removed from the payload."
