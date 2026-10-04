@@ -17,7 +17,7 @@ reasons and created artifacts remain in the ignored
 
 | Subject | Host-reported served model | Case | Validity | Graded outcome by criterion | Cost | Elapsed |
 | --- | --- | --- | --- | --- | ---: | ---: |
-| `subject-opus` | `claude-opus-5-5` | `super-bound-delegated-refresh-token-rotation` | valid | pass: `runs-the-scorer`, `consults-the-advisor`; ungraded: `persists-stop-evidence` after votes `reviewer-sol: FAIL` / `reviewer-grok: PASS`; not judged because the row was already ungraded: `persists-red-auth-floor`, `preserves-human-authorship`, `cites-the-consultation-artifact` | $1.33030884 | 271.902 s |
+| `subject-opus` | `claude-opus-5-5` | `super-bound-delegated-refresh-token-rotation` | valid | pass: `runs-the-scorer`, `consults-the-advisor`; ungraded: `persists-stop-evidence` after votes `reviewer-sol: FAIL` / `reviewer-grok: PASS`; not judged because the row was already ungraded: `persists-red-auth-floor`, `preserves-human-authorship`, `cites-the-consultation-artifact` | $1.33030884 priced; `reviewer-sol` unpriced | 271.902 s |
 
 The reviewer split was recorded in both the compact and raw receipts. It was a one-to-one tie, not
 a strict majority: Sol said the transcript did not establish that the ticket JSON was persisted at
@@ -44,7 +44,12 @@ Every skipped row has reason `ungraded-row`.
 | `subject-grok` | `approved-spec-produces-tickets` |
 
 The single completed session charged **$1.33030884** against the **$12.05** hard cap, leaving
-**$10.71969116** unspent.
+**$10.71969116** of the cap uncharged. That figure is a lower bound on what the run cost. The run's
+matrix named no price table, so the receipt records `"price_table": null` and the runner priced only
+the turns whose host reported a cost: $1.3081524 for the subject and $0.02215644 for
+`reviewer-grok`. The one `reviewer-sol` turn is recorded as tokens only, 17,069 in total (16,957
+input, of which 10,880 cached, and 112 output), and is excluded from the charged figure and from the
+cap accounting.
 
 ## Verdicts
 
@@ -56,7 +61,7 @@ The single completed session charged **$1.33030884** against the **$12.05** hard
 | Overall | **Success on three different models is not proven.** Only one served-model identity was observed, no model completed the four-case suite, and no case received a graded pass or fail. |
 
 The run proves only that the revised harness preserved a tied panel as ungraded and stopped without
-overspending or silently choosing a winner. It does not prove the vague-target behavior, the
+charging past the cap or silently choosing a winner. It does not prove the vague-target behavior, the
 two-to-one majority behavior, the remaining three cases, or success on Sol or Grok.
 
 ## Exact commands
@@ -124,8 +129,8 @@ No retry, stopped-session rerun, binding substitution or second `--execute` occu
 ## Verification
 
 The committed compact receipt is byte-for-byte identical to the runner output, `jq` parses it, its
-revision is the measured revision, its charged spend is $1.33030884, and its skipped list has eleven
-rows. The repository gates then reported:
+revision is the measured revision, its charged spend is $1.33030884 with the `reviewer-sol` turn's 17,069 tokens unpriced and
+excluded, and its skipped list has eleven rows. The repository gates then reported:
 
 - `bun test`: 2,973 passes, one expected donor-snapshot skip and zero failures across 2,974 tests.
 - `bun run ak validate`: zero errors, 34 warnings, 154 notes, 126 skill-style warnings, one skipped
