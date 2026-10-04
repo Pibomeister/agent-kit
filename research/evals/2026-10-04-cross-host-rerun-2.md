@@ -6,6 +6,10 @@ models. Claude served `claude-opus-5-5`, but its first case ended ungraded after
 reviewers split one-to-one. The whole-run ungraded stop then skipped the remaining eleven sessions,
 so no Sol or Grok subject session started. No session was retried and no binding was substituted.
 
+This receipt is an honest record of a failed attempt, and the next step is already approved and
+under way: a fourth-family reviewer so every subject seats three reviewers, then one more capped
+run.
+
 The compact receipt is
 [`2026-10-04-results/cross-host-rerun-2.json`](2026-10-04-results/cross-host-rerun-2.json). It is
 byte-for-byte identical to `.work/cross-host-rerun-2.json` at SHA-256
@@ -56,13 +60,32 @@ cap accounting.
 | Model | Verdict |
 | --- | --- |
 | `claude-opus-5-5` | **Not proven.** Its first case was valid but ungraded after a one-to-one reviewer tie; its other three cases were skipped. |
-| `gpt-6-sol` | **Not assessed.** The whole-run ungraded stop fired before any Sol subject session. |
-| `grok-4.7` | **Not assessed.** The whole-run ungraded stop fired before any Grok subject session. |
+| `gpt-6-sol` (intended binding, not served in this run) | **Not assessed.** The whole-run ungraded stop fired before any Sol subject session. |
+| `grok-4.7` (intended binding, not served in this run) | **Not assessed.** The whole-run ungraded stop fired before any Grok subject session. |
 | Overall | **Success on three different models is not proven.** Only one served-model identity was observed, no model completed the four-case suite, and no case received a graded pass or fail. |
 
 The run proves only that the revised harness preserved a tied panel as ungraded and stopped without
 charging past the cap or silently choosing a winner. It does not prove the vague-target behavior, the
 two-to-one majority behavior, the remaining three cases, or success on Sol or Grok.
+
+## Matrix used
+
+The runner loaded the operator calibration matrix copied to `.work/eval-matrix.yaml`.
+
+| Seat | Id | Host | Model |
+| --- | --- | --- | --- |
+| Subject | `subject-opus` | claude | `claude-opus-5-5` |
+| Subject | `subject-fable` | claude | `claude-fable-5-1` |
+| Subject | `subject-sol` | codex | `gpt-6-sol` |
+| Subject | `subject-astra` | codex | `gpt-6-astra` |
+| Subject | `subject-grok` | grok | `grok-4.7` |
+| Reviewer | `reviewer-opus` | claude | `claude-opus-5-5` |
+| Reviewer | `reviewer-sol` | codex | `gpt-6-sol` |
+| Reviewer | `reviewer-grok` | grok | `grok-4.7` |
+
+The panel settings were `independent-of: subject` and `min-reviewers: 2`. That operator copy has no
+`price-table` key and seats `reviewer-sol` rather than the 2026-10-03 run's `reviewer-astra`.
+Neither was a deliberate policy change: the operator copy simply differed from the first rerun's.
 
 ## Exact commands
 
