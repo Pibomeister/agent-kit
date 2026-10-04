@@ -101,19 +101,46 @@ export class ClaudeMemSource {
     return { tokens: row?.tokens ?? 0, count: row?.count ?? 0 };
   }
 
-  /** Observations after a watermark id, oldest first unless `newestFirst`. */
+  /** Observations after a watermark id and at or below `throughId` when given, oldest first unless `newestFirst`. */
   observationsSince(
     project: string,
     afterId: number,
-    options: { sinceEpochMs?: number; newestFirst?: boolean } = {},
+    options: { sinceEpochMs?: number; newestFirst?: boolean; throughId?: number } = {},
   ): ObservationRow[] {
     const order = options.newestFirst === true ? "desc" : "asc";
     return this.db
-      .query<ObservationRow, [string, string, number, number]>(
+      .query<ObservationRow, [string, string, number, number, number]>(
         `select ${OBSERVATION_COLUMNS} from observations o left join sdk_sessions s on s.memory_session_id = o.memory_session_id
-         where (o.project = ? or o.project like ?) and o.id > ? and o.created_at_epoch >= ? order by o.id ${order}`,
+         where (o.project = ? or o.project like ?) and o.id > ? and o.id <= ? and o.created_at_epoch >= ? order by o.id ${order}`,
       )
-      .all(...this.args(project), afterId, options.sinceEpochMs ?? 0);
+      .all(...this.args(project), afterId, options.throughId ?? Number.MAX_SAFE_INTEGER, options.sinceEpochMs ?? 0);
+  }
+
+  /** A project's observation ids at or below `throughId`, oldest first. */
+  observationIds(project: string, throughId: number): number[] {
+    return this.db
+      .query<{ id: number }, [string, string, number]>(
+        "select id from observations where (project = ? or project like ?) and id <= ? order by id",
+      )
+      .all(...this.args(project), throughId)
+      .map((row) => row.id);
+  }
+
+  /** The observations with these ids, oldest first. Unknown ids are absent. */
+  observationsById(ids: readonly number[]): ObservationRow[] {
+    const out: ObservationRow[] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      out.push(
+        ...this.db
+          .query<ObservationRow, number[]>(
+            `select ${OBSERVATION_COLUMNS} from observations o left join sdk_sessions s on s.memory_session_id = o.memory_session_id
+             where o.id in (${chunk.map(() => "?").join(", ")})`,
+          )
+          .all(...chunk),
+      );
+    }
+    return out.sort((a, b) => a.id - b.id);
   }
 
   sessionObservations(memorySessionId: string): ObservationRow[] {

@@ -10,6 +10,7 @@ import { acquireLock, type Ledger } from "../../src/learn/core/ledger.ts";
 import { tickLogPath } from "../../src/learn/core/paths.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
+import { unconsolidatedEpisodes } from "../../src/learn/memory/episodes.ts";
 import {
   appendRun,
   ensureMemoryLedger,
@@ -20,7 +21,15 @@ import {
 } from "../../src/learn/memory/ledger.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
 import { decide, type DecideInput, runProject, tick } from "../../src/learn/memory/tick.ts";
-import { gitRepo, MemFixture, projectScratch, removeProjectScratch, scratch, testContext } from "./helpers.ts";
+import {
+  gitRepo,
+  MemFixture,
+  projectScratch,
+  reflectorReply,
+  removeProjectScratch,
+  scratch,
+  testContext,
+} from "./helpers.ts";
 
 const NOON = new Date(2026, 8, 18, 12, 0);
 const NIGHT = new Date(2026, 8, 18, 2, 10);
@@ -31,7 +40,10 @@ function fresh(): MemoryState {
 }
 
 function run(state: MemoryState, now: Date, rest: Partial<DecideInput>): string[] {
-  return decide({ state, now, idleS: 0, newTokens: 0, newObs: 0, unconsolidated: 0, ...rest }, THRESHOLDS);
+  return decide(
+    { state, now, idleS: 0, newTokens: 0, newObs: 0, unscreened: 0, unconsolidated: 0, ...rest },
+    THRESHOLDS,
+  );
 }
 
 describe("decide", () => {
@@ -57,6 +69,12 @@ describe("decide", () => {
       "nightly",
     ]));
 
+  test("unscreened history backfills only while idle", () => {
+    expect(run(fresh(), NOON, { idleS: 600, unscreened: 40 })).toEqual(["backfill"]);
+    expect(run(fresh(), NOON, { idleS: 30, unscreened: 40 })).toEqual([]);
+    expect(run(fresh(), NOON, { idleS: 600 })).toEqual([]);
+  });
+
   test("weekly when idle and a week has passed", () =>
     expect(run({ ...fresh(), last_weekly: NOON.getTime() - 8 * 86_400_000 }, NOON, { idleS: 600 })).toEqual([
       "weekly",
@@ -68,12 +86,13 @@ describe("decide", () => {
         idleS: 9999,
         newTokens: 99_999,
         newObs: 9,
+        unscreened: 9,
         unconsolidated: 30,
       }),
     ).toEqual([]));
 
   test("force overrides everything, mute included", () => {
-    expect(run({ muted: true }, NOON, { force: "all" })).toEqual(["reflect", "nightly", "weekly"]);
+    expect(run({ muted: true }, NOON, { force: "all" })).toEqual(["reflect", "backfill", "nightly", "weekly"]);
     expect(run({}, NOON, { force: "nightly" })).toEqual(["nightly"]);
   });
 
@@ -85,15 +104,18 @@ describe("decide", () => {
       last_nightly_attempt: NOON.getTime() - 30 * 60_000,
       nightly_failures: 1,
     };
-    expect(run(failed, NOON, { idleS: 600, newTokens: 30_000, newObs: 40, unconsolidated: 30 })).toEqual([]);
+    expect(run(failed, NOON, { idleS: 600, newTokens: 30_000, newObs: 40, unscreened: 5, unconsolidated: 30 })).toEqual(
+      [],
+    );
     expect(
       run(failed, new Date(NOON.getTime() + 31 * 60_000), {
         idleS: 600,
         newTokens: 30_000,
         newObs: 40,
+        unscreened: 5,
         unconsolidated: 30,
       }),
-    ).toEqual(["reflect", "nightly"]);
+    ).toEqual(["reflect", "backfill", "nightly"]);
   });
 });
 
@@ -148,60 +170,81 @@ describe("tick", () => {
     }
   });
 
-  test("a screened backlog runs nightly once in its due window", () => {
-    const root = gitRepo(join(projectScratch(), "backlog"));
+  test("history behind the first reflect window is screened a batch per idle tick, then consolidated on the nightly cadence", () => {
+    const root = gitRepo(join(projectScratch(), "history"));
     const dbPath = join(scratch(), "mem.db");
     const mem = new MemFixture(dbPath);
     const now = NOON.getTime();
-    const sessionIds = Array.from({ length: 25 }, (_, index) => `${index.toString(16).padStart(8, "0")}-0000`);
-    for (const sid of sessionIds) {
-      mem.session({ sid, project: "backlog", started: now - 86_400_000, completed: now - 86_399_000 });
-      mem.observation({ sid, project: "backlog", type: "discovery", title: "pre-window", at: now - 86_399_500 });
-    }
-    const screened = sessionIds.map((sid) =>
-      mem.observation({ sid, project: "backlog", type: "discovery", title: "screened", at: now - 600_000 }),
-    );
-    const firstScreened = screened[0];
-    const lastScreened = screened.at(-1);
-    if (firstScreened === undefined || lastScreened === undefined)
-      throw new Error("fixture has no screened observations");
+    const session = (sid: string, count: number) => {
+      mem.session({ sid, project: "history", started: now - 86_400_000, completed: now - 86_399_000 });
+      return Array.from({ length: count }, (_, index) =>
+        mem.observation({
+          sid,
+          project: "history",
+          type: "discovery",
+          title: `${sid} ${index}`,
+          facts: ["f".repeat(600)],
+          at: now - 600_000,
+        }),
+      );
+    };
+    const oldest = session("aaaa1111-0000", 30);
+    const older = session("bbbb2222-0000", 30);
+    const newest = session("cccc3333-0000", 70);
     mem.close();
+    const judge = (prompt: string) =>
+      prompt.includes("# learn/reflector") ? reflectorReply(prompt) : { lessons: [], review_events: [] };
     const ctx = testContext({
       cwd: root,
       env: { AK_LEARN_MEM_DB: dbPath },
-      replies: [
-        { lessons: [], review_events: [] },
-        { lessons: [], review_events: [] },
-      ],
+      replies: Array.from({ length: 12 }, () => judge),
     });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
-    saveState(ledger, {
-      last_obs_id_reflected: lastScreened,
-      last_reflect: now,
-      last_nightly: "2026-09-18",
-      last_weekly: now,
-    });
-    appendRun(ledger, {
-      job: "reflect",
-      status: "ok",
-      min_obs_id: firstScreened,
-      max_obs_id: lastScreened,
-    });
+    saveState(ledger, { last_nightly: "2026-09-18", last_weekly: now });
     const source = ClaudeMemSource.open(dbPath);
     if (source === null) throw new Error(`claude-mem source did not open at ${dbPath}`);
+    const tickAt = (at: Date) => {
+      setSystemTime(at);
+      const line = runProject(ctx, source, root, "history").find((entry) => entry.startsWith("idle "));
+      return line?.slice(line.indexOf("unscreened"));
+    };
+    const calls = (role: string) => ctx.prompts.filter((prompt) => prompt.includes(`# learn/${role}`)).length;
+    const runs = () =>
+      readJsonl<{ job: string; status: string; min_obs_id?: number; max_obs_id?: number }>(ledger.path("runs.jsonl"));
+    const minutes = (n: number) => new Date(now + n * 60_000);
     try {
-      setSystemTime(NOON);
-      expect(runProject(ctx, source, root, "backlog")).toContain(
-        "idle 600s new_tokens 0 new_obs 0 unconsolidated 25 due nightly",
-      );
-      expect(runProject(ctx, source, root, "backlog")).toContain(
-        "idle 600s new_tokens 0 new_obs 0 unconsolidated 1 due none",
-      );
+      expect(tickAt(NOON)).toBe("unscreened 0 unconsolidated 0 due reflect");
+      const watermark = readState(ledger).last_obs_id_reflected;
+      expect(watermark).toBe(newest.at(-1));
+      const window = runs().find((row) => row.job === "reflect")?.min_obs_id ?? 0;
+      expect(window).toBeGreaterThan(older.at(-1) ?? Infinity);
+
+      // Only the session the window reached is ready; the two behind it wait for the backfill instead of holding nightly due.
+      expect(tickAt(minutes(15))).toBe(`unscreened ${window - 1} unconsolidated 1 due backfill`);
+      expect(calls("reflector")).toBe(2);
+      expect(tickAt(minutes(30))?.endsWith("unconsolidated 3 due backfill")).toBe(true);
+      expect(calls("reflector")).toBe(3);
+
+      for (const n of [45, 60, 75]) expect(tickAt(minutes(n))).toBe("unscreened 0 unconsolidated 3 due none");
+      expect(calls("reflector")).toBe(3);
+      expect(calls("consolidator")).toBe(0);
+      const backfills = runs().filter((row) => row.job === "backfill");
+      expect(backfills.map((row) => row.status)).toEqual(["ok", "ok"]);
+      expect(backfills.map((row) => row.max_obs_id)).toEqual([window - 1, (backfills[0]?.min_obs_id ?? 0) - 1]);
+      expect(backfills[1]?.min_obs_id).toBe(oldest[0]);
+      expect(readState(ledger).last_obs_id_reflected).toBe(watermark);
+
+      const nextNight = new Date(2026, 8, 19, 2, 10);
+      expect(tickAt(nextNight)).toBe("unscreened 0 unconsolidated 3 due nightly");
+      expect(calls("consolidator")).toBe(1);
+      expect(ctx.prompts.at(-1)).toContain(`  obs:${oldest[0]} [`);
+      expect(unconsolidatedEpisodes(ledger)).toEqual([]);
+      expect(tickAt(new Date(nextNight.getTime() + 15 * 60_000))).toBe("unscreened 0 unconsolidated 0 due none");
+      expect(calls("consolidator")).toBe(1);
     } finally {
       setSystemTime();
       source.close();
     }
-    expect(ctx.prompts.filter((prompt) => prompt.includes("# learn/consolidator"))).toHaveLength(1);
   });
 
   test("a held lock exits 0 without opening claude-mem", () => {

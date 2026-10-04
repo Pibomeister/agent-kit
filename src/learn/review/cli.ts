@@ -11,7 +11,7 @@ import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { readText } from "../core/store.ts";
-import { ingest, type IngestOptions } from "./ingest.ts";
+import { deferredNote, ingest, type IngestOptions } from "./ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "./ledger.ts";
 import { maintain } from "./maintain.ts";
 import { pendingPromotions, promoteById, propose, retire, rollback } from "./propose.ts";
@@ -81,9 +81,9 @@ function doIngest(args: LearnArgs, ctx: LearnContext, ledger: Ledger, root: stri
       );
       ctx.io.out(`    ${JSON.stringify(event.text.slice(0, 140))}`);
     }
-    ctx.io.out(`${result.events.length} events (dry run; ledger ${ledger.dir})`);
+    ctx.io.out(`${result.events.length} events (dry run; ledger ${ledger.dir})${deferredNote(result)}`);
   } else {
-    ctx.io.out(`ingest: +${result.fresh} new events -> ${ledger.dir}`);
+    ctx.io.out(`ingest: +${result.fresh} new events -> ${ledger.dir}${deferredNote(result)}`);
   }
 }
 

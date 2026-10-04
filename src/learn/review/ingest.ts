@@ -171,10 +171,11 @@ export function observationEvent(row: ObservationRow, project: string): ReviewEv
 }
 
 /**
- * Review observations after the ledger's contiguous resolved watermark. A
- * review-shaped row waits until an accepted reflect run screened it or a
- * reflect run quarantined it. Later screened rows may be ingested beyond that
- * gap, but the watermark never crosses the gap, so the deferred row is replayed.
+ * Review observations after the ledger's watermark, and the ones an earlier
+ * run deferred. A review-shaped row becomes an event once an accepted reflect
+ * or backfill run screened it, and is dropped once a run quarantined it. Until
+ * then its id rides in the watermark file's `deferred` list, so the watermark
+ * moves on and each run replays only those rows.
  */
 export function eventsFromClaudeMem(
   ctx: LearnContext,
@@ -182,27 +183,30 @@ export function eventsFromClaudeMem(
   project: string,
   sinceMs: number,
   memory: Ledger,
-): { events: ReviewEvent[]; maxId: number } {
-  const minId = readJson<{ claude_mem_max_id?: number }>(ledger.path(WATERMARK_FILE), {}).claude_mem_max_id ?? 0;
+): { events: ReviewEvent[]; maxId: number; deferred: number[] } {
+  const mark = readJson<{ claude_mem_max_id?: number; deferred?: number[] }>(ledger.path(WATERMARK_FILE), {});
+  const minId = mark.claude_mem_max_id ?? 0;
+  const waiting = mark.deferred ?? [];
   const source = ClaudeMemSource.open(ctx.config.memDb);
-  if (source === null) return { events: [], maxId: minId };
+  if (source === null) return { events: [], maxId: minId, deferred: waiting };
   const ranges = screenedObservationRanges(memory);
   const quarantined = quarantinedObservationIds(memory);
   try {
     let maxId = minId;
-    let blocked = false;
     const events: ReviewEvent[] = [];
-    for (const row of source.observationsSince(project, minId, { sinceEpochMs: sinceMs })) {
+    const deferred: number[] = [];
+    const rows = [
+      ...source.observationsById(waiting),
+      ...source.observationsSince(project, minId, { sinceEpochMs: sinceMs }),
+    ];
+    for (const row of rows) {
+      maxId = Math.max(maxId, row.id);
       const event = observationEvent(row, project);
-      const quarantine = quarantined.has(`obs:${row.id}`);
-      if (event !== null && !quarantine && !isScreened(ranges, row.id)) {
-        blocked = true;
-        continue;
-      }
-      if (!blocked) maxId = row.id;
-      if (event !== null && !quarantine) events.push(event);
+      if (event === null || quarantined.has(`obs:${row.id}`)) continue;
+      if (isScreened(ranges, row.id)) events.push(event);
+      else deferred.push(row.id);
     }
-    return { events, maxId };
+    return { events, maxId, deferred };
   } finally {
     source.close();
   }
@@ -292,6 +296,15 @@ export interface IngestResult {
   fresh: number;
   /** Sources that were asked for and could not be read (ruling `required-lane-failure-is-unavailable`). */
   unavailable: string[];
+  /** claude-mem review observations held back until the memory loop screens them. */
+  deferred: number;
+}
+
+/** What a report appends when review observations are waiting on the memory loop's screen; empty when none are. */
+export function deferredNote(result: IngestResult): string {
+  return result.deferred === 0
+    ? ""
+    : `; ${result.deferred} claude-mem review observation(s) wait for the memory loop to screen them`;
 }
 
 /** Gather events and append the unseen ones. In a dry run nothing is written. Commits when anything was appended. */
@@ -318,16 +331,18 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
     }
   }
   let maxId = 0;
+  let deferred: number[] = [];
   if (options.skipMem !== true) {
     const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs, new Ledger(memoryDir(ctx.config, root)));
     events.push(...mem.events);
     maxId = mem.maxId;
+    deferred = mem.deferred;
   }
   if (options.source !== "codex") events.push(...eventsFromReflectQueue(ctx, root, project));
 
-  if (ctx.config.dryRun) return { events, fresh: 0, unavailable };
+  if (ctx.config.dryRun) return { events, fresh: 0, unavailable, deferred: deferred.length };
   const fresh = appendEvents(ledger, events);
-  if (maxId > 0) writeJson(ledger.path(WATERMARK_FILE), { claude_mem_max_id: maxId, ts: nowIso() });
+  if (maxId > 0) writeJson(ledger.path(WATERMARK_FILE), { claude_mem_max_id: maxId, deferred, ts: nowIso() });
   if (fresh > 0) ledger.commit(`ingest: +${fresh} events`);
-  return { events, fresh, unavailable };
+  return { events, fresh, unavailable, deferred: deferred.length };
 }

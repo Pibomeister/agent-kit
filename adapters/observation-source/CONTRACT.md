@@ -50,7 +50,9 @@ Distinct project names, with any worktree or subdirectory suffix folded into its
 ### `observationsSince`
 
 ```text
-observationsSince(project, afterId, { sinceEpochMs?, newestFirst? }) -> ObservationRow[]
+observationsSince(project, afterId, { sinceEpochMs?, newestFirst?, throughId? }) -> ObservationRow[]
+observationIds(project, throughId) -> ObservationId[]
+observationsById(ids) -> ObservationRow[]
 ```
 
 The watermark read. `afterId` is the ledger's `last_obs_id_reflected`
@@ -61,9 +63,21 @@ Each accepted reflect run records the lowest and highest observation id it was s
 and `max_obs_id` in `schemas/memory-run.schema.json`). Downstream judges receive only observations
 inside those exact ranges. Nightly marks still count the session's full observation population
 through the consumed id, matching `episode.obs` even when the first window started after older
-history. Review ingest keeps its watermark before an unscreened review observation and replays that
-row until a later accepted range screens it; screened later rows may be admitted meanwhile, so
-pre-window review history is deferred rather than dropped.
+history.
+
+What the watermark passed without an accepted run being shown it is screened by the backfill job:
+the history older than a first window, and whatever an accepted run from before `min_obs_id`
+covered, since such a run contributes no range. `observationIds` finds those ids and `throughId`
+bounds the read to one batch, newest first, one batch per idle tick. A backfill run calls the same
+judge under the same input cap, applies the same quarantine and records its own range; it writes
+neither the memory nor the watermark, and a muted project runs none. The scheduler counts an
+unconsolidated episode toward nightly only once it has a screened observation to show.
+
+Review ingest moves its watermark past an unscreened review observation and carries that
+observation's id in the watermark file's `deferred` list. Each ingest re-reads only those ids
+(`observationsById`) beside the rows after the watermark, so pre-window review history is deferred
+rather than dropped and the replay stays as small as the list. The count still waiting is reported
+by the ingest and by `setup seed`'s dry ingest.
 
 ### `sessions`
 

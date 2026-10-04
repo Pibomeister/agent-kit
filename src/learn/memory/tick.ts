@@ -1,8 +1,8 @@
 /**
  * The memory loop's scheduler. Every tick: take the runtime-wide lock,
  * discover projects from claude-mem, and for each project active in the last
- * seven days record new episodes, then run whichever of reflect, nightly and
- * weekly are due. Failures are logged, never raised.
+ * seven days record new episodes, then run whichever of reflect, backfill,
+ * nightly and weekly are due. Failures are logged, never raised.
  *
  * The scheduled path uses stat only. It never spawns git in a repository and
  * never opens a file inside one: under a macOS scheduler that open blocks on
@@ -18,15 +18,15 @@ import { nowIso, nowMs, todayLocal } from "../core/store.ts";
 import { loadEvents } from "../review/events.ts";
 import { reviewLedger, reviewLedgerDir } from "../review/ledger.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
-import { consolidate } from "./consolidate.ts";
+import { consolidate, readyEpisodes } from "./consolidate.ts";
 import { deep } from "./deep.ts";
 import { buildEpisodes, type EpisodeEvent, unconsolidatedEpisodes } from "./episodes.ts";
 import { appendRun, ensureMemoryLedger, logLine, type MemoryState, memoryDir, readState } from "./ledger.ts";
-import { reflect } from "./reflect.ts";
+import { backfill, reflect, unscreenedIds } from "./reflect.ts";
 import { discoverProjects, discoverySince, readRegistry } from "./registry.ts";
 
-export type Job = "reflect" | "nightly" | "weekly";
-export const JOBS: readonly Job[] = ["reflect", "nightly", "weekly"];
+export type Job = "reflect" | "backfill" | "nightly" | "weekly";
+export const JOBS: readonly Job[] = ["reflect", "backfill", "nightly", "weekly"];
 
 export const ACTIVE_DAYS = 7;
 export const REFLECT_MAX_GAP_MS = 6 * 3600 * 1000;
@@ -42,6 +42,9 @@ export interface DecideInput {
   idleS: number;
   newTokens: number;
   newObs: number;
+  /** Observations at or below the reflect watermark that no accepted run was shown. */
+  unscreened: number;
+  /** Unconsolidated episodes with screened observations to show; one still waiting on a screen is not counted. */
   unconsolidated: number;
   /** `all` or one job forces it, even on a muted project. */
   force?: Job | "all" | null;
@@ -67,11 +70,13 @@ function backoffElapsed(state: MemoryState, job: "reflect" | "nightly", now: num
  * | Job | Due when |
  * |---|---|
  * | reflect | idle and new discovery tokens reach the threshold, or any new observation 6h after the last reflect |
- * | nightly | past the nightly hour, not yet run today, one unconsolidated episode; or a backlog of 25 while idle |
+ * | backfill | idle and an observation behind the watermark is unscreened; one batch per tick |
+ * | nightly | past the nightly hour, not yet run today, one ready episode; or a backlog of 25 ready while idle |
  * | weekly | idle and a week since the last |
  *
  * A failed or rejected reflect, and a failed nightly, hold that job back for
- * 1h, doubling per consecutive failure up to 24h. A forced job ignores it.
+ * 1h, doubling per consecutive failure up to 24h. The backfill shares the
+ * reflect backoff. A forced job ignores it.
  */
 export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
   if (input.force) return input.force === "all" ? [...JOBS] : [input.force];
@@ -86,6 +91,7 @@ export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
       (input.newObs > 0 && now - lastReflect >= REFLECT_MAX_GAP_MS))
   )
     due.push("reflect");
+  if (idle && input.unscreened > 0 && backoffElapsed(input.state, "reflect", now)) due.push("backfill");
   const today = todayLocal(input.now);
   if (
     backoffElapsed(input.state, "nightly", now) &&
@@ -140,19 +146,24 @@ export function runProject(
       return [...out, `no claude-mem observations under project '${memProject}'; check the folder basename matches`];
     const idleS = (nowMs() - lastActivity) / 1000;
     const { tokens: newTokens, count: newObs } = source.newTokensSince(memProject, state.last_obs_id_reflected ?? 0);
-    const unconsolidated = unconsolidatedEpisodes(ledger).length;
+    const unscreened = unscreenedIds(source, ledger, memProject).length;
+    const unconsolidated = readyEpisodes(source, ledger, unconsolidatedEpisodes(ledger)).size;
     const force = options.force === true ? (options.job ?? "all") : null;
-    let due = decide({ state, now: new Date(), idleS, newTokens, newObs, unconsolidated, force }, ctx.config);
+    let due = decide(
+      { state, now: new Date(), idleS, newTokens, newObs, unscreened, unconsolidated, force },
+      ctx.config,
+    );
     if (options.job !== undefined && options.force !== true)
       due = due.filter((job) => options.job === "all" || options.job === job);
     const dueText = due.length > 0 ? due.join(",") : "none";
     out.push(
-      `idle ${Math.floor(idleS)}s new_tokens ${newTokens} new_obs ${newObs} unconsolidated ${unconsolidated} due ${dueText}`,
+      `idle ${Math.floor(idleS)}s new_tokens ${newTokens} new_obs ${newObs} unscreened ${unscreened} unconsolidated ${unconsolidated} due ${dueText}`,
     );
     const trigger = options.force === true ? "force" : "tick";
     const existingReview = new Ledger(reviewLedgerDir(ctx.config, root));
     const runners: Record<Job, () => string> = {
       reflect: () => reflect(ctx, source, ledger, memProject, trigger),
+      backfill: () => backfill(ctx, source, ledger, memProject, trigger),
       // Forwarding findings seeds the review ledger when it is missing; compaction only touches one that exists.
       nightly: () => consolidate(ctx, source, ledger, root, dryRun ? null : reviewLedger(ctx.config, root), trigger),
       weekly: () => deep(ctx, ledger, root, existingReview.initialized ? existingReview : null, trigger),

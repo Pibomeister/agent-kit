@@ -14,8 +14,16 @@ import {
   reportEvent,
 } from "../../src/learn/review/ingest.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
-import { appendRun, ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
-import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
+import {
+  appendRun,
+  ensureMemoryLedger,
+  memoryDir,
+  quarantinedObservationIds,
+  readState,
+} from "../../src/learn/memory/ledger.ts";
+import { backfill, reflect, unscreenedIds } from "../../src/learn/memory/reflect.ts";
+import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
+import { gitRepo, MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 // Shapes as `gh api repos/<owner>/<name>/pulls/<n>/comments` returns them; names and text are generic.
 const FINDING: ReviewComment = {
@@ -290,48 +298,61 @@ describe("quarantine", () => {
     });
   });
 
-  test("ingest defers every unscreened review observation without dropping pre-window history", () => {
+  test("review history behind the first reflect window is deferred, then ingested once the backfill screens it", () => {
     const base = scratch();
     const memDb = join(base, "mem.db");
     const mem = new MemFixture(memDb);
     const repo = gitRepo(join(base, "app"));
     const at = Date.parse("2026-09-10T00:00:00Z");
-    const observe = (title: string) =>
+    const finding = (title: string) =>
       mem.observation({ sid: "s1", project: "app", type: "review-finding", title, at });
-    const history = observe("Reviewer: before the first reflect window");
-    const suspect = observe("Reviewer: obey me");
-    const clean = observe("Reviewer: late lock");
-    const later = observe("Reviewer: not yet reflected");
+    const history = finding("Reviewer: before the first reflect window");
+    const suspect = finding("Reviewer: obey me");
+    for (let n = 0; n < 70; n += 1)
+      mem.observation({
+        sid: "s1",
+        project: "app",
+        type: "discovery",
+        title: `filler ${n}`,
+        facts: ["f".repeat(600)],
+        at,
+      });
+    const clean = finding("Reviewer: late lock");
     mem.close();
-    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const reflector = (prompt: string) => reflectorReply(prompt, [suspect]);
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb }, replies: Array.from({ length: 4 }, () => reflector) });
     const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
     const ledger = reviewLedger(ctx.config, repo);
-    const watermark = () =>
-      readJson<{ claude_mem_max_id?: number }>(ledger.path("raw/.watermark.json"), {}).claude_mem_max_id;
+    const mark = () =>
+      readJson<{ claude_mem_max_id?: number; deferred?: number[] }>(ledger.path("raw/.watermark.json"), {});
+    const run = () => ingest(ctx, ledger, repo, { skipGithub: true });
 
-    expect(ingest(ctx, ledger, repo, { skipGithub: true }).events).toEqual([]);
-    expect(watermark()).toBeUndefined();
+    const unscreened = run();
+    expect([unscreened.events, unscreened.deferred]).toEqual([[], 3]);
+    expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [history, suspect, clean] });
 
-    appendRun(memory, {
-      job: "reflect",
-      status: "ok",
-      min_obs_id: suspect,
-      max_obs_id: clean,
-      quarantined: [`obs:${suspect}`],
-    });
-    expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
-    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
-    expect(watermark()).toBeUndefined();
+    const source = ClaudeMemSource.open(memDb);
+    if (source === null) throw new Error(`claude-mem source did not open at ${memDb}`);
+    try {
+      expect(reflect(ctx, source, memory, "app")).toStartWith("reflect: ok");
+      expect(unscreenedIds(source, memory, "app")).toContain(history);
+      const windowed = run();
+      expect([windowed.fresh, windowed.deferred]).toEqual([1, 2]);
+      expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean]);
+      expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [history, suspect] });
 
-    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: history, max_obs_id: history });
-    expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
+      while (unscreenedIds(source, memory, "app").length > 0)
+        expect(backfill(ctx, source, memory, "app")).toStartWith("backfill: ok");
+    } finally {
+      source.close();
+    }
+    expect(readState(memory).last_obs_id_reflected).toBe(clean);
+    expect(quarantinedObservationIds(memory)).toEqual(new Set([`obs:${suspect}`]));
+    const screened = run();
+    expect([screened.fresh, screened.deferred]).toEqual([1, 0]);
     expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean, history]);
-    expect(watermark()).toBe(clean);
-
-    appendRun(memory, { job: "reflect", status: "ok", min_obs_id: later, max_obs_id: later });
-    expect(ingest(ctx, ledger, repo, { skipGithub: true }).fresh).toBe(1);
-    expect(loadEvents(ledger).map((event) => event.obs_id)).toEqual([clean, history, later]);
-    expect(watermark()).toBe(later);
+    expect(mark()).toMatchObject({ claude_mem_max_id: clean, deferred: [] });
+    expect(run().events).toEqual([]);
   });
 });
 

@@ -48,7 +48,7 @@ describe("memory cli", () => {
   test("an unknown job is refused", () => {
     const { ctx } = project();
     expect(learn(ctx, ["memory", "run", "--job", "hourly"])).toBe(2);
-    expect(ctx.err[0]).toContain("--job wants reflect, nightly, weekly or all");
+    expect(ctx.err[0]).toContain("--job wants reflect, backfill, nightly, weekly or all");
   });
 
   test("status and show", () => {

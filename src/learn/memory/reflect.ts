@@ -11,6 +11,12 @@
  * and sets the watermark past everything older, so memory starts from the
  * present rather than replaying history. Rejected and failed attempts keep a
  * separate exponential backoff without advancing the observation watermark.
+ *
+ * The backfill screens what that start skipped: observations at or below the
+ * watermark that no accepted run was shown, one fixed batch per call, newest
+ * first. It runs the same judge and the same quarantine, records the range it
+ * screened and the observations it quarantined, and writes neither `memory.md`
+ * nor the watermark.
  */
 import { existsSync, writeFileSync } from "node:fs";
 import type { LearnContext } from "../core/context.ts";
@@ -21,10 +27,12 @@ import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/cla
 import {
   appendRun,
   citedIds,
+  isScreened,
   logLine,
   provenanceGate,
   readState,
   saveState,
+  screenedObservationRanges,
   SECTIONS,
   sid8,
   splitLines,
@@ -35,6 +43,8 @@ import { parseSecurityNotes, redact, SECURITY_KINDS, securityRecord, withSecurit
 export const INPUT_CHARS = 60_000;
 /** The share of `INPUT_CHARS` held back from observations for session summaries. */
 export const SUMMARY_CHARS = 20_000;
+/** The most observations one backfill call screens. */
+export const BACKFILL_BATCH = 100;
 
 /** Observation id, time, type, session, title, subtitle, and facts cut at 600 characters. */
 export function formatObservation(row: ObservationRow): string {
@@ -48,14 +58,8 @@ export function formatObservation(row: ObservationRow): string {
   return `${bits.join("\n")}\n`;
 }
 
-/** Observations after the watermark, under the input cap less the summaries' share. A zero watermark fills from the newest. Returned oldest first. */
-export function fetchNew(
-  source: ClaudeMemSource,
-  memProject: string,
-  watermark: number,
-  inputChars = INPUT_CHARS - SUMMARY_CHARS,
-): ObservationRow[] {
-  const rows = source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 });
+/** The leading rows that fit under the cap, at least one. Returned oldest first. */
+function fit(rows: readonly ObservationRow[], inputChars: number): ObservationRow[] {
   const out: ObservationRow[] = [];
   let used = 0;
   for (const row of rows) {
@@ -65,6 +69,24 @@ export function fetchNew(
     out.push(row);
   }
   return out.sort((a, b) => a.id - b.id);
+}
+
+/** Observations after the watermark, under the input cap less the summaries' share. A zero watermark fills from the newest. Returned oldest first. */
+export function fetchNew(
+  source: ClaudeMemSource,
+  memProject: string,
+  watermark: number,
+  inputChars = INPUT_CHARS - SUMMARY_CHARS,
+): ObservationRow[] {
+  return fit(source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 }), inputChars);
+}
+
+/** Observation ids at or below the watermark that no accepted reflect or backfill run was shown, oldest first. */
+export function unscreenedIds(source: ClaudeMemSource, ledger: Ledger, memProject: string): number[] {
+  const ranges = screenedObservationRanges(ledger);
+  return source
+    .observationIds(memProject, readState(ledger).last_obs_id_reflected ?? 0)
+    .filter((id) => !isScreened(ranges, id));
 }
 
 const field = (value: string | null) => (value ?? "").slice(0, 600);
@@ -171,6 +193,33 @@ export interface ReflectInputs {
   summaries?: readonly SummaryRow[];
 }
 
+/** The provenance gate and the quarantine over one reflector reply, with the security fields its run row records. */
+function screenReply(
+  ledger: Ledger,
+  reply: ReflectReply,
+  valid: ReadonlySet<string>,
+  previous: string,
+  inputs: ReflectInputs,
+) {
+  const allowed = new Set([...valid, ...citedIds(previous)]);
+  const { kept, dropped, candidates } = provenanceGate(splitLines(reply.memory), allowed);
+  const { notes, rejected } = parseSecurityNotes(reply.security_notes, valid);
+  if (rejected > 0) logLine(ledger, `reflect: ${rejected} security note(s) dropped, citing no observation shown`);
+  const red = redact(kept, {
+    observations: inputs.observations ?? [],
+    summaries: inputs.summaries ?? [],
+    previous,
+    notes,
+  });
+  const security = {
+    security_notes: new Set(notes.map((n) => n.obs)).size,
+    security_inferred: red.inferred.length,
+    security_notes_rejected: rejected,
+    quarantined: [...new Set(red.quarantine.map((n) => n.obs))].sort(),
+  };
+  return { dropped, candidates, red, security };
+}
+
 /**
  * Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit.
  *
@@ -191,16 +240,16 @@ export function applyReflection(
   meta: Record<string, unknown> = {},
   inputs: ReflectInputs = {},
 ): ReflectResult {
-  const { memory: newText, security_notes } =
-    typeof reply === "string" ? { memory: reply, security_notes: undefined } : reply;
   const memoryPath = ledger.path("memory.md");
   const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
-  const allowed = new Set([...valid, ...citedIds(previous)]);
-  const { kept, dropped, candidates } = provenanceGate(splitLines(newText), allowed);
-  const { notes, rejected } = parseSecurityNotes(security_notes, valid);
-  if (rejected > 0) logLine(ledger, `reflect: ${rejected} security note(s) dropped, citing no observation shown`);
+  const { dropped, candidates, red, security } = screenReply(
+    ledger,
+    typeof reply === "string" ? { memory: reply } : reply,
+    valid,
+    previous,
+    inputs,
+  );
   const observations = inputs.observations ?? [];
-  const red = redact(kept, { observations, summaries: inputs.summaries ?? [], previous, notes });
   const redacted = red.flagged + red.tokens;
   const sessionOf = (obs: string) => {
     const row = observations.find((r) => `obs:${r.id}` === obs);
@@ -209,15 +258,7 @@ export function applyReflection(
   const record = securityRecord(red.quarantine, sessionOf);
   const written = `${red.kept.join("\n").trim()}\n`;
   const text = `${withSecurityRecord(red.kept, record).join("\n").trim()}\n`;
-  const quarantined = [...new Set(red.quarantine.map((n) => n.obs))].sort();
-  const outcome = {
-    dropped_by_provenance: dropped,
-    dropped_by_redaction: redacted,
-    security_notes: new Set(notes.map((n) => n.obs)).size,
-    security_inferred: red.inferred.length,
-    security_notes_rejected: rejected,
-    quarantined,
-  };
+  const outcome = { dropped_by_provenance: dropped, dropped_by_redaction: redacted, ...security };
   let reason = degenerate(written, previous, inputTokens, cap, record === null ? 0 : tokens(record));
   // A gutted memory is worse than a stale one.
   const meant = candidates - red.flagged;
@@ -253,7 +294,7 @@ export function applyReflection(
   });
   logLine(
     ledger,
-    `reflect ok: ${tokens(text)} tokens, ${dropped} bullets dropped by provenance, ${redacted} by redaction, ${quarantined.length} observation(s) quarantined, watermark obs:${maxObsId}`,
+    `reflect ok: ${tokens(text)} tokens, ${dropped} bullets dropped by provenance, ${redacted} by redaction, ${security.quarantined.length} observation(s) quarantined, watermark obs:${maxObsId}`,
   );
   ledger.commit(`reflect: watermark obs:${maxObsId}`);
   return { ok: true, reason: null, dropped, redacted };
@@ -306,4 +347,75 @@ export function reflect(
   );
   const redacted = result.redacted > 0 ? `, ${result.redacted} redacted` : "";
   return `reflect: ${result.ok ? "ok" : `rejected: ${result.reason}`} (${observations.length} obs, ${result.dropped} dropped${redacted})`;
+}
+
+/**
+ * Screen one batch of the observations the watermark passed without an
+ * accepted run being shown them. The reply's memory is read only by the
+ * quarantine; nothing it says is written.
+ */
+export function backfill(
+  ctx: LearnContext,
+  source: ClaudeMemSource,
+  ledger: Ledger,
+  memProject: string,
+  trigger = "tick",
+): string {
+  const pending = unscreenedIds(source, ledger, memProject);
+  const batch = pending.slice(-BACKFILL_BATCH);
+  const oldest = batch[0];
+  const newest = batch.at(-1);
+  if (oldest === undefined || newest === undefined) return "backfill: nothing unscreened";
+  const wanted = new Set(batch);
+  const observations = fit(
+    source
+      .observationsSince(memProject, oldest - 1, { throughId: newest, newestFirst: true })
+      .filter((row) => wanted.has(row.id)),
+    INPUT_CHARS - SUMMARY_CHARS,
+  );
+  const sids = [...new Set(observations.map((row) => row.memory_session_id))].sort();
+  const previous = readText(ledger.path("memory.md"));
+  const summaries = source.summaries(sids);
+  const prompt = reflectPrompt(ctx, previous, observations, summaries);
+  if (ctx.config.dryRun) {
+    ctx.io.out(prompt);
+    return `backfill: dry run (${observations.length} of ${pending.length} unscreened observations, ${tokens(prompt)} prompt tokens)`;
+  }
+  const reply = ctx.judge(prompt, {
+    runId: null,
+    loop: "memory",
+    role: "reflector",
+    project: memProject,
+  });
+  const text = reply?.memory;
+  if (typeof text !== "string" || text.trim() === "") {
+    markAttempt(ledger);
+    appendRun(ledger, { job: "backfill", status: "failed", reason: "no judge output", trigger });
+    logLine(ledger, "backfill failed: no judge output");
+    return "backfill: judge call failed";
+  }
+  const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
+  const { security } = screenReply(ledger, { memory: text, security_notes: reply?.security_notes }, valid, previous, {
+    observations,
+    summaries,
+  });
+  const minObsId = Math.min(...observations.map((row) => row.id));
+  const maxObsId = Math.max(...observations.map((row) => row.id));
+  appendRun(ledger, {
+    job: "backfill",
+    status: "ok",
+    ...security,
+    tokens_in: tokens(observations.map(formatObservation).join("")),
+    min_obs_id: minObsId,
+    max_obs_id: maxObsId,
+    trigger,
+    observations: observations.length,
+    sessions: sids.length,
+  });
+  logLine(
+    ledger,
+    `backfill ok: screened obs:${minObsId}..obs:${maxObsId}, ${security.quarantined.length} observation(s) quarantined`,
+  );
+  ledger.commit(`backfill: screened obs:${minObsId}..obs:${maxObsId}`);
+  return `backfill: ok (${observations.length} obs, ${pending.length - observations.length} left)`;
 }

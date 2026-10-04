@@ -111,22 +111,23 @@ export function quarantinedObservationIds(ledger: Ledger): Set<string> {
   );
 }
 
-/** Exact observation-id ranges shown to accepted reflect runs, oldest run first. */
+/**
+ * Exact observation-id ranges shown to accepted reflect and backfill runs,
+ * oldest run first. A run that recorded no lower bound contributes no range,
+ * so what it covered is screened again by the backfill.
+ */
 export function screenedObservationRanges(ledger: Ledger): [number, number][] {
   const ranges: [number, number][] = [];
-  let previousMax: number | undefined;
   for (const run of readJsonl<{ job?: string; status?: string; min_obs_id?: number; max_obs_id?: number }>(
     ledger.path("runs.jsonl"),
   )) {
-    if (run.job !== "reflect" || run.status !== "ok" || run.max_obs_id === undefined) continue;
-    const min = run.min_obs_id ?? (previousMax === undefined ? undefined : previousMax + 1);
-    if (min !== undefined && min <= run.max_obs_id) ranges.push([min, run.max_obs_id]);
-    previousMax = run.max_obs_id;
+    if ((run.job !== "reflect" && run.job !== "backfill") || run.status !== "ok") continue;
+    if (run.min_obs_id !== undefined && run.max_obs_id !== undefined) ranges.push([run.min_obs_id, run.max_obs_id]);
   }
   return ranges;
 }
 
-/** Whether an accepted reflect run was shown this observation id. */
+/** Whether an accepted reflect or backfill run was shown this observation id. */
 export function isScreened(ranges: readonly (readonly [number, number])[], id: number): boolean {
   return ranges.some(([min, max]) => id >= min && id <= max);
 }

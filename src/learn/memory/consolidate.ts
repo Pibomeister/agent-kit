@@ -8,9 +8,9 @@
  * episodes that fit under the input cap reach the judge, so only they are
  * marked consolidated and only their ids pass the evidence gate.
  *
- * An episode shows only observations inside an accepted reflector run's exact
- * id range and, once a run has consumed it, only those after the highest id
- * that run consumed. An episode with none to show waits.
+ * An episode shows only observations inside an accepted reflect or backfill
+ * run's exact id range and, once a run has consumed it, only those after the
+ * highest id that run consumed. An episode with none to show waits.
  *
  * A lesson is `confirmed` when its evidence spans two or more sessions and
  * `hypothesis` otherwise. A newly confirmed lesson becomes a knowledgebase
@@ -436,6 +436,39 @@ function triggerOf(
   return [...sessions].some((sid) => corrected.has(sid)) ? "correction" : "failure";
 }
 
+/** A pending episode's screened observations no standing run has consumed, and the mark consuming them records. */
+export interface ReadyEpisode {
+  rows: ObservationRow[];
+  obs: number;
+  obs_id: number;
+}
+
+/** The pending episodes that have something to show the consolidator, by session id. */
+export function readyEpisodes(
+  source: ClaudeMemSource,
+  ledger: Ledger,
+  pending: readonly Episode[],
+): Map<string, ReadyEpisode> {
+  const ranges = screenedObservationRanges(ledger);
+  const consumed = consumedObsIds(ledger);
+  const ready = new Map<string, ReadyEpisode>();
+  for (const episode of pending) {
+    const allRows = source.sessionObservations(episode.sid);
+    const after = consumed.get(episode.sid) ?? 0;
+    const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
+    const last = rows.at(-1);
+    if (last !== undefined)
+      ready.set(episode.sid, { rows, obs: allRows.filter((row) => row.id <= last.id).length, obs_id: last.id });
+  }
+  return ready;
+}
+
+/** A nightly with nothing to show still counts as today's run, so the scheduler does not call it again every tick. */
+function nothingToConsolidate(ctx: LearnContext, ledger: Ledger, message: string): string {
+  if (!ctx.config.dryRun) saveState(ledger, { ...readState(ledger), last_nightly: todayLocal() });
+  return message;
+}
+
 export function consolidate(
   ctx: LearnContext,
   source: ClaudeMemSource,
@@ -449,23 +482,10 @@ export function consolidate(
     deliverReviewEvents(review, ledger, []);
   const all = loadEpisodes(ledger);
   const pending = unconsolidatedEpisodes(ledger);
-  if (pending.length === 0) return "nightly: no unconsolidated episodes";
-  const ranges = screenedObservationRanges(ledger);
-  const consumed = consumedObsIds(ledger);
-  const unseen = new Map<string, { rows: ObservationRow[]; obs: number; obs_id: number }>();
-  for (const episode of pending) {
-    const allRows = source.sessionObservations(episode.sid);
-    const seen = allRows.filter((row) => isScreened(ranges, row.id));
-    const after = consumed.get(episode.sid) ?? 0;
-    const rows = seen.filter((row) => row.id > after);
-    const last = rows.at(-1);
-    if (last !== undefined) {
-      const obs = allRows.filter((row) => row.id <= last.id).length;
-      unseen.set(episode.sid, { rows, obs, obs_id: last.id });
-    }
-  }
+  if (pending.length === 0) return nothingToConsolidate(ctx, ledger, "nightly: no unconsolidated episodes");
+  const unseen = readyEpisodes(source, ledger, pending);
   const ready = pending.filter((episode) => unseen.has(episode.sid));
-  if (ready.length === 0) return "nightly: no reflected observations to consolidate";
+  if (ready.length === 0) return nothingToConsolidate(ctx, ledger, "nightly: no reflected observations to consolidate");
   const { chosen, failures } = stratify(ready, ctx.config.batch);
   const pairs = pairFailures(failures, all);
   const quarantined = quarantinedObservationIds(ledger);

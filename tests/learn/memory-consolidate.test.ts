@@ -35,11 +35,12 @@ import {
   readState,
   saveState,
 } from "../../src/learn/memory/ledger.ts";
+import { backfill, unscreenedIds } from "../../src/learn/memory/reflect.ts";
 import { lessonsBlock } from "../../src/learn/memory/session-context.ts";
 import { EVENTS_FILE, reviewLedger } from "../../src/learn/review/ledger.ts";
 import type { ReviewEvent } from "../../src/learn/review/events.ts";
 import { ClaudeMemSource, type ObservationRow } from "../../src/learn/sources/claude-mem.ts";
-import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
+import { gitRepo, MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 const REPLY = {
   lessons: [
@@ -378,7 +379,7 @@ describe("stratify", () => {
 type Reply = Record<string, unknown>;
 
 /** Two completed sessions of project `shop`, one observation each, and a judge scripted with `replies`. */
-function nightlyFixture(replies: (o1: number, o2: number) => Reply[]) {
+function nightlyFixture(replies: (o1: number, o2: number) => Array<Reply | ((prompt: string) => Reply)>) {
   const dir = scratch();
   const root = gitRepo(join(dir, "shop"));
   const dbPath = join(dir, "mem.db");
@@ -529,6 +530,33 @@ describe("nightly", () => {
     expect(unconsolidatedEpisodes(ledger).map((pending) => pending.sid)).toEqual(["bbbb2222-0000"]);
   });
 
+  test("a ledger whose accepted reflect run recorded no lower bound is screened again before nightly shows it", () => {
+    const { ctx, root, ledger, review, source, o1, o2 } = nightlyFixture(() => [
+      (prompt: string) => reflectorReply(prompt),
+      { lessons: [], review_events: [] },
+    ]);
+    writeFileSync(ledger.path("runs.jsonl"), "");
+    appendRun(ledger, { job: "reflect", status: "ok", max_obs_id: o2 });
+    const memory = readFileSync(ledger.path("memory.md"), "utf8");
+    try {
+      expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no reflected observations to consolidate");
+      expect(ctx.prompts).toEqual([]);
+      expect(readState(ledger).last_nightly).toBe(todayLocal());
+      expect(unscreenedIds(source, ledger, "shop")).toEqual([o1, o2]);
+      expect(backfill(ctx, source, ledger, "shop")).toBe("backfill: ok (2 obs, 0 left)");
+      expect(readState(ledger).last_obs_id_reflected).toBe(o2);
+      expect(readFileSync(ledger.path("memory.md"), "utf8")).toBe(memory);
+      expect(backfill(ctx, source, ledger, "shop")).toBe("backfill: nothing unscreened");
+      expect(consolidate(ctx, source, ledger, root, review)).toBe(
+        "nightly: 2/2 episodes -> +0 lessons, 0 review events",
+      );
+    } finally {
+      source.close();
+    }
+    expect(shownObs(ctx.prompts[1])).toEqual([o1, o2]);
+    expect(unconsolidatedEpisodes(ledger)).toEqual([]);
+  });
+
   test("a first reflect window exposes only the observations the reflector was shown", () => {
     const { ctx, root, ledger, review, source, o2 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
     writeFileSync(ledger.path("runs.jsonl"), "");
@@ -569,7 +597,7 @@ describe("nightly", () => {
     const late = grown.grow();
     expect(grown.nightlyOnRecordedEpisodes()).toBe("nightly: 1/1 episodes -> +0 lessons, 0 review events");
     expect(
-      readJsonl<{ obs: number; obs_id: number }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
+      readJsonl<{ obs: number; obs_id: number | undefined }>(grown.ledger.path(CONSOLIDATED_FILE)).map((mark) => [
         mark.obs,
         mark.obs_id,
       ]),

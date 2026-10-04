@@ -11,7 +11,7 @@ import type { LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { ensureMemoryLedger, memoryDir } from "../memory/ledger.ts";
 import { registerRoot } from "../memory/registry.ts";
-import { ingest, type IngestOptions } from "../review/ingest.ts";
+import { deferredNote, ingest, type IngestOptions } from "../review/ingest.ts";
 import { reviewLedger } from "../review/ledger.ts";
 import { skillsLedger } from "../skills/learn.ts";
 
@@ -54,7 +54,7 @@ export function seed(ctx: LearnContext, repo: string, options: SeedOptions = {})
   for (const event of result.events) bySource.set(event.source, (bySource.get(event.source) ?? 0) + 1);
   const detail = [...bySource.entries()].map(([source, n]) => `${source}=${n}`).join(", ");
   ctx.io.out(
-    `dry ingest: ${result.events.length} events visible${detail === "" ? "" : ` (${detail})`}; nothing written`,
+    `dry ingest: ${result.events.length} events visible${detail === "" ? "" : ` (${detail})`}${deferredNote(result)}; nothing written`,
   );
   ctx.io.out(
     `next: \`ak learn review run --repo ${root}\` for the first review pass, \`ak learn memory run --repo ${root}\` for the first memory pass`,
