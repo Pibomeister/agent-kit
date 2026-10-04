@@ -552,6 +552,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     .bySection("skills")
     .filter((entry) => entry.invocation === "U")
     .map((entry) => entry.id);
+  const renderExplicitStarts = (text: string) =>
+    rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
 
@@ -715,12 +717,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
     const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, bodyPath);
     issues.push(...rewritten.issues);
-    const hostSkill = rewriteExplicitStarts(
-      `${generated.text}${rewritten.text}`,
-      host,
-      catalog.package.namespace,
-      userSkillIds,
-    );
+    const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
 
     files.set(bodyPath, { path: bodyPath, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
@@ -735,7 +732,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       if (text === null) continue;
       const assetRewrite = rewriteLinks(asset, asset, text, included, asset);
       issues.push(...assetRewrite.issues);
-      files.set(asset, { path: asset, contents: assetRewrite.text, source: asset });
+      files.set(asset, { path: asset, contents: renderExplicitStarts(assetRewrite.text), source: asset });
       for (const dep of assetRewrite.dependencies) {
         const published = publishedPathFor(dep, included);
         if (published !== null) pending.push({ source: dep, published });
@@ -756,7 +753,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     const rewritten = rewriteLinks(next.source, next.published, text, included, next.source);
     issues.push(...rewritten.issues);
-    files.set(next.published, { path: next.published, contents: rewritten.text, source: next.source });
+    files.set(next.published, {
+      path: next.published,
+      contents: renderExplicitStarts(rewritten.text),
+      source: next.source,
+    });
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
       if (published !== null) pending.push({ source: dep, published });

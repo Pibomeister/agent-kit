@@ -193,7 +193,8 @@ agent-kit` followed by `codex plugin add ak@agent-kit`.
 
 ## 5. Testing
 
-Tests this adapter owns, in `tests/packaging.test.ts`:
+Tests this adapter owns. Item 6 is in `tests/packaging.test.ts`. Item 5 needs the host CLI and
+the published branch, so `bun test` does not run it:
 
 1. **Bundle parity** — the skill id set in `dist/codex` equals the skill id set in
    `dist/claude-code` for the same profile. Canonical content is equivalent after reversing the

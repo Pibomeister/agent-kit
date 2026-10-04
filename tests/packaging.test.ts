@@ -1442,6 +1442,26 @@ describe("the two host bundles, compared", () => {
    * does the work on that host is §3.1's description clause, which this package
    * does not generate yet.
    */
+  test("a skill-local reference and a shared dependency name a U command in the same form as the gate", () => {
+    // ADR-0009: the rendering covers a U command wherever it occurs in a
+    // packaged skill. A reference that keeps the canonical spelling recommends
+    // a start the codex gate beside it refuses.
+    const ctx = ctxFor({
+      "skills/alpha/references/setup.md": "Remind the human to run `/ak:alpha`.\n",
+      "protocols/tdd/PROTOCOL.md": "# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n",
+    });
+    const claude = planBundle(ctx, "claude-code", {});
+    const codex = planBundle(ctx, "codex", {});
+    const shared = "references/shared/protocols/tdd/PROTOCOL.md";
+
+    expect(codex.files.get("skills/alpha/references/setup.md")?.contents).toBe("Remind the human to run `$alpha`.\n");
+    expect(codex.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `$alpha`, not `/ak:alpha-next`.\n");
+    expect(claude.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Remind the human to run `/ak:alpha`.\n",
+    );
+    expect(claude.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n");
+  });
+
   test("neither host's own frontmatter keys leak into the other host's bundle", () => {
     const { claude, codex } = bundles();
     const alphaIn = (plan: ReturnType<typeof planBundle>) => plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
@@ -1507,6 +1527,22 @@ describe("portable explicit-start authority in the real catalog", () => {
 
       expect(packagedSkill(codex, entry.id).data["description"]).not.toContain(canonical);
     }
+  });
+
+  test("no file packaged under a codex skill or its shared references names a U skill's canonical command", () => {
+    const userIds = catalog
+      .bySection("skills")
+      .filter((skill) => skill.invocation === "U")
+      .map((skill) => skill.id);
+    const canonicalStart = new RegExp(`${catalog.package.namespace}(?:${userIds.join("|")})(?![a-z0-9]|-[a-z0-9])`);
+    const offenders = [...codex.files.values()]
+      .filter((file) => /^(?:skills|references)\//.test(file.path) && canonicalStart.test(file.contents))
+      .map((file) => file.path);
+    expect(offenders).toEqual([]);
+
+    const setup = codex.files.get("skills/product-pulse/references/setup.md")?.contents ?? "";
+    expect(setup).toContain("`$product-pulse`");
+    expect(claude.files.get("skills/product-pulse/references/setup.md")?.contents).toContain("`/ak:product-pulse`");
   });
 
   test("M skill trigger descriptions are unchanged, so automatic loading remains available", () => {

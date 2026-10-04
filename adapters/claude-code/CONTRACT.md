@@ -214,7 +214,8 @@ claude plugin eval dist/claude-code --threshold 1.0 --no-publish
 `--strict` treats warnings as errors and is the form CI runs; it fails on unrecognized fields and
 missing metadata that the runtime would otherwise tolerate.
 
-Tests this adapter owns, in `tests/packaging.test.ts`:
+Tests this adapter owns. Item 8 is in `tests/packaging.test.ts`. Items 6 and 7 need the host CLI
+and a live model, so `bun test` does not run them:
 
 1. **Manifest completeness** — every profile-selected skill appears in `skills[]`, every entry
    resolves to a directory containing a `SKILL.md`, and no directory is unnamed.
