@@ -398,7 +398,7 @@ describe("runner guards", () => {
           command: [
             "node",
             "-e",
-            "require('node:fs').writeFileSync(process.argv[1],String(process.pid));setInterval(()=>{},1000)",
+            "const fs=require('node:fs');const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{},1000)",
             launcherPid,
           ],
         })),

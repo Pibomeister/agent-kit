@@ -447,11 +447,6 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   };
   process.once("SIGINT", close);
   process.once("SIGTERM", close);
-  server.once("close", () => {
-    if (existsSync(socketPath)) unlinkSync(socketPath);
-    process.off("SIGINT", close);
-    process.off("SIGTERM", close);
-  });
   return 0;
 }
 
