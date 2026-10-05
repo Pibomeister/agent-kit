@@ -85,6 +85,13 @@ stops.
   sent to a Codex cell as `$ak:<id>`, and a reply is read back through the same mapping before the
   canonical graders run, so a Codex reply that recommends `/ak:<id>` does not pass. Prompt files are
   transformed when loaded and are not edited.
+- The Codex eval cell is a known limit, accepted as such. It launches the host with plugins
+  disabled and installs the bundle's skills standalone, so the host lists each skill under its bare
+  id and a typed `$ak:<id>` is never a host-resolved plugin mention there. Its typed-case results
+  observe the packaged prose gate matching the typed prefix, not the plugin mention; the plugin
+  form is verified separately by the model-free live-host probe in `adapters/codex/CONTRACT.md` §3.1.
+- Codex sessions recorded before this change ran against a bundle gated on `/ak:<id>`. The reply
+  mapping reads every stored Codex reply in the new spelling, so those sessions are not rescorable.
 - Offline packaging tests prove the emitted positive marker, the retained prose refusal and the
   unchanged M path. They do not claim that a live session obeyed the prose.
 - Each new host adapter must add its renderer, fixture coverage for U explicit/prose and M automatic

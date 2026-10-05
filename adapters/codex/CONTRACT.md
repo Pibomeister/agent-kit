@@ -142,6 +142,13 @@ For every U skill in the codex bundle:
    The rendered skill list names every skill `ak:<id>` and the user turn is delivered verbatim. The
    probe does not show mention resolution, so a bare `$<id>` resolving to a plugin skill is neither
    confirmed nor relied on: the packaged gate does not accept it.
+
+   The eval harness's Codex cell does not observe this form as a mention. It launches the host with
+   plugins disabled and installs the bundle's skills standalone, so a skill is listed there under
+   its bare id and a typed `$ak:<id>` resolves to nothing: a typed case passes on the packaged
+   prose matching the prefix. That is an accepted limit (ADR-0009); the plugin form rests on the
+   probe above. Codex sessions recorded before this bundle gated on `$ak:<id>` are not rescorable
+   under the new spelling.
 3. The non-trigger eval case for that skill is a **required** gate for this bundle rather than an
    advisory one, because it is the only observation of the property in a live session: the checks
    above hold the text, not the behavior.

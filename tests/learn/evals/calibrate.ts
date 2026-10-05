@@ -228,7 +228,11 @@ export function suggestedOf(scored: Scored): Suggested {
   }
 }
 
-/** `text` as `CRITERIA` and the graders name commands; unchanged when the run did not record its host. */
+/**
+ * `text` as `CRITERIA` and the graders name commands; unchanged when the run did not record its host.
+ * The mapping does not depend on when a session was recorded, so a Codex session from before its
+ * bundle gated on the host's own form is not rescorable: its `/ak:<id>` reads as the other spelling.
+ */
 const canonicalOn = (host: HostKind | null, text: string) => (host === null ? text : startsFor(host).canonical(text));
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
