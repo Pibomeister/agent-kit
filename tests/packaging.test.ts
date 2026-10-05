@@ -1541,9 +1541,9 @@ describe("portable explicit-start authority in the real catalog", () => {
       .filter((skill) => skill.invocation === "U")
       .map((skill) => skill.id);
     const canonicalStart = explicitStartPattern(userIds.map((id) => `${catalog.package.namespace}${id}`));
-    const offenders = [...codex.files.values()]
-      .filter((file) => /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1)
-      .map((file) => file.path);
+    const offenders = [...codex.files.values()].flatMap((file) =>
+      /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1 ? [file.path] : [],
+    );
     expect(offenders).toEqual([]);
 
     const setup = codex.files.get("skills/product-pulse/references/setup.md")?.contents ?? "";

@@ -311,8 +311,8 @@ describe("loading stored runs and the label file", () => {
       expect(labelled.transcript).toContain(`[prompt] ${labelled.prompt}`);
     }
     // The subject ran on codex and named that host's start; the reviewer reads it as `CRITERIA` names it.
-    const asked = labels.items.find((i) => i.suggested.outcome === "recommended")!;
-    expect(asked.transcript).toContain(`please type /ak:${asked.skill} yourself`);
+    const asked = labels.items.find((i) => i.suggested.outcome === "recommended");
+    expect(asked?.transcript).toContain(`please type /ak:${asked?.skill} yourself`);
     const violated = labels.items.find((i) => i.stratum.startsWith("violated/"))!;
     expect(violated).toMatchObject({
       events_recorded: true,
