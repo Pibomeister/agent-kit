@@ -225,7 +225,10 @@ describe("registry", () => {
 
   test("bare repositories and no-mistakes repository copies are never registered", () => {
     const { config } = setup();
-    const bare = join(projectScratch(), "bare.git");
+    // The bare repository sits inside a checkout, as it does when the tests run from a plain clone.
+    const enclosing = projectScratch();
+    mkdirSync(join(enclosing, ".git"));
+    const bare = join(enclosing, "bare.git");
     mkdirSync(join(bare, "objects"), { recursive: true });
     writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
     const noMistakes = join(projectScratch(), ".no-mistakes", "repos", "copy");

@@ -196,8 +196,9 @@ export function discoverProjects(
   const found: Registry = {};
   for (const row of rows) {
     if (SKIP_CWD.some((skip) => `${row.cwd}/`.includes(skip))) continue;
+    if (ineligible(resolve(row.cwd)) !== null) continue;
     const root = rootOf(row.cwd);
-    if (root === null || ineligible(root) !== null) continue;
+    if (root === null) continue;
     found[projectFolderName(root)] = { root, mem_project: row.project.split("/")[0]!, last_seen: row.last_seen };
   }
   for (const entry of Object.values(found).toSorted(byClaim)) {
