@@ -888,7 +888,7 @@ references:
       lineage and the criterion coverage predicate shared across the lifecycle.
 
 # ---------------------------------------------------------------------------
-# Schemas — 32. `common` holds shared $defs and validates no document itself.
+# Schemas — 33. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1063,6 +1063,13 @@ schemas:
       One line of the learning runtime's span log: one finished review, memory, skills or hook unit
       with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
       and hashes only.
+  - id: constitution-article
+    batch: 13
+    status: authored
+    summary: >-
+      One registered constitution article: source span, tier, exceptions, related articles, triggers
+      and the checks that cover it, each naming the exact predicate it verifies. Registries live in an
+      overlay; this package holds only the shape and invented fixtures.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.
