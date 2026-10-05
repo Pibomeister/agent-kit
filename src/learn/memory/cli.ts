@@ -102,7 +102,8 @@ export function rollbackWiki(ledger: Ledger, to?: string): string {
   const undone = ledger
     .git(["log", "--format=%s", `${resolved}..HEAD`])
     .stdout.split("\n")
-    .map((subject) => /^nightly (nightly-[\w-]+):/.exec(subject)?.[1])
+    // A nightly run id is its span id (16 hex); runs recorded before spans carry `nightly-<date>-<n>`.
+    .map((subject) => /^nightly (nightly-[\w-]+|[0-9a-f]{16}):/.exec(subject)?.[1])
     .filter((run): run is string => run !== undefined);
   const failure = restorePaths(ledger, resolved, changed);
   if (failure !== null) {

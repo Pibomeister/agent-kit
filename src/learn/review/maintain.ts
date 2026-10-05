@@ -12,6 +12,7 @@ import type { PatchOp } from "../core/pages.ts";
 import { patchBody } from "../core/pages.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { readJson, readText, todayUtc, writeJson } from "../core/store.ts";
+import { runOf } from "../core/trace.ts";
 import { loadEvents, type ReviewEvent } from "./events.ts";
 import {
   addEvidence,
@@ -286,24 +287,31 @@ export function repeatRate(tally: Tally): string {
 export function maintain(ctx: LearnContext, ledger: Ledger, project: string): string {
   const processed = readJson<Record<string, string[]>>(ledger.path(PROCESSED_FILE), {});
   const pending = loadEvents(ledger).filter((event) => !(event.hash in processed));
-  if (pending.length === 0) return "no new events";
+  if (pending.length === 0) {
+    ctx.span?.status("nothing");
+    return "no new events";
+  }
   const state = emptyState(loadPatterns(ledger));
   const size = Math.max(1, ctx.config.batch);
 
   if (ctx.config.dryRun) {
+    ctx.span?.status("dry-run");
     ctx.io.out(maintainerPrompt(ctx, ledger, state.patterns, pending.slice(0, size)));
     return `dry run (${pending.length} unprocessed events, showing the first batch)`;
   }
 
+  let unusable = 0;
   for (let i = 0; i < pending.length; i += size) {
     const chunk = pending.slice(i, i + size);
+    ctx.span?.attr("batches", i / size + 1);
     const reply = ctx.judge(maintainerPrompt(ctx, ledger, state.patterns, chunk), {
-      runId: null,
+      ...runOf(ctx),
       loop: "review",
       role: "pattern-maintainer",
       project,
     });
     if (!validReply(reply)) {
+      unusable += 1;
       logLine(
         ledger,
         `maintainer: judge reply unusable on batch ${i / size + 1}; ${chunk.length} events left unprocessed`,
@@ -313,9 +321,13 @@ export function maintain(ctx: LearnContext, ledger: Ledger, project: string): st
     applyReply(ctx, ledger, chunk, reply, state);
   }
   for (const reason of state.rejected) logLine(ledger, `maintainer rejected: ${reason}`);
+  ctx.span?.attr("unusable", unusable);
+  ctx.span?.attr("rejected_parts", state.rejected.length);
   const done = Object.keys(state.processed).length;
   if (done === 0) {
-    ledger.commit("maintain: judge reply unusable");
+    ctx.span?.status("failed", "no-judge-output");
+    const sha = ledger.commit("maintain: judge reply unusable");
+    ctx.span?.commit(sha);
     return "judge reply unusable";
   }
 
@@ -332,8 +344,13 @@ export function maintain(ctx: LearnContext, ledger: Ledger, project: string): st
   );
   impactRow(ledger, "run", "-", `prs=${prs} findings=${total} repeats=${repeat}`);
   writeJson(ledger.path(PROCESSED_FILE), { ...processed, ...state.processed });
-  ledger.commit(
+  ctx.span?.attr("events", done);
+  ctx.span?.attr("findings", total);
+  ctx.span?.attr("repeats", repeat);
+  ctx.span?.attr("new_patterns", state.newIds.size);
+  const sha = ledger.commit(
     `maintain: ${prs === "-" ? "no-pr" : prs} +${done} events, ${state.newIds.size} new patterns, repeat ${rate}`,
   );
+  ctx.span?.commit(sha);
   return `processed ${done} events; ${state.newIds.size} new patterns; repeat rate ${rate}`;
 }

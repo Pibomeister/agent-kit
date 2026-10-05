@@ -14,6 +14,7 @@ import type { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { run } from "../core/proc.ts";
 import { readText, todayUtc } from "../core/store.ts";
+import { runOf } from "../core/trace.ts";
 import { lessonDraft, proposeLesson } from "../kb.ts";
 import { rawSnapshot } from "./events.ts";
 import { EVENTS_FILE } from "./ledger.ts";
@@ -74,7 +75,8 @@ export function guardrailDraft(
       createdBy: "learn/pattern-maintainer",
     },
     { root, revision },
-    `learn-review-${todayUtc(at).replace(/-/g, "")}`,
+    // Inside a run the draft carries the run's span id; a hand promotion outside one keeps the dated id.
+    runOf(ctx).runId ?? `learn-review-${todayUtc(at).replace(/-/g, "")}`,
     at,
   );
 }
@@ -186,15 +188,24 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
     if (promoteOne(ctx, ledger, root, pattern, texts)) proposed.push(pattern.id);
   }
   if (promoted.length === 0) {
-    if (baselined && !ctx.config.dryRun) ledger.commit("propose: bookkeeping (promoted_count baseline)");
+    ctx.span?.status(ctx.config.dryRun ? "dry-run" : "nothing");
+    if (baselined && !ctx.config.dryRun) {
+      const sha = ledger.commit("propose: bookkeeping (promoted_count baseline)");
+      ctx.span?.commit(sha);
+    }
     return "nothing to promote";
   }
-  if (ctx.config.dryRun) return `dry run: would promote ${promoted.join(",")}`;
+  ctx.span?.attr("promoted", promoted);
+  if (ctx.config.dryRun) {
+    ctx.span?.status("dry-run");
+    return `dry run: would promote ${promoted.join(",")}`;
+  }
   writeFileSync(ledger.path("guardrails.md"), texts.guard);
   writeFileSync(ledger.path("pending-team-promotions.md"), texts.pending);
   rebuildIndex(ledger, patterns);
   const teamNote = proposed.length > 0 ? `; team proposals ${proposed.join(",")}` : "";
-  ledger.commit(`propose: guardrails +${promoted.join(",")}${teamNote}`);
+  const sha = ledger.commit(`propose: guardrails +${promoted.join(",")}${teamNote}`);
+  ctx.span?.commit(sha);
   return `promoted ${promoted.join(",")} to guardrails${teamNote}`;
 }
 
