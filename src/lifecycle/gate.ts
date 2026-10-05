@@ -359,14 +359,8 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   let bound: { binding_run_id: string; binding_evidence_location: string } | undefined;
   if (a.binding !== undefined) {
     const binding = readObject(a.binding);
-    const location = (binding?.evidence as { location?: unknown } | null | undefined)?.location;
-    if (
-      binding?.schema !== "firstmate-binding" ||
-      typeof binding.run_id !== "string" ||
-      binding.run_id === "" ||
-      typeof location !== "string" ||
-      location === ""
-    )
+    const location = object(binding?.evidence)?.location;
+    if (binding?.schema !== "firstmate-binding" || !nonempty(binding.run_id) || !nonempty(location))
       return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
     bound = { binding_run_id: binding.run_id, binding_evidence_location: location };
   }
@@ -1081,7 +1075,7 @@ function evaluateEvidence(
   );
   const grantRecord = [
     join(a.dir, safeRunId(a.run)),
-    ...(typeof run.binding_run_id === "string" && typeof run.binding_evidence_location === "string"
+    ...(run.binding_run_id !== undefined && run.binding_evidence_location !== undefined
       ? [join(run.binding_evidence_location, safeRunId(run.binding_run_id))]
       : []),
   ]
@@ -1966,12 +1960,9 @@ export function main(
       return 2;
     }
     const binding = str("binding");
-    const opened = openRun({
-      dir,
-      project,
-      ticket: resolve(cwd, ticket),
-      ...(binding === undefined ? {} : { binding: resolve(cwd, binding) }),
-    });
+    const openArgs: OpenArgs = { dir, project, ticket: resolve(cwd, ticket) };
+    if (binding !== undefined) openArgs.binding = resolve(cwd, binding);
+    const opened = openRun(openArgs);
     if (!opened.ok) {
       io.err(`ak lifecycle open: ${opened.reason}`);
       return 1;

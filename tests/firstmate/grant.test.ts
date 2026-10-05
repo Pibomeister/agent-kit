@@ -150,7 +150,6 @@ describe("ak firstmate grant", () => {
     for (const gate of ["build-checks", "review-full", "review-readiness"])
       expect(lifecycle("record", "--dir", store, "--gate", gate).code).toBe(0);
     const snapshot = takeSnapshot(worktree);
-    if (typeof snapshot === "string") throw new Error(snapshot);
     const receiptDir = makeDir();
     const log = "1 pass, 0 fail\n";
     writeFileSync(join(receiptDir, "verification-output.log"), log);

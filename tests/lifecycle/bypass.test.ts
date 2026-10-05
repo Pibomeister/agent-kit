@@ -260,7 +260,6 @@ describe("start only: approvals, merge and deploy are never covered", () => {
         expect(ak(worktree, ledger, "record", "--gate", "review-full", ...grantFlags).code).toBe(0);
         expect(ak(worktree, ledger, "record", "--gate", "review-readiness", ...grantFlags).code).toBe(0);
         const snapshot = takeSnapshot(worktree);
-        if (typeof snapshot === "string") throw new Error(snapshot);
         const receiptDir = dir("ak-bypass-receipt-");
         const log = "1 pass, 0 fail\n";
         writeFileSync(join(receiptDir, "verification-output.log"), log);
