@@ -3,10 +3,11 @@
  * worktree and cache skips, the look-back window, newest sighting wins.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { projectFolderName, registryPath, rootOf } from "../../src/learn/core/paths.ts";
+import { projectFolderName, registryPath, rootOf, tickLogPath } from "../../src/learn/core/paths.ts";
 import { discoverProjects, discoverySince, readRegistry, registerRoot } from "../../src/learn/memory/registry.ts";
+import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
 import { ClaudeMemSource, type CwdRow } from "../../src/learn/sources/claude-mem.ts";
 import { MemFixture, projectScratch, removeProjectScratch, scratch, testContext } from "./helpers.ts";
 
@@ -81,22 +82,56 @@ describe("registry", () => {
 
   test("two roots for one claude-mem project leave one active entry and warn", () => {
     const { config } = setup();
-    const older = join(projectScratch(), "older", "shop");
-    const newer = join(projectScratch(), "newer", "shop");
-    for (const root of [older, newer]) mkdirSync(join(root, ".git"), { recursive: true });
+    const first = join(projectScratch(), "first", "shop");
+    const second = join(projectScratch(), "second", "shop");
+    for (const root of [first, second]) mkdirSync(join(root, ".git"), { recursive: true });
     const warnings: string[] = [];
     const registry = discoverProjects(
       config,
       [
-        { project: "shop", cwd: older, last_seen: 10 },
-        { project: "shop", cwd: newer, last_seen: 20 },
+        { project: "shop", cwd: first, last_seen: 10 },
+        { project: "shop", cwd: second, last_seen: 20 },
       ],
       (warning) => warnings.push(warning),
     );
-    expect(Object.values(registry)).toEqual([{ root: newer, mem_project: "shop", last_seen: 20 }]);
+    expect(Object.values(registry)).toEqual([{ root: first, mem_project: "shop", last_seen: 10 }]);
     expect(warnings).toEqual([
-      `registry warning: claude-mem project 'shop' has multiple roots; keeping ${newer}, unregistering ${older}`,
+      `registry warning: claude-mem project 'shop' is already registered at ${first}; refusing ${second}`,
     ]);
+    expect(readRegistry(config)).toEqual(registry);
+  });
+
+  test("a second root for a registered claude-mem project is refused and the established root stays", () => {
+    const { config } = setup();
+    const established = join(projectScratch(), "work", "api");
+    const stray = join(projectScratch(), "oss", "api");
+    for (const root of [established, stray]) mkdirSync(join(root, ".git"), { recursive: true });
+    expect(registerRoot(config, established, 5).refusal).toBeNull();
+
+    const refused = registerRoot(config, stray, 50);
+    const warning = `registry warning: claude-mem project 'api' is already registered at ${established}; refusing ${stray}`;
+    expect(refused.refusal).toBe(warning);
+    expect(refused.warnings).toEqual([warning]);
+    expect(Object.values(readRegistry(config))).toEqual([{ root: established, mem_project: "api", last_seen: 5 }]);
+
+    expect(registerRoot(config, established, 60)).toMatchObject({ refusal: null, warnings: [] });
+    expect(Object.values(readRegistry(config))).toEqual([{ root: established, mem_project: "api", last_seen: 60 }]);
+  });
+
+  test("a session start in a refused root writes the warning to the tick log and not to the session block", () => {
+    const established = join(projectScratch(), "work", "api");
+    const stray = join(projectScratch(), "oss", "api");
+    for (const root of [established, stray]) mkdirSync(join(root, ".git"), { recursive: true });
+    const ctx = testContext({ cwd: stray });
+    registerRoot(ctx.config, established, 5);
+
+    const block = sessionStartBlock(ctx);
+    expect(block).not.toContain("registry warning");
+    expect(ctx.out.join("\n")).not.toContain("registry warning");
+    expect(readFileSync(tickLogPath(ctx.config), "utf8")).toContain(
+      `registry warning: claude-mem project 'api' is already registered at ${established}; refusing ${stray}\n`,
+    );
+    expect(Object.values(readRegistry(ctx.config)).map((entry) => entry.root)).toEqual([established]);
   });
 
   test("bare repositories and no-mistakes repository copies are never registered", () => {
@@ -107,8 +142,16 @@ describe("registry", () => {
     const noMistakes = join(projectScratch(), ".no-mistakes", "repos", "copy");
     mkdirSync(join(noMistakes, ".git"), { recursive: true });
 
-    expect(registerRoot(config, bare)).toEqual({});
-    expect(registerRoot(config, noMistakes)).toEqual({});
+    expect(registerRoot(config, bare)).toEqual({
+      registry: {},
+      warnings: [`registry warning: ${bare} is a bare repository and cannot be registered`],
+      refusal: `registry warning: ${bare} is a bare repository and cannot be registered`,
+    });
+    expect(registerRoot(config, noMistakes)).toEqual({
+      registry: {},
+      warnings: [`registry warning: ${noMistakes} is managed by no-mistakes and cannot be registered`],
+      refusal: `registry warning: ${noMistakes} is managed by no-mistakes and cannot be registered`,
+    });
     expect(
       discoverProjects(config, [
         { project: "bare", cwd: bare, last_seen: 10 },
@@ -116,6 +159,36 @@ describe("registry", () => {
       ]),
     ).toEqual({});
     expect(existsSync(registryPath(config))).toBe(false);
+  });
+
+  test("hygiene unregisters bare and no-mistakes entries and keeps a root it cannot stat", () => {
+    const { repo, config } = setup();
+    const bare = join(projectScratch(), "bare.git");
+    mkdirSync(join(bare, "objects"), { recursive: true });
+    writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+    const noMistakes = join(projectScratch(), ".no-mistakes", "repos", "copy");
+    const unmounted = join(projectScratch(), "unmounted", "app");
+    const kept = { root: unmounted, mem_project: "renamed-app", last_seen: 3 };
+    mkdirSync(config.runtimeDir, { recursive: true });
+    writeFileSync(
+      registryPath(config),
+      `${JSON.stringify({
+        [projectFolderName(bare)]: { root: bare, mem_project: "bare", last_seen: 1 },
+        [projectFolderName(noMistakes)]: { root: noMistakes, mem_project: "copy", last_seen: 2 },
+        [projectFolderName(unmounted)]: kept,
+      })}\n`,
+    );
+
+    const result = registerRoot(config, repo, 9);
+    expect(result.refusal).toBeNull();
+    expect(result.warnings).toEqual([
+      `registry warning: ${bare} is a bare repository and cannot be registered`,
+      `registry warning: ${noMistakes} is managed by no-mistakes and cannot be registered`,
+    ]);
+    expect(readRegistry(config)).toEqual({
+      [projectFolderName(unmounted)]: kept,
+      [projectFolderName(repo)]: { root: repo, mem_project: "myrepo", last_seen: 9 },
+    });
   });
 
   test("root resolution only stats", () => {

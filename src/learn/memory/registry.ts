@@ -9,11 +9,11 @@
  * `rootOf`, which only stats: a scheduled process may not open a file inside a
  * repository or spawn git there.
  */
-import { statSync } from "node:fs";
-import { basename, resolve, sep } from "node:path";
+import { appendFileSync, mkdirSync, statSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
-import { projectFolderName, registryPath, rootOf } from "../core/paths.ts";
-import { nowMs, readJson, writeJson } from "../core/store.ts";
+import { projectFolderName, registryPath, rootOf, tickLogPath } from "../core/paths.ts";
+import { nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
 import type { CwdRow } from "../sources/claude-mem.ts";
 
 export interface RegistryEntry {
@@ -33,14 +33,22 @@ export function readRegistry(config: LearnConfig): Registry {
   return readJson<Registry>(registryPath(config), {});
 }
 
-function registrableRoot(root: string): boolean {
-  const resolved = resolve(root);
-  if (`${resolved}${sep}`.includes(`${sep}.no-mistakes${sep}repos${sep}`)) return false;
+/** Why a root may never hold a ledger, or null. Stat only, and a root that cannot be read is not judged. */
+function ineligible(root: string): string | null {
+  if (`${root}${sep}`.includes(`${sep}.no-mistakes${sep}repos${sep}`)) return "managed by no-mistakes";
   try {
-    return statSync(resolve(resolved, ".git")).isDirectory();
+    const bare =
+      statSync(join(root, ".git"), { throwIfNoEntry: false }) === undefined &&
+      statSync(join(root, "HEAD")).isFile() &&
+      statSync(join(root, "objects")).isDirectory();
+    return bare ? "a bare repository" : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function ineligibleWarning(root: string, reason: string): string {
+  return `registry warning: ${root} is ${reason} and cannot be registered`;
 }
 
 export interface RegistryHygiene {
@@ -48,69 +56,97 @@ export interface RegistryHygiene {
   warnings: string[];
 }
 
-/** Remove ineligible roots and keep only the newest root for each claude-mem project. */
+/** Drop ineligible roots and flag every claude-mem project that more than one root shares. */
 export function registryHygiene(input: Registry): RegistryHygiene {
   const registry: Registry = {};
   const warnings: string[] = [];
-  const entries = Object.values(input).toSorted((a, b) => b.last_seen - a.last_seen || a.root.localeCompare(b.root));
-  const byProject = new Map<string, RegistryEntry>();
-  for (const entry of entries) {
-    if (!registrableRoot(entry.root)) {
-      warnings.push(`registry warning: unregistering ${entry.root}; root is bare, missing, or managed by no-mistakes`);
+  const roots = new Map<string, string[]>();
+  for (const [folder, entry] of Object.entries(input)) {
+    const reason = ineligible(entry.root);
+    if (reason !== null) {
+      warnings.push(ineligibleWarning(entry.root, reason));
       continue;
     }
-    const kept = byProject.get(entry.mem_project);
-    if (kept !== undefined) {
-      warnings.push(
-        `registry warning: claude-mem project '${entry.mem_project}' has multiple roots; keeping ${kept.root}, unregistering ${entry.root}`,
-      );
-      continue;
-    }
-    byProject.set(entry.mem_project, entry);
-    registry[projectFolderName(entry.root)] = entry;
+    registry[folder] = entry;
+    roots.set(entry.mem_project, [...(roots.get(entry.mem_project) ?? []), entry.root]);
+  }
+  for (const [project, shared] of roots) {
+    if (shared.length > 1)
+      warnings.push(`registry warning: claude-mem project '${project}' has multiple roots: ${shared.join(", ")}`);
   }
   return { registry, warnings };
 }
 
+/** Add or refresh one root. A root new to the registry is refused, with the warning returned, when its claude-mem project already has one. */
+function admit(registry: Registry, entry: RegistryEntry): string | null {
+  const folder = projectFolderName(entry.root);
+  if (registry[folder] === undefined) {
+    const established = Object.values(registry).find((other) => other.mem_project === entry.mem_project);
+    if (established !== undefined)
+      return `registry warning: claude-mem project '${entry.mem_project}' is already registered at ${established.root}; refusing ${entry.root}`;
+  }
+  registry[folder] = entry;
+  return null;
+}
+
+export interface Registration extends RegistryHygiene {
+  /** Why the root was not registered, or null when it was. Also among `warnings`. */
+  refusal: string | null;
+}
+
 /** Record a main repo root; its claude-mem project is the folder basename. */
-export function registerRoot(config: LearnConfig, root: string, at = nowMs()): Registry {
+export function registerRoot(config: LearnConfig, root: string, at = nowMs()): Registration {
   const current = readRegistry(config);
   const before = JSON.stringify(current);
+  const { registry, warnings } = registryHygiene(current);
   const resolved = resolve(root);
-  if (registrableRoot(resolved))
-    current[projectFolderName(resolved)] = { root: resolved, mem_project: basename(resolved), last_seen: at };
-  const clean = registryHygiene(current);
-  if (!config.dryRun && JSON.stringify(clean.registry) !== before) writeJson(registryPath(config), clean.registry);
-  return clean.registry;
+  const reason = ineligible(resolved);
+  const refusal =
+    reason === null
+      ? admit(registry, { root: resolved, mem_project: basename(resolved), last_seen: at })
+      : ineligibleWarning(resolved, reason);
+  if (refusal !== null && !warnings.includes(refusal)) warnings.push(refusal);
+  if (!config.dryRun && JSON.stringify(registry) !== before) writeJson(registryPath(config), registry);
+  return { registry, warnings, refusal };
+}
+
+/** Append registry warnings raised outside a tick to the tick log, leaving the caller's own output alone. */
+export function logRegistryWarnings(config: LearnConfig, warnings: readonly string[]): void {
+  if (config.dryRun || warnings.length === 0) return;
+  const path = tickLogPath(config);
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, warnings.map((warning) => `${nowIso()} ${warning}\n`).join(""));
 }
 
 /**
  * Merge claude-mem's latest working directory per project into the registry.
- * A worktree-suffixed project name (`app/branch`) registers under `app`, and
- * the newest sighting of a folder wins.
+ * A worktree-suffixed project name (`app/branch`) registers under `app`, the
+ * newest sighting of a folder wins, and a second root for a claude-mem project
+ * that already has one is refused with a warning.
  */
 export function discoverProjects(
   config: LearnConfig,
   rows: readonly CwdRow[],
   warn: (message: string) => void = () => undefined,
 ): Registry {
-  const registry = readRegistry(config);
-  const before = JSON.stringify(registry);
+  const current = readRegistry(config);
+  const before = JSON.stringify(current);
+  const { registry, warnings } = registryHygiene(current);
   const found: Registry = {};
   for (const row of rows) {
     if (SKIP_CWD.some((skip) => `${row.cwd}/`.includes(skip))) continue;
     const root = rootOf(row.cwd);
-    if (root === null) continue;
-    if (registrableRoot(root))
-      found[projectFolderName(root)] = { root, mem_project: row.project.split("/")[0]!, last_seen: row.last_seen };
+    if (root === null || ineligible(root) !== null) continue;
+    found[projectFolderName(root)] = { root, mem_project: row.project.split("/")[0]!, last_seen: row.last_seen };
   }
   for (const [folder, entry] of Object.entries(found)) {
-    if ((registry[folder]?.last_seen ?? 0) < entry.last_seen) registry[folder] = entry;
+    if ((registry[folder]?.last_seen ?? 0) >= entry.last_seen) continue;
+    const refusal = admit(registry, entry);
+    if (refusal !== null) warnings.push(refusal);
   }
-  const clean = registryHygiene(registry);
-  for (const warning of clean.warnings) warn(warning);
-  if (!config.dryRun && JSON.stringify(clean.registry) !== before) writeJson(registryPath(config), clean.registry);
-  return clean.registry;
+  for (const warning of warnings) warn(warning);
+  if (!config.dryRun && JSON.stringify(registry) !== before) writeJson(registryPath(config), registry);
+  return registry;
 }
 
 /** Discovery's look-back window, as the `sinceMs` for `ClaudeMemSource.toolUseCwds`. */

@@ -247,6 +247,14 @@ describe("discover", () => {
     expect(existsSync(loopDir(ctx.config, root, "skills"))).toBe(false);
   });
 
+  test("a dry skills run creates no skills ledger", () => {
+    const { ctx, root } = fixture();
+    const dry: TestContext = { ...ctx, config: { ...ctx.config, dryRun: true } };
+    expect(runSkillLearn(dry, root)).toBe("dry run");
+    expect(ctx.prompts).toEqual([]);
+    expect(existsSync(loopDir(ctx.config, root, "skills"))).toBe(false);
+  });
+
   test("a failed judge call leaves the sessions unmarked for the next pass", () => {
     const { ctx, root, packageRoot } = fixture([null, { candidates: [CAND] }]);
     expect(discover(ctx, root, { packageRoot })).toBe("judge call failed (sessions left unmarked)");

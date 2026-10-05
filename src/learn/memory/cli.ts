@@ -16,7 +16,7 @@ import { appendJsonl, nowIso, readJsonl, readText } from "../core/store.ts";
 import { generations } from "../core/trace.ts";
 import { UNDONE_RUNS_FILE } from "./episodes.ts";
 import { ensureMemoryLedger, memoryDir, readState, saveState } from "./ledger.ts";
-import { readRegistry, registerRoot } from "./registry.ts";
+import { logRegistryWarnings, readRegistry, registerRoot } from "./registry.ts";
 import { sessionRoot } from "./session-context.ts";
 import { type Job, JOBS, tick } from "./tick.ts";
 
@@ -187,7 +187,12 @@ export const memoryArea: LearnArea = {
           ctx.io.err("ak learn memory: not inside a git repository");
           return 1;
         }
-        registerRoot(ctx.config, root);
+        const registration = registerRoot(ctx.config, root);
+        logRegistryWarnings(ctx.config, registration.warnings);
+        if (registration.refusal !== null) {
+          ctx.io.err(`ak learn memory: ${registration.refusal}`);
+          return 1;
+        }
         return tick(ctx, { only: root, job, force: true });
       },
     },

@@ -90,6 +90,11 @@ export function skillsLedger(ctx: LearnContext, root: string): Ledger {
   );
 }
 
+/** The ledger a pass works on: a dry run reads whatever is there and never creates it. */
+function passLedger(ctx: LearnContext, root: string): Ledger {
+  return ctx.config.dryRun ? new Ledger(loopDir(ctx.config, root, "skills")) : skillsLedger(ctx, root);
+}
+
 export function loadRegistry(ledger: Ledger): SkillRegistry {
   const raw = readJson<Partial<SkillRegistry>>(ledger.path("registry.json"), {});
   const registry: SkillRegistry = {
@@ -379,7 +384,7 @@ export interface DiscoverOptions {
 
 /** One discovery pass. Returns a one-line summary; writes nothing on a dry run or a failed judge call. */
 export function discover(ctx: LearnContext, root: string, options: DiscoverOptions = {}): string {
-  const ledger = ctx.config.dryRun ? new Ledger(loopDir(ctx.config, root, "skills")) : skillsLedger(ctx, root);
+  const ledger = passLedger(ctx, root);
   const release = ctx.config.dryRun ? () => undefined : ledger.tryLock();
   if (release === null) {
     ctx.span?.status("locked", "lock-held");
@@ -504,7 +509,7 @@ export function runSkillLearn(ctx: LearnContext, root: string): string {
 }
 
 function skillLearnRun(ctx: LearnContext, root: string): string {
-  const ledger = skillsLedger(ctx, root);
+  const ledger = passLedger(ctx, root);
   const parts: string[] = [];
   const trigger = triggerOf(ctx, "cli");
   const last = loadRegistry(ledger).last_discover;

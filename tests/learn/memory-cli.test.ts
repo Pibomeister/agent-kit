@@ -3,9 +3,10 @@
  * rollback that restores the wiki layer while the raw layer stays.
  */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
+import { run } from "../../src/learn/core/proc.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
 import { UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
@@ -43,6 +44,20 @@ describe("memory cli", () => {
     expect(learn(ctx, ["memory", "projects"])).toBe(0);
     expect(ctx.out.length).toBe(1);
     expect(ctx.out[0]).toContain(`shop${" ".repeat(20)} ${root}`);
+  });
+
+  test("run in a bare repository prints the refusal and exits nonzero", () => {
+    const { ctx } = project();
+    const bare = join(scratch(), "bare.git");
+    mkdirSync(bare);
+    run(["git", "init", "-q", "--bare"], { cwd: bare });
+    expect(learn(ctx, ["memory", "run", "--job", "weekly", "--repo", bare])).toBe(1);
+    expect(ctx.err).toEqual([
+      `ak learn memory: registry warning: ${bare} is a bare repository and cannot be registered`,
+    ]);
+    expect(existsSync(memoryDir(ctx.config, bare))).toBe(false);
+    expect(learn(ctx, ["memory", "projects"])).toBe(0);
+    expect(ctx.out.join("\n")).not.toContain(bare);
   });
 
   test("an unknown job is refused", () => {
