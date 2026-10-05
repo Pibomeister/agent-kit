@@ -17,7 +17,7 @@ import { codex, codexThreadStart, runCodexAppServer } from "./evals/subjects/cod
 import { grok } from "./evals/subjects/grok.ts";
 import { rewriteAssignmentReadChain } from "./evals/subjects/grok-mediator.ts";
 import { privateHome } from "./evals/subjects/home.ts";
-import { kimi } from "./evals/subjects/kimi.ts";
+import { KIMI_REVIEWER_AGENT, kimi } from "./evals/subjects/kimi.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
@@ -611,9 +611,15 @@ describe("kimi", () => {
       "Load the greet skill.",
       "--output-format",
       "text",
-      "--plan",
       "--model",
       "bound-d",
+    ]);
+    expect(kimi.command(req, undefined)).toEqual([
+      "kimi",
+      "--prompt",
+      "Load the greet skill.",
+      "--output-format",
+      "text",
     ]);
     expect(kimi.parse('  {"verdict":"PASS","reason":"meets the criterion"}  \n')).toEqual({
       events: [{ kind: "message", text: '{"verdict":"PASS","reason":"meets the criterion"}' }],
@@ -623,14 +629,29 @@ describe("kimi", () => {
     expect(kimi.injection).toBe("prompt-prefix");
   });
 
-  test("a session runs read-only against an empty skills directory that is removed afterwards", async () => {
+  test("the reviewer agent definition grants no tools and no sub-agents", () => {
+    const [, frontmatter = "", body = ""] = KIMI_REVIEWER_AGENT.split("---\n");
+    expect(frontmatter.trimEnd().split("\n")).toEqual([
+      "name: text-reviewer",
+      "description: Answers one prompt in text, with no tools and no sub-agents.",
+      "tools: []",
+      "subagents: []",
+    ]);
+    expect(body.trim()).not.toBe("");
+    expect(body).not.toContain("${");
+  });
+
+  test("a session runs tool-less against an empty skills directory, and both are removed afterwards", async () => {
     const bin = join(scratch, "kimi-bin");
     mkdirSync(bin, { recursive: true });
+    // Stands in for the CLI's own option check: prompt mode refuses the modes it cannot combine with.
     writeFileSync(
       join(bin, "kimi"),
       '#!/bin/sh\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done\n' +
-        'while [ "$#" -gt 0 ]; do [ "$1" = "--skills-dir" ] && dir="$2"; shift; done\n' +
-        "printf 'entries=%s\\n' \"$(ls -A \"$dir\" | wc -l | tr -d ' ')\"\n",
+        'for arg in "$@"; do case "$arg" in --plan|--yolo|--auto) echo "error: Cannot combine --prompt with $arg." >&2; exit 1;; esac; done\n' +
+        'while [ "$#" -gt 0 ]; do [ "$1" = "--skills-dir" ] && dir="$2"; [ "$1" = "--agent-file" ] && agent="$2"; shift; done\n' +
+        "printf 'entries=%s\\n' \"$(ls -A \"$dir\" | wc -l | tr -d ' ')\"\n" +
+        "printf 'agent<<\\n'; cat \"$agent\"\n",
       { mode: 0o755 },
     );
     const result = await runSubject(kimi, "reviewer-d", "bound-d", {
@@ -639,21 +660,44 @@ describe("kimi", () => {
       env: { PATH: `${bin}:${process.env.PATH ?? ""}` },
       maxTurns: 1,
     });
-    const lines = result.reply.split("\n");
+    const [argv = "", agentFile = ""] = result.reply.split("\nagent<<\n");
+    const lines = argv.split("\n");
+    const agent = lines[lines.indexOf("--agent-file") + 1] ?? "";
     const skills = lines[lines.indexOf("--skills-dir") + 1] ?? "";
-    expect(lines.slice(0, lines.indexOf("--skills-dir"))).toEqual([
+    expect(lines).toEqual([
       "--prompt",
       "Load the greet skill.",
       "--output-format",
       "text",
-      "--plan",
       "--model",
       "bound-d",
+      "--agent-file",
+      agent,
+      "--skills-dir",
+      skills,
+      "entries=0",
     ]);
-    expect(lines.slice(lines.indexOf("--skills-dir") + 2)).toEqual(["entries=0"]);
+    expect(agentFile).toBe(KIMI_REVIEWER_AGENT.trim());
+    expect(isAbsolute(agent)).toBe(true);
     expect(isAbsolute(skills)).toBe(true);
+    expect(existsSync(agent)).toBe(false);
     expect(existsSync(skills)).toBe(false);
     expect(result).toMatchObject({ host: "kimi", exitCode: 0, timedOut: false });
+  });
+
+  test("no request puts a mode flag beside --prompt", () => {
+    const requests: SessionRequest[] = [
+      req,
+      { ...req, appendSystemPrompt: "Judge strictly." },
+      { ...req, maxTurns: 1 },
+    ];
+    for (const request of requests) {
+      for (const model of ["bound-d", undefined]) {
+        const argv = kimi.command(request, model);
+        expect(argv).toContain("--prompt");
+        for (const flag of ["--plan", "--yolo", "-y", "--auto"]) expect(argv).not.toContain(flag);
+      }
+    }
   });
 });
 
