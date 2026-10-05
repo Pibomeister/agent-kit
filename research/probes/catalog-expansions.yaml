@@ -80,7 +80,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 30
+  catalog: 31
   expansions:
     - ids: [case]
       reason: >-
@@ -111,6 +111,11 @@ schemas:
         The opt-in learning runtime persists review events, patterns, episodes, memory runs and
         its own state, each with a declared shape.
       commits: [8e4a0de]
+    - ids: [learn-span]
+      reason: >-
+        The learning runtime's run spans record each unit's ids, duration, status and judge
+        totals; a closed shape is what keeps prose, paths and names out of them.
+      commits: [238fb34]
     - ids: [handoff-record, evaluation, map]
       reason: >-
         A run record with no artifact schema had no lawful way through publishArtifact, which
