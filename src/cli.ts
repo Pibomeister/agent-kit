@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { attach, formatAttachResult } from "./attach/index.ts";
 import { scoreDelegationFiles } from "./delegation.ts";
 import { runFirstmate } from "./firstmate/cli.ts";
+import { readGuardStdin, runGuard } from "./guard/cli.ts";
 import { main as runLifecycle } from "./lifecycle/gate.ts";
 import { runKb } from "./kb/cli.ts";
 import { readHookStdin, runLearn } from "./learn/cli.ts";
@@ -64,6 +65,7 @@ const USAGE = [
   "  ak doctor                                  inspect the installed hosts and current project",
   "  ak update                                  refresh installed ak plugins to the published version",
   "  ak learn <area> <verb> ...                 the opt-in learning runtime (`ak learn` for help)",
+  "  ak guard hook <event> ...                  the opt-in guard runtime's host hook (`ak guard` for help)",
   "  ak runner serve|call ...                   runner service and charter-bound requests",
   "",
   "Exit 0 when nothing failed, non-zero on any error.",
@@ -91,6 +93,7 @@ const COMMANDS = [
   "doctor",
   "update",
   "learn",
+  "guard",
   "runner",
 ];
 
@@ -412,11 +415,14 @@ if (import.meta.main) {
   const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
   // `ak learn` has its own argument grammar per area and loads its areas on demand,
   // so it is dispatched here, before runCli's parser sees flags it does not know.
+  // `ak guard hook` reads its payload from stdin the same way.
   const code =
     argv[0] === "runner"
       ? await runRunner(argv.slice(1), io)
       : argv[0] === "learn"
         ? await runLearn(argv.slice(1), { cwd: process.cwd(), io, stdin: readHookStdin(argv) })
-        : runCli(argv, { cwd: process.cwd(), io });
+        : argv[0] === "guard"
+          ? runGuard(argv.slice(1), { cwd: process.cwd(), io, stdin: readGuardStdin(argv) })
+          : runCli(argv, { cwd: process.cwd(), io });
   if (argv[0] !== "runner" || argv[1] !== "serve" || code !== 0) process.exit(code);
 }
