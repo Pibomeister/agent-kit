@@ -12,10 +12,12 @@ import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { memoryDir, readState } from "../../src/learn/memory/ledger.ts";
 import { loadEpisodes } from "../../src/learn/memory/episodes.ts";
 import { type Registry, registerRoot, registryHygiene } from "../../src/learn/memory/registry.ts";
+import { fetchNew, formatObservation } from "../../src/learn/memory/reflect.ts";
 import { tick } from "../../src/learn/memory/tick.ts";
 import {
   CAPTURE_ID_BASE,
   type CapturedSession,
+  ProjectMemorySource,
   WorkerSessionSource,
   captureWorkerSessions,
   parseCodexSession,
@@ -65,6 +67,48 @@ function replaceFixtureCwd(dir: string, cwd: string): void {
   }
 }
 
+function workerSession(nativeId: string, times: readonly number[]): CapturedSession {
+  return {
+    native_id: nativeId,
+    memory_session_id: nativeId.padEnd(32, "0"),
+    platform: "codex",
+    cwd: "/fixture/worktree",
+    started_at_epoch: times[0] ?? 0,
+    completed_at_epoch: times.at(-1) ?? null,
+    prompt_count: 0,
+    request: null,
+    completed: null,
+    next_steps: null,
+    files_modified: [],
+    observations: times.map((at, index) => ({
+      type: "assistant",
+      title: "assistant message",
+      text: `${nativeId} step ${index}`,
+      at,
+      files_modified: [],
+    })),
+  };
+}
+
+/** Two overlapping sessions captured into one ledger: ids follow capture order, not time. */
+function overlappingWorkers() {
+  const ledger = ensureMemoryLedger(scratch("ak-capture-order-"));
+  const long = workerSession("a", [100, 110, 120, 130, 140, 150, 160, 170, 180, 190]);
+  const short = workerSession("b", [151, 152, 153, 154, 155, 156, 157, 158, 159, 160]);
+  captureWorkerSessions(ledger, [long, short]);
+  const workers = WorkerSessionSource.open(ledger);
+  const rows = workers.observationsSince("", 0);
+  const capFor = (count: number) => rows.slice(0, count).reduce((used, row) => used + formatObservation(row).length, 0);
+  return { source: new ProjectMemorySource(null, workers), ids: rows.map((row) => row.id), capFor };
+}
+
+function codexToolOutput(text: string) {
+  return {
+    type: "response_item",
+    payload: { type: "custom_tool_call_output", output: [{ type: "input_text", text }] },
+  };
+}
+
 describe("worker session parsers", () => {
   test("normalizes a captured Codex rollout including tool input, failure output and edited files", () => {
     const path = join(FIXTURES, "codex", "sessions", "2026", "10", "04", "rollout-fixture.jsonl");
@@ -76,6 +120,27 @@ describe("worker session parsers", () => {
     expect(session.observations.map((row) => row.type)).toEqual(["prompt", "tool-use", "error", "assistant"]);
     expect(session.files_modified).toEqual(["src/lint.ts"]);
     expect(session.observations.some((row) => row.text.includes("200 warnings remain"))).toBe(true);
+    const text = session.observations.map((row) => row.text).join("\n");
+    expect(text).not.toContain("injected project instructions");
+    expect(text).not.toContain("environment_context");
+  });
+
+  test("a tool result reporting zero failures is not a failure signal", () => {
+    const path = join(scratch("ak-codex-rollout-"), "rollout-clean.jsonl");
+    writeFileSync(
+      path,
+      [
+        { type: "session_meta", payload: { id: "clean", cwd: "/fixture/worktree" } },
+        codexToolOutput("Found 0 warnings and 0 errors."),
+        codexToolOutput("12 pass\n0 fail\nno regression detected"),
+        codexToolOutput("10 warnings in src/lint.ts"),
+        codexToolOutput("1 error, 0 warnings"),
+      ]
+        .map((row) => JSON.stringify(row))
+        .join("\n"),
+    );
+    const session = requiredSession(parseCodexSession(path));
+    expect(session.observations.map((row) => row.type)).toEqual(["tool-result", "tool-result", "error", "error"]);
   });
 
   test("normalizes a captured Grok session and excludes synthetic context", () => {
@@ -110,6 +175,22 @@ describe("worker session parsers", () => {
       { sinceMs: 0 },
     );
     expect(sessions.map((session) => session.platform).toSorted()).toEqual(["codex", "grok", "kimi"]);
+  });
+
+  test("an unreadable host record is skipped and reported while the other sessions are returned", () => {
+    const homes = scratch("ak-worker-unreadable-");
+    cpSync(FIXTURES, homes, { recursive: true });
+    const broken = join(homes, "kimi", "sessions", "wd_fixture", "broken-session");
+    mkdirSync(join(broken, "agents", "main", "wire.jsonl"), { recursive: true });
+    writeFileSync(join(broken, "state.json"), JSON.stringify({ id: "broken", cwd: "/fixture/worktree" }));
+    const warnings: string[] = [];
+    const sessions = scanWorkerSessions(
+      { codex: [join(homes, "codex")], grok: [join(homes, "grok")], kimi: [join(homes, "kimi")] },
+      { sinceMs: 0, warn: (line) => warnings.push(line) },
+    );
+    expect(sessions.map((session) => session.platform).toSorted()).toEqual(["codex", "grok", "kimi"]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(join(broken, "state.json"));
   });
 });
 
@@ -185,6 +266,20 @@ describe("memory tick worker capture", () => {
     expect(tick(ctx, { only: main, job: "reflect", force: true })).toBe(0);
     expect(ctx.prompts).toHaveLength(2);
     expect(ctx.out.filter((line) => line.includes("worker observations +0")).length).toBeGreaterThan(0);
+  });
+});
+
+describe("reflect window over captured workers", () => {
+  test("a capped read after the worker watermark shows the ids next to it, whatever their times", () => {
+    const { source, ids, capFor } = overlappingWorkers();
+    const shown = fetchNew(source, "", 0, capFor(15), CAPTURE_ID_BASE - 1);
+    expect(shown.map((row) => row.id)).toEqual(ids.slice(0, 15));
+  });
+
+  test("a zero worker watermark fills from the newest worker rows though claude-mem was already reflected", () => {
+    const { source, ids, capFor } = overlappingWorkers();
+    const shown = fetchNew(source, "", 41, capFor(5), 0);
+    expect(shown.map((row) => row.id)).toEqual(ids.slice(-5));
   });
 });
 

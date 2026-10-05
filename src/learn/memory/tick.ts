@@ -386,7 +386,10 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       let projects = 0;
       const captured = sessionsByRegisteredRoot(
         registry,
-        scanWorkerSessions(workerHomes(ctx.env), { sinceMs: nowMs() - 30 * 86_400_000 }),
+        scanWorkerSessions(workerHomes(ctx.env), {
+          sinceMs: nowMs() - 30 * 86_400_000,
+          warn: (warning) => tickLog(ctx, warning),
+        }),
       );
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only) continue;

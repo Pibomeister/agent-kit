@@ -62,9 +62,9 @@ observationsById(ids) -> ObservationRow[]
 ```
 
 The watermark read. claude-mem uses the ledger's `last_obs_id_reflected`; runtime-owned offline rows
-use `last_worker_obs_id_reflected` (`schemas/learn-state.schema.json`). A zero watermark reads newest
-first so a first run fills from recent work; every later run reads oldest first so nothing between
-two runs is skipped.
+use `last_worker_obs_id_reflected` (`schemas/learn-state.schema.json`). A source whose watermark is
+zero reads newest first so its first run fills from recent work; every later run reads that source
+oldest first by id so nothing between two runs is skipped.
 
 Each accepted reflect run records the exact observation ids it was shown (`obs_ids` in
 `schemas/memory-run.schema.json`; older native-only runs retain their lowest/highest range).
@@ -161,8 +161,9 @@ The scheduled tick reads these shipped host records when present:
 `AK_LEARN_CODEX_HOMES`, `AK_LEARN_GROK_HOMES` and `AK_LEARN_KIMI_HOMES` select several when a runner
 uses isolated homes. The scheduler passes these variables through when they were set at setup time.
 
-Encrypted content, reasoning/`think` parts, synthetic Grok context and non-user Kimi injections are
-not observations. Host records are normalized to append-only rows with a separate numeric id range,
+Encrypted content, reasoning/`think` parts, the instruction and environment blocks Codex injects as
+user messages, synthetic Grok context and non-user Kimi injections are not observations. A host
+record that cannot be read is skipped and logged; it never stops the tick. Host records are normalized to append-only rows with a separate numeric id range,
 then pass through the same reflection, evidence and quarantine gates as claude-mem rows. A host with
 no readable public session record is unsupported until its format is evidenced; setup does not invent
 a transcript from hooks or terminal output.

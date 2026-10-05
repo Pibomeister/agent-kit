@@ -72,7 +72,10 @@ export const CAPTURE_OBSERVATIONS_FILE = "raw/worker-observations.jsonl";
 export const CAPTURE_SESSIONS_FILE = "raw/worker-sessions.jsonl";
 const MAX_OBSERVATIONS = 999;
 const MAX_TEXT = 8_000;
-const FAILURE_TEXT = /\b(?:error|fail(?:ed|ure|ing)?|warnings?|regression|timeout|blocked|finding|violation)\b/i;
+const FAILURE_WORDS = "(?:error|fail(?:ed|ure|ing)?|warnings?|regression|timeout|blocked|finding|violation)";
+const FAILURE_TEXT = new RegExp(`\\b${FAILURE_WORDS}\\b`, "i");
+const ZERO_FAILURES = new RegExp(`\\b(?:0|no)\\s+${FAILURE_WORDS}\\b`, "gi");
+const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions for |<environment_context>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
 const jsonValidator = new Ajv({ strict: false });
 const validateJsonValue = jsonValidator.compile<JsonValue>({
@@ -172,7 +175,7 @@ function observation(type: string, title: string, text: string, at: number, file
 }
 
 function resultType(text: string): string {
-  return FAILURE_TEXT.test(text) ? "error" : "tool-result";
+  return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, "")) ? "error" : "tool-result";
 }
 
 function normalizedFile(path: string, cwd: string): string | null {
@@ -244,6 +247,12 @@ function session(
   };
 }
 
+/** A Codex user message without the instruction and environment blocks the host injects. */
+function codexUserContent(value: JsonValue | undefined): JsonValue | undefined {
+  if (Array.isArray(value)) return value.filter((part) => !CODEX_INJECTED.test(string(object(part)?.text) ?? ""));
+  return CODEX_INJECTED.test(string(value) ?? "") ? undefined : value;
+}
+
 export function parseCodexSession(path: string): CapturedSession | null {
   const rows = readJsonLines(path);
   const meta = rows.find((row) => row.type === "session_meta" && object(row.payload)?.cwd !== undefined);
@@ -264,7 +273,7 @@ export function parseCodexSession(path: string): CapturedSession | null {
     if (event.type === "task_started") ended = null;
     if (event.type === "task_complete") ended = Math.max(ended ?? 0, epoch(event.completed_at, at));
     if (event.type === "message" && (event.role === "user" || event.role === "assistant")) {
-      const text = publicText(event.content);
+      const text = publicText(event.role === "user" ? codexUserContent(event.content) : event.content);
       if (text !== "")
         observations.push(
           observation(event.role === "user" ? "prompt" : "assistant", `${event.role} message`, text, at),
@@ -434,7 +443,11 @@ function walk(dir: string, accept: (path: string) => boolean): string[] {
   return out.toSorted();
 }
 
-export function scanWorkerSessions(homes: WorkerHomes, options: { sinceMs?: number } = {}): CapturedSession[] {
+/** Every recent host session that parses. An unreadable record is skipped and reported through `warn`. */
+export function scanWorkerSessions(
+  homes: WorkerHomes,
+  options: { sinceMs?: number; warn?: (line: string) => void } = {},
+): CapturedSession[] {
   const sinceMs = options.sinceMs ?? Date.now() - 30 * 86_400_000;
   const recent = (path: string) => {
     try {
@@ -444,28 +457,31 @@ export function scanWorkerSessions(homes: WorkerHomes, options: { sinceMs?: numb
     }
   };
   const sessions: CapturedSession[] = [];
+  const collect = (path: string, parse: () => CapturedSession | null) => {
+    try {
+      const parsed = parse();
+      if (parsed !== null) sessions.push(parsed);
+    } catch (error) {
+      options.warn?.(`worker session skipped: ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   for (const home of homes.codex) {
     for (const path of walk(
       join(home, "sessions"),
       (file) => basename(file).startsWith("rollout-") && file.endsWith(".jsonl"),
     )) {
-      if (!recent(path)) continue;
-      const parsed = parseCodexSession(path);
-      if (parsed !== null) sessions.push(parsed);
+      if (recent(path)) collect(path, () => parseCodexSession(path));
     }
   }
   for (const home of homes.grok) {
     for (const path of walk(join(home, "sessions"), (file) => basename(file) === "chat_history.jsonl")) {
-      if (!recent(path)) continue;
-      const parsed = parseGrokSession(dirname(path));
-      if (parsed !== null) sessions.push(parsed);
+      if (recent(path)) collect(path, () => parseGrokSession(dirname(path)));
     }
   }
   for (const home of homes.kimi) {
     for (const path of walk(join(home, "sessions"), (file) => basename(file) === "state.json")) {
-      if (!existsSync(join(dirname(path), "agents", "main", "wire.jsonl")) || !recent(path)) continue;
-      const parsed = parseKimiSession(dirname(path));
-      if (parsed !== null) sessions.push(parsed);
+      if (existsSync(join(dirname(path), "agents", "main", "wire.jsonl")) && recent(path))
+        collect(path, () => parseKimiSession(dirname(path)));
     }
   }
   return sessions.toSorted(

@@ -76,7 +76,11 @@ function fit(rows: readonly ObservationRow[], inputChars: number): ObservationRo
   return out.sort((a, b) => a.id - b.id);
 }
 
-/** Observations after the watermark, under the input cap less the summaries' share. A zero watermark fills from the newest. Returned oldest first. */
+/**
+ * Observations after each source's watermark, under the input cap less the summaries' share. A
+ * source whose watermark is zero fills from its newest. The sources alternate, each in its own id
+ * order, so what is shown of a source is the run of ids next to its watermark. Returned oldest first.
+ */
 export function fetchNew(
   source: MemoryObservationSource,
   memProject: string,
@@ -84,13 +88,12 @@ export function fetchNew(
   inputChars = INPUT_CHARS - SUMMARY_CHARS,
   capturedWatermark = 0,
 ): ObservationRow[] {
-  const newestFirst = watermark === 0 && capturedWatermark === 0;
-  const rows = [
-    ...source.observationsSince(memProject, watermark, { newestFirst }),
-    ...(source.capturedObservationsSince?.(memProject, capturedWatermark, { newestFirst }) ?? []),
-  ].toSorted((a, b) =>
-    newestFirst ? b.created_at_epoch - a.created_at_epoch : a.created_at_epoch - b.created_at_epoch,
-  );
+  const native = source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 });
+  const captured =
+    source.capturedObservationsSince?.(memProject, capturedWatermark, { newestFirst: capturedWatermark === 0 }) ?? [];
+  const rows: ObservationRow[] = [];
+  for (let index = 0; index < Math.max(native.length, captured.length); index++)
+    for (const row of [native[index], captured[index]]) if (row !== undefined) rows.push(row);
   return fit(rows, inputChars);
 }
 
