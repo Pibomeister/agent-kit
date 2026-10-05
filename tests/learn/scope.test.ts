@@ -342,6 +342,17 @@ describe("review round fixes", () => {
     expect(hook(f, "session-start", { cwd: wt }).out).toContain("[rp-001] read the diff");
   });
 
+  test("setup scope --set accepts a root spelled through a symlink, silently, and stores git's root", () => {
+    const f = fixture();
+    const link = join(scratch(), "link");
+    symlinkSync(f.inside, link);
+    const { out, io } = collect();
+    runLearn(["setup", "scope", "--set", link], { cwd: f.inside, io, env: f.env });
+    expect(out.filter((line) => line.startsWith("  "))).toEqual([]);
+    expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
+    expect(hook(f, "session-start", { cwd: f.inside }).out).toContain("[rp-001] read the diff");
+  });
+
   test("a dangling-symlink scope file allows nothing instead of reading as no scope", () => {
     const f = fixture();
     mkdirSync(f.config.runtimeDir, { recursive: true });

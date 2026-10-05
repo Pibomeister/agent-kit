@@ -4,7 +4,7 @@
  * never widen it. `AK_LEARN_REPOS`, when present, overrides the file.
  */
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { type LearnConfig, loadConfig, parseRepos, sameScope, scopeFile } from "../core/config.ts";
+import { identity, type LearnConfig, loadConfig, parseRepos, sameScope, scopeFile } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { run } from "../core/proc.ts";
@@ -45,12 +45,12 @@ export function scope(ctx: LearnContext, options: { set?: string; clear?: boolea
     const entries = options.set.split(":").map((part) => part.trim());
     const roots = entries.flatMap((entry) => {
       const top = parseRepos(entry).length === 0 ? null : workTreeTop(entry);
-      const root = top !== null && parseRepos(top)[0] === parseRepos(entry)[0] ? mainRepoRoot(entry) : null;
+      const root = top !== null && identity(top) === identity(entry) ? mainRepoRoot(entry) : null;
       if (root === null) {
         if (entry !== "") ctx.io.out(`  ignored: ${entry} (not a repository root or a linked worktree)`);
         return [];
       }
-      if (root !== parseRepos(entry)[0]) ctx.io.out(`  ${entry}: stored as its main repository root ${root}`);
+      if (identity(root) !== identity(entry)) ctx.io.out(`  ${entry}: stored as its main repository root ${root}`);
       return [root];
     });
     mkdirSync(ctx.config.runtimeDir, { recursive: true });

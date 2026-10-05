@@ -4,8 +4,8 @@
  * every config root it would resolve from its environment points at scratch.
  * HOME is left alone: Bun reads it once at startup, so `homedir()` and a config
  * built from an env without `CLAUDE_CONFIG_DIR` (`loadConfig({})`) still name
- * the operator's real directories. `tests/learn/isolation.test.ts` guards the
- * shape of that mistake that reached the operator's judge trace.
+ * the operator's real directories, so a test that writes a judge call or a span
+ * passes a config built from the environment, never `loadConfig({})`.
  */
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";

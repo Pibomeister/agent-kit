@@ -132,7 +132,7 @@ export function scopeFile(runtimeDir: string): string {
  * but never open there (`rootOf`), and resolving symlinks opens each directory on the way. Two
  * spellings of one directory, through a symlink or in another case, share an identity.
  */
-function identity(path: string): string | null {
+export function identity(path: string): string | null {
   try {
     const stat = statSync(path, { bigint: true, throwIfNoEntry: false });
     return stat === undefined ? null : `${stat.dev}:${stat.ino}`;
