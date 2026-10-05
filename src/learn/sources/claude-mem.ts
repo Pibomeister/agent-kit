@@ -50,6 +50,32 @@ export interface CwdRow {
   last_seen: number;
 }
 
+/** The read surface used by the memory loop, independent of where sessions were recorded. */
+export interface MemoryObservationSource {
+  close(): void;
+  lastActivityMs(project: string): number;
+  newTokensSince(project: string, afterId: number): { tokens: number; count: number };
+  capturedTokensSince?(project: string, afterId: number): { tokens: number; count: number };
+  observationsSince(
+    project: string,
+    afterId: number,
+    options?: { sinceEpochMs?: number; newestFirst?: boolean },
+  ): ObservationRow[];
+  capturedObservationsSince?(
+    project: string,
+    afterId: number,
+    options?: { sinceEpochMs?: number; newestFirst?: boolean },
+  ): ObservationRow[];
+  observationsById(ids: readonly number[]): ObservationRow[];
+  sessionObservations(memorySessionId: string): ObservationRow[];
+  observationSessions(ids: readonly number[]): Map<number, string>;
+  sessions(project: string, sinceMs: number, staleBeforeMs: number): SessionRow[];
+  latestSummary(memorySessionId: string): SummaryRow | null;
+  summaries(memorySessionIds: readonly string[]): SummaryRow[];
+  promptCount(sessionDbId: number, memorySessionId?: string): number;
+  editedFiles(memorySessionId: string): string[];
+}
+
 const OBSERVATION_COLUMNS = `o.id, o.memory_session_id, o.project, o.type, o.title, o.subtitle, o.narrative, o.facts,
   o.concepts, o.files_read, o.files_modified, o.discovery_tokens, o.created_at, o.created_at_epoch, s.platform_source`;
 
@@ -190,7 +216,7 @@ export class ClaudeMemSource {
       .all(...memorySessionIds);
   }
 
-  promptCount(sessionDbId: number): number {
+  promptCount(sessionDbId: number, _memorySessionId?: string): number {
     const row = this.db
       .query<{ n: number }, [number]>("select count(*) as n from user_prompts where session_db_id = ?")
       .get(sessionDbId);

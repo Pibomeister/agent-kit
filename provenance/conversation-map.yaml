@@ -1670,6 +1670,21 @@ capabilities:
       From the learning-stack zip's memory loop. claude-mem supplies the observations through
       adapters/observation-source; it has no reflection step of this shape.
 
+  - id: learning-offline-worker-capture
+    capability: Read public Codex, Grok and Kimi session records offline and fold linked-worktree sessions into the registered repository's memory by Git common directory
+    disposition: retained
+    destination: adapters/observation-source
+    locator: plan §8
+    origin: conversation
+    acceptance_test: >-
+      Captured fixtures for all three hosts become evidence-gated observations under one registered
+      root; a linked worktree shares that root by Git common directory, while a same-named clone,
+      bare repository or unregistered cwd is not captured there.
+    note: >-
+      The learning design requires an observation-source boundary but did not require every worker
+      host to be observed. This binding adds only formats evidenced by local host records and leaves
+      a host out when no usable public record exists.
+
   - id: learning-consolidator
     capability: The judge that proposes lessons from a window of episodes, each citing the sessions it rests on
     disposition: retained

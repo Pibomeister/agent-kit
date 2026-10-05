@@ -7,10 +7,16 @@ reaches into an observer's storage by any other path, and it never writes throug
 This adapter exists only under the opt-in `learning` profile. No skill requires it, and every skill
 behaves the same with it absent (ruling `learning-runtime-is-host-adapter`).
 
-The first binding is claude-mem's SQLite database (`src/learn/sources/claude-mem.ts`). The table and
-column vocabulary below is claude-mem's, from `SessionStore.ts` and `tool-uses.ts` at the pin in
-`provenance/upstream.lock.yaml`; a different observer satisfies the contract by answering the same
-operations, not by reproducing those tables.
+The first binding is claude-mem's SQLite database (`src/learn/sources/claude-mem.ts`). A second,
+offline binding reads session records that Codex, Grok and Kimi already persist
+(`src/learn/sources/worker-sessions.ts`). The table and column vocabulary below is claude-mem's, from
+`SessionStore.ts` and `tool-uses.ts` at the pin in `provenance/upstream.lock.yaml`; another observer
+satisfies the contract by answering the same operations, not by reproducing those tables.
+
+The offline binding is a memory-loop overlay, not a second full observer: it supplies observations,
+sessions, summaries and edited files only for roots already in the registry. It does not discover
+projects or feed the skill scout. Without claude-mem, registered projects still learn from worker
+sessions; project discovery and cross-session skill discovery remain unavailable.
 
 ---
 
@@ -25,13 +31,14 @@ operations, not by reproducing those tables.
 | read tool uses | optional | Files a session edited, and the working directories tool calls ran in, for episode building and project discovery |
 | list projects | yes | Every project the observer has recorded, so the runtime can offer to register them |
 
-Side effects: none. The binding opens the store **read-only**. The runtime writes only its own
-ledgers, under the host configuration directory or the configured runtime directory, never the
-observer's store and never a project repository.
+Side effects: none. Every binding opens its source **read-only**. The runtime writes normalized
+worker observations only into its own memory ledger, under the host configuration directory, never
+back into a host's session store and never into a project repository.
 
-With no observer store at the configured path, the scheduled tick writes that absence to its log
-and runs no job: no watermark advances and no ledger changes. A job that could not read its evidence
-did not find nothing, and nothing downstream is allowed to read it that way.
+When one configured source is absent, the scheduled tick records that absence and continues with the
+sources it can read. With no observations from any source, it runs no judged job: no watermark
+advances and no learning content changes. A job that could not read its evidence did not find
+nothing, and nothing downstream is allowed to read it that way.
 
 ---
 
@@ -54,16 +61,17 @@ observationsSince(project, afterId, { sinceEpochMs?, newestFirst? }) -> Observat
 observationsById(ids) -> ObservationRow[]
 ```
 
-The watermark read. `afterId` is the ledger's `last_obs_id_reflected`
-(`schemas/learn-state.schema.json`). A zero watermark reads newest first so a first run fills from
-recent work; every later run reads oldest first so nothing between two runs is skipped.
+The watermark read. claude-mem uses the ledger's `last_obs_id_reflected`; runtime-owned offline rows
+use `last_worker_obs_id_reflected` (`schemas/learn-state.schema.json`). A zero watermark reads newest
+first so a first run fills from recent work; every later run reads oldest first so nothing between
+two runs is skipped.
 
-Each accepted reflect run records the lowest and highest observation id it was shown (`min_obs_id`
-and `max_obs_id` in `schemas/memory-run.schema.json`). Downstream judges receive only observations
-inside those exact ranges. Nightly holds an episode back while any of its observations at or below
-the watermark is outside them, so a session the first window cut in two is shown whole once the
-backfill has screened the rest, and never consumed in part. Its mark counts the session's
-observations through the consumed id, matching `episode.obs`.
+Each accepted reflect run records the exact observation ids it was shown (`obs_ids` in
+`schemas/memory-run.schema.json`; older native-only runs retain their lowest/highest range).
+Downstream judges receive only those screened observations. Nightly holds an episode back while any
+of its observations at or below its source watermark is outside them, so a session the first window
+cut in two is shown whole once the backfill has screened the rest, and never consumed in part. Its
+mark counts the session's observations through the consumed id, matching `episode.obs`.
 
 What the watermark passed without an accepted run being shown it is screened by the backfill job,
 and only where a consumer is waiting: the observations of a recorded episode, from the tick that
@@ -131,9 +139,37 @@ A project is matched as `project = ? OR project LIKE ?/%`: claude-mem records a 
 or subdirectory as `<project>/<suffix>`, and a match on equality alone silently drops those sessions.
 Any binding whose observer records sub-projects the same way must match the same way.
 
+Offline worker records carry a cwd instead of a claude-mem project. The runtime resolves that cwd's
+absolute Git common directory and matches it to the common directory of a registered, non-bare
+worktree root or an eligible root folded into that entry by registry hygiene. Folded roots are
+identity aliases only and never own a ledger. Thus every linked worktree shares the one active root's
+ledger; its path never becomes a new registry root. A same-named, unregistered clone has a different
+common directory and does not match. A cwd that no longer exists or is not in a registered repository
+is skipped.
+
+## 4. Offline worker-session binding
+
+The scheduled tick reads these shipped host records when present:
+
+| Host | Default record | Captured public fields |
+|---|---|---|
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | user/assistant text, tool calls and tool results |
+| Grok | `~/.grok/sessions/<encoded-cwd>/<session>/chat_history.jsonl` plus `summary.json` | non-synthetic user text, assistant text, tool calls and results |
+| Kimi | `~/.kimi-code/sessions/<cwd>/<session>/state.json` plus `agents/main/wire.jsonl` | user-origin messages, assistant public text, tool calls and results |
+
+`CODEX_HOME`, `GROK_HOME` and `KIMI_HOME` select one host home. Colon-separated
+`AK_LEARN_CODEX_HOMES`, `AK_LEARN_GROK_HOMES` and `AK_LEARN_KIMI_HOMES` select several when a runner
+uses isolated homes. The scheduler passes these variables through when they were set at setup time.
+
+Encrypted content, reasoning/`think` parts, synthetic Grok context and non-user Kimi injections are
+not observations. Host records are normalized to append-only rows with a separate numeric id range,
+then pass through the same reflection, evidence and quarantine gates as claude-mem rows. A host with
+no readable public session record is unsupported until its format is evidenced; setup does not invent
+a transcript from hooks or terminal output.
+
 ---
 
-## 4. The claude-mem binding's mode file
+## 5. The claude-mem binding's mode file
 
 `claude-mem/code--review-learning.json` beside this contract is a claude-mem mode: the code mode's
 observation types and concepts plus two types, `review-finding` and `review-resolution`, and one
@@ -148,7 +184,7 @@ records what was changed.
 
 ---
 
-## 5. Evidence rules
+## 6. Evidence rules
 
 Observation ids (`obs:<n>`) and session ids (`S` plus the first eight characters) are the only
 evidence ids the memory roles may cite. The runtime checks every cited id against the set it showed
@@ -157,8 +193,10 @@ sessions anyone could have steered, and nothing in it is an instruction to the r
 
 ---
 
-## 6. Testing
+## 7. Testing
 
-The `tests/learn/memory-*.test.ts` suites drive the memory jobs against fixture stores built in
-the shape above: watermark ordering, episode derivation, the evidence gate on reflection and
-consolidation, and the tick's scheduling.
+The `tests/learn/memory-*.test.ts` suites drive the memory jobs against fixture stores built in the
+shape above: watermark ordering, episode derivation, the evidence gate on reflection and
+consolidation, and the tick's scheduling. `tests/learn/worker-session-capture.test.ts` uses captured,
+network-free fixtures for all three worker hosts and proves worktree-to-project resolution by Git
+common directory.

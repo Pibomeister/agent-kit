@@ -82,6 +82,8 @@ const SEED: Readonly<Record<string, string>> = {
 
 export interface MemoryState {
   last_obs_id_reflected?: number;
+  /** Highest runtime-owned worker observation accepted by reflection. */
+  last_worker_obs_id_reflected?: number;
   last_reflect?: number;
   last_reflect_attempt?: number;
   reflect_failures?: number;
@@ -143,9 +145,12 @@ export function screenedObservationRanges(ledger: Ledger): [number, number][] {
     obs_ids?: number[];
   }>(ledger.path("runs.jsonl"))) {
     if (run.status !== "ok") continue;
+    if ((run.obs_ids?.length ?? 0) > 0) {
+      for (const id of run.obs_ids ?? []) ranges.push([id, id]);
+      continue;
+    }
     if (run.job === "reflect" && run.min_obs_id !== undefined && run.max_obs_id !== undefined)
       ranges.push([run.min_obs_id, run.max_obs_id]);
-    if (run.job === "backfill") for (const id of run.obs_ids ?? []) ranges.push([id, id]);
   }
   return ranges;
 }

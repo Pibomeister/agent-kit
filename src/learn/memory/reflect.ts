@@ -25,13 +25,15 @@ import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowMs, readText, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
-import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
+import type { MemoryObservationSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
+import { isCapturedObservation } from "../sources/worker-sessions.ts";
 import { unconsolidatedEpisodes } from "./episodes.ts";
 import {
   appendRun,
   citedIds,
   isScreened,
   logLine,
+  type MemoryState,
   provenanceGate,
   readState,
   saveState,
@@ -76,12 +78,20 @@ function fit(rows: readonly ObservationRow[], inputChars: number): ObservationRo
 
 /** Observations after the watermark, under the input cap less the summaries' share. A zero watermark fills from the newest. Returned oldest first. */
 export function fetchNew(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   memProject: string,
   watermark: number,
   inputChars = INPUT_CHARS - SUMMARY_CHARS,
+  capturedWatermark = 0,
 ): ObservationRow[] {
-  return fit(source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 }), inputChars);
+  const newestFirst = watermark === 0 && capturedWatermark === 0;
+  const rows = [
+    ...source.observationsSince(memProject, watermark, { newestFirst }),
+    ...(source.capturedObservationsSince?.(memProject, capturedWatermark, { newestFirst }) ?? []),
+  ].toSorted((a, b) =>
+    newestFirst ? b.created_at_epoch - a.created_at_epoch : a.created_at_epoch - b.created_at_epoch,
+  );
+  return fit(rows, inputChars);
 }
 
 /**
@@ -90,13 +100,19 @@ export function fetchNew(
  * a recorded episode until it is consolidated, and the review ids an ingest
  * `deferred`. History no consumer reads is never listed.
  */
-export function unscreenedIds(source: ClaudeMemSource, ledger: Ledger, deferred: readonly number[]): number[] {
+export function unscreenedIds(source: MemoryObservationSource, ledger: Ledger, deferred: readonly number[]): number[] {
   const ranges = screenedObservationRanges(ledger);
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
+  const state = readState(ledger);
+  const nativeWatermark = state.last_obs_id_reflected ?? 0;
+  const capturedWatermark = state.last_worker_obs_id_reflected ?? 0;
   const ids = new Set(deferred);
   for (const episode of unconsolidatedEpisodes(ledger))
     for (const row of source.sessionObservations(episode.sid)) ids.add(row.id);
-  return [...ids].filter((id) => id <= watermark && !isScreened(ranges, id)).toSorted((a, b) => a - b);
+  return [...ids]
+    .filter(
+      (id) => id <= (isCapturedObservation({ id }) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, id),
+    )
+    .toSorted((a, b) => a - b);
 }
 
 const field = (value: string | null) => (value ?? "").slice(0, 600);
@@ -278,6 +294,7 @@ export function applyReflection(
   cap: number,
   meta: Record<string, unknown> = {},
   inputs: ReflectInputs = {},
+  workerMaxObsId?: number,
 ): ReflectResult {
   const memoryPath = ledger.path("memory.md");
   const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
@@ -302,11 +319,14 @@ export function applyReflection(
   writeGated(ledger.dir, memoryPath, text);
   const state = readState(ledger);
   const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
-  saveState(ledger, {
+  const nextState: MemoryState = {
     ...withoutBackoff,
     last_obs_id_reflected: Math.max(withoutBackoff.last_obs_id_reflected ?? 0, maxObsId),
     last_reflect: nowMs(),
-  });
+  };
+  if (workerMaxObsId !== undefined)
+    nextState.last_worker_obs_id_reflected = Math.max(withoutBackoff.last_worker_obs_id_reflected ?? 0, workerMaxObsId);
+  saveState(ledger, nextState);
   appendRun(ledger, {
     job: "reflect",
     status: "ok",
@@ -326,13 +346,15 @@ export function applyReflection(
 
 export function reflect(
   ctx: LearnContext,
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   memProject: string,
   trigger = "tick",
 ): string {
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
-  const observations = fetchNew(source, memProject, watermark);
+  const state = readState(ledger);
+  const watermark = state.last_obs_id_reflected ?? 0;
+  const workerWatermark = state.last_worker_obs_id_reflected ?? 0;
+  const observations = fetchNew(source, memProject, watermark, INPUT_CHARS - SUMMARY_CHARS, workerWatermark);
   if (observations.length === 0) return "reflect: nothing new";
   const sids = [...new Set(observations.map((row) => row.memory_session_id))].sort();
   const previous = readText(ledger.path("memory.md"));
@@ -351,8 +373,11 @@ export function reflect(
   }
   const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
   const inputTokens = tokens(observations.map(formatObservation).join(""));
-  const minObsId = Math.min(...observations.map((row) => row.id));
-  const maxObsId = Math.max(...observations.map((row) => row.id));
+  const native = observations.filter((row) => !isCapturedObservation(row));
+  const workers = observations.filter(isCapturedObservation);
+  const minObsId = native.length > 0 ? Math.min(...native.map((row) => row.id)) : watermark;
+  const maxObsId = native.length > 0 ? Math.max(...native.map((row) => row.id)) : watermark;
+  const workerMaxObsId = workers.length > 0 ? Math.max(...workers.map((row) => row.id)) : workerWatermark;
   const result = applyReflection(
     ledger,
     reply,
@@ -360,8 +385,15 @@ export function reflect(
     inputTokens,
     maxObsId,
     ctx.config.memoryTokens,
-    { trigger, observations: observations.length, sessions: sids.length, min_obs_id: minObsId },
+    {
+      trigger,
+      observations: observations.length,
+      sessions: sids.length,
+      min_obs_id: minObsId,
+      obs_ids: observations.map((row) => row.id),
+    },
     { observations, summaries },
+    workerMaxObsId,
   );
   const redacted = result.redacted > 0 ? `, ${result.redacted} redacted` : "";
   return `reflect: ${result.ok ? "ok" : `rejected: ${result.reason}`} (${observations.length} obs, ${result.dropped} dropped${redacted})`;
@@ -374,7 +406,7 @@ export function reflect(
  */
 export function backfill(
   ctx: LearnContext,
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   memProject: string,
   deferred: readonly number[],

@@ -32,6 +32,8 @@ export interface RegistryEntry {
   root: string;
   mem_project: string;
   last_seen: number;
+  /** Other eligible roots folded into this entry; identity aliases only, never ledger roots. */
+  aliases?: string[];
 }
 
 export type Registry = Record<string, RegistryEntry>;

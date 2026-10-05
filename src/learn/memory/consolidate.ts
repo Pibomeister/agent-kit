@@ -29,7 +29,8 @@ import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
-import type { ClaudeMemSource, ObservationRow } from "../sources/claude-mem.ts";
+import type { MemoryObservationSource, ObservationRow } from "../sources/claude-mem.ts";
+import { isCapturedObservation } from "../sources/worker-sessions.ts";
 import {
   consumedObsIds,
   type Episode,
@@ -448,17 +449,25 @@ export interface ReadyEpisode {
 
 /** The pending episodes that have something to show the consolidator and nothing left for the backfill to screen, by session id. */
 export function readyEpisodes(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   pending: readonly Episode[],
 ): Map<string, ReadyEpisode> {
   const ranges = screenedObservationRanges(ledger);
   const consumed = consumedObsIds(ledger);
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
+  const state = readState(ledger);
+  const nativeWatermark = state.last_obs_id_reflected ?? 0;
+  const capturedWatermark = state.last_worker_obs_id_reflected ?? 0;
   const ready = new Map<string, ReadyEpisode>();
   for (const episode of pending) {
     const allRows = source.sessionObservations(episode.sid);
-    if (allRows.some((row) => row.id <= watermark && !isScreened(ranges, row.id))) continue;
+    if (
+      allRows.some(
+        (row) =>
+          row.id <= (isCapturedObservation(row) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, row.id),
+      )
+    )
+      continue;
     const after = consumed.get(episode.sid) ?? 0;
     const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
     const last = rows.at(-1);
@@ -476,7 +485,7 @@ function nothingToConsolidate(ctx: LearnContext, ledger: Ledger, message: string
 
 export function consolidate(
   ctx: LearnContext,
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   root: string,
   review: Ledger | null,
