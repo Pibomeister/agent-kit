@@ -7,7 +7,7 @@ metadata:
   ak:
     mode: manual
     autonomy_unenforceable:
-      - suppression of model invocation, which this host cannot express
+      - suppression of model invocation, which this package does not request on this host
       - "artifact-write is storage only: the host does not compute or check the receipt hash, so envelope hash binding is this package's own work."
 ---
 

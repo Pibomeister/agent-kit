@@ -7,7 +7,7 @@ metadata:
   ak:
     mode: manual
     autonomy_unenforceable:
-      - suppression of model invocation, which this host cannot express
+      - suppression of model invocation, which this package does not request on this host
 ---
 
 Grill the request, establish shared vocabulary, reach approved direction or an explicit unresolved

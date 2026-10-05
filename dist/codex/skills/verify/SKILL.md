@@ -7,7 +7,7 @@ metadata:
   ak:
     mode: manual
     autonomy_unenforceable:
-      - suppression of model invocation, which this host cannot express
+      - suppression of model invocation, which this package does not request on this host
       - independent-context creates a fresh context but host-only evidence is not a runner attestation; receipts mark that seat host-unattested.
 ---
 

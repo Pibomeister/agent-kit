@@ -7,7 +7,7 @@ metadata:
   ak:
     mode: manual
     autonomy_unenforceable:
-      - "model invocation cannot be suppressed on this host: `disable-model-invocation` has no codex equivalent (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger clause and the entrypoint's explicit-authority check are all that stand in for it, and the run stops rather than replying on a thread on an unrequested start."
+      - "model invocation is not suppressed on this host: this package emits no suppression key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than replying on a thread on an unrequested start."
       - idempotency is not provided by the host. The key is derived and the thread read back by this package; the host neither stores the key nor refuses a duplicate reply.
       - grant validation is the runner's. Where the host cannot validate a grant, the entrypoint stops for explicit invocation rather than running on an unchecked claim.
       - the host does not distinguish a reply capability from a resolve capability. This package treats them as separate grants and declines the one it was not given.

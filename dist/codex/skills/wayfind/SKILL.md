@@ -7,7 +7,7 @@ metadata:
   ak:
     mode: manual
     autonomy_unenforceable:
-      - suppression of model invocation, which this host cannot express
+      - suppression of model invocation, which this package does not request on this host
 ---
 
 Map longer work into decision tickets and implementation tickets. A decision ticket can never be

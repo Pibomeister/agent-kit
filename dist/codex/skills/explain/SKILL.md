@@ -7,7 +7,7 @@ metadata:
   ak:
     mode: manual
     autonomy_unenforceable:
-      - suppression of model invocation, which this host cannot express
+      - suppression of model invocation, which this package does not request on this host
 ---
 
 Explain how and why existing behavior works from repository and KB evidence. A description is not
