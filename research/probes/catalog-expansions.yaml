@@ -65,7 +65,7 @@ roles:
       reason: >-
         Runtime verification needs a named non-entrypoint seat outside implementer lineage so
         receipt authorship and unavailable independence are structurally expressible.
-      commits: [fbdda5e]
+      commits: [73a79fb]
 
 references:
   baseline: 4
@@ -86,7 +86,7 @@ references:
       reason: >-
         Surface evidence kinds, recipe semantics and verifier-seat lineage need one host-neutral
         vocabulary shared by the lifecycle phases that produce or consume them.
-      commits: [fbdda5e]
+      commits: [73a79fb]
 
 schemas:
   baseline: 14
@@ -141,7 +141,7 @@ schemas:
       reason: >-
         A successful host-neutral setup-through-cleanup path needs a content-addressed artifact
         shape that projects can declare and later verifier seats can replay.
-      commits: [fbdda5e]
+      commits: [73a79fb]
 
 profiles:
   baseline: 4
