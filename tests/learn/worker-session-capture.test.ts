@@ -12,7 +12,7 @@ import { readJsonl } from "../../src/learn/core/store.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { memoryDir, readState } from "../../src/learn/memory/ledger.ts";
 import { loadEpisodes } from "../../src/learn/memory/episodes.ts";
-import { type Registry, readWorktrees } from "../../src/learn/memory/registry.ts";
+import { type Registry, readWorktrees, registerRoot } from "../../src/learn/memory/registry.ts";
 import { fetchNew, formatObservation } from "../../src/learn/memory/reflect.ts";
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
 import { tick } from "../../src/learn/memory/tick.ts";
@@ -21,7 +21,6 @@ import {
   type CapturedSession,
   ProjectMemorySource,
   WorkerSessionSource,
-  captureWorkerSessions,
   parseCodexSession,
   parseGrokSession,
   parseKimiSession,
@@ -53,6 +52,14 @@ function linkedRepo() {
   writeFileSync(join(linkedGit, "gitdir"), `${join(linked, ".git")}\n`);
   writeFileSync(join(linkedGit, "HEAD"), readFileSync(join(main, ".git", "HEAD"), "utf8"));
   return { main, linked };
+}
+
+function captureWorkerSessions(
+  ledger: Ledger,
+  sessions: readonly CapturedSession[],
+  options: { dryRun?: boolean; sinceMs?: number } = {},
+): number {
+  return WorkerSessionSource.open(ledger).capture(sessions, options);
 }
 
 function requiredSession(value: CapturedSession | null): CapturedSession {
@@ -147,9 +154,10 @@ describe("worker session parsers", () => {
     expect(session.observations.map((row) => row.type)).toEqual(["error"]);
     expect(session.files_modified).toEqual(["src/lint.ts"]);
     const text = session.observations[0]?.text ?? "";
-    expect(text.split("\n").slice(0, 3)).toEqual([
+    expect(text.split("\n").slice(0, 4)).toEqual([
       "prompt: Fix the lint warnings without suppressing the rule.",
       "reply: I renamed the token and the lint command is green.",
+      "failed: apply_patch",
       "tools: apply_patch x1",
     ]);
     expect(text).toContain("-> 200 warnings remain: lint/no-placeholder");
@@ -242,6 +250,28 @@ describe("worker session parsers", () => {
     expect(session.request).toBe("Push with [redacted:github-token] from [redacted:home-path]/project please.");
     for (const secret of [token, "b2".repeat(16), "c3".repeat(12), "/Users/alice"])
       expect(JSON.stringify(session)).not.toContain(secret);
+  });
+
+  test("the first 300 characters of a long turn carry its prompt, its final reply and the calls that failed", () => {
+    const path = writeRollout(scratch("ak-codex-lead-"), "lead", "/fixture/worktree", [
+      codexMessage("user", `Make the checkout total match the cart. ${"Background nobody needs. ".repeat(40)}`),
+      codexToolCall("shell", `bun test ${"tests/checkout/".repeat(30)}`),
+      codexToolOutput(`3 tests failed\n${"stack frame\n".repeat(200)}`),
+      codexMessage("assistant", "First attempt, superseded."),
+      codexToolCall("apply_patch", "*** Update File: src/total.ts"),
+      codexToolOutput("Success. Updated the following files: src/total.ts"),
+      codexToolCall("deploy_preview", "{}"),
+      codexToolOutput("error: preview quota exceeded"),
+      codexMessage("assistant", `The total now sums line items after discounts. ${"More detail. ".repeat(60)}`),
+      CODEX_TASK_COMPLETE,
+    ]);
+    const text = requiredSession(parseCodexSession(path)).observations[0]?.text ?? "";
+    const lead = text.slice(0, 300).split("\n");
+    expect(lead[0]).toStartWith("prompt: Make the checkout total match the cart.");
+    expect(lead[1]).toStartWith("reply: The total now sums line items after discounts.");
+    expect(lead[2]).toBe("failed: shell, deploy_preview");
+    expect(text.split("\n")[3]).toBe("tools: shell x1, apply_patch x1, deploy_preview x1");
+    expect(text.slice(300)).toContain("-> 3 tests failed");
   });
 
   test("normalizes a captured Grok session and excludes synthetic context", () => {
@@ -402,6 +432,39 @@ describe("memory tick worker capture", () => {
     expect(ctx.out.some((line) => line.includes("worker sessions skipped"))).toBe(false);
   });
 
+  test("Grok and Kimi sessions in a linked worktree no hook recorded reach its root through the worktree's git pointer", () => {
+    const { main, linked } = linkedRepo();
+    const homes = scratch("ak-worker-hookless-");
+    for (const host of ["grok", "kimi"]) cpSync(join(FIXTURES, host), join(homes, host), { recursive: true });
+    replaceFixtureCwd(homes, join(linked, "packages", "web"));
+    mkdirSync(join(linked, "packages", "web"), { recursive: true });
+    const ctx = testContext({
+      cwd: main,
+      env: {
+        AK_LEARN_CODEX_HOMES: join(homes, "codex"),
+        AK_LEARN_GROK_HOMES: join(homes, "grok"),
+        AK_LEARN_KIMI_HOMES: join(homes, "kimi"),
+      },
+    });
+    registerRoot(ctx.config, main);
+    expect(readWorktrees(ctx.config)).toEqual({});
+
+    expect(tick(ctx, { only: main, job: "reflect" })).toBe(0);
+    expect(
+      loadEpisodes(new Ledger(memoryDir(ctx.config, main)))
+        .map((episode) => episode.platform)
+        .toSorted(),
+    ).toEqual(["grok", "kimi"]);
+    expect(ctx.out.some((line) => line.includes("worker sessions skipped"))).toBe(false);
+  });
+
+  test("a worktree pointer naming an unregistered root places nothing", () => {
+    const { main, linked } = linkedRepo();
+    const entry = { mem_project: "registered", last_seen: 1 };
+    expect(workerRootResolver({ other: { ...entry, root: "/code/other" } }, {})(linked)).toBeNull();
+    expect(workerRootResolver({ main: { ...entry, root: main } }, {})(join(linked, "src"))).toBe(main);
+  });
+
   test("a removed worktree's sessions still reach its project, and unplaced sessions are counted in one line", () => {
     const { main, linked } = linkedRepo();
     const codex = scratch("ak-worker-removed-");
@@ -423,7 +486,7 @@ describe("memory tick worker capture", () => {
     const stored = WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, main))).observationsSince("", 0);
     expect(stored.map((row) => row.facts)).toEqual(["prompt: finish the cart fix\nreply: The cart fix is done."]);
     expect(ctx.out.filter((line) => line.includes("worker sessions skipped"))).toEqual([
-      "worker sessions skipped: 2 outside every registered root and recorded worktree",
+      "worker sessions skipped: 2 outside every registered root and worktree",
     ]);
   });
 });

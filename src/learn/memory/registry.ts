@@ -6,7 +6,7 @@
  * that covers a linked worktree, whose `.git` is a file), the tick discovers
  * repos from claude-mem's tool-use working directories, and `ak learn memory
  * run` registers the repo it was pointed at. Discovery resolves a root with
- * `rootOf`, which only stats: a scheduled process may not open a file inside a
+ * `rootOf`, which only stats: discovery may not open a file inside a
  * repository or spawn git there.
  *
  * One root owns each claude-mem project. The owner keeps it while its
@@ -53,10 +53,9 @@ export function readWorktrees(config: LearnConfig): Worktrees {
 }
 
 /**
- * Record the linked worktree a foreground session runs in against its main root. The scheduled
- * tick may not ask git which repository a worker's cwd belongs to, so the answer is written down
- * here, while git may run. The record outlives the worktree. A cwd inside the main worktree needs
- * no record.
+ * Record the linked worktree a foreground session runs in against its main root, so the scheduled
+ * tick can place a worker's cwd there once the worktree is removed and its `.git` pointer with it.
+ * A cwd inside the main worktree needs no record.
  */
 export function recordWorktree(config: LearnConfig, cwd: string, root: string): void {
   if (config.dryRun || rootOf(cwd) !== null) return;

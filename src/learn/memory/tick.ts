@@ -4,10 +4,12 @@
  * and for each project active in the last seven days record new episodes,
  * then run whichever jobs are due. Failures are logged, never raised.
  *
- * The scheduled path uses stat only. It never spawns git in a repository and
- * never opens a file inside one: under a macOS scheduler that open blocks on
- * the privacy prompt and ignores every timeout. Git runs only in the ledgers,
- * which live under the config directory.
+ * The scheduled path never spawns git in a repository, and opens one kind of
+ * file inside one: the `.git` pointer of a linked worktree, read to place a
+ * worker session no registered root or recorded worktree contains. Everything
+ * else is stat only, because under a macOS scheduler an open inside a protected
+ * folder blocks on the privacy prompt and ignores every timeout. Git runs only
+ * in the ledgers, which live under the config directory.
  */
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -25,7 +27,6 @@ import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import {
   CAPTURE_WINDOW_MS,
   type CapturedSession,
-  captureWorkerSessions,
   ProjectMemorySource,
   scanWorkerSessions,
   WorkerSessionSource,
@@ -265,15 +266,16 @@ export function runProject(
   try {
     const out: string[] = [];
     let captured = 0;
+    const captures = WorkerSessionSource.open(ledger);
     try {
-      captured = captureWorkerSessions(ledger, options.captured ?? [], { dryRun, sinceMs: options.capturedSince });
+      captured = captures.capture(options.captured ?? [], { dryRun, sinceMs: options.capturedSince });
       if ((options.captured?.length ?? 0) > 0) out.push(`worker observations +${captured}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       out.push(`worker capture failed: ${message}`);
       if (!dryRun) logLine(ledger, `worker capture failed: ${message}`);
     }
-    const source = new ProjectMemorySource(claude, WorkerSessionSource.open(ledger));
+    const source = new ProjectMemorySource(claude, captures);
     try {
       out.push(
         jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
@@ -392,7 +394,7 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
         warn: (warning) => tickLog(ctx, warning),
       });
       if (scan.unmatched > 0)
-        tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and recorded worktree`);
+        tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and worktree`);
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only) continue;
         if (!allowed(entry.root)) continue;

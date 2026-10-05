@@ -12,7 +12,9 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Ledger } from "../core/ledger.ts";
+import { linkedWorktree } from "../core/paths.ts";
 import { appendJsonl, readJsonl, writeJsonl } from "../core/store.ts";
+import { scrubSecrets } from "../memory/redact.ts";
 import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
@@ -101,8 +103,9 @@ export const MAX_OBSERVATIONS = 999;
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
 const MAX_TEXT = 2_000;
-const PROMPT_CHARS = 160;
-const REPLY_CHARS = 240;
+const PROMPT_CHARS = 110;
+const REPLY_CHARS = 110;
+const FAILED_CHARS = 50;
 const INPUT_CHARS = 120;
 const OUTPUT_CHARS = 300;
 const FAILURE_WORDS =
@@ -111,25 +114,6 @@ const FAILURE_TEXT = new RegExp(`\\b${FAILURE_WORDS}\\b`, "i");
 const ZERO_FAILURES = new RegExp(`\\b(?:0|no)\\s+${FAILURE_WORDS}\\b`, "gi");
 const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
-/** Credential formats and home directories, each replaced by `[redacted:<kind>]` before captured text is kept. */
-const SECRETS: ReadonlyArray<readonly [kind: string, pattern: RegExp]> = [
-  ["private-key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g],
-  ["aws-access-key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g],
-  ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g],
-  ["slack-token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/g],
-  ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
-  ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
-  ["bearer-token", /(?<=\bBearer\s+)(?=[A-Za-z0-9._~+/-]*[0-9])[A-Za-z0-9._~+/-]{20,}=*/gi],
-  ["url-credentials", /(?<=\b[A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]+:(?![$%{<])[^\s/?#@"'<>]+(?=@)/g],
-  [
-    "env-secret",
-    /(?<=\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*["']?)[^\s"']{8,}/g,
-  ],
-  [
-    "home-path",
-    /(?<=^|[\s"'`([{<=,;:|>])(?:\/(?:var\/)?home\/[A-Za-z0-9._-]+|\/Users\/(?!Shared\b)[A-Za-z0-9._-]+)(?![A-Za-z0-9._-])/gm,
-  ],
-];
 const jsonValidator = new Ajv({ strict: false });
 const validateJsonValue = jsonValidator.compile<JsonValue>({
   $defs: {
@@ -215,13 +199,9 @@ function epoch(value: JsonValue | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-function scrubbed(text: string): string {
-  return SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text);
-}
-
 /** Host text made storable: control characters dropped, scrubbed, then cut. Scrubbing runs before the cut so no cut leaves half a credential. */
 function clipped(value: string): string {
-  return scrubbed(
+  return scrubSecrets(
     value
       .replace(/\p{Cc}/gu, (character) => (character === "\n" || character === "\t" ? character : " "))
       .trim()
@@ -263,7 +243,7 @@ function normalizedFile(path: string, cwd: string): string | null {
   if (clean === "" || clean.includes("\n")) return null;
   if (!isAbsolute(clean)) return clean.replace(/^\.\//, "");
   const rel = relative(cwd, clean);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : scrubbed(clean);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : scrubSecrets(clean);
 }
 
 function filesFromValue(value: JsonValue | undefined, cwd: string): string[] {
@@ -334,9 +314,10 @@ function turnLog() {
 }
 
 /**
- * One turn as one observation: the prompt, the last reply, how often each tool ran, then each call
- * with short excerpts of its arguments and output, failing calls first. A turn with a failing
- * output is typed `error`.
+ * One turn as one observation. It leads with a summary of at most 300 characters, which is as far
+ * as the shortest judge excerpt reads: the prompt, the last reply and the names of the calls that
+ * failed. The detail follows: how often each tool ran, then each call with short excerpts of its
+ * arguments and output, failing calls first. A turn with a failing output is typed `error`.
  */
 function turnObservation(turn: Turn): CapturedObservation {
   const failing = turn.calls.filter((call) => reportsFailure(call.output));
@@ -345,6 +326,8 @@ function turnObservation(turn: Turn): CapturedObservation {
   const lines: string[] = [];
   if (turn.prompt !== "") lines.push(`prompt: ${excerpt(turn.prompt, PROMPT_CHARS)}`);
   if (turn.reply !== "") lines.push(`reply: ${excerpt(turn.reply, REPLY_CHARS)}`);
+  if (failing.length > 0)
+    lines.push(`failed: ${excerpt([...new Set(failing.map((call) => call.name))].join(", "), FAILED_CHARS)}`);
   if (counts.size > 0) lines.push(`tools: ${[...counts].map(([name, count]) => `${name} x${count}`).join(", ")}`);
   for (const call of [...failing, ...turn.calls.filter((item) => !failing.includes(item))])
     lines.push(`${call.name} ${excerpt(call.input, INPUT_CHARS)} -> ${excerpt(call.output, OUTPUT_CHARS)}`);
@@ -600,7 +583,8 @@ function walk(dir: string, accept: (path: string) => boolean): string[] {
 
 /**
  * Where a recorded cwd belongs: the deepest registered root, or worktree recorded for one, that
- * contains it. Paths are compared as text, so nothing here touches a repository.
+ * contains it, compared as text. A cwd none of them contains is placed by the `.git` pointer of
+ * the linked worktree it sits in, when that names a registered root.
  */
 export function workerRootResolver(registry: Registry, worktrees: Worktrees): (cwd: string) => string | null {
   const roots = new Set(Object.values(registry).map((entry) => entry.root));
@@ -610,7 +594,10 @@ export function workerRootResolver(registry: Registry, worktrees: Worktrees): (c
   ].toSorted((a, b) => b[0].length - a[0].length);
   return (cwd) => {
     const path = resolve(cwd);
-    return places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1] ?? null;
+    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1];
+    if (placed !== undefined) return placed;
+    const root = linkedWorktree(path)?.root;
+    return root !== undefined && roots.has(root) ? root : null;
   };
 }
 
@@ -738,80 +725,84 @@ function storedSession(item: CapturedSession, observationCount: number): StoredS
   };
 }
 
-/**
- * Append the rows of each host session the ledger does not hold yet, matched by a digest of title
- * and text rather than position, since a host may rewrite its record. A stored session that is not
- * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the files hold the same
- * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
- * Returns observations appended.
- */
-export function captureWorkerSessions(
-  ledger: Ledger,
-  sessions: readonly CapturedSession[],
-  options: { dryRun?: boolean; sinceMs?: number } = {},
-): number {
-  const observationsPath = ledger.path(CAPTURE_OBSERVATIONS_FILE);
-  const sessionsPath = ledger.path(CAPTURE_SESSIONS_FILE);
-  const held = readJsonl<StoredObservation>(observationsPath);
-  const latest = new Map(readJsonl<StoredSession>(sessionsPath).map((row) => [row.memory_session_id, row]));
-  const scanned = new Set(sessions.map((item) => item.memory_session_id));
-  const expired = (sid: string) =>
-    !scanned.has(sid) && (latest.get(sid)?.modified_at_epoch ?? 0) < (options.sinceMs ?? 0);
-  const newestId = held.reduce((newest, row) => Math.max(newest, row.id), CAPTURE_ID_BASE - 1);
-  const stored = new Map<string, string[]>();
-  for (const row of held) stored.set(row.memory_session_id, [...(stored.get(row.memory_session_id) ?? []), row.key]);
-  let nextId = newestId;
-  const fresh: StoredObservation[] = [];
-  const revisions: StoredSession[] = [];
-  for (const item of sessions) {
-    const keys = stored.get(item.memory_session_id) ?? [];
-    const unseen = new Map<string, number>();
-    for (const key of keys) unseen.set(key, (unseen.get(key) ?? 0) + 1);
-    const appended: StoredObservation[] = [];
-    for (const row of item.observations) {
-      const key = rowKey(row);
-      const count = unseen.get(key) ?? 0;
-      if (count > 0) unseen.set(key, count - 1);
-      else appended.push(storedObservation(item, row, ++nextId));
-    }
-    if (appended.length === 0) continue;
-    fresh.push(...appended);
-    revisions.push(storedSession(item, keys.length + appended.length));
-  }
-  if (options.dryRun === true) return fresh.length;
-  const kept = held.filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId));
-  if (kept.length < held.length) {
-    for (const revision of revisions) latest.set(revision.memory_session_id, revision);
-    writeJsonl(observationsPath, [...kept, ...fresh]);
-    writeJsonl(
-      sessionsPath,
-      [...latest.values()].filter((row) => !expired(row.memory_session_id)),
-    );
-  } else if (fresh.length > 0) {
-    appendJsonl(observationsPath, fresh);
-    appendJsonl(sessionsPath, revisions);
-  }
-  return fresh.length;
-}
-
 export function isCapturedObservation(row: Pick<ObservationRow, "id">): boolean {
   return row.id >= CAPTURE_ID_BASE;
 }
 
+/** A project's captured worker rows, read from its ledger once and kept in step with what `capture` writes. */
 export class WorkerSessionSource implements MemoryObservationSource {
-  private readonly observations: ObservationRow[];
-  private readonly sessionRows: Map<string, StoredSession>;
+  private observations: StoredObservation[] = [];
+  private readonly bySession = new Map<string, StoredObservation[]>();
+  private sessionRows = new Map<string, StoredSession>();
 
-  private constructor(observations: ObservationRow[], sessions: StoredSession[]) {
-    this.observations = observations.toSorted((a, b) => a.id - b.id);
-    this.sessionRows = new Map(sessions.map((row) => [row.memory_session_id, row]));
+  private constructor(
+    private readonly observationsPath: string,
+    private readonly sessionsPath: string,
+  ) {
+    this.hold(readJsonl<StoredObservation>(observationsPath), readJsonl<StoredSession>(sessionsPath));
   }
 
   static open(ledger: Ledger): WorkerSessionSource {
-    return new WorkerSessionSource(
-      readJsonl<ObservationRow>(ledger.path(CAPTURE_OBSERVATIONS_FILE)),
-      readJsonl<StoredSession>(ledger.path(CAPTURE_SESSIONS_FILE)),
+    return new WorkerSessionSource(ledger.path(CAPTURE_OBSERVATIONS_FILE), ledger.path(CAPTURE_SESSIONS_FILE));
+  }
+
+  private hold(observations: readonly StoredObservation[], sessions: readonly StoredSession[]): void {
+    this.observations = observations.toSorted((a, b) => a.id - b.id);
+    this.sessionRows = new Map(sessions.map((row) => [row.memory_session_id, row]));
+    this.bySession.clear();
+    for (const row of this.observations) {
+      const rows = this.bySession.get(row.memory_session_id);
+      if (rows === undefined) this.bySession.set(row.memory_session_id, [row]);
+      else rows.push(row);
+    }
+  }
+
+  /**
+   * Append the rows of each host session the ledger does not hold yet, matched by a digest of title
+   * and text rather than position, since a host may rewrite its record. A stored session that is not
+   * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the files hold the same
+   * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
+   * Returns observations appended; a dry run counts them and changes nothing.
+   */
+  capture(sessions: readonly CapturedSession[], options: { dryRun?: boolean; sinceMs?: number } = {}): number {
+    const held = this.observations;
+    const scanned = new Set(sessions.map((item) => item.memory_session_id));
+    const expired = (sid: string) =>
+      !scanned.has(sid) && (this.sessionRows.get(sid)?.modified_at_epoch ?? 0) < (options.sinceMs ?? 0);
+    const newestId = held.at(-1)?.id ?? CAPTURE_ID_BASE - 1;
+    let nextId = newestId;
+    const fresh: StoredObservation[] = [];
+    const revisions: StoredSession[] = [];
+    for (const item of sessions) {
+      const stored = this.bySession.get(item.memory_session_id) ?? [];
+      const unseen = new Map<string, number>();
+      for (const row of stored) unseen.set(row.key, (unseen.get(row.key) ?? 0) + 1);
+      const appended: StoredObservation[] = [];
+      for (const row of item.observations) {
+        const key = rowKey(row);
+        const count = unseen.get(key) ?? 0;
+        if (count > 0) unseen.set(key, count - 1);
+        else appended.push(storedObservation(item, row, ++nextId));
+      }
+      if (appended.length === 0) continue;
+      fresh.push(...appended);
+      revisions.push(storedSession(item, stored.length + appended.length));
+    }
+    if (options.dryRun === true) return fresh.length;
+    const kept = held.filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId));
+    const pruned = kept.length < held.length;
+    const latest = [...this.sessionRows.values(), ...revisions].filter(
+      (row) => !pruned || !expired(row.memory_session_id),
     );
+    if (pruned) {
+      writeJsonl(this.observationsPath, [...kept, ...fresh]);
+      writeJsonl(this.sessionsPath, [...new Map(latest.map((row) => [row.memory_session_id, row])).values()]);
+    } else if (fresh.length > 0) {
+      appendJsonl(this.observationsPath, fresh);
+      appendJsonl(this.sessionsPath, revisions);
+    }
+    this.hold([...kept, ...fresh], latest);
+    return fresh.length;
   }
 
   close(): void {}
@@ -842,7 +833,7 @@ export class WorkerSessionSource implements MemoryObservationSource {
   }
 
   sessionObservations(memorySessionId: string): ObservationRow[] {
-    return this.observations.filter((row) => row.memory_session_id === memorySessionId);
+    return this.bySession.get(memorySessionId) ?? [];
   }
 
   observationSessions(ids: readonly number[]): Map<number, string> {

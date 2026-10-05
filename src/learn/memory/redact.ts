@@ -171,6 +171,31 @@ export function normalWords(text: string): string[] {
     .filter((w) => w !== "");
 }
 
+/** Credential formats and home directories, each replaced by `[redacted:<kind>]` before captured text is kept. */
+const SECRETS: ReadonlyArray<readonly [kind: string, pattern: RegExp]> = [
+  ["private-key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g],
+  ["aws-access-key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g],
+  ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g],
+  ["slack-token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/g],
+  ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
+  ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
+  ["bearer-token", /(?<=\bBearer\s+)(?=[A-Za-z0-9._~+/-]*[0-9])[A-Za-z0-9._~+/-]{20,}=*/gi],
+  ["url-credentials", /(?<=\b[A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]+:(?![$%{<])[^\s/?#@"'<>]+(?=@)/g],
+  [
+    "env-secret",
+    /(?<=\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*["']?)[^\s"']{8,}/g,
+  ],
+  [
+    "home-path",
+    /(?<=^|[\s"'`([{<=,;:|>])(?:\/(?:var\/)?home\/[A-Za-z0-9._-]+|\/Users\/(?!Shared\b)[A-Za-z0-9._-]+)(?![A-Za-z0-9._-])/gm,
+  ],
+];
+
+/** `text` with every credential and home directory replaced by its kind. The one scrubber for text captured from a host record. */
+export function scrubSecrets(text: string): string {
+  return SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text);
+}
+
 function observationText(row: ObservationRow): string {
   return [row.title, row.subtitle, row.narrative, row.facts, row.concepts, row.files_read, row.files_modified]
     .filter((v) => v)

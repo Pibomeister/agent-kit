@@ -142,19 +142,24 @@ or subdirectory as `<project>/<suffix>`, and a match on equality alone silently 
 Any binding whose observer records sub-projects the same way must match the same way.
 
 Offline worker records carry a cwd instead of a claude-mem project. The scheduled tick places that
-cwd by comparing paths, and never spawns git or opens a file inside a repository to do it. A cwd
-belongs to a registered root when it is that root or a path under it, or when it is a recorded
-linked worktree of that root or a path under one. The deepest match wins.
+cwd by comparing paths, and never spawns git to do it. A cwd belongs to a registered root when it
+is that root or a path under it, or when it is a recorded linked worktree of that root or a path
+under one. The deepest match wins.
+
+A cwd none of them contains is placed by its worktree: the tick walks up from the cwd to the first
+`.git`, and when that is a file whose `gitdir:` line reads `<root>/.git/worktrees/<name>` for a
+registered root, the session belongs to that root. That pointer is the only file the scheduled tick
+opens inside a repository; a `.git` directory ends the walk. This is what places a Grok or Kimi
+session, since those hosts run no hooks.
 
 The worktree record is `<runtimeDir>/worktrees.json`, linked worktree path -> registered root. It is
 written in the foreground, where git may run: the session-start, stop and prompt hooks record the
-worktree their own session runs in. The record outlives the worktree, so a session of a worktree
-since removed still reaches its project. A worktree's path never becomes a registry root.
+worktree their own session runs in. The record outlives the worktree and its pointer, so a session
+of a worktree since removed still reaches its project. A worktree's path never becomes a registry
+root.
 
-A recent session whose cwd matches no root and no recorded worktree is not parsed. The tick counts
-these and logs one line with the count. Grok and Kimi run no hooks, so a session of theirs in a
-linked worktree outside every registered root is placed only once a hooked host has run in that
-worktree.
+A recent session whose cwd is placed by none of these is not parsed. The tick counts these and logs
+one line with the count. A removed worktree no hooked host ran in is among them.
 
 ## 4. Offline worker-session binding
 
@@ -180,12 +185,19 @@ record that cannot be read is skipped and logged; it never stops the tick.
 ### What is stored
 
 One row per turn: a user prompt and what the worker did until the next one. A row holds, in one text
-field of at most 2,000 characters:
+field of at most 2,000 characters, a summary and then the detail. The summary is at most 300
+characters, which is as far as the shortest judge excerpt reads:
 
 | Part | Stored |
 |---|---|
-| User prompt | an excerpt of at most 160 characters |
-| Assistant reply | an excerpt of the turn's last reply, at most 240 characters |
+| User prompt | an excerpt of at most 110 characters |
+| Assistant reply | an excerpt of the turn's last reply, at most 110 characters |
+| Failing calls | the names of the tools whose output reports a failure, at most 50 characters |
+
+The detail follows it:
+
+| Part | Stored |
+|---|---|
 | Tool calls | each tool's name and how often it ran |
 | Each call | an excerpt of its arguments (120 characters) and of its output (300 characters), failing calls first |
 
