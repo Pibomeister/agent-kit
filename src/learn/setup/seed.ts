@@ -5,6 +5,9 @@
  * runs the review ingest as a dry path so the first report shows what the
  * sources can see. No judge is called: the judge is replaced by one that
  * refuses, so a seed that tried to judge would fail loudly rather than spend.
+ *
+ * A root the registry refuses (see `memory/registry.ts`) gets no ledgers: the
+ * seed prints the refusal and exits 1.
  */
 import { resolve } from "node:path";
 import type { LearnContext } from "../core/context.ts";

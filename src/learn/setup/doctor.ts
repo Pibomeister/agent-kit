@@ -1,6 +1,7 @@
 /**
- * `ak learn setup doctor` — report prerequisites, the scheduled judge's login,
- * the resolved environment and the last 24 hours of judge calls and spans.
+ * `ak learn setup doctor` — report prerequisites, registry hygiene, the
+ * scheduled judge's login, the resolved environment and the last 24 hours of
+ * judge calls and spans.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
