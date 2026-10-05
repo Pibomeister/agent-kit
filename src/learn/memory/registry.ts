@@ -8,6 +8,18 @@
  * run` registers the repo it was pointed at. Discovery resolves a root with
  * `rootOf`, which only stats: a scheduled process may not open a file inside a
  * repository or spawn git there.
+ *
+ * One root owns each claude-mem project. The owner keeps it while its
+ * directory exists, and a second root is refused with a warning. An owner
+ * whose directory is gone (ENOENT on the root itself, no other stat failure)
+ * is released to the next root that registers. Roots contesting a project
+ * with no owner, in one discovery pass or in a registry written before this
+ * rule, are settled in favour of the one named after the project, then the
+ * newest.
+ *
+ * Known limit: claude-mem names a project after its folder, so two unrelated
+ * repositories with the same basename share one claude-mem project. Only one
+ * of them can be registered; the other is refused with the same warning.
  */
 import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -51,44 +63,92 @@ function ineligibleWarning(root: string, reason: string): string {
   return `registry warning: ${root} is ${reason} and cannot be registered`;
 }
 
+/** True only when the root itself is positively gone; any other stat failure decides nothing. */
+function absent(root: string): boolean {
+  try {
+    statSync(root);
+    return false;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT";
+  }
+}
+
+/** Ownership order among roots contesting one claude-mem project: one that still exists, then one named after the project, then the newest. */
+function byClaim(a: RegistryEntry, b: RegistryEntry): number {
+  return (
+    Number(absent(a.root)) - Number(absent(b.root)) ||
+    Number(basename(b.root) === b.mem_project) - Number(basename(a.root) === a.mem_project) ||
+    b.last_seen - a.last_seen ||
+    a.root.localeCompare(b.root)
+  );
+}
+
+interface Held {
+  held: Map<string, RegistryEntry>;
+  warnings: string[];
+}
+
+/** Drop ineligible roots and reduce every claude-mem project that several roots share to one owner. */
+function clean(input: Registry): Held {
+  const held = new Map<string, RegistryEntry>();
+  const warnings: string[] = [];
+  for (const [folder, entry] of Object.entries(input)) {
+    const reason = ineligible(entry.root);
+    if (reason === null) held.set(folder, entry);
+    else warnings.push(ineligibleWarning(entry.root, reason));
+  }
+  for (const project of new Set([...held.values()].map((entry) => entry.mem_project))) {
+    const contenders = [...held]
+      .filter(([, entry]) => entry.mem_project === project)
+      .toSorted(([, a], [, b]) => byClaim(a, b));
+    const owner = contenders[0];
+    if (owner === undefined) continue;
+    for (const [folder, entry] of contenders.slice(1)) {
+      held.delete(folder);
+      warnings.push(
+        `registry warning: claude-mem project '${project}' has multiple roots; ${owner[1].root} owns it and ${entry.root} is not kept in the registry`,
+      );
+    }
+  }
+  return { held, warnings };
+}
+
 export interface RegistryHygiene {
   registry: Registry;
   warnings: string[];
 }
 
-/** Drop ineligible roots and flag every claude-mem project that more than one root shares. */
+/** The registry as the next write would leave it, with a warning for every root dropped. Writes nothing. */
 export function registryHygiene(input: Registry): RegistryHygiene {
-  const registry: Registry = {};
-  const warnings: string[] = [];
-  const roots = new Map<string, string[]>();
-  for (const [folder, entry] of Object.entries(input)) {
-    const reason = ineligible(entry.root);
-    if (reason !== null) {
-      warnings.push(ineligibleWarning(entry.root, reason));
-      continue;
-    }
-    registry[folder] = entry;
-    roots.set(entry.mem_project, [...(roots.get(entry.mem_project) ?? []), entry.root]);
-  }
-  for (const [project, shared] of roots) {
-    if (shared.length > 1)
-      warnings.push(`registry warning: claude-mem project '${project}' has multiple roots: ${shared.join(", ")}`);
-  }
-  return { registry, warnings };
+  const { held, warnings } = clean(input);
+  return { registry: Object.fromEntries(held), warnings };
 }
 
-/** Add or refresh one root. A root taking a claude-mem project that another root already holds is refused, with the warning returned. */
-function admit(registry: Registry, entry: RegistryEntry): string | null {
+/**
+ * Add or refresh one root. A root taking a claude-mem project that another root
+ * holds is refused, with the warning returned, unless that owner's directory is
+ * gone, in which case the owner is released and the handover is logged.
+ */
+function admit({ held, warnings }: Held, entry: RegistryEntry): string | null {
   const folder = projectFolderName(entry.root);
-  if (registry[folder]?.mem_project !== entry.mem_project) {
-    const established = Object.entries(registry).find(
-      ([other, held]) => other !== folder && held.mem_project === entry.mem_project,
-    )?.[1];
-    if (established !== undefined)
-      return `registry warning: claude-mem project '${entry.mem_project}' is already registered at ${established.root}; refusing ${entry.root}`;
+  const owner = [...held].find(([other, kept]) => other !== folder && kept.mem_project === entry.mem_project);
+  if (owner !== undefined) {
+    const [ownerFolder, { root }] = owner;
+    if (!absent(root))
+      return `registry warning: claude-mem project '${entry.mem_project}' is already registered at ${root}; refusing ${entry.root}`;
+    held.delete(ownerFolder);
+    warnings.push(
+      `registry warning: ${root} no longer exists; claude-mem project '${entry.mem_project}' now belongs to ${entry.root}`,
+    );
   }
-  registry[folder] = entry;
+  held.set(folder, entry);
   return null;
+}
+
+function save(config: LearnConfig, before: string, held: Map<string, RegistryEntry>): Registry {
+  const registry: Registry = Object.fromEntries(held);
+  if (!config.dryRun && JSON.stringify(registry) !== before) writeJson(registryPath(config), registry);
+  return registry;
 }
 
 export interface Registration extends RegistryHygiene {
@@ -99,17 +159,16 @@ export interface Registration extends RegistryHygiene {
 /** Record a main repo root; its claude-mem project is the folder basename. */
 export function registerRoot(config: LearnConfig, root: string, at = nowMs()): Registration {
   const current = readRegistry(config);
-  const before = JSON.stringify(current);
-  const { registry, warnings } = registryHygiene(current);
+  const cleaned = clean(current);
   const resolved = resolve(root);
   const reason = ineligible(resolved);
   const refusal =
     reason === null
-      ? admit(registry, { root: resolved, mem_project: basename(resolved), last_seen: at })
+      ? admit(cleaned, { root: resolved, mem_project: basename(resolved), last_seen: at })
       : ineligibleWarning(resolved, reason);
+  const { held, warnings } = cleaned;
   if (refusal !== null && !warnings.includes(refusal)) warnings.push(refusal);
-  if (!config.dryRun && JSON.stringify(registry) !== before) writeJson(registryPath(config), registry);
-  return { registry, warnings, refusal };
+  return { registry: save(config, JSON.stringify(current), held), warnings, refusal };
 }
 
 /** Append registry warnings raised outside a tick to the tick log, leaving the caller's own output alone. */
@@ -123,8 +182,8 @@ export function logRegistryWarnings(config: LearnConfig, warnings: readonly stri
 /**
  * Merge claude-mem's latest working directory per project into the registry.
  * A worktree-suffixed project name (`app/branch`) registers under `app`, the
- * newest sighting of a folder wins, and a second root for a claude-mem project
- * that already has one is refused with a warning.
+ * newest sighting of a folder wins, and a root contesting a claude-mem project
+ * is settled by the ownership rules above, with a warning for each refusal.
  */
 export function discoverProjects(
   config: LearnConfig,
@@ -132,8 +191,8 @@ export function discoverProjects(
   warn: (message: string) => void = () => undefined,
 ): Registry {
   const current = readRegistry(config);
-  const before = JSON.stringify(current);
-  const { registry, warnings } = registryHygiene(current);
+  const cleaned = clean(current);
+  const { held, warnings } = cleaned;
   const found: Registry = {};
   for (const row of rows) {
     if (SKIP_CWD.some((skip) => `${row.cwd}/`.includes(skip))) continue;
@@ -141,14 +200,13 @@ export function discoverProjects(
     if (root === null || ineligible(root) !== null) continue;
     found[projectFolderName(root)] = { root, mem_project: row.project.split("/")[0]!, last_seen: row.last_seen };
   }
-  for (const [folder, entry] of Object.entries(found)) {
-    if ((registry[folder]?.last_seen ?? 0) >= entry.last_seen) continue;
-    const refusal = admit(registry, entry);
+  for (const entry of Object.values(found).toSorted(byClaim)) {
+    if ((held.get(projectFolderName(entry.root))?.last_seen ?? 0) >= entry.last_seen) continue;
+    const refusal = admit(cleaned, entry);
     if (refusal !== null) warnings.push(refusal);
   }
   for (const warning of warnings) warn(warning);
-  if (!config.dryRun && JSON.stringify(registry) !== before) writeJson(registryPath(config), registry);
-  return registry;
+  return save(config, JSON.stringify(current), held);
 }
 
 /** Discovery's look-back window, as the `sinceMs` for `ClaudeMemSource.toolUseCwds`. */

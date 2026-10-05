@@ -141,7 +141,9 @@ describe("setup doctor", () => {
 
     const check = doctorChecks(ctx, deps).find((candidate) => candidate.name === "registry hygiene");
     expect(check).toMatchObject({ ok: false, hard: false });
-    expect(check?.why).toBe(`registry warning: claude-mem project 'shop' has multiple roots: ${first}, ${second}`);
+    expect(check?.why).toBe(
+      `registry warning: claude-mem project 'shop' has multiple roots; ${second} owns it and ${first} is not kept in the registry`,
+    );
     expect(Object.keys(readRegistry(ctx.config))).toHaveLength(2);
   });
 

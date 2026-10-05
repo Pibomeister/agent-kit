@@ -3,9 +3,10 @@
  * worktree and cache skips, the look-back window, newest sighting wins.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectFolderName, registryPath, rootOf, tickLogPath } from "../../src/learn/core/paths.ts";
+import { memoryDir } from "../../src/learn/memory/ledger.ts";
 import { discoverProjects, discoverySince, readRegistry, registerRoot } from "../../src/learn/memory/registry.ts";
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
 import { ClaudeMemSource, type CwdRow } from "../../src/learn/sources/claude-mem.ts";
@@ -101,46 +102,95 @@ describe("registry", () => {
     expect(readRegistry(config)).toEqual(registry);
   });
 
-  test("roots already sharing a claude-mem project still refresh", () => {
-    const { config } = setup();
+  test("a registry holding several roots for one claude-mem project is reduced to one owner", () => {
+    const { repo, config } = setup();
     const first = join(projectScratch(), "first", "shop");
     const second = join(projectScratch(), "second", "shop");
-    for (const root of [first, second]) mkdirSync(join(root, ".git"), { recursive: true });
+    const misnamed = join(projectScratch(), "other");
+    const gone = join(projectScratch(), "gone", "shop");
+    for (const root of [first, second, misnamed]) mkdirSync(join(root, ".git"), { recursive: true });
     mkdirSync(config.runtimeDir, { recursive: true });
     writeFileSync(
       registryPath(config),
       `${JSON.stringify({
         [projectFolderName(first)]: { root: first, mem_project: "shop", last_seen: 1 },
+        [projectFolderName(gone)]: { root: gone, mem_project: "shop", last_seen: 500 },
+        [projectFolderName(misnamed)]: { root: misnamed, mem_project: "shop", last_seen: 99 },
         [projectFolderName(second)]: { root: second, mem_project: "shop", last_seen: 2 },
       })}\n`,
     );
-    expect(registerRoot(config, first, 8).refusal).toBeNull();
-    expect(registerRoot(config, second, 9).refusal).toBeNull();
-    expect(Object.values(readRegistry(config)).map((entry) => entry.last_seen)).toEqual([8, 9]);
+    const ledger = join(memoryDir(config, first), "memory.md");
+    mkdirSync(memoryDir(config, first), { recursive: true });
+    writeFileSync(ledger, "kept\n");
+
+    const dropped = (root: string) =>
+      `registry warning: claude-mem project 'shop' has multiple roots; ${second} owns it and ${root} is not kept in the registry`;
+    expect(registerRoot(config, repo, 9).warnings).toEqual([dropped(first), dropped(misnamed), dropped(gone)]);
+    expect(readRegistry(config)).toEqual({
+      [projectFolderName(second)]: { root: second, mem_project: "shop", last_seen: 2 },
+      [projectFolderName(repo)]: { root: repo, mem_project: "myrepo", last_seen: 9 },
+    });
+    expect(readFileSync(ledger, "utf8")).toBe("kept\n");
   });
 
-  test("two roots for one claude-mem project leave one active entry and warn", () => {
+  test("with no owner, discovery prefers the root named after the project, then the newest", () => {
     const { config } = setup();
     const first = join(projectScratch(), "first", "shop");
     const second = join(projectScratch(), "second", "shop");
-    for (const root of [first, second]) mkdirSync(join(root, ".git"), { recursive: true });
+    const misnamed = join(projectScratch(), "other");
+    for (const root of [first, second, misnamed]) mkdirSync(join(root, ".git"), { recursive: true });
     const warnings: string[] = [];
     const registry = discoverProjects(
       config,
       [
         { project: "shop", cwd: first, last_seen: 10 },
         { project: "shop", cwd: second, last_seen: 20 },
+        { project: "shop", cwd: misnamed, last_seen: 30 },
       ],
       (warning) => warnings.push(warning),
     );
-    expect(Object.values(registry)).toEqual([{ root: first, mem_project: "shop", last_seen: 10 }]);
+    expect(Object.values(registry)).toEqual([{ root: second, mem_project: "shop", last_seen: 20 }]);
     expect(warnings).toEqual([
-      `registry warning: claude-mem project 'shop' is already registered at ${first}; refusing ${second}`,
+      `registry warning: claude-mem project 'shop' is already registered at ${second}; refusing ${first}`,
+      `registry warning: claude-mem project 'shop' is already registered at ${second}; refusing ${misnamed}`,
     ]);
     expect(readRegistry(config)).toEqual(registry);
   });
 
-  test("a second root for a registered claude-mem project is refused and the established root stays", () => {
+  test("an owner whose directory is gone is released to the next root that registers", () => {
+    const { config } = setup();
+    const old = join(projectScratch(), "old", "api");
+    const moved = join(projectScratch(), "new", "api");
+    for (const root of [old, moved]) mkdirSync(join(root, ".git"), { recursive: true });
+    registerRoot(config, old, 5);
+    expect(registerRoot(config, moved, 6).refusal).not.toBeNull();
+
+    rmSync(old, { recursive: true });
+    expect(registerRoot(config, moved, 7)).toMatchObject({
+      refusal: null,
+      warnings: [`registry warning: ${old} no longer exists; claude-mem project 'api' now belongs to ${moved}`],
+    });
+    expect(Object.values(readRegistry(config))).toEqual([{ root: moved, mem_project: "api", last_seen: 7 }]);
+  });
+
+  test("an owner whose directory fails to stat for any other reason keeps its project", () => {
+    const { config } = setup();
+    const blocker = join(projectScratch(), "not-a-directory");
+    writeFileSync(blocker, "");
+    const unreadable = join(blocker, "api");
+    const contender = join(projectScratch(), "oss", "api");
+    mkdirSync(join(contender, ".git"), { recursive: true });
+    const owner = { root: unreadable, mem_project: "api", last_seen: 5 };
+    mkdirSync(config.runtimeDir, { recursive: true });
+    writeFileSync(registryPath(config), `${JSON.stringify({ [projectFolderName(unreadable)]: owner })}\n`);
+
+    expect(registerRoot(config, contender, 9).refusal).toBe(
+      `registry warning: claude-mem project 'api' is already registered at ${unreadable}; refusing ${contender}`,
+    );
+    expect(Object.values(readRegistry(config))).toEqual([owner]);
+  });
+
+  test("a second repository with the same basename is refused while the owner's directory exists", () => {
     const { config } = setup();
     const established = join(projectScratch(), "work", "api");
     const stray = join(projectScratch(), "oss", "api");
