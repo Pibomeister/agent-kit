@@ -885,7 +885,7 @@ references:
       lineage and the criterion coverage predicate shared across the lifecycle.
 
 # ---------------------------------------------------------------------------
-# Schemas — 31. `common` holds shared $defs and validates no document itself.
+# Schemas — 32. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
