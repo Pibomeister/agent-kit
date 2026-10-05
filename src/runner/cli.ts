@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
-import { createConnection, createServer } from "node:net";
+import { createConnection, createServer, type Socket } from "node:net";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { Runner } from "./core.ts";
@@ -21,6 +21,7 @@ import {
 } from "./wire.ts";
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
+type KillableChild = { kill(signal?: number | NodeJS.Signals): void };
 const ADMIN = new Set([
   "start",
   "collect",
@@ -118,7 +119,13 @@ function privateChildEnv(runner: Runner) {
   return env;
 }
 
-async function spawnPiped(argv: string[], cwd: string, stdin?: string, env = childEnv()) {
+async function spawnPiped(
+  argv: string[],
+  cwd: string,
+  stdin?: string,
+  env = childEnv(),
+  activeChildren?: Set<KillableChild>,
+) {
   const child = Bun.spawn(argv, {
     cwd,
     env,
@@ -126,19 +133,36 @@ async function spawnPiped(argv: string[], cwd: string, stdin?: string, env = chi
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).arrayBuffer(),
-    new Response(child.stderr).arrayBuffer(),
-    child.exited,
-  ]);
-  return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
+  activeChildren?.add(child);
+  try {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).arrayBuffer(),
+      new Response(child.stderr).arrayBuffer(),
+      child.exited,
+    ]);
+    return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
+  } finally {
+    activeChildren?.delete(child);
+  }
 }
 
-async function dispatchSeat(runner: Runner, runId: string, cardId: string, launcher: SeatLauncher): Promise<void> {
+async function dispatchSeat(
+  runner: Runner,
+  runId: string,
+  cardId: string,
+  launcher: SeatLauncher,
+  activeChildren: Set<KillableChild>,
+): Promise<void> {
   const card = runner.status(runId).cards[cardId];
   if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
   const packet = runner.packet(runId, cardId);
-  const child = await spawnPiped(launcher.command, runner.stateDir, JSON.stringify(packet), privateChildEnv(runner));
+  const child = await spawnPiped(
+    launcher.command,
+    runner.stateDir,
+    JSON.stringify(packet),
+    privateChildEnv(runner),
+    activeChildren,
+  );
   if (child.exitCode !== 0) throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
   const answerValue: unknown = JSON.parse(child.stdout.toString());
   if (!isSeatAnswer(answerValue)) throw new Error("launcher returned an invalid judgment");
@@ -155,13 +179,19 @@ async function dispatchSeat(runner: Runner, runId: string, cardId: string, launc
   );
 }
 
-async function decideCard(runner: Runner, runId: string, cardId: string, launchers: SeatLauncher[]) {
+async function decideCard(
+  runner: Runner,
+  runId: string,
+  cardId: string,
+  launchers: SeatLauncher[],
+  activeChildren: Set<KillableChild>,
+) {
   const early = runner.authorize(runId, cardId);
   if (early !== null) return early;
   const failures: string[] = [];
   for (const launcher of launchers) {
     try {
-      await dispatchSeat(runner, runId, cardId, launcher);
+      await dispatchSeat(runner, runId, cardId, launcher, activeChildren);
     } catch (cause) {
       failures.push(`seat ${launcher.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
@@ -179,6 +209,7 @@ async function execute(
   verifyCommand: string[] | null,
   effectAdapters: Map<string, EffectAdapter>,
   decisions: Map<string, Promise<unknown>>,
+  activeChildren: Set<KillableChild>,
 ) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
@@ -255,7 +286,7 @@ async function execute(
       const before = runner.syncRevision(runId);
       if (before.next_permitted_action !== "verify.record")
         throw new Error("verification is not the next permitted action");
-      const result = await spawnPiped(verifyCommand, runner.workerRoot);
+      const result = await spawnPiped(verifyCommand, runner.workerRoot, undefined, childEnv(), activeChildren);
       const after = runner.syncRevision(runId);
       if (before.revision !== after.revision || before.diff_hash !== after.diff_hash)
         throw new Error("verification changed the worker snapshot");
@@ -277,7 +308,7 @@ async function execute(
       const cardId = str(a, "card_id");
       const pending =
         decisions.get(cardId) ??
-        decideCard(runner, str(a, "run"), cardId, launchers).finally(() => decisions.delete(cardId));
+        decideCard(runner, str(a, "run"), cardId, launchers, activeChildren).finally(() => decisions.delete(cardId));
       decisions.set(cardId, pending);
       return pending;
     }
@@ -371,7 +402,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     }
   }
   const decisions = new Map<string, Promise<unknown>>();
+  const activeChildren = new Set<KillableChild>();
+  const connections = new Set<Socket>();
   const server = createServer((connection) => {
+    connections.add(connection);
+    connection.once("close", () => connections.delete(connection));
     let body = "";
     let handled = false;
     connection.setEncoding("utf8");
@@ -381,7 +416,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
         connection.end(
-          `${JSON.stringify({ ok: true, result: await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters, decisions) })}\n`,
+          `${JSON.stringify({ ok: true, result: await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters, decisions, activeChildren) })}\n`,
         );
       } catch (cause) {
         connection.end(
@@ -403,7 +438,13 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     chmodSync(socketPath, Number.parseInt(mode, 8));
     io.out(`ak runner: listening on ${socketPath}`);
   });
-  const close = () => server.close();
+  const close = () => {
+    server.close();
+    for (const child of activeChildren) child.kill("SIGKILL");
+    for (const connection of connections) connection.destroy();
+    if (existsSync(socketPath)) unlinkSync(socketPath);
+    process.exit(0);
+  };
   process.once("SIGINT", close);
   process.once("SIGTERM", close);
   server.once("close", () => {

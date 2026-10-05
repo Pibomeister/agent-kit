@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   watch,
@@ -27,6 +28,75 @@ import { artifactHash } from "../../src/util/hash.ts";
 setDefaultTimeout(30_000);
 
 const root = join(import.meta.dir, "..", "..");
+const RUNNER_CALL_TIMEOUT_MS = 25_000;
+const CONTENDED_RUNNER_CALL_TIMEOUT_MS = 120_000;
+const fixtureDirs = new Set<string>();
+const runnerCallChildren = new Set<ReturnType<typeof Bun.spawn>>();
+
+function callRunnerCli(
+  verb: string,
+  request: string,
+  socket: string,
+  token: string,
+  timeoutMs = RUNNER_CALL_TIMEOUT_MS,
+) {
+  const child = nodeSpawnSync(
+    "bun",
+    [join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
+    {
+      cwd: root,
+      env: { ...process.env, AK_RUNNER_TOKEN: token },
+      encoding: "buffer",
+      timeout: timeoutMs,
+      killSignal: "SIGKILL",
+    },
+  );
+  if (child.error !== undefined && "code" in child.error && child.error.code === "ETIMEDOUT")
+    throw new Error(`runner call ${verb} timed out after ${timeoutMs}ms and was killed`);
+  if (child.error !== undefined) throw child.error;
+  return { exitCode: child.status, stdout: child.stdout, stderr: child.stderr };
+}
+
+function spawnRunnerCli(
+  verb: string,
+  request: string,
+  socket: string,
+  token: string,
+  timeoutMs = RUNNER_CALL_TIMEOUT_MS,
+) {
+  const child = Bun.spawn(
+    ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
+    { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: token }, stdout: "pipe", stderr: "pipe" },
+  );
+  runnerCallChildren.add(child);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, timeoutMs);
+  const exited = child.exited.then((code) => {
+    clearTimeout(timer);
+    runnerCallChildren.delete(child);
+    if (timedOut) throw new Error(`runner call ${verb} timed out after ${timeoutMs}ms and was killed`);
+    return code;
+  });
+  void exited.catch(() => {});
+  return {
+    exited,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    kill: (signal?: number | NodeJS.Signals) => child.kill(signal),
+  };
+}
+
+afterEach(async () => {
+  for (const child of runnerCallChildren) child.kill("SIGKILL");
+  await Promise.allSettled([...runnerCallChildren].map((child) => child.exited));
+  runnerCallChildren.clear();
+  for (const dir of fixtureDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+  fixtureDirs.clear();
+});
+
 const transcript: string[] = [
   "# Toy charter runner transcript",
   "",
@@ -57,15 +127,30 @@ function waitForPath(path: string, owner: { exited: Promise<number> }) {
       else reject(error);
     }
     watcher.once("error", settle);
-    void owner.exited.then((code) =>
-      settle(existsSync(path) ? undefined : new Error(`process exited ${code} before creating ${path}`)),
+    void owner.exited.then(
+      (code) => settle(existsSync(path) ? undefined : new Error(`process exited ${code} before creating ${path}`)),
+      (cause) => settle(cause instanceof Error ? cause : new Error(String(cause))),
     );
     if (existsSync(path)) settle();
   });
 }
 
+async function waitForProcessExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await Bun.sleep(20);
+  }
+  return false;
+}
+
 function fixture(limit = 3) {
   const dir = mkdtempSync(join(tmpdir(), "ak-runner-"));
+  fixtureDirs.add(dir);
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
@@ -259,6 +344,110 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
 }
 
 describe("runner guards", () => {
+  test("a runner CLI call cannot wait forever for a silent service", async () => {
+    const f = fixture();
+    const socket = join(f.privateDir, "silent.sock");
+    const request = join(f.requestDir, "silent.json");
+    writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+    const silent = Bun.spawn(
+      ["node", "-e", "require('node:net').createServer(()=>{}).listen(process.argv[1])", socket],
+      { cwd: root, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      await waitForPath(socket, silent);
+      expect(() => callRunnerCli("status", request, socket, "b".repeat(48), 200)).toThrow(
+        "runner call status timed out after 200ms and was killed",
+      );
+    } finally {
+      silent.kill();
+      await silent.exited;
+    }
+  });
+
+  test("stopping the runner service kills an active seat launcher", async () => {
+    const f = fixture();
+    const socket = join(f.privateDir, "runner.sock");
+    const seatConfig = join(f.privateDir, "seats.json");
+    const launcherPid = join(f.privateDir, "launcher.pid");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    const runner = new Runner(f.privateDir, f.worker, root, true);
+    runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "receipt.txt");
+    writeFileSync(receipt, "trusted test output");
+    runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    runner.prepare("toy-run", {
+      id: "align",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: ["seat-a", "seat-b"].map((seat) => ({
+          seat,
+          actor: `supervisor-${seat}`,
+          lineage: [`supervisor-${seat}`],
+          command: [
+            "node",
+            "-e",
+            "require('node:fs').writeFileSync(process.argv[1],String(process.pid));setInterval(()=>{},1000)",
+            launcherPid,
+          ],
+        })),
+      }),
+    );
+    const server = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--seat-config",
+        seatConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    );
+    let decision: ReturnType<typeof spawnRunnerCli> | undefined;
+    try {
+      await waitForPath(socket, server);
+      const request = join(f.requestDir, "request.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "align" }));
+      decision = spawnRunnerCli("decide", request, socket, workerToken);
+      await waitForPath(launcherPid, decision);
+      const pid = Number(readFileSync(launcherPid, "utf8"));
+      server.kill();
+      const stopped = await Promise.race([server.exited.then(() => true), Bun.sleep(5_000).then(() => false)]);
+      if (!stopped) {
+        server.kill("SIGKILL");
+        await server.exited;
+      }
+      expect(stopped).toBe(true);
+      expect(await waitForProcessExit(pid)).toBe(true);
+    } finally {
+      decision?.kill("SIGKILL");
+      server.kill("SIGKILL");
+      await Promise.all([decision?.exited, server.exited]);
+    }
+  }, 30_000);
+
   test("a Firstmate start needs a standing grant in the approved charter", () => {
     const f = fixture();
     expect(() =>
@@ -421,12 +610,7 @@ describe("runner guards", () => {
         }),
       );
       const call = (verb: string, token: string) =>
-        Bun.spawnSync(["bun", "src/cli.ts", "runner", "call", verb, "--json", request, "--socket", socket], {
-          cwd: root,
-          env: { ...process.env, AK_RUNNER_TOKEN: token },
-          stdout: "pipe",
-          stderr: "pipe",
-        });
+        callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       expect(call("start", workerToken).exitCode).toBe(1);
       expect(call("start", adminToken).exitCode).toBe(0);
       expect(new Runner(f.privateDir, f.worker, root).status("toy-run").start_authority.kind).toBe("standing-grant");
@@ -474,15 +658,9 @@ describe("runner guards", () => {
       expect(packet.stdout.toString()).toContain('"operation": "align.run"');
       expect(packet.stdout.toString()).toContain('"approve": "yes"');
       expect(packet.stdout.toString()).not.toContain('"judgments"');
-      const first = Bun.spawn(
-        ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
-        { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
-      );
+      const first = spawnRunnerCli("decide", request, socket, workerToken, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       await waitForPath(launches, first);
-      const second = Bun.spawn(
-        ["bun", "src/cli.ts", "runner", "call", "decide", "--json", request, "--socket", socket],
-        { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
-      );
+      const second = spawnRunnerCli("decide", request, socket, workerToken, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       expect(call("status", workerToken).exitCode).toBe(0);
       writeFileSync(`${launches}.open`, "");
       expect(await first.exited).toBe(0);
@@ -842,15 +1020,7 @@ describe("runner guards", () => {
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
-        return Bun.spawnSync(
-          ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
-          {
-            cwd: root,
-            env: { ...process.env, AK_RUNNER_TOKEN: token },
-            stdout: "pipe",
-            stderr: "pipe",
-          },
-        );
+        return callRunnerCli(verb, request, socket, token);
       };
       expect(
         call("start", adminToken, {
@@ -1619,15 +1789,7 @@ describe("runner guards", () => {
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
-        return Bun.spawnSync(
-          ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
-          {
-            cwd: root,
-            env: { ...process.env, AK_RUNNER_TOKEN: token },
-            stdout: "pipe",
-            stderr: "pipe",
-          },
-        );
+        return callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       };
       const run = { run: "toy-run" };
       expect(
@@ -1756,12 +1918,7 @@ describe("runner guards", () => {
       const request = join(f.privateDir, "request.json");
       const call = (verb: string, token: string, args: RunnerArgs) => {
         writeFileSync(request, JSON.stringify(args));
-        return Bun.spawnSync(["bun", "src/cli.ts", "runner", "call", verb, "--json", request, "--socket", socket], {
-          cwd: root,
-          env: { ...process.env, AK_RUNNER_TOKEN: token },
-          stdout: "pipe",
-          stderr: "pipe",
-        });
+        return callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       };
       const run = { run: "toy-run" };
       expect(
