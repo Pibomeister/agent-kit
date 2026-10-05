@@ -72,10 +72,11 @@ export const CAPTURE_OBSERVATIONS_FILE = "raw/worker-observations.jsonl";
 export const CAPTURE_SESSIONS_FILE = "raw/worker-sessions.jsonl";
 const MAX_OBSERVATIONS = 999;
 const MAX_TEXT = 8_000;
-const FAILURE_WORDS = "(?:error|fail(?:ed|ure|ing)?|warnings?|regression|timeout|blocked|finding|violation)";
+const FAILURE_WORDS =
+  "(?:errors?|fail(?:s|ed|ures?|ing)?|warnings?|regressions?|timeouts?|blocked|findings?|violations?)";
 const FAILURE_TEXT = new RegExp(`\\b${FAILURE_WORDS}\\b`, "i");
 const ZERO_FAILURES = new RegExp(`\\b(?:0|no)\\s+${FAILURE_WORDS}\\b`, "gi");
-const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions for |<environment_context>)/;
+const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
 const jsonValidator = new Ajv({ strict: false });
 const validateJsonValue = jsonValidator.compile<JsonValue>({

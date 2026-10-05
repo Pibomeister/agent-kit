@@ -122,6 +122,8 @@ describe("worker session parsers", () => {
     expect(session.observations.some((row) => row.text.includes("200 warnings remain"))).toBe(true);
     const text = session.observations.map((row) => row.text).join("\n");
     expect(text).not.toContain("injected project instructions");
+    expect(text).not.toContain("injected global instructions");
+    expect(text).not.toContain("injected skill body");
     expect(text).not.toContain("environment_context");
   });
 
@@ -135,12 +137,23 @@ describe("worker session parsers", () => {
         codexToolOutput("12 pass\n0 fail\nno regression detected"),
         codexToolOutput("10 warnings in src/lint.ts"),
         codexToolOutput("1 error, 0 warnings"),
+        codexToolOutput("2 errors, 0 warnings"),
+        codexToolOutput("3 findings and 2 violations after 0 failures"),
+        codexToolOutput("0 errors, 0 failures, no regressions"),
       ]
         .map((row) => JSON.stringify(row))
         .join("\n"),
     );
     const session = requiredSession(parseCodexSession(path));
-    expect(session.observations.map((row) => row.type)).toEqual(["tool-result", "tool-result", "error", "error"]);
+    expect(session.observations.map((row) => row.type)).toEqual([
+      "tool-result",
+      "tool-result",
+      "error",
+      "error",
+      "error",
+      "error",
+      "tool-result",
+    ]);
   });
 
   test("normalizes a captured Grok session and excludes synthetic context", () => {
