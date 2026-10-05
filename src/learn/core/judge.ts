@@ -79,6 +79,8 @@ export interface JudgeTraceRow {
 
 const STDERR_TAIL_BYTES = 2 * 1024;
 const TRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Retained trace generations, oldest first; `rotateTrace` moves the second over the first. */
+const TRACE_GENERATIONS = ["judge-calls.1.jsonl", "judge-calls.jsonl"] as const;
 const jsonValidator = new Ajv({ strict: false });
 const validateHostEnvelope = jsonValidator.compile<HostEnvelope>({ type: "object" });
 const validateString = jsonValidator.compile<string>({ type: "string" });
@@ -91,20 +93,32 @@ export interface JudgeTraceSummary {
   totalCostUsd: number;
 }
 
-interface JudgeTraceSummaryRow {
+/** The fields of a retained judge row that usage metrics read; never `stderr_tail`, usage bodies or prompts. */
+export interface JudgeStatsRow {
   at: string;
-  call_id: string;
+  run_id: string | null;
+  loop: Loop;
+  role: LearnRole;
   outcome: JudgeOutcome;
+  duration_ms: number;
   total_cost_usd: number | null;
+}
+
+interface JudgeTraceSummaryRow extends JudgeStatsRow {
+  call_id: string;
 }
 
 const validateJudgeTraceSummaryRow = jsonValidator.compile<JudgeTraceSummaryRow>({
   type: "object",
-  required: ["at", "call_id", "outcome", "total_cost_usd"],
+  required: ["at", "call_id", "run_id", "loop", "role", "outcome", "duration_ms", "total_cost_usd"],
   properties: {
     at: { type: "string" },
     call_id: { type: "string", pattern: "^[0-9a-f-]{36}$" },
+    run_id: { type: ["string", "null"] },
+    loop: { enum: ["review", "memory", "skills"] },
+    role: { type: "string" },
     outcome: { enum: ["ok", "empty", "unparseable", "unavailable", "error"] },
+    duration_ms: { type: "number", minimum: 0 },
     total_cost_usd: { type: ["number", "null"] },
   },
   additionalProperties: true,
@@ -181,7 +195,7 @@ function traceRows(path: string): JudgeTraceSummaryRow[] {
 
 /** Move the current trace over the previous one, dropping the bodies of the calls that leave with it. */
 function rotateTrace(config: LearnConfig, trace: string): void {
-  const rotated = join(config.runtimeDir, "judge-calls.1.jsonl");
+  const rotated = join(config.runtimeDir, TRACE_GENERATIONS[0]);
   const bodies = join(config.runtimeDir, "judge-bodies");
   for (const row of traceRows(rotated)) {
     rmSync(join(bodies, `${row.call_id}.prompt`), { force: true });
@@ -241,7 +255,7 @@ function traceAttempt(
       is_error: booleanField(envelope.is_error),
     };
     const line = `${JSON.stringify(row)}\n`;
-    const trace = join(config.runtimeDir, "judge-calls.jsonl");
+    const trace = join(config.runtimeDir, TRACE_GENERATIONS[1]);
     if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes)
       rotateTrace(config, trace);
     appendFileSync(trace, line);
@@ -256,69 +270,33 @@ function traceAttempt(
   }
 }
 
-/** The fields of a retained judge row that usage metrics read; never `stderr_tail`, usage bodies or prompts. */
-export interface JudgeStatsRow {
-  at: string;
-  run_id: string | null;
-  loop: Loop;
-  role: LearnRole;
-  outcome: JudgeOutcome;
-  duration_ms: number;
-  total_cost_usd: number | null;
-}
-
-const validateJudgeStatsRow = jsonValidator.compile<JudgeStatsRow>({
-  type: "object",
-  required: ["at", "run_id", "loop", "role", "outcome", "duration_ms", "total_cost_usd"],
-  properties: {
-    at: { type: "string" },
-    run_id: { type: ["string", "null"] },
-    loop: { enum: ["review", "memory", "skills"] },
-    role: { type: "string" },
-    outcome: { enum: ["ok", "empty", "unparseable", "unavailable", "error"] },
-    duration_ms: { type: "number", minimum: 0 },
-    total_cost_usd: { type: ["number", "null"] },
-  },
-  additionalProperties: true,
-});
-
 /** Every retained judge row, oldest generation first, reduced to the fields usage metrics read. */
 export function judgeRows(config: LearnConfig): JudgeStatsRow[] {
-  const rows: JudgeStatsRow[] = [];
-  for (const name of ["judge-calls.1.jsonl", "judge-calls.jsonl"]) {
-    let text: string;
-    try {
-      text = readFileSync(join(config.runtimeDir, name), "utf8");
-    } catch {
-      continue;
-    }
-    for (const line of text.split("\n")) {
-      try {
-        const parsed: unknown = JSON.parse(line);
-        if (!validateJudgeStatsRow(parsed)) continue;
-        const { at, run_id, loop, role, outcome, duration_ms, total_cost_usd } = parsed;
-        rows.push({ at, run_id, loop, role, outcome, duration_ms, total_cost_usd });
-      } catch {
-        continue;
-      }
-    }
-  }
-  return rows;
+  return TRACE_GENERATIONS.flatMap((name) =>
+    traceRows(join(config.runtimeDir, name)).map(
+      ({ at, run_id, loop, role, outcome, duration_ms, total_cost_usd }) => ({
+        at,
+        run_id,
+        loop,
+        role,
+        outcome,
+        duration_ms,
+        total_cost_usd,
+      }),
+    ),
+  );
 }
 
 /** Calls, calls without a usable reply and reported cost in the retained trace over the last 24 hours. */
 export function judgeTraceSummary(config: LearnConfig, now = Date.now()): JudgeTraceSummary {
   const summary: JudgeTraceSummary = { calls: 0, failures: 0, totalCostUsd: 0 };
   const cutoff = now - TRACE_WINDOW_MS;
-  for (const name of ["judge-calls.1.jsonl", "judge-calls.jsonl"]) {
-    for (const row of traceRows(join(config.runtimeDir, name))) {
-      const at = Date.parse(row.at);
-      if (!Number.isFinite(at) || at < cutoff || at > now) continue;
-      summary.calls += 1;
-      if (row.outcome !== "ok") summary.failures += 1;
-      if (row.total_cost_usd !== null && Number.isFinite(row.total_cost_usd))
-        summary.totalCostUsd += row.total_cost_usd;
-    }
+  for (const row of judgeRows(config)) {
+    const at = Date.parse(row.at);
+    if (!Number.isFinite(at) || at < cutoff || at > now) continue;
+    summary.calls += 1;
+    if (row.outcome !== "ok") summary.failures += 1;
+    if (row.total_cost_usd !== null && Number.isFinite(row.total_cost_usd)) summary.totalCostUsd += row.total_cost_usd;
   }
   return summary;
 }

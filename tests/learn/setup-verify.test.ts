@@ -88,13 +88,14 @@ describe("setup doctor", () => {
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
     const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const old = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const call = { run_id: null, loop: "review", role: "pattern-maintainer", duration_ms: 1 };
     writeFileSync(
       join(ctx.config.runtimeDir, "judge-calls.1.jsonl"),
-      `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "ok", total_cost_usd: 0.25 })}\n`,
+      `${JSON.stringify({ ...call, at: recent, call_id: randomUUID(), outcome: "ok", total_cost_usd: 0.25 })}\n`,
     );
     writeFileSync(
       join(ctx.config.runtimeDir, "judge-calls.jsonl"),
-      `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "error", total_cost_usd: 0.5 })}\n${JSON.stringify({ at: old, call_id: randomUUID(), outcome: "error", total_cost_usd: 99 })}\n`,
+      `${JSON.stringify({ ...call, at: recent, call_id: randomUUID(), outcome: "error", total_cost_usd: 0.5 })}\n${JSON.stringify({ ...call, at: old, call_id: randomUUID(), outcome: "error", total_cost_usd: 99 })}\n`,
     );
 
     const span = {
