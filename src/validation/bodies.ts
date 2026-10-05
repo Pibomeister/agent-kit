@@ -164,7 +164,7 @@ export interface GovernedNeverRow {
 }
 
 /**
- * The two rows mandatory in all twenty-nine seats.
+ * The two rows mandatory in every seat.
  *
  * These were previously welded to the two conditional rows below, and each weld
  * carried a seat-specific half the cited ruling does not state. Writers

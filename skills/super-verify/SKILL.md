@@ -126,10 +126,10 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
     `verification-recipe` artifact for later runs.
 11. When every criterion is confirmed, record the gate with every receipt file recorded at this
     head: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate verify --receipt <file>`
-    (repeat `--receipt` for each receipt). The bundle's gate copies each receipt and its digested
-    output into the run store and writes references in the v2 phase record; it does not turn those
+    (repeat `--receipt` for each receipt). The bundle's gate copies each receipt and every
+    artifact it lists into the run store and writes references in the v2 phase record; it does not turn those
     references into a verdict. It skips, with a note, a receipt bound to another revision and
-    refuses one whose output log it cannot find, and the pre-ship check refuses one whose ticket ref
+    refuses one with a listed artifact it cannot find, and the pre-ship check refuses one whose ticket ref
     is not the run record's `artifactHash` value from step 6. Re-recording a corrected receipt under
     the same id replaces the earlier one at this head, except a failed receipt, which stays.
     The record names this revision and diff hash, so any later edit makes it stale and super-ship

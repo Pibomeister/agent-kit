@@ -12,7 +12,7 @@
  * stays the branch's default until a new `open`, so every new task opens a new run.
  *
  * An opened run, or a check given `--evidence`, is also judged on evidence. `open` and
- * `record --gate verify --receipt` copy the ticket, each receipt and its captured output into
+ * `record --gate verify --receipt` copy the ticket, each receipt and every artifact it lists into
  * `<store>/<run>/artifacts/` by content hash, and the v2 `verify` record holds references to them, not
  * a verdict. The check re-hashes what the references name, judges it against the run's ticket and the
  * head, and appends its decision under `<store>/<run>/decisions/`. A v1 record stays readable as phase
