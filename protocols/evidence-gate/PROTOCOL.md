@@ -76,6 +76,11 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol `phase-oper
      does.
    - A lesson is `confirmed` when its surviving evidence spans at least two sessions, and
      `hypothesis` otherwise.
+   - A lesson equal to a live lesson in statement and scope, or a pattern equal to another in
+     problem, root cause and fix, once case, punctuation, spacing and Unicode are normalized, is a
+     repeat: it raises that record's count and `last_seen` and adds its evidence. No second record,
+     no match on a title, nothing overwritten. A new lesson, pattern or guardrail draft lists the
+     records its content resembles in the run's result, to amend or supersede; advisory, never stored.
    - A lesson supersedes a `hypothesis` whatever its own status, and a `confirmed` lesson only
      when it is itself `confirmed`. A lesson that is not `confirmed` and names a `confirmed` one
      in `supersedes` leaves both `conflict`, with neither superseded. A target in any other

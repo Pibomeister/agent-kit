@@ -106,6 +106,8 @@ describe("consolidate apply", () => {
       confirmed: ["ls-002"],
       review_events: 1,
       review_events_parked: 0,
+      repeated: [],
+      similar: [],
     });
     const lessons = loadLessons(ledger);
     const meta = (id: string) => lessons.get(id)!.meta;

@@ -20,6 +20,7 @@ import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { parsePage, renderPage, type PageMeta } from "../core/pages.ts";
 import { loopDir } from "../core/paths.ts";
+import type { Candidate } from "../core/similar.ts";
 import { appendJsonl, nowIso, nowMs, readJson, readJsonl, readText, writeJson } from "../core/store.ts";
 import { lessonDraft, proposeLesson, type ProposalResult, type TriggerKind } from "../kb.ts";
 
@@ -289,7 +290,12 @@ export function proposeConfirmed(
   ledger: Ledger,
   root: string,
   page: LessonPage,
-  options: { runId: string; createdBy: "learn/consolidator" | "learn/lesson-merger"; trigger: TriggerKind },
+  options: {
+    runId: string;
+    createdBy: "learn/consolidator" | "learn/lesson-merger";
+    trigger: TriggerKind;
+    similar?: readonly Candidate[];
+  },
 ): ProposalResult {
   const { meta } = page;
   const id = lessonId(page);
@@ -312,7 +318,7 @@ export function proposeConfirmed(
     { root, revision: null },
     options.runId,
   );
-  return proposeLesson(ctx, ledger.dir, draft);
+  return proposeLesson(ctx, ledger.dir, draft, options.similar);
 }
 
 /**
