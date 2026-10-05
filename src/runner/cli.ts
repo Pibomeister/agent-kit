@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { Runner } from "./core.ts";
@@ -403,10 +403,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   }
   const decisions = new Map<string, Promise<unknown>>();
   const activeChildren = new Set<KillableChild>();
-  const connections = new Set<Socket>();
   const server = createServer((connection) => {
-    connections.add(connection);
-    connection.once("close", () => connections.delete(connection));
     let body = "";
     let handled = false;
     connection.setEncoding("utf8");
@@ -439,9 +436,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     io.out(`ak runner: listening on ${socketPath}`);
   });
   const close = () => {
-    server.close();
     for (const child of activeChildren) child.kill("SIGKILL");
-    for (const connection of connections) connection.destroy();
     if (existsSync(socketPath)) unlinkSync(socketPath);
     process.exit(0);
   };
