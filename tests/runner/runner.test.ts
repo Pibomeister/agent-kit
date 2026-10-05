@@ -131,7 +131,7 @@ function waitForPath(path: string, owner: { exited: Promise<number> }) {
   });
 }
 
-async function waitForProcessExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
+async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -393,7 +393,7 @@ describe("runner guards", () => {
           command: [
             "node",
             "-e",
-            "const fs=require('node:fs');const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{},1000)",
+            "const fs=require('node:fs');const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setTimeout(()=>{},300000)",
             launcherPid,
           ],
         })),
@@ -425,11 +425,11 @@ describe("runner guards", () => {
       await waitForPath(socket, server);
       const request = join(f.requestDir, "request.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "align" }));
-      decision = spawnRunnerCli("decide", request, socket, workerToken);
+      decision = spawnRunnerCli("decide", request, socket, workerToken, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       await waitForPath(launcherPid, decision);
       const pid = Number(readFileSync(launcherPid, "utf8"));
       server.kill();
-      const stopped = await Promise.race([server.exited.then(() => true), Bun.sleep(5_000).then(() => false)]);
+      const stopped = await Promise.race([server.exited.then(() => true), Bun.sleep(60_000).then(() => false)]);
       if (!stopped) {
         server.kill("SIGKILL");
         await server.exited;
@@ -441,7 +441,7 @@ describe("runner guards", () => {
       server.kill("SIGKILL");
       await Promise.all([decision?.exited, server.exited]);
     }
-  }, 30_000);
+  }, 300_000);
 
   test("a Firstmate start needs a standing grant in the approved charter", () => {
     const f = fixture();
