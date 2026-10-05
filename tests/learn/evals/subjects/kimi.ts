@@ -24,7 +24,7 @@ import { runAsync } from "../session.ts";
 import type { SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
 
 /** The per-call agent definition: no tools, no sub-agents, and a body that replaces the default prompt. */
-export const KIMI_REVIEWER_AGENT = [
+const KIMI_REVIEWER_AGENT = [
   "---",
   "name: text-reviewer",
   "description: Answers one prompt in text, with no tools and no sub-agents.",

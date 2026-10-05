@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
 import { costOf, loadPriceTable } from "./evals/pricing.ts";
@@ -17,7 +18,7 @@ import { codex, codexThreadStart, runCodexAppServer } from "./evals/subjects/cod
 import { grok } from "./evals/subjects/grok.ts";
 import { rewriteAssignmentReadChain } from "./evals/subjects/grok-mediator.ts";
 import { privateHome } from "./evals/subjects/home.ts";
-import { KIMI_REVIEWER_AGENT, kimi } from "./evals/subjects/kimi.ts";
+import { kimi } from "./evals/subjects/kimi.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
@@ -629,18 +630,6 @@ describe("kimi", () => {
     expect(kimi.injection).toBe("prompt-prefix");
   });
 
-  test("the reviewer agent definition grants no tools and no sub-agents", () => {
-    const [, frontmatter = "", body = ""] = KIMI_REVIEWER_AGENT.split("---\n");
-    expect(frontmatter.trimEnd().split("\n")).toEqual([
-      "name: text-reviewer",
-      "description: Answers one prompt in text, with no tools and no sub-agents.",
-      "tools: []",
-      "subagents: []",
-    ]);
-    expect(body.trim()).not.toBe("");
-    expect(body).not.toContain("${");
-  });
-
   test("a session runs tool-less against an empty skills directory, and both are removed afterwards", async () => {
     const bin = join(scratch, "kimi-bin");
     mkdirSync(bin, { recursive: true });
@@ -677,7 +666,14 @@ describe("kimi", () => {
       skills,
       "entries=0",
     ]);
-    expect(agentFile).toBe(KIMI_REVIEWER_AGENT.trim());
+    const [, frontmatter = "", body = ""] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(agentFile) ?? [];
+    const definition: unknown = parseYaml(frontmatter);
+    expect(definition).toMatchObject({ tools: [], subagents: [] });
+    expect(definition).toHaveProperty("description", expect.stringMatching(/\S/));
+    expect(definition).not.toHaveProperty("disallowedTools");
+    expect(definition).not.toHaveProperty("override");
+    expect(body.trim()).not.toBe("");
+    expect(body).not.toContain("${");
     expect(isAbsolute(agent)).toBe(true);
     expect(isAbsolute(skills)).toBe(true);
     expect(existsSync(agent)).toBe(false);
