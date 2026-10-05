@@ -163,8 +163,11 @@ uses isolated homes. The scheduler passes these variables through when they were
 
 Encrypted content, reasoning/`think` parts, the instruction and environment blocks Codex injects as
 user messages, synthetic Grok context and non-user Kimi injections are not observations. A host
-record that cannot be read is skipped and logged; it never stops the tick. Host records are normalized to append-only rows with a separate numeric id range,
-then pass through the same reflection, evidence and quarantine gates as claude-mem rows. A host with
+record that cannot be read is skipped and logged; it never stops the tick. Host records are
+normalized to append-only rows with a separate numeric id range. A row is new when the ledger holds
+no row of that session with the same title and text, so a record its host rewrites (Grok compaction)
+still appends only what was not captured. The rows then pass through the same reflection, evidence
+and quarantine gates as claude-mem rows. A host with
 no readable public session record is unsupported until its format is evidenced; setup does not invent
 a transcript from hooks or terminal output.
 

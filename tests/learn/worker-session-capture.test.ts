@@ -314,4 +314,36 @@ describe("captured observation ledger", () => {
     expect(observations.map((row) => row.id)).toEqual(observations.map((row) => row.id).toSorted((a, b) => a - b));
     expect(new Ledger(ledger.dir).git(["status", "--porcelain"]).stdout).not.toBe("");
   });
+
+  test("a host record rewritten shorter still appends its new rows, and only those", () => {
+    const ledger = ensureMemoryLedger(scratch("ak-capture-rewrite-"));
+    const before = workerSession("g", [1, 2, 3, 4, 5, 6]);
+    expect(captureWorkerSessions(ledger, [before])).toBe(6);
+
+    const kept = before.observations.slice(4);
+    const added = {
+      type: "assistant",
+      title: "assistant message",
+      text: "g step after compaction",
+      at: 9,
+      files_modified: [],
+    };
+    const rewritten = { ...before, observations: [...kept, added] };
+    expect(captureWorkerSessions(ledger, [rewritten])).toBe(1);
+    expect(captureWorkerSessions(ledger, [rewritten])).toBe(0);
+
+    const source = WorkerSessionSource.open(ledger);
+    const texts = source.sessionObservations(before.memory_session_id).map((row) => row.narrative);
+    expect(texts).toEqual([...before.observations.map((row) => row.text), "g step after compaction"]);
+    expect(source.sessions("ignored", 0, Number.MAX_SAFE_INTEGER)[0]?.observation_count).toBe(7);
+  });
+
+  test("a repeated row is stored once per occurrence", () => {
+    const ledger = ensureMemoryLedger(scratch("ak-capture-repeat-"));
+    const once = workerSession("r", [1]);
+    const twice = { ...once, observations: [...once.observations, ...once.observations] };
+    expect(captureWorkerSessions(ledger, [once])).toBe(1);
+    expect(captureWorkerSessions(ledger, [twice])).toBe(1);
+    expect(captureWorkerSessions(ledger, [twice])).toBe(0);
+  });
 });

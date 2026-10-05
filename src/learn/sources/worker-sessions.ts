@@ -565,6 +565,10 @@ function storedObservation(item: CapturedSession, row: CapturedObservation, id: 
   };
 }
 
+function rowKey(title: string, text: string): string {
+  return `${title}\n${text}`;
+}
+
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
   return {
     id: 0,
@@ -582,27 +586,40 @@ function storedSession(item: CapturedSession, observationCount: number): StoredS
   };
 }
 
-/** Append only the newly grown suffix of each host session. Returns observations appended. */
+/**
+ * Append the rows of each host session the ledger does not hold yet, matched by title and text
+ * rather than position, since a host may rewrite its record. Returns observations appended.
+ */
 export function captureWorkerSessions(
   ledger: Ledger,
   sessions: readonly CapturedSession[],
   options: { dryRun?: boolean } = {},
 ): number {
   const observations = readJsonl<ObservationRow>(ledger.path(CAPTURE_OBSERVATIONS_FILE));
-  const counts = new Map<string, number>();
-  for (const row of observations) counts.set(row.memory_session_id, (counts.get(row.memory_session_id) ?? 0) + 1);
+  const stored = new Map<string, string[]>();
   let nextId = CAPTURE_ID_BASE - 1;
-  for (const row of observations) nextId = Math.max(nextId, row.id);
+  for (const row of observations) {
+    nextId = Math.max(nextId, row.id);
+    const keys = stored.get(row.memory_session_id) ?? [];
+    keys.push(rowKey(row.title ?? "", row.narrative ?? ""));
+    stored.set(row.memory_session_id, keys);
+  }
   const fresh: ObservationRow[] = [];
   const revisions: StoredSession[] = [];
   for (const item of sessions) {
-    const before = counts.get(item.memory_session_id) ?? 0;
-    const appended = item.observations.slice(before).map((row) => storedObservation(item, row, ++nextId));
+    const keys = stored.get(item.memory_session_id) ?? [];
+    const unseen = new Map<string, number>();
+    for (const key of keys) unseen.set(key, (unseen.get(key) ?? 0) + 1);
+    const appended: ObservationRow[] = [];
+    for (const row of item.observations) {
+      const key = rowKey(row.title, row.text);
+      const held = unseen.get(key) ?? 0;
+      if (held > 0) unseen.set(key, held - 1);
+      else appended.push(storedObservation(item, row, ++nextId));
+    }
     if (appended.length === 0) continue;
     fresh.push(...appended);
-    const total = before + appended.length;
-    counts.set(item.memory_session_id, total);
-    revisions.push(storedSession(item, total));
+    revisions.push(storedSession(item, keys.length + appended.length));
   }
   if (fresh.length > 0 && options.dryRun !== true) {
     appendJsonl(ledger.path(CAPTURE_OBSERVATIONS_FILE), fresh);
