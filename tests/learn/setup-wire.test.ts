@@ -152,7 +152,14 @@ describe("setup wire", () => {
 
   test("a scope is never written into a hook command, and wiring claude-mem under one says it stays unscoped", () => {
     const deps = fakeDeps();
-    const scoped = context(deps, { AK_LEARN_REPOS: scratch() });
+    const root = scratch();
+    const scopedContext = () => {
+      const ctx = context(deps, { AK_LEARN_REPOS: root });
+      mkdirSync(ctx.config.runtimeDir, { recursive: true });
+      writeFileSync(join(ctx.config.runtimeDir, "repos"), `${root}\n`);
+      return ctx;
+    };
+    const scoped = scopedContext();
     expect(wire(scoped, deps, { host: "claude" })).toBe(0);
     const doc = readDoc(join(scoped.config.configDir, "settings.json"));
     expect([...commands(doc, "SessionStart"), ...commands(doc, "Stop")]).toEqual([
@@ -161,8 +168,8 @@ describe("setup wire", () => {
     ]);
     const note = "note: the repo scope covers agent-kit's hooks and tick only; claude-mem still observes every session";
     expect(scoped.out).toContain(note);
-    const noMem = context(deps, { AK_LEARN_REPOS: scratch() });
-    wire(noMem, deps, { host: "claude", noMem: true });
+    const noMem = scopedContext();
+    expect(wire(noMem, deps, { host: "claude", noMem: true })).toBe(0);
     expect(noMem.out).not.toContain(note);
     const unscoped = context(deps);
     wire(unscoped, deps, { host: "claude" });

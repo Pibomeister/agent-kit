@@ -14,6 +14,7 @@ import type { LearnContext } from "../core/context.ts";
 import { run, type RunResult } from "../core/proc.ts";
 import { AK_ENTRY, PACKAGE_ROOT } from "../core/roles.ts";
 import { writeJson } from "../core/store.ts";
+import { unitScopeDiffers } from "./scope.ts";
 
 /** Everything setup touches outside the config dir, injectable so tests never reach the real machine. */
 export interface SetupDeps {
@@ -321,6 +322,13 @@ export function restartWorker(ctx: LearnContext, deps: SetupDeps): void {
 }
 
 export function wire(ctx: LearnContext, deps: SetupDeps, options: WireOptions = {}): number {
+  if (unitScopeDiffers(ctx)) {
+    ctx.io.err(
+      "ak learn setup wire: AK_LEARN_REPOS is not carried into the hook commands, and the scope file differs, " +
+        "so the hooks would run with another scope; run `ak learn setup scope --set` with the same roots first",
+    );
+    return 1;
+  }
   const commands = hookCommands(deps);
   const claude = options.host !== "codex";
   const codex = options.host !== "claude" && (options.host === "codex" || existsSync(codexHome(ctx, deps)));

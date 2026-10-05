@@ -126,8 +126,8 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
 
   // Reported, never failed: unscoped and a scope that allows nothing are both deliberate settings.
   check("repo scope", true, scopeText(ctx.config));
-  // The unit never carries AK_LEARN_REPOS: a scope that lives only in this shell does not reach the tick.
-  check("scheduled tick scope", !unitScopeDiffers(ctx), scopeText(fileScope(ctx)));
+  // Neither the hook commands nor the unit carry AK_LEARN_REPOS: a scope that lives only in this shell reaches neither.
+  check("hooks and scheduled tick scope", !unitScopeDiffers(ctx), scopeText(fileScope(ctx)));
 
   const judge = judgeBinary(ctx, deps);
   check("judge command resolvable", judge !== null, judge ?? ctx.config.judgeCommand.join(" "));

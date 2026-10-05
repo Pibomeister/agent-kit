@@ -304,19 +304,27 @@ describe("setup verify", () => {
     }
   });
 
-  test("a scope only in AK_LEARN_REPOS is refused by schedule and flagged by verify, since the unit never carries it", () => {
+  test("a scope only in AK_LEARN_REPOS is refused by wire and schedule and flagged by verify, since neither carries it", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const root = gitRepo(join(scratch(), "shop"));
     const ctx = context(deps, { AK_LEARN_REPOS: root });
-    const tick = () => verifyChecks(ctx, deps).find((check) => check.label === "scheduled tick scope");
+    const tick = () => verifyChecks(ctx, deps).find((check) => check.label === "hooks and scheduled tick scope");
     expect(schedule(ctx, deps)).toBe(1);
     expect(ctx.err.join("\n")).toContain("AK_LEARN_REPOS is not carried into the unit");
     expect(existsSync(join(deps.home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist"))).toBe(false);
-    expect(tick()).toEqual({ label: "scheduled tick scope", ok: false, detail: "unscoped (every repository)" });
+    expect(wire(ctx, deps)).toBe(1);
+    expect(ctx.err.join("\n")).toContain("AK_LEARN_REPOS is not carried into the hook commands");
+    expect(existsSync(join(ctx.config.configDir, "settings.json"))).toBe(false);
+    expect(tick()).toEqual({
+      label: "hooks and scheduled tick scope",
+      ok: false,
+      detail: "unscoped (every repository)",
+    });
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
     writeFileSync(join(ctx.config.runtimeDir, "repos"), `${root}\n`);
     expect(schedule(ctx, deps)).toBe(0);
-    expect(tick()).toEqual({ label: "scheduled tick scope", ok: true, detail: `${root} (scope file)` });
+    expect(wire(ctx, deps)).toBe(0);
+    expect(tick()).toEqual({ label: "hooks and scheduled tick scope", ok: true, detail: `${root} (scope file)` });
     // The same repositories in another spelling or order are the same scope.
     const other = gitRepo(join(scratch(), "cafe"));
     const link = join(scratch(), "link");
