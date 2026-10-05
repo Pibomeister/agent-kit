@@ -48,7 +48,12 @@ describe("memory cli", () => {
   test("an unknown job is refused", () => {
     const { ctx } = project();
     expect(learn(ctx, ["memory", "run", "--job", "hourly"])).toBe(2);
-    expect(ctx.err[0]).toContain("--job wants reflect, backfill, nightly, weekly or all");
+    expect(ctx.err[0]).toBe(
+      "ak learn memory: --job: unknown job 'hourly'; valid: reflect, backfill, nightly, weekly, all",
+    );
+    ctx.err.length = 0;
+    expect(learn(ctx, ["memory", "run", "--job", "nigthly"])).toBe(2);
+    expect(ctx.err[0]).toBe("ak learn memory: --job: unknown job 'nigthly'; did you mean nightly?");
   });
 
   test("status and show", () => {
@@ -73,6 +78,19 @@ describe("memory cli", () => {
     });
     expect(code).toBe(1);
     expect(ctx.err).toEqual(["ak learn memory: not inside a git repository"]);
+  });
+
+  test("a --repo that names no repository is refused with the registered roots nearest it", () => {
+    const { root, ctx } = project();
+    expect(learn(ctx, ["memory", "run", "--job", "weekly"])).toBe(0);
+    ctx.err.length = 0;
+    expect(learn(ctx, ["memory", "show", "--repo", `${root}x`])).toBe(1);
+    expect(ctx.err).toEqual([
+      `ak learn memory: not inside a git repository: unknown repository '${root}x'; did you mean ${root}?`,
+    ]);
+    ctx.err.length = 0;
+    expect(learn(ctx, ["memory", "run", "--repo", `${root}x`])).toBe(1);
+    expect(ctx.err[0]).toContain(`did you mean ${root}?`);
   });
 });
 
@@ -104,13 +122,13 @@ describe("rollback", () => {
     ledger.commit("reflect three");
     expect(rollbackWiki(ledger, first)).toStartWith("rolled back");
     expect(readFileSync(ledger.path("memory.md"), "utf8")).toBe("first\n");
-    expect(rollbackWiki(ledger, "0000000")).toBe("unknown revision 0000000");
+    expect(rollbackWiki(ledger, "0000000")).toMatch(/^unknown revision 0000000; latest: [0-9a-f]{7,} /);
   });
 
   test("a target that is not a commit, or not an ancestor of HEAD, is refused", () => {
     const { ledger, first } = ledgerWithHistory();
     const head = ledger.head();
-    expect(rollbackWiki(ledger, `${first}^{tree}`)).toBe(`unknown revision ${first}^{tree}`);
+    expect(rollbackWiki(ledger, `${first}^{tree}`)).toStartWith(`unknown revision ${first}^{tree}; latest: `);
     const tree = ledger.git(["rev-parse", `${first}^{tree}`]).stdout.trim();
     const side = ledger.git(["commit-tree", tree, "-m", "side"]).stdout.trim();
     expect(side).toMatch(/^[0-9a-f]{40}$/);

@@ -347,8 +347,23 @@ describe("ak learn skills", () => {
     expect(verb(ctx, "promote", ["--repo", root])).toBe(2);
     expect(ctx.err.at(-1)).toBe("ak learn skills: --id is required");
     expect(verb(ctx, "reject", ["--repo", root, "--id", "sk-009"])).toBe(1);
+    expect(ctx.err.at(-1)).toBe("ak learn skills reject: unknown candidate 'sk-009'; did you mean sk-001?");
+    expect(verb(ctx, "promote", ["--repo", root, "--id", "sk-01"])).toBe(1);
+    expect(ctx.err.at(-1)).toBe("ak learn skills promote: unknown candidate 'sk-01'; did you mean sk-001?");
     expect(verb(ctx, "reject", ["--repo", root, "sk-001"])).toBe(0);
     expect(ctx.out.at(-1)).toBe("rejected sk-001");
+  });
+
+  test("a --repo that names nothing is refused, not read as a project with no candidates", () => {
+    const { ctx, root } = fixture();
+    const missing = `${root}-gone`;
+    for (const name of ["list", "roster"]) {
+      ctx.err.length = 0;
+      expect(verb(ctx, name, ["--repo", missing])).toBe(2);
+      expect(ctx.err).toEqual([
+        `ak learn skills: --repo names no directory: unknown repository '${missing}'; there are none to choose from`,
+      ]);
+    }
   });
 
   test("discover validates --since and refuses to run outside a repository", () => {

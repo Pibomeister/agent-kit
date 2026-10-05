@@ -3,6 +3,7 @@ import { parse as parseYaml } from "yaml";
 
 import type { Catalog } from "../catalog/load.ts";
 import { readTextIfPresent } from "../util/fs.ts";
+import { unknownSelector } from "../util/suggest.ts";
 import { error, note, type Issue } from "../validation/types.ts";
 
 export interface ProfileMembership {
@@ -15,6 +16,12 @@ export interface ProfileMembership {
   profile: string;
   skills: string[];
   issues: Issue[];
+}
+
+/** What `--profile` accepts: every profile catalog.yaml declares, and `all`. */
+export function profileIds(catalog: Catalog): string[] {
+  const declared = catalog.bySection("profiles").map((e) => e.id);
+  return declared.includes("all") ? declared : [...declared, "all"];
 }
 
 /**
@@ -57,7 +64,11 @@ export function resolveProfile(root: string, catalog: Catalog, profileId: string
       profile: selected,
       skills: [],
       issues: [
-        error("packaging.unknown-profile", "catalog.yaml", `Profile '${selected}' is not declared in catalog.yaml.`),
+        error(
+          "packaging.unknown-profile",
+          "catalog.yaml",
+          `${unknownSelector("profile", selected, profileIds(catalog))}: catalog.yaml declares no such profile.`,
+        ),
       ],
     };
   }

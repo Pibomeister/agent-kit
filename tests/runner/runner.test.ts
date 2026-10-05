@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { StandingGrant } from "../../src/runner/types.ts";
 import type { RunnerArgs } from "../../src/runner/wire.ts";
@@ -1862,5 +1863,37 @@ describe("runner guards", () => {
     mkdirSync(state);
     symlinkSync(worker, join(state, "evidence"));
     expect(() => new Runner(state, worker, root)).toThrow("evidence store escapes");
+  });
+});
+
+describe("unknown runner selectors", () => {
+  test("a checkpoint card the run lacks is refused with the cards it has", () => {
+    const f = ready();
+    card(f, "align-1");
+    expect(() => f.runner.packet("toy-run", "algin-1")).toThrow(
+      "unknown checkpoint card 'algin-1'; did you mean align-1?",
+    );
+    expect(() => f.runner.decide("toy-run", "nothing-like-it")).toThrow(
+      "unknown checkpoint card 'nothing-like-it'; valid: align-1",
+    );
+  });
+
+  test("ak runner refuses an unknown subcommand and, before connecting, an unknown verb", async () => {
+    const err: string[] = [];
+    const io = { out: () => {}, err: (line: string) => err.push(line) };
+    expect(await runRunner(["cal"], io)).toBe(2);
+    expect(err[0]).toBe("ak runner: unknown subcommand 'cal'; did you mean call?");
+
+    err.length = 0;
+    const previous = process.env["AK_RUNNER_TOKEN"];
+    process.env["AK_RUNNER_TOKEN"] = "t".repeat(32);
+    try {
+      const socket = join(mkdtempSync(join(tmpdir(), "ak-runner-verb-")), "absent.sock");
+      expect(await runRunner(["call", "stauts", "--socket", socket], io)).toBe(2);
+    } finally {
+      if (previous === undefined) delete process.env["AK_RUNNER_TOKEN"];
+      else process.env["AK_RUNNER_TOKEN"] = previous;
+    }
+    expect(err).toEqual(["ak runner: unknown verb 'stauts'; did you mean status or start?"]);
   });
 });

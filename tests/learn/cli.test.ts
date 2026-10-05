@@ -28,9 +28,23 @@ describe("ak learn hook never fails a session", () => {
   });
 
   test("outside hooks, an unknown verb is still a usage error", () => {
-    const { io } = capture();
+    const { io, err } = capture();
     expect(
       runLearn(["memory", "nope"], { cwd: scratch(), io, env: { ...process.env, CLAUDE_CONFIG_DIR: scratch() } }),
     ).toBe(2);
+    expect(err[0]).toBe("ak learn memory: unknown verb 'nope'; nearest of 8: mute, run, show");
+  });
+
+  test("an unknown area or verb names what was probably meant", () => {
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: scratch() };
+    const area = capture();
+    expect(runLearn(["memroy", "show"], { cwd: scratch(), io: area.io, env })).toBe(2);
+    expect(area.err[0]).toBe("ak learn: unknown area 'memroy'; did you mean memory?");
+    const verb = capture();
+    expect(runLearn(["review", "retier"], { cwd: scratch(), io: verb.io, env })).toBe(2);
+    expect(verb.err[0]).toBe("ak learn review: unknown verb 'retier'; did you mean retire?");
+    const hook = capture();
+    expect(runLearn(["hook", "sesion-start"], { cwd: scratch(), io: hook.io, env })).toBe(0);
+    expect(hook.err[0]).toBe("ak learn hook: unknown verb 'sesion-start'; did you mean session-start?");
   });
 });

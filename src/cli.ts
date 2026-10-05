@@ -19,10 +19,13 @@ import { runRunner } from "./runner/cli.ts";
 import { loadCatalog } from "./catalog/load.ts";
 import type { BuildOptions } from "./packaging/build.ts";
 import { checkBundles, writeAdaptations, writeBundles } from "./packaging/build.ts";
+import { HOST_IDS, type HostId } from "./packaging/hosts.ts";
 import { describeInstall, loadInstallConfig } from "./packaging/install.ts";
+import { profileIds } from "./packaging/profiles.ts";
 import { checkTrackerBinding, findProjectRoot } from "./tracker/binding.ts";
 import { ADAPTATIONS_FILE, checkAdaptationsSync } from "./validation/provenance.ts";
 import type { CheckContext } from "./validation/context.ts";
+import { unknownSelector } from "./util/suggest.ts";
 import { runValidation } from "./validation/run.ts";
 import { isSkillStyleIssue } from "./validation/skill-style.ts";
 import {
@@ -50,9 +53,9 @@ export interface CliOptions {
 const USAGE = [
   "ak — the agent-kit contract tool",
   "",
-  "  ak validate [--profile <id>] [--json]      check the tree against catalog.yaml",
+  "  ak validate [--profile <id>] [--host <id>] [--json]  check the tree against catalog.yaml",
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
-  "  ak build [--check] [--profile <id>|all]    emit dist/claude-code and dist/codex",
+  "  ak build [--check] [--profile <id>|all] [--host <id>]  emit dist/claude-code and dist/codex, or one",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
   "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
@@ -70,14 +73,32 @@ interface Parsed {
   command: string | undefined;
   positional: string[];
   flags: Map<string, string | true>;
+  /** The flags in VALUE_FLAGS, by name: each always carries its value. */
+  values: Map<string, string>;
   unknown: string[];
 }
+
+/** Every top-level command, for the suggestion an unknown one gets. */
+const COMMANDS = [
+  "validate",
+  "build",
+  "attach",
+  "delegation",
+  "lifecycle",
+  "firstmate",
+  "tracker",
+  "doctor",
+  "update",
+  "learn",
+  "runner",
+];
 
 const VALUE_FLAGS = new Set(["profile", "host", "project"]);
 
 function parse(argv: readonly string[]): Parsed {
   const positional: string[] = [];
   const flags = new Map<string, string | true>();
+  const values = new Map<string, string>();
   const unknown: string[] = [];
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i]!;
@@ -94,11 +115,12 @@ function parse(argv: readonly string[]): Parsed {
       }
       if (inline === undefined) i += 1;
       flags.set(name, value);
+      values.set(name, value);
       continue;
     }
     flags.set(name, inline ?? true);
   }
-  return { command: positional[0], positional: positional.slice(1), flags, unknown };
+  return { command: positional[0], positional: positional.slice(1), flags, values, unknown };
 }
 
 function report(
@@ -168,8 +190,31 @@ function contextOf(cwd: string, io: CliIo): CheckContext | null {
 }
 
 function buildOptions(parsed: Parsed): BuildOptions {
-  const profile = parsed.flags.get("profile");
-  return { profile: typeof profile === "string" ? profile : undefined };
+  const host = parsed.values.get("host");
+  return {
+    profile: parsed.values.get("profile"),
+    hosts: host === undefined ? undefined : HOST_IDS.filter((id): id is HostId => id === host),
+  };
+}
+
+/**
+ * `--profile` and `--host` name members of known sets, so an unknown one is
+ * refused before anything runs. Left to the packager, `ak validate` measured
+ * nothing for a mistyped profile and passed, because only the links check
+ * plans bundles and it reports link issues alone. A catalog that does not load
+ * is left to the command, which reports why.
+ */
+function unknownSelectors(parsed: Parsed, cwd: string): string[] {
+  const problems: string[] = [];
+  const host = parsed.values.get("host");
+  if (host !== undefined && !HOST_IDS.some((id) => id === host)) problems.push(unknownSelector("host", host, HOST_IDS));
+  const profile = parsed.values.get("profile");
+  if (profile !== undefined) {
+    const { catalog } = loadCatalog(cwd);
+    if (catalog !== null && !profileIds(catalog).includes(profile))
+      problems.push(unknownSelector("profile", profile, profileIds(catalog)));
+  }
+  return problems;
 }
 
 function validate(parsed: Parsed, options: CliOptions): number {
@@ -337,6 +382,12 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
   for (const token of parsed.unknown) options.io.err(`ak: ${token} needs a value`);
   if (parsed.unknown.length > 0) return 2;
 
+  if (parsed.command === "validate" || parsed.command === "build") {
+    const problems = unknownSelectors(parsed, options.cwd);
+    for (const problem of problems) options.io.err(`ak ${parsed.command}: ${problem}`);
+    if (problems.length > 0) return 2;
+  }
+
   switch (parsed.command) {
     case "validate":
       return validate(parsed, options);
@@ -352,7 +403,7 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
       for (const line of USAGE) options.io.err(line);
       return 2;
     default:
-      options.io.err(`ak: unknown command ${parsed.command}`);
+      options.io.err(`ak: ${unknownSelector("command", parsed.command, COMMANDS)}`);
       for (const line of USAGE) options.io.err(line);
       return 2;
   }

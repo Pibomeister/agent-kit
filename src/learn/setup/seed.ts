@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { ensureMemoryLedger, memoryDir } from "../memory/ledger.ts";
-import { registerRoot } from "../memory/registry.ts";
+import { registerRoot, unknownRepo } from "../memory/registry.ts";
 import { deferredNote, ingest, type IngestOptions } from "../review/ingest.ts";
 import { reviewLedger } from "../review/ledger.ts";
 import { skillsLedger } from "../skills/learn.ts";
@@ -25,7 +25,7 @@ export function seed(ctx: LearnContext, repo: string, options: SeedOptions = {})
   const start = resolve(ctx.cwd, repo);
   const root = mainRepoRoot(start);
   if (root === null) {
-    ctx.io.err(`ak learn setup seed: ${start} is not inside a git repository`);
+    ctx.io.err(`ak learn setup seed: ${start} is not inside a git repository: ${unknownRepo(ctx.config, start)}`);
     return 1;
   }
   registerRoot(ctx.config, root);

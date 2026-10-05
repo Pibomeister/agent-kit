@@ -2,6 +2,7 @@
  * `ak learn setup` — install, check and remove the learning runtime's host wiring.
  * Every verb prints what it changed and is safe to re-run.
  */
+import { unknownSelector } from "../../util/suggest.ts";
 import { flag, type LearnArea, type LearnContext } from "../core/context.ts";
 import { doctor } from "./doctor.ts";
 import { parseInterval, schedule } from "./schedule.ts";
@@ -25,7 +26,7 @@ export function createSetupArea(depsFor: (ctx: LearnContext) => SetupDeps = defa
         run: (args, ctx) => {
           const host = flag(args, "host");
           if (host !== undefined && host !== "claude" && host !== "codex") {
-            ctx.io.err("ak learn setup wire: --host is claude or codex");
+            ctx.io.err(`ak learn setup wire: --host: ${unknownSelector("host", host, ["claude", "codex"])}`);
             return 2;
           }
           return wire(ctx, depsFor(ctx), {

@@ -293,6 +293,9 @@ export interface IngestOptions {
   skipMem?: boolean;
 }
 
+/** The hosts a session's review findings come from; `--source` names one. */
+export const REVIEW_SOURCES = ["claude", "codex"] as const;
+
 export interface IngestResult {
   /** Every event gathered this run, before deduplication. */
   events: ReviewEvent[];

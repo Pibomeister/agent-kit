@@ -8,6 +8,7 @@
  */
 import { existsSync, rmSync } from "node:fs";
 import { basename } from "node:path";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnArea, LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
@@ -15,7 +16,7 @@ import { mainRepoRoot, projectFolderName, tickLogPath } from "../core/paths.ts";
 import { appendJsonl, nowIso, readJsonl, readText } from "../core/store.ts";
 import { UNDONE_RUNS_FILE } from "./episodes.ts";
 import { ensureMemoryLedger, memoryDir, readState, saveState } from "./ledger.ts";
-import { readRegistry, registerRoot } from "./registry.ts";
+import { readRegistry, registerRoot, unknownRepo } from "./registry.ts";
 import { sessionRoot } from "./session-context.ts";
 import { type Job, JOBS, tick } from "./tick.ts";
 
@@ -23,15 +24,22 @@ import { type Job, JOBS, tick } from "./tick.ts";
 export const WIKI_PATHS = ["memory.md", "lessons.md", "lessons"];
 
 function rootFor(args: LearnArgs, ctx: LearnContext): string | null {
-  const root = sessionRoot(flag(args, "repo") ?? ctx.cwd);
-  if (root === null) ctx.io.err("ak learn memory: not inside a git repository");
+  const repo = flag(args, "repo");
+  const root = sessionRoot(repo ?? ctx.cwd);
+  if (root === null) notARepo(ctx, repo);
   return root;
+}
+
+function notARepo(ctx: LearnContext, repo: string | undefined): void {
+  ctx.io.err(
+    `ak learn memory: not inside a git repository${repo === undefined ? "" : `: ${unknownRepo(ctx.config, repo)}`}`,
+  );
 }
 
 function jobFlag(args: LearnArgs, ctx: LearnContext): Job | "all" | null {
   const job = flag(args, "job") ?? "all";
   if (job === "all" || (JOBS as readonly string[]).includes(job)) return job as Job | "all";
-  ctx.io.err(`ak learn memory: --job wants reflect, backfill, nightly, weekly or all, got ${job}`);
+  ctx.io.err(`ak learn memory: --job: ${unknownSelector("job", job, [...JOBS, "all"])}`);
   return null;
 }
 
@@ -85,7 +93,7 @@ export function rollbackWiki(ledger: Ledger, to?: string): string {
     target = `${last}~1`;
   }
   const resolved = ledger.git(["rev-parse", "--verify", "--quiet", `${target}^{commit}`]).stdout.trim();
-  if (resolved === "") return to === undefined ? "nothing to roll back" : `unknown revision ${to}`;
+  if (resolved === "") return to === undefined ? "nothing to roll back" : ledger.unknownRevision(to);
   if (ledger.git(["merge-base", "--is-ancestor", resolved, "HEAD"]).code !== 0)
     return `${to ?? target} is not an ancestor of the ledger's HEAD`;
   const dirty = ledger
@@ -182,9 +190,10 @@ export const memoryArea: LearnArea = {
       run: (args, ctx) => {
         const job = jobFlag(args, ctx);
         if (job === null) return 2;
-        const root = mainRepoRoot(flag(args, "repo") ?? ctx.cwd);
+        const repo = flag(args, "repo");
+        const root = mainRepoRoot(repo ?? ctx.cwd);
         if (root === null) {
-          ctx.io.err("ak learn memory: not inside a git repository");
+          notARepo(ctx, repo);
           return 1;
         }
         registerRoot(ctx.config, root);

@@ -23,7 +23,6 @@
     "typescript(no-unsafe-type-assertion)": 1
   },
   "src/cli.ts": {
-    "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "typescript(no-non-null-assertion)": 1,
     "typescript(no-unsafe-type-assertion)": 1,
