@@ -4,9 +4,10 @@
  * never widen it. `AK_LEARN_REPOS`, when present, overrides the file.
  */
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { type LearnConfig, loadConfig, parseRepos, scopeFile } from "../core/config.ts";
+import { type LearnConfig, loadConfig, parseRepos, sameScope, scopeFile } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
+import { run } from "../core/proc.ts";
 
 /** The effective scope and where it came from, as verify, doctor and this verb print it. */
 export function scopeText(config: LearnConfig): string {
@@ -26,18 +27,27 @@ export function fileScope(ctx: LearnContext): LearnConfig {
 
 /** Whether the tick would run with a different scope than this shell's, because the scope lives only in the variable. */
 export function unitScopeDiffers(ctx: LearnContext): boolean {
-  return ctx.config.reposSource === "env" && JSON.stringify(fileScope(ctx).repos) !== JSON.stringify(ctx.config.repos);
+  return ctx.config.reposSource === "env" && !sameScope(fileScope(ctx).repos, ctx.config.repos);
+}
+
+/** The top of the working tree `dir` sits in, or null outside one. */
+function workTreeTop(dir: string): string | null {
+  const result = run(["git", "rev-parse", "--show-toplevel"], { cwd: dir, timeoutMs: 10_000 });
+  return result.code === 0 && result.stdout.trim() !== "" ? result.stdout.trim() : null;
 }
 
 export function scope(ctx: LearnContext, options: { set?: string; clear?: boolean }): number {
   const path = scopeFile(ctx.config.runtimeDir);
   if (options.set !== undefined) {
-    // The hooks compare against a session's main repo root, so a worktree or a subdirectory is stored as its main root.
+    // The hooks compare against a session's main repo root, so a linked worktree is stored as its main
+    // root. Only a working-tree top level is accepted: git resolves any directory below one, and a plain
+    // folder under a repository-tracked home would otherwise widen the scope to that whole home.
     const entries = options.set.split(":").map((part) => part.trim());
     const roots = entries.flatMap((entry) => {
-      const root = parseRepos(entry).length === 0 ? null : mainRepoRoot(entry);
+      const top = parseRepos(entry).length === 0 ? null : workTreeTop(entry);
+      const root = top !== null && parseRepos(top)[0] === parseRepos(entry)[0] ? mainRepoRoot(entry) : null;
       if (root === null) {
-        if (entry !== "") ctx.io.out(`  ignored: ${entry} (not an absolute path inside a git repository)`);
+        if (entry !== "") ctx.io.out(`  ignored: ${entry} (not a repository root or a linked worktree)`);
         return [];
       }
       if (root !== parseRepos(entry)[0]) ctx.io.out(`  ${entry}: stored as its main repository root ${root}`);

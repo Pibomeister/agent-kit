@@ -1,8 +1,8 @@
 /**
  * The suite never reaches the operator's real learn state: `tests/preload.ts`
- * strips the operator's `AK_LEARN_*` and points every config root at scratch,
- * and no test builds a judge from `loadConfig({})`, whose config directory is
- * the real `~/.claude` whatever the environment says.
+ * strips the operator's `AK_LEARN_*` and points the environment's config roots
+ * at scratch, and no test builds a judge from an inline `loadConfig({})`, whose
+ * config directory is the real `~/.claude` whatever the environment says.
  */
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, realpathSync } from "node:fs";

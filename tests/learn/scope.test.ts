@@ -280,8 +280,8 @@ describe("scope file verbs", () => {
     const f = fixture();
     const set = collect();
     runLearn(["setup", "scope", "--set", `${f.inside}:shop:/no/such/dir`], { cwd: f.inside, io: set.io, env: f.env });
-    expect(set.out).toContain("  ignored: shop (not an absolute path inside a git repository)");
-    expect(set.out).toContain("  ignored: /no/such/dir (not an absolute path inside a git repository)");
+    expect(set.out).toContain("  ignored: shop (not a repository root or a linked worktree)");
+    expect(set.out).toContain("  ignored: /no/such/dir (not a repository root or a linked worktree)");
     expect(set.out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
     const env = { ...f.env, AK_LEARN_REPOS: f.outside };
     const show = collect();
@@ -327,16 +327,18 @@ describe("review round fixes", () => {
     expect(out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
   });
 
-  test("setup scope --set stores a linked worktree or a subdirectory as its main repository root", () => {
+  test("setup scope --set stores a linked worktree as its main root and refuses any directory below a root", () => {
     const f = fixture();
     const wt = join(scratch(), "wt");
     run(["git", "worktree", "add", "-q", "-b", "feature-z", wt], { cwd: f.inside });
-    const sub = join(f.inside, "src");
+    // A plain folder under a repository (a dotfiles-tracked home) must not widen the scope to that repository.
+    const sub = join(f.inside, "notes");
     mkdirSync(sub);
     const { out, io } = collect();
     runLearn(["setup", "scope", "--set", `${wt}:${sub}`], { cwd: f.inside, io, env: f.env });
     expect(out).toContain(`  ${wt}: stored as its main repository root ${f.inside}`);
-    expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}:${f.inside}\n`);
+    expect(out).toContain(`  ignored: ${sub} (not a repository root or a linked worktree)`);
+    expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
     expect(hook(f, "session-start", { cwd: wt }).out).toContain("[rp-001] read the diff");
   });
 

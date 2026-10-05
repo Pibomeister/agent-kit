@@ -172,6 +172,17 @@ function scopePresent(path: string): boolean {
   }
 }
 
+function identities(roots: readonly string[]): Set<string> {
+  return new Set(roots.map((root) => identity(root) ?? root));
+}
+
+/** Whether two scopes allow the same repositories, by file identity: spelling and order do not count. */
+export function sameScope(a: readonly string[] | null, b: readonly string[] | null): boolean {
+  if (a === null || b === null) return a === b;
+  const [x, y] = [identities(a), identities(b)];
+  return x.size === y.size && [...x].every((id) => y.has(id));
+}
+
 /** The scope file's text; one that cannot be read is a scope that allows nothing. */
 function readScope(path: string): string {
   try {

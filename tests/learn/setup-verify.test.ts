@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import { loopDir, projectFolderName, registryPath } from "../../src/learn/core/paths.ts";
@@ -317,6 +317,13 @@ describe("setup verify", () => {
     writeFileSync(join(ctx.config.runtimeDir, "repos"), `${root}\n`);
     expect(schedule(ctx, deps)).toBe(0);
     expect(tick()).toEqual({ label: "scheduled tick scope", ok: true, detail: `${root} (scope file)` });
+    // The same repositories in another spelling or order are the same scope.
+    const other = gitRepo(join(scratch(), "cafe"));
+    const link = join(scratch(), "link");
+    symlinkSync(root, link);
+    writeFileSync(join(ctx.config.runtimeDir, "repos"), `${other}:${root}\n`);
+    const env = { ...ctx.env, AK_LEARN_REPOS: `${link}:${other}` };
+    expect(schedule({ ...ctx, env, config: loadConfig(env) }, deps)).toBe(0);
   });
 
   test("an unreadable unit is reported by the unit checks, never thrown", () => {
