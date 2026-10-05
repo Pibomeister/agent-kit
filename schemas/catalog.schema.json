@@ -204,7 +204,8 @@
               "review-pattern",
               "episode",
               "memory-run",
-              "learn-state"
+              "learn-state",
+              "learn-span"
             ]
           },
           "batch": { "$ref": "#/$defs/batch" },

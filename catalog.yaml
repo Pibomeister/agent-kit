@@ -1032,6 +1032,13 @@ schemas:
     summary: >-
       The memory ledger's watermarks and schedule marks, so a job resumes from the last evidence it
       consumed instead of replaying or skipping any.
+  - id: learn-span
+    batch: 9
+    status: authored
+    summary: >-
+      One line of the learning runtime's span log: one finished review, memory, skills or hook unit
+      with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
+      and hashes only.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.

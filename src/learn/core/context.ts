@@ -4,6 +4,7 @@
  */
 import type { LearnConfig } from "./config.ts";
 import type { JudgeFn } from "./judge.ts";
+import type { SpanHandle } from "./trace.ts";
 
 export interface LearnIo {
   out: (line: string) => void;
@@ -18,6 +19,8 @@ export interface LearnContext {
   env: NodeJS.ProcessEnv;
   /** Hook payload read from stdin, when the command was started by a host hook. */
   stdin?: string;
+  /** The unit of work this context runs inside (`trace.ts`); judge calls name it as their run. */
+  span?: SpanHandle;
 }
 
 /** Parsed arguments below `ak learn <area> <verb>`. */
