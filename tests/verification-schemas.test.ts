@@ -77,11 +77,32 @@ describe("verification recipe and surface evidence schemas", () => {
   });
 
   test("rejects an unknown evidence kind and an API response without status and body digest", () => {
-    const receipt = { ...structuredClone(receiptTemplate), evidence_kind: "screen-video" };
-    expect(schemas.validatorFor("verification")?.(receipt)).toBe(false);
+    const validate = schemas.validatorFor("verification");
+    const surface = {
+      ...structuredClone(receiptTemplate),
+      created_by: { role: "verifier" },
+      recipe: { id: "settings-runtime", hash: hash("a") },
+      verifier_seat: {
+        id: "verify-1",
+        implementer_seat: "build-1",
+        isolation: "runner-attested",
+        attestation: { id: "seat-verify-1", hash: hash("b") },
+      },
+    };
+    expect(validate?.({ ...surface, evidence_kind: "log" })).toBe(true);
+    expect(validate?.({ ...surface, evidence_kind: "screen-video" })).toBe(false);
 
-    const api = { ...structuredClone(receiptTemplate), evidence_kind: "api-response", api_response: {} };
-    expect(schemas.validatorFor("verification")?.(api)).toBe(false);
+    const api = {
+      ...surface,
+      evidence_kind: "api-response",
+      artifacts: [
+        ...structuredClone(receiptTemplate.artifacts),
+        { path: "response.json", digest: hash("c"), kind: "response" },
+      ],
+    };
+    expect(validate?.({ ...api, api_response: { status: 200, body_digest: hash("c") } })).toBe(true);
+    expect(validate?.({ ...api, api_response: { body_digest: hash("c") } })).toBe(false);
+    expect(validate?.({ ...api, api_response: { status: 200 } })).toBe(false);
   });
 
   test("rejects a frontend ticket that requests no declared evidence kind", () => {

@@ -73,7 +73,7 @@ inputs:
       exit status.
   - id: verification-recipe
     schema: verification-recipe
-    required: true
+    required: false
     summary: >-
       The content-addressed setup, build, launch, readiness, drive and cleanup path plus the
       project-declared surface evidence kinds. Discovery may replace a missing recipe only after
