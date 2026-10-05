@@ -9,7 +9,8 @@
  * Read-only by construction. The roster reads `catalog.yaml`, the installed
  * skill directories and the skills ledger, and never moves, renames or writes a
  * skill. It also respects the invocation law: a user-invoked skill is listed as
- * a slash command a human may type, never as something to start.
+ * the command a human may type, in the host's form for a catalog skill
+ * (ADR-0009), never as something to start.
  */
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";

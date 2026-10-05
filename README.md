@@ -21,8 +21,10 @@ codex plugin marketplace add Pibomeister/agent-kit --ref published
 codex plugin add ak@agent-kit
 ```
 
-Claude Code skills appear under `/ak:` after a restart. Codex's plugin CLI has no project scope;
-its install is user-level. To let teammates run setup checks and upgrades from any project, install
+Claude Code skills appear under `/ak:` after a restart. Codex lists them as `ak:<id>`, and a
+human-started skill is typed there as `$ak:<id>`, where this README and the canonical skills write
+`/ak:<id>` ([ADR-0009](docs/decisions/0009-portable-explicit-start.md)). Codex's plugin CLI has no
+project scope; its install is user-level. To let teammates run setup checks and upgrades from any project, install
 the published maintenance command once (Bun must be on `PATH`):
 
 ```bash
