@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
+import { bind } from "../../src/firstmate/bind.ts";
 import {
   BYPASS_PHASES,
   checkBypass,
@@ -36,6 +37,7 @@ import {
 } from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+import { FIXED_NOW, makeBundle, makeDir, makeHome, makeProject } from "../firstmate/fixture.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
@@ -56,6 +58,26 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 const dir = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
+
+/** A Firstmate binding file for `taskId`, written by the real `bind`. */
+function bindingFor(taskId: string): string {
+  const { home, upstream } = makeHome({ patched: true });
+  const bindingOut = join(home, "data", taskId, "binding.json");
+  const r = bind(
+    {
+      fmHome: home,
+      taskId,
+      project: makeProject(),
+      mode: "agent-kit",
+      bindingOut,
+      host: "claude-code",
+      evidence: { store: "mock", location: makeDir() },
+    },
+    { akRoot: REPO, bundleDir: makeBundle(), pinsDir: makeDir(), ledgerDir: makeDir(), upstream, now: FIXED_NOW },
+  );
+  if (!r.ok) throw new Error(r.errors.join("\n"));
+  return bindingOut;
+}
 
 /** The id of the one grant registered in a ledger, from its ledger file name. */
 /** The grant entries in a ledger: `<grant_id>.json` files, not the `ended/` directory beside them. */
@@ -233,12 +255,13 @@ describe("start only: approvals, merge and deploy are never covered", () => {
     for (const start of ["typed", "bypass", "ship-use", "before-open", "other-task"] as const) {
       const s = granted();
       const { worktree, ledger, grantPath } = s;
-      const task = start === "other-task" ? "T-2" : "T-1";
+      const boundTask = { "before-open": "T-1", "other-task": "T-2" }[start as string];
+      const bindingFlags = boundTask === undefined ? [] : ["--binding", bindingFor(boundTask)];
       const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
       const ticket = {
         schema: "ticket",
         schema_version: 1,
-        id: task,
+        id: "TICKET-1",
         acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
         verification: [
           {
@@ -261,7 +284,9 @@ describe("start only: approvals, merge and deploy are never covered", () => {
       if (start === "other-task") expect(checkPhase(s, grantPath, "T-1", "super-review:full").code).toBe(0);
       const grantFlags = start === "bypass" ? ["--bypass", grantPath, "--task", "T-1"] : [];
       const openAndCheck = () => {
-        const run = ak(worktree, ledger, "open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
+        const run = ak(worktree, ledger, "open", "--ticket", ticketPath, ...bindingFlags).out.match(
+          /^opened run (.+)$/m,
+        )?.[1];
         if (run === undefined) throw new Error("open did not return a run id");
         expect(ak(worktree, ledger, "record", "--gate", "build-checks").code).toBe(0);
         expect(ak(worktree, ledger, "record", "--gate", "review-full", ...grantFlags).code).toBe(0);
@@ -294,7 +319,7 @@ describe("start only: approvals, merge and deploy are never covered", () => {
             environment: { id: "test", isolated: true, secrets_policy: "none" },
             supports: ["AC-1"],
             check: "project-check",
-            ticket: { id: task, schema: "ticket", hash: artifactHash(ticket) },
+            ticket: { id: "TICKET-1", schema: "ticket", hash: artifactHash(ticket) },
             recipe,
             evidence_kind: "smoke-test",
             verifier_seat: {

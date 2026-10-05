@@ -357,6 +357,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   const id = (ticket as { id?: unknown } | null)?.id;
   if (typeof id !== "string" || id.trim() === "") return { ok: false, reason: `ticket ${a.ticket} has no id` };
   let bound: { binding_run_id: string; binding_evidence_location: string } | undefined;
+  let boundTask: unknown;
   if (a.binding !== undefined) {
     const binding = readObject(a.binding);
     const location = (binding?.evidence as { location?: unknown } | null | undefined)?.location;
@@ -369,6 +370,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     )
       return { ok: false, reason: `${a.binding} is not a Firstmate binding` };
     bound = { binding_run_id: binding.run_id, binding_evidence_location: location };
+    boundTask = binding.task_id;
   }
 
   const openedAt = new Date().toISOString();
@@ -398,7 +400,7 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
   atomicJson(runRecordPath(a.dir, runId), run);
   for (const phase of ["super-align", "super-bound"] as const) {
     const beforeOpen = bypassUsePath(a.dir, branch.text, phase);
-    if (readObject(beforeOpen)?.task_id !== id) continue;
+    if (typeof boundTask !== "string" || readObject(beforeOpen)?.task_id !== boundTask) continue;
     mkdirSync(join(a.dir, runId, "bypass"), { recursive: true });
     renameSync(beforeOpen, bypassUsePath(a.dir, runId, phase));
   }
