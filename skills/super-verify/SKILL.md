@@ -136,7 +136,7 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
     sends you back here.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--run` and `--dir` when it has them. A run that was never opened,
+    A binding's brief supplies `--dir` for the run opened with it. A run that was never opened,
     whether branch-named or supplied by a binding, has no task record, so retain its compatible
     marker-only call without `--receipt`; it is history, not proof. A record on a run that
     `ship-preflight` has closed is refused; the task needs a new `open`.

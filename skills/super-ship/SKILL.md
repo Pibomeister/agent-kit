@@ -137,7 +137,7 @@ The project's own release checks, discovered rather than assumed.
    `node <this skill's directory>/../../bin/ak-gate.mjs record --gate ship-preflight`.
    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
    branch-named v1 run when none was opened) and records default to the repository's git directory.
-   A binding's brief supplies `--run` and `--dir` when it has them. Recording `ship-preflight` closes
+   A binding's brief supplies `--dir` for the run opened with it. Recording `ship-preflight` closes
    an opened run. A closed run accepts `ship-preflight` again only at the head that closed it, which
    is what lets a `dry-run` be followed by `publish`. Once `ship-preflight` is recorded, a fix that
    moves the head needs a new run: `open` again and re-run every gated phase for it.

@@ -105,8 +105,7 @@ absence is recorded (`policies/limits.yaml`).
    to the branch checked out where it runs, and later gate commands on that branch resolve the
    pointer it writes. A run never closed by `ship-preflight` stays the branch's default until a
    new `open`, and the gate does not tell an earlier task's unclosed run from this one, so every
-   new task opens a new run, even on a branch that already has one. A Firstmate binding already supplies a unique
-   `--run` and `--dir`; keep that path unchanged and do not open another run.
+   new task opens a new run, even on a branch that already has one.
 4. Dispatch one implementer (`roles/implementer/ROLE.md`) with the ticket as its single source of
    requirements. It spawns no implementers of its own, and no second implementer runs against this
    worktree.
@@ -150,7 +149,7 @@ absence is recorded (`policies/limits.yaml`).
     from the recorded one. After an amend or rebase, pass the flags again.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--run` and `--dir` when it has them.
+    A binding's brief supplies `--dir` for the run opened with it.
 
 ## Hard gates
 
