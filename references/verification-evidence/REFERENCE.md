@@ -62,9 +62,8 @@ The verifier seat record names its id, the implementer seat, and one isolation s
   This remains useful guided evidence and never claims autonomous independence. The gate counts it
   only for a human-typed ship, with a visible note, as worker-attested evidence. It refuses it once
   the build gate records the implementer seat, or once the run holds any bypass or delegated grant
-  record, and the refusal names the record. A `super-align` or `super-bound` bypass check made before
-  the run was opened attaches to the run opened with the binding for the same task
-  (`open --binding`), and to no run opened without one. A delegated grant is found through the binding
+  record, and the refusal names the record. A bypass check made before the lifecycle run
+  is opened does not mark that run. A delegated grant is found through the binding
   the run was opened with (`open --binding <binding file>`): the run record keeps the binding's run
   id and evidence store, and the gate reads the grant records there whatever store the run itself
   uses. A run opened without it does not see the binding's grants. The mark holds for the rest of the run, even after a person takes over:

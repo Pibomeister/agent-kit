@@ -25,7 +25,6 @@ import { join } from "node:path";
 import { parse } from "yaml";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
-import { bind } from "../../src/firstmate/bind.ts";
 import {
   BYPASS_PHASES,
   checkBypass,
@@ -37,7 +36,6 @@ import {
 } from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
-import { FIXED_NOW, makeBundle, makeDir, makeHome, makeProject } from "../firstmate/fixture.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
@@ -58,26 +56,6 @@ function git(cwd: string, ...args: string[]): string {
 }
 
 const dir = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
-
-/** A Firstmate binding file for `taskId`, written by the real `bind`. */
-function bindingFor(taskId: string): string {
-  const { home, upstream } = makeHome({ patched: true });
-  const bindingOut = join(home, "data", taskId, "binding.json");
-  const r = bind(
-    {
-      fmHome: home,
-      taskId,
-      project: makeProject(),
-      mode: "agent-kit",
-      bindingOut,
-      host: "claude-code",
-      evidence: { store: "mock", location: makeDir() },
-    },
-    { akRoot: REPO, bundleDir: makeBundle(), pinsDir: makeDir(), ledgerDir: makeDir(), upstream, now: FIXED_NOW },
-  );
-  if (!r.ok) throw new Error(r.errors.join("\n"));
-  return bindingOut;
-}
 
 /** The id of the one grant registered in a ledger, from its ledger file name. */
 /** The grant entries in a ledger: `<grant_id>.json` files, not the `ended/` directory beside them. */
@@ -252,11 +230,8 @@ describe("bypass granted: phases start without a typed command", () => {
 
 describe("start only: approvals, merge and deploy are never covered", () => {
   test("a host-unattested verifier receipt is refused once a checked gate started under the grant", () => {
-    for (const start of ["typed", "bypass", "ship-use", "before-open", "other-task"] as const) {
-      const s = granted();
-      const { worktree, ledger, grantPath } = s;
-      const boundTask = { "before-open": "T-1", "other-task": "T-2" }[start as string];
-      const bindingFlags = boundTask === undefined ? [] : ["--binding", bindingFor(boundTask)];
+    for (const start of ["typed", "bypass", "ship-use"] as const) {
+      const { worktree, ledger, grantPath } = granted();
       const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
       const ticket = {
         schema: "ticket",
@@ -277,16 +252,9 @@ describe("start only: approvals, merge and deploy are never covered", () => {
       };
       const ticketPath = join(worktree, "T-1.json");
       writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
-      if (start === "before-open" || start === "other-task")
-        expect(
-          ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-align").code,
-        ).toBe(0);
-      if (start === "other-task") expect(checkPhase(s, grantPath, "T-1", "super-review:full").code).toBe(0);
       const grantFlags = start === "bypass" ? ["--bypass", grantPath, "--task", "T-1"] : [];
       const openAndCheck = () => {
-        const run = ak(worktree, ledger, "open", "--ticket", ticketPath, ...bindingFlags).out.match(
-          /^opened run (.+)$/m,
-        )?.[1];
+        const run = ak(worktree, ledger, "open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
         if (run === undefined) throw new Error("open did not return a run id");
         expect(ak(worktree, ledger, "record", "--gate", "build-checks").code).toBe(0);
         expect(ak(worktree, ledger, "record", "--gate", "review-full", ...grantFlags).code).toBe(0);
@@ -340,26 +308,16 @@ describe("start only: approvals, merge and deploy are never covered", () => {
       };
       const byHand = "note: verifier seat verify-1 on receipt verification-1 is host-unattested";
       const checked = openAndCheck();
-      if (start === "typed" || start === "other-task") {
+      if (start === "typed") {
         expect(checked.err).toContain(byHand);
         expect(checked.code).toBe(0);
+        continue;
       }
-      if (start === "other-task") {
-        expect(checkPhase(s, freshGrant(s, () => new Date(), "T-2").path, "T-2", "super-review:full").code).toBe(0);
-        const earlier = join(defaultEvidenceDir(worktree), "task", "bypass");
-        for (const phase of ["super-align", "super-review-full"])
-          expect(JSON.parse(readFileSync(join(earlier, `${phase}.json`), "utf8"))).toMatchObject({ task_id: "T-1" });
-      }
-      if (start === "typed" || start === "other-task") continue;
-      const used = { bypass: "super-review-full", "ship-use": "super-ship", "before-open": "super-align" }[start];
+      const used = { bypass: "super-review-full", "ship-use": "super-ship" }[start];
       expect(checked.code).toBe(1);
       expect(checked.err).toContain(
         `refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation (the run holds grant record ${join(defaultEvidenceDir(worktree), checked.run, "bypass", `${used}.json`)})`,
       );
-      if (start !== "before-open") continue;
-      const fresh = openAndCheck();
-      expect(fresh.err).toContain(byHand);
-      expect(fresh.code).toBe(0);
     }
   }, 120_000);
 
