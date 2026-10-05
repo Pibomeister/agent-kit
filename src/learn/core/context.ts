@@ -34,6 +34,8 @@ export type LearnCommand = (args: LearnArgs, ctx: LearnContext) => number;
 /** One `ak learn <area>`: its verbs and a one-line usage per verb. */
 export interface LearnArea {
   summary: string;
+  /** The verb `ak learn <area>` runs when no verb (or a flag) follows the area. */
+  default?: string;
   verbs: Record<string, { usage: string; run: LearnCommand }>;
 }
 

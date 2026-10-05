@@ -1,6 +1,6 @@
 /**
  * `ak learn setup doctor` — report prerequisites, the scheduled judge's login,
- * the resolved environment and the last 24 hours of judge calls.
+ * the resolved environment and the last 24 hours of judge calls and spans.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
@@ -10,6 +10,7 @@ import type { LearnContext } from "../core/context.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
 import { schedulerKind, unitEnvironment } from "./schedule.ts";
 import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
+import { runsLine } from "../stats.ts";
 
 export interface Check {
   name: string;
@@ -120,6 +121,7 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(
     `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,
   );
+  ctx.io.out(runsLine(ctx.config));
   const blocked = checks.filter((check) => check.hard && !check.ok).map((check) => check.name);
   if (blocked.length > 0) {
     ctx.io.out(`\nBLOCKED: ${blocked.join(", ")}`);

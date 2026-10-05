@@ -99,6 +99,7 @@ describe("setup doctor", () => {
 
     expect(doctor(ctx, deps)).toBe(0);
     expect(ctx.out).toContain("  judge calls (24h)  2 calls, 1 failure, $0.750000 total cost");
+    expect(ctx.out).toContain("  runs (24h)         0 spans");
   });
 
   test("checks the scheduled default judge's auth without making a judge call", () => {

@@ -14,6 +14,7 @@ import { memoryArea } from "./memory/cli.ts";
 import { reviewArea } from "./review/cli.ts";
 import { setupArea } from "./setup/cli.ts";
 import { skillsArea } from "./skills/cli.ts";
+import { statsArea } from "./stats.ts";
 
 export const LEARN_AREAS: Readonly<Record<string, LearnArea>> = {
   review: reviewArea,
@@ -21,6 +22,7 @@ export const LEARN_AREAS: Readonly<Record<string, LearnArea>> = {
   skills: skillsArea,
   setup: setupArea,
   hook: hookArea,
+  stats: statsArea,
 };
 
 export function learnUsage(): string[] {
@@ -60,8 +62,11 @@ export function runLearn(argv: readonly string[], options: RunLearnOptions): num
 }
 
 function dispatch(argv: readonly string[], options: RunLearnOptions): number {
-  const [areaName, verbName, ...rest] = argv;
+  const [areaName, ...afterArea] = argv;
   const area = areaName === undefined ? undefined : LEARN_AREAS[areaName];
+  const fallback = area?.default;
+  const defaulted = fallback !== undefined && (afterArea[0] === undefined || afterArea[0].startsWith("--"));
+  const [verbName, ...rest] = defaulted ? [fallback, ...afterArea] : afterArea;
   if (area === undefined) {
     if (areaName !== undefined) options.io.err(`ak learn: unknown area ${areaName}`);
     for (const line of learnUsage()) options.io.err(line);
