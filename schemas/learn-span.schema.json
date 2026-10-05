@@ -56,17 +56,7 @@
     "reason": {
       "anyOf": [
         {
-          "enum": [
-            "error",
-            "lock-held",
-            "no-judge-output",
-            "judge-unavailable",
-            "gate-rejected",
-            "debounced",
-            "not-a-repo",
-            "muted",
-            "no-source"
-          ]
+          "enum": ["error", "lock-held", "no-judge-output", "gate-rejected", "debounced", "not-a-repo", "no-source"]
         },
         { "type": "null" }
       ]
@@ -123,15 +113,13 @@
         "block_tokens": { "$ref": "#/$defs/count" },
         "guardrails": { "$ref": "#/$defs/count" },
         "lessons": { "$ref": "#/$defs/count" },
-        "roster": { "$ref": "#/$defs/count" },
-        "muted": { "type": "boolean" },
         "shown": { "type": "array", "items": { "type": "string", "pattern": "^(rp|ls)-[0-9]{1,6}$" } },
         "spawned": { "type": "boolean" },
         "detection": { "enum": ["explicit", "guardrail", "positive", "auto", "none"] },
         "captured": { "type": "boolean" }
       }
     },
-    "commit": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{40}$" }, { "type": "null" }] }
+    "commit": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$" }, { "type": "null" }] }
   },
   "$defs": {
     "span_id": { "type": "string", "pattern": "^[0-9a-f]{16}$" },

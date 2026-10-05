@@ -7,7 +7,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
+import { loadConfig } from "../../src/learn/core/config.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
+import { commandJudge, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
+import { run } from "../../src/learn/core/proc.ts";
 import { acquireLock } from "../../src/learn/core/ledger.ts";
 import { projectFolderName, tickLogPath } from "../../src/learn/core/paths.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
@@ -226,15 +229,78 @@ describe("memory spans", () => {
   });
 });
 
+describe("fix-round regressions", () => {
+  test("the skills discover verb runs inside its own span", () => {
+    const root = gitRepo(join(scratch(), "repo"));
+    const ctx = testContext({ cwd: root });
+    expect(learn(ctx, ["skills", "discover", "--repo", root])).toBe(0);
+    expect(named(ctx, "skills.discover")[0]).toMatchObject({ status: "nothing", trigger: "cli" });
+    expect(named(ctx, "skills.discover")[0]?.project_key).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  test("session-start in a linked worktree keys the main repository, like the Stop hook", () => {
+    const root = gitRepo(join(scratch(), "main"));
+    const worktree = join(scratch(), "linked");
+    run(["git", "worktree", "add", "-q", "-b", "side", worktree], { cwd: root });
+    const ctx = testContext({ cwd: worktree });
+    expect(learn(ctx, ["hook", "session-start"], JSON.stringify({ cwd: worktree }))).toBe(0);
+    span(ctx, "hook.stop", "hook", (hook) => stopHook(hook, { cwd: worktree }, parseLearnArgs([]), recorder().spawner));
+    const [start] = named(ctx, "hook.session-start");
+    const [stop] = named(ctx, "hook.stop");
+    expect(start?.project_key).toMatch(/^[0-9a-f]{12}$/);
+    expect(start?.project_key).toBe(stop?.project_key ?? "");
+  });
+
+  test("a span from a sha256 ledger keeps its 64-hex commit", () => {
+    const ctx = testContext();
+    const sha = "a".repeat(64);
+    span(ctx, "review.maintain", "cli", (inner) => inner.span?.commit(sha));
+    expect(named(ctx, "review.maintain")[0]?.commit).toBe(sha);
+  });
+
+  test("a tick log that cannot be written is reported on stderr and the tick carries on", () => {
+    const ctx = testContext();
+    mkdirSync(tickLogPath(ctx.config), { recursive: true });
+    expect(tick(ctx)).toBe(0);
+    expect(ctx.err.join("\n")).toContain("tick: could not write");
+  });
+
+  test("memory status reads the rotated tick log too", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ctx = testContext({ cwd: root });
+    ensureMemoryLedger(memoryDir(ctx.config, root));
+    mkdirSync(ctx.config.runtimeDir, { recursive: true });
+    writeFileSync(tickLogPath(ctx.config).replace(/tick\.log$/, "tick.1.log"), "shop: episodes +1 (rotated)\n");
+    writeFileSync(tickLogPath(ctx.config), "");
+    expect(learn(ctx, ["memory", "status"])).toBe(0);
+    expect(ctx.out).toContain("shop: episodes +1 (rotated)");
+  });
+
+  test("a judge call under a dated run id records no span parent", () => {
+    const dir = scratch();
+    const script = join(dir, "judge.sh");
+    writeFileSync(script, `echo '{"ok": true}'\n`);
+    const config = { ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }), judgeCommand: ["sh", script] };
+    commandJudge(config)("prompt", {
+      runId: "nightly-2026-10-05-4242",
+      loop: "memory",
+      role: "consolidator",
+      project: "shop",
+    });
+    const [row] = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
+    expect(row).toMatchObject({ run_id: "nightly-2026-10-05-4242", parent_span_id: null });
+  });
+});
+
 describe("memory rollback", () => {
   test("marks nightly runs undone for both the legacy dated id and the span id", () => {
     const ledger = ensureMemoryLedger(memoryDir(testContext().config, scratch()));
     writeFileSync(ledger.path("memory.md"), "# Working memory\n");
     ledger.commit("seed");
     const base = ledger.head() ?? "";
-    for (const run of ["nightly-2026-10-01-4242", "0123456789abcdef"]) {
-      writeFileSync(ledger.path("lessons.md"), `# Lessons\n${run}\n`);
-      ledger.commit(`nightly ${run}: +1 lessons`);
+    for (const runId of ["nightly-2026-10-01-4242", "0123456789abcdef"]) {
+      writeFileSync(ledger.path("lessons.md"), `# Lessons\n${runId}\n`);
+      ledger.commit(`nightly ${runId}: +1 lessons`);
     }
     expect(rollbackWiki(ledger, base)).toStartWith("rolled back");
     const undone = readJsonl<{ run: string }>(ledger.path(UNDONE_RUNS_FILE)).map((row) => row.run);

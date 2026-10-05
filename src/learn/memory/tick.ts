@@ -131,7 +131,15 @@ interface RunRow {
 
 const COUNT = { type: "integer", minimum: 0 };
 const IDS = { type: "array", items: { type: "string" } };
-const validateRunRow = new Ajv({ strict: false }).compile<RunRow>({
+let runRowValidator: ((row: unknown) => row is RunRow) | undefined;
+
+/** Compiled on first use: hooks import this module and never read a run log. */
+function validateRunRow(row: unknown): row is RunRow {
+  runRowValidator ??= new Ajv({ strict: false }).compile<RunRow>(RUN_ROW_SCHEMA);
+  return runRowValidator(row);
+}
+
+const RUN_ROW_SCHEMA = {
   type: "object",
   required: ["status"],
   properties: {
@@ -150,7 +158,7 @@ const validateRunRow = new Ajv({ strict: false }).compile<RunRow>({
     proposals: IDS,
   },
   additionalProperties: true,
-});
+};
 
 /** The run log's rows a span can read; a line that fails the shape is skipped, since telemetry never fails a job. */
 function runLog(ledger: Ledger): RunRow[] {
@@ -308,7 +316,8 @@ export function runProject(
 function tickLog(ctx: LearnContext, line: string): void {
   ctx.io.out(line);
   if (ctx.config.dryRun) return;
-  appendCapped(tickLogPath(ctx.config), `${line}\n`, ctx.config.traceMaxBytes);
+  if (!appendCapped(tickLogPath(ctx.config), `${line}\n`, ctx.config.traceMaxBytes))
+    ctx.io.err(`tick: could not write ${tickLogPath(ctx.config)}`);
 }
 
 /**

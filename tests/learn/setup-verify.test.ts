@@ -97,9 +97,31 @@ describe("setup doctor", () => {
       `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "error", total_cost_usd: 0.5 })}\n${JSON.stringify({ at: old, call_id: randomUUID(), outcome: "error", total_cost_usd: 99 })}\n`,
     );
 
+    const span = {
+      v: 1,
+      trace_id: "4bf92f3577b34da6a3ce929d0e0e4736",
+      span_id: "00f067aa0ba902b7",
+      parent_span_id: null,
+      name: "review.run",
+      loop: "review",
+      project_key: null,
+      trigger: "cli",
+      start: recent,
+      duration_ms: 5,
+      status: "ok",
+      reason: null,
+      judge: { calls: 0, failures: 0, cost_usd: 0, cost_known: true, input_tokens: 0, output_tokens: 0 },
+      attrs: {},
+      commit: null,
+    };
+    writeFileSync(
+      join(ctx.config.runtimeDir, "spans.jsonl"),
+      `${JSON.stringify(span)}\n${JSON.stringify({ ...span, span_id: "00f067aa0ba902b8", start: old })}\n`,
+    );
+
     expect(doctor(ctx, deps)).toBe(0);
     expect(ctx.out).toContain("  judge calls (24h)  2 calls, 1 failure, $0.750000 total cost");
-    expect(ctx.out).toContain("  runs (24h)         0 spans");
+    expect(ctx.out).toContain("  runs (24h)         1 span: review ok 1");
   });
 
   test("checks the scheduled default judge's auth without making a judge call", () => {

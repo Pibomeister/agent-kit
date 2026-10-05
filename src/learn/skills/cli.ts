@@ -4,6 +4,7 @@
 import { resolve } from "node:path";
 import { flag, type LearnArea, type LearnArgs, type LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
+import { span, triggerOf } from "../core/trace.ts";
 import { discover, loadRegistry, promoteCandidate, rejectCandidate, runSkillLearn, skillsLedger } from "./learn.ts";
 import { rosterSection } from "./roster.ts";
 
@@ -55,7 +56,10 @@ export const skillsArea: LearnArea = {
           ctx.io.err("ak learn skills discover: --since takes a day count or a date");
           return 2;
         }
-        const summary = discover(ctx, root, { days, force: args.flags.has("force") });
+        const summary = span(ctx, "skills.discover", triggerOf(ctx, "cli"), (inner) => {
+          inner.span?.project(root);
+          return discover(inner, root, { days, force: args.flags.has("force") });
+        });
         ctx.io.out(summary === "" ? "another discovery holds the skills ledger; skipped" : summary);
         return 0;
       },

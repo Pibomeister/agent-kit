@@ -11,9 +11,12 @@ import { runLearn } from "../../src/learn/cli.ts";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import type { JudgeTraceRow } from "../../src/learn/core/judge.ts";
 import { projectFolderName } from "../../src/learn/core/paths.ts";
+import { Ledger } from "../../src/learn/core/ledger.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { SPAN_FILE, type SpanRow } from "../../src/learn/core/trace.ts";
 import { appendRun, ensureMemoryLedger, memoryDir, saveState, writeLesson } from "../../src/learn/memory/ledger.ts";
+import { rollbackWiki } from "../../src/learn/memory/cli.ts";
+import { UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { gitRepo, MemFixture, projectScratch, removeProjectScratch, scratch, stubRoles } from "./helpers.ts";
 
@@ -162,6 +165,38 @@ describe("run-id linkage", () => {
     ];
     const names = new Set(spans(p).map((row) => row.name));
     for (const name of expected) expect(names.has(name)).toBe(true);
+    const owner = new Map<string, SpanRow["name"]>([
+      ["pattern-maintainer", "review.maintain"],
+      ["reflector", "memory.reflect"],
+      ["consolidator", "memory.nightly"],
+      ["lesson-merger", "memory.weekly"],
+      ["skill-scout", "skills.discover"],
+    ]);
+    for (const row of rows) expect(byId.get(row.run_id ?? "")?.name).toBe(owner.get(row.role));
+  });
+
+  test("the nightly and weekly run ids, commit subjects and rollback all carry the job's span id", () => {
+    const p = project();
+    session(p);
+    const nightly = spans(p).find((row) => row.name === "memory.nightly");
+    const weekly = spans(p).find((row) => row.name === "memory.weekly");
+    if (nightly === undefined || weekly === undefined) throw new Error("expected nightly and weekly spans");
+    const memory = new Ledger(memoryDir(loadConfig(p.env), p.root));
+    const runs = readJsonl<{ job: string; id?: string }>(memory.path("runs.jsonl"));
+    expect(runs.find((row) => row.job === "nightly")?.id).toBe(nightly.span_id);
+    expect(runs.find((row) => row.job === "weekly")?.id).toBe(weekly.span_id);
+    const subjects = memory.git(["log", "--format=%s"]).stdout;
+    expect(subjects).toContain(`nightly ${nightly.span_id}:`);
+    expect(subjects).toContain(`weekly ${weekly.span_id}`);
+    expect(nightly.commit).toBe(
+      memory.git(["log", "-1", "--format=%H", "--grep", `^nightly ${nightly.span_id}:`]).stdout.trim(),
+    );
+    const before = memory.git(["rev-parse", `${nightly.commit ?? ""}~1`]).stdout.trim();
+    writeFileSync(memory.path("lessons.md"), "# Lessons\nchanged after the run\n");
+    memory.commit("touch the wiki");
+    expect(rollbackWiki(memory, before)).toStartWith("rolled back");
+    const undone = readJsonl<{ run: string }>(memory.path(UNDONE_RUNS_FILE)).map((row) => row.run);
+    expect(undone).toContain(nightly.span_id);
   });
 
   test("judge totals roll up: the review run carries its maintainer's calls and cost", () => {

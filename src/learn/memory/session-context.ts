@@ -132,6 +132,8 @@ export function sessionStartBlock(ctx: LearnContext): string {
   const root = sessionRoot(ctx.cwd);
   const roster = rosterSection(ctx, root);
   if (root === null) return roster;
+  // The hook's span keys the root this block was built for, linked worktrees included.
+  ctx.span?.project(root);
   registerRoot(ctx.config, root);
 
   const cap = ctx.config.memoryTokens;

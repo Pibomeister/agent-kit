@@ -128,8 +128,6 @@ describe("learnStats", () => {
     ]);
     expect(report.failures).toEqual([
       { role: "pattern-maintainer", outcome: "error", count: 1 },
-      { role: "pattern-maintainer", outcome: "ok", count: 1 },
-      { role: "reflector", outcome: "ok", count: 1 },
       { role: "skill-scout", outcome: "unparseable", count: 1 },
     ]);
     expect(report.status).toEqual([
@@ -209,7 +207,7 @@ describe("ak learn stats", () => {
       "Cost by loop and role",
       "Latency by span",
       "Latency by judge role",
-      "Judge outcomes",
+      "Judge failures by role and outcome",
       "Span status",
     ])
       expect(printed).toContain(heading);
@@ -246,6 +244,47 @@ describe("ak learn stats", () => {
     ).toBe(0);
     const parsed: unknown = JSON.parse(out.out.join("\n"));
     expect(parsed).toMatchObject({ status: [{ name: "review.run", status: "ok", count: 1 }] });
+  });
+
+  test("the text tables carry the fixture's numbers", () => {
+    const ctx = testContext();
+    fixture(ctx.config);
+    const out = capture();
+    expect(runLearn(["stats", "--days", "36500"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(0);
+    const rows = out.out.map((line) => line.split(/\s+/).join(" "));
+    // A 100-year window also takes in the 40-day-old rows: three maintainer calls, one of them $7.
+    expect(rows).toContain("review pattern-maintainer 3 7.250000 1");
+    expect(rows).toContain("pattern-maintainer 3 500 700");
+    expect(rows).toContain("review.run 2 100 9999");
+    expect(rows).toContain("pattern-maintainer error 1");
+    expect(rows).toContain("hook.session-start nothing 1");
+  });
+
+  test("--help prints the usage; unknown flags, extra words, --json=value and a huge --days are usage errors", () => {
+    const ctx = testContext();
+    const help = capture();
+    expect(runLearn(["stats", "--help"], { cwd: scratch(), io: help.io, env: ctx.env })).toBe(0);
+    expect(help.out.join("\n")).toContain("stats [--repo PATH] [--days N] [--json]");
+    for (const argv of [
+      ["stats", "--dys", "7"],
+      ["stats", "show", "extra"],
+      ["stats", "--json=false"],
+      ["stats", "--days", "36501"],
+    ]) {
+      const out = capture();
+      expect(runLearn(argv, { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
+      expect(out.out).toEqual([]);
+    }
+  });
+
+  test("--repo outside any repository is an error, not an empty report", () => {
+    const ctx = testContext();
+    const out = capture();
+    expect(
+      runLearn(["stats", "--repo", join(scratch(), "missing")], { cwd: scratch(), io: out.io, env: ctx.env }),
+    ).toBe(1);
+    expect(out.err.join("\n")).toContain("is not inside a git repository");
+    expect(out.out).toEqual([]);
   });
 
   test("a bad or bare --days and a bare --repo are usage errors", () => {

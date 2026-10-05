@@ -5,7 +5,6 @@
  * to stderr, and the exit code is always 0.
  */
 import type { LearnArea, LearnContext } from "./core/context.ts";
-import { rootOf } from "./core/paths.ts";
 import { tokens } from "./core/store.ts";
 import { span } from "./core/trace.ts";
 import { sessionStartBlock } from "./memory/session-context.ts";
@@ -45,13 +44,11 @@ function guarded(
 
 /**
  * What the session was shown, read back from the printed block: guardrail
- * bullets open with `- [rp-N]`, lesson rows end with `[ls-N]`. The project
- * key uses the stat-only root, so the hook spawns no git for telemetry.
+ * bullets open with `- [rp-N]`, lesson rows end with `[ls-N]`.
  */
-function recordExposure(ctx: LearnContext, block: string, cwd: string): void {
+function recordExposure(ctx: LearnContext, block: string): void {
   const guardrails = [...block.matchAll(/^- \[(rp-\d{1,6})\]/gm)].map((match) => match[1] ?? "");
   const lessons = [...block.matchAll(/\[(ls-\d{1,6})\]$/gm)].map((match) => match[1] ?? "");
-  ctx.span?.project(rootOf(cwd));
   ctx.span?.attr("shown", [...guardrails, ...lessons]);
   ctx.span?.attr("guardrails", guardrails.length);
   ctx.span?.attr("lessons", lessons.length);
@@ -70,7 +67,7 @@ export const hookArea: LearnArea = {
           const cwd = typeof payload.cwd === "string" ? payload.cwd : hook.cwd;
           const block = sessionStartBlock({ ...hook, cwd });
           if (block.trim() !== "") hook.io.out(block.trimEnd());
-          recordExposure(hook, block, cwd);
+          recordExposure(hook, block);
         }),
     },
     stop: {

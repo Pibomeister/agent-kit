@@ -16,6 +16,9 @@ import { projectKey, spanRows, type SpanRow } from "./core/trace.ts";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_DAYS = 30;
+const MAX_DAYS = 36_500;
+const STATS_FLAGS = ["repo", "days", "json"];
+const USAGE = "stats [--repo PATH] [--days N] [--json]   the default verb; no judge call, nothing leaves the machine";
 
 export interface Retention {
   /** The oldest retained row of this source, or null when there is none. */
@@ -32,6 +35,7 @@ export interface StatsReport {
     spans: Array<{ name: string; count: number; p50_ms: number; p95_ms: number }>;
     judge: Array<{ role: string; count: number; p50_ms: number; p95_ms: number }>;
   };
+  /** Judge calls without a usable reply, per role and outcome; `ok` calls are counted in `cost`. */
   failures: Array<{ role: string; outcome: string; count: number }>;
   status: Array<{ name: string; status: string; count: number }>;
 }
@@ -136,7 +140,10 @@ export function learnStats(config: LearnConfig, options: StatsOptions): StatsRep
         ...latency(rows.map((row) => row.duration_ms)),
       })),
     },
-    failures: groups(judge, (row) => `${row.role}\u0000${row.outcome}`).map(([, [first, ...rest]]) => ({
+    failures: groups(
+      judge.filter((row) => row.outcome !== "ok"),
+      (row) => `${row.role}\u0000${row.outcome}`,
+    ).map(([, [first, ...rest]]) => ({
       role: first.role,
       outcome: first.outcome,
       count: rest.length + 1,
@@ -205,7 +212,7 @@ function render(report: StatsReport): string[] {
       report.latency.judge.map((row) => [row.role, row.count, row.p50_ms, row.p95_ms]),
     ),
     ...table(
-      "Judge outcomes by role",
+      "Judge failures by role and outcome",
       ["role", "outcome", "count"],
       report.failures.map((row) => [row.role, row.outcome, row.count]),
     ),
@@ -218,20 +225,40 @@ function render(report: StatsReport): string[] {
 }
 
 function show(args: LearnArgs, ctx: LearnContext): number {
-  if (args.flags.get("days") === true || args.flags.get("repo") === true) {
-    ctx.io.err("ak learn stats: --days and --repo each want a value");
+  if (args.flags.has("help")) {
+    ctx.io.out(`ak learn ${USAGE}`);
+    return 0;
+  }
+  const unknown = [...args.flags.keys()].filter((name) => !STATS_FLAGS.includes(name));
+  if (unknown.length > 0 || args.positional.length > 0) {
+    ctx.io.err(
+      `ak learn stats: unexpected ${[...unknown.map((name) => `--${name}`), ...args.positional].join(" ")}; usage: ak learn ${USAGE}`,
+    );
+    return 2;
+  }
+  if (
+    args.flags.get("days") === true ||
+    args.flags.get("repo") === true ||
+    (args.flags.has("json") && args.flags.get("json") !== true)
+  ) {
+    ctx.io.err(`ak learn stats: --days and --repo each want a value, --json takes none; usage: ak learn ${USAGE}`);
     return 2;
   }
   const rawDays = flag(args, "days");
   const days = rawDays === undefined ? DEFAULT_DAYS : Number(rawDays);
-  if (!Number.isInteger(days) || days <= 0) {
-    ctx.io.err(`ak learn stats: --days wants a positive whole number of days, got ${rawDays ?? ""}`);
+  if (!Number.isInteger(days) || days <= 0 || days > MAX_DAYS) {
+    ctx.io.err(`ak learn stats: --days wants a whole number of days from 1 to ${MAX_DAYS}, got ${rawDays ?? ""}`);
     return 2;
   }
   let key: string | null = null;
   const repo = flag(args, "repo");
   if (repo !== undefined) {
-    key = projectKey(ctx.config, mainRepoRoot(repo) ?? repo);
+    const root = mainRepoRoot(repo);
+    if (root === null) {
+      ctx.io.err(`ak learn stats: --repo ${repo} is not inside a git repository`);
+      return 1;
+    }
+    key = projectKey(ctx.config, root);
     if (key === null) {
       ctx.io.err("ak learn stats: the install salt is unreadable, so no project key can be computed");
       return 1;
@@ -248,7 +275,7 @@ export const statsArea: LearnArea = {
   default: "show",
   verbs: {
     show: {
-      usage: "stats [--repo PATH] [--days N] [--json]   the default verb; no judge call, nothing leaves the machine",
+      usage: USAGE,
       run: show,
     },
   },

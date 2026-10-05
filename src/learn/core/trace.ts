@@ -26,7 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import Ajv2020 from "ajv/dist/2020.js";
+import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import spanSchema from "../../../schemas/learn-span.schema.json" with { type: "json" };
 import type { LearnConfig } from "./config.ts";
 import type { LearnContext } from "./context.ts";
@@ -58,11 +58,9 @@ export type SpanReason =
   | "error"
   | "lock-held"
   | "no-judge-output"
-  | "judge-unavailable"
   | "gate-rejected"
   | "debounced"
   | "not-a-repo"
-  | "muted"
   | "no-source";
 export type SpanAttrValue = number | boolean | string | readonly string[];
 
@@ -94,7 +92,7 @@ const ATTRS: Readonly<Record<SpanName, readonly string[]>> = {
   "skills.run": ["pending"],
   "skills.discover": ["sessions", "proposed", "kept"],
   "skills.uses": ["changed", "pending"],
-  "hook.session-start": ["block_tokens", "guardrails", "lessons", "roster", "muted", "shown"],
+  "hook.session-start": ["block_tokens", "guardrails", "lessons", "shown"],
   "hook.stop": ["spawned"],
   "hook.prompt": ["detection", "captured"],
 };
@@ -149,7 +147,13 @@ export interface JudgeAttempt {
   outputTokens: number;
 }
 
-const validateRow = new Ajv2020({ strict: false }).compile<SpanRow>(spanSchema);
+let rowValidator: ValidateFunction<SpanRow> | undefined;
+
+/** Compiled on first use, so a process that writes or reads no span never pays for the compile. */
+function spanValidator(): ValidateFunction<SpanRow> {
+  rowValidator ??= new Ajv2020({ strict: false }).compile<SpanRow>(spanSchema);
+  return rowValidator;
+}
 
 /** Judge totals of every span open in this process, keyed by span id, so a judge call can find its run. */
 const openSpans = new Map<string, JudgeTotals>();
@@ -273,18 +277,25 @@ function rotatedPath(path: string): string {
 /**
  * Append `text`, first moving the file over its one previous generation when
  * the append would take it past `maxBytes`. Best-effort: a failure writes
- * nothing and throws nothing. Two processes rotating at the same instant can
- * drop the previous generation, the same limit the judge trace accepts.
+ * nothing, throws nothing and returns false. Two processes rotating at the
+ * same instant can drop the previous generation, or the losing writer's own
+ * line, the same limit the judge trace accepts.
  */
-export function appendCapped(path: string, text: string, maxBytes: number): void {
+export function appendCapped(path: string, text: string, maxBytes: number): boolean {
   try {
     mkdirSync(dirname(path), { recursive: true });
     if (existsSync(path) && statSync(path).size + Buffer.byteLength(text) > maxBytes)
       renameSync(path, rotatedPath(path));
     appendFileSync(path, text);
+    return true;
   } catch {
-    return;
+    return false;
   }
+}
+
+/** The rotated generation's path beside `path`, oldest first, then `path` itself. */
+export function generations(path: string): [string, string] {
+  return [rotatedPath(path), path];
 }
 
 const LOOPS = ["review", "memory", "skills", "hook"] as const;
@@ -357,7 +368,7 @@ export function span<T>(ctx: LearnContext, name: SpanName, trigger: SpanTrigger,
 }
 
 function writeSpan(config: LearnConfig, row: SpanRow): void {
-  if (!validateRow(row)) return;
+  if (!spanValidator()(row)) return;
   appendCapped(join(config.runtimeDir, SPAN_FILE), `${JSON.stringify(row)}\n`, config.traceMaxBytes);
 }
 
@@ -372,7 +383,7 @@ function rowsIn(path: string): SpanRow[] {
   for (const line of text.split("\n")) {
     try {
       const parsed: unknown = JSON.parse(line);
-      if (validateRow(parsed)) rows.push(parsed);
+      if (spanValidator()(parsed)) rows.push(parsed);
     } catch {
       continue;
     }

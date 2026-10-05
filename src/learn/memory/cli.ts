@@ -6,13 +6,14 @@
  * with git. `rollback` restores the wiki layer (memory.md, lessons) only; the
  * raw episodes and runs are append-only and never reverted.
  */
-import { existsSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { basename } from "node:path";
 import type { LearnArea, LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot, projectFolderName, tickLogPath } from "../core/paths.ts";
 import { appendJsonl, nowIso, readJsonl, readText } from "../core/store.ts";
+import { generations } from "../core/trace.ts";
 import { UNDONE_RUNS_FILE } from "./episodes.ts";
 import { ensureMemoryLedger, memoryDir, readState, saveState } from "./ledger.ts";
 import { readRegistry, registerRoot } from "./registry.ts";
@@ -150,13 +151,11 @@ function status(args: LearnArgs, ctx: LearnContext): number {
   for (const run of runs) ctx.io.out(JSON.stringify(run));
   if (runs.length === 0) ctx.io.out("(none)");
   const name = entry?.mem_project || basename(root);
-  const logPath = tickLogPath(ctx.config);
-  const ticks = existsSync(logPath)
-    ? readText(logPath)
-        .split("\n")
-        .filter((line) => line.startsWith(`${name}: `))
-        .slice(-20)
-    : [];
+  // The tick log is capped with one previous generation; read it first so a fresh rotation hides nothing.
+  const ticks = generations(tickLogPath(ctx.config))
+    .flatMap((path) => readText(path).split("\n"))
+    .filter((line) => line.startsWith(`${name}: `))
+    .slice(-20);
   ctx.io.out("");
   ctx.io.out("## Tick log");
   for (const line of ticks) ctx.io.out(line);

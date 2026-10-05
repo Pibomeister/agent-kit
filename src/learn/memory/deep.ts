@@ -307,6 +307,6 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
     ledger,
     `weekly: ${compactNote}, ${stale.length} lessons stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`,
   );
-  ledger.commit("weekly");
+  ledger.commit(`weekly ${runId}`);
   return `weekly: ${compactNote}, ${stale.length} stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`;
 }

@@ -221,7 +221,8 @@ function traceAttempt(
       run_id: context.runId,
       trace_id: carrier.traceId,
       span_id: carrier.spanId,
-      parent_span_id: context.runId,
+      // A run id outside a span (a dated id) names no span, so the attempt has no span parent.
+      parent_span_id: context.runId !== null && /^[0-9a-f]{16}$/.test(context.runId) ? context.runId : null,
       loop: context.loop,
       role: context.role,
       project: context.project,
