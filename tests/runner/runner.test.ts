@@ -7,7 +7,6 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
-  rmSync,
   symlinkSync,
   unlinkSync,
   watch,
@@ -30,7 +29,6 @@ setDefaultTimeout(30_000);
 const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;
 const CONTENDED_RUNNER_CALL_TIMEOUT_MS = 120_000;
-const fixtureDirs = new Set<string>();
 const runnerCallChildren = new Set<ReturnType<typeof Bun.spawn>>();
 
 function callRunnerCli(
@@ -93,8 +91,6 @@ afterEach(async () => {
   for (const child of runnerCallChildren) child.kill("SIGKILL");
   await Promise.allSettled([...runnerCallChildren].map((child) => child.exited));
   runnerCallChildren.clear();
-  for (const dir of fixtureDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
-  fixtureDirs.clear();
 });
 
 const transcript: string[] = [
@@ -150,7 +146,6 @@ async function waitForProcessExit(pid: number, timeoutMs = 5_000): Promise<boole
 
 function fixture(limit = 3) {
   const dir = mkdtempSync(join(tmpdir(), "ak-runner-"));
-  fixtureDirs.add(dir);
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
