@@ -1,5 +1,5 @@
 /**
- * Episode memory: ended claude-mem sessions become `episodes.jsonl` rows,
+ * Episode memory: ended observed sessions become `episodes.jsonl` rows,
  * deterministically, each with a priority. Rows are only ever appended; when a
  * resumed session gains observations, its newer row supersedes the older one.
  * Consolidation is recorded beside them in `raw/consolidated.jsonl` as

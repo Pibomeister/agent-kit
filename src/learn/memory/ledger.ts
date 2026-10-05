@@ -4,7 +4,8 @@
  * | File | What |
  * |---|---|
  * | `memory.md` | the organized working memory; the only prose injected at session start, with confirmed lessons |
- * | `episodes.jsonl` | append-only episode revisions for ended claude-mem sessions, with latest revision winning |
+ * | `episodes.jsonl` | append-only episode revisions for ended observed sessions, with latest revision winning |
+ * | `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | turns and sessions captured from worker host records (`sources/worker-sessions.ts`) |
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |

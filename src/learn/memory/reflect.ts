@@ -1,6 +1,7 @@
 /**
- * The reflector: the previous `memory.md` plus new claude-mem observations
- * become a rewritten `memory.md`. One judge call (role `reflector`), then
+ * The reflector: the previous `memory.md` plus new observations, from claude-mem
+ * and from captured worker sessions, become a rewritten `memory.md`. One judge
+ * call (role `reflector`), then
  * deterministic gates: provenance (every bullet cites an input id), the
  * security channel and quarantine (redact.ts: a flagged observation becomes
  * one runtime-written bullet and nothing it said survives), then the
