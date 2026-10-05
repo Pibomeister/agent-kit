@@ -77,11 +77,13 @@ export function registryHygiene(input: Registry): RegistryHygiene {
   return { registry, warnings };
 }
 
-/** Add or refresh one root. A root new to the registry is refused, with the warning returned, when its claude-mem project already has one. */
+/** Add or refresh one root. A root taking a claude-mem project that another root already holds is refused, with the warning returned. */
 function admit(registry: Registry, entry: RegistryEntry): string | null {
   const folder = projectFolderName(entry.root);
-  if (registry[folder] === undefined) {
-    const established = Object.values(registry).find((other) => other.mem_project === entry.mem_project);
+  if (registry[folder]?.mem_project !== entry.mem_project) {
+    const established = Object.entries(registry).find(
+      ([other, held]) => other !== folder && held.mem_project === entry.mem_project,
+    )?.[1];
     if (established !== undefined)
       return `registry warning: claude-mem project '${entry.mem_project}' is already registered at ${established.root}; refusing ${entry.root}`;
   }

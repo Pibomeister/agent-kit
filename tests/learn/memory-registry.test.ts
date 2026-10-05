@@ -80,6 +80,45 @@ describe("registry", () => {
     ).toBe(10);
   });
 
+  test("a registered root is not moved onto a claude-mem project another root holds", () => {
+    const { config } = setup();
+    const shop = join(projectScratch(), "shop");
+    const other = join(projectScratch(), "other");
+    for (const root of [shop, other]) mkdirSync(join(root, ".git"), { recursive: true });
+    registerRoot(config, shop, 5);
+    registerRoot(config, other, 5);
+    const warnings: string[] = [];
+    const registry = discoverProjects(config, [{ project: "shop", cwd: other, last_seen: 10 }], (warning) =>
+      warnings.push(warning),
+    );
+    expect(Object.values(registry)).toEqual([
+      { root: shop, mem_project: "shop", last_seen: 5 },
+      { root: other, mem_project: "other", last_seen: 5 },
+    ]);
+    expect(warnings).toEqual([
+      `registry warning: claude-mem project 'shop' is already registered at ${shop}; refusing ${other}`,
+    ]);
+    expect(readRegistry(config)).toEqual(registry);
+  });
+
+  test("roots already sharing a claude-mem project still refresh", () => {
+    const { config } = setup();
+    const first = join(projectScratch(), "first", "shop");
+    const second = join(projectScratch(), "second", "shop");
+    for (const root of [first, second]) mkdirSync(join(root, ".git"), { recursive: true });
+    mkdirSync(config.runtimeDir, { recursive: true });
+    writeFileSync(
+      registryPath(config),
+      `${JSON.stringify({
+        [projectFolderName(first)]: { root: first, mem_project: "shop", last_seen: 1 },
+        [projectFolderName(second)]: { root: second, mem_project: "shop", last_seen: 2 },
+      })}\n`,
+    );
+    expect(registerRoot(config, first, 8).refusal).toBeNull();
+    expect(registerRoot(config, second, 9).refusal).toBeNull();
+    expect(Object.values(readRegistry(config)).map((entry) => entry.last_seen)).toEqual([8, 9]);
+  });
+
   test("two roots for one claude-mem project leave one active entry and warn", () => {
     const { config } = setup();
     const first = join(projectScratch(), "first", "shop");
