@@ -1063,6 +1063,13 @@ schemas:
       One line of the learning runtime's span log: one finished review, memory, skills or hook unit
       with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
       and hashes only.
+  - id: guard-policy
+    batch: 13
+    status: authored
+    summary: >-
+      The guard runtime's policy data: protected paths, destructive command patterns, secret path
+      patterns, a path-to-tier map and the governed paths with their article ids. Hand-written until
+      the constitution compiler generates it.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.
