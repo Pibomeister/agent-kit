@@ -1,18 +1,19 @@
 /**
  * Offline capture for worker hosts that already persist their own sessions.
  * The parser never calls a host or a model: it reads Codex rollouts, Grok
- * session folders and Kimi wire logs, then normalizes their public transcript
- * events into the observation-source shape used by the memory loop.
+ * session folders and Kimi wire logs, then condenses their public transcript
+ * into one observation per turn, in the observation-source shape used by the
+ * memory loop. Captured text is scrubbed of credentials and home directories
+ * and cut to short excerpts before it is stored; full tool output never is.
  */
 import { createHash } from "node:crypto";
 import Ajv from "ajv";
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Ledger } from "../core/ledger.ts";
-import { run } from "../core/proc.ts";
-import { appendJsonl, readJsonl } from "../core/store.ts";
-import type { Registry } from "../memory/registry.ts";
+import { appendJsonl, readJsonl, writeJsonl } from "../core/store.ts";
+import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
 
@@ -39,6 +40,8 @@ export interface CapturedSession {
   cwd: string;
   started_at_epoch: number;
   completed_at_epoch: number | null;
+  /** When the host last wrote the record. */
+  modified_at_epoch: number;
   prompt_count: number;
   request: string | null;
   completed: string | null;
@@ -49,11 +52,17 @@ export interface CapturedSession {
 
 interface StoredSession extends SessionRow {
   native_id: string;
+  modified_at_epoch: number;
   prompt_count: number;
   request: string | null;
   completed: string | null;
   next_steps: string | null;
   files_modified: string[];
+}
+
+interface StoredObservation extends ObservationRow {
+  /** Digest of the row's title and text, which is how a later scan recognizes it. */
+  key: string;
 }
 
 type JsonScalar = string | number | boolean | null;
@@ -67,17 +76,60 @@ interface ParsedToolInput {
   parsed: JsonValue;
 }
 
+interface ToolCall {
+  name: string;
+  input: string;
+  output: string;
+}
+
+/** One user prompt and everything the worker did until the next one. */
+interface Turn {
+  prompt: string;
+  reply: string;
+  calls: ToolCall[];
+  files: string[];
+  at: number;
+}
+
 export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
 export const CAPTURE_OBSERVATIONS_FILE = "raw/worker-observations.jsonl";
 export const CAPTURE_SESSIONS_FILE = "raw/worker-sessions.jsonl";
-const MAX_OBSERVATIONS = 999;
-const MAX_TEXT = 8_000;
+/** How far back the scan reads host records, and how long the ledger keeps a session its host stopped writing. */
+export const CAPTURE_WINDOW_MS = 30 * 86_400_000;
+export const MAX_OBSERVATIONS = 999;
+/** A turn nobody ended counts as over once its record has been quiet this long. */
+const IDLE_MS = 3_600_000;
+const READ_TEXT = 8_000;
+const MAX_TEXT = 2_000;
+const PROMPT_CHARS = 160;
+const REPLY_CHARS = 240;
+const INPUT_CHARS = 120;
+const OUTPUT_CHARS = 300;
 const FAILURE_WORDS =
   "(?:errors?|fail(?:s|ed|ures?|ing)?|warnings?|regressions?|timeouts?|blocked|findings?|violations?)";
 const FAILURE_TEXT = new RegExp(`\\b${FAILURE_WORDS}\\b`, "i");
 const ZERO_FAILURES = new RegExp(`\\b(?:0|no)\\s+${FAILURE_WORDS}\\b`, "gi");
 const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
+/** Credential formats and home directories, each replaced by `[redacted:<kind>]` before captured text is kept. */
+const SECRETS: ReadonlyArray<readonly [kind: string, pattern: RegExp]> = [
+  ["private-key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g],
+  ["aws-access-key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g],
+  ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g],
+  ["slack-token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/g],
+  ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
+  ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
+  ["bearer-token", /(?<=\bBearer\s+)(?=[A-Za-z0-9._~+/-]*[0-9])[A-Za-z0-9._~+/-]{20,}=*/gi],
+  ["url-credentials", /(?<=\b[A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]+:(?![$%{<])[^\s/?#@"'<>]+(?=@)/g],
+  [
+    "env-secret",
+    /(?<=\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*["']?)[^\s"']{8,}/g,
+  ],
+  [
+    "home-path",
+    /(?<=^|[\s"'`([{<=,;:|>])(?:\/(?:var\/)?home\/[A-Za-z0-9._-]+|\/Users\/(?!Shared\b)[A-Za-z0-9._-]+)(?![A-Za-z0-9._-])/gm,
+  ],
+];
 const jsonValidator = new Ajv({ strict: false });
 const validateJsonValue = jsonValidator.compile<JsonValue>({
   $defs: {
@@ -135,6 +187,25 @@ function readJsonLines(path: string): JsonObject[] {
     });
 }
 
+/** The first line of a file, read without loading the rest. */
+function firstLine(path: string): string {
+  const fd = openSync(path, "r");
+  try {
+    const chunks: Buffer[] = [];
+    const buffer = Buffer.alloc(65_536);
+    for (;;) {
+      const read = readSync(fd, buffer, 0, buffer.length, null);
+      if (read === 0) break;
+      const end = buffer.subarray(0, read).indexOf(10);
+      chunks.push(Buffer.from(buffer.subarray(0, end === -1 ? read : end)));
+      if (end !== -1) break;
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function epoch(value: JsonValue | undefined, fallback: number): number {
   const direct = number(value);
   if (direct !== null) return direct > 10_000_000_000 ? direct : Math.round(direct * 1000);
@@ -144,11 +215,23 @@ function epoch(value: JsonValue | undefined, fallback: number): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+function scrubbed(text: string): string {
+  return SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text);
+}
+
+/** Host text made storable: control characters dropped, scrubbed, then cut. Scrubbing runs before the cut so no cut leaves half a credential. */
 function clipped(value: string): string {
-  return value
-    .replace(/\p{Cc}/gu, (character) => (character === "\n" || character === "\t" ? character : " "))
-    .trim()
-    .slice(0, MAX_TEXT);
+  return scrubbed(
+    value
+      .replace(/\p{Cc}/gu, (character) => (character === "\n" || character === "\t" ? character : " "))
+      .trim()
+      .slice(0, READ_TEXT),
+  ).slice(0, MAX_TEXT);
+}
+
+function excerpt(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 /** Public text parts only. Encrypted content and Kimi `think` parts are deliberately excluded. */
@@ -171,12 +254,8 @@ function stableSessionId(host: WorkerHost, nativeId: string): string {
   return createHash("sha256").update(`${host}:${nativeId}`).digest("hex").slice(0, 32);
 }
 
-function observation(type: string, title: string, text: string, at: number, files: string[] = []): CapturedObservation {
-  return { type, title, text: clipped(text), at, files_modified: [...new Set(files)].toSorted() };
-}
-
-function resultType(text: string): string {
-  return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, "")) ? "error" : "tool-result";
+function reportsFailure(text: string): boolean {
+  return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, ""));
 }
 
 function normalizedFile(path: string, cwd: string): string | null {
@@ -184,7 +263,7 @@ function normalizedFile(path: string, cwd: string): string | null {
   if (clean === "" || clean.includes("\n")) return null;
   if (!isAbsolute(clean)) return clean.replace(/^\.\//, "");
   const rel = relative(cwd, clean);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : clean;
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : scrubbed(clean);
 }
 
 function filesFromValue(value: JsonValue | undefined, cwd: string): string[] {
@@ -219,32 +298,112 @@ function toolInput(value: JsonValue | undefined): ParsedToolInput {
   return { text: clipped(JSON.stringify(value ?? {})), parsed: value ?? {} };
 }
 
+/** Collects a session's events into turns. A prompt opens a turn; a tool output joins the oldest call still waiting for one. */
+function turnLog() {
+  const turns: Turn[] = [];
+  const start = (prompt: string, at: number): Turn => {
+    const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
+    turns.push(turn);
+    return turn;
+  };
+  const current = (at: number): Turn => {
+    const turn = turns.at(-1) ?? start("", at);
+    turn.at = at;
+    return turn;
+  };
+  return {
+    turns,
+    prompt(text: string, at: number): void {
+      start(text, at);
+    },
+    reply(text: string, at: number): void {
+      current(at).reply = text;
+    },
+    call(name: string, input: ParsedToolInput, cwd: string, at: number): void {
+      const turn = current(at);
+      turn.calls.push({ name, input: input.text, output: "" });
+      if (WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
+    },
+    output(text: string, at: number): void {
+      const turn = current(at);
+      const waiting = turn.calls.find((call) => call.output === "");
+      if (waiting === undefined) turn.calls.push({ name: "tool", input: "", output: text });
+      else waiting.output = text;
+    },
+  };
+}
+
+/**
+ * One turn as one observation: the prompt, the last reply, how often each tool ran, then each call
+ * with short excerpts of its arguments and output, failing calls first. A turn with a failing
+ * output is typed `error`.
+ */
+function turnObservation(turn: Turn): CapturedObservation {
+  const failing = turn.calls.filter((call) => reportsFailure(call.output));
+  const counts = new Map<string, number>();
+  for (const call of turn.calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
+  const lines: string[] = [];
+  if (turn.prompt !== "") lines.push(`prompt: ${excerpt(turn.prompt, PROMPT_CHARS)}`);
+  if (turn.reply !== "") lines.push(`reply: ${excerpt(turn.reply, REPLY_CHARS)}`);
+  if (counts.size > 0) lines.push(`tools: ${[...counts].map(([name, count]) => `${name} x${count}`).join(", ")}`);
+  for (const call of [...failing, ...turn.calls.filter((item) => !failing.includes(item))])
+    lines.push(`${call.name} ${excerpt(call.input, INPUT_CHARS)} -> ${excerpt(call.output, OUTPUT_CHARS)}`);
+  return {
+    type: failing.length > 0 ? "error" : "turn",
+    title: "worker turn",
+    text: lines.join("\n").slice(0, MAX_TEXT),
+    at: turn.at,
+    files_modified: [...new Set(turn.files)].toSorted(),
+  };
+}
+
+/**
+ * The session as stored. A last turn still running is left for a later scan, since its outcome is
+ * not written yet. Past `MAX_OBSERVATIONS` the first prompt and the newest turns are kept, with a
+ * marker row counting what was left out between them.
+ */
 function session(
   host: WorkerHost,
   nativeId: string,
   cwd: string,
-  started: number,
-  ended: number | null,
-  observations: CapturedObservation[],
-  files: Set<string>,
+  times: { started: number; ended: number | null; modified: number; now: number },
+  log: readonly Turn[],
 ): CapturedSession | null {
-  const kept = observations.filter((row) => row.text !== "").slice(0, MAX_OBSERVATIONS);
-  if (kept.length === 0) return null;
-  const prompts = kept.filter((row) => row.type === "prompt");
-  const assistants = kept.filter((row) => row.type === "assistant");
+  const settled = times.ended !== null || times.now - times.modified > IDLE_MS;
+  const turns = (settled ? log : log.slice(0, -1)).filter(
+    (turn) => turn.prompt !== "" || turn.reply !== "" || turn.calls.length > 0,
+  );
+  if (turns.length === 0) return null;
+  const prompts = turns.filter((turn) => turn.prompt !== "");
+  const tail = turns.length > MAX_OBSERVATIONS ? turns.slice(2 - MAX_OBSERVATIONS) : turns;
+  const head = prompts.slice(0, 1).filter((turn) => !tail.includes(turn));
+  const dropped = turns.length - tail.length - head.length;
+  const marker: CapturedObservation[] =
+    dropped > 0
+      ? [
+          {
+            type: "truncated",
+            title: "worker turns omitted",
+            text: `${dropped} earlier turns of this session were left out`,
+            at: tail[0]?.at ?? times.started,
+            files_modified: [],
+          },
+        ]
+      : [];
   return {
     native_id: nativeId,
     memory_session_id: stableSessionId(host, nativeId),
     platform: host,
     cwd,
-    started_at_epoch: started,
-    completed_at_epoch: ended === null ? null : Math.max(started, ended),
+    started_at_epoch: times.started,
+    completed_at_epoch: times.ended === null ? null : Math.max(times.started, times.ended),
+    modified_at_epoch: times.modified,
     prompt_count: prompts.length,
-    request: prompts[0]?.text ?? null,
-    completed: assistants.at(-1)?.text ?? null,
+    request: prompts[0]?.prompt ?? null,
+    completed: turns.findLast((turn) => turn.reply !== "")?.reply ?? null,
     next_steps: null,
-    files_modified: [...files].toSorted(),
-    observations: kept,
+    files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
+    observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)],
   };
 }
 
@@ -254,18 +413,26 @@ function codexUserContent(value: JsonValue | undefined): JsonValue | undefined {
   return CODEX_INJECTED.test(string(value) ?? "") ? undefined : value;
 }
 
-export function parseCodexSession(path: string): CapturedSession | null {
+/** A rollout opens with its `session_meta` line, which is all the scan reads to place a session. */
+function codexMeta(row: JsonObject | null | undefined): JsonObject | null {
+  return row?.type === "session_meta" ? object(row.payload) : null;
+}
+
+function codexCwd(path: string): string | null {
+  return string(codexMeta(object(parseJson(firstLine(path))))?.cwd);
+}
+
+export function parseCodexSession(path: string, now = Date.now()): CapturedSession | null {
   const rows = readJsonLines(path);
-  const meta = rows.find((row) => row.type === "session_meta" && object(row.payload)?.cwd !== undefined);
-  const payload = object(meta?.payload);
+  const meta = rows[0];
+  const payload = codexMeta(meta);
   const cwd = string(payload?.cwd);
   const nativeId = string(payload?.id) ?? string(payload?.session_id);
   if (cwd === null || nativeId === null) return null;
-  const fallback = statSync(path).mtimeMs;
-  const started = epoch(payload?.timestamp ?? meta?.timestamp, fallback);
+  const modified = statSync(path).mtimeMs;
+  const started = epoch(payload?.timestamp ?? meta?.timestamp, modified);
   let ended: number | null = null;
-  const observations: CapturedObservation[] = [];
-  const files = new Set<string>();
+  const log = turnLog();
   let offset = 0;
   for (const row of rows) {
     const event = object(row.payload);
@@ -275,69 +442,62 @@ export function parseCodexSession(path: string): CapturedSession | null {
     if (event.type === "task_complete") ended = Math.max(ended ?? 0, epoch(event.completed_at, at));
     if (event.type === "message" && (event.role === "user" || event.role === "assistant")) {
       const text = publicText(event.role === "user" ? codexUserContent(event.content) : event.content);
-      if (text !== "")
-        observations.push(
-          observation(event.role === "user" ? "prompt" : "assistant", `${event.role} message`, text, at),
-        );
+      if (text === "") continue;
+      if (event.role === "user") log.prompt(text, at);
+      else log.reply(text, at);
       continue;
     }
     if (event.type === "custom_tool_call" || event.type === "function_call") {
-      const name = string(event.name) ?? "tool";
-      const input = toolInput(event.input ?? event.arguments);
-      const touched = WRITE_TOOLS.test(name) ? filesFromValue(input.parsed, cwd) : [];
-      for (const file of touched) files.add(file);
-      observations.push(observation("tool-use", name, input.text, at, touched));
+      log.call(string(event.name) ?? "tool", toolInput(event.input ?? event.arguments), cwd, at);
       continue;
     }
     if (event.type === "custom_tool_call_output" || event.type === "function_call_output") {
       const text = publicText(event.output);
-      if (text !== "") observations.push(observation(resultType(text), "tool result", text, at));
+      if (text !== "") log.output(text, at);
     }
   }
-  return session("codex", nativeId, cwd, started, ended, observations, files);
+  return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
 }
 
-export function parseGrokSession(dir: string): CapturedSession | null {
+function grokCwd(dir: string, summary: JsonObject | null): string | null {
+  const recorded = string(object(summary?.info)?.cwd);
+  if (recorded !== null) return recorded;
+  try {
+    return decodeURIComponent(basename(dirname(dir)));
+  } catch {
+    return null;
+  }
+}
+
+export function parseGrokSession(dir: string, now = Date.now()): CapturedSession | null {
   const historyPath = join(dir, "chat_history.jsonl");
   if (!existsSync(historyPath)) return null;
   const summary = readObject(join(dir, "summary.json"));
-  const info = object(summary?.info);
-  let cwd = string(info?.cwd);
-  if (cwd === null) {
-    try {
-      cwd = decodeURIComponent(basename(dirname(dir)));
-    } catch {
-      return null;
-    }
-  }
-  const nativeId = string(info?.id) ?? basename(dir);
-  const fallback = statSync(historyPath).mtimeMs;
-  const started = epoch(summary?.created_at, fallback);
+  const cwd = grokCwd(dir, summary);
+  if (cwd === null) return null;
+  const nativeId = string(object(summary?.info)?.id) ?? basename(dir);
+  const modified = statSync(historyPath).mtimeMs;
+  const started = epoch(summary?.created_at, modified);
   let ended: number | null = null;
-  const observations: CapturedObservation[] = [];
-  const files = new Set<string>();
+  const log = turnLog();
   let offset = 0;
   const history = readJsonLines(historyPath);
   for (const row of history) {
     const at = started + offset++;
     if (row.type === "user" && row.synthetic_reason === undefined) {
       const text = publicText(row.content);
-      if (text !== "") observations.push(observation("prompt", "user message", text, at));
+      if (text !== "") log.prompt(text, at);
     } else if (row.type === "assistant") {
       const text = publicText(row.content);
-      if (text !== "") observations.push(observation("assistant", "assistant message", text, at));
+      if (text !== "") log.reply(text, at);
       for (const call of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
         const tool = object(call);
         const fn = object(tool?.function);
-        const name = string(fn?.name ?? tool?.name) ?? "tool";
-        const input = toolInput(fn?.arguments ?? tool?.arguments);
-        const touched = WRITE_TOOLS.test(name) ? filesFromValue(input.parsed, cwd) : [];
-        for (const file of touched) files.add(file);
-        observations.push(observation("tool-use", name, input.text, at, touched));
+        log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at);
       }
     } else if (row.type === "tool_result") {
       const text = publicText(row.content);
-      if (text !== "") observations.push(observation(resultType(text), "tool result", text, at));
+      if (text !== "") log.output(text, at);
     }
   }
   const lastPublic = history.findLast(
@@ -348,22 +508,21 @@ export function parseGrokSession(dir: string): CapturedSession | null {
     publicText(lastPublic.content) !== "" &&
     (!Array.isArray(lastPublic.tool_calls) || lastPublic.tool_calls.length === 0)
   )
-    ended = epoch(summary?.last_active_at ?? summary?.updated_at, fallback);
-  return session("grok", nativeId, cwd, started, ended, observations, files);
+    ended = epoch(summary?.last_active_at ?? summary?.updated_at, modified);
+  return session("grok", nativeId, cwd, { started, ended, modified, now }, log.turns);
 }
 
-export function parseKimiSession(dir: string): CapturedSession | null {
+export function parseKimiSession(dir: string, now = Date.now()): CapturedSession | null {
   const state = readObject(join(dir, "state.json"));
   const path = join(dir, "agents", "main", "wire.jsonl");
   if (state === null || !existsSync(path)) return null;
   const cwd = string(state.cwd);
   const nativeId = string(state.id) ?? basename(dir);
   if (cwd === null) return null;
-  const fallback = statSync(path).mtimeMs;
-  const started = epoch(state.createdAt, fallback);
+  const modified = statSync(path).mtimeMs;
+  const started = epoch(state.createdAt, modified);
   let ended: number | null = null;
-  const observations: CapturedObservation[] = [];
-  const files = new Set<string>();
+  const log = turnLog();
   for (const row of readJsonLines(path)) {
     const at = epoch(row.time, started);
     if (row.type === "turn.prompt" || row.type === "agent.turn.started" || row.type === "turn.steer") ended = null;
@@ -378,26 +537,21 @@ export function parseKimiSession(dir: string): CapturedSession | null {
     const role = string(message.role);
     const origin = object(message.origin) ?? object(object(envelope?.meta)?.origin);
     if (role === "user" && origin?.kind !== "user") continue;
-    if (role === "user" || role === "assistant" || role === "tool") {
-      const text = publicText(message.content);
-      if (text !== "") {
-        const type = role === "user" ? "prompt" : role === "assistant" ? "assistant" : resultType(text);
-        observations.push(observation(type, `${role} message`, text, at));
-      }
+    const text = publicText(message.content);
+    if (text !== "") {
+      if (role === "user") log.prompt(text, at);
+      else if (role === "assistant") log.reply(text, at);
+      else if (role === "tool") log.output(text, at);
     }
     if (role !== "assistant") continue;
     for (const call of Array.isArray(message.toolCalls) ? message.toolCalls : []) {
       const tool = object(call);
-      if (tool === null) continue;
-      const name = string(tool.name) ?? "tool";
-      const input = toolInput(tool.arguments);
-      const touched = WRITE_TOOLS.test(name) ? filesFromValue(input.parsed, cwd) : [];
-      for (const file of touched) files.add(file);
-      observations.push(observation("tool-use", name, input.text, at, touched));
+      if (tool !== null) log.call(string(tool.name) ?? "tool", toolInput(tool.arguments), cwd, at);
     }
   }
-  const parsed = session("kimi", nativeId, cwd, started, ended, observations, files);
-  if (parsed !== null && parsed.request === null) parsed.request = string(state.lastPrompt);
+  const parsed = session("kimi", nativeId, cwd, { started, ended, modified, now }, log.turns);
+  const lastPrompt = string(state.lastPrompt);
+  if (parsed !== null && parsed.request === null && lastPrompt !== null) parsed.request = clipped(lastPrompt);
   return parsed;
 }
 
@@ -444,12 +598,40 @@ function walk(dir: string, accept: (path: string) => boolean): string[] {
   return out.toSorted();
 }
 
-/** Every recent host session that parses. An unreadable record is skipped and reported through `warn`. */
+/**
+ * Where a recorded cwd belongs: the deepest registered root, or worktree recorded for one, that
+ * contains it. Paths are compared as text, so nothing here touches a repository.
+ */
+export function workerRootResolver(registry: Registry, worktrees: Worktrees): (cwd: string) => string | null {
+  const roots = new Set(Object.values(registry).map((entry) => entry.root));
+  const places = [
+    ...[...roots].map((root): [string, string] => [root, root]),
+    ...Object.entries(worktrees).filter(([, root]) => roots.has(root)),
+  ].toSorted((a, b) => b[0].length - a[0].length);
+  return (cwd) => {
+    const path = resolve(cwd);
+    return places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1] ?? null;
+  };
+}
+
+export interface WorkerScan {
+  /** Parsed sessions by the registered root their cwd resolved to, oldest first. */
+  sessions: Map<string, CapturedSession[]>;
+  /** Recent sessions whose cwd resolved to no registered root; these are never parsed. */
+  unmatched: number;
+}
+
+/**
+ * Recent host sessions under a registered root. Only a record's cwd is read before `rootFor`
+ * places it, so a session of an unregistered project costs one small read. An unreadable record
+ * is skipped and reported through `warn`.
+ */
 export function scanWorkerSessions(
   homes: WorkerHomes,
+  rootFor: (cwd: string) => string | null,
   options: { sinceMs?: number; warn?: (line: string) => void } = {},
-): CapturedSession[] {
-  const sinceMs = options.sinceMs ?? Date.now() - 30 * 86_400_000;
+): WorkerScan {
+  const sinceMs = options.sinceMs ?? Date.now() - CAPTURE_WINDOW_MS;
   const recent = (path: string) => {
     try {
       return statSync(path).mtimeMs >= sinceMs;
@@ -457,11 +639,19 @@ export function scanWorkerSessions(
       return false;
     }
   };
-  const sessions: CapturedSession[] = [];
-  const collect = (path: string, parse: () => CapturedSession | null) => {
+  const scan: WorkerScan = { sessions: new Map(), unmatched: 0 };
+  const collect = (path: string, cwdOf: () => string | null, parse: () => CapturedSession | null) => {
+    if (!recent(path)) return;
     try {
+      const cwd = cwdOf();
+      if (cwd === null) return;
+      const root = rootFor(cwd);
+      if (root === null) {
+        scan.unmatched += 1;
+        return;
+      }
       const parsed = parse();
-      if (parsed !== null) sessions.push(parsed);
+      if (parsed !== null) scan.sessions.set(root, [...(scan.sessions.get(root) ?? []), parsed]);
     } catch (error) {
       options.warn?.(`worker session skipped: ${path}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -470,91 +660,56 @@ export function scanWorkerSessions(
     for (const path of walk(
       join(home, "sessions"),
       (file) => basename(file).startsWith("rollout-") && file.endsWith(".jsonl"),
-    )) {
-      if (recent(path)) collect(path, () => parseCodexSession(path));
-    }
+    ))
+      collect(
+        path,
+        () => codexCwd(path),
+        () => parseCodexSession(path),
+      );
   }
   for (const home of homes.grok) {
     for (const path of walk(join(home, "sessions"), (file) => basename(file) === "chat_history.jsonl")) {
-      if (recent(path)) collect(path, () => parseGrokSession(dirname(path)));
+      const dir = dirname(path);
+      collect(
+        path,
+        () => grokCwd(dir, readObject(join(dir, "summary.json"))),
+        () => parseGrokSession(dir),
+      );
     }
   }
   for (const home of homes.kimi) {
     for (const path of walk(join(home, "sessions"), (file) => basename(file) === "state.json")) {
-      if (existsSync(join(dirname(path), "agents", "main", "wire.jsonl")) && recent(path))
-        collect(path, () => parseKimiSession(dirname(path)));
+      const dir = dirname(path);
+      if (existsSync(join(dir, "agents", "main", "wire.jsonl")))
+        collect(
+          path,
+          () => string(readObject(path)?.cwd),
+          () => parseKimiSession(dir),
+        );
     }
   }
-  return sessions.toSorted(
-    (a, b) => a.started_at_epoch - b.started_at_epoch || a.memory_session_id.localeCompare(b.memory_session_id),
-  );
+  for (const rows of scan.sessions.values())
+    rows.sort(
+      (a, b) => a.started_at_epoch - b.started_at_epoch || a.memory_session_id.localeCompare(b.memory_session_id),
+    );
+  return scan;
 }
 
-function commonDir(cwd: string): string | null {
-  const result = run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, timeoutMs: 10_000 });
-  if (result.code !== 0 || result.stdout.trim() === "") return null;
-  try {
-    return realpathSync(result.stdout.trim());
-  } catch {
-    return resolve(cwd, result.stdout.trim());
-  }
+function rowKey(row: CapturedObservation): string {
+  return createHash("sha256").update(`${row.title}\n${row.text}`).digest("hex").slice(0, 16);
 }
 
-function isWorktree(root: string): boolean {
-  return run(["git", "rev-parse", "--is-inside-work-tree"], { cwd: root, timeoutMs: 10_000 }).stdout.trim() === "true";
-}
-
-/** Match by repository identity, never by a same-looking cwd or basename. */
-export function registeredRootForCwd(registry: Registry, cwd: string): string | null {
-  const target = commonDir(cwd);
-  if (target === null) return null;
-  return registeredRootsByCommonDir(registry).get(target) ?? null;
-}
-
-function registeredRootsByCommonDir(registry: Registry): Map<string, string> {
-  const roots = new Map<string, string>();
-  for (const entry of Object.values(registry)) {
-    for (const candidate of [entry.root, ...(entry.aliases ?? [])]) {
-      if (!isWorktree(candidate)) continue;
-      const common = commonDir(candidate);
-      if (common !== null) roots.set(common, entry.root);
-    }
-  }
-  return roots;
-}
-
-export function sessionsByRegisteredRoot(
-  registry: Registry,
-  sessions: readonly CapturedSession[],
-): Map<string, CapturedSession[]> {
-  const grouped = new Map<string, CapturedSession[]>();
-  const roots = registeredRootsByCommonDir(registry);
-  const cache = new Map<string, string | null>();
-  for (const item of sessions) {
-    let root = cache.get(item.cwd);
-    if (root === undefined) {
-      const common = commonDir(item.cwd);
-      root = common === null ? null : (roots.get(common) ?? null);
-      cache.set(item.cwd, root);
-    }
-    if (root === null) continue;
-    const rows = grouped.get(root) ?? [];
-    rows.push(item);
-    grouped.set(root, rows);
-  }
-  return grouped;
-}
-
-function storedObservation(item: CapturedSession, row: CapturedObservation, id: number): ObservationRow {
+function storedObservation(item: CapturedSession, row: CapturedObservation, id: number): StoredObservation {
   return {
     id,
+    key: rowKey(row),
     memory_session_id: item.memory_session_id,
     project: "",
     type: row.type,
     title: row.title,
     subtitle: null,
-    narrative: row.text,
-    facts: JSON.stringify([row.text]),
+    narrative: null,
+    facts: row.text,
     concepts: JSON.stringify([]),
     files_read: JSON.stringify([]),
     files_modified: JSON.stringify(row.files_modified),
@@ -565,10 +720,6 @@ function storedObservation(item: CapturedSession, row: CapturedObservation, id: 
   };
 }
 
-function rowKey(title: string, text: string): string {
-  return `${title}\n${text}`;
-}
-
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
   return {
     id: 0,
@@ -576,6 +727,7 @@ function storedSession(item: CapturedSession, observationCount: number): StoredS
     platform_source: item.platform,
     started_at_epoch: item.started_at_epoch,
     completed_at_epoch: item.completed_at_epoch,
+    modified_at_epoch: item.modified_at_epoch,
     observation_count: observationCount,
     native_id: item.native_id,
     prompt_count: item.prompt_count,
@@ -587,43 +739,57 @@ function storedSession(item: CapturedSession, observationCount: number): StoredS
 }
 
 /**
- * Append the rows of each host session the ledger does not hold yet, matched by title and text
- * rather than position, since a host may rewrite its record. Returns observations appended.
+ * Append the rows of each host session the ledger does not hold yet, matched by a digest of title
+ * and text rather than position, since a host may rewrite its record. A stored session that is not
+ * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the files hold the same
+ * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
+ * Returns observations appended.
  */
 export function captureWorkerSessions(
   ledger: Ledger,
   sessions: readonly CapturedSession[],
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; sinceMs?: number } = {},
 ): number {
-  const observations = readJsonl<ObservationRow>(ledger.path(CAPTURE_OBSERVATIONS_FILE));
+  const observationsPath = ledger.path(CAPTURE_OBSERVATIONS_FILE);
+  const sessionsPath = ledger.path(CAPTURE_SESSIONS_FILE);
+  const held = readJsonl<StoredObservation>(observationsPath);
+  const latest = new Map(readJsonl<StoredSession>(sessionsPath).map((row) => [row.memory_session_id, row]));
+  const scanned = new Set(sessions.map((item) => item.memory_session_id));
+  const expired = (sid: string) =>
+    !scanned.has(sid) && (latest.get(sid)?.modified_at_epoch ?? 0) < (options.sinceMs ?? 0);
+  const newestId = held.reduce((newest, row) => Math.max(newest, row.id), CAPTURE_ID_BASE - 1);
   const stored = new Map<string, string[]>();
-  let nextId = CAPTURE_ID_BASE - 1;
-  for (const row of observations) {
-    nextId = Math.max(nextId, row.id);
-    const keys = stored.get(row.memory_session_id) ?? [];
-    keys.push(rowKey(row.title ?? "", row.narrative ?? ""));
-    stored.set(row.memory_session_id, keys);
-  }
-  const fresh: ObservationRow[] = [];
+  for (const row of held) stored.set(row.memory_session_id, [...(stored.get(row.memory_session_id) ?? []), row.key]);
+  let nextId = newestId;
+  const fresh: StoredObservation[] = [];
   const revisions: StoredSession[] = [];
   for (const item of sessions) {
     const keys = stored.get(item.memory_session_id) ?? [];
     const unseen = new Map<string, number>();
     for (const key of keys) unseen.set(key, (unseen.get(key) ?? 0) + 1);
-    const appended: ObservationRow[] = [];
+    const appended: StoredObservation[] = [];
     for (const row of item.observations) {
-      const key = rowKey(row.title, row.text);
-      const held = unseen.get(key) ?? 0;
-      if (held > 0) unseen.set(key, held - 1);
+      const key = rowKey(row);
+      const count = unseen.get(key) ?? 0;
+      if (count > 0) unseen.set(key, count - 1);
       else appended.push(storedObservation(item, row, ++nextId));
     }
     if (appended.length === 0) continue;
     fresh.push(...appended);
     revisions.push(storedSession(item, keys.length + appended.length));
   }
-  if (fresh.length > 0 && options.dryRun !== true) {
-    appendJsonl(ledger.path(CAPTURE_OBSERVATIONS_FILE), fresh);
-    appendJsonl(ledger.path(CAPTURE_SESSIONS_FILE), revisions);
+  if (options.dryRun === true) return fresh.length;
+  const kept = held.filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId));
+  if (kept.length < held.length) {
+    for (const revision of revisions) latest.set(revision.memory_session_id, revision);
+    writeJsonl(observationsPath, [...kept, ...fresh]);
+    writeJsonl(
+      sessionsPath,
+      [...latest.values()].filter((row) => !expired(row.memory_session_id)),
+    );
+  } else if (fresh.length > 0) {
+    appendJsonl(observationsPath, fresh);
+    appendJsonl(sessionsPath, revisions);
   }
   return fresh.length;
 }

@@ -4,9 +4,10 @@
  * and for each project active in the last seven days record new episodes,
  * then run whichever jobs are due. Failures are logged, never raised.
  *
- * claude-mem cwd discovery stays stat-only. Worker capture resolves only the
- * cwd already recorded by a host with `git --git-common-dir`, which is the
- * repository identity shared by the registered root and its linked worktrees.
+ * The scheduled path uses stat only. It never spawns git in a repository and
+ * never opens a file inside one: under a macOS scheduler that open blocks on
+ * the privacy prompt and ignores every timeout. Git runs only in the ledgers,
+ * which live under the config directory.
  */
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -22,20 +23,21 @@ import { deferredObservationIds } from "../review/ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "../review/ledger.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import {
+  CAPTURE_WINDOW_MS,
   type CapturedSession,
   captureWorkerSessions,
   ProjectMemorySource,
   scanWorkerSessions,
-  sessionsByRegisteredRoot,
   WorkerSessionSource,
   workerHomes,
+  workerRootResolver,
 } from "../sources/worker-sessions.ts";
 import { consolidate, readyEpisodes } from "./consolidate.ts";
 import { deep } from "./deep.ts";
 import { buildEpisodes, type EpisodeEvent, unconsolidatedEpisodes } from "./episodes.ts";
 import { appendRun, ensureMemoryLedger, logLine, type MemoryState, memoryDir, readState } from "./ledger.ts";
 import { backfill, reflect, unscreenedIds } from "./reflect.ts";
-import { discoverProjects, discoverySince, readRegistry } from "./registry.ts";
+import { discoverProjects, discoverySince, readRegistry, readWorktrees } from "./registry.ts";
 
 export type Job = "reflect" | "backfill" | "nightly" | "weekly";
 export const JOBS: readonly Job[] = ["reflect", "backfill", "nightly", "weekly"];
@@ -253,7 +255,7 @@ export function runProject(
   claude: ClaudeMemSource | null,
   root: string,
   memProject: string,
-  options: { job?: Job | "all"; force?: boolean; captured?: readonly CapturedSession[] } = {},
+  options: { job?: Job | "all"; force?: boolean; captured?: readonly CapturedSession[]; capturedSince?: number } = {},
 ): string[] {
   const dryRun = ctx.config.dryRun;
   const ledger = dryRun ? new Ledger(memoryDir(ctx.config, root)) : ensureMemoryLedger(memoryDir(ctx.config, root));
@@ -264,7 +266,7 @@ export function runProject(
     const out: string[] = [];
     let captured = 0;
     try {
-      captured = captureWorkerSessions(ledger, options.captured ?? [], { dryRun });
+      captured = captureWorkerSessions(ledger, options.captured ?? [], { dryRun, sinceMs: options.capturedSince });
       if ((options.captured?.length ?? 0) > 0) out.push(`worker observations +${captured}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -384,17 +386,17 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
           : readRegistry(ctx.config);
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;
-      const captured = sessionsByRegisteredRoot(
-        registry,
-        scanWorkerSessions(workerHomes(ctx.env), {
-          sinceMs: nowMs() - 30 * 86_400_000,
-          warn: (warning) => tickLog(ctx, warning),
-        }),
-      );
+      const capturedSince = nowMs() - CAPTURE_WINDOW_MS;
+      const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
+        sinceMs: capturedSince,
+        warn: (warning) => tickLog(ctx, warning),
+      });
+      if (scan.unmatched > 0)
+        tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and recorded worktree`);
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only) continue;
         if (!allowed(entry.root)) continue;
-        const workerSessions = captured.get(entry.root) ?? [];
+        const workerSessions = scan.sessions.get(entry.root) ?? [];
         const workerActivity = workerSessions.reduce(
           (latest, session) =>
             Math.max(latest, session.completed_at_epoch ?? session.observations.at(-1)?.at ?? session.started_at_epoch),
@@ -413,6 +415,7 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
             job: options.job,
             force: options.force,
             captured: workerSessions,
+            capturedSince,
           });
         } catch (error) {
           lines = [`failed: ${(error as Error).message}`];

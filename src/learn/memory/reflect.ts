@@ -77,9 +77,11 @@ function fit(rows: readonly ObservationRow[], inputChars: number): ObservationRo
 }
 
 /**
- * Observations after each source's watermark, under the input cap less the summaries' share. A
- * source whose watermark is zero fills from its newest. The sources alternate, each in its own id
- * order, so what is shown of a source is the run of ids next to its watermark. Returned oldest first.
+ * Observations after each source's watermark, under the input cap less the summaries' share.
+ * claude-mem at a zero watermark fills from its newest. Captured worker rows always fill from the
+ * oldest: their store holds only the scan window, and a session's turns are read in order. The
+ * sources alternate, each in its own id order, so what is shown of a source is the run of ids next
+ * to its watermark. Returned oldest first.
  */
 export function fetchNew(
   source: MemoryObservationSource,
@@ -89,8 +91,7 @@ export function fetchNew(
   capturedWatermark = 0,
 ): ObservationRow[] {
   const native = source.observationsSince(memProject, watermark, { newestFirst: watermark === 0 });
-  const captured =
-    source.capturedObservationsSince?.(memProject, capturedWatermark, { newestFirst: capturedWatermark === 0 }) ?? [];
+  const captured = source.capturedObservationsSince?.(memProject, capturedWatermark) ?? [];
   const rows: ObservationRow[] = [];
   for (let index = 0; index < Math.max(native.length, captured.length); index++)
     for (const row of [native[index], captured[index]]) if (row !== undefined) rows.push(row);

@@ -24,7 +24,7 @@
 import { mkdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
-import { projectFolderName, registryPath, rootOf, tickLogPath } from "../core/paths.ts";
+import { projectFolderName, registryPath, rootOf, tickLogPath, worktreeRoot, worktreesPath } from "../core/paths.ts";
 import { appendGated, nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
 import type { CwdRow } from "../sources/claude-mem.ts";
 
@@ -32,11 +32,12 @@ export interface RegistryEntry {
   root: string;
   mem_project: string;
   last_seen: number;
-  /** Other eligible roots folded into this entry; identity aliases only, never ledger roots. */
-  aliases?: string[];
 }
 
 export type Registry = Record<string, RegistryEntry>;
+
+/** Linked worktree path -> the registered root it belongs to, as its own sessions recorded it. */
+export type Worktrees = Record<string, string>;
 
 /** Working directories never worth a ledger: plugin caches and scratch space. */
 const SKIP_CWD = ["/plugins/cache/", "/tmp/", "/private/tmp/"];
@@ -45,6 +46,25 @@ export const DISCOVERY_DAYS = 14;
 
 export function readRegistry(config: LearnConfig): Registry {
   return readJson<Registry>(registryPath(config), {});
+}
+
+export function readWorktrees(config: LearnConfig): Worktrees {
+  return readJson<Worktrees>(worktreesPath(config), {});
+}
+
+/**
+ * Record the linked worktree a foreground session runs in against its main root. The scheduled
+ * tick may not ask git which repository a worker's cwd belongs to, so the answer is written down
+ * here, while git may run. The record outlives the worktree. A cwd inside the main worktree needs
+ * no record.
+ */
+export function recordWorktree(config: LearnConfig, cwd: string, root: string): void {
+  if (config.dryRun || rootOf(cwd) !== null) return;
+  const worktree = worktreeRoot(cwd);
+  if (worktree === null || worktree === root) return;
+  const worktrees = readWorktrees(config);
+  if (worktrees[worktree] === root) return;
+  writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
 }
 
 /** Why a root may never hold a ledger, or null. Stat only, and a root that cannot be read is not judged. */

@@ -37,6 +37,13 @@ export function mainRepoRoot(cwd: string): string | null {
   return common.endsWith("/.git") || common.endsWith("\\.git") ? dirname(common) : common;
 }
 
+/** The top of the worktree holding `cwd`, linked or main. Spawns git, so foreground only, like `mainRepoRoot`. */
+export function worktreeRoot(cwd: string): string | null {
+  const result = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 10_000 });
+  const top = result.stdout.trim();
+  return result.code !== 0 || top === "" ? null : resolve(top);
+}
+
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
@@ -86,6 +93,11 @@ export function loopDir(config: LearnConfig, repoRoot: string, loop: Loop): stri
 /** The runtime-wide project registry: folder -> { root, mem_project, last_seen }. */
 export function registryPath(config: LearnConfig): string {
   return join(config.runtimeDir, "projects.json");
+}
+
+/** Linked worktree path -> registered root, written by foreground sessions for the scheduled tick to read. */
+export function worktreesPath(config: LearnConfig): string {
+  return join(config.runtimeDir, "worktrees.json");
 }
 
 export function tickLogPath(config: LearnConfig): string {

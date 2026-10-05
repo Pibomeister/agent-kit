@@ -22,7 +22,7 @@ import { readText, todayLocal, tokens } from "../core/store.ts";
 import { guardrailsSection } from "../review/guardrails.ts";
 import { rosterSection } from "../skills/roster.ts";
 import { ageWords, loadLessons, memoryDir, readState, splitLines, str } from "./ledger.ts";
-import { logRegistryWarnings, registerRoot } from "./registry.ts";
+import { logRegistryWarnings, recordWorktree, registerRoot } from "./registry.ts";
 
 export const MAX_LESSONS = 8;
 
@@ -173,6 +173,7 @@ export function sessionStartBlock(ctx: LearnContext): string {
   // The hook's span keys the root this block was built for, linked worktrees included.
   ctx.span?.project(root);
   logRegistryWarnings(ctx.config, registerRoot(ctx.config, root).warnings);
+  recordWorktree(ctx.config, ctx.cwd, root);
   const parts = blockBody(ctx, root, ctx.config.memoryTokens);
   if (roster.trim() !== "") parts.push(roster.trim());
   return joined(parts);
