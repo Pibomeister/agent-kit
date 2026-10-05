@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import { loopDir, projectFolderName, registryPath } from "../../src/learn/core/paths.ts";
 import { run, type RunResult } from "../../src/learn/core/proc.ts";
@@ -24,6 +24,10 @@ function fakeDeps(
   const mode = join(packageRoot, "adapters", "observation-source", "claude-mem");
   mkdirSync(mode, { recursive: true });
   writeFileSync(join(mode, `${MEM_MODE}.json`), "{}\n");
+  // The entry a wired hook and the unit run must exist for verify to pass.
+  const entry = join(packageRoot, "src", "cli.ts");
+  mkdirSync(dirname(entry), { recursive: true });
+  writeFileSync(entry, "");
   const have = new Set(bins);
   const calls: string[][] = [];
   const envs: Array<NodeJS.ProcessEnv | undefined> = [];
@@ -37,11 +41,16 @@ function fakeDeps(
       return { code: 0, stdout, stderr: "", timedOut: false };
     },
     which: (bin) => (have.has(bin) ? `/usr/bin/${bin}` : null),
-    ak: ["/opt/bun", "/pkg/src/cli.ts"],
+    ak: ["/opt/bun", entry],
     packageRoot,
     calls,
     envs,
   };
+}
+
+/** One hook entry running `command`. */
+function hook(command: string) {
+  return { hooks: [{ type: "command", command }] };
 }
 
 /** A context whose judge command is `judge`, and whose claude-mem lives under the fake home. */
@@ -269,6 +278,45 @@ describe("setup verify", () => {
     expect(verify(ctx, deps, repo)).toBe(0);
     expect(ctx.out.at(-1)).toBe("\nall checks passed");
     expect(deps.calls.every((call) => call[0] === "launchctl" && call[1] === "list")).toBe(true);
+  });
+
+  test("an ak entry that a wired hook or the unit names but no longer exists fails verify", () => {
+    for (const platform of ["darwin", "linux"] as const) {
+      const deps = { ...fakeDeps(["bun", "git", "judge", "systemctl"]), platform };
+      const ctx = context(deps);
+      wire(ctx, deps);
+      schedule(ctx, deps);
+      const entry = deps.ak[1] ?? "";
+      expect(verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists")).toEqual({
+        label: "ak entry exists",
+        ok: true,
+        detail: entry,
+      });
+      rmSync(entry);
+      expect(verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists")).toEqual({
+        label: "ak entry exists",
+        ok: false,
+        detail: `missing: ${entry}`,
+      });
+      // The unit alone still names it.
+      writeFileSync(join(ctx.config.configDir, "settings.json"), "{}\n");
+      expect(verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists")?.ok).toBe(false);
+    }
+  });
+
+  test("a hook that runs a bare `ak` from PATH is not checked as a missing path", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps);
+    mkdirSync(ctx.config.configDir, { recursive: true });
+    writeFileSync(
+      join(ctx.config.configDir, "settings.json"),
+      JSON.stringify({
+        hooks: { SessionStart: [hook("ak learn hook session-start")], Stop: [hook("ak learn hook stop")] },
+      }),
+    );
+    const results = verifyChecks(ctx, deps);
+    expect(results.find((check) => check.label === "claude SessionStart hook")?.ok).toBe(true);
+    expect(results.map((check) => check.label)).not.toContain("ak entry exists");
   });
 
   test("verify and doctor report the effective repo scope and where it came from", () => {

@@ -11,13 +11,22 @@
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { splitCommand } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
+import launchdTemplate from "./templates/launchd.plist.tmpl" with { type: "text" };
+import serviceTemplate from "./templates/systemd.service.tmpl" with { type: "text" };
+import timerTemplate from "./templates/systemd.timer.tmpl" with { type: "text" };
 import type { SetupDeps } from "./wire.ts";
 import { shellQuote } from "./wire.ts";
 
 export const LABEL = "dev.agent-kit.learn";
 export const DEFAULT_INTERVAL_S = 900;
-const TEMPLATES = join(import.meta.dir, "templates");
+/** Embedded, so the single-file bundle renders units with no template files beside it. */
+const TEMPLATES = {
+  "launchd.plist.tmpl": launchdTemplate,
+  "systemd.service.tmpl": serviceTemplate,
+  "systemd.timer.tmpl": timerTemplate,
+};
 
 export type SchedulerKind = "launchd" | "systemd" | "cron" | "none";
 
@@ -74,8 +83,8 @@ export function unitEnvironment(ctx: LearnContext): Array<[string, string]> {
 }
 
 /** `$name` / `${name}` substitution. A variable with no value is an error, never an empty string. */
-export function renderTemplate(name: string, vars: Readonly<Record<string, string | number>>): string {
-  const text = readFileSync(join(TEMPLATES, name), "utf8");
+export function renderTemplate(name: keyof typeof TEMPLATES, vars: Readonly<Record<string, string | number>>): string {
+  const text = TEMPLATES[name];
   return text.replace(/\$(?:\{(\w+)\}|(\w+))/g, (_, braced: string | undefined, bare: string | undefined) => {
     const key = (braced ?? bare)!;
     const value = vars[key];
@@ -86,6 +95,19 @@ export function renderTemplate(name: string, vars: Readonly<Record<string, strin
 
 function xml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The command line a written unit runs, decoded from what `launchdPlist` (its argument strings) or
+ * `systemdService` (its ExecStart, with the `%%` and `$$` escapes undone) wrote. Each decoder sits
+ * beside its encoder so the two change together.
+ */
+export function unitArgv(text: string): string[] {
+  const exec = /^ExecStart=(.*)$/m.exec(text)?.[1];
+  if (exec !== undefined) return splitCommand(exec.replace(/%%/g, "%").replace(/\$\$/g, "$"));
+  return [...text.matchAll(/<string>([^<]*)<\/string>/g)].map((match) =>
+    (match[1] ?? "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"),
+  );
 }
 
 export function launchdPlist(ctx: LearnContext, deps: SetupDeps, intervalS: number): string {

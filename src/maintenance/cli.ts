@@ -18,6 +18,7 @@ import {
   type TrackerBinding,
 } from "../tracker/binding.ts";
 import { scoreDelegationFiles } from "../delegation.ts";
+import { readHookStdin, runLearn } from "../learn/cli.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -589,7 +590,12 @@ async function update(): Promise<number> {
 if (import.meta.main) {
   const action = process.argv[2];
   const flags = process.argv.slice(3);
-  if (
+  if (action === "learn") {
+    // The learning runtime travels in this bundle so a plugin install can run it without a checkout.
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    const argv = process.argv.slice(2);
+    process.exitCode = runLearn(flags, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+  } else if (
     (action === "doctor" && flags.every((flag) => flag === "--json") && flags.length <= 1) ||
     (action === "update" && flags.length === 0)
   )
@@ -603,7 +609,7 @@ if (import.meta.main) {
       process.exitCode = 1;
     }
   } else {
-    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path>");
+    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn …");
     process.exitCode = 2;
   }
 }

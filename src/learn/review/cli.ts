@@ -171,7 +171,8 @@ export const reviewArea: LearnArea = {
       run: (args, ctx) => {
         const root = rootFor(args, ctx);
         if (root === null) return 1;
-        const ledger = reviewLedger(ctx.config, root);
+        // A read: a repo with no review ledger is reported as empty, never seeded.
+        const ledger = new Ledger(reviewLedgerDir(ctx.config, root));
         ctx.io.out(readText(ledger.path("index.md")).trimEnd());
         const guard = readText(ledger.path("guardrails.md")).trim();
         ctx.io.out("");

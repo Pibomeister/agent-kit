@@ -5,6 +5,7 @@
  * here and only here, under the opt-in `learning` profile, and no packaged
  * skill body depends on them (ruling `learning-runtime-is-host-adapter`).
  */
+import { readFileSync } from "node:fs";
 import { loadConfig } from "./core/config.ts";
 import type { LearnArea, LearnContext, LearnIo } from "./core/context.ts";
 import { parseLearnArgs } from "./core/context.ts";
@@ -32,6 +33,16 @@ export function learnUsage(): string[] {
     for (const verb of Object.values(area.verbs)) lines.push(`      ${verb.usage}`);
   }
   return lines;
+}
+
+/** The host's hook payload on stdin, read only for `ak learn hook …`; `argv` is the whole command line after `ak`. */
+export function readHookStdin(argv: readonly string[]): string | undefined {
+  if (argv[0] !== "learn" || argv[1] !== "hook" || process.stdin.isTTY) return undefined;
+  try {
+    return readFileSync(0, "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 export interface RunLearnOptions {

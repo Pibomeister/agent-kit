@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
-import { PACKAGE_ROOT } from "../core/roles.ts";
+import { AK_ENTRY } from "../core/roles.ts";
 import { nowIso } from "../core/store.ts";
 import { appendCapped, carrierOf } from "../core/trace.ts";
 import type { HookPayload } from "../hooks.ts";
@@ -64,7 +64,7 @@ export function pipelineCommand(
   cwd: string,
   source: string,
   logFile: string,
-  ak: readonly string[] = [process.execPath, join(PACKAGE_ROOT, "src", "cli.ts")],
+  ak: readonly string[] = [process.execPath, AK_ENTRY],
 ): string[] {
   const cli = ak.map(shellQuote).join(" ");
   const review = `${cli} 'learn' 'review' 'run' '--repo' "$1" '--cwd' "$4" '--source' "$2" >> "$3" 2>&1`;

@@ -69,7 +69,7 @@ const AUTHORED_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references
 /** Where an application-local documentation write target is a release-scenario-21 failure. */
 const SKILL_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references"];
 
-const TEXT_FILE = /\.(md|ya?ml|json|ts|txt)$/;
+const TEXT_FILE = /\.(md|ya?ml|json|ts|txt|tmpl)$/;
 
 export function contentScanRoots(): string[] {
   return [...SCAN_DIRS];
