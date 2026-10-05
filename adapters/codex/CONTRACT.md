@@ -258,7 +258,8 @@ claude-code run.
 ## 6. The learning runtime's hooks
 
 `ak learn setup wire` registers three hooks in `$CODEX_HOME` when it exists, and skips this host
-with a message when it does not: `ak learn hook session-start` on `SessionStart`,
+with a message when it does not: `ak learn hook session-start --source codex` on `SessionStart`,
+whose roster names human-only commands as `$ak:<id>` (ADR-0009),
 `ak learn hook prompt` on `UserPromptSubmit`, which captures user corrections, and
 `ak learn hook stop --source codex` on `Stop`. As on claude-code
 (`adapters/claude-code/CONTRACT.md` §7), no skill requires a hook, the bundle ships none, and the

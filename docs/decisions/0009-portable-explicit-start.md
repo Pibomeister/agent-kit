@@ -92,6 +92,9 @@ stops.
   form is verified separately by the model-free live-host probe in `adapters/codex/CONTRACT.md` §3.1.
 - Codex sessions recorded before this change ran against a bundle gated on `/ak:<id>`. The reply
   mapping reads every stored Codex reply in the new spelling, so those sessions are not rescorable.
+- The opt-in learning runtime's session-start roster is in scope although it is not a packaged
+  file: the Codex `SessionStart` hook is wired with `--source codex`, as `Stop` already was, and the
+  roster then names human-only catalog commands as `$ak:<id>`; without a source it keeps `/ak:<id>`.
 - Offline packaging tests prove the emitted positive marker, the retained prose refusal and the
   unchanged M path. They do not claim that a live session obeyed the prose.
 - Each new host adapter must add its renderer, fixture coverage for U explicit/prose and M automatic

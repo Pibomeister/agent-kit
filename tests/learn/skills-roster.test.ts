@@ -147,6 +147,18 @@ describe("rosterSection", () => {
     expect(text).not.toContain("gamma");
   });
 
+  test("a catalog human-only command is named in the form the host's bundle gates on", () => {
+    const ctx = testContext();
+    const global = join(ctx.config.configDir, "skills");
+    skill(global, "ship-it", "---\nname: ship-it\ndescription: Ship.\ndisable-model-invocation: true\n---\n");
+    const humanOnly = (host: "claude-code" | "codex") =>
+      rosterSection(ctx, null, { packageRoot: fixtureCatalog(), host })
+        .split("\n")
+        .find((line) => line.startsWith("Human-only commands"));
+    expect(humanOnly("codex")).toEndWith(": $ak:alpha, /ship-it");
+    expect(humanOnly("claude-code")).toEndWith(": /ak:alpha, /ship-it");
+  });
+
   test("pending candidates are listed with their ledger path; decided ones are not", () => {
     const ctx = testContext();
     const repo = gitRepo(join(scratch(), "repo"));
