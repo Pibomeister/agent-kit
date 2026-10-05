@@ -348,7 +348,7 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       tickLog(ctx, `== ${nowIso()} tick${ctx.config.dryRun ? " DRY RUN" : ""}`);
       const registry =
         options.only === undefined
-          ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()))
+          ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()), (warning) => tickLog(ctx, warning))
           : readRegistry(ctx.config);
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;

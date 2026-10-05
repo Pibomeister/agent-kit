@@ -79,6 +79,45 @@ describe("registry", () => {
     ).toBe(10);
   });
 
+  test("two roots for one claude-mem project leave one active entry and warn", () => {
+    const { config } = setup();
+    const older = join(projectScratch(), "older", "shop");
+    const newer = join(projectScratch(), "newer", "shop");
+    for (const root of [older, newer]) mkdirSync(join(root, ".git"), { recursive: true });
+    const warnings: string[] = [];
+    const registry = discoverProjects(
+      config,
+      [
+        { project: "shop", cwd: older, last_seen: 10 },
+        { project: "shop", cwd: newer, last_seen: 20 },
+      ],
+      (warning) => warnings.push(warning),
+    );
+    expect(Object.values(registry)).toEqual([{ root: newer, mem_project: "shop", last_seen: 20 }]);
+    expect(warnings).toEqual([
+      `registry warning: claude-mem project 'shop' has multiple roots; keeping ${newer}, unregistering ${older}`,
+    ]);
+  });
+
+  test("bare repositories and no-mistakes repository copies are never registered", () => {
+    const { config } = setup();
+    const bare = join(projectScratch(), "bare.git");
+    mkdirSync(join(bare, "objects"), { recursive: true });
+    writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+    const noMistakes = join(projectScratch(), ".no-mistakes", "repos", "copy");
+    mkdirSync(join(noMistakes, ".git"), { recursive: true });
+
+    expect(registerRoot(config, bare)).toEqual({});
+    expect(registerRoot(config, noMistakes)).toEqual({});
+    expect(
+      discoverProjects(config, [
+        { project: "bare", cwd: bare, last_seen: 10 },
+        { project: "copy", cwd: noMistakes, last_seen: 20 },
+      ]),
+    ).toEqual({});
+    expect(existsSync(registryPath(config))).toBe(false);
+  });
+
   test("root resolution only stats", () => {
     const { repo, worktree } = setup();
     expect(rootOf(join(repo, "packages", "api"))).toBe(repo);

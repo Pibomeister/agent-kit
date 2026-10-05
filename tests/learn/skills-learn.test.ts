@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
-import { projectFolderName } from "../../src/learn/core/paths.ts";
+import { loopDir, projectFolderName } from "../../src/learn/core/paths.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { skillsArea } from "../../src/learn/skills/cli.ts";
 import {
@@ -244,7 +244,7 @@ describe("discover", () => {
     expect(discover(dry, root, { packageRoot })).toBe("dry run");
     expect(ctx.prompts).toEqual([]);
     expect(ctx.out.join("\n")).toContain("## Output contract (enforced by the runtime)");
-    expect(loadRegistry(skillsLedger(ctx, root)).seen_sessions).toEqual({});
+    expect(existsSync(loopDir(ctx.config, root, "skills"))).toBe(false);
   });
 
   test("a failed judge call leaves the sessions unmarked for the next pass", () => {

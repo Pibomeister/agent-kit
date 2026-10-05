@@ -379,8 +379,8 @@ export interface DiscoverOptions {
 
 /** One discovery pass. Returns a one-line summary; writes nothing on a dry run or a failed judge call. */
 export function discover(ctx: LearnContext, root: string, options: DiscoverOptions = {}): string {
-  const ledger = skillsLedger(ctx, root);
-  const release = ledger.tryLock();
+  const ledger = ctx.config.dryRun ? new Ledger(loopDir(ctx.config, root, "skills")) : skillsLedger(ctx, root);
+  const release = ctx.config.dryRun ? () => undefined : ledger.tryLock();
   if (release === null) {
     ctx.span?.status("locked", "lock-held");
     return "";

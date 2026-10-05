@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { loopDir } from "../../src/learn/core/paths.ts";
+import { loopDir, projectFolderName, registryPath } from "../../src/learn/core/paths.ts";
 import { run, type RunResult } from "../../src/learn/core/proc.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
 import { createSetupArea } from "../../src/learn/setup/cli.ts";
@@ -123,6 +123,25 @@ describe("setup doctor", () => {
     expect(doctor(ctx, deps)).toBe(0);
     expect(ctx.out).toContain("  judge calls (24h)  2 calls, 1 failure, $0.750000 total cost");
     expect(ctx.out).toContain("  runs (24h)         1 span: review ok 1");
+  });
+
+  test("flags roots that share one claude-mem project", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps);
+    const first = gitRepo(join(scratch(), "first", "shop"));
+    const second = gitRepo(join(scratch(), "second", "shop"));
+    mkdirSync(ctx.config.runtimeDir, { recursive: true });
+    writeFileSync(
+      registryPath(ctx.config),
+      `${JSON.stringify({
+        [projectFolderName(first)]: { root: first, mem_project: "shop", last_seen: 1 },
+        [projectFolderName(second)]: { root: second, mem_project: "shop", last_seen: 2 },
+      })}\n`,
+    );
+
+    const check = doctorChecks(ctx, deps).find((candidate) => candidate.name === "registry hygiene");
+    expect(check).toMatchObject({ ok: false, hard: false });
+    expect(check?.why).toContain("claude-mem project 'shop' has multiple roots");
   });
 
   test("checks the scheduled default judge's auth without making a judge call", () => {
