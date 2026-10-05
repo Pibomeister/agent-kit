@@ -92,7 +92,11 @@ describe("declared unavailable", () => {
     const calls = join(dir, "calls");
     const script = join(dir, "judge.sh");
     writeFileSync(script, `echo x >> '${calls}'\necho '{"unavailable": "observation ids missing"}'\n`);
-    const judge = commandJudge({ ...loadConfig({}), judgeCommand: ["sh", script], judgeTimeoutMs: 10_000 });
+    const judge = commandJudge({
+      ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+      judgeCommand: ["sh", script],
+      judgeTimeoutMs: 10_000,
+    });
     expect(judge("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId: null })).toBeNull();
     expect(readFileSync(calls, "utf8")).toBe("x\n");
     expect(declaredUnavailable({ unavailable: "why" })).toBe("why");
