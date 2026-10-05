@@ -67,12 +67,27 @@ function requiredSession(value: CapturedSession | null): CapturedSession {
   return value;
 }
 
-function replaceFixtureCwd(dir: string, cwd: string): void {
+const DAY_MS = 86_400_000;
+const FIXTURE_DAY = Date.parse("2026-10-04T00:00:00.000Z");
+
+/**
+ * Rewrites a copy of the fixtures as sessions that ran in `cwd` yesterday. The episode window is
+ * measured from the real clock, so the recorded day moves with it and the times of day stay.
+ */
+function placeFixtures(dir: string, cwd: string): void {
+  const shift = (Math.floor(Date.now() / DAY_MS) - 1) * DAY_MS - FIXTURE_DAY;
+  const day = new Date(FIXTURE_DAY + shift).toISOString().slice(0, 10);
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) replaceFixtureCwd(path, cwd);
+    if (entry.isDirectory()) placeFixtures(path, cwd);
     else if (entry.isFile() && (path.endsWith(".json") || path.endsWith(".jsonl")))
-      writeFileSync(path, readFileSync(path, "utf8").replaceAll("/fixture/worktree", cwd));
+      writeFileSync(
+        path,
+        readFileSync(path, "utf8")
+          .replaceAll("/fixture/worktree", cwd)
+          .replaceAll("2026-10-04T", `${day}T`)
+          .replace(/\b1791\d{9}\b/g, (ms) => String(Number(ms) + shift)),
+      );
   }
 }
 
@@ -395,7 +410,7 @@ describe("memory tick worker capture", () => {
     const { main, linked } = linkedRepo();
     const homes = scratch("ak-worker-homes-");
     cpSync(FIXTURES, homes, { recursive: true });
-    replaceFixtureCwd(homes, linked);
+    placeFixtures(homes, linked);
     const ctx = testContext({
       cwd: linked,
       env: {
@@ -436,7 +451,7 @@ describe("memory tick worker capture", () => {
     const { main, linked } = linkedRepo();
     const homes = scratch("ak-worker-hookless-");
     for (const host of ["grok", "kimi"]) cpSync(join(FIXTURES, host), join(homes, host), { recursive: true });
-    replaceFixtureCwd(homes, join(linked, "packages", "web"));
+    placeFixtures(homes, join(linked, "packages", "web"));
     mkdirSync(join(linked, "packages", "web"), { recursive: true });
     const ctx = testContext({
       cwd: main,
