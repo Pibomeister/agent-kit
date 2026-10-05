@@ -7,7 +7,10 @@
  * committed); this repository names only roles and host kinds.
  */
 
-/** The host CLIs a subject adapter exists for. */
+/**
+ * The host CLIs a subject adapter exists for. `kimi` is reviewer-only: `eval-matrix.schema.json`
+ * accepts it for a reviewer seat and refuses it as a subject host.
+ */
 export type HostKind = "claude" | "codex" | "grok" | "kimi";
 
 /** One tool call, normalised across hosts. `name` uses the Claude tool vocabulary where a mapping exists. */

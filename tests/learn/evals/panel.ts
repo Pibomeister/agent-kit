@@ -181,7 +181,11 @@ export function parseVote(reply: string): { vote: Vote; reason: string } {
   return { vote: "invalid", reason: reply.slice(0, 200) };
 }
 
-/** The default judge: one isolated, single-turn session on the reviewer's own host, in an empty directory. */
+/**
+ * The default judge: one isolated, single-turn session on the reviewer's own host, in an empty
+ * directory. Kimi is the exception on both counts, as `subjects/kimi.ts` records: it keeps the
+ * operator's home and has no turn-cap flag, so the timeout bounds it.
+ */
 export const hostJudge =
   (prices?: PriceTable): Judge =>
   async (reviewer, prompt) => {
