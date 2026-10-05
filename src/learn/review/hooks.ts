@@ -23,6 +23,11 @@ import { appendEvents } from "./events.ts";
 import { correctionEvent, memProject } from "./ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "./ledger.ts";
 
+/** The session's working directory: the payload's when it names one, else the process's. */
+export function payloadCwd(payload: HookPayload, fallback: string): string {
+  return typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : fallback;
+}
+
 export const DEBOUNCE_MS = 10 * 60 * 1000;
 export const LAST_RUN_FILE = "raw/.last_run";
 export const PIPELINE_LOG = "raw/.pipeline.log";
@@ -86,7 +91,7 @@ export function stopHook(
   args: LearnArgs,
   spawner: Spawner = detachSpawner,
 ): void {
-  const cwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : ctx.cwd;
+  const cwd = payloadCwd(payload, ctx.cwd);
   ctx.span?.status("skipped");
   if (cwd.includes("/plugins/cache/") || payload.stop_hook_active === true) return;
   const root = mainRepoRoot(cwd);
@@ -318,7 +323,7 @@ export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnA
   const detection = detectPatterns(prompt);
   ctx.span?.attr("detection", detection.type ?? "none");
   if (detection.type === null || detection.sentiment !== "correction") return;
-  const cwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : ctx.cwd;
+  const cwd = payloadCwd(payload, ctx.cwd);
   if (cwd.includes("/plugins/cache/")) return;
   const root = mainRepoRoot(cwd);
   if (root === null) return;

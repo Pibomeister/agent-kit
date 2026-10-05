@@ -304,6 +304,28 @@ describe("setup verify", () => {
     }
   });
 
+  test("a scope only in AK_LEARN_REPOS is refused by schedule and flagged by verify, since the unit never carries it", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const root = gitRepo(join(scratch(), "shop"));
+    const ctx = context(deps, { AK_LEARN_REPOS: root });
+    const tick = () => verifyChecks(ctx, deps).find((check) => check.label === "scheduled tick scope");
+    expect(schedule(ctx, deps)).toBe(1);
+    expect(ctx.err.join("\n")).toContain("AK_LEARN_REPOS is not carried into the unit");
+    expect(existsSync(join(deps.home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist"))).toBe(false);
+    expect(tick()).toEqual({ label: "scheduled tick scope", ok: false, detail: "unscoped (every repository)" });
+    mkdirSync(ctx.config.runtimeDir, { recursive: true });
+    writeFileSync(join(ctx.config.runtimeDir, "repos"), `${root}\n`);
+    expect(schedule(ctx, deps)).toBe(0);
+    expect(tick()).toEqual({ label: "scheduled tick scope", ok: true, detail: `${root} (scope file)` });
+  });
+
+  test("an unreadable unit is reported by the unit checks, never thrown", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps);
+    mkdirSync(join(deps.home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist"), { recursive: true });
+    expect(verifyChecks(ctx, deps).find((check) => check.label === "launchd unit written")?.ok).toBe(true);
+  });
+
   test("a hook that runs a bare `ak` from PATH is not checked as a missing path", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const ctx = context(deps);

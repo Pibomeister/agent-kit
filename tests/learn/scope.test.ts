@@ -44,15 +44,20 @@ function fixture(scope?: (inside: string, outside: string) => string): Fixture {
   const config = loadConfig(env);
   // A guardrail in the in-scope repo, so session-start has a block to print there.
   writeFileSync(reviewLedger(config, inside).path("guardrails.md"), "# Guardrails\n\n- [rp-001] read the diff\n");
-  mkdirSync(config.runtimeDir, { recursive: true });
   return { env, config, inside, outside };
 }
 
-function hook(f: Fixture, verb: string, payload: HookPayload) {
+/** Write the scope file directly, as an operator's own tooling might. */
+function writeScope(config: LearnConfig, text: string): void {
+  mkdirSync(config.runtimeDir, { recursive: true });
+  writeFileSync(scopeFile(config.runtimeDir), text);
+}
+
+function hook(f: Fixture, verb: string, payload: HookPayload, cwd = String(payload.cwd)) {
   const out: string[] = [];
   const err: string[] = [];
   const io = { out: (line: string) => out.push(line), err: (line: string) => err.push(line) };
-  const code = runLearn(["hook", verb], { cwd: String(payload.cwd), io, env: f.env, stdin: JSON.stringify(payload) });
+  const code = runLearn(["hook", verb], { cwd, io, env: f.env, stdin: JSON.stringify(payload) });
   return { code, out: out.join("\n"), err: err.join("\n") };
 }
 
@@ -74,7 +79,7 @@ describe("scope resolution", () => {
     expect(f.config.reposSource).toBe("none");
     expect(repoAllowed(f.config, f.outside)).toBe(true);
 
-    writeFileSync(scopeFile(f.config.runtimeDir), `${f.inside}\n`);
+    writeScope(f.config, `${f.inside}\n`);
     const file = loadConfig(f.env);
     expect(file.reposSource).toBe("file");
     expect(repoAllowed(file, f.inside)).toBe(true);
@@ -96,7 +101,7 @@ describe("scope resolution", () => {
       expect(repoAllowed(env, f.inside)).toBe(false);
     }
     for (const text of ["", ":", "shop", join(f.inside, "missing")]) {
-      writeFileSync(scopeFile(f.config.runtimeDir), `${text}\n`);
+      writeScope(f.config, `${text}\n`);
       expect([text, loadConfig(f.env).repos]).toEqual([text, []]);
       expect(repoAllowed(loadConfig(f.env), f.inside)).toBe(false);
     }
@@ -104,7 +109,7 @@ describe("scope resolution", () => {
 
   test("a scope file that cannot be read allows nothing, and --clear still removes it", () => {
     const f = fixture();
-    mkdirSync(scopeFile(f.config.runtimeDir));
+    mkdirSync(scopeFile(f.config.runtimeDir), { recursive: true });
     const config = loadConfig(f.env);
     expect([config.reposSource, config.repos]).toEqual(["file", []]);
     const { out, io } = collect();
@@ -275,8 +280,8 @@ describe("scope file verbs", () => {
     const f = fixture();
     const set = collect();
     runLearn(["setup", "scope", "--set", `${f.inside}:shop:/no/such/dir`], { cwd: f.inside, io: set.io, env: f.env });
-    expect(set.out).toContain("  ignored: shop (not an absolute path that exists)");
-    expect(set.out).toContain("  ignored: /no/such/dir (not an absolute path that exists)");
+    expect(set.out).toContain("  ignored: shop (not an absolute path inside a git repository)");
+    expect(set.out).toContain("  ignored: /no/such/dir (not an absolute path inside a git repository)");
     expect(set.out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
     const env = { ...f.env, AK_LEARN_REPOS: f.outside };
     const show = collect();
@@ -294,5 +299,52 @@ describe("scope file verbs", () => {
       expect(runLearn(["setup", "scope", ...argv], { cwd: f.inside, io: bad.io, env: f.env })).toBe(2);
       expect(bad.out).toEqual(["ak learn setup scope: --set takes ROOT[:ROOT], and --set and --clear are exclusive"]);
     }
+  });
+});
+
+describe("review round fixes", () => {
+  test("each hook gates on the payload's cwd, not the process's", () => {
+    const f = fixture((inside) => inside);
+    f.env.AK_LEARN_DRY_RUN = "1";
+    // Run from inside the scope, about a session outside it: nothing.
+    expect(hook(f, "session-start", { cwd: f.outside }, f.inside).out).toBe("");
+    expect(hook(f, "stop", { cwd: f.outside }, f.inside).err).toBe("");
+    hook(f, "prompt", { cwd: f.outside, prompt: CORRECTION }, f.inside);
+    expect(readJsonl<SpanRow>(join(f.config.runtimeDir, SPAN_FILE))).toEqual([]);
+    // Run from outside, about a session inside: each acts.
+    expect(hook(f, "session-start", { cwd: f.inside }, f.outside).out).toContain("[rp-001] read the diff");
+    expect(hook(f, "stop", { cwd: f.inside }, f.outside).err).toContain("would detach");
+    expect(spansNamed(f.config, "hook.stop").length).toBe(1);
+  });
+
+  test("setup scope --set works on a machine with no runtime directory yet, and writes no temp file behind", () => {
+    const f = fixture();
+    expect(existsSync(f.config.runtimeDir)).toBe(false);
+    const { out, io } = collect();
+    expect(runLearn(["setup", "scope", "--set", f.inside], { cwd: f.inside, io, env: f.env })).toBe(0);
+    expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
+    expect(existsSync(`${scopeFile(f.config.runtimeDir)}.tmp`)).toBe(false);
+    expect(out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
+  });
+
+  test("setup scope --set stores a linked worktree or a subdirectory as its main repository root", () => {
+    const f = fixture();
+    const wt = join(scratch(), "wt");
+    run(["git", "worktree", "add", "-q", "-b", "feature-z", wt], { cwd: f.inside });
+    const sub = join(f.inside, "src");
+    mkdirSync(sub);
+    const { out, io } = collect();
+    runLearn(["setup", "scope", "--set", `${wt}:${sub}`], { cwd: f.inside, io, env: f.env });
+    expect(out).toContain(`  ${wt}: stored as its main repository root ${f.inside}`);
+    expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}:${f.inside}\n`);
+    expect(hook(f, "session-start", { cwd: wt }).out).toContain("[rp-001] read the diff");
+  });
+
+  test("a dangling-symlink scope file allows nothing instead of reading as no scope", () => {
+    const f = fixture();
+    mkdirSync(f.config.runtimeDir, { recursive: true });
+    symlinkSync(join(f.config.runtimeDir, "gone"), scopeFile(f.config.runtimeDir));
+    const config = loadConfig(f.env);
+    expect([config.reposSource, config.repos]).toEqual(["file", []]);
   });
 });

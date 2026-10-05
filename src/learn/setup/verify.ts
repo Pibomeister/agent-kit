@@ -11,7 +11,7 @@ import { readJson } from "../core/store.ts";
 import { readRegistry } from "../memory/registry.ts";
 import { judgeBinary } from "./doctor.ts";
 import { LABEL, schedulerKind, unitArgv, unitPaths } from "./schedule.ts";
-import { scopeText } from "./scope.ts";
+import { fileScope, scopeText, unitScopeDiffers } from "./scope.ts";
 import {
   CONTEXT_OBSERVATIONS,
   claudeSettingsPath,
@@ -42,7 +42,13 @@ function wiredAkPath(argv: readonly string[]): string[] {
 /** Every `ak` path the wiring names, in its hooks and its unit. A plugin update moves the bundle and leaves them behind. */
 function wiredAkPaths(docs: readonly HookDoc[], unit: string | null): string[] {
   const commands = docs.flatMap((doc) => ourHookCommands(doc)).map((command) => splitCommand(command));
-  if (unit !== null && existsSync(unit)) commands.push(unitArgv(readFileSync(unit, "utf8")));
+  if (unit !== null && existsSync(unit)) {
+    try {
+      commands.push(unitArgv(readFileSync(unit, "utf8")));
+    } catch {
+      // An unreadable unit is reported by the unit checks; it names no path to test here.
+    }
+  }
   return [...new Set(commands.flatMap(wiredAkPath))];
 }
 
@@ -120,6 +126,8 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
 
   // Reported, never failed: unscoped and a scope that allows nothing are both deliberate settings.
   check("repo scope", true, scopeText(ctx.config));
+  // The unit never carries AK_LEARN_REPOS: a scope that lives only in this shell does not reach the tick.
+  check("scheduled tick scope", !unitScopeDiffers(ctx), scopeText(fileScope(ctx)));
 
   const judge = judgeBinary(ctx, deps);
   check("judge command resolvable", judge !== null, judge ?? ctx.config.judgeCommand.join(" "));

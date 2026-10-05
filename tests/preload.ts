@@ -1,12 +1,13 @@
 /**
  * Loaded by `bun test` before the suite (`bunfig.toml` `[test] preload`). The
  * process drops the operator's learn settings (a scope, a judge command), and
- * every config root it would resolve from its environment or from `homedir()`
- * points at scratch. A context built from an explicit env that names a real
- * directory is outside its reach; `tests/learn/isolation.test.ts` guards the
- * one such shape that reached the operator's judge trace.
+ * every config root it would resolve from its environment points at scratch.
+ * HOME is left alone: Bun reads it once at startup, so `homedir()` and a config
+ * built from an env without `CLAUDE_CONFIG_DIR` (`loadConfig({})`) still name
+ * the operator's real directories. `tests/learn/isolation.test.ts` guards the
+ * shape of that mistake that reached the operator's judge trace.
  */
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +16,3 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "ak-test-env-")));
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");
 process.env.CODEX_HOME = join(root, "codex");
-// `loadConfig({})` and every other `homedir()` reader resolve under HOME, so it moves too.
-process.env.HOME = join(root, "home");
-mkdirSync(process.env.HOME);

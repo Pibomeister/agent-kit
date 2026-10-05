@@ -13,7 +13,7 @@ import { mainRepoRoot } from "./core/paths.ts";
 import { tokens } from "./core/store.ts";
 import { span } from "./core/trace.ts";
 import { sessionRoot, sessionStartBlock } from "./memory/session-context.ts";
-import { promptHook, stopHook } from "./review/hooks.ts";
+import { payloadCwd, promptHook, stopHook } from "./review/hooks.ts";
 
 export interface HookPayload {
   cwd?: string;
@@ -21,11 +21,6 @@ export interface HookPayload {
   user_prompt?: string;
   stop_hook_active?: boolean;
   [key: string]: unknown;
-}
-
-/** The session's working directory: the payload's when it names one, else the process's. */
-export function payloadCwd(payload: HookPayload, fallback: string): string {
-  return typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : fallback;
 }
 
 export function parsePayload(stdin: string | undefined): HookPayload {

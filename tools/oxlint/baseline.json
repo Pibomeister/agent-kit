@@ -112,7 +112,7 @@
     "typescript(no-unsafe-type-assertion)": 2
   },
   "src/learn/hooks.ts": {
-    "anti-slop(no-runtime-typeof)": 2,
+    "anti-slop(no-runtime-typeof)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 1,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
     "typescript(no-unsafe-type-assertion)": 2
@@ -199,7 +199,7 @@
     "unicorn(no-array-sort)": 1
   },
   "src/learn/review/hooks.ts": {
-    "anti-slop(no-runtime-typeof)": 4
+    "anti-slop(no-runtime-typeof)": 3
   },
   "src/learn/review/ingest.ts": {
     "anti-slop(no-known-value-widening)": 2,

@@ -292,7 +292,7 @@ donor paths for the tip while failing at the pin, which the validator reports as
 rather than as a broken instrument.
 
 `bunfig.toml` makes `tests/` the canonical test root: `bun test` runs every test there and excludes the `evals/super-build/_fixtures/**/*.test.js` scaffolds (the eval runner exercises them) and the `dist/` copies, so its population does not depend on whether the tree has been built.
-Its `[test] preload` (`tests/preload.ts`) strips `AK_LEARN_*` and points `CLAUDE_CONFIG_DIR`, `CLAUDE_MEM_DATA_DIR`, `CODEX_HOME` and `HOME` at scratch, so a test that needs one of them sets it in its own environment.
+Its `[test] preload`, `tests/preload.ts`, keeps the operator's learn settings and config roots out of the test process; what it cannot reach, and the guard for that, is in its header.
 
 The install configuration is part of the instrument too: a skill's packaged mode depends on which
 adapters `ak.install.yaml` attaches and on whether it configures a tracker backend, so the summary

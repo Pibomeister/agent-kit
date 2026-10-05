@@ -16,6 +16,7 @@ import type { LearnContext } from "../core/context.ts";
 import launchdTemplate from "./templates/launchd.plist.tmpl" with { type: "text" };
 import serviceTemplate from "./templates/systemd.service.tmpl" with { type: "text" };
 import timerTemplate from "./templates/systemd.timer.tmpl" with { type: "text" };
+import { unitScopeDiffers } from "./scope.ts";
 import type { SetupDeps } from "./wire.ts";
 import { shellQuote } from "./wire.ts";
 
@@ -186,6 +187,13 @@ export function schedule(
   options: { intervalS?: number; load?: boolean } = {},
 ): number {
   const intervalS = options.intervalS ?? DEFAULT_INTERVAL_S;
+  if (unitScopeDiffers(ctx)) {
+    ctx.io.err(
+      "ak learn setup schedule: AK_LEARN_REPOS is not carried into the unit, and the scope file differs, " +
+        "so the scheduled tick would run with another scope; run `ak learn setup scope --set` with the same roots first",
+    );
+    return 1;
+  }
   const kind = schedulerKind(deps);
   mkdirSync(ctx.config.runtimeDir, { recursive: true });
   if (kind === "none") {

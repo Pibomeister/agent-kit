@@ -3,9 +3,10 @@
  * honour, kept in one runtime-owned file so re-running wire or schedule can
  * never widen it. `AK_LEARN_REPOS`, when present, overrides the file.
  */
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { type LearnConfig, loadConfig, parseRepos, scopeFile } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
+import { mainRepoRoot } from "../core/paths.ts";
 
 /** The effective scope and where it came from, as verify, doctor and this verb print it. */
 export function scopeText(config: LearnConfig): string {
@@ -14,16 +15,39 @@ export function scopeText(config: LearnConfig): string {
   return `${roots} (${config.reposSource === "env" ? "AK_LEARN_REPOS" : "scope file"})`;
 }
 
+/**
+ * The scope a process started without `AK_LEARN_REPOS` sees, which is the scheduler unit's: the
+ * unit never carries the variable, so only the scope file reaches the tick.
+ */
+export function fileScope(ctx: LearnContext): LearnConfig {
+  const { AK_LEARN_REPOS: _scope, ...env } = ctx.env;
+  return loadConfig(env);
+}
+
+/** Whether the tick would run with a different scope than this shell's, because the scope lives only in the variable. */
+export function unitScopeDiffers(ctx: LearnContext): boolean {
+  return ctx.config.reposSource === "env" && JSON.stringify(fileScope(ctx).repos) !== JSON.stringify(ctx.config.repos);
+}
+
 export function scope(ctx: LearnContext, options: { set?: string; clear?: boolean }): number {
   const path = scopeFile(ctx.config.runtimeDir);
   if (options.set !== undefined) {
+    // The hooks compare against a session's main repo root, so a worktree or a subdirectory is stored as its main root.
+    const entries = options.set.split(":").map((part) => part.trim());
+    const roots = entries.flatMap((entry) => {
+      const root = parseRepos(entry).length === 0 ? null : mainRepoRoot(entry);
+      if (root === null) {
+        if (entry !== "") ctx.io.out(`  ignored: ${entry} (not an absolute path inside a git repository)`);
+        return [];
+      }
+      if (root !== parseRepos(entry)[0]) ctx.io.out(`  ${entry}: stored as its main repository root ${root}`);
+      return [root];
+    });
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
-    writeFileSync(path, `${options.set.trim()}\n`);
+    // Hooks and the tick read this file at any moment, so it is replaced whole, never rewritten in place.
+    writeFileSync(`${path}.tmp`, `${roots.join(":")}\n`);
+    renameSync(`${path}.tmp`, path);
     ctx.io.out(`${path}: written`);
-    for (const entry of options.set.split(":").map((part) => part.trim())) {
-      if (entry !== "" && parseRepos(entry).length === 0)
-        ctx.io.out(`  ignored: ${entry} (not an absolute path that exists)`);
-    }
   } else if (options.clear === true) {
     const existed = existsSync(path);
     rmSync(path, { recursive: true, force: true });

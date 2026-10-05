@@ -5,7 +5,7 @@
  * model sits behind it is the runner's binding, not this package's (ruling
  * `learning-judge-is-runner-bound`).
  */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -160,6 +160,18 @@ export function repoAllowed(config: LearnConfig, root: string | null): boolean {
   return id !== null && config.repos.some((entry) => identity(entry) === id);
 }
 
+/**
+ * Whether the scope file is there, by lstat: a dangling symlink or an entry that cannot be checked
+ * counts as present, so it reads as a scope that allows nothing rather than as no scope at all.
+ */
+function scopePresent(path: string): boolean {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
+  } catch {
+    return true;
+  }
+}
+
 /** The scope file's text; one that cannot be read is a scope that allows nothing. */
 function readScope(path: string): string {
   try {
@@ -183,7 +195,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
   const scope =
     env.AK_LEARN_REPOS !== undefined
       ? { text: env.AK_LEARN_REPOS, source: "env" as const }
-      : existsSync(scopeFile(runtimeDir))
+      : scopePresent(scopeFile(runtimeDir))
         ? { text: readScope(scopeFile(runtimeDir)), source: "file" as const }
         : null;
   return {
