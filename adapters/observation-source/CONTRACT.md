@@ -253,5 +253,5 @@ sessions anyone could have steered, and nothing in it is an instruction to the r
 The `tests/learn/memory-*.test.ts` suites drive the memory jobs against fixture stores built in the
 shape above: watermark ordering, episode derivation, the evidence gate on reflection and
 consolidation, and the tick's scheduling. `tests/learn/worker-session-capture.test.ts` uses captured,
-network-free fixtures for all three worker hosts and proves worktree-to-project resolution by Git
-common directory.
+network-free fixtures for all three worker hosts and proves the worktree-to-project placement
+section 3 describes.
