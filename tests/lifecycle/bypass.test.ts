@@ -230,13 +230,15 @@ describe("bypass granted: phases start without a typed command", () => {
 
 describe("start only: approvals, merge and deploy are never covered", () => {
   test("a host-unattested verifier receipt is refused once a checked gate started under the grant", () => {
-    for (const start of ["typed", "bypass", "ship-use", "before-open"] as const) {
-      const { worktree, ledger, grantPath } = granted();
+    for (const start of ["typed", "bypass", "ship-use", "before-open", "other-task"] as const) {
+      const s = granted();
+      const { worktree, ledger, grantPath } = s;
+      const task = start === "other-task" ? "T-2" : "T-1";
       const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
       const ticket = {
         schema: "ticket",
         schema_version: 1,
-        id: "T-1",
+        id: task,
         acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
         verification: [
           {
@@ -252,10 +254,11 @@ describe("start only: approvals, merge and deploy are never covered", () => {
       };
       const ticketPath = join(worktree, "T-1.json");
       writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
-      if (start === "before-open")
+      if (start === "before-open" || start === "other-task")
         expect(
           ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-align").code,
         ).toBe(0);
+      if (start === "other-task") expect(checkPhase(s, grantPath, "T-1", "super-review:full").code).toBe(0);
       const grantFlags = start === "bypass" ? ["--bypass", grantPath, "--task", "T-1"] : [];
       const openAndCheck = () => {
         const run = ak(worktree, ledger, "open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
@@ -291,7 +294,7 @@ describe("start only: approvals, merge and deploy are never covered", () => {
             environment: { id: "test", isolated: true, secrets_policy: "none" },
             supports: ["AC-1"],
             check: "project-check",
-            ticket: { id: "T-1", schema: "ticket", hash: artifactHash(ticket) },
+            ticket: { id: task, schema: "ticket", hash: artifactHash(ticket) },
             recipe,
             evidence_kind: "smoke-test",
             verifier_seat: {
@@ -312,11 +315,17 @@ describe("start only: approvals, merge and deploy are never covered", () => {
       };
       const byHand = "note: verifier seat verify-1 on receipt verification-1 is host-unattested";
       const checked = openAndCheck();
-      if (start === "typed") {
-        expect(checked.code).toBe(0);
+      if (start === "typed" || start === "other-task") {
         expect(checked.err).toContain(byHand);
-        continue;
+        expect(checked.code).toBe(0);
       }
+      if (start === "other-task") {
+        expect(checkPhase(s, freshGrant(s, () => new Date(), "T-2").path, "T-2", "super-review:full").code).toBe(0);
+        const earlier = join(defaultEvidenceDir(worktree), "task", "bypass");
+        for (const phase of ["super-align", "super-review-full"])
+          expect(JSON.parse(readFileSync(join(earlier, `${phase}.json`), "utf8"))).toMatchObject({ task_id: "T-1" });
+      }
+      if (start === "typed" || start === "other-task") continue;
       const used = { bypass: "super-review-full", "ship-use": "super-ship", "before-open": "super-align" }[start];
       expect(checked.code).toBe(1);
       expect(checked.err).toContain(

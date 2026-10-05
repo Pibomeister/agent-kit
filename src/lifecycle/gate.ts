@@ -396,10 +396,11 @@ export function openRun(a: OpenArgs): { ok: true; run: RunRecord } | { ok: false
     ...bound,
   };
   atomicJson(runRecordPath(a.dir, runId), run);
-  const beforeOpen = join(a.dir, safeRunId(branch.text), "bypass");
-  if (existsSync(beforeOpen)) {
-    mkdirSync(join(a.dir, runId), { recursive: true });
-    renameSync(beforeOpen, join(a.dir, runId, "bypass"));
+  for (const phase of ["super-align", "super-bound"] as const) {
+    const beforeOpen = bypassUsePath(a.dir, branch.text, phase);
+    if (readObject(beforeOpen)?.task_id !== id) continue;
+    mkdirSync(join(a.dir, runId, "bypass"), { recursive: true });
+    renameSync(beforeOpen, bypassUsePath(a.dir, runId, phase));
   }
   storeArtifact(a.dir, runId, canonical);
   atomicJson(branchPointerPath(a.dir, branch.text), { run_id: runId });
