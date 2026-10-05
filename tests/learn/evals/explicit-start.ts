@@ -7,7 +7,12 @@
  */
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
-import { explicitStartForHost, type HostId, rewriteExplicitStarts } from "../../../src/packaging/hosts.ts";
+import {
+  explicitStartForHost,
+  explicitStartPattern,
+  type HostId,
+  rewriteExplicitStarts,
+} from "../../../src/packaging/hosts.ts";
 import { BUNDLE_FOR } from "./subjects/index.ts";
 import type { HostKind } from "./subjects/types.ts";
 
@@ -21,8 +26,6 @@ export interface StartVocabulary {
   canonical(text: string): string;
 }
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 export function startVocabulary(host: HostId, namespace: string, userSkillIds: ReadonlyArray<string>): StartVocabulary {
   const other = new Map<string, string>();
   for (const id of userSkillIds) {
@@ -32,11 +35,7 @@ export function startVocabulary(host: HostId, namespace: string, userSkillIds: R
     other.set(canonical, native);
     other.set(native, canonical);
   }
-  const either = [...other.keys()]
-    .sort((a, b) => b.length - a.length)
-    .map(escapeRe)
-    .join("|");
-  const command = new RegExp(`(?:${either})(?![a-z0-9]|-[a-z0-9])`, "g");
+  const command = explicitStartPattern([...other.keys()]);
   return {
     typed: (text) => rewriteExplicitStarts(text, host, namespace, userSkillIds),
     canonical: (text) => (other.size === 0 ? text : text.replace(command, (found) => other.get(found) ?? found)),

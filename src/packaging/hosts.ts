@@ -29,12 +29,19 @@ function escapeForPattern(text: string): string {
 }
 
 /**
+ * Every exact occurrence of one of `commands`, the one definition of where a
+ * command ends. A longer id is not a match: `/ak:compound-refresh` is not the
+ * command `/ak:compound` followed by text.
+ */
+export function explicitStartPattern(commands: ReadonlyArray<string>): RegExp {
+  return new RegExp(`(?:${commands.map(escapeForPattern).join("|")})(?![a-z0-9]|-[a-z0-9])`, "g");
+}
+
+/**
  * Rewrite exact canonical U-skill command references in host-facing prose.
  *
- * A longer id is not a match: `/ak:compound-refresh` must not be translated as
- * the command `/ak:compound` followed by text. M ids are absent from the input,
- * so their automatic-invocation contract is not converted into an explicit
- * gate by packaging.
+ * M ids are absent from the input, so their automatic-invocation contract is
+ * not converted into an explicit gate by packaging.
  */
 export function rewriteExplicitStarts(
   text: string,
@@ -42,14 +49,14 @@ export function rewriteExplicitStarts(
   namespace: string,
   userSkillIds: ReadonlyArray<string>,
 ): string {
-  let rewritten = text;
+  const native = new Map<string, string>();
   for (const skillId of userSkillIds) {
     const canonical = `${namespace}${skillId}`;
-    const native = explicitStartForHost(host, namespace, skillId);
-    if (canonical === native) continue;
-    rewritten = rewritten.replace(new RegExp(`${escapeForPattern(canonical)}(?![a-z0-9]|-[a-z0-9])`, "g"), native);
+    const rendered = explicitStartForHost(host, namespace, skillId);
+    if (canonical !== rendered) native.set(canonical, rendered);
   }
-  return rewritten;
+  if (native.size === 0) return text;
+  return text.replace(explicitStartPattern([...native.keys()]), (found) => native.get(found) ?? found);
 }
 
 /**

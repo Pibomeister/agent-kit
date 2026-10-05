@@ -10,7 +10,7 @@ import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { checkCompleteness } from "../src/validation/completeness.ts";
-import { HOST_IDS, RESTRICTIONS, loadHostCapabilities } from "../src/packaging/hosts.ts";
+import { HOST_IDS, RESTRICTIONS, explicitStartPattern, loadHostCapabilities } from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
 import {
   INSTALL_FILE,
@@ -1540,9 +1540,9 @@ describe("portable explicit-start authority in the real catalog", () => {
       .bySection("skills")
       .filter((skill) => skill.invocation === "U")
       .map((skill) => skill.id);
-    const canonicalStart = new RegExp(`${catalog.package.namespace}(?:${userIds.join("|")})(?![a-z0-9]|-[a-z0-9])`);
+    const canonicalStart = explicitStartPattern(userIds.map((id) => `${catalog.package.namespace}${id}`));
     const offenders = [...codex.files.values()]
-      .filter((file) => /^(?:skills|references)\//.test(file.path) && canonicalStart.test(file.contents))
+      .filter((file) => /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1)
       .map((file) => file.path);
     expect(offenders).toEqual([]);
 
