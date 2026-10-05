@@ -47,6 +47,7 @@ export const LEARN_VALUE_FLAGS = new Set([
   "since",
   "source",
   "cwd",
+  "set",
   "pr",
   "id",
   "to",

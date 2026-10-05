@@ -332,6 +332,10 @@ export function wire(ctx: LearnContext, deps: SetupDeps, options: WireOptions = 
   if (claude) wireClaude(ctx, commands);
   if (options.host !== "claude") wireCodex(ctx, deps, commands, options.host === "codex");
   if (mem) {
+    if (ctx.config.repos !== null)
+      ctx.io.out(
+        "note: the repo scope covers agent-kit's hooks and tick only; claude-mem still observes every session",
+      );
     const changed = wireMem(ctx, deps);
     if (changed && options.restartWorker === true) restartWorker(ctx, deps);
     else if (changed)

@@ -51,6 +51,11 @@ export function schedulerLog(ctx: LearnContext): string {
 
 /** Variables passed through to the unit when set: where claude-mem lives, and every `AK_LEARN_*` knob including the judge command. */
 const PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME"];
+/**
+ * Never baked: the repo scope lives in the runtime's scope file, which the hooks read too, so a
+ * re-run from a shell without the variable cannot widen the tick, nor one with it pin a stale scope.
+ */
+const NOT_BAKED = ["AK_LEARN_REPOS"];
 
 /** The unit's environment, in a stable order. */
 export function unitEnvironment(ctx: LearnContext): Array<[string, string]> {
@@ -59,7 +64,7 @@ export function unitEnvironment(ctx: LearnContext): Array<[string, string]> {
   if (configDir !== undefined && configDir.trim() !== "") out.push(["CLAUDE_CONFIG_DIR", configDir]);
   out.push(["PATH", ctx.env.PATH && ctx.env.PATH !== "" ? ctx.env.PATH : "/usr/local/bin:/usr/bin:/bin"]);
   const extra = Object.keys(ctx.env)
-    .filter((key) => PASSTHROUGH.includes(key) || key.startsWith("AK_LEARN_"))
+    .filter((key) => (PASSTHROUGH.includes(key) || key.startsWith("AK_LEARN_")) && !NOT_BAKED.includes(key))
     .sort();
   for (const key of extra) {
     const value = ctx.env[key];

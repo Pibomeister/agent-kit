@@ -11,6 +11,7 @@ import type { LearnContext } from "../core/context.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
 import { readRegistry, registryHygiene } from "../memory/registry.ts";
 import { schedulerKind, unitEnvironment } from "./schedule.ts";
+import { scopeText } from "./scope.ts";
 import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
 import { runsLine } from "../stats.ts";
 
@@ -126,6 +127,7 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(`  claude-mem dir      ${memDir(ctx, deps)}   (db ${ctx.config.memDb})`);
   ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
+  ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
   const trace = judgeTraceSummary(ctx.config);
   ctx.io.out(
     `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,

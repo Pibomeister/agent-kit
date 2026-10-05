@@ -299,7 +299,10 @@ export function detectPatterns(text: string): Detection {
   return { type: "auto", patterns: names.join(" "), confidence, sentiment: "correction", decayDays };
 }
 
-/** Prompt hook. Detection runs first, so a prompt that is not a correction costs no git call and no write. */
+/**
+ * Prompt hook. Detection runs first, so a prompt that is not a correction costs no git call and no
+ * write. Under a repo scope the hook entry resolves the root before this runs, one git call a prompt.
+ */
 export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnArgs): void {
   const raw =
     typeof payload.prompt === "string"

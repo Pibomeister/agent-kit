@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { loadConfig } from "../../src/learn/core/config.ts";
 import { loopDir, projectFolderName, registryPath } from "../../src/learn/core/paths.ts";
 import { run, type RunResult } from "../../src/learn/core/proc.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
@@ -268,6 +269,28 @@ describe("setup verify", () => {
     expect(verify(ctx, deps, repo)).toBe(0);
     expect(ctx.out.at(-1)).toBe("\nall checks passed");
     expect(deps.calls.every((call) => call[0] === "launchctl" && call[1] === "list")).toBe(true);
+  });
+
+  test("verify and doctor report the effective repo scope and where it came from", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const scope = (ctx: TestContext) => verifyChecks(ctx, deps).find((check) => check.label === "repo scope");
+    expect(scope(context(deps))).toEqual({
+      label: "repo scope",
+      ok: true,
+      detail: "unscoped (every repository)",
+    });
+    const root = gitRepo(join(scratch(), "shop"));
+    const env = context(deps, { AK_LEARN_REPOS: root });
+    expect(scope(env)?.detail).toBe(`${root} (AK_LEARN_REPOS)`);
+    doctor(env, deps);
+    expect(env.out).toContain(`  repo scope          ${root} (AK_LEARN_REPOS)`);
+    const file = context(deps);
+    mkdirSync(file.config.runtimeDir, { recursive: true });
+    writeFileSync(join(file.config.runtimeDir, "repos"), ":\n");
+    const reread = { ...file, config: loadConfig(file.env) };
+    expect(scope(reread)?.detail).toBe("nothing allowed (scope file)");
+    doctor(reread, deps);
+    expect(reread.out).toContain("  repo scope          nothing allowed (scope file)");
   });
 
   test("a hook wired twice by hand is reported, not accepted", () => {

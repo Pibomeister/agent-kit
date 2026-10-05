@@ -5,8 +5,9 @@
  * model sits behind it is the runner's binding, not this package's (ruling
  * `learning-judge-is-runner-bound`).
  */
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 export interface LearnConfig {
   /** `$CLAUDE_CONFIG_DIR`, else `~/.claude`. Ledgers live under `<configDir>/projects/`. */
@@ -33,6 +34,13 @@ export interface LearnConfig {
   batch: number;
   /** Print decisions and prompts; write nothing. */
   dryRun: boolean;
+  /**
+   * The repo scope: the main repo roots the hooks and the scheduled tick may act on, as absolute
+   * paths that existed when read. null is unscoped; an empty list allows nothing.
+   */
+  repos: readonly string[] | null;
+  /** Where the scope came from: `AK_LEARN_REPOS` overrides the file `setup scope` writes. */
+  reposSource: "none" | "file" | "env";
 }
 
 /**
@@ -114,6 +122,53 @@ export function splitCommand(text: string): string[] {
   return out;
 }
 
+/** The scope file `ak learn setup scope` manages. */
+export function scopeFile(runtimeDir: string): string {
+  return join(runtimeDir, "repos");
+}
+
+/**
+ * A path's file identity, read with stat alone: the scheduled tick may stat inside a repository
+ * but never open there (`rootOf`), and resolving symlinks opens each directory on the way. Two
+ * spellings of one directory, through a symlink or in another case, share an identity.
+ */
+function identity(path: string): string | null {
+  try {
+    const stat = statSync(path, { bigint: true, throwIfNoEntry: false });
+    return stat === undefined ? null : `${stat.dev}:${stat.ino}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A `:`-separated scope. An entry counts only when it is absolute and exists; anything else
+ * matches nothing, so a blank or mistyped scope fails closed rather than meaning every repo.
+ */
+export function parseRepos(text: string): string[] {
+  return text
+    .split(":")
+    .map((entry) => entry.trim())
+    .filter((entry) => isAbsolute(entry) && identity(entry) !== null)
+    .map((entry) => resolve(entry));
+}
+
+/** Whether the hooks and the scheduled tick may act on `root`, a main repo root (null outside any repo). */
+export function repoAllowed(config: LearnConfig, root: string | null): boolean {
+  if (config.repos === null) return true;
+  const id = root === null ? null : identity(root);
+  return id !== null && config.repos.some((entry) => identity(entry) === id);
+}
+
+/** The scope file's text; one that cannot be read is a scope that allows nothing. */
+function readScope(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return "";
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
   const configDir =
     env.CLAUDE_CONFIG_DIR && env.CLAUDE_CONFIG_DIR.trim() !== "" ? env.CLAUDE_CONFIG_DIR : join(homedir(), ".claude");
@@ -123,9 +178,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
       : join(homedir(), ".claude-mem");
   const judge =
     env.AK_LEARN_JUDGE && env.AK_LEARN_JUDGE.trim() !== "" ? splitCommand(env.AK_LEARN_JUDGE) : DEFAULT_JUDGE;
+  const runtimeDir = join(configDir, "agent-kit", "learn");
+  // Presence, not content: a blank variable is a scope that allows nothing.
+  const scope =
+    env.AK_LEARN_REPOS !== undefined
+      ? { text: env.AK_LEARN_REPOS, source: "env" as const }
+      : existsSync(scopeFile(runtimeDir))
+        ? { text: readScope(scopeFile(runtimeDir)), source: "file" as const }
+        : null;
   return {
     configDir,
-    runtimeDir: join(configDir, "agent-kit", "learn"),
+    runtimeDir,
     judgeCommand: judge,
     judgeTimeoutMs: int(env, "AK_LEARN_JUDGE_TIMEOUT_S", 300) * 1000,
     traceFull: env.AK_LEARN_TRACE === "full",
@@ -140,5 +203,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
     nightlyHour: int(env, "AK_LEARN_NIGHTLY_HOUR", 2),
     batch: int(env, "AK_LEARN_BATCH", 24),
     dryRun: env.AK_LEARN_DRY_RUN === "1",
+    repos: scope === null ? null : parseRepos(scope.text),
+    reposSource: scope?.source ?? "none",
   };
 }

@@ -150,6 +150,25 @@ describe("setup wire", () => {
     return testContext({ env: { CLAUDE_MEM_DATA_DIR: join(deps.home, ".claude-mem"), CODEX_HOME: "", ...env } });
   }
 
+  test("a scope is never written into a hook command, and wiring claude-mem under one says it stays unscoped", () => {
+    const deps = fakeDeps();
+    const scoped = context(deps, { AK_LEARN_REPOS: scratch() });
+    expect(wire(scoped, deps, { host: "claude" })).toBe(0);
+    const doc = readDoc(join(scoped.config.configDir, "settings.json"));
+    expect([...commands(doc, "SessionStart"), ...commands(doc, "Stop")]).toEqual([
+      hookCommands(deps).sessionStart,
+      hookCommands(deps).claudeStop,
+    ]);
+    const note = "note: the repo scope covers agent-kit's hooks and tick only; claude-mem still observes every session";
+    expect(scoped.out).toContain(note);
+    const noMem = context(deps, { AK_LEARN_REPOS: scratch() });
+    wire(noMem, deps, { host: "claude", noMem: true });
+    expect(noMem.out).not.toContain(note);
+    const unscoped = context(deps);
+    wire(unscoped, deps, { host: "claude" });
+    expect(unscoped.out).not.toContain(note);
+  });
+
   test("wiring twice yields the same bytes, and foreign settings survive", () => {
     const deps = fakeDeps();
     const ctx = context(deps);

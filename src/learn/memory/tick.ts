@@ -12,6 +12,7 @@
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import Ajv from "ajv";
+import { repoAllowed } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { acquireLock, Ledger } from "../core/ledger.ts";
 import { tickLogPath } from "../core/paths.ts";
@@ -346,14 +347,17 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
     }
     try {
       tickLog(ctx, `== ${nowIso()} tick${ctx.config.dryRun ? " DRY RUN" : ""}`);
+      // The repo scope gates the scheduled pass; `only` is an explicit `memory run --repo` and is not gated.
+      const allowed = (root: string) => options.only !== undefined || repoAllowed(ctx.config, root);
       const registry =
         options.only === undefined
-          ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()), (warning) => tickLog(ctx, warning))
+          ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()), (warning) => tickLog(ctx, warning), allowed)
           : readRegistry(ctx.config);
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only) continue;
+        if (!allowed(entry.root)) continue;
         if (options.only === undefined && source.lastActivityMs(entry.mem_project) < cutoff) continue;
         const name = entry.mem_project || basename(entry.root);
         projects += 1;

@@ -10,6 +10,7 @@ import { readJson } from "../core/store.ts";
 import { readRegistry } from "../memory/registry.ts";
 import { judgeBinary } from "./doctor.ts";
 import { LABEL, schedulerKind, unitPaths } from "./schedule.ts";
+import { scopeText } from "./scope.ts";
 import {
   CONTEXT_OBSERVATIONS,
   claudeSettingsPath,
@@ -91,6 +92,9 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
       check(`${loop} ledger (${root})`, existsSync(join(dir, ".git")), dir);
     }
   }
+
+  // Reported, never failed: unscoped and a scope that allows nothing are both deliberate settings.
+  check("repo scope", true, scopeText(ctx.config));
 
   const judge = judgeBinary(ctx, deps);
   check("judge command resolvable", judge !== null, judge ?? ctx.config.judgeCommand.join(" "));

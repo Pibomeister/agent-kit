@@ -184,11 +184,13 @@ export function logRegistryWarnings(config: LearnConfig, warnings: readonly stri
  * A worktree-suffixed project name (`app/branch`) registers under `app`, the
  * newest sighting of a folder wins, and a root contesting a claude-mem project
  * is settled by the ownership rules above, with a warning for each refusal.
+ * A root `allow` refuses is never written.
  */
 export function discoverProjects(
   config: LearnConfig,
   rows: readonly CwdRow[],
   warn: (message: string) => void = () => undefined,
+  allow: (root: string) => boolean = () => true,
 ): Registry {
   const current = readRegistry(config);
   const cleaned = clean(current);
@@ -198,7 +200,7 @@ export function discoverProjects(
     if (SKIP_CWD.some((skip) => `${row.cwd}/`.includes(skip))) continue;
     if (ineligible(resolve(row.cwd)) !== null) continue;
     const root = rootOf(row.cwd);
-    if (root === null) continue;
+    if (root === null || !allow(root)) continue;
     found[projectFolderName(root)] = { root, mem_project: row.project.split("/")[0]!, last_seen: row.last_seen };
   }
   for (const entry of Object.values(found).toSorted(byClaim)) {

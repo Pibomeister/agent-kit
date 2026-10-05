@@ -8,7 +8,7 @@ import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-for (const key of Object.keys(process.env)) if (key.startsWith("AK_LEARN_")) delete process.env[key];
+for (const key of Object.keys(process.env)) if (key.startsWith("AK_LEARN_")) Reflect.deleteProperty(process.env, key);
 const root = realpathSync(mkdtempSync(join(tmpdir(), "ak-test-env-")));
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");
