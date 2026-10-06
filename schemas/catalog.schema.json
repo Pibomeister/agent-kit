@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/catalog.schema.json",
   "title": "Catalog",
-  "description": "The shape of catalog.yaml, the single source of truth. Nothing is installable, packageable or referenceable unless it is declared here, and `ak validate` fails on an entry with no directory and on a directory with no entry. Every entry carries a batch and a status; skills, packs, protocols, roles and references additionally carry a provenance origin, because the question 'is there a donor file behind it' has an answer for authored content and not for a schema or a profile. 'invocation' is U or M and nothing else (AGENTS.md, 'The invocation law'); 'status' moves contract -> authored; 'provenance_origin' is donor or conversation, where conversation means a G:L locator rather than a fabricated source path (plan 1.4). Profiles are install sets and adapters are host contracts: neither may name anything about which agent fills a seat.",
+  "description": "The shape of catalog.yaml, the single source of truth. catalog.d/<name>.yaml fragments may add entries to it and validate against #/$defs/fragment instead; catalog.yaml validates on its own, without them. Nothing is installable, packageable or referenceable unless it is declared here or in a fragment, and `ak validate` fails on an entry with no directory and on a directory with no entry. Every entry carries a batch and a status; skills, packs, protocols, roles and references additionally carry a provenance origin, because the question 'is there a donor file behind it' has an answer for authored content and not for a schema or a profile. 'invocation' is U or M and nothing else (AGENTS.md, 'The invocation law'); 'status' moves contract -> authored; 'provenance_origin' is donor or conversation, where conversation means a G:L locator rather than a fabricated source path (plan 1.4). Profiles are install sets and adapters are host contracts: neither may name anything about which agent fills a seat.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -165,7 +165,7 @@
       "x-validator-rule": "catalog.reference-loaded-by-names-a-declared-skill"
     },
     "schemas": {
-      "description": "The 27 JSON Schemas. 'common' holds the shared $defs and validates no document itself; the thirteen artifact schemas are exactly common#/$defs/schema_id, catalog, skill, pack, case, rulings, install, firstmate-binding and tracker-binding validate configuration rather than run artifacts, and review-event, review-pattern, episode, memory-run and learn-state validate the learning runtime's ledger records, which is why none of those carry an envelope. Schema entries have no provenance origin: they are original contracts, not adapted donor files.",
+      "description": "The catalog's JSON Schemas. 'common' holds the shared $defs and validates no document itself; artifact schemas are exactly common#/$defs/schema_id, catalog, skill, pack, case, rulings, install, firstmate-binding and tracker-binding validate configuration rather than run artifacts, and review-event, review-pattern, episode, memory-run and learn-state validate the learning runtime's ledger records, which is why none of those carry an envelope. Schema entries have no provenance origin: they are original contracts, not adapted donor files.",
       "type": "array",
       "minItems": 1,
       "items": {
@@ -190,6 +190,7 @@
               "finding",
               "review",
               "verification",
+              "verification-recipe",
               "charter",
               "decision",
               "event",
@@ -204,7 +205,8 @@
               "review-pattern",
               "episode",
               "memory-run",
-              "learn-state"
+              "learn-state",
+              "learn-span"
             ]
           },
           "batch": { "$ref": "#/$defs/batch" },
@@ -249,6 +251,24 @@
     }
   },
   "$defs": {
+    "fragment": {
+      "description": "One catalog.d/<name>.yaml. A fragment adds entries to catalog.yaml's sections and does nothing else: each section it declares has exactly the entry shape catalog.yaml's does, an id catalog.yaml or another fragment already declares in the same section is catalog.duplicate-id rather than an override, and there is no package block, because package identity is catalog.yaml's alone. A schema entry can name only an id the schemas enum already lists, which catalog.yaml declares, so a new schema is a change to this file and to catalog.yaml rather than a fragment. docs/decisions/0010-catalog-fragments.md records the decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "skills": { "$ref": "#/properties/skills" },
+        "packs": { "$ref": "#/properties/packs" },
+        "protocols": { "$ref": "#/properties/protocols" },
+        "roles": { "$ref": "#/properties/roles" },
+        "references": { "$ref": "#/properties/references" },
+        "schemas": { "$ref": "#/properties/schemas" },
+        "policies": { "$ref": "#/properties/policies" },
+        "profiles": { "$ref": "#/properties/profiles" },
+        "adapters": { "$ref": "#/properties/adapters" }
+      }
+    },
     "invocation": {
       "description": "U = user-invoked, only a human starts it, and the packager emits the host's manual-only key for it. M = model-invoked. There is no third value (AGENTS.md, 'The invocation law').",
       "enum": ["U", "M"]

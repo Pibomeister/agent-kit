@@ -587,15 +587,16 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      *
      * §3.1 states a property of the bundle, not advice about what to declare:
      * "Every U skill's `packaging.hosts[]` entry for `adapter: codex` records
-     * this explicitly: `mode: manual`". On a host that cannot suppress model
-     * invocation, a U skill exposed as anything else is one the model may start
-     * on a host that cannot be told not to -- and a human having asked is that
-     * skill's whole protection there.
+     * this explicitly: `mode: manual`". On a host where model invocation is not
+     * suppressed, a U skill exposed as anything else is one the model may start
+     * on a host that has not been told not to -- and a human having asked is
+     * that skill's whole protection there.
      *
-     * The premise §3.1 names is "a host with no manual-invocation flag", so
-     * that is what is tested. Keyed on `host === "codex"` this would be a rule
-     * that happens to be right about the two hosts that exist and goes on
-     * firing at codex after codex grows the flag. `enforces` rather than
+     * The premise §3.1 names is that the package "does not emit" the host's
+     * suppression key, so the host does not enforce it, and that is what is
+     * tested. Keyed on `host === "codex"` this would be a rule that happens to
+     * be right about the two hosts that exist and goes on firing at codex after
+     * its bundle starts enforcing suppression. `enforces` rather than
      * `HOST_FRONTMATTER_KEYS` because emitting the key and honoring it are
      * different claims, and the one that protects the skill is the second.
      *
@@ -612,7 +613,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         error(
           "packaging.u-skill-not-manual",
           `skills/${entry.id}/skill.yaml`,
-          `'${entry.id}' is a U skill and its packaging.hosts[] row for adapter '${host}' declares mode '${declaredMode}'. ${host} does not enforce no-model-invocation, so adapters/codex/CONTRACT.md §3.1 requires 'mode: manual' with the unsuppressible model invocation named in 'unsupported'. The bundle packages it manual regardless; fix the row so the declaration records the weakening instead of contradicting it.`,
+          `'${entry.id}' is a U skill and its packaging.hosts[] row for adapter '${host}' declares mode '${declaredMode}'. ${host} does not enforce no-model-invocation, so adapters/codex/CONTRACT.md §3.1 requires 'mode: manual' with the unsuppressed model invocation named in 'unsupported'. The bundle packages it manual regardless; fix the row so the declaration records the weakening instead of contradicting it.`,
         ),
       );
     }
@@ -975,10 +976,10 @@ function checkManifestParity(root: string, manifest: HostManifest): Issue[] {
  * inventing an owner, which would be a claim about a real party in a file that
  * gets distributed.
  *
- * The donor's `homepage`, `tags` and `metadata.description` are not emitted.
- * This tree states no value for any of them, and the failure this package has
- * already produced once is a plausible value nobody checked -- so the fields
- * are absent until something in the tree says what they are.
+ * The donor's `homepage` and `tags` are not emitted because this tree states no
+ * value for them. `metadata.description` is the catalog package description:
+ * Claude's strict marketplace validator requires it, and deriving it from the
+ * same source as the plugin manifest prevents the two descriptions drifting.
  */
 function marketplace(ctx: CheckContext): string {
   const pkg = ctx.catalog.package;
@@ -986,7 +987,7 @@ function marketplace(ctx: CheckContext): string {
   const doc = {
     name: pkg.name,
     owner: author,
-    metadata: { version: pkg.version },
+    metadata: { version: pkg.version, description: pkg.description },
     plugins: [{ name: pkg.id, description: pkg.name, author, source: "./" }],
   };
   return `${JSON.stringify(doc, null, 2)}\n`;

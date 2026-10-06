@@ -20,6 +20,7 @@ import { Ledger } from "../core/ledger.ts";
 import { loopDir, projectFolderName, reflectFolderName } from "../core/paths.ts";
 import { buildPrompt, PACKAGE_ROOT } from "../core/roles.ts";
 import { appendJsonl, nowIso, readJson, todayUtc, writeJson } from "../core/store.ts";
+import { runOf, span, triggerOf } from "../core/trace.ts";
 import { memProject } from "../review/ingest.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { catalogSkills, installedSkills, oneLine } from "./roster.ts";
@@ -87,6 +88,11 @@ export function skillsLedger(ctx: LearnContext, root: string): Ledger {
     },
     "init skills ledger",
   );
+}
+
+/** The ledger a pass works on: a dry run reads whatever is there and never creates it. */
+function passLedger(ctx: LearnContext, root: string): Ledger {
+  return ctx.config.dryRun ? new Ledger(loopDir(ctx.config, root, "skills")) : skillsLedger(ctx, root);
 }
 
 export function loadRegistry(ledger: Ledger): SkillRegistry {
@@ -378,13 +384,20 @@ export interface DiscoverOptions {
 
 /** One discovery pass. Returns a one-line summary; writes nothing on a dry run or a failed judge call. */
 export function discover(ctx: LearnContext, root: string, options: DiscoverOptions = {}): string {
-  const ledger = skillsLedger(ctx, root);
-  const release = ledger.tryLock();
-  if (release === null) return "";
+  const ledger = passLedger(ctx, root);
+  const release = ctx.config.dryRun ? () => undefined : ledger.tryLock();
+  if (release === null) {
+    ctx.span?.status("locked", "lock-held");
+    return "";
+  }
   try {
     const registry = loadRegistry(ledger);
     const sessions = gatherSessions(ctx, root, options.days ?? DEFAULT_DAYS, registry, options.force === true);
-    if (sessions.length < MIN_SESSIONS) return `only ${sessions.length} new sessions; nothing to analyse`;
+    ctx.span?.attr("sessions", sessions.length);
+    if (sessions.length < MIN_SESSIONS) {
+      ctx.span?.status("nothing");
+      return `only ${sessions.length} new sessions; nothing to analyse`;
+    }
     const existing = existingSkills(ctx, root, options.packageRoot);
     let body = sessions
       .map((s) => `#### session ${s.sid}\n${s.messages.map((m) => `- ${m.slice(0, 300)}`).join("\n")}`)
@@ -404,18 +417,23 @@ export function discover(ctx: LearnContext, root: string, options: DiscoverOptio
       ctx.env,
     );
     if (ctx.config.dryRun) {
+      ctx.span?.status("dry-run");
       ctx.io.out(prompt);
       return "dry run";
     }
     const proposed = parseCandidates(
       ctx.judge(prompt, {
-        runId: null,
+        ...runOf(ctx),
         loop: "skills",
         role: "skill-scout",
         project: basename(root),
       }),
     );
-    if (proposed === null) return "judge call failed (sessions left unmarked)";
+    if (proposed === null) {
+      ctx.span?.status("failed", "no-judge-output");
+      return "judge call failed (sessions left unmarked)";
+    }
+    ctx.span?.attr("proposed", proposed.length);
 
     const taken = new Set([
       ...existing.map((s) => s.name),
@@ -449,7 +467,9 @@ export function discover(ctx: LearnContext, root: string, options: DiscoverOptio
     appendJsonl(ledger.path("raw", "discover.jsonl"), [
       { at: registry.last_discover, sessions: sessions.length, proposed: proposed.length, kept: made },
     ]);
-    ledger.commit(`discover: ${made.length} candidates from ${sessions.length} sessions`);
+    ctx.span?.attr("kept", made.length);
+    const sha = ledger.commit(`discover: ${made.length} candidates from ${sessions.length} sessions`);
+    ctx.span?.commit(sha);
     return `analysed ${sessions.length} sessions; ${made.length} new candidates: ${made.join(", ") || "-"}`;
   } finally {
     release();
@@ -482,28 +502,54 @@ export function measureUses(ctx: LearnContext, ledger: Ledger, registry: SkillRe
  * weighs when deciding to promote.
  */
 export function runSkillLearn(ctx: LearnContext, root: string): string {
-  const ledger = skillsLedger(ctx, root);
+  return span(ctx, "skills.run", triggerOf(ctx, "cli"), (run) => {
+    run.span?.project(root);
+    return skillLearnRun(run, root);
+  });
+}
+
+function skillLearnRun(ctx: LearnContext, root: string): string {
+  const ledger = passLedger(ctx, root);
   const parts: string[] = [];
+  const trigger = triggerOf(ctx, "cli");
   const last = loadRegistry(ledger).last_discover;
   if (last === undefined || Date.now() - Date.parse(last) > DEBOUNCE_MS) {
-    const summary = discover(ctx, root);
+    const summary = span(ctx, "skills.discover", trigger, (inner) => {
+      inner.span?.project(root);
+      return discover(inner, root);
+    });
     if (summary !== "") parts.push(summary);
   }
-  if (ctx.config.dryRun) return parts.join("; ");
-  const release = ledger.tryLock();
-  if (release === null) return parts.join("; ");
-  try {
-    const registry = loadRegistry(ledger);
-    const changed = measureUses(ctx, ledger, registry);
-    if (changed > 0) {
-      saveRegistry(ledger, registry);
-      ledger.commit(`uses: ${changed} candidates measured`);
-    }
-    const pending = Object.values(registry.candidates).filter((c) => c.status === "candidate");
-    parts.push(`${pending.length} candidates pending (${pending.map((c) => `${c.name}=${c.uses}`).join(", ") || "-"})`);
-  } finally {
-    release();
+  if (ctx.config.dryRun) {
+    ctx.span?.status("dry-run");
+    return parts.join("; ");
   }
+  span(ctx, "skills.uses", trigger, (inner) => {
+    inner.span?.project(root);
+    const release = ledger.tryLock();
+    if (release === null) {
+      inner.span?.status("locked", "lock-held");
+      return;
+    }
+    try {
+      const registry = loadRegistry(ledger);
+      const changed = measureUses(inner, ledger, registry);
+      if (changed > 0) {
+        saveRegistry(ledger, registry);
+        const sha = ledger.commit(`uses: ${changed} candidates measured`);
+        inner.span?.commit(sha);
+      }
+      const pending = Object.values(registry.candidates).filter((c) => c.status === "candidate");
+      inner.span?.attr("changed", changed);
+      inner.span?.attr("pending", pending.length);
+      ctx.span?.attr("pending", pending.length);
+      parts.push(
+        `${pending.length} candidates pending (${pending.map((c) => `${c.name}=${c.uses}`).join(", ") || "-"})`,
+      );
+    } finally {
+      release();
+    }
+  });
   return parts.join("; ");
 }
 

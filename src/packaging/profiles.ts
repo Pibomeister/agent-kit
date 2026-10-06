@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import type { Catalog } from "../catalog/load.ts";
+import { CATALOG_FRAGMENT_DIR, type Catalog } from "../catalog/load.ts";
 import { readTextIfPresent } from "../util/fs.ts";
 import { unknownSelector } from "../util/suggest.ts";
 import { error, note, type Issue } from "../validation/types.ts";
@@ -67,7 +67,7 @@ export function resolveProfile(root: string, catalog: Catalog, profileId: string
         error(
           "packaging.unknown-profile",
           "catalog.yaml",
-          `${unknownSelector("profile", selected, profileIds(catalog))}: catalog.yaml declares no such profile.`,
+          `${unknownSelector("profile", selected, profileIds(catalog))}: neither catalog.yaml nor a ${CATALOG_FRAGMENT_DIR}/ fragment declares it.`,
         ),
       ],
     };

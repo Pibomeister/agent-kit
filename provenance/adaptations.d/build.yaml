@@ -21,6 +21,18 @@
 # from memory or from a document's description of a donor.
 
 adaptations:
+  - path: skills/super-build/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L475-496
+    rationale: Implementer checks become explicitly self-check evidence before independent verification reruns the frozen packet.
+  - path: skills/super-build/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L475-496
+    rationale: The contract separates self-check receipts from gate-eligible verifier receipts.
+  - path: skills/super-verify/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L497-549
+    rationale: Verification resolves or discovers a recipe, seats the verifier, drives runnable surfaces and returns artifacts without prose approval.
+  - path: skills/super-verify/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L497-549
+    rationale: The autonomous contract requires independent context and trusted evidence supplied fail-closed by the runner.
 
   # --- super-scout ---------------------------------------------------------------
 

@@ -164,6 +164,15 @@ describe("paths", () => {
     }
   });
 
+  test("the repo scope is never baked into the unit; every other AK_LEARN_* knob still is", () => {
+    const ctx = context({ PATH: "/bin", AK_LEARN_REPOS: "/work/shop", AK_LEARN_JUDGE: "judge -p" });
+    expect(unitEnvironment(ctx)).toEqual([
+      ["PATH", "/bin"],
+      ["AK_LEARN_JUDGE", "judge -p"],
+    ]);
+    expect(launchdPlist(ctx, deps(), 900)).not.toContain("AK_LEARN_REPOS");
+  });
+
   test("the config dir follows the environment", () => {
     expect(loadConfig({ CLAUDE_CONFIG_DIR: "/somewhere/else" }).configDir).toBe("/somewhere/else");
     expect(loadConfig({}).configDir).toBe(join(homedir(), ".claude"));

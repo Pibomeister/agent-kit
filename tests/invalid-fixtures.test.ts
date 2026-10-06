@@ -165,6 +165,14 @@ const CASES: ReadonlyArray<InvalidCase> = [
     file: "skills/alpha/SKILL.md",
     message: /The first step under ## Workflow .* does not name `\/ak:alpha` or say to stop/,
   },
+  {
+    tree: "21-fragment-redeclares-id",
+    what: "a catalog.d/ fragment redeclaring an id catalog.yaml declares",
+    rule: "catalog.duplicate-id",
+    file: "catalog.d/downstream.yaml",
+    message:
+      /declares id 'alpha' here and in catalog\.yaml\. A catalog\.d\/ fragment adds entries and never replaces one/,
+  },
 ];
 
 function errorsOf(tree: string): Issue[] {

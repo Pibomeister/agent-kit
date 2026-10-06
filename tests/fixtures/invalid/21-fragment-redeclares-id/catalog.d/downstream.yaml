@@ -1,0 +1,5 @@
+schema_version: 1
+skills:
+  - id: alpha
+    status: authored
+    invocation: M

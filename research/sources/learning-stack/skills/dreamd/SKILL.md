@@ -6,7 +6,7 @@ description: Scheduled "dreaming" layer over claude-mem and review-learn - obser
 # dreamd
 
 Downstream consumer of claude-mem (`~/.claude-mem/claude-mem.db`, read-only), the review-learn ledger and skill-learn.
-Runs away from the foreground loop: a launchd job ticks every 15 min (`com.eduardopicazo.dreamd`); nothing here fires from a Stop hook.
+Runs away from the foreground loop: a launchd job ticks every 15 min (`com.$USER.dreamd`); nothing here fires from a Stop hook.
 
 Per-project ledger (git-versioned, private): `$CLAUDE_CONFIG_DIR/projects/<repo-folder>/dream/`
 
@@ -65,7 +65,7 @@ Known ceiling of that gate: it checks that the id exists, not that it supports t
 
 - SessionStart (Claude `$CLAUDE_CONFIG_DIR/settings.json`, Codex `~/.codex/hooks.json`): `session_context.py` prints memory.md + up to 8 confirmed lessons trimmed to the cap, then `dreamd: reflected <age> ago · N lessons (k confirmed) · next nightly <date> · /dreamd report`.
 - Budget trade: `~/.claude-mem/settings.json` `CLAUDE_MEM_CONTEXT_OBSERVATIONS=25` (was 50) pays for the injected block.
-- launchd `~/Library/LaunchAgents/com.eduardopicazo.dreamd.plist`, `StartInterval 900`. `launchctl list | grep dreamd`; reload with `launchctl bootout gui/$(id -u)/com.eduardopicazo.dreamd; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.eduardopicazo.dreamd.plist`.
+- launchd `~/Library/LaunchAgents/com.$USER.dreamd.plist`, `StartInterval 900`. `launchctl list | grep dreamd`; reload with `launchctl bootout gui/$(id -u)/com.$USER.dreamd; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.$USER.dreamd.plist`.
 
 ## Testing
 

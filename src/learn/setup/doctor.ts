@@ -1,6 +1,7 @@
 /**
- * `ak learn setup doctor` — report prerequisites, the scheduled judge's login,
- * the resolved environment and the last 24 hours of judge calls.
+ * `ak learn setup doctor` — report prerequisites, registry hygiene, the
+ * scheduled judge's login, the resolved environment and the last 24 hours of
+ * judge calls and spans.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
@@ -8,8 +9,11 @@ import { isAbsolute } from "node:path";
 import { DEFAULT_JUDGE } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
+import { readRegistry, registryHygiene } from "../memory/registry.ts";
 import { schedulerKind, unitEnvironment } from "./schedule.ts";
+import { scopeText } from "./scope.ts";
 import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
+import { runsLine } from "../stats.ts";
 
 export interface Check {
   name: string;
@@ -65,6 +69,7 @@ function scheduledJudgeAuth(ctx: LearnContext, deps: SetupDeps): Check | null {
 export function doctorChecks(ctx: LearnContext, deps: SetupDeps): Check[] {
   const gh = deps.which("gh");
   const auth = scheduledJudgeAuth(ctx, deps);
+  const registryWarnings = registryHygiene(readRegistry(ctx.config)).warnings;
   return [
     { name: "bun", ok: deps.which("bun") !== null, hard: true, why: "runs `ak learn` from hooks and the scheduler" },
     { name: "git", ok: deps.which("git") !== null, hard: true, why: "every ledger is a git repository" },
@@ -92,6 +97,12 @@ export function doctorChecks(ctx: LearnContext, deps: SetupDeps): Check[] {
       hard: false,
       why: "PR review threads for the review loop",
     },
+    {
+      name: "registry hygiene",
+      ok: registryWarnings.length === 0,
+      hard: false,
+      why: registryWarnings.length === 0 ? "one eligible root per claude-mem project" : registryWarnings.join("; "),
+    },
     ...(auth === null ? [] : [auth]),
   ];
 }
@@ -116,10 +127,12 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(`  claude-mem dir      ${memDir(ctx, deps)}   (db ${ctx.config.memDb})`);
   ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
+  ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
   const trace = judgeTraceSummary(ctx.config);
   ctx.io.out(
     `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,
   );
+  ctx.io.out(runsLine(ctx.config));
   const blocked = checks.filter((check) => check.hard && !check.ok).map((check) => check.name);
   if (blocked.length > 0) {
     ctx.io.out(`\nBLOCKED: ${blocked.join(", ")}`);

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { loopDir } from "../../src/learn/core/paths.ts";
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { loadConfig } from "../../src/learn/core/config.ts";
+import { loopDir, projectFolderName, registryPath } from "../../src/learn/core/paths.ts";
 import { run, type RunResult } from "../../src/learn/core/proc.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
 import { createSetupArea } from "../../src/learn/setup/cli.ts";
@@ -23,6 +24,10 @@ function fakeDeps(
   const mode = join(packageRoot, "adapters", "observation-source", "claude-mem");
   mkdirSync(mode, { recursive: true });
   writeFileSync(join(mode, `${MEM_MODE}.json`), "{}\n");
+  // The entry a wired hook and the unit run must exist for verify to pass.
+  const entry = join(packageRoot, "src", "cli.ts");
+  mkdirSync(dirname(entry), { recursive: true });
+  writeFileSync(entry, "");
   const have = new Set(bins);
   const calls: string[][] = [];
   const envs: Array<NodeJS.ProcessEnv | undefined> = [];
@@ -36,11 +41,16 @@ function fakeDeps(
       return { code: 0, stdout, stderr: "", timedOut: false };
     },
     which: (bin) => (have.has(bin) ? `/usr/bin/${bin}` : null),
-    ak: ["/opt/bun", "/pkg/src/cli.ts"],
+    ak: ["/opt/bun", entry],
     packageRoot,
     calls,
     envs,
   };
+}
+
+/** One hook entry running `command`. */
+function hook(command: string) {
+  return { hooks: [{ type: "command", command }] };
 }
 
 /** A context whose judge command is `judge`, and whose claude-mem lives under the fake home. */
@@ -88,17 +98,63 @@ describe("setup doctor", () => {
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
     const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const old = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const call = { run_id: null, loop: "review", role: "pattern-maintainer", duration_ms: 1 };
     writeFileSync(
       join(ctx.config.runtimeDir, "judge-calls.1.jsonl"),
-      `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "ok", total_cost_usd: 0.25 })}\n`,
+      `${JSON.stringify({ ...call, at: recent, call_id: randomUUID(), outcome: "ok", total_cost_usd: 0.25 })}\n`,
     );
     writeFileSync(
       join(ctx.config.runtimeDir, "judge-calls.jsonl"),
-      `${JSON.stringify({ at: recent, call_id: randomUUID(), outcome: "error", total_cost_usd: 0.5 })}\n${JSON.stringify({ at: old, call_id: randomUUID(), outcome: "error", total_cost_usd: 99 })}\n`,
+      `${JSON.stringify({ ...call, at: recent, call_id: randomUUID(), outcome: "error", total_cost_usd: 0.5 })}\n${JSON.stringify({ ...call, at: old, call_id: randomUUID(), outcome: "error", total_cost_usd: 99 })}\n`,
+    );
+
+    const span = {
+      v: 1,
+      trace_id: "4bf92f3577b34da6a3ce929d0e0e4736",
+      span_id: "00f067aa0ba902b7",
+      parent_span_id: null,
+      name: "review.run",
+      loop: "review",
+      project_key: null,
+      trigger: "cli",
+      start: recent,
+      duration_ms: 5,
+      status: "ok",
+      reason: null,
+      judge: { calls: 0, failures: 0, cost_usd: 0, cost_known: true, input_tokens: 0, output_tokens: 0 },
+      attrs: {},
+      commit: null,
+    };
+    writeFileSync(
+      join(ctx.config.runtimeDir, "spans.jsonl"),
+      `${JSON.stringify(span)}\n${JSON.stringify({ ...span, span_id: "00f067aa0ba902b8", start: old })}\n`,
     );
 
     expect(doctor(ctx, deps)).toBe(0);
     expect(ctx.out).toContain("  judge calls (24h)  2 calls, 1 failure, $0.750000 total cost");
+    expect(ctx.out).toContain("  runs (24h)         1 span: review ok 1");
+  });
+
+  test("flags roots that share one claude-mem project", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps);
+    const first = gitRepo(join(scratch(), "first", "shop"));
+    const second = gitRepo(join(scratch(), "second", "shop"));
+    mkdirSync(ctx.config.runtimeDir, { recursive: true });
+    writeFileSync(
+      registryPath(ctx.config),
+      `${JSON.stringify({
+        [projectFolderName(first)]: { root: first, mem_project: "shop", last_seen: 1 },
+        [projectFolderName(second)]: { root: second, mem_project: "shop", last_seen: 2 },
+      })}\n`,
+    );
+
+    const check = doctorChecks(ctx, deps).find((candidate) => candidate.name === "registry hygiene");
+    expect(check).toMatchObject({ ok: false, hard: false });
+    expect(check?.why).toBe(
+      `registry warning: claude-mem project 'shop' has multiple roots; ${second} owns it and ${first} is not kept in the registry`,
+    );
+    expect(Object.keys(readRegistry(ctx.config))).toHaveLength(2);
   });
 
   test("checks the scheduled default judge's auth without making a judge call", () => {
@@ -173,6 +229,21 @@ describe("setup seed", () => {
     );
   });
 
+  test("a bare repository is refused before any ledger is created", () => {
+    const ctx = testContext();
+    const bare = join(scratch(), "bare.git");
+    mkdirSync(bare);
+    run(["git", "init", "-q", "--bare"], { cwd: bare });
+    expect(seed(ctx, bare, { skipGithub: true })).toBe(1);
+    expect(ctx.err).toEqual([
+      `ak learn setup seed: registry warning: ${bare} is a bare repository and cannot be registered`,
+    ]);
+    expect(ctx.out).toEqual([]);
+    for (const loop of ["review", "memory", "skills"] as const)
+      expect(existsSync(loopDir(ctx.config, bare, loop))).toBe(false);
+    expect(readRegistry(ctx.config)).toEqual({});
+  });
+
   test("the CLI requires --repo", () => {
     const ctx = testContext();
     expect(createSetupArea(() => fakeDeps([])).verbs.seed!.run(parseLearnArgs([]), ctx)).toBe(2);
@@ -224,6 +295,104 @@ describe("setup verify", () => {
       ok: false,
       detail: `not inside a git repository: unknown repository '${repo}x'; did you mean ${repo}?`,
     });
+  });
+
+  test("an ak entry that a wired hook or the unit names but no longer exists fails verify", () => {
+    for (const platform of ["darwin", "linux"] as const) {
+      const deps = { ...fakeDeps(["bun", "git", "judge", "systemctl"]), platform };
+      const ctx = context(deps);
+      wire(ctx, deps);
+      schedule(ctx, deps);
+      const entry = deps.ak[1] ?? "";
+      expect(verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists")).toEqual({
+        label: "ak entry exists",
+        ok: true,
+        detail: entry,
+      });
+      rmSync(entry);
+      expect(verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists")).toEqual({
+        label: "ak entry exists",
+        ok: false,
+        detail: `missing: ${entry}`,
+      });
+      // The unit alone still names it.
+      writeFileSync(join(ctx.config.configDir, "settings.json"), "{}\n");
+      expect(verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists")?.ok).toBe(false);
+    }
+  });
+
+  test("a scope only in AK_LEARN_REPOS is refused by wire and schedule and flagged by verify, since neither carries it", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const root = gitRepo(join(scratch(), "shop"));
+    const ctx = context(deps, { AK_LEARN_REPOS: root });
+    const tick = () => verifyChecks(ctx, deps).find((check) => check.label === "hooks and scheduled tick scope");
+    expect(schedule(ctx, deps)).toBe(1);
+    expect(ctx.err.join("\n")).toContain("AK_LEARN_REPOS is not carried into the unit");
+    expect(existsSync(join(deps.home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist"))).toBe(false);
+    expect(wire(ctx, deps)).toBe(1);
+    expect(ctx.err.join("\n")).toContain("AK_LEARN_REPOS is not carried into the hook commands");
+    expect(existsSync(join(ctx.config.configDir, "settings.json"))).toBe(false);
+    expect(tick()).toEqual({
+      label: "hooks and scheduled tick scope",
+      ok: false,
+      detail: "unscoped (every repository)",
+    });
+    mkdirSync(ctx.config.runtimeDir, { recursive: true });
+    writeFileSync(join(ctx.config.runtimeDir, "repos"), `${root}\n`);
+    expect(schedule(ctx, deps)).toBe(0);
+    expect(wire(ctx, deps)).toBe(0);
+    expect(tick()).toEqual({ label: "hooks and scheduled tick scope", ok: true, detail: `${root} (scope file)` });
+    // The same repositories in another spelling or order are the same scope.
+    const other = gitRepo(join(scratch(), "cafe"));
+    const link = join(scratch(), "link");
+    symlinkSync(root, link);
+    writeFileSync(join(ctx.config.runtimeDir, "repos"), `${other}:${root}\n`);
+    const env = { ...ctx.env, AK_LEARN_REPOS: `${link}:${other}` };
+    expect(schedule({ ...ctx, env, config: loadConfig(env) }, deps)).toBe(0);
+  });
+
+  test("an unreadable unit is reported by the unit checks, never thrown", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps);
+    mkdirSync(join(deps.home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist"), { recursive: true });
+    expect(verifyChecks(ctx, deps).find((check) => check.label === "launchd unit written")?.ok).toBe(true);
+  });
+
+  test("a hook that runs a bare `ak` from PATH is not checked as a missing path", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps);
+    mkdirSync(ctx.config.configDir, { recursive: true });
+    writeFileSync(
+      join(ctx.config.configDir, "settings.json"),
+      JSON.stringify({
+        hooks: { SessionStart: [hook("ak learn hook session-start")], Stop: [hook("ak learn hook stop")] },
+      }),
+    );
+    const results = verifyChecks(ctx, deps);
+    expect(results.find((check) => check.label === "claude SessionStart hook")?.ok).toBe(true);
+    expect(results.map((check) => check.label)).not.toContain("ak entry exists");
+  });
+
+  test("verify and doctor report the effective repo scope and where it came from", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const scope = (ctx: TestContext) => verifyChecks(ctx, deps).find((check) => check.label === "repo scope");
+    expect(scope(context(deps))).toEqual({
+      label: "repo scope",
+      ok: true,
+      detail: "unscoped (every repository)",
+    });
+    const root = gitRepo(join(scratch(), "shop"));
+    const env = context(deps, { AK_LEARN_REPOS: root });
+    expect(scope(env)?.detail).toBe(`${root} (AK_LEARN_REPOS)`);
+    doctor(env, deps);
+    expect(env.out).toContain(`  repo scope          ${root} (AK_LEARN_REPOS)`);
+    const file = context(deps);
+    mkdirSync(file.config.runtimeDir, { recursive: true });
+    writeFileSync(join(file.config.runtimeDir, "repos"), ":\n");
+    const reread = { ...file, config: loadConfig(file.env) };
+    expect(scope(reread)?.detail).toBe("nothing allowed (scope file)");
+    doctor(reread, deps);
+    expect(reread.out).toContain("  repo scope          nothing allowed (scope file)");
   });
 
   test("a hook wired twice by hand is reported, not accepted", () => {

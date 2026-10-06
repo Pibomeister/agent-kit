@@ -5,8 +5,9 @@ This record repairs the setup behind
 authenticated model turn. The host commands run were version, help and local login-status checks,
 one flag given without its value to read the argument parser's reply, and two handshakes that send
 no prompt: Codex `initialize` plus `thread/start`, and Grok `initialize` plus `session/new`. Both
-handshakes use the copied login. Subject execution remains behind `--execute` and needs separate
-approval.
+handshakes use the copied login. The fourth reviewer's Kimi Code login was checked separately with
+`kimi doctor` and `kimi provider list`; the latter reported an OAuth-backed managed provider and
+started no turn. Subject execution remains behind `--execute` and needs separate approval.
 
 ## Earliest divergence
 
@@ -86,20 +87,27 @@ bun tests/learn/evals/case-runner.ts --preflight \
 
 Preflight takes the same `--subject` selection `--execute` will run, from the local
 `.work/eval-matrix.yaml`, and probes each selected subject's host once. The host checks below
-returned `ok: true` on all three hosts at Claude Code 2.1.289, Codex 0.159.2 and Grok 1.0.46. That
-run predates the `grader-readiness` check and selected the hosts by name; the host checks themselves
-are unchanged.
+returned `ok: true` on all three subject hosts at Claude Code 2.1.289, Codex 0.159.2 and Grok 1.0.46,
+with Kimi Code 2.1.1 bound as the fourth reviewer host.
 
 ```text
-claude  binary login bundle-skills case-fixtures cli-flags
-codex   binary login bundle-skills case-fixtures cli-flags thread-identity
-grok    binary login bundle-skills case-fixtures cli-flags tool-names
+claude  binary login bundle-skills case-fixtures grader-readiness reviewer-hosts cli-flags
+codex   binary login bundle-skills case-fixtures grader-readiness reviewer-hosts cli-flags thread-identity
+grok    binary login bundle-skills case-fixtures grader-readiness reviewer-hosts cli-flags tool-names
 ```
 
-`grader-readiness` now sits in each host row. It fails when a selected subject's reviewer panel
+`grader-readiness` sits in each host row. It fails when a selected subject's reviewer panel
 cannot be seated from the matrix, when a selected case has a grader type with no local evaluator, or
-when a judged grader reads mock calls only. It has not been run against the operator's matrix here,
-because this worktree has no `.work/eval-matrix.yaml`; the tests drive it with a stub matrix.
+when a judged grader reads mock calls only. `reviewer-hosts` resolves and checks the local login for
+every host seated on those panels, caching each probe so the fourth host is checked once. A missing
+Kimi binary or OAuth login now makes all three subject rows fail before execution.
+
+The Kimi reviewer session runs under a per-call `--agent-file` whose definition grants no tools and
+no sub-agents, with an empty per-call `--skills-dir`, so it loads no user or project skill. Kimi
+Code 2.1.1 refuses `--prompt` with `--plan`, which is why the seat is not held by `--plan`, and it
+has no turn-cap flag. `tests/learn/evals/subjects/kimi.ts` owns the argv and its reasons. One live
+reviewer turn through that adapter on Kimi Code 2.1.1 exited 0 and parsed to a PASS vote; that turn
+was made after this record's setup checks and is the only Kimi model turn behind it.
 
 Each login check is local and redacts the credential content. The other host checks probe the
 installed CLI:
@@ -145,17 +153,24 @@ The Claude column uses the prior four-case measured amounts. The Sol column uses
 2026-10-03 receipts. No valid Grok grading cost exists, so its estimate uses the corresponding
 Claude amount instead of treating invalid partial sessions as representative.
 
-| Case | Claude | Sol | Grok estimate |
-| --- | ---: | ---: | ---: |
-| Delegated refresh-token rotation | $1.84511520 | $0.87766336 | $1.84511520 |
-| Vague checkout-speed criterion | $0.38056000 | $0.57576404 | $0.38056000 |
-| Refused oversized-change split | $0.35358000 | $0.32225344 | $0.35358000 |
-| Approved specification produces tickets | $1.24043260 | $0.49037672 | $1.24043260 |
-| Per-model subtotal | **$3.81968780** | **$2.26605756** | **$3.81968780** |
+| Case | Claude | Sol | Grok estimate | Extra reviewer judge cost per session |
+| --- | ---: | ---: | ---: | ---: |
+| Delegated refresh-token rotation | $1.84511520 | $0.87766336 | $1.84511520 | $0.00000000 |
+| Vague checkout-speed criterion | $0.38056000 | $0.57576404 | $0.38056000 | $0.00000000 |
+| Refused oversized-change split | $0.35358000 | $0.32225344 | $0.35358000 | $0.00000000 |
+| Approved specification produces tickets | $1.24043260 | $0.49037672 | $1.24043260 | $0.00000000 |
+| Per-model subtotal | **$3.81968780** | **$2.26605756** | **$3.81968780** | **$0.00000000** |
 
-Estimated total: **$9.90543316**. A conservative ceiling takes the larger observed amount for each
-case and applies it to all three models: **$12.04467552**. Round that to a **$12.05 hard cap** if the
-rerun is approved.
+The extra reviewer uses the existing OAuth entitlement and Kimi Code does not report a per-turn USD
+amount, so the runner records no incremental `costUsd` for those judge sessions. The zeroes above
+describe cap accounting, not resource use. The expected total remains **$9.90543316**. A conservative
+ceiling takes the larger observed amount for each case and applies it to all three models:
+**$12.04467552**, which is **$0.00532448 below the $12.05 hard cap**.
+
+The bound matrix carries four reviewer seats from four host families and requires three eligible
+reviewers. A reviewer bound like the subject remains ineligible, leaving exactly three independent
+votes for each of the three selected subjects; a missing vote or a panel with fewer than three
+eligible reviewers remains ungraded or fails preflight, respectively.
 
 Stop rules. `--execute` enforces every rule in this list; `tests/learn/evals-case-runner.test.ts`
 drives each one against stub hosts.
@@ -174,15 +189,16 @@ drives each one against stub hosts.
 5. An invalid row stops the whole run before another launch. A row is invalid on a timeout, a
    host-refused call, a non-zero host exit, an empty reply, a reached turn cap, a missing served
    model, a missing session or thread id, or a missing request id on a host whose stream emits one.
-6. An ungraded result stops the whole run before another launch. A row is ungraded when any scored
-   grader has no pass or fail verdict, even if another grader in the same row failed. A judged
+6. An ungraded result stops that subject before its next launch; the runner continues with the next
+   subject. A row is ungraded when any scored grader has no pass or fail verdict, even if another
+   grader in the same row failed. A judged
    grader has no verdict when its file is absent, leaves the session directory or is not a regular
    file, when the reviewers disagree, or when a reviewer gives no readable verdict. A file that
    exists and is empty is judged as written. If any scored judged grader's surface is missing, no
    reviewer is asked about that row at all; once reviewers leave one scored judged grader without a
    verdict, they are not asked about the graders after it.
 7. A graded failure stops that subject: its remaining cases are skipped and the runner goes on to
-   the next subject unless rule 4, 5 or 6 has fired. A row is a graded failure only when every
+   the next subject unless rule 4 or 5 has fired. A row is a graded failure only when every
    scored grader reached a pass or fail verdict and at least one failed.
 
 Request ids are a host capability, declared per adapter as `requestIds`. The Claude stream carries a

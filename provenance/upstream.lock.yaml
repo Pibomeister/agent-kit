@@ -297,3 +297,19 @@ local_sources:
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
     cited_in_adaptations: true
+  - id: mission-brief-constitution-support
+    description: >-
+      The captain-written mission brief for constitution support in agent-kit, reproduced with
+      nine lines redacted and every other byte kept: the requester's name and organization, the
+      organization's name, and the titles of two privately held source documents. Line numbers
+      therefore match the private original. docs/decisions/0009-constitution-support.md and the
+      ticket plan cite it as C:L<start>-<end>.
+    original_path: ~/firstmate/data/ak-constitution/mission-brief.md
+    working_copy: research/sources/mission-brief-constitution-support.md
+    sha256: 0018dd4bd15819be4cb2a55ae5056ee22cdb0446da62907871e3d381a81eab82
+    lines: 153
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    # No adaptations row cites it yet. The tickets ADR-0009 plans attribute each adapted file
+    # through an anchored `local:` row when that file lands.
+    cited_in_adaptations: false

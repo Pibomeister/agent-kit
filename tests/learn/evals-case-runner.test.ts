@@ -296,8 +296,9 @@ const matrix: Matrix = {
     { id: "reviewer-a", host: "claude", model: "review-binding-a" },
     { id: "reviewer-b", host: "codex", model: "review-binding-b" },
     { id: "reviewer-c", host: "grok", model: "review-binding-c" },
+    { id: "reviewer-d", host: "kimi", model: "review-binding-d" },
   ],
-  panels: { "independent-of": "subject", "min-reviewers": 2, size: 2 },
+  panels: { "independent-of": "subject", "min-reviewers": 3, size: 3 },
 };
 
 const CODEX_HANDSHAKE = readFileSync(join(FIXTURES, "codex-handshake.jsonl"), "utf8");
@@ -608,10 +609,17 @@ describe("evaluateCaseSession", () => {
     mkdirSync(join(cwd, "tickets"));
     writeFileSync(join(cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
     let asked = 0;
+    const tiedPanel = buildPanel(
+      {
+        reviewers: matrix.reviewers.filter(({ id }) => id === "reviewer-b" || id === "reviewer-c"),
+        panels: { "independent-of": "subject", "min-reviewers": 2, size: 2 },
+      },
+      subject("claude"),
+    );
     const row = await evaluateCaseSession(loadCase(CASE_FILE), session("claude", "claude.jsonl"), {
       cwd,
       filesCreated: ["tickets/result.json"],
-      panel: buildPanel(matrix, subject("claude")),
+      panel: tiedPanel,
       queue: join(cwd, "queue.jsonl"),
       judge: async () => {
         asked += 1;
@@ -625,7 +633,7 @@ describe("evaluateCaseSession", () => {
       ["reports-the-result", "needs-human"],
       ["persists-the-result", "unavailable"],
     ]);
-    expect(asked).toBe(buildPanel(matrix, subject("claude")).members.length);
+    expect(asked).toBe(tiedPanel.members.length);
   });
 
   test("a host-cancelled session is listed once as invalid without calling a grader", async () => {
@@ -848,12 +856,36 @@ describe("preflight", () => {
     expect(code).toBe(0);
     expect(started).toBe(0);
     expect(rows.map(({ host, checks }) => [host, checks.map(({ name }) => name)])).toEqual([
-      ["claude", ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "cli-flags"]],
+      [
+        "claude",
+        ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "reviewer-hosts", "cli-flags"],
+      ],
       [
         "codex",
-        ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "cli-flags", "thread-identity"],
+        [
+          "binary",
+          "login",
+          "bundle-skills",
+          "case-fixtures",
+          "grader-readiness",
+          "reviewer-hosts",
+          "cli-flags",
+          "thread-identity",
+        ],
       ],
-      ["grok", ["binary", "login", "bundle-skills", "case-fixtures", "grader-readiness", "cli-flags", "tool-names"]],
+      [
+        "grok",
+        [
+          "binary",
+          "login",
+          "bundle-skills",
+          "case-fixtures",
+          "grader-readiness",
+          "reviewer-hosts",
+          "cli-flags",
+          "tool-names",
+        ],
+      ],
     ]);
     expect(rows.every(({ ok, checks }) => ok && checks.every((check) => check.ok))).toBe(true);
     expect(rows.at(0)?.checks.at(-1)?.detail).toContain(
@@ -870,6 +902,24 @@ describe("preflight", () => {
     expect(errors).toContain("case-runner preflight claude bundle-skills: missing super-bound");
     expect(errors).toContain("case-runner preflight codex bundle-skills: missing super-bound");
     expect(errors).toContain("case-runner preflight grok bundle-skills: missing super-bound");
+  });
+
+  test("fails before execution when the fourth reviewer host is not runnable or authenticated", async () => {
+    const { code, errors, rows } = await preflight({
+      loginProbe: (host) => host !== "kimi",
+    });
+
+    expect(code).toBe(2);
+    expect(rows.map(({ host, ok }) => [host, ok])).toEqual([
+      ["claude", false],
+      ["codex", false],
+      ["grok", false],
+    ]);
+    expect(errors).toEqual([
+      "case-runner preflight claude reviewer-hosts: unavailable kimi",
+      "case-runner preflight codex reviewer-hosts: unavailable kimi",
+      "case-runner preflight grok reviewer-hosts: unavailable kimi",
+    ]);
   });
 
   test("fails when an installed CLI's help does not list a flag the adapter passes", async () => {
@@ -940,9 +990,14 @@ describe("preflight", () => {
     ]);
   });
 
-  test("goes red for the hosts whose subject cannot seat a reviewer panel", async () => {
+  test("goes red when a subject has fewer than three eligible reviewers", async () => {
     const { code, errors, rows } = await preflight({
-      matrix: { ...THREE_HOSTS, panels: { ...matrix.panels, "min-reviewers": 4 } },
+      matrix: {
+        ...THREE_HOSTS,
+        reviewers: matrix.reviewers
+          .slice(0, 3)
+          .map((reviewer, index) => (index === 0 ? { ...reviewer, model: "subject-binding" } : reviewer)),
+      },
     });
 
     expect(code).toBe(2);
@@ -1070,7 +1125,7 @@ describe("execute path", () => {
         out: () => {},
         startSubject: stubHost(started, {}),
         judge: async (reviewer) => ({
-          reply: JSON.stringify({ verdict: reviewer.id === "reviewer-c" ? "FAIL" : "PASS", reason: "stub vote" }),
+          reply: JSON.stringify({ verdict: reviewer.id === "reviewer-d" ? "FAIL" : "PASS", reason: "stub vote" }),
         }),
       },
     );
@@ -1080,7 +1135,7 @@ describe("execute path", () => {
     expect(judged).toMatchObject({
       verdict: "pass",
       split: true,
-      votes: { "reviewer-a": "PASS", "reviewer-b": "PASS", "reviewer-c": "FAIL" },
+      votes: { "reviewer-a": "PASS", "reviewer-b": "PASS", "reviewer-d": "FAIL" },
     });
   });
 
@@ -1570,7 +1625,7 @@ describe("stop rules", () => {
     },
   );
 
-  test("an ungraded result stops the whole run before another launch", async () => {
+  test("an ungraded result stops only that subject before the next subject runs", async () => {
     const { cwd, bundle, json, rawDir } = stage("ungraded-stop");
     const started: string[] = [];
     const code = await caseRunnerMain(
@@ -1581,24 +1636,22 @@ describe("stop rules", () => {
         rawDir,
         out: () => {},
         startSubject: stubHost(started, {}),
-        judge: async () => ({ reply: "no verdict here" }),
+        judge: async () => ({ reply: started.at(-1) === "subject-grok" ? "no verdict here" : PASS }),
       },
     );
     const { receipt, sessions } = storedReport(json);
 
     expect(code).toBe(1);
-    expect(started).toEqual(["subject-grok"]);
+    expect(started).toEqual(["subject-grok", "subject-codex", "subject-codex"]);
     expect(sessions.map((row) => [row.subject, row.validity, row.result])).toEqual([
       ["subject-grok", "valid", "ungraded"],
+      ["subject-codex", "valid", "pass"],
+      ["subject-codex", "valid", "pass"],
     ]);
-    expect(receipt.skipped.map((row) => [row.subject, row.reason])).toEqual([
-      ["subject-grok", "ungraded-row"],
-      ["subject-codex", "ungraded-row"],
-      ["subject-codex", "ungraded-row"],
-    ]);
+    expect(receipt.skipped.map((row) => [row.subject, row.reason])).toEqual([["subject-grok", "ungraded-row"]]);
   });
 
-  test("a judged file the subject never wrote stops the whole run without asking a reviewer about it", async () => {
+  test("a judged file the subject never wrote stops only that subject without asking a reviewer about it", async () => {
     const { cwd, bundle, json, rawDir } = stage("absent-file");
     const started: string[] = [];
     let asked = 0;
@@ -1622,15 +1675,16 @@ describe("stop rules", () => {
     const { receipt, sessions } = storedReport(json);
 
     expect(code).toBe(1);
-    expect(started).toEqual(["subject-grok"]);
+    expect(started).toEqual(["subject-grok", "subject-codex"]);
     expect(asked).toBe(0);
-    expect(sessions.map((row) => [row.subject, row.result])).toEqual([["subject-grok", "ungraded"]]);
-    expect(receipt.skipped).toEqual([
-      { subject: "subject-codex", case: "cross-host-runner-fixture", reason: "ungraded-row" },
+    expect(sessions.map((row) => [row.subject, row.result])).toEqual([
+      ["subject-grok", "ungraded"],
+      ["subject-codex", "ungraded"],
     ]);
+    expect(receipt.skipped).toEqual([]);
   });
 
-  test("a failed deterministic grader beside an absent judged file still stops the whole run", async () => {
+  test("a failed deterministic grader beside an absent judged file still stops only that subject", async () => {
     const { cwd, bundle, json, rawDir } = stage("mixed-row");
     const started: string[] = [];
     const code = await caseRunnerMain(
@@ -1653,11 +1707,12 @@ describe("stop rules", () => {
     const { receipt, sessions } = storedReport(json);
 
     expect(code).toBe(1);
-    expect(started).toEqual(["subject-grok"]);
-    expect(sessions.map((row) => [row.subject, row.result])).toEqual([["subject-grok", "ungraded"]]);
-    expect(receipt.skipped).toEqual([
-      { subject: "subject-codex", case: "cross-host-runner-fixture", reason: "ungraded-row" },
+    expect(started).toEqual(["subject-grok", "subject-codex"]);
+    expect(sessions.map((row) => [row.subject, row.result])).toEqual([
+      ["subject-grok", "ungraded"],
+      ["subject-codex", "ungraded"],
     ]);
+    expect(receipt.skipped).toEqual([]);
   });
 
   test("a graded failure skips that subject's remaining cases and the next subject still runs", async () => {

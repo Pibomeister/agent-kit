@@ -85,17 +85,24 @@ status on this host at all until a parse of the table went looking for them.
 What differs on this host is not which capabilities are supplied but which **restrictions** the
 host can enforce. None of the rows below is a `capability` value:
 
+Native child sessions are useful fresh execution contexts but do not attest what the child saw or
+its excluded lineage. The inherited `independent-context: not-provided` status means host-only
+verifier receipts are `host-unattested`; a runner supplies attested independence. The gate counts
+such a receipt only in a run that never held a bypass or delegated grant.
+
 | Restriction | claude-code | codex | Consequence |
 |---|---|---|---|
-| Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior | **No equivalent key verified** on `codex-cli 0.154.0` | The structural half of the invocation law is unavailable. See §3.1 |
+| Per-skill suppression of model invocation | `disable-model-invocation: true`, documented host behavior; not emitted by this package | `agents/openai.yaml` supports `policy.allow_implicit_invocation: false`; not emitted by this package | ADR-0003 keeps every skill model-loadable, so the package deliberately relies on the U skill's authority check rather than either host key. See §3.1 |
 | Tool restriction | `allowed-tools`, pre-approval only, denies nothing | Not emitted. The host has an OS-level sandbox instead, configured by the operator (`sandbox_permissions`, verified (CLI) in `codex plugin --help`) | Codex's confinement is real but **operator-owned and process-wide**, not per-skill. The package still declares side effects and still relies on neither |
 | Bundled behavioral eval runner | `claude plugin eval`, `<eval dir>/**/case.yaml` | **None verified** | The eval corpus is not executable against this bundle by a host-native runner. See §5 |
 | Manifest validator | `claude plugin validate --strict` | **None verified** | Bundle validation is `ak validate` plus an install smoke test |
 
-### 3.1 The degradation that matters: U skills on a host with no manual-invocation flag
+### 3.1 The portable gate that matters: U skills remain model-loadable
 
-Plan §1.3: "Do not assume that a host's manual-invocation flag is portable." On this host it is not
-portable, and the package does not pretend otherwise.
+Plan §1.3: "Do not assume that a host's manual-invocation flag is portable." Codex now documents
+`policy.allow_implicit_invocation: false` in `agents/openai.yaml`, but this package deliberately does
+not emit it: ADR-0003 keeps every skill model-loadable, and the U skill's first-step authority check
+is the portable gate.
 
 For every U skill in the codex bundle:
 
@@ -103,9 +110,9 @@ For every U skill in the codex bundle:
    typed command and its class — `Human-started command: it runs only when the human's message
    begins with /ak:<id>`, followed where the skill has phase operations by the other authority that
    may start it — and says what to do on any other request: do not load or follow it, tell the human
-   to type that command. On a host that cannot suppress model invocation, the description
-   is the only thing between a U skill and an unrequested start, so it is written to be read that
-   way. `ak validate`'s `human-start` check fails a U skill whose description omits the command
+   to type that command. Because the package intentionally emits no host suppression key, the
+   description is the first layer between a U skill and an unrequested start, so it is written to
+   be read that way. `ak validate`'s `human-start` check fails a U skill whose description omits the command
    (`invocation.description-omits-command`) or the class (`invocation.description-omits-class`).
 2. The skill's own `## Authority` section names the command and states that a prose request is
    not a start, and its first workflow step is the stop: it names `/ak:<id>`, and started without
@@ -118,7 +125,7 @@ For every U skill in the codex bundle:
    above hold the text, not the behavior.
 
 Every U skill's `packaging.hosts[]` entry for `adapter: codex` records this explicitly:
-`mode: manual`, with the unsuppressible model invocation named in `unsupported`
+`mode: manual`, with the unsuppressed model invocation named in `unsupported`
 (`schemas/skill.schema.json`). A U skill declaring anything but `manual` on this host is an
 `ak build` error, `packaging.u-skill-not-manual`, and is packaged `manual` regardless; `ak validate`
 does not report it, because the packager's plan is where it is decided — the declaration is the
@@ -195,9 +202,9 @@ Tests this adapter owns, in `tests/adapters/`:
 
    The Codex marketplace's plugin `name` and `metadata.version` agree with
    `dist/codex/.codex-plugin/plugin.json`.
-3. **No leaked host keys** — the codex bundle contains no `disable-model-invocation` and no
-   `allowed-tools`; the claude-code bundle contains both where required. A key from one host's set
-   appearing in the other's bundle is a failure.
+3. **No leaked or suppressed host keys** — neither bundle contains `disable-model-invocation`, and
+   the codex bundle contains no `allowed-tools`; the claude-code bundle contains `allowed-tools`
+   where required. A key outside a host's generated set is a failure.
 4. **Non-trigger corpus completeness** — every U skill in the codex bundle has a non-trigger eval
    case, and every such case's prompt is drawn from that skill's `## Not for` section.
 5. **Install smoke test** — `codex plugin marketplace add Pibomeister/agent-kit --ref published`

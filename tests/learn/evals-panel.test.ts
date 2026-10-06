@@ -39,8 +39,13 @@ describe("matrix", () => {
     expect(prices.version).toBe(1);
     expect(prices.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(Object.keys(prices.models).length).toBeGreaterThan(0);
-    expect(m.reviewers.map((r) => r.host)).toEqual(["claude", "codex", "grok"]);
-    expect(m.panels).toEqual(rules);
+    expect(m.reviewers.map((r) => r.host)).toEqual(["claude", "codex", "grok", "kimi"]);
+    expect(m.panels).toEqual({ "independent-of": "subject", "min-reviewers": 3, size: 3 });
+    for (const subject of m.subjects) {
+      const panel = buildPanel(m, subject);
+      expect(panel.status).toBe("available");
+      expect(panel.members.length).toBe(3);
+    }
     // No line of the example starts with a `model:` key, the shape the catalog's routing scan looks for.
     expect(text.split("\n").some((line) => /^\s*-?\s*model\s*[:=]/.test(line))).toBe(false);
   });
@@ -48,11 +53,18 @@ describe("matrix", () => {
   test("rejects an unknown host, a panel under two reviewers, a duplicate id and another independence rule", () => {
     const bad = (yaml: string) => () => parseMatrix(yaml);
     const ok =
-      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\npanels: {independent-of: subject, min-reviewers: 2}\n";
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}, {id: r-c, host: kimi, model: z}]\npanels: {independent-of: subject, min-reviewers: 3}\n";
     expect(bad(`subjects: [{id: s-a, host: other, model: m}]\n${ok}`)).toThrow(/host/);
+    expect(bad(`subjects: [{id: s-a, host: kimi, model: m}]\n${ok}`)).toThrow(/host/);
     expect(
-      bad(`subjects: [{id: s-a, host: claude, model: m}]\n${ok.replace("min-reviewers: 2", "min-reviewers: 1")}`),
+      bad(`subjects: [{id: s-a, host: claude, model: m}]\n${ok.replace("min-reviewers: 3", "min-reviewers: 1")}`),
     ).toThrow(/min-reviewers/);
+    const two =
+      "subjects: [{id: s-a, host: claude, model: m}]\n" +
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\n" +
+      "panels: {independent-of: subject, min-reviewers: 2}\n";
+    expect(parseMatrix(two).panels["min-reviewers"]).toBe(2);
+    expect(bad(two.replace(", {id: r-b, host: grok, model: y}", ""))).toThrow(/reviewers/);
     expect(bad(`subjects: [{id: r-a, host: claude, model: m}]\n${ok}`)).toThrow(/appears twice/);
     expect(bad(`subjects: [{id: s-a, host: claude, model: m}]\n${ok.replace("subject", "author")}`)).toThrow(
       /independent-of/,
@@ -70,7 +82,7 @@ describe("matrix", () => {
 
   test("a subject may leave its binding to the host; a reviewer may not", () => {
     const tail =
-      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\npanels: {independent-of: subject, min-reviewers: 2}\n";
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}, {id: r-c, host: kimi, model: z}]\npanels: {independent-of: subject, min-reviewers: 3}\n";
     expect(parseMatrix(`subjects: [{id: s-a, host: claude}]\n${tail}`).subjects[0]!.model).toBeUndefined();
     expect(() => parseMatrix(`subjects: [{id: s-a, host: claude}]\n${tail.replace(", model: y", "")}`)).toThrow(
       /model/,
@@ -79,7 +91,7 @@ describe("matrix", () => {
 
   test("a subject turn cap distinguishes an override, no cap, and the evaluator default", () => {
     const tail =
-      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\npanels: {independent-of: subject, min-reviewers: 2}\n";
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}, {id: r-c, host: kimi, model: z}]\npanels: {independent-of: subject, min-reviewers: 3}\n";
     const matrix = parseMatrix(
       "subjects:\n" +
         "  - {id: s-a, host: claude, max-turns: 12}\n" +
@@ -104,8 +116,8 @@ describe("matrix", () => {
   test("a numeric turn cap is refused for a host that cannot enforce one", () => {
     const yaml =
       "subjects: [{id: s-a, host: codex, max-turns: 4}]\n" +
-      "reviewers: [{id: r-a, host: claude, model: x}, {id: r-b, host: grok, model: y}]\n" +
-      "panels: {independent-of: subject, min-reviewers: 2}\n";
+      "reviewers: [{id: r-a, host: claude, model: x}, {id: r-b, host: grok, model: y}, {id: r-c, host: kimi, model: z}]\n" +
+      "panels: {independent-of: subject, min-reviewers: 3}\n";
     expect(() => parseMatrix(yaml)).toThrow("subject 's-a' uses host 'codex', which cannot enforce max-turns");
   });
 
@@ -131,8 +143,8 @@ describe("matrix", () => {
 
   test("the optional price table must be a path under research/", () => {
     const tail =
-      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}]\n" +
-      "panels: {independent-of: subject, min-reviewers: 2}\n";
+      "reviewers: [{id: r-a, host: codex, model: x}, {id: r-b, host: grok, model: y}, {id: r-c, host: kimi, model: z}]\n" +
+      "panels: {independent-of: subject, min-reviewers: 3}\n";
     const subjects = "subjects: [{id: s-a, host: claude}]\n";
     expect(parseMatrix(subjects + "price-table: research/evals/prices.json\n" + tail).priceTable).toBe(
       "research/evals/prices.json",

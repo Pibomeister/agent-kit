@@ -194,7 +194,7 @@ describe("preflight", () => {
     const host = r.checks.find((c) => c.id === "host-capabilities");
     expect(host?.ok).toBe(true);
     expect(host?.detail).toContain("isolated-review-context=partial");
-    expect(host?.detail).toContain("independent-context=partial");
+    expect(host?.detail).toContain("independent-context=not-provided");
   });
 });
 

@@ -6,6 +6,7 @@
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
+import { CATALOG_FILE } from "../catalog/load.ts";
 import type { CheckContext } from "./context.ts";
 import { error, unavailable, warning, type Issue } from "./types.ts";
 import { loadArtifacts } from "./artifacts.ts";
@@ -70,7 +71,7 @@ export function checkCatalogRules(ctx: CheckContext): Issue[] {
       issues.push(
         error(
           RULE_REFERENCE_LOADER,
-          "catalog.yaml",
+          reference.file,
           `reference ${reference.id} declares no loaded_by; progressive disclosure is only checkable when the loaders are named`,
         ),
       );
@@ -81,7 +82,7 @@ export function checkCatalogRules(ctx: CheckContext): Issue[] {
         issues.push(
           error(
             RULE_REFERENCE_LOADER,
-            "catalog.yaml",
+            reference.file,
             `reference ${reference.id} is loaded_by ${loader}, which is not a declared skill`,
           ),
         );
@@ -93,11 +94,16 @@ export function checkCatalogRules(ctx: CheckContext): Issue[] {
   if (profiles.length > 0) {
     const defaults = profiles.filter((p) => p.raw["default"] === true);
     if (defaults.length !== 1) {
+      // A fragment's profile is named with its file. The default is
+      // package.default_profile's to name, and a fragment cannot carry a
+      // package: block, so a second default declared in a fragment is the
+      // fragment's defect and the report says where it is.
+      const fromFragment = defaults.find((d) => d.file !== CATALOG_FILE);
       issues.push(
         error(
           RULE_DEFAULT_PROFILE,
-          "catalog.yaml",
-          `${defaults.length} profile(s) carry default: true (${defaults.map((d) => d.id).join(", ") || "none"}); exactly one does`,
+          fromFragment?.file ?? CATALOG_FILE,
+          `${defaults.length} profile(s) carry default: true (${defaults.map((d) => (d.file === CATALOG_FILE ? d.id : `${d.id} in ${d.file}`)).join(", ") || "none"}); exactly one does`,
         ),
       );
     }
@@ -107,7 +113,7 @@ export function checkCatalogRules(ctx: CheckContext): Issue[] {
       issues.push(
         error(
           RULE_DEFAULT_PROFILE,
-          "catalog.yaml",
+          first.file,
           `profile ${first.id} is the default but package.default_profile is ${declared}`,
         ),
       );

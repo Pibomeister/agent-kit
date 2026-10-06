@@ -6,6 +6,7 @@ import { unknownSelector } from "../../util/suggest.ts";
 import { flag, type LearnArea, type LearnContext } from "../core/context.ts";
 import { doctor } from "./doctor.ts";
 import { parseInterval, schedule } from "./schedule.ts";
+import { scope } from "./scope.ts";
 import { type SeedOptions, seed } from "./seed.ts";
 import { uninstall } from "./uninstall.ts";
 import { verify } from "./verify.ts";
@@ -45,6 +46,17 @@ export function createSetupArea(depsFor: (ctx: LearnContext) => SetupDeps = defa
             return 2;
           }
           return schedule(ctx, depsFor(ctx), { intervalS, load: args.flags.has("load") });
+        },
+      },
+      scope: {
+        usage: "setup scope [--set ROOT[:ROOT]] [--clear]   show or set the repos the hooks and the tick act on",
+        run: (args, ctx) => {
+          const set = flag(args, "set");
+          if ((args.flags.has("set") && set === undefined) || (set !== undefined && args.flags.has("clear"))) {
+            ctx.io.err("ak learn setup scope: --set takes ROOT[:ROOT], and --set and --clear are exclusive");
+            return 2;
+          }
+          return scope(ctx, { set, clear: args.flags.has("clear") });
         },
       },
       seed: {

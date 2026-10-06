@@ -113,7 +113,8 @@
           "enum": [
             "claude",
             "codex",
-            "grok"
+            "grok",
+            "kimi"
           ]
         },
         "model": {

@@ -12,8 +12,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import { run, type RunResult } from "../core/proc.ts";
-import { PACKAGE_ROOT } from "../core/roles.ts";
+import { AK_ENTRY, PACKAGE_ROOT } from "../core/roles.ts";
 import { writeJson } from "../core/store.ts";
+import { unitScopeDiffers } from "./scope.ts";
 
 /** Everything setup touches outside the config dir, injectable so tests never reach the real machine. */
 export interface SetupDeps {
@@ -22,7 +23,7 @@ export interface SetupDeps {
   uid: number;
   run: (cmd: readonly string[], options?: { env?: NodeJS.ProcessEnv }) => RunResult;
   which: (bin: string) => string | null;
-  /** The argv prefix that runs `ak`: bun, then `<package root>/src/cli.ts`. */
+  /** The argv prefix that runs `ak`: bun, then the running entry (`src/cli.ts`, or the bundle's `bin/ak`). */
   ak: string[];
   packageRoot: string;
 }
@@ -35,7 +36,7 @@ export function defaultDeps(ctx: LearnContext): SetupDeps {
     uid: process.getuid?.() ?? 0,
     run: (cmd, options) => run(cmd, { timeoutMs: 60_000, env: options?.env ?? ctx.env }),
     which,
-    ak: [which("bun") ?? "bun", join(PACKAGE_ROOT, "src", "cli.ts")],
+    ak: [which("bun") ?? "bun", AK_ENTRY],
     packageRoot: PACKAGE_ROOT,
   };
 }
@@ -135,11 +136,18 @@ export function dropHooks(doc: HookDoc): number {
   return touched;
 }
 
+/** The command lines of every hook of ours, under one event or under all of them. */
+export function ourHookCommands(doc: HookDoc, event?: string): string[] {
+  const entries = event === undefined ? Object.values(doc.hooks ?? {}).flat() : (doc.hooks?.[event] ?? []);
+  return entries
+    .flatMap((entry) => entry.hooks ?? [])
+    .map((hook) => hook.command)
+    .filter((command): command is string => ourHookVerb(command) !== null);
+}
+
 /** Count hooks of ours for one verb under one event. */
 export function countHook(doc: HookDoc, event: string, verb: string): number {
-  return (doc.hooks?.[event] ?? [])
-    .flatMap((entry) => entry.hooks ?? [])
-    .filter((hook) => ourHookVerb(hook.command) === verb).length;
+  return ourHookCommands(doc, event).filter((command) => ourHookVerb(command) === verb).length;
 }
 
 /**
@@ -314,6 +322,13 @@ export function restartWorker(ctx: LearnContext, deps: SetupDeps): void {
 }
 
 export function wire(ctx: LearnContext, deps: SetupDeps, options: WireOptions = {}): number {
+  if (unitScopeDiffers(ctx)) {
+    ctx.io.err(
+      "ak learn setup wire: AK_LEARN_REPOS is not carried into the hook commands, and the scope file differs, " +
+        "so the hooks would run with another scope; run `ak learn setup scope --set` with the same roots first",
+    );
+    return 1;
+  }
   const commands = hookCommands(deps);
   const claude = options.host !== "codex";
   const codex = options.host !== "claude" && (options.host === "codex" || existsSync(codexHome(ctx, deps)));
@@ -332,6 +347,10 @@ export function wire(ctx: LearnContext, deps: SetupDeps, options: WireOptions = 
   if (claude) wireClaude(ctx, commands);
   if (options.host !== "claude") wireCodex(ctx, deps, commands, options.host === "codex");
   if (mem) {
+    if (ctx.config.repos !== null)
+      ctx.io.out(
+        "note: the repo scope covers agent-kit's hooks and tick only; claude-mem still observes every session",
+      );
     const changed = wireMem(ctx, deps);
     if (changed && options.restartWorker === true) restartWorker(ctx, deps);
     else if (changed)

@@ -156,7 +156,7 @@ export function checkInvocation(ctx: CheckContext): Issue[] {
         error(
           "invocation.declaration-conflict",
           `skills/${entry.id}/skill.yaml`,
-          `skill.yaml says invocation: ${manifest.invocation} but catalog.yaml says ${entry.invocation}. The catalog is the source of truth; a skill may not downgrade its own invocation class.`,
+          `skill.yaml says invocation: ${manifest.invocation} but ${entry.file} says ${entry.invocation}. The catalog is the source of truth; a skill may not downgrade its own invocation class.`,
         ),
       );
     }

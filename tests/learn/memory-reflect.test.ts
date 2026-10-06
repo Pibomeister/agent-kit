@@ -250,27 +250,30 @@ describe("reflect", () => {
     const dbPath = join(dir, "mem.db");
     const mem = new MemFixture(dbPath);
     const now = Date.now();
-    for (let index = 0; index < 60; index += 1) {
-      const sid = `${index.toString(16).padStart(8, "0")}-0000`;
-      mem.session({ sid, project: "app", started: now - 3_600_000 });
-      for (let n = 0; n < 4; n += 1) {
-        mem.observation({
+    // One transaction: committing each of the 360 rows separately syncs the file 360 times.
+    mem.db.transaction(() => {
+      for (let index = 0; index < 60; index += 1) {
+        const sid = `${index.toString(16).padStart(8, "0")}-0000`;
+        mem.session({ sid, project: "app", started: now - 3_600_000 });
+        for (let n = 0; n < 4; n += 1) {
+          mem.observation({
+            sid,
+            project: "app",
+            type: "discovery",
+            title: `fact ${index}.${n}`,
+            facts: ["f".repeat(600)],
+            at: now,
+          });
+        }
+        mem.summary({
           sid,
           project: "app",
-          type: "discovery",
-          title: `fact ${index}.${n}`,
-          facts: ["f".repeat(600)],
-          at: now,
+          request: `#${index}#` + "r".repeat(600),
+          completed: "c".repeat(600),
+          next: "n".repeat(600),
         });
       }
-      mem.summary({
-        sid,
-        project: "app",
-        request: `#${index}#` + "r".repeat(600),
-        completed: "c".repeat(600),
-        next: "n".repeat(600),
-      });
-    }
+    })();
     mem.close();
     const source = ClaudeMemSource.open(dbPath);
     if (!source) throw new Error("claude-mem source did not open");

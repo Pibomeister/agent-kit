@@ -23,6 +23,15 @@ claude-mem `02cd0c9c`, claude-reflect `2c892cab`.
 | claude-reflect at `2c892cab` (MIT) | Correction capture and skill discovery | The correction queue the review loop reads, the correction record's shape, and the skill scout |
 | compound-engineering at `05c42da9` (MIT) | `ce-compound`, `ce-compound-refresh` | The capture bar and the refresh outcomes; see `research/dossiers/knowledge.md` §1–2 for the full import analysis |
 
+The tree under `research/sources/learning-stack/` is the learning-stack zip unpacked, less its
+real-world identifiers. The organisation it was built for, that organisation's private repository
+and tracker key, a customer's name, people's names and handles, and one user's scheduler label were
+replaced by fictional stand-ins. Each test fixture was rewritten to match, including the event hash
+a test pins, so each of the stack's own tests gives the result it gave before. Code symbols, file
+paths, product vocabulary and review prose from that work were kept. The tree therefore no longer
+reproduces the zip's digest in the table above, which identifies the zip as received. Git history
+before the replacement still carries the originals; it was not rewritten.
+
 Precedence is AGENTS.md's: the governing plan wins, and the rulings in
 `policies/resolved-conflicts.yaml` bind wherever the sources disagree with it.
 

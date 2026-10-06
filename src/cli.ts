@@ -6,7 +6,7 @@
  * the file and the rule that produced it.
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -14,7 +14,7 @@ import { attach, formatAttachResult } from "./attach/index.ts";
 import { scoreDelegationFiles } from "./delegation.ts";
 import { runFirstmate } from "./firstmate/cli.ts";
 import { main as runLifecycle } from "./lifecycle/gate.ts";
-import { runLearn } from "./learn/cli.ts";
+import { readHookStdin, runLearn } from "./learn/cli.ts";
 import { runRunner } from "./runner/cli.ts";
 import { loadCatalog } from "./catalog/load.ts";
 import type { BuildOptions } from "./packaging/build.ts";
@@ -406,15 +406,6 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
       options.io.err(`ak: ${unknownSelector("command", parsed.command, COMMANDS)}`);
       for (const line of USAGE) options.io.err(line);
       return 2;
-  }
-}
-
-function readHookStdin(argv: readonly string[]): string | undefined {
-  if (argv[0] !== "learn" || argv[1] !== "hook" || process.stdin.isTTY) return undefined;
-  try {
-    return readFileSync(0, "utf8");
-  } catch {
-    return undefined;
   }
 }
 
