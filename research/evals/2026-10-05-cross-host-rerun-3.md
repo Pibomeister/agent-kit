@@ -10,7 +10,7 @@ substituted and `--execute` ran once.
 
 The fourth reviewer did its job. Every judged criterion received three votes, no row ended
 ungraded, and the three two-to-one splits each resolved by strict majority. In the two earlier
-reruns a split of this kind stopped the whole run.
+reruns a reviewer split stopped the whole run.
 
 The compact receipt is
 [`2026-10-05-results/cross-host-rerun-3.json`](2026-10-05-results/cross-host-rerun-3.json). It is
@@ -118,7 +118,8 @@ moves to the next.
 | `subject-opus` | `approved-spec-produces-tickets` |
 | `subject-grok` | `approved-spec-produces-tickets` |
 
-The run exited 1 because the skipped list is not empty. The receipt records `"aborted": null`.
+The run exited 1 because two rows failed and four sessions were skipped. The
+receipt records `"aborted": null`.
 
 ## Spend
 
