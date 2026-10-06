@@ -14,7 +14,7 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
  * The canonical command remains catalog.package.namespace + skill id. Source
  * validation and the invocation graph read that one spelling. Packaging owns
  * the host translation so canonical skills never need a list of host syntaxes
- * and a prose request still matches none of them (ADR-0009).
+ * and a prose request still matches none of them (ADR-0011).
  *
  * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
  * leading `$`; the namespace already carries that `<plugin>:` stem after its

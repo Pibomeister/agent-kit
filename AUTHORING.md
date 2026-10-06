@@ -1315,7 +1315,7 @@ Firstmate standing start (ADR-0007), only `/ak:<id>` starts a user-invoked skill
 user-invoked skill's `positive` prompt begins with `/ak:<id> ` followed by the request, and it is
 graded on doing the workflow: the invocation is explicit, so the authority step passes. Prompts and
 graders are written in that canonical form on every host; the harness types and reads the form the
-host's bundle gates on (ADR-0009). A prompt
+host's bundle gates on (ADR-0011). A prompt
 that names a user-invoked skill in prose belongs in a negative. There, the session passes if it
 recommends the exact `/ak:<id>` command, or loads the skill and stops at its authority step, and it
 fails if it carries out the workflow. A live check on 2026-09-25, with a direct `claude -p` session

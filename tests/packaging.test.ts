@@ -1443,7 +1443,7 @@ describe("the two host bundles, compared", () => {
    * does not generate yet.
    */
   test("a skill-local reference and a shared dependency name a U command in the same form as the gate", () => {
-    // ADR-0009: the rendering covers a U command wherever it occurs in a
+    // ADR-0011: the rendering covers a U command wherever it occurs in a
     // packaged skill. A reference that keeps the canonical spelling recommends
     // a start the codex gate beside it refuses.
     const ctx = ctxFor({

@@ -1,5 +1,5 @@
 /**
- * The eval harness types and grades in the form of the bundle each host installs (ADR-0009).
+ * The eval harness types and grades in the form of the bundle each host installs (ADR-0011).
  * Offline: no session runs here.
  */
 import { describe, expect, test } from "bun:test";

@@ -3,7 +3,7 @@
  *
  * Prompt sets and graders are written once, in the canonical `/ak:<id>` form. A session types what
  * the installed bundle gates on, and a reply is read back into the canonical form before grading,
- * both through the packager's `explicitStartForHost` (ADR-0009).
+ * both through the packager's `explicitStartForHost` (ADR-0011).
  */
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";

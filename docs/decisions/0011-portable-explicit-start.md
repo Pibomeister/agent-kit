@@ -1,4 +1,4 @@
-# ADR-0009 — Explicit starts are rendered by the host adapter
+# ADR-0011 — Explicit starts are rendered by the host adapter
 
 **Status:** Accepted.
 **Date:** 2026-10-04.

@@ -85,7 +85,7 @@ hand-writing them into the canonical tree cannot be caught downstream, and why `
 them at the source (`AUTHORING.md` §4).
 
 The canonical explicit start is `catalog.package.namespace + skill id`, and this host's renderer
-keeps it unchanged as `/ak:<id>` (ADR-0009). The renderer still runs at the packaging boundary so
+keeps it unchanged as `/ak:<id>` (ADR-0011). The renderer still runs at the packaging boundary so
 the same source contract can produce another host's native form without listing host syntaxes in
 every U skill.
 
@@ -233,7 +233,7 @@ and a live model, so `bun test` does not run them:
    hold, whether or not the skill loaded.
 8. **Explicit-start rendering** — a U skill's description and first workflow step retain
    `/ak:<id>`, ordinary prose remains a stop, and an M skill's automatic path receives no U gate
-   (ADR-0009).
+   (ADR-0011).
 
 ---
 

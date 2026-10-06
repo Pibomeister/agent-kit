@@ -78,7 +78,7 @@ dist/codex/
 
 One canonical source tree, with host differences generated at the packaging boundary. Frontmatter
 keys follow §3, and exact canonical U-command references are rendered as `$ak:<id>` for this host
-(ADR-0009). Ordinary prose is unchanged.
+(ADR-0011). Ordinary prose is unchanged.
 
 ---
 
@@ -133,7 +133,7 @@ For every U skill in the codex bundle:
    else. `human-start` fails a U skill whose first workflow step does not name the command or does
    not say to stop (`invocation.first-step-not-stop`).
    Selecting the skill through `/skills` is explicit only when the resulting human turn delivered
-   to the skill begins with that `$ak:<id>` mention (ADR-0009). Selection state without the marker, a
+   to the skill begins with that `$ak:<id>` mention (ADR-0011). Selection state without the marker, a
    later mention in prose, or the model choosing the skill from its description is not a start.
 
    The form is `$ak:<id>` because that is the name this host gives a plugin's skill. Probe, with no
@@ -146,7 +146,7 @@ For every U skill in the codex bundle:
    The eval harness's Codex cell does not observe this form as a mention. It launches the host with
    plugins disabled and installs the bundle's skills standalone, so a skill is listed there under
    its bare id and a typed `$ak:<id>` resolves to nothing: a typed case passes on the packaged
-   prose matching the prefix. That is an accepted limit (ADR-0009); the plugin form rests on the
+   prose matching the prefix. That is an accepted limit (ADR-0011); the plugin form rests on the
    probe above. Codex sessions recorded before this bundle gated on `$ak:<id>` are not rescorable
    under the new spelling.
 3. The non-trigger eval case for that skill is a **required** gate for this bundle rather than an
@@ -212,7 +212,7 @@ the published branch, so `bun test` does not run it:
 
 1. **Bundle parity** — the skill id set in `dist/codex` equals the skill id set in
    `dist/claude-code` for the same profile. Canonical content is equivalent after reversing the
-   ADR-0009 U-command rendering; byte identity is required only where no host rendering applies.
+   ADR-0011 U-command rendering; byte identity is required only where no host rendering applies.
 2. **Manifest parity** — `version` and `license` agree across `package.json`,
    `dist/claude-code/.claude-plugin/plugin.json` and `dist/codex/.codex-plugin/plugin.json`.
    `name` and `description` agree between the two manifests and with `catalog.yaml`'s
@@ -259,7 +259,7 @@ claude-code run.
 
 `ak learn setup wire` registers three hooks in `$CODEX_HOME` when it exists, and skips this host
 with a message when it does not: `ak learn hook session-start --source codex` on `SessionStart`,
-whose roster names human-only commands as `$ak:<id>` (ADR-0009),
+whose roster names human-only commands as `$ak:<id>` (ADR-0011),
 `ak learn hook prompt` on `UserPromptSubmit`, which captures user corrections, and
 `ak learn hook stop --source codex` on `Stop`. As on claude-code
 (`adapters/claude-code/CONTRACT.md` §7), no skill requires a hook, the bundle ships none, and the
