@@ -12,7 +12,26 @@ import { applyConsolidation } from "../../src/learn/memory/consolidate.ts";
 import { applyPairs, compactEvidence, compactReviewLedger, decayLessons, deep } from "../../src/learn/memory/deep.ts";
 import { ensureMemoryLedger, loadLessons, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
+import { type CapturedSession, WorkerSessionSource } from "../../src/learn/sources/worker-sessions.ts";
 import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
+
+function workerSession(nativeId: string, at: number): CapturedSession {
+  return {
+    native_id: nativeId,
+    memory_session_id: nativeId.repeat(32),
+    platform: "codex",
+    cwd: "/fixture/worktree",
+    started_at_epoch: at,
+    completed_at_epoch: at,
+    modified_at_epoch: Date.now(),
+    prompt_count: 0,
+    request: null,
+    completed: null,
+    next_steps: null,
+    files_modified: [],
+    observations: [{ type: "turn", title: "worker turn", text: `${nativeId} step`, at, files_modified: [] }],
+  };
+}
 
 const PAGE = `---
 id: rp-003
@@ -263,5 +282,37 @@ describe("weekly", () => {
     expect([lessons.get("ls-001")!.meta.sessions, lessons.get("ls-001")!.meta.status]).toEqual([3, "confirmed"]);
     expect([lessons.get("ls-003")!.meta.sessions, lessons.get("ls-003")!.meta.status]).toEqual([2, "confirmed"]);
     expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-shop-ls-003.json"]);
+  });
+
+  test("captured worker evidence counts its sessions with no claude-mem database: a merge confirms two hypotheses", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const workers = WorkerSessionSource.open(ledger);
+    workers.capture(["a", "b"].map((nativeId, index) => workerSession(nativeId, 100 + index)));
+    const rows = workers.observationsSince("", 0);
+    const ids = rows.map((row) => `obs:${row.id}`);
+    applyConsolidation(
+      ledger,
+      {
+        lessons: [
+          { statement: "fix the code the rule flags", evidence: [ids[0]], confidence: 0.6 },
+          { statement: "fix what the rule flags, not the token", evidence: [ids[1]], confidence: 0.6 },
+        ],
+      },
+      new Set(ids),
+      new Map(rows.map((row) => [`obs:${row.id}`, row.memory_session_id.slice(0, 8)])),
+    );
+    expect([...loadLessons(ledger).values()].map(({ meta }) => meta.status)).toEqual(["hypothesis", "hypothesis"]);
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: join(scratch(), "missing.db") },
+      replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }],
+    });
+    expect(deep(ctx, ledger, root, null)).toBe(
+      "weekly: 0 review pattern pages compacted, 0 stale, 1 merged, 0 conflicts",
+    );
+    const kept = loadLessons(ledger).get("ls-001")?.meta;
+    expect([kept?.sessions, kept?.status]).toEqual([2, "confirmed"]);
+    expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-shop-ls-001.json"]);
   });
 });
