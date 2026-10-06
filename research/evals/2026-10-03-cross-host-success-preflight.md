@@ -102,10 +102,12 @@ when a judged grader reads mock calls only. `reviewer-hosts` resolves and checks
 every host seated on those panels, caching each probe so the fourth host is checked once. A missing
 Kimi binary or OAuth login now makes all three subject rows fail before execution.
 
-The Kimi reviewer session runs with `--plan` and an empty per-call `--skills-dir`, so it starts
-read-only and loads no user or project skill. Kimi Code 2.1.1 has no turn-cap flag. No Kimi model
-turn has been made under these flags: the live check belongs to the preflight of the next
-three-model run.
+The Kimi reviewer session runs under a per-call `--agent-file` whose definition grants no tools and
+no sub-agents, with an empty per-call `--skills-dir`, so it loads no user or project skill. Kimi
+Code 2.1.1 refuses `--prompt` with `--plan`, which is why the seat is not held by `--plan`, and it
+has no turn-cap flag. `tests/learn/evals/subjects/kimi.ts` owns the argv and its reasons. One live
+reviewer turn through that adapter on Kimi Code 2.1.1 exited 0 and parsed to a PASS vote; that turn
+was made after this record's setup checks and is the only Kimi model turn behind it.
 
 Each login check is local and redacts the credential content. The other host checks probe the
 installed CLI:
