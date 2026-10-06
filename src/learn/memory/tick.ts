@@ -351,7 +351,12 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       const allowed = (root: string) => options.only !== undefined || repoAllowed(ctx.config, root);
       const registry =
         options.only === undefined
-          ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()), (warning) => tickLog(ctx, warning), allowed)
+          ? discoverProjects(
+              ctx.config,
+              source.toolUseCwds(discoverySince()),
+              (warning) => tickLog(ctx, warning),
+              allowed,
+            )
           : readRegistry(ctx.config);
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;
