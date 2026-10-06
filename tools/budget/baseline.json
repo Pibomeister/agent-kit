@@ -46,6 +46,11 @@
       "bytes": 13507,
       "tokens": 3377
     },
+    "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
+      "file": "references/knowledgebase-binding/REFERENCE.md",
+      "bytes": 5825,
+      "tokens": 1454
+    },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
       "bytes": 13234,
@@ -123,8 +128,8 @@
     },
     "bundle/claude-code:skills/diagnose/SKILL.md": {
       "file": "skills/diagnose/SKILL.md",
-      "bytes": 16895,
-      "tokens": 4218
+      "bytes": 17035,
+      "tokens": 4253
     },
     "bundle/claude-code:skills/diagnose/references/feedback-loops.md": {
       "file": "skills/diagnose/references/feedback-loops.md",
@@ -278,18 +283,18 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 13968,
-      "tokens": 3485
+      "bytes": 14448,
+      "tokens": 3604
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 20052,
-      "tokens": 5006
+      "bytes": 20240,
+      "tokens": 5053
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 19953,
-      "tokens": 4983
+      "bytes": 20088,
+      "tokens": 5017
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -308,8 +313,8 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 12486,
-      "tokens": 3118
+      "bytes": 12620,
+      "tokens": 3152
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -323,8 +328,8 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18377,
-      "tokens": 4589
+      "bytes": 18512,
+      "tokens": 4623
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -446,6 +451,11 @@
       "bytes": 13507,
       "tokens": 3377
     },
+    "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
+      "file": "references/knowledgebase-binding/REFERENCE.md",
+      "bytes": 5825,
+      "tokens": 1454
+    },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
       "bytes": 13234,
@@ -523,8 +533,8 @@
     },
     "bundle/codex:skills/diagnose/SKILL.md": {
       "file": "skills/diagnose/SKILL.md",
-      "bytes": 16895,
-      "tokens": 4218
+      "bytes": 17035,
+      "tokens": 4253
     },
     "bundle/codex:skills/diagnose/references/feedback-loops.md": {
       "file": "skills/diagnose/references/feedback-loops.md",
@@ -678,18 +688,18 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 14086,
-      "tokens": 3515
+      "bytes": 14566,
+      "tokens": 3634
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 20170,
-      "tokens": 5035
+      "bytes": 20358,
+      "tokens": 5082
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 19953,
-      "tokens": 4983
+      "bytes": 20088,
+      "tokens": 5017
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -708,8 +718,8 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 12486,
-      "tokens": 3118
+      "bytes": 12620,
+      "tokens": 3152
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -723,8 +733,8 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18377,
-      "tokens": 4589
+      "bytes": 18512,
+      "tokens": 4623
     },
     "bundle/codex:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
