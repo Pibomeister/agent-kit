@@ -197,6 +197,52 @@ describe("policies/invocation.yaml", () => {
   // every case below puts it there. It used to be appended at column 0 in this
   // file, which is why the four checks that read it passed their tests for
   // weeks while never once running against `policies/invocation.yaml`.
+  // One defect per row on POLICY, each through its own path, asserted by its exact message.
+  test.each([
+    [
+      "an entrypoint group's authority",
+      POLICY.replace("    authority: explicit\n", "    authority: whenever\n"),
+      "entrypoints.user_invoked.authority is whenever, which is not a value of common#/$defs/authority",
+    ],
+    [
+      "an operation with no authority",
+      POLICY.replace("    authority: delegated-grant\n", ""),
+      "align.run declares no authority",
+    ],
+    [
+      "an also_requires grant",
+      POLICY.replace(
+        "    callable_by: [autopilot]\n",
+        "    also_requires:\n      - covers: do-anything\n    callable_by: [autopilot]\n",
+      ),
+      "align.run requires a grant covering do-anything, which is not a checkpoint_category, grantable_action or sensitive_action in common",
+    ],
+    [
+      "a count below the listed skills",
+      POLICY.replace("count: 2", "count: 1"),
+      "entrypoints.user_invoked.count is 1 but 2 skill(s) are listed",
+    ],
+    [
+      "a user-invoked skill listed as model-invoked",
+      POLICY.replace("skills: [super-align, autopilot]", "skills: [super-align]")
+        .replace("count: 2", "count: 1")
+        .replace("skills: [diagnose]", "skills: [diagnose, autopilot]")
+        .replace("    count: 1\n    authority: model", "    count: 2\n    authority: model"),
+      "autopilot is listed under entrypoints.model_invoked but catalog.yaml declares invocation U",
+    ],
+    [
+      "a per_entrypoint skill the catalog does not declare",
+      POLICY.replace(
+        "operations:",
+        "  per_entrypoint:\n    ghost-skill:\n      run:\n        invocation: U\noperations:",
+      ),
+      "per_entrypoint names ghost-skill, which catalog.yaml does not declare",
+    ],
+  ])("%s outside the vocabulary or the catalog is refused by name", (_path, policy, message) => {
+    const issues = checkPolicies(ctxFor(policy));
+    expect(issues.filter((i) => i.severity === "error").map((i) => i.message)).toEqual([message]);
+  });
+
   const REVIEW_SKILL = `  - id: super-review
     invocation: U
     status: contract

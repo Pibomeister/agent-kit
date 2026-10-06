@@ -11,6 +11,7 @@ import { readJson, readJsonl } from "../../src/learn/core/store.ts";
 import { applyConsolidation } from "../../src/learn/memory/consolidate.ts";
 import { applyPairs, compactEvidence, compactReviewLedger, decayLessons, deep } from "../../src/learn/memory/deep.ts";
 import { ensureMemoryLedger, loadLessons, writeLesson } from "../../src/learn/memory/ledger.ts";
+import { lessonsBlock } from "../../src/learn/memory/session-context.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
 
@@ -177,6 +178,57 @@ describe("staleness", () => {
     page("ls-005", { status: "hypothesis" });
     expect(decayLessons(ledger, "2026-09-18")).toEqual(["ls-001"]);
     expect(loadLessons(ledger).get("ls-001")!.meta.status).toBe("stale");
+  });
+
+  test("the 90 days are a boundary: unseen for 89 days stays confirmed, 91 days goes stale", () => {
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const boundary: [string, string][] = [
+      ["ls-089", "2026-06-21"],
+      ["ls-091", "2026-06-19"],
+    ];
+    for (const [id, lastSeen] of boundary)
+      writeLesson(
+        ledger.path("lessons", `${id}.md`),
+        { id, statement: id, status: "confirmed", scope: "repo", tags: [], last_seen: lastSeen },
+        "\n",
+      );
+    expect(decayLessons(ledger, "2026-09-18")).toEqual(["ls-091"]);
+  });
+});
+
+describe("the session-start lessons block", () => {
+  test("holds at most eight confirmed lessons, most confident first, then most recently seen", () => {
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    // Ten confirmed lessons: confidence 0.1..1.0, two of them tied at 0.5 and split by last_seen.
+    const lessons: [string, string, string][] = [
+      ["ls-101", "0.1", "2026-09-10"],
+      ["ls-102", "0.2", "2026-09-10"],
+      ["ls-103", "0.3", "2026-09-10"],
+      ["ls-104", "0.5", "2026-09-01"],
+      ["ls-105", "0.5", "2026-09-15"],
+      ["ls-106", "0.6", "2026-09-10"],
+      ["ls-107", "0.7", "2026-09-10"],
+      ["ls-108", "0.8", "2026-09-10"],
+      ["ls-109", "0.9", "2026-09-10"],
+      ["ls-110", "1", "2026-09-10"],
+    ];
+    for (const [id, confidence, lastSeen] of lessons)
+      writeLesson(
+        ledger.path("lessons", `${id}.md`),
+        { id, statement: id, status: "confirmed", scope: "repo", tags: [], confidence, last_seen: lastSeen },
+        "\n",
+      );
+    writeLesson(
+      ledger.path("lessons", "ls-111.md"),
+      { id: "ls-111", statement: "ls-111", status: "hypothesis", scope: "repo", tags: [], confidence: "1" },
+      "\n",
+    );
+    const block = lessonsBlock(ledger);
+    expect(block.confirmed).toBe(10);
+    expect(block.total).toBe(11);
+    expect(block.text.trim().split("\n").slice(1)).toEqual(
+      ["ls-110", "ls-109", "ls-108", "ls-107", "ls-106", "ls-105", "ls-104", "ls-103"].map((id) => `- ${id} [${id}]`),
+    );
   });
 });
 

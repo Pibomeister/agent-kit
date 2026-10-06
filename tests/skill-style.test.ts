@@ -36,6 +36,11 @@ function skill(body: string, description: string = OK_DESCRIPTION): string {
 }
 
 /** An n-token filler line with no spaces, digits or punctuation: it cannot trip any other check. */
+/** A skill named `id`, for a tree that holds several. */
+function named(id: string, body: string, description = OK_DESCRIPTION): string {
+  return `---\nname: ${id}\ndescription: ${description}\n---\n\n${body}`;
+}
+
 function tokensOfFiller(tokens: number): string {
   return "w".repeat(4 * tokens + 1);
 }
@@ -43,6 +48,48 @@ function tokensOfFiller(tokens: number): string {
 describe("skill-style: setup", () => {
   test("every rule id this module emits starts with the declared prefix", () => {
     expect(SKILL_STYLE_RULE_PREFIX).toBe("skill-style.");
+    // One skill per check, so every id the module can emit is actually emitted and read here.
+    const files = {
+      "skills/s-long/SKILL.md": named("s-long", tokensOfFiller(BODY_TOKEN_WARN)),
+      "skills/s-near/SKILL.md": named("s-near", tokensOfFiller(BODY_TOKEN_SOFT_WARN)),
+      "skills/s-desc/SKILL.md": named("s-desc", "# S\n\nBody.\n", "word ".repeat(210).trim()),
+      "skills/s-dense/SKILL.md": named(
+        "s-dense",
+        "Never skip a step. You must always check the queue, and skipping is forbidden.\n".repeat(3),
+      ),
+      "skills/s-table/SKILL.md": named(
+        "s-table",
+        '# S\n\n| The thought | Why it is wrong | Do this instead |\n|---|---|---|\n| "Obvious." | A guess. | Ask. |\n',
+      ),
+      "skills/s-select/SKILL.md": named(
+        "s-select",
+        "# S\n\n## When to use\n\nOne.\nTwo.\nThree.\n\n## Not for\n\nNo.\n",
+      ),
+      "skills/s-link/SKILL.md": named("s-link", "# S\n\nSee [the schema](../../schemas/dossier.schema.json).\n"),
+      "skills/s-refs/SKILL.md": named("s-refs", "# S\n\nSee [a](./references/a.md) and [g](./references/guide.md).\n"),
+      "skills/s-refs/references/a.md": "# A\n\nSee also [b](./b.md).\n",
+      "skills/s-refs/references/b.md": "# B\n\nMore.\n",
+      "skills/s-refs/references/guide.md": `# Guide\n\n${"Detail line.\n".repeat(REFERENCE_FILE_LINE_WARN + 1)}`,
+      "skills/s-legacy/SKILL.md": named("s-legacy", "# S\n\nDo this: think step by step, then stop.\n"),
+    };
+    const ids = [...new Set(Object.keys(files).flatMap((path) => path.split("/").slice(1, 2)))];
+    const emitted = [...new Set(checkSkillStyle(ctxFor(files, ids)).map((i) => i.rule))].toSorted();
+    expect(emitted).toEqual(
+      [
+        "skill-style.body-approaching-limit",
+        "skill-style.body-too-long",
+        "skill-style.description-missing-trigger",
+        "skill-style.description-too-long",
+        "skill-style.enforcement-density-high",
+        "skill-style.legacy-phrase",
+        "skill-style.link-outside-skill-dir",
+        "skill-style.rationalization-table",
+        "skill-style.reference-chain-depth",
+        "skill-style.reference-missing-toc",
+        "skill-style.selection-text-in-body",
+      ].toSorted(),
+    );
+    expect(emitted.every((rule) => rule.startsWith(SKILL_STYLE_RULE_PREFIX))).toBe(true);
   });
 
   test("isSkillStyleIssue matches only that prefix", () => {

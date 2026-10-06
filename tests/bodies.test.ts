@@ -335,11 +335,21 @@ describe("role body shape (AUTHORING 12.2)", () => {
   });
 
   test("every forbidden role heading is rejected, each with its own reason", () => {
-    for (const heading of ROLE_FORBIDDEN_SECTIONS) {
+    // Literal, not ROLE_FORBIDDEN_SECTIONS: dropping an entry from the code must fail here.
+    const reasons: [string, string][] = [
+      ["## Authority", "a role never self-authorizes"],
+      ["## Workflow", "A prompt is not a procedure."],
+      ["## Hard gates", "a seat has no workflow to stop"],
+      ["## Inputs", "Write `## What it must be given` instead"],
+      ["## Side effects", "A role has none"],
+      ["## Limits", "Folded into `## Never`."],
+    ];
+    expect([...ROLE_FORBIDDEN_SECTIONS].toSorted()).toEqual(reasons.map(([heading]) => heading).toSorted());
+    for (const [heading, reason] of reasons) {
       const ctx = roleTree({}, [...ROLE_SECTIONS, heading]);
       const issue = errors(checkBodyShapes(ctx)).find((i) => i.rule === "body.forbidden-section");
-      expect(issue?.message).toContain(heading);
-      expect(issue?.message.length).toBeGreaterThan(heading.length + 20);
+      expect(issue?.message).toContain(`${heading} does not belong here.`);
+      expect(issue?.message).toContain(reason);
     }
   });
 
@@ -1104,8 +1114,9 @@ describe("the conditional standards-grounding row (AUTHORING 12.2)", () => {
   });
 
   test("the standards row carries no ruling citation, and no rulings check demands one", () => {
+    // The seat carries the row with no citation; if the row named a ruling, the row match would demand it.
     const issues = checkBodyShapes(seatTree("reviewer-standards", withStandards));
-    expect(issues.filter((i) => i.rule.startsWith("rulings."))).toEqual([]);
+    expect(errors(issues)).toEqual([]);
     expect(STANDARDS_GROUNDING_ROW.ruling).toBeNull();
   });
 
