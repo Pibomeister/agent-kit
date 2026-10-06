@@ -90,7 +90,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 32
+  catalog: 33
   expansions:
     - ids: [case]
       reason: >-
@@ -126,6 +126,12 @@ schemas:
         The learning runtime's run spans record each unit's ids, duration, status and judge
         totals; a closed shape is what keeps prose, paths and names out of them.
       commits: [238fb34]
+    - ids: [guard-policy]
+      reason: >-
+        The opt-in guard runtime judges tool calls against a policy data file, which needs a
+        shape the constitution compiler can later emit and the evaluator can load.
+      commits: [aca3ce1]
+      docs: [docs/decisions/0009-constitution-support.md]
     - ids: [handoff-record, evaluation, map]
       reason: >-
         A run record with no artifact schema had no lawful way through publishArtifact, which
