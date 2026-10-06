@@ -247,6 +247,13 @@ a hook, every skill behaves the same with them absent, and `ak learn setup unins
 configuration directory, never inside a project repository (ruling
 `learning-runtime-is-host-adapter`).
 
+The hooks are user-wide, so `ak learn setup scope --set ROOT[:ROOT]` limits the runtime to listed
+repositories: outside them every hook exits without acting and the scheduled tick runs no jobs. The
+scope lives in one runtime-owned file that `wire` and `schedule` never widen. `AK_LEARN_REPOS`
+overrides it for one shell but reaches neither the hook commands nor the scheduler unit, so `wire`
+and `schedule` refuse a scope held only there and `setup verify` fails on the mismatch. With no
+scope file and no variable, every repository is in scope.
+
 The default judge model follows the operator's current host selection. An operator who needs a fixed
 judge model pins the complete command through `AK_LEARN_JUDGE` in their own environment; scheduler
 setup carries that setting into the unit. The default command disables session persistence and runs

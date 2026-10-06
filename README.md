@@ -40,7 +40,8 @@ installed host and reports old and new versions; it is safe to rerun. If the cur
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
 `ak delegation <ticket> --project <project-record>`, which `/ak:super-bound` runs to score each
 ticket, so that skill needs a current `ak` on `PATH`
-([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). The `published` branch
+([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
+([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green push to `main`. On the first
 merge, wait for that workflow to complete before using the commands above; no release tag is
 needed. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
