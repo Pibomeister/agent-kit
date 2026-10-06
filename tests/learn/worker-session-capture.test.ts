@@ -154,6 +154,29 @@ function codexToolOutput(text: string) {
 
 const CODEX_TASK_COMPLETE = { type: "event_msg", payload: { type: "task_complete" } };
 
+/** The first observation of a one-turn rollout whose only tool call returned `output`. */
+function shellTurn(id: string, output: string) {
+  return requiredSession(
+    parseCodexSession(
+      writeRollout(scratch("ak-codex-exit-"), id, "/fixture/worktree", [
+        codexMessage("user", "Run the checks."),
+        codexToolCall("shell", "bun test"),
+        codexToolOutput(output),
+        codexMessage("assistant", "Done."),
+        CODEX_TASK_COMPLETE,
+      ]),
+    ),
+  ).observations[0];
+}
+
+function exitHeader(code: number, body: string): string {
+  return `Chunk ID: 1f2e3d\nWall time: 0.4 seconds\nProcess exited with code ${code}\nOriginal token count: 12\nOutput:\n${body}`;
+}
+
+function execResult(code: number): string {
+  return `Script completed\nWall time 0.4 seconds\nOutput:\n{"chunk_id":"1f2e3d","wall_time_seconds":0.4,"exit_code":${code},"output":"error budget ok"}`;
+}
+
 /** A Codex rollout under `home`, whose first line is the `session_meta` the scan places it by. */
 function writeRollout(home: string, id: string, cwd: string, rows: readonly object[]): string {
   const dir = join(home, "sessions");
@@ -275,6 +298,48 @@ describe("worker session parsers", () => {
     expect(session.request).toBe("Push with [redacted:github-token] from [redacted:home-path]/project please.");
     for (const secret of [token, "b2".repeat(16), "c3".repeat(12), "/Users/alice"])
       expect(JSON.stringify(session)).not.toContain(secret);
+  });
+
+  test("a recorded exit status decides whether a call failed, whatever its output says", () => {
+    const passed = shellTurn("zero", exitHeader(0, "error handling: 14 pass, warnings as errors enabled"));
+    expect(passed?.type).toBe("turn");
+    expect(passed?.text).not.toContain("failed:");
+
+    const failed = shellTurn("nonzero", exitHeader(2, "nothing to report"));
+    expect(failed?.type).toBe("error");
+    expect(failed?.text).toContain("failed: shell");
+
+    expect(shellTurn("exec-zero", execResult(0))?.type).toBe("turn");
+    expect(shellTurn("exec-nonzero", execResult(1))?.type).toBe("error");
+    expect(shellTurn("unrecorded", "error: preview quota exceeded")?.type).toBe("error");
+  });
+
+  test("a Codex sub-agent thread takes its request from the brief addressed to it, never the encrypted part", () => {
+    const session = requiredSession(
+      parseCodexSession(join(FIXTURES, "codex-subagent", "sessions", "2026", "10", "04", "rollout-subagent.jsonl")),
+    );
+    expect(session.request).toBe("Audit the retry loop in src/queue.ts and report what you find.");
+    expect(session.prompt_count).toBe(1);
+    expect(session.observations[0]?.text).toStartWith("prompt: Audit the retry loop in src/queue.ts");
+    expect(JSON.stringify(session)).not.toContain("gAAAA-fixture-ciphertext");
+    expect(JSON.stringify(session)).not.toContain("Relay for the other worker");
+  });
+
+  test("captured rows reach the ledger through the secret gate, which records what it removed", () => {
+    const ledger = ensureMemoryLedger(scratch("ak-capture-gate-"));
+    const stripe = `sk_live_${"d4".repeat(12)}`;
+    const path = writeRollout(scratch("ak-codex-gate-"), "gate", "/fixture/worktree", [
+      codexMessage("user", `Charge with ${stripe} now.`),
+      codexMessage("assistant", "Charged."),
+      CODEX_TASK_COMPLETE,
+    ]);
+    const session = requiredSession(parseCodexSession(path));
+    expect(session.request).toBe("Charge with [redacted:stripe-key] now.");
+    captureWorkerSessions(ledger, [{ ...session, completed: `Used ${stripe}.` }]);
+    expect(readFileSync(ledger.path("raw", "worker-sessions.jsonl"), "utf8")).not.toContain(stripe);
+    expect(readJsonl<{ file: string; kinds: object }>(ledger.path("raw", "secret-redactions.jsonl"))).toEqual([
+      expect.objectContaining({ file: "raw/worker-sessions.jsonl", kinds: { "stripe-key": 1 } }),
+    ]);
   });
 
   test("the first 300 characters of a long turn carry its prompt, its final reply and the calls that failed", () => {

@@ -15,7 +15,7 @@ import type { Ledger } from "../core/ledger.ts";
 import { linkedWorktree } from "../core/paths.ts";
 import { appendJsonl, readJsonl, writeJsonl } from "../core/store.ts";
 import { sid8 } from "../memory/ledger.ts";
-import { scrubSecrets } from "../memory/redact.ts";
+import { scrubCaptured } from "../memory/redact.ts";
 import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
@@ -83,6 +83,12 @@ interface ToolCall {
   name: string;
   input: string;
   output: string;
+  failed: boolean;
+}
+
+interface ToolOutput {
+  text: string;
+  failed: boolean;
 }
 
 /** One user prompt and everything the worker did until the next one. */
@@ -113,6 +119,8 @@ const FAILURE_WORDS =
   "(?:errors?|fail(?:s|ed|ures?|ing)?|warnings?|regressions?|timeouts?|blocked|findings?|violations?)";
 const FAILURE_TEXT = new RegExp(`\\b${FAILURE_WORDS}\\b`, "i");
 const ZERO_FAILURES = new RegExp(`\\b(?:0|no)\\s+${FAILURE_WORDS}\\b`, "gi");
+const EXIT_HEADER = /^(?:Process exited with code|Exit code:|exit:) (-?\d+)$/;
+const EXIT_FIELD = /"chunk_id":"[^"]*","wall_time_seconds":[\d.]+,"exit_code":(-?\d+)/g;
 const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
 const jsonValidator = new Ajv({ strict: false });
@@ -202,7 +210,7 @@ function epoch(value: JsonValue | undefined, fallback: number): number {
 
 /** Host text made storable: control characters dropped, scrubbed, then cut. Scrubbing runs before the cut so no cut leaves half a credential. */
 function clipped(value: string): string {
-  return scrubSecrets(
+  return scrubCaptured(
     value
       .replace(/\p{Cc}/gu, (character) => (character === "\n" || character === "\t" ? character : " "))
       .trim()
@@ -217,18 +225,20 @@ function excerpt(text: string, max: number): string {
 
 /** Public text parts only. Encrypted content and Kimi `think` parts are deliberately excluded. */
 function publicText(value: JsonValue | undefined): string {
-  if (value !== undefined && validateString(value)) return clipped(value);
+  return clipped(rawPublicText(value));
+}
+
+function rawPublicText(value: JsonValue | undefined): string {
+  if (value !== undefined && validateString(value)) return value;
   if (!Array.isArray(value)) return "";
-  return clipped(
-    value
-      .flatMap((part) => {
-        const item = object(part);
-        if (item === null || item.type === "encrypted_content" || item.type === "think") return [];
-        const text = string(item.text);
-        return text === null ? [] : [text];
-      })
-      .join("\n"),
-  );
+  return value
+    .flatMap((part) => {
+      const item = object(part);
+      if (item === null || item.type === "encrypted_content" || item.type === "think") return [];
+      const text = string(item.text);
+      return text === null ? [] : [text];
+    })
+    .join("\n");
 }
 
 function stableSessionId(host: WorkerHost, nativeId: string): string {
@@ -239,12 +249,26 @@ function reportsFailure(text: string): boolean {
   return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, ""));
 }
 
+/** The exit statuses the host recorded in a tool output: a header line, or a Codex exec result's `exit_code`. */
+function exitStatuses(raw: string): number[] {
+  const headers = raw.split("\n", 4).flatMap((line) => EXIT_HEADER.exec(line.trim())?.[1] ?? []);
+  return [...headers, ...[...raw.matchAll(EXIT_FIELD)].flatMap((match) => match[1] ?? [])].map(Number);
+}
+
+/** A tool output as stored, failing by its recorded exit status and by its wording only where the host recorded none. */
+function toolOutput(value: JsonValue | undefined): ToolOutput {
+  const raw = rawPublicText(value);
+  const text = clipped(raw);
+  const statuses = exitStatuses(raw);
+  return { text, failed: statuses.length > 0 ? statuses.some((status) => status !== 0) : reportsFailure(text) };
+}
+
 function normalizedFile(path: string, cwd: string): string | null {
   const clean = path.trim();
   if (clean === "" || clean.includes("\n")) return null;
   if (!isAbsolute(clean)) return clean.replace(/^\.\//, "");
   const rel = relative(cwd, clean);
-  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : scrubSecrets(clean);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : scrubCaptured(clean);
 }
 
 function filesFromValue(value: JsonValue | undefined, cwd: string): string[] {
@@ -302,14 +326,19 @@ function turnLog() {
     },
     call(name: string, input: ParsedToolInput, cwd: string, at: number): void {
       const turn = current(at);
-      turn.calls.push({ name, input: input.text, output: "" });
+      turn.calls.push({ name, input: input.text, output: "", failed: false });
       if (WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
     },
-    output(text: string, at: number): void {
+    output(output: ToolOutput, at: number): void {
+      if (output.text === "") return;
       const turn = current(at);
       const waiting = turn.calls.find((call) => call.output === "");
-      if (waiting === undefined) turn.calls.push({ name: "tool", input: "", output: text });
-      else waiting.output = text;
+      if (waiting === undefined)
+        turn.calls.push({ name: "tool", input: "", output: output.text, failed: output.failed });
+      else {
+        waiting.output = output.text;
+        waiting.failed = output.failed;
+      }
     },
   };
 }
@@ -318,10 +347,10 @@ function turnLog() {
  * One turn as one observation. It leads with a summary of at most 300 characters, which is as far
  * as the shortest judge excerpt reads: the prompt, the last reply and the names of the calls that
  * failed. The detail follows: how often each tool ran, then each call with short excerpts of its
- * arguments and output, failing calls first. A turn with a failing output is typed `error`.
+ * arguments and output, failing calls first. A turn with a failing call is typed `error`.
  */
 function turnObservation(turn: Turn): CapturedObservation {
-  const failing = turn.calls.filter((call) => reportsFailure(call.output));
+  const failing = turn.calls.filter((call) => call.failed);
   const counts = new Map<string, number>();
   for (const call of turn.calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
   const lines: string[] = [];
@@ -425,11 +454,24 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
   const started = epoch(payload?.timestamp ?? meta?.timestamp, modified);
   let ended: number | null = null;
   const log = turnLog();
+  const agentPath = string(payload?.agent_path);
+  let briefed = rows.some((row) => {
+    const event = object(row.payload);
+    return event?.type === "message" && event.role === "user" && publicText(codexUserContent(event.content)) !== "";
+  });
   let offset = 0;
   for (const row of rows) {
     const event = object(row.payload);
     if (event === null) continue;
     const at = epoch(row.timestamp ?? event.timestamp, started + offset++);
+    if (!briefed && agentPath !== null && event.type === "agent_message" && event.recipient === agentPath) {
+      const parts = Array.isArray(event.content) ? event.content : [];
+      const text = publicText(parts.filter((part) => object(part)?.type === "input_text"));
+      if (text === "") continue;
+      log.prompt(text, at);
+      briefed = true;
+      continue;
+    }
     if (event.type === "task_started") ended = null;
     if (event.type === "task_complete") ended = Math.max(ended ?? 0, epoch(event.completed_at, at));
     if (event.type === "message" && (event.role === "user" || event.role === "assistant")) {
@@ -444,8 +486,7 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
       continue;
     }
     if (event.type === "custom_tool_call_output" || event.type === "function_call_output") {
-      const text = publicText(event.output);
-      if (text !== "") log.output(text, at);
+      log.output(toolOutput(event.output), at);
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
@@ -488,8 +529,7 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
         log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at);
       }
     } else if (row.type === "tool_result") {
-      const text = publicText(row.content);
-      if (text !== "") log.output(text, at);
+      log.output(toolOutput(row.content), at);
     }
   }
   const lastPublic = history.findLast(
@@ -530,10 +570,10 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     const origin = object(message.origin) ?? object(object(envelope?.meta)?.origin);
     if (role === "user" && origin?.kind !== "user") continue;
     const text = publicText(message.content);
-    if (text !== "") {
+    if (role === "tool") log.output(toolOutput(message.content), at);
+    else if (text !== "") {
       if (role === "user") log.prompt(text, at);
       else if (role === "assistant") log.reply(text, at);
-      else if (role === "tool") log.output(text, at);
     }
     if (role !== "assistant") continue;
     for (const call of Array.isArray(message.toolCalls) ? message.toolCalls : []) {
@@ -808,12 +848,17 @@ export class WorkerSessionSource implements MemoryObservationSource {
   private constructor(
     private readonly observationsPath: string,
     private readonly sessionsPath: string,
+    private readonly gate: string,
   ) {
     this.hold(readJsonl<StoredObservation>(observationsPath), readJsonl<StoredSession>(sessionsPath));
   }
 
   static open(ledger: Ledger): WorkerSessionSource {
-    return new WorkerSessionSource(ledger.path(CAPTURE_OBSERVATIONS_FILE), ledger.path(CAPTURE_SESSIONS_FILE));
+    return new WorkerSessionSource(
+      ledger.path(CAPTURE_OBSERVATIONS_FILE),
+      ledger.path(CAPTURE_SESSIONS_FILE),
+      ledger.dir,
+    );
   }
 
   private hold(observations: readonly StoredObservation[], sessions: readonly StoredSession[]): void {
@@ -875,11 +920,15 @@ export class WorkerSessionSource implements MemoryObservationSource {
       (row) => !pruned || !expired(row.memory_session_id),
     );
     if (pruned) {
-      writeJsonl(this.observationsPath, [...kept, ...fresh]);
-      writeJsonl(this.sessionsPath, [...new Map(latest.map((row) => [row.memory_session_id, row])).values()]);
+      writeJsonl(this.observationsPath, [...kept, ...fresh], this.gate);
+      writeJsonl(
+        this.sessionsPath,
+        [...new Map(latest.map((row) => [row.memory_session_id, row])).values()],
+        this.gate,
+      );
     } else {
-      appendJsonl(this.observationsPath, fresh);
-      appendJsonl(this.sessionsPath, revisions);
+      appendJsonl(this.observationsPath, fresh, this.gate);
+      appendJsonl(this.sessionsPath, revisions, this.gate);
     }
     this.hold([...kept, ...fresh], latest);
     return written;

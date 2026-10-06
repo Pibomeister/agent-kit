@@ -40,6 +40,7 @@
  * A bullet carrying any part of a match is dropped whole, since a bullet
  * redacted in place still carries the wording around the hole.
  */
+import { scrubSecrets } from "../core/secrets.ts";
 import type { ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
 import { citedIds, SECTIONS } from "./ledger.ts";
 
@@ -171,29 +172,18 @@ export function normalWords(text: string): string[] {
     .filter((w) => w !== "");
 }
 
-/** Credential formats and home directories, each replaced by `[redacted:<kind>]` before captured text is kept. */
+/** What the shared secret gate (`core/secrets.ts`) has no rule for, each replaced by `[redacted:<kind>]`. */
 const SECRETS: ReadonlyArray<readonly [kind: string, pattern: RegExp]> = [
-  ["private-key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/g],
-  ["aws-access-key", /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g],
-  ["github-token", /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})/g],
-  ["slack-token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/g],
   ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
-  ["jwt", /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
-  ["bearer-token", /(?<=\bBearer\s+)(?=[A-Za-z0-9._~+/-]*[0-9])[A-Za-z0-9._~+/-]{20,}=*/gi],
-  ["url-credentials", /(?<=\b[A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]+:(?![$%{<])[^\s/?#@"'<>]+(?=@)/g],
   [
     "env-secret",
     /(?<=\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*["']?)[^\s"']{8,}/g,
   ],
-  [
-    "home-path",
-    /(?<=^|[\s"'`([{<=,;:|>])(?:\/(?:var\/)?home\/[A-Za-z0-9._-]+|\/Users\/(?!Shared\b)[A-Za-z0-9._-]+)(?![A-Za-z0-9._-])/gm,
-  ],
 ];
 
-/** `text` with every credential and home directory replaced by its kind. The one scrubber for text captured from a host record. */
-export function scrubSecrets(text: string): string {
-  return SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text);
+/** Text captured from a host record, scrubbed: the rules above first, then the shared secret gate's. */
+export function scrubCaptured(text: string): string {
+  return scrubSecrets(SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text)).text;
 }
 
 function observationText(row: ObservationRow): string {

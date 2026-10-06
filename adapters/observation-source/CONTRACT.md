@@ -208,7 +208,8 @@ Full tool output is never stored. The session row adds the first prompt, the las
 repository paths the session's write tools named. Every stored string is scrubbed before it is cut
 and before anything is written or sent to a judge: private keys, cloud and service tokens, bearer
 tokens, URL credentials, secret-named assignments and home directories become `[redacted:<kind>]`.
-A turn with a failing tool output is typed `error`.
+A turn with a failing call is typed `error`: a call fails by the exit status its host recorded in the
+output, nonzero failing and zero not, and by the output's wording only where no status was recorded.
 
 A turn still running is left for a later scan: the last turn is stored once its host records the
 turn's end, or once the record has been quiet for an hour. A session past 999 turns keeps its first
