@@ -165,6 +165,12 @@ interface ReadResult {
   coverage: { kinds: string[]; scopes: string[]; unreadable: string[]; run_artifact_links: string };
 }
 
+/** A run artifact as the knowledgebase stores it: the record beside the artifact it was published from. */
+interface StoredArtifact {
+  record: Pick<Published, "ref" | "content_hash" | "idempotency_key">;
+  artifact: Partial<typeof charterExample>;
+}
+
 const ajv = new Ajv2020({ strict: false });
 const isPublished = ajv.compile<Published>({
   type: "object",
@@ -172,6 +178,7 @@ const isPublished = ajv.compile<Published>({
 });
 const isRefusal = ajv.compile<Refusal>({ type: "object", required: ["status", "code", "message"] });
 const isRead = ajv.compile<ReadResult>({ type: "object", required: ["status", "documents", "coverage"] });
+const isStored = ajv.compile<StoredArtifact>({ type: "object", required: ["record", "artifact"] });
 
 function published(run: Run): Published {
   const value: unknown = JSON.parse(run.out);
@@ -769,14 +776,18 @@ describe("publishArtifact, run-artifact placement", () => {
   test("an approved copy published after its draft is stored on the same record", () => {
     const fx = registered();
     const { approvals, ...unapproved } = charterExample;
-    const write = (name: string, artifact: object): string => {
+    const write = (name: string, artifact: Partial<typeof charterExample>): string => {
       const file = join(fx.scratch, name);
       writeFileSync(file, JSON.stringify(artifact));
       return file;
     };
     const args = ["publish", "artifact", "--run", "example-run-1", "--file"];
     const path = "projects/example-project/runs/example-run-1/charter/example-charter-1.json";
-    const stored = (): unknown => JSON.parse(git(fx.kb, "show", `HEAD:${path}`));
+    const stored = (): StoredArtifact => {
+      const value: unknown = JSON.parse(git(fx.kb, "show", `HEAD:${path}`));
+      if (!isStored(value)) throw new Error(`not a stored artifact: ${path}`);
+      return value;
+    };
 
     const draft = published(kb(fx, fx.project, ...args, write("draft.json", unapproved)));
     expect(draft.effect).toBe("published");
@@ -804,6 +815,7 @@ describe("publishArtifact, run-artifact placement", () => {
     expect(commits(fx.kb)).toBe(2);
 
     const [first] = approvals;
+    if (first === undefined) throw new Error("the charter example carries no approval");
     const second = { ...first, at: "2026-09-20T09:00:00Z" };
     const both = { ...unapproved, approvals: [first, second] };
     expect(published(kb(fx, fx.project, ...args, write("both.json", both))).effect).toBe("published");
