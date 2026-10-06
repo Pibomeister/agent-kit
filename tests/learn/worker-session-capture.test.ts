@@ -4,7 +4,16 @@
  * recorded worktree, and append idempotently to that project's memory ledger.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { Ledger } from "../../src/learn/core/ledger.ts";
 import { run } from "../../src/learn/core/proc.ts";
@@ -59,7 +68,7 @@ function captureWorkerSessions(
   sessions: readonly CapturedSession[],
   options: { dryRun?: boolean; sinceMs?: number } = {},
 ): number {
-  return WorkerSessionSource.open(ledger).capture(sessions, options);
+  return WorkerSessionSource.open(ledger).capture(sessions, options).observations;
 }
 
 function requiredSession(value: CapturedSession | null): CapturedSession {
@@ -378,6 +387,71 @@ describe("worker session parsers", () => {
   });
 });
 
+describe("worker scan against what the ledger holds", () => {
+  const rows = [
+    codexMessage("user", "tidy the cart module"),
+    codexMessage("assistant", "The cart module is tidy."),
+    CODEX_TASK_COMPLETE,
+  ];
+
+  test("a finished session the ledger holds as its record stands is not parsed again and still counts as activity", () => {
+    const codex = scratch("ak-worker-held-");
+    const path = writeRollout(codex, "held", "/code/shop", rows);
+    const homes = { codex: [codex], grok: [], kimi: [] };
+    const ledger = ensureMemoryLedger(scratch("ak-capture-held-"));
+    const stored = WorkerSessionSource.open(ledger);
+    const first = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    const parsed = first.sessions.get("/code/shop") ?? [];
+    expect(parsed).toHaveLength(1);
+    expect(stored.capture(parsed)).toEqual({ observations: 1, sessions: 1 });
+
+    const second = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    expect(second.sessions.size).toBe(0);
+    expect(second.activity.get("/code/shop")).toBe(first.activity.get("/code/shop"));
+    expect(second.activity.get("/code/shop")).toBe(parsed[0]?.completed_at_epoch ?? 0);
+
+    const later = new Date(Date.now() + 60_000);
+    utimesSync(path, later, later);
+    const third = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    const touched = third.sessions.get("/code/shop") ?? [];
+    expect(touched).toHaveLength(1);
+    expect(stored.capture(touched)).toEqual({ observations: 0, sessions: 1 });
+    expect(scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored }).sessions.size).toBe(0);
+  });
+
+  test("a session still running is parsed on every scan", () => {
+    const codex = scratch("ak-worker-running-");
+    writeRollout(codex, "running", "/code/shop", [
+      ...rows,
+      { type: "event_msg", payload: { type: "task_started" } },
+      codexMessage("user", "now the checkout"),
+    ]);
+    const homes = { codex: [codex], grok: [], kimi: [] };
+    const stored = WorkerSessionSource.open(ensureMemoryLedger(scratch("ak-capture-running-")));
+    const first = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    expect(stored.capture(first.sessions.get("/code/shop") ?? [])).toEqual({ observations: 1, sessions: 1 });
+    expect(
+      scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored }).sessions.get("/code/shop"),
+    ).toHaveLength(1);
+  });
+
+  test("a session under a root the run does not cover is neither parsed nor counted as unplaced", () => {
+    const codex = scratch("ak-worker-scope-");
+    writeRollout(codex, "covered", "/code/shop", rows);
+    const other = writeRollout(codex, "other", "/code/blog", rows);
+    appendFileSync(other, "\n{not json");
+    const warnings: string[] = [];
+    const scan = scanWorkerSessions({ codex: [codex], grok: [], kimi: [] }, (cwd) => cwd, {
+      wanted: (root) => root === "/code/shop",
+      warn: (line) => warnings.push(line),
+    });
+    expect([...scan.sessions.keys()]).toEqual(["/code/shop"]);
+    expect([...scan.activity.keys()]).toEqual(["/code/shop"]);
+    expect(scan.unmatched).toBe(0);
+    expect(warnings).toEqual([]);
+  });
+});
+
 describe("worker capture project resolution", () => {
   const registry: Registry = {
     shop: { root: "/code/shop", mem_project: "shop", last_seen: 1 },
@@ -443,8 +517,28 @@ describe("memory tick worker capture", () => {
 
     expect(tick(ctx, { only: main, job: "reflect", force: true })).toBe(0);
     expect(ctx.prompts).toHaveLength(2);
-    expect(ctx.out.filter((line) => line.includes("worker observations +0")).length).toBeGreaterThan(0);
+    expect(WorkerSessionSource.open(ledger).observationsSince("", 0)).toHaveLength(3);
     expect(ctx.out.some((line) => line.includes("worker sessions skipped"))).toBe(false);
+  });
+
+  test("a scheduled tick still runs a project whose worker sessions are all captured already", () => {
+    const { main } = linkedRepo();
+    const codex = scratch("ak-worker-activity-");
+    const ctx = testContext({ cwd: main, env: { AK_LEARN_CODEX_HOMES: codex } });
+    registerRoot(ctx.config, main);
+    writeRollout(codex, "captured", main, [
+      codexMessage("user", "tidy the cart module"),
+      codexMessage("assistant", "The cart module is tidy."),
+      CODEX_TASK_COMPLETE,
+    ]);
+
+    expect(tick(ctx)).toBe(0);
+    expect(ctx.out.some((line) => line.includes("worker observations +1"))).toBe(true);
+    const first = ctx.out.length;
+    expect(tick(ctx)).toBe(0);
+    const again = ctx.out.slice(first);
+    expect(again.some((line) => line.includes("worker observations"))).toBe(false);
+    expect(again.some((line) => line.includes("new_obs 1"))).toBe(true);
   });
 
   test("Grok and Kimi sessions in a linked worktree no hook recorded reach its root through the worktree's git pointer", () => {

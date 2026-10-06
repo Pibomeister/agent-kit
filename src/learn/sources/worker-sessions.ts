@@ -401,8 +401,16 @@ function codexMeta(row: JsonObject | null | undefined): JsonObject | null {
   return row?.type === "session_meta" ? object(row.payload) : null;
 }
 
-function codexCwd(path: string): string | null {
-  return string(codexMeta(object(parseJson(firstLine(path))))?.cwd);
+function codexNativeId(payload: JsonObject | null): string | null {
+  return string(payload?.id) ?? string(payload?.session_id);
+}
+
+function grokNativeId(dir: string, summary: JsonObject | null): string {
+  return string(object(summary?.info)?.id) ?? basename(dir);
+}
+
+function kimiNativeId(dir: string, state: JsonObject | null): string {
+  return string(state?.id) ?? basename(dir);
 }
 
 export function parseCodexSession(path: string, now = Date.now()): CapturedSession | null {
@@ -410,7 +418,7 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
   const meta = rows[0];
   const payload = codexMeta(meta);
   const cwd = string(payload?.cwd);
-  const nativeId = string(payload?.id) ?? string(payload?.session_id);
+  const nativeId = codexNativeId(payload);
   if (cwd === null || nativeId === null) return null;
   const modified = statSync(path).mtimeMs;
   const started = epoch(payload?.timestamp ?? meta?.timestamp, modified);
@@ -458,7 +466,7 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
   const summary = readObject(join(dir, "summary.json"));
   const cwd = grokCwd(dir, summary);
   if (cwd === null) return null;
-  const nativeId = string(object(summary?.info)?.id) ?? basename(dir);
+  const nativeId = grokNativeId(dir, summary);
   const modified = statSync(historyPath).mtimeMs;
   const started = epoch(summary?.created_at, modified);
   let ended: number | null = null;
@@ -500,7 +508,7 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
   const path = join(dir, "agents", "main", "wire.jsonl");
   if (state === null || !existsSync(path)) return null;
   const cwd = string(state.cwd);
-  const nativeId = string(state.id) ?? basename(dir);
+  const nativeId = kimiNativeId(dir, state);
   if (cwd === null) return null;
   const modified = statSync(path).mtimeMs;
   const started = epoch(state.createdAt, modified);
@@ -604,19 +612,27 @@ export function workerRootResolver(registry: Registry, worktrees: Worktrees): (c
 export interface WorkerScan {
   /** Parsed sessions by the registered root their cwd resolved to, oldest first. */
   sessions: Map<string, CapturedSession[]>;
+  /** When a worker was last active under each root, counting the sessions left unparsed because the ledger holds them. */
+  activity: Map<string, number>;
   /** Recent sessions whose cwd resolved to no registered root; these are never parsed. */
   unmatched: number;
 }
 
 /**
- * Recent host sessions under a registered root. Only a record's cwd is read before `rootFor`
- * places it, so a session of an unregistered project costs one small read. An unreadable record
- * is skipped and reported through `warn`.
+ * Recent host sessions under a registered root. Only a record's cwd and id are read before `rootFor`
+ * places it, so a session of an unregistered project costs one small read. A session under a root
+ * `wanted` refuses is left alone, and so is one the root's `stored` rows already hold complete as
+ * its record stands. An unreadable record is skipped and reported through `warn`.
  */
 export function scanWorkerSessions(
   homes: WorkerHomes,
   rootFor: (cwd: string) => string | null,
-  options: { sinceMs?: number; warn?: (line: string) => void } = {},
+  options: {
+    sinceMs?: number;
+    warn?: (line: string) => void;
+    wanted?: (root: string) => boolean;
+    stored?: (root: string) => WorkerSessionSource | null;
+  } = {},
 ): WorkerScan {
   const sinceMs = options.sinceMs ?? Date.now() - CAPTURE_WINDOW_MS;
   const recent = (path: string) => {
@@ -626,19 +642,38 @@ export function scanWorkerSessions(
       return false;
     }
   };
-  const scan: WorkerScan = { sessions: new Map(), unmatched: 0 };
-  const collect = (path: string, cwdOf: () => string | null, parse: () => CapturedSession | null) => {
+  const scan: WorkerScan = { sessions: new Map(), activity: new Map(), unmatched: 0 };
+  const active = (root: string, at: number) => scan.activity.set(root, Math.max(scan.activity.get(root) ?? 0, at));
+  const collect = (
+    host: WorkerHost,
+    path: string,
+    record: string,
+    identify: () => { cwd: string | null; nativeId: string | null },
+    parse: () => CapturedSession | null,
+  ) => {
     if (!recent(path)) return;
     try {
-      const cwd = cwdOf();
+      const { cwd, nativeId } = identify();
       if (cwd === null) return;
       const root = rootFor(cwd);
       if (root === null) {
         scan.unmatched += 1;
         return;
       }
+      if (options.wanted?.(root) === false) return;
+      const modified = statSync(record).mtimeMs;
+      const held =
+        nativeId !== null && modified >= sinceMs
+          ? (options.stored?.(root)?.completedAt(stableSessionId(host, nativeId), modified) ?? null)
+          : null;
+      if (held !== null) {
+        active(root, held);
+        return;
+      }
       const parsed = parse();
-      if (parsed !== null) scan.sessions.set(root, [...(scan.sessions.get(root) ?? []), parsed]);
+      if (parsed === null) return;
+      scan.sessions.set(root, [...(scan.sessions.get(root) ?? []), parsed]);
+      active(root, parsed.completed_at_epoch ?? parsed.observations.at(-1)?.at ?? parsed.started_at_epoch);
     } catch (error) {
       options.warn?.(`worker session skipped: ${path}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -649,8 +684,13 @@ export function scanWorkerSessions(
       (file) => basename(file).startsWith("rollout-") && file.endsWith(".jsonl"),
     ))
       collect(
+        "codex",
         path,
-        () => codexCwd(path),
+        path,
+        () => {
+          const meta = codexMeta(object(parseJson(firstLine(path))));
+          return { cwd: string(meta?.cwd), nativeId: codexNativeId(meta) };
+        },
         () => parseCodexSession(path),
       );
   }
@@ -658,8 +698,13 @@ export function scanWorkerSessions(
     for (const path of walk(join(home, "sessions"), (file) => basename(file) === "chat_history.jsonl")) {
       const dir = dirname(path);
       collect(
+        "grok",
         path,
-        () => grokCwd(dir, readObject(join(dir, "summary.json"))),
+        path,
+        () => {
+          const summary = readObject(join(dir, "summary.json"));
+          return { cwd: grokCwd(dir, summary), nativeId: grokNativeId(dir, summary) };
+        },
         () => parseGrokSession(dir),
       );
     }
@@ -667,10 +712,16 @@ export function scanWorkerSessions(
   for (const home of homes.kimi) {
     for (const path of walk(join(home, "sessions"), (file) => basename(file) === "state.json")) {
       const dir = dirname(path);
-      if (existsSync(join(dir, "agents", "main", "wire.jsonl")))
+      const wire = join(dir, "agents", "main", "wire.jsonl");
+      if (existsSync(wire))
         collect(
+          "kimi",
           path,
-          () => string(readObject(path)?.cwd),
+          wire,
+          () => {
+            const state = readObject(path);
+            return { cwd: string(state?.cwd), nativeId: kimiNativeId(dir, state) };
+          },
           () => parseKimiSession(dir),
         );
     }
@@ -762,9 +813,11 @@ export class WorkerSessionSource implements MemoryObservationSource {
    * and text rather than position, since a host may rewrite its record. A stored session that is not
    * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the files hold the same
    * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
-   * Returns observations appended; a dry run counts them and changes nothing.
+   * A finished session whose record changed without a new row has its session row rewritten, so the
+   * scan can tell the ledger is level with the record. Returns observations appended and session rows
+   * written; a dry run counts them and changes nothing.
    */
-  capture(sessions: readonly CapturedSession[], options: { dryRun?: boolean; sinceMs?: number } = {}): number {
+  capture(sessions: readonly CapturedSession[], options: { dryRun?: boolean; sinceMs?: number } = {}) {
     const held = this.observations;
     const scanned = new Set(sessions.map((item) => item.memory_session_id));
     const expired = (sid: string) =>
@@ -784,11 +837,19 @@ export class WorkerSessionSource implements MemoryObservationSource {
         if (count > 0) unseen.set(key, count - 1);
         else appended.push(storedObservation(item, row, ++nextId));
       }
-      if (appended.length === 0) continue;
+      const row = this.sessionRows.get(item.memory_session_id);
+      if (
+        appended.length === 0 &&
+        (row === undefined ||
+          item.completed_at_epoch === null ||
+          (row.modified_at_epoch === item.modified_at_epoch && row.completed_at_epoch === item.completed_at_epoch))
+      )
+        continue;
       fresh.push(...appended);
       revisions.push(storedSession(item, stored.length + appended.length));
     }
-    if (options.dryRun === true) return fresh.length;
+    const written = { observations: fresh.length, sessions: revisions.length };
+    if (options.dryRun === true) return written;
     const kept = held.filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId));
     const pruned = kept.length < held.length;
     const latest = [...this.sessionRows.values(), ...revisions].filter(
@@ -797,12 +858,18 @@ export class WorkerSessionSource implements MemoryObservationSource {
     if (pruned) {
       writeJsonl(this.observationsPath, [...kept, ...fresh]);
       writeJsonl(this.sessionsPath, [...new Map(latest.map((row) => [row.memory_session_id, row])).values()]);
-    } else if (fresh.length > 0) {
+    } else {
       appendJsonl(this.observationsPath, fresh);
       appendJsonl(this.sessionsPath, revisions);
     }
     this.hold([...kept, ...fresh], latest);
-    return fresh.length;
+    return written;
+  }
+
+  /** When the stored session ended, if the ledger holds it complete as its host record stood at `modifiedMs`. */
+  completedAt(memorySessionId: string, modifiedMs: number): number | null {
+    const row = this.sessionRows.get(memorySessionId);
+    return row !== undefined && row.modified_at_epoch === modifiedMs ? row.completed_at_epoch : null;
   }
 
   close(): void {}

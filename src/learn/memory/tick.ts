@@ -266,9 +266,13 @@ export function runProject(
   try {
     const out: string[] = [];
     let captured = 0;
+    let refreshed = 0;
     const captures = WorkerSessionSource.open(ledger);
     try {
-      captured = captures.capture(options.captured ?? [], { dryRun, sinceMs: options.capturedSince });
+      ({ observations: captured, sessions: refreshed } = captures.capture(options.captured ?? [], {
+        dryRun,
+        sinceMs: options.capturedSince,
+      }));
       if ((options.captured?.length ?? 0) > 0) out.push(`worker observations +${captured}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -288,7 +292,7 @@ export function runProject(
               worker_observations: captured,
             });
             ledger.commit(`episodes +${fresh.length}, worker observations +${captured}`);
-          }
+          } else if (refreshed > 0 && !dryRun) ledger.commit(`worker sessions refreshed ${refreshed}`);
           return `episodes +${fresh.length}`;
         }),
       );
@@ -389,9 +393,22 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;
       const capturedSince = nowMs() - CAPTURE_WINDOW_MS;
+      const stores = new Map<string, WorkerSessionSource | null>();
+      const stored = (root: string) => {
+        if (!stores.has(root)) {
+          try {
+            stores.set(root, WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, root))));
+          } catch {
+            stores.set(root, null);
+          }
+        }
+        return stores.get(root) ?? null;
+      };
       const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
         sinceMs: capturedSince,
         warn: (warning) => tickLog(ctx, warning),
+        wanted: (root) => (options.only === undefined || root === options.only) && allowed(root),
+        stored,
       });
       if (scan.unmatched > 0)
         tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and worktree`);
@@ -399,14 +416,9 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
         if (options.only !== undefined && entry.root !== options.only) continue;
         if (!allowed(entry.root)) continue;
         const workerSessions = scan.sessions.get(entry.root) ?? [];
-        const workerActivity = workerSessions.reduce(
-          (latest, session) =>
-            Math.max(latest, session.completed_at_epoch ?? session.observations.at(-1)?.at ?? session.started_at_epoch),
-          0,
-        );
         if (
           options.only === undefined &&
-          Math.max(source?.lastActivityMs(entry.mem_project) ?? 0, workerActivity) < cutoff
+          Math.max(source?.lastActivityMs(entry.mem_project) ?? 0, scan.activity.get(entry.root) ?? 0) < cutoff
         )
           continue;
         const name = entry.mem_project || basename(entry.root);

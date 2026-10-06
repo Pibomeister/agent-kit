@@ -15,7 +15,7 @@ import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { type CapturedSession, WorkerSessionSource } from "../../src/learn/sources/worker-sessions.ts";
 import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
 
-function workerSession(nativeId: string, at: number): CapturedSession {
+function workerSession(nativeId: string, at: number, modified = Date.now()): CapturedSession {
   return {
     native_id: nativeId,
     memory_session_id: nativeId.repeat(32),
@@ -23,7 +23,7 @@ function workerSession(nativeId: string, at: number): CapturedSession {
     cwd: "/fixture/worktree",
     started_at_epoch: at,
     completed_at_epoch: at,
-    modified_at_epoch: Date.now(),
+    modified_at_epoch: modified,
     prompt_count: 0,
     request: null,
     completed: null,
@@ -314,5 +314,39 @@ describe("weekly", () => {
     const kept = loadLessons(ledger).get("ls-001")?.meta;
     expect([kept?.sessions, kept?.status]).toEqual([2, "confirmed"]);
     expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-shop-ls-001.json"]);
+  });
+
+  test("a lesson keeps its worker session after the captured row is dropped, so a recurrence a month later still confirms it", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const day = 86_400_000;
+    const day0 = Date.now() - 36 * day;
+    const nightly = (statement: string) => {
+      const row = WorkerSessionSource.open(ledger).observationsSince("", 0).at(-1);
+      const id = `obs:${row?.id}`;
+      applyConsolidation(
+        ledger,
+        { lessons: [{ statement, evidence: [id], confidence: 0.6 }] },
+        new Set([id]),
+        new Map([[id, (row?.memory_session_id ?? "").slice(0, 8)]]),
+      );
+      return id;
+    };
+    WorkerSessionSource.open(ledger).capture([workerSession("a", day0, day0)]);
+    const early = nightly("fix the code the rule flags");
+    WorkerSessionSource.open(ledger).capture([], { sinceMs: day0 + day });
+    WorkerSessionSource.open(ledger).capture([workerSession("b", day0 + 36 * day)], { sinceMs: day0 + 6 * day });
+    const late = nightly("fix what the rule flags, not the token");
+    const held = WorkerSessionSource.open(ledger).observationsSince("", 0);
+    expect(held.map((row) => `obs:${row.id}`)).toEqual([late]);
+    expect(early).not.toBe(late);
+    expect([...loadLessons(ledger).values()].map(({ meta }) => meta.status)).toEqual(["hypothesis", "hypothesis"]);
+
+    const ctx = testContext({ cwd: root, replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }] });
+    expect(deep(ctx, ledger, root, null)).toBe(
+      "weekly: 0 review pattern pages compacted, 0 stale, 1 merged, 0 conflicts",
+    );
+    const kept = loadLessons(ledger).get("ls-001")?.meta;
+    expect([kept?.sessions, kept?.status]).toEqual([2, "confirmed"]);
   });
 });

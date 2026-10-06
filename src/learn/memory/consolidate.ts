@@ -255,7 +255,9 @@ export interface ConsolidateSummary {
 
 /**
  * Create lesson pages, mark superseded ones, and forward review events when a
- * review ledger is given. The runtime sets every id, status and count.
+ * review ledger is given. The runtime sets every id, status and count. A cited
+ * worker observation also puts its session's `S<sid>` on the lesson, since the
+ * captured row is dropped from the ledger long before the lesson is.
  */
 export function applyConsolidation(
   ledger: Ledger,
@@ -277,7 +279,16 @@ export function applyConsolidation(
   const lessons = Array.isArray(reply.lessons) ? (reply.lessons as JudgedLesson[]) : [];
   for (const lesson of lessons) {
     if (lesson === null || typeof lesson !== "object") continue;
-    const evidence = strings(lesson.evidence).filter((id) => valid.has(id));
+    const cited = strings(lesson.evidence).filter((id) => valid.has(id));
+    const evidence = [
+      ...new Set([
+        ...cited,
+        ...cited.flatMap((id) => {
+          const sid = isCapturedObservation({ id: Number(id.slice(4)) }) ? obsSession.get(id) : undefined;
+          return sid === undefined ? [] : [`S${sid}`];
+        }),
+      ]),
+    ];
     const statement = oneLine(lesson.statement);
     if (evidence.length === 0 || statement === "") {
       summary.dropped += 1;
