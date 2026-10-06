@@ -786,11 +786,17 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         ),
       );
     } else {
-      files.set(GATE_FILE, {
-        path: GATE_FILE,
-        contents: gateScript(root, text, listDirs(join(root, "adapters"))),
-        source: GATE_SOURCE,
-      });
+      try {
+        files.set(GATE_FILE, {
+          path: GATE_FILE,
+          contents: gateScript(root, text, listDirs(join(root, "adapters"))),
+          source: GATE_SOURCE,
+        });
+      } catch (cause) {
+        issues.push(
+          error("packaging.gate-build-failed", GATE_SOURCE, cause instanceof Error ? cause.message : String(cause)),
+        );
+      }
     }
   }
 
