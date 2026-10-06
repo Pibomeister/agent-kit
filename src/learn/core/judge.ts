@@ -8,21 +8,13 @@
  * status, ids or rates.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
 import type { Loop } from "./paths.ts";
 import { run } from "./proc.ts";
+import { gateJsonText, writeGated } from "./store.ts";
 import type { LearnRole } from "./roles.ts";
 import { carrierOf, recordJudgeAttempt } from "./trace.ts";
 
@@ -254,16 +246,16 @@ function traceAttempt(
       session_id: stringField(envelope.session_id),
       is_error: booleanField(envelope.is_error),
     };
-    const line = `${JSON.stringify(row)}\n`;
     const trace = join(config.runtimeDir, TRACE_GENERATIONS[1]);
+    const line = gateJsonText(config.runtimeDir, trace, `${JSON.stringify(row)}\n`);
     if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes)
       rotateTrace(config, trace);
     appendFileSync(trace, line);
     if (config.traceFull) {
       const bodies = join(config.runtimeDir, "judge-bodies");
       mkdirSync(bodies, { recursive: true });
-      writeFileSync(join(bodies, `${callId}.prompt`), prompt);
-      writeFileSync(join(bodies, `${callId}.reply`), stringField(envelope.result) ?? result.stdout);
+      writeGated(config.runtimeDir, join(bodies, `${callId}.prompt`), prompt);
+      writeGated(config.runtimeDir, join(bodies, `${callId}.reply`), stringField(envelope.result) ?? result.stdout);
     }
   } catch {
     return;

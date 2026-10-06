@@ -132,7 +132,7 @@
       }
     },
     "evidence": {
-      "description": "Where receipts, reviews, raw seat outputs and the ship record go. 'kb' is the knowledgebase adapter and fails closed while no knowledgebase is configured. 'mock' is a labeled fixture store for demonstrations; a binding carrying it can never publish, because delivery.action is then forced to dry-run.",
+      "description": "Where receipts, reviews, raw seat outputs and the ship record go. 'kb' is the knowledgebase adapter and fails closed: the Firstmate adapter does not publish to a knowledgebase (adapters/firstmate/CONTRACT.md §1). 'mock' is a labeled fixture store for demonstrations; a binding carrying it can never publish, because delivery.action is then forced to dry-run.",
       "type": "object",
       "additionalProperties": false,
       "required": ["store", "location"],

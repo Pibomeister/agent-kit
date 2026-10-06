@@ -204,8 +204,9 @@ Invalidation records against receipts this run supersedes, naming what changed. 
 in place.
 
 All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`). This skill names no repository path
-for project-derived content.
+run-artifact placement (`adapters/knowledgebase/CONTRACT.md`); the commands are in
+[the knowledgebase-binding reference pack](../../references/knowledgebase-binding/REFERENCE.md).
+This skill names no repository path for project-derived content.
 
 ## Side effects
 

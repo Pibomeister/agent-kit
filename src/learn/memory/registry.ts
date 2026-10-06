@@ -21,11 +21,11 @@
  * repositories with the same basename share one claude-mem project. Only one
  * of them can be registered; the other is refused with the same warning.
  */
-import { appendFileSync, mkdirSync, statSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
 import { projectFolderName, registryPath, rootOf, tickLogPath } from "../core/paths.ts";
-import { nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
+import { appendGated, nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
 import type { CwdRow } from "../sources/claude-mem.ts";
 
 export interface RegistryEntry {
@@ -176,7 +176,7 @@ export function logRegistryWarnings(config: LearnConfig, warnings: readonly stri
   if (config.dryRun || warnings.length === 0) return;
   const path = tickLogPath(config);
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, warnings.map((warning) => `${nowIso()} ${warning}\n`).join(""));
+  appendGated(config.runtimeDir, path, warnings.map((warning) => `${nowIso()} ${warning}\n`).join(""));
 }
 
 /**

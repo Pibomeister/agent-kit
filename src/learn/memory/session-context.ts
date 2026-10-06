@@ -1,7 +1,8 @@
 /**
  * The one SessionStart block: review guardrails, working memory and up to
  * eight confirmed lessons, merged within ONE token cap (`memoryTokens`), then
- * the skill roster.
+ * the skill roster, which is outside that cap and is the first thing cut for
+ * a host that clips the block.
  *
  * Guardrails are placed first and are never trimmed for memory; memory and
  * lessons get what remains of the cap and lose bullets from their least
@@ -37,6 +38,7 @@ export const TRIM_ORDER = [
 ];
 
 const TRUNCATED = "\n(truncated at the memory token cap)\n";
+const ROSTER_SHORTENED = "(skill roster shortened to fit this host's context limit)\n";
 const MEMORY_HEADER = "Working memory for this repo (derived from past sessions; every bullet cites its evidence ids):";
 
 type Section = [header: string | null, lines: string[]];
@@ -128,16 +130,15 @@ export function sessionRoot(cwd: string): string | null {
   return rootOf(cwd) ?? mainRepoRoot(cwd);
 }
 
-export function sessionStartBlock(ctx: LearnContext): string {
-  const root = sessionRoot(ctx.cwd);
-  const roster = rosterSection(ctx, root);
-  if (root === null) return roster;
-  // The hook's span keys the root this block was built for, linked worktrees included.
-  ctx.span?.project(root);
-  logRegistryWarnings(ctx.config, registerRoot(ctx.config, root).warnings);
+const joined = (parts: readonly string[]): string => (parts.length > 0 ? `${parts.join("\n\n")}\n` : "");
 
-  const cap = ctx.config.memoryTokens;
-  const guardrails = hardCut(guardrailsSection(ctx, root).trim(), cap);
+/**
+ * Everything ahead of the roster, with memory and lessons merged within
+ * `cap`. Guardrails answer to the configured cap alone, so a lowered `cap`
+ * takes from memory and never from them.
+ */
+function blockBody(ctx: LearnContext, root: string, cap: number): string[] {
+  const guardrails = hardCut(guardrailsSection(ctx, root).trim(), ctx.config.memoryTokens);
   const parts: string[] = [];
   if (guardrails !== "") parts.push(guardrails);
 
@@ -162,6 +163,48 @@ export function sessionStartBlock(ctx: LearnContext): string {
       );
     }
   }
+  return parts;
+}
+
+export function sessionStartBlock(ctx: LearnContext): string {
+  const root = sessionRoot(ctx.cwd);
+  const roster = rosterSection(ctx, root);
+  if (root === null) return roster;
+  // The hook's span keys the root this block was built for, linked worktrees included.
+  ctx.span?.project(root);
+  logRegistryWarnings(ctx.config, registerRoot(ctx.config, root).warnings);
+  const parts = blockBody(ctx, root, ctx.config.memoryTokens);
   if (roster.trim() !== "") parts.push(roster.trim());
-  return parts.length > 0 ? `${parts.join("\n\n")}\n` : "";
+  return joined(parts);
+}
+
+/**
+ * The same block within a character ceiling, for a host that clips what a
+ * hook hands the model. The roster gives way first: it gets the room the rest
+ * leaves, and one that is cut is cut on a line and says so. Only when the rest alone overshoots
+ * is the memory cap lowered by that overshoot, so memory gives way by the
+ * usual trim; text no cap can shrink is cut on a line.
+ */
+export function sessionStartBlockWithin(ctx: LearnContext, maxChars: number): string {
+  const whole = sessionStartBlock(ctx);
+  if (whole.length <= maxChars) return whole;
+  const root = sessionRoot(ctx.cwd);
+  const roster = rosterSection(ctx, root).trim();
+  const room = roster === "" ? maxChars : maxChars - ROSTER_SHORTENED.length - 1;
+  let cap = ctx.config.memoryTokens;
+  let body = "";
+  if (root !== null) {
+    body = joined(blockBody(ctx, root, cap));
+    while (body.length > room && cap > 0) {
+      cap = Math.max(0, cap - Math.ceil((body.length - room) / 4) - 1);
+      body = joined(blockBody(ctx, root, cap));
+    }
+  }
+  body = hardCut(body, Math.floor(room / 4) - 1);
+  if (roster === "") return body;
+  const section = `${roster}\n`;
+  const head = section.slice(0, Math.max(0, room - body.length));
+  const lines = head.slice(0, head.lastIndexOf("\n") + 1);
+  const kept = lines === section || lines.includes("\n- ") ? lines : "";
+  return `${body}${body === "" ? "" : "\n"}${kept}${kept === section ? "" : ROSTER_SHORTENED}`;
 }
