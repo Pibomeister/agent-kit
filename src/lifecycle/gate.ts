@@ -22,9 +22,9 @@
  * git common directory, and a Firstmate worker opens its run with `--binding <file> --dir <the binding's
  * evidence store>`, so the run record names the binding and the store its grants are kept in.
  *
- * The file imports only `node:` built-ins, because `ak build` type-strips it into each plugin bundle as
- * `bin/ak-gate.mjs`, where a session without this checkout runs it with `node`. `ak lifecycle` runs the
- * same `main` in place.
+ * `ak build` bundles this file and the schema-derived standalone validator as `bin/ak-gate.mjs`.
+ * A session without this checkout runs that self-contained file with `node`; `ak lifecycle` runs
+ * the same predicate and `main` in place.
  */
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -50,6 +50,7 @@ import {
 import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import validateVerification from "./verification-schema.ts";
 
 // ── the snapshot ─────────────────────────────────────────────────────────────
 
@@ -725,8 +726,30 @@ const nonempty = (value: unknown): value is string => typeof value === "string" 
 
 /** The schema-shape half of the bundled predicate. Cross-checked against ajv in lifecycle tests. */
 export function verificationShapeReasons(value: unknown): string[] {
+  if (!validateVerification(value)) {
+    // Preserve established refusal text; the legacy checker is diagnostics only, never the oracle.
+    const invalid = object(value);
+    if (invalid === undefined) return ["receipt is not an object"];
+    const legacy = verificationDiagnosticReasons(invalid);
+    return legacy.length > 0
+      ? legacy
+      : (validateVerification.errors ?? []).map((error) => `${error.instancePath || "receipt"} ${error.message}`);
+  }
   const receipt = object(value);
   if (receipt === undefined) return ["receipt is not an object"];
+  const reasons: string[] = [];
+  if (receipt.supports === undefined) reasons.push("supports is invalid");
+  if (receipt.evidence_kind === "api-response") {
+    const response = object(receipt.api_response);
+    const artifacts = Array.isArray(receipt.artifacts) ? receipt.artifacts.map(object) : [];
+    if (!artifacts.some((artifact) => artifact?.kind === "response" && artifact.digest === response?.body_digest))
+      reasons.push("api_response body_digest has no matching response artifact");
+  }
+  return reasons;
+}
+
+/** Compatibility messages for schema-invalid receipts. This does not decide acceptance. */
+function verificationDiagnosticReasons(receipt: NonNullable<ReturnType<typeof object>>): string[] {
   const reasons: string[] = [];
   const allowed = new Set([
     "schema",
