@@ -29,7 +29,7 @@
         "name": { "$ref": "common.schema.json#/$defs/kebab_id" },
         "version": { "$ref": "common.schema.json#/$defs/semver" },
         "namespace": {
-          "description": "The canonical explicit-start namespace, e.g. '/ak:'. Source validation uses this form; host adapters render it into native invocation syntax when packaging (ADR-0009).",
+          "description": "The canonical explicit-start namespace, e.g. '/ak:'. Source validation uses this form; host adapters render it into native invocation syntax when packaging (ADR-0011).",
           "type": "string",
           "pattern": "^/[a-z0-9]+(-[a-z0-9]+)*:$"
         },
