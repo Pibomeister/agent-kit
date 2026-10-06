@@ -93,7 +93,9 @@ Write the page or artifact to a scratch file outside the repository and pass its
 - **Keep the returned `ref`, `content_hash` and `revision`.** They are the record reference the
   skill reports; `effect: none` means the same content was already published and nothing was
   written twice. The `idempotency_key` and `run` returned are the stored record's. Republishing an
-  artifact after its approvals were attached stores the approved copy under the same `ref`.
+  artifact after approvals were added stores the approved copy under the same `ref`; approvals
+  already stored are added to, never dropped, and a copy that lacks one while bringing another is
+  refused.
 - **An `adr` is stored `proposed`** and other pages `unreviewed`. There is no way to publish one
   accepted, and a page body that begins with its own `---` header is refused. Acceptance is a
   human's edit in the knowledgebase.

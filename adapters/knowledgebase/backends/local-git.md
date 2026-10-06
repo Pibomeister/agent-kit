@@ -128,12 +128,15 @@ record ref and the content hash.
 | exists with the same content hash | nothing written: `effect: none`, the existing commit returned |
 | exists with a different content hash | refused; a changed page is published under a new id that supersedes the old one |
 | is a run artifact with the same content hash and a different set of links | refused; a stored record's links are not rewritten |
-| is a run artifact with the same content hash, and the request carries approvals the record does not hold | the approved copy is committed over the record: `effect: published`, a new commit on the same ref |
+| is a run artifact with the same content hash, and the request carries every stored approval plus at least one more | the approved copy is committed over the record: `effect: published`, a new commit on the same ref |
+| is a run artifact with the same content hash, and every approval in the request is already stored | nothing written: `effect: none` |
+| is a run artifact with the same content hash, and the request both lacks a stored approval and carries one not stored | refused; stored approvals are added to, never replaced |
 
 Approvals are outside the content hash, so a draft and its approved copy share a ref, a hash and a
 key. Publishing the approved copy after the draft stores it; the draft stays in the record's git
-history. A republish that carries no approvals writes nothing, so a late retry of the draft does
-not strip the approvals already stored.
+history. Approvals are compared entry by entry. A republish that carries none, or only some of
+those stored, writes nothing, so a late retry of an earlier copy does not strip the approvals
+already stored.
 
 Every result reports what the knowledgebase holds: `content_hash`, `idempotency_key` and `run` are
 read from the stored record. A page republished under another `--run` returns `effect: none` with

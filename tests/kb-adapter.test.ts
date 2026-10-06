@@ -802,6 +802,22 @@ describe("publishArtifact, run-artifact placement", () => {
     expect(lateDraft.effect).toBe("none");
     expect(stored()).toMatchObject({ artifact: { approvals } });
     expect(commits(fx.kb)).toBe(2);
+
+    const [first] = approvals;
+    const second = { ...first, at: "2026-09-20T09:00:00Z" };
+    const both = { ...unapproved, approvals: [first, second] };
+    expect(published(kb(fx, fx.project, ...args, write("both.json", both))).effect).toBe("published");
+    expect(stored()).toMatchObject({ artifact: { approvals: [first, second] } });
+    expect(commits(fx.kb)).toBe(3);
+
+    const lateFirst = published(kb(fx, fx.project, ...args, write("approved.json", charterExample)));
+    expect(lateFirst.effect).toBe("none");
+    const divergent = { ...unapproved, approvals: [{ ...first, at: "2026-09-21T09:00:00Z" }] };
+    const sent = kb(fx, fx.project, ...args, write("divergent.json", divergent));
+    expect(sent.code).toBe(1);
+    expect(refusal(sent).code).toBe("kb.changed-under-reused-record");
+    expect(stored()).toMatchObject({ artifact: { approvals: [first, second] } });
+    expect(commits(fx.kb)).toBe(3);
     expect(git(fx.kb, "status", "--porcelain")).toBe("");
   });
 

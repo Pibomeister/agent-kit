@@ -228,10 +228,10 @@ function idempotencyKey(run: string | null, ref: string, hash: string): string {
   return `sha256:${sha256Hex([run ?? "", "publishArtifact", ref, hash].join("\n"))}`;
 }
 
-/** The approvals an artifact carries, canonical; empty when it carries none. */
-function approvalsOf(artifact: RunArtifact): string {
-  const approvals = artifact.approvals;
-  return Array.isArray(approvals) && approvals.length > 0 ? canonicalJson(approvals) : "";
+/** The approvals an artifact carries, each canonical, in a stable order. */
+function approvalsOf(artifact: RunArtifact): string[] {
+  const approvals: unknown = artifact.approvals;
+  return Array.isArray(approvals) ? [...new Set(approvals.map((approval) => canonicalJson(approval)))].toSorted() : [];
 }
 
 function headCommit(root: string): string | null {
@@ -336,8 +336,8 @@ interface RecordIdentity {
   hash: string;
   key: string;
   links: readonly string[];
-  /** The approvals sent, canonical; empty when the request carries none. */
-  approvals: string;
+  /** The approvals sent, each canonical; empty when the request carries none. */
+  approvals: readonly string[];
 }
 
 /** What a committed record says of itself. */
@@ -349,7 +349,7 @@ interface StoredRecord {
   key: string;
   run: string | null;
   links: readonly string[];
-  approvals: string;
+  approvals: readonly string[];
 }
 
 function sleep(ms: number): void {
@@ -386,7 +386,7 @@ function withLock(root: string, write: () => PublishOutcome | KbRefusal): Publis
  * committed record at that path. Its published digest is how an unchanged
  * republish becomes a no-op and a changed one a refusal (runner-contract §5),
  * and its links may not change either. Approvals are outside the digest, so a
- * republish that brings approvals the record does not hold is committed over
+ * republish that brings every approval the record holds and at least one more is committed over
  * it. Every result reports what the knowledgebase holds, not what was sent.
  */
 function commitRecord(
@@ -420,7 +420,7 @@ function commitRecord(
           `${identity.ref} is already published with other links (${linked.join(", ") || "none"}). A stored record's links are not rewritten; publish the linked artifact as a new record that supersedes this one.`,
         );
       }
-      if (identity.approvals === "" || identity.approvals === stored.approvals) {
+      if (identity.approvals.every((approval) => stored.approvals.includes(approval))) {
         return {
           status: "complete",
           ref: identity.ref,
@@ -430,6 +430,12 @@ function commitRecord(
           revision: git(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
           effect: "none",
         };
+      }
+      if (!stored.approvals.every((approval) => identity.approvals.includes(approval))) {
+        return refused(
+          "kb.changed-under-reused-record",
+          `${identity.ref} is already published with approvals this copy does not carry. Stored approvals are added to, never replaced; republish the copy that holds every approval already stored.`,
+        );
       }
       if (git(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "") return uncommitted;
     } else if (existsSync(file)) {
@@ -468,7 +474,7 @@ function commitRecord(
       after === null ||
       after === before ||
       stored.observed !== identity.hash ||
-      stored.approvals !== identity.approvals
+      stored.approvals.join("\n") !== identity.approvals.join("\n")
     ) {
       return failed(
         "kb.read-back-mismatch",
@@ -535,7 +541,7 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
     kb,
     documentPath(kb.binding.project, segments, request.kind, request.id),
     renderDocument(meta, body),
-    { ref, hash, key, links: [], approvals: "" },
+    { ref, hash, key, links: [], approvals: [] },
     (text) => {
       const parsed = parseDocument(text);
       if (parsed === null) return null;
@@ -545,7 +551,7 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
         key: parsed.meta.idempotency_key,
         run: parsed.meta.run,
         links: [],
-        approvals: "",
+        approvals: [],
       };
     },
   );
