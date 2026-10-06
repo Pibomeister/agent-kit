@@ -175,8 +175,11 @@ The scheduled tick reads these shipped host records when present:
 `AK_LEARN_CODEX_HOMES`, `AK_LEARN_GROK_HOMES` and `AK_LEARN_KIMI_HOMES` select several when a runner
 uses isolated homes. The scheduler passes these variables through when they were set at setup time.
 
-The scan reads only each recent record's cwd first: the Codex `session_meta` line, Grok's
-`summary.json`, Kimi's `state.json`. A record is parsed in full only when section 3 places that cwd.
+The scan reads only each recent record's cwd and session id first: the Codex `session_meta` line,
+Grok's `summary.json`, Kimi's `state.json`. Every record is placed before any is parsed. A record is
+parsed in full only when section 3 places that cwd under a root this tick will run, and the ledger
+does not already hold the session finished as its record now stands. A session left unparsed for
+that last reason still counts as worker activity for its project.
 
 Encrypted content, reasoning/`think` parts, the instruction and environment blocks Codex injects as
 user messages, synthetic Grok context and non-user Kimi injections are not observations. A host
