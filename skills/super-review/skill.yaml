@@ -105,6 +105,13 @@ inputs:
     summary: >-
       For delta only: the open run with its finding list, fingerprints, dispositions, input hashes
       and the fix diff.
+  - id: verification-receipts
+    schema: verification
+    required: false
+    summary: >-
+      For readiness: current receipts with recipe, evidence kind and verifier-seat lineage. A
+      missing required kind, or a missing runner attestation where the build gate records an
+      implementer seat or the run ever held a grant, makes the verification lane unavailable.
 
 outputs:
   - id: review-record
@@ -163,6 +170,7 @@ packs:
 references:
   - engineering-principles
   - knowledgebase-backend
+  - verification-evidence
 
 roles:
   - code-review/correctness
@@ -218,6 +226,9 @@ hard_gates:
     finding is kept (ruling `safe-auto-restricted-per-seat`).
   - Change size and test ratios are guidance carried per project and are never grounds for a finding
     on their own (ruling `numeric-heuristics-are-guidance`).
+  - Readiness never substitutes review judgment for a verifier-seat attestation the recorded build
+    seat or a run that ever held a grant requires, or a project-declared surface evidence kind; it names the
+    criterion and gap as unavailable.
 
 stop_conditions:
   - complete when every selected lane has a state, every required lane is covered, the
@@ -280,10 +291,9 @@ packaging:
       mode: manual
       unsupported:
         - >-
-          model invocation cannot be suppressed on this host: `disable-model-invocation`
-          has no codex equivalent (`adapters/codex/CONTRACT.md` §3.1). The generated
-          description's non-trigger clause and the entrypoint's explicit-authority check are
-          all that stand in for it, and the run stops rather than convening a panel on an
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
           unrequested start.
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per

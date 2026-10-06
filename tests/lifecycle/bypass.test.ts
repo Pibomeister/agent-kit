@@ -31,9 +31,11 @@ import {
   defaultEvidenceDir,
   main,
   readRecords,
+  takeSnapshot,
   type GateRecord,
 } from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
+import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
@@ -227,6 +229,97 @@ describe("bypass granted: phases start without a typed command", () => {
 });
 
 describe("start only: approvals, merge and deploy are never covered", () => {
+  test("a host-unattested verifier receipt is refused once a checked gate started under the grant", () => {
+    for (const start of ["typed", "bypass", "ship-use"] as const) {
+      const { worktree, ledger, grantPath } = granted();
+      const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
+      const ticket = {
+        schema: "ticket",
+        schema_version: 1,
+        id: "TICKET-1",
+        acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
+        verification: [
+          {
+            id: "project-check",
+            check: "Exercise the running service.",
+            kind: "command",
+            supports: ["AC-1"],
+            recipe,
+            evidence_required: ["smoke-test"],
+          },
+        ],
+        approvals: [{ role: "human", approved_at: "2026-09-29T00:00:00Z" }],
+      };
+      const ticketPath = join(worktree, "T-1.json");
+      writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
+      const grantFlags = start === "bypass" ? ["--bypass", grantPath, "--task", "T-1"] : [];
+      const openAndCheck = () => {
+        const run = ak(worktree, ledger, "open", "--ticket", ticketPath).out.match(/^opened run (.+)$/m)?.[1];
+        if (run === undefined) throw new Error("open did not return a run id");
+        expect(ak(worktree, ledger, "record", "--gate", "build-checks").code).toBe(0);
+        expect(ak(worktree, ledger, "record", "--gate", "review-full", ...grantFlags).code).toBe(0);
+        expect(ak(worktree, ledger, "record", "--gate", "review-readiness", ...grantFlags).code).toBe(0);
+        const snapshot = takeSnapshot(worktree);
+        const receiptDir = dir("ak-bypass-receipt-");
+        const log = "1 pass, 0 fail\n";
+        writeFileSync(join(receiptDir, "verification-output.log"), log);
+        const digest = `sha256:${createHash("sha256").update(log).digest("hex")}`;
+        const receiptPath = join(receiptDir, "verification-1.json");
+        writeFileSync(
+          receiptPath,
+          `${JSON.stringify({
+            schema: "verification",
+            schema_version: 1,
+            id: "verification-1",
+            project: { id: "demo" },
+            run_id: run,
+            created_by: { role: "verifier" },
+            inputs: [],
+            source_revision: snapshot,
+            created_at: "2026-09-29T00:00:00Z",
+            status: "passed",
+            kind: "command",
+            command: { argv: ["bun", "test"] },
+            exit_status: 0,
+            output_digest: digest,
+            artifacts: [{ path: "verification-output.log", digest, kind: "log" }],
+            environment: { id: "test", isolated: true, secrets_policy: "none" },
+            supports: ["AC-1"],
+            check: "project-check",
+            ticket: { id: "TICKET-1", schema: "ticket", hash: artifactHash(ticket) },
+            recipe,
+            evidence_kind: "smoke-test",
+            verifier_seat: {
+              id: "verify-1",
+              implementer_seat: "build-1",
+              isolation: "host-unattested",
+              attestation: null,
+            },
+          })}\n`,
+        );
+        expect(ak(worktree, ledger, "record", "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+        if (start === "ship-use")
+          expect(
+            ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", "super-ship")
+              .code,
+          ).toBe(0);
+        return { run, ...ak(worktree, ledger, "check") };
+      };
+      const byHand = "note: verifier seat verify-1 on receipt verification-1 is host-unattested";
+      const checked = openAndCheck();
+      if (start === "typed") {
+        expect(checked.err).toContain(byHand);
+        expect(checked.code).toBe(0);
+        continue;
+      }
+      const used = { bypass: "super-review-full", "ship-use": "super-ship" }[start];
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(
+        `refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation (the run holds grant record ${join(defaultEvidenceDir(worktree), checked.run, "bypass", `${used}.json`)})`,
+      );
+    }
+  }, 120_000);
+
   test("policies/invocation.yaml lists the same bypass phases the gate starts", () => {
     expect(parse(readFileSync(join(REPO, "policies", "invocation.yaml"), "utf8"))).toMatchObject({
       bypass: { phases: [...BYPASS_PHASES] },

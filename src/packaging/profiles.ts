@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import type { Catalog } from "../catalog/load.ts";
+import { CATALOG_FRAGMENT_DIR, type Catalog } from "../catalog/load.ts";
 import { readTextIfPresent } from "../util/fs.ts";
 import { error, note, type Issue } from "../validation/types.ts";
 
@@ -57,7 +57,11 @@ export function resolveProfile(root: string, catalog: Catalog, profileId: string
       profile: selected,
       skills: [],
       issues: [
-        error("packaging.unknown-profile", "catalog.yaml", `Profile '${selected}' is not declared in catalog.yaml.`),
+        error(
+          "packaging.unknown-profile",
+          "catalog.yaml",
+          `Profile '${selected}' is not declared in catalog.yaml or a ${CATALOG_FRAGMENT_DIR}/ fragment.`,
+        ),
       ],
     };
   }

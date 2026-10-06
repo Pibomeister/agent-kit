@@ -14,6 +14,7 @@ import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowMs, todayLocal } from "../core/store.ts";
+import { runOf } from "../core/trace.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { sessionsOf } from "./consolidate.ts";
 import {
@@ -262,10 +263,12 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
   const compacted = review === null ? 0 : compactReviewLedger(review);
   const stale = decayLessons(ledger);
   let pairs: PairResult = { merged: [], conflicts: [], confirmed: [] };
-  const runId = `weekly-${todayLocal()}-${nowMs() % 100_000}`;
+  // Inside a tick the run is the job's span; called on its own it keeps the dated id.
+  const runId = runOf(ctx).runId ?? `weekly-${todayLocal()}-${nowMs() % 100_000}`;
   if (index !== "(none)") {
     const reply = ctx.judge(deepPrompt(ctx, index), {
       runId,
+      traceId: runOf(ctx).traceId,
       loop: "memory",
       role: "lesson-merger",
       project: basename(root),
@@ -304,6 +307,6 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
     ledger,
     `weekly: ${compactNote}, ${stale.length} lessons stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`,
   );
-  ledger.commit("weekly");
+  ledger.commit(`weekly ${runId}`);
   return `weekly: ${compactNote}, ${stale.length} stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`;
 }

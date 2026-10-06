@@ -25,6 +25,18 @@
 # written here.
 
 adaptations:
+  - path: skills/super-align/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L446-455
+    rationale: Product success names an observable surface and declared evidence kind without naming a tool.
+  - path: skills/super-align/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L446-455
+    rationale: The execution contract mirrors the observable-success vocabulary and reference dependency.
+  - path: skills/super-bound/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L456-474
+    rationale: Bounding selects project-declared recipes and evidence kinds for each surfaced criterion.
+  - path: skills/super-bound/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L456-474
+    rationale: Ticket outputs mirror recipe hashes, surfaces and evidence requirements.
   # ---- skills/super-align ----
   - path: skills/super-align/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/productivity/grilling/SKILL.md

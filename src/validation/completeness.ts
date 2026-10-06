@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import type { CatalogEntry } from "../catalog/load.ts";
+import { CATALOG_FRAGMENT_DIR, type CatalogEntry } from "../catalog/load.ts";
 import {
   DIRECTORY_SECTIONS,
   FILE_SECTIONS,
@@ -80,7 +80,7 @@ export function checkCompleteness(ctx: CheckContext): Issue[] {
             error(
               "catalog.entry-without-directory",
               dir,
-              `catalog.yaml declares ${section}/${entry.id} as authored but ${dir}/ does not exist.`,
+              `${entry.file} declares ${section}/${entry.id} as authored but ${dir}/ does not exist.`,
             ),
           );
         } else {
@@ -118,7 +118,7 @@ export function checkCompleteness(ctx: CheckContext): Issue[] {
           warning(
             "catalog.status-behind-body",
             `${dir}/${preferred}`,
-            `${dir}/${preferred} exists but catalog.yaml still says status: contract. Set it to authored.`,
+            `${dir}/${preferred} exists but ${entry.file} still says status: contract. Set it to authored.`,
           ),
         );
       }
@@ -140,7 +140,7 @@ export function checkCompleteness(ctx: CheckContext): Issue[] {
         error(
           "catalog.directory-without-entry",
           `${section}/${id}`,
-          `${section}/${id}/ exists but catalog.yaml declares no ${section} entry '${id}'. Nothing is installable unless it is declared.`,
+          `${section}/${id}/ exists but catalog.yaml declares no ${section} entry '${id}', and no ${CATALOG_FRAGMENT_DIR}/ fragment does. Nothing is installable unless it is declared.`,
         ),
       );
     }
@@ -168,7 +168,7 @@ function checkFileSections(ctx: CheckContext): Issue[] {
             warning(
               "catalog.status-behind-body",
               path,
-              `${path} exists but catalog.yaml still says status: contract. Set it to authored.`,
+              `${path} exists but ${entry.file} still says status: contract. Set it to authored.`,
             ),
           );
         }
@@ -179,7 +179,7 @@ function checkFileSections(ctx: CheckContext): Issue[] {
           error(
             "catalog.entry-without-file",
             path,
-            `catalog.yaml declares ${section}/${entry.id} as authored but ${path} does not exist.`,
+            `${entry.file} declares ${section}/${entry.id} as authored but ${path} does not exist.`,
           ),
         );
       } else {
@@ -201,7 +201,7 @@ function checkFileSections(ctx: CheckContext): Issue[] {
             error(
               "catalog.file-without-entry",
               `adapters/${dir}`,
-              `adapters/${dir}/ exists but catalog.yaml declares no adapters entry '${dir}'.`,
+              `adapters/${dir}/ exists but catalog.yaml declares no adapters entry '${dir}', and no ${CATALOG_FRAGMENT_DIR}/ fragment does.`,
             ),
           );
         }
@@ -216,7 +216,7 @@ function checkFileSections(ctx: CheckContext): Issue[] {
           error(
             "catalog.file-without-entry",
             path,
-            `${path} exists but catalog.yaml declares no ${section} entry for it.`,
+            `${path} exists but catalog.yaml declares no ${section} entry for it, and no ${CATALOG_FRAGMENT_DIR}/ fragment does.`,
           ),
         );
       }

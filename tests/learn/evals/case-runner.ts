@@ -652,6 +652,10 @@ function defaultLoginProbe(host: HostKind): boolean {
     const result = run(["codex", "login", "status"], { cwd: PACKAGE_ROOT, timeoutMs: 10_000 });
     return result.code === 0 && /logged in/i.test(`${result.stdout}\n${result.stderr}`);
   }
+  if (host === "kimi") {
+    const result = run(["kimi", "provider", "list"], { cwd: PACKAGE_ROOT, timeoutMs: 10_000 });
+    return result.code === 0 && /type=kimi\b.*\bsource=oauth\b/.test(`${result.stdout}\n${result.stderr}`);
+  }
   const home = process.env.GROK_HOME ?? join(process.env.HOME ?? homedir(), ".grok");
   return jsonObject(join(home, "auth.json"));
 }
@@ -858,12 +862,25 @@ export async function preflightHosts(
   const binary = probes.binary ?? defaultBinaryProbe;
   const login = probes.login ?? defaultLoginProbe;
   const cli = probes.cli ?? defaultCliProbe;
+  const binaries = new Map<HostKind, boolean>();
+  const logins = new Map<HostKind, boolean>();
+  const hasBinary = (host: HostKind) => {
+    if (!binaries.has(host)) binaries.set(host, binary(host));
+    return binaries.get(host) ?? false;
+  };
+  const isLoggedIn = (host: HostKind) => {
+    if (!logins.has(host)) logins.set(host, login(host));
+    return logins.get(host) ?? false;
+  };
   const rows: PreflightRow[] = [];
   for (const host of new Set(subjects.map((subject) => subject.host))) {
-    const unready = readinessProblems(
-      matrix,
-      subjects.filter((subject) => subject.host === host),
-      evalCases,
+    const hostSubjects = subjects.filter((subject) => subject.host === host);
+    const unready = readinessProblems(matrix, hostSubjects, evalCases);
+    const reviewerHosts = [
+      ...new Set(hostSubjects.flatMap((subject) => buildPanel(matrix, subject).members.map((member) => member.host))),
+    ];
+    const unavailableReviewers = reviewerHosts.filter(
+      (reviewerHost) => !hasBinary(reviewerHost) || !isLoggedIn(reviewerHost),
     );
     const bundle = join(bundleRoot, BUNDLE_FOR[host]);
     const skills = skillIds(evalCases);
@@ -875,8 +892,8 @@ export async function preflightHosts(
       return existsSync(file) ? [] : [evalCase.name];
     });
     const checks: PreflightCheck[] = [
-      { name: "binary", ok: binary(host), detail: "host CLI resolves locally" },
-      { name: "login", ok: login(host), detail: "credential source is present and valid" },
+      { name: "binary", ok: hasBinary(host), detail: "host CLI resolves locally" },
+      { name: "login", ok: isLoggedIn(host), detail: "credential source is present and valid" },
       {
         name: "bundle-skills",
         ok: existsSync(bundle) && missingSkills.length === 0,
@@ -897,6 +914,14 @@ export async function preflightHosts(
         name: "grader-readiness",
         ok: unready.length === 0,
         detail: unready.length === 0 ? "every panel seats and every grader runs locally" : unready.join("; "),
+      },
+      {
+        name: "reviewer-hosts",
+        ok: unavailableReviewers.length === 0,
+        detail:
+          unavailableReviewers.length === 0
+            ? `${reviewerHosts.length} reviewer host(s) resolve and are logged in`
+            : `unavailable ${unavailableReviewers.join(", ")}`,
       },
       await probed("cli-flags", () => flagCheck(host, evalCases, bundle, cli)),
     ];
@@ -983,16 +1008,16 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
     } | null = null;
     const skipped: Array<{ subject: string; case: string; reason: SkipReason }> = [];
     let chargedUsd = 0;
-    let stop: Exclude<SkipReason, "subject-failed"> | null = null;
+    let stop: Exclude<SkipReason, "subject-failed" | "ungraded-row"> | null = null;
     for (const subject of subjects) {
       const adapter = adapterFor(subject.host);
       const bundleDir = join(bundleRoot, BUNDLE_FOR[subject.host]);
       const panel = buildPanel(matrix, subject);
-      let subjectFailed = false;
+      let subjectStop: "ungraded-row" | "subject-failed" | null = null;
       for (const evalCase of cases) {
         const estimate = estimates[subject.id]?.[evalCase.name] ?? 0;
-        if (stop === null && !subjectFailed && chargedUsd + estimate > maxSpendUsd) stop = "spend-cap";
-        const skip = stop ?? (subjectFailed ? "subject-failed" : null);
+        if (stop === null && subjectStop === null && chargedUsd + estimate > maxSpendUsd) stop = "spend-cap";
+        const skip = stop ?? subjectStop;
         if (skip !== null) {
           skipped.push({ subject: subject.id, case: evalCase.name, reason: skip });
           continue;
@@ -1025,8 +1050,8 @@ export async function main(argv: string[], dependencies: MainDependencies = {}):
           rows.push(row);
           chargedUsd += (row.subject_cost_usd ?? estimate) + row.grader_cost_usd;
           if (row.validity === "invalid") stop = "invalid-row";
-          else if (row.result === "ungraded") stop = "ungraded-row";
-          else if (row.result === "fail") subjectFailed = true;
+          else if (row.result === "ungraded") subjectStop = "ungraded-row";
+          else if (row.result === "fail") subjectStop = "subject-failed";
         } catch (error) {
           stop = "aborted";
           chargedUsd += (prepared === undefined ? 0 : (session?.costUsd ?? estimate)) + (judgeSpend ?? 0);

@@ -1,0 +1,49 @@
+# Probe A output, claude 2.1.288, session window 2026-10-03T02:32:12Z to 2026-10-03T02:32:51Z
+# One claude -p session, OAuth login copied into an empty CLAUDE_CONFIG_DIR, env -i. Captured by probe-a.sh check.
+# The session ended with subtype error_max_budget_usd after its 10th Bash call and before its closing reply;
+# every verdict below reads harness logs, not the reply.
+
+== hook.log: PreToolUse fired, in order
+PRE echo EXIT1-probe
+PRE echo EXIT2-probe
+PRE echo SLEEPHOOK-probe
+PRE echo DENYME-ALLOWHOOK
+PRE echo ASKME-ALLOWHOOK
+PRE echo CTXHOOK-probe
+PRE git push origin main
+PRE git -C . push origin main
+PRE cat secret.txt
+PRE python3 -c "print(open('secret.txt').read())"
+
+== post.log: PostToolUse fired, i.e. the command executed
+PostToolUse echo EXIT1-probe
+PostToolUse echo SLEEPHOOK-probe
+PostToolUse echo CTXHOOK-probe
+PostToolUse git -C . push origin main
+PostToolUse python3 -c "print(open('secret.txt').read())"
+
+== debug log lines
+2026-10-03T02:32:17.196Z [ERROR] "Hook PreToolUse:Bash (PreToolUse) error: status code 1\nstderr:\nexit1-stderr"
+2026-10-03T02:32:26.556Z [DEBUG] Hook PreToolUse:Bash [<probe>/A/pre.sh] timed out after 3000ms
+2026-10-03T02:32:28.981Z [DEBUG] Hook returned 'allow' for Bash, but deny rule overrides: Permission to use Bash with command echo DENYME-ALLOWHOOK has been denied.
+2026-10-03T02:32:31.285Z [DEBUG] Hook returned 'allow' for Bash, but ask rule/safety check requires full permission pipeline
+
+== permission_denials in the result event (commands only)
+echo EXIT2-probe
+echo DENYME-ALLOWHOOK
+echo ASKME-ALLOWHOOK
+git push origin main
+cat secret.txt
+
+== remote main after the run (exists => command 8 pushed)
+main exists on the local bare remote
+
+== transcript rows around the CTXHOOK call (row index, type, attachment type or tool id suffix)
+15 attachment attachment hook_non_blocking_error toolUseID=...XXd6FR 
+32 attachment attachment hook_cancelled toolUseID=...T24FQP 
+37 attachment attachment hook_success toolUseID=...9jf2tn 
+42 attachment attachment hook_success toolUseID=...ixRmyt 
+49 assistant tool_use ...ooE2mp command='echo CTXHOOK-probe'
+50 attachment attachment hook_success toolUseID=...ooE2mp 
+51 attachment attachment hook_additional_context toolUseID=...ooE2mp ['Probe marker: KIWI-4471 was attached by a PreToolUse hook.']
+52 user tool_result ...ooE2mp

@@ -8,10 +8,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import skill_index as SI  # noqa: E402
 
 FOLDED = """---
-name: phil-review
+name: lead-review
 description: >-
-  Review a pushed PR using PhilTroinR-calibrated severity.
-  Use for “phil review” or “would Phil approve”.
+  Review a pushed PR using lead-calibrated severity.
+  Use for “lead review” or “would the lead approve”.
 allowed-tools: Read
 ---
 # body
@@ -28,8 +28,8 @@ class FrontmatterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "SKILL.md"; p.write_text(FOLDED)
             fm = SI.frontmatter(p)
-        self.assertEqual(fm["name"], "phil-review")
-        self.assertEqual(fm["description"], "Review a pushed PR using PhilTroinR-calibrated severity. Use for “phil review” or “would Phil approve”.")
+        self.assertEqual(fm["name"], "lead-review")
+        self.assertEqual(fm["description"], "Review a pushed PR using lead-calibrated severity. Use for “lead review” or “would the lead approve”.")
         self.assertEqual(fm["allowed-tools"], "Read")
 
     def test_build_index_groups_candidates_and_counts(self):

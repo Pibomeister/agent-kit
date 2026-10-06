@@ -15,26 +15,44 @@ import { join } from "node:path";
 import type { LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
-import { PACKAGE_ROOT } from "../core/roles.ts";
+import { AK_ENTRY } from "../core/roles.ts";
 import { nowIso } from "../core/store.ts";
+import { appendCapped, carrierOf } from "../core/trace.ts";
 import type { HookPayload } from "../hooks.ts";
 import { appendEvents } from "./events.ts";
 import { correctionEvent, memProject } from "./ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "./ledger.ts";
+
+/** The session's working directory: the payload's when it names one, else the process's. */
+export function payloadCwd(payload: HookPayload, fallback: string): string {
+  return typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : fallback;
+}
 
 export const DEBOUNCE_MS = 10 * 60 * 1000;
 export const LAST_RUN_FILE = "raw/.last_run";
 export const PIPELINE_LOG = "raw/.pipeline.log";
 
 /** Starts a detached background process. Injectable so tests never spawn. */
-export type Spawner = (argv: readonly string[], options: { cwd: string }) => void;
+export type Spawner = (argv: readonly string[], options: { cwd: string; env?: NodeJS.ProcessEnv }) => void;
 
 export const detachSpawner: Spawner = (argv, options) => {
   const [bin, ...rest] = argv;
   if (bin === undefined) return;
-  const child = spawn(bin, rest, { cwd: options.cwd, detached: true, stdio: "ignore" });
+  const child = spawn(bin, rest, { cwd: options.cwd, detached: true, stdio: "ignore", env: options.env });
   child.unref();
 };
+
+/**
+ * The detached pipeline's environment: this hook's own, with the hook span as
+ * its trace parent and a marker that the runs it starts were started by a
+ * hook. The ambient TRACESTATE and BAGGAGE belong to the replaced carrier.
+ */
+function pipelineEnv(ctx: LearnContext): NodeJS.ProcessEnv {
+  const { TRACESTATE: _state, BAGGAGE: _baggage, ...env } = ctx.env;
+  env.AK_LEARN_TRIGGER = "hook";
+  if (ctx.span !== undefined) env.TRACEPARENT = carrierOf(ctx.span);
+  return env;
+}
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -51,7 +69,7 @@ export function pipelineCommand(
   cwd: string,
   source: string,
   logFile: string,
-  ak: readonly string[] = [process.execPath, join(PACKAGE_ROOT, "src", "cli.ts")],
+  ak: readonly string[] = [process.execPath, AK_ENTRY],
 ): string[] {
   const cli = ak.map(shellQuote).join(" ");
   const review = `${cli} 'learn' 'review' 'run' '--repo' "$1" '--cwd' "$4" '--source' "$2" >> "$3" 2>&1`;
@@ -73,20 +91,34 @@ export function stopHook(
   args: LearnArgs,
   spawner: Spawner = detachSpawner,
 ): void {
-  const cwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : ctx.cwd;
+  const cwd = payloadCwd(payload, ctx.cwd);
+  ctx.span?.status("skipped");
   if (cwd.includes("/plugins/cache/") || payload.stop_hook_active === true) return;
   const root = mainRepoRoot(cwd);
-  if (root === null) return;
+  if (root === null) {
+    ctx.span?.status("skipped", "not-a-repo");
+    return;
+  }
+  ctx.span?.project(root);
   const mark = join(reviewLedgerDir(ctx.config, root), LAST_RUN_FILE);
-  if (existsSync(mark) && Date.now() - statSync(mark).mtimeMs < DEBOUNCE_MS) return;
+  if (existsSync(mark) && Date.now() - statSync(mark).mtimeMs < DEBOUNCE_MS) {
+    ctx.span?.status("skipped", "debounced");
+    return;
+  }
   if (ctx.config.dryRun) {
+    ctx.span?.status("dry-run");
     ctx.io.err(`ak learn hook stop: dry run, would detach the review pipeline for ${root}`);
     return;
   }
   const ledger = reviewLedger(ctx.config, root);
   touch(mark);
   const source = flag(args, "source") === "codex" ? "codex" : "claude";
-  spawner(pipelineCommand(root, cwd, source, ledger.path(PIPELINE_LOG)), { cwd: root });
+  const log = ledger.path(PIPELINE_LOG);
+  // The detached shell appends to the log, so the cap is applied here, before it starts.
+  appendCapped(log, "", ctx.config.traceMaxBytes);
+  spawner(pipelineCommand(root, cwd, source, log), { cwd: root, env: pipelineEnv(ctx) });
+  ctx.span?.status("ok");
+  ctx.span?.attr("spawned", true);
 }
 
 export type DetectionType = "explicit" | "guardrail" | "positive" | "auto";
@@ -272,7 +304,10 @@ export function detectPatterns(text: string): Detection {
   return { type: "auto", patterns: names.join(" "), confidence, sentiment: "correction", decayDays };
 }
 
-/** Prompt hook. Detection runs first, so a prompt that is not a correction costs no git call and no write. */
+/**
+ * Prompt hook. Detection runs first, so a prompt that is not a correction costs no git call and no
+ * write. Under a repo scope the hook entry resolves the root before this runs, one git call a prompt.
+ */
 export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnArgs): void {
   const raw =
     typeof payload.prompt === "string"
@@ -281,14 +316,22 @@ export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnA
         ? payload.user_prompt
         : "";
   const prompt = raw.trim();
+  ctx.span?.status("nothing");
+  ctx.span?.attr("captured", false);
   if (prompt === "" || prompt.startsWith("<")) return;
   if (prompt.length > MAX_CAPTURE_PROMPT_LENGTH && !/remember:/i.test(prompt)) return;
   const detection = detectPatterns(prompt);
+  ctx.span?.attr("detection", detection.type ?? "none");
   if (detection.type === null || detection.sentiment !== "correction") return;
-  const cwd = typeof payload.cwd === "string" && payload.cwd !== "" ? payload.cwd : ctx.cwd;
+  const cwd = payloadCwd(payload, ctx.cwd);
   if (cwd.includes("/plugins/cache/")) return;
   const root = mainRepoRoot(cwd);
-  if (root === null || ctx.config.dryRun) return;
+  if (root === null) return;
+  ctx.span?.project(root);
+  if (ctx.config.dryRun) {
+    ctx.span?.status("dry-run");
+    return;
+  }
   const ledger = reviewLedger(ctx.config, root);
   const platform = flag(args, "source") === "codex" ? "codex" : "claude";
   appendEvents(ledger, [
@@ -297,4 +340,6 @@ export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnA
       confidence: detection.confidence,
     }),
   ]);
+  ctx.span?.status("ok");
+  ctx.span?.attr("captured", true);
 }

@@ -202,6 +202,11 @@
       },
       "x-validator-rule": "project.numeric-guidance-never-becomes-a-gate"
     },
+    "verification_recipes": {
+      "description": "Project-declared runtime facilities. Each declaration names a content-addressed recipe, the scopes and surfaces it covers, its available evidence kinds and every permitted lifecycle step. An absent facility stays absent; bodies never infer one from a framework convention.",
+      "type": "array",
+      "items": { "$ref": "verification-recipe.schema.json#/$defs/project_declaration" }
+    },
     "checks": {
       "description": "Project-declared diff-scoped structural and test-strength commands. Their receipts are evidence; a check blocks only when a mandatory constraint separately names it (ruling `project-checks-block-only-as-constraints`).",
       "type": "array",

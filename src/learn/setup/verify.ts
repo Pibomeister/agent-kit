@@ -2,14 +2,16 @@
  * `ak learn setup verify` — check that the wiring, the scheduler unit, the
  * ledgers and the judge are all in place. Reads only.
  */
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import { splitCommand } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { type Loop, loopDir, mainRepoRoot } from "../core/paths.ts";
 import { readJson } from "../core/store.ts";
 import { readRegistry } from "../memory/registry.ts";
 import { judgeBinary } from "./doctor.ts";
-import { LABEL, schedulerKind, unitPaths } from "./schedule.ts";
+import { LABEL, schedulerKind, unitArgv, unitPaths } from "./schedule.ts";
+import { fileScope, scopeText, unitScopeDiffers } from "./scope.ts";
 import {
   CONTEXT_OBSERVATIONS,
   claudeSettingsPath,
@@ -18,6 +20,7 @@ import {
   type HookDoc,
   MEM_MODE,
   memDir,
+  ourHookCommands,
   type SetupDeps,
 } from "./wire.ts";
 
@@ -28,6 +31,26 @@ export interface VerifyResult {
 }
 
 const LOOPS: readonly Loop[] = ["review", "memory", "skills"];
+
+/** The `ak` path a wired command line runs: the absolute argument just before `learn`. A bare `ak` is resolved from PATH at run time and is not checked. */
+function wiredAkPath(argv: readonly string[]): string[] {
+  const at = argv.indexOf("learn");
+  const path = at > 0 ? (argv[at - 1] ?? "") : "";
+  return isAbsolute(path) ? [path] : [];
+}
+
+/** Every `ak` path the wiring names, in its hooks and its unit. A plugin update moves the bundle and leaves them behind. */
+function wiredAkPaths(docs: readonly HookDoc[], unit: string | null): string[] {
+  const commands = docs.flatMap((doc) => ourHookCommands(doc)).map((command) => splitCommand(command));
+  if (unit !== null && existsSync(unit)) {
+    try {
+      commands.push(unitArgv(readFileSync(unit, "utf8")));
+    } catch {
+      // An unreadable unit is reported by the unit checks; it names no path to test here.
+    }
+  }
+  return [...new Set(commands.flatMap(wiredAkPath))];
+}
 
 export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string): VerifyResult[] {
   const out: VerifyResult[] = [];
@@ -67,6 +90,15 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
 
   const kind = schedulerKind(deps);
   const paths = unitPaths(deps, kind);
+  const entries = wiredAkPaths([claude, readJson<HookDoc>(codexHooks, {})], paths?.unit ?? null);
+  if (entries.length > 0) {
+    const missing = entries.filter((entry) => !existsSync(entry));
+    check(
+      "ak entry exists",
+      missing.length === 0,
+      missing.length === 0 ? entries.join(" ") : `missing: ${missing.join(" ")}`,
+    );
+  }
   if (paths !== null) {
     check(`${kind} unit written`, existsSync(paths.unit), paths.unit);
     if (paths.timer !== undefined) check(`${kind} timer written`, existsSync(paths.timer), paths.timer);
@@ -91,6 +123,11 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
       check(`${loop} ledger (${root})`, existsSync(join(dir, ".git")), dir);
     }
   }
+
+  // Reported, never failed: unscoped and a scope that allows nothing are both deliberate settings.
+  check("repo scope", true, scopeText(ctx.config));
+  // Neither the hook commands nor the unit carry AK_LEARN_REPOS: a scope that lives only in this shell reaches neither.
+  check("hooks and scheduled tick scope", !unitScopeDiffers(ctx), scopeText(fileScope(ctx)));
 
   const judge = judgeBinary(ctx, deps);
   check("judge command resolvable", judge !== null, judge ?? ctx.config.judgeCommand.join(" "));

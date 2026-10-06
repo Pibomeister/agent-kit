@@ -113,6 +113,10 @@ comes from the supervisor through `needs-decision`; the worker never approves it
 11. Restate the direction in six fields — Outcome, User, Why now, Success, Constraint, Out of scope
     — and ask for approval. Out of scope is never omitted. Under a bypass grant, ask by reporting
     `needs-decision` with the restatement and stop; only the supervisor's answer is a yes.
+    Load [verification evidence](../../references/verification-evidence/REFERENCE.md). For any
+    success field describing a rendered interface or running service, name the observable surface,
+    user path or request, and evidence kinds the project declares. Do not assume a browser, trace
+    collector or running service.
 12. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
     ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish

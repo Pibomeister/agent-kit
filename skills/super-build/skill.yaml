@@ -99,8 +99,9 @@ outputs:
   - id: verification-receipts
     schema: verification
     summary: >-
-      One receipt per acceptance criterion, carrying the command or probe, exit status, output
-      digest, revision and environment identity, and naming the criteria it supports.
+      Implementer self-check receipts, labeled `created_by.role: implementer` and never counted once
+      the build gate records the implementer seat, plus the gate-eligible verifier receipts returned
+      by super-verify with recipe, evidence kind and distinct seat lineage.
   - id: ticket-check-result
     schema: finding
     summary: >-
@@ -132,6 +133,7 @@ constraints:
 references:
   - engineering-principles
   - knowledgebase-backend
+  - verification-evidence
 
 limits:
   fix-rounds: 5
@@ -143,6 +145,9 @@ budget:
     - fix-rounds
 
 hard_gates:
+  - A receipt created by the implementer, change author, spec approver or recipe author is self-check
+    evidence only and never substitutes for the verifier seat (ruling
+    `missing-supervisor-never-implementer`).
   - A ticket typed decision is never executed as implementation work and is never re-typed here to
     make it executable.
   - A finding graded smell, or carrying a null difficulty, is refused as an implementation ticket.
@@ -207,9 +212,9 @@ packaging:
           is why it does not cap this row while that adapter is attached (ruling
           `fail-closed-adapter-lifts-ceiling`).
         - >-
-          independent-context is provided as a fresh subagent context. The host does not attest that
-          two contexts are independent, so seat independence is recorded by this package and checked
-          against the ticket's authorship rather than assumed from the host.
+          independent-context is not provided by the host: a fresh subagent context exists, but the
+          host does not attest that two contexts are independent, so seat independence is recorded by
+          this package and checked against the ticket's authorship rather than assumed from the host.
     - adapter: codex
       mode: autonomous
       unsupported:
@@ -222,9 +227,9 @@ packaging:
           is why it does not cap this row while that adapter is attached (ruling
           `fail-closed-adapter-lifts-ceiling`).
         - >-
-          independent-context is provided as a fresh subagent context. The host does not attest that
-          two contexts are independent, so seat independence is recorded by this package and checked
-          against the ticket's authorship rather than assumed from the host.
+          independent-context is not provided by the host: a fresh subagent context exists, but the
+          host does not attest that two contexts are independent, so seat independence is recorded by
+          this package and checked against the ticket's authorship rather than assumed from the host.
 
 provenance:
   origin: donor

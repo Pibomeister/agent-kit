@@ -1,7 +1,10 @@
 # agent-kit catalog — the single source of truth.
 #
 # `ak validate` fails on an entry with no directory and on a directory with no entry.
-# Nothing is installable, packageable or referenceable unless it is declared here.
+# Nothing is installable, packageable or referenceable unless it is declared here or in a
+# catalog.d/<name>.yaml fragment. A fragment only adds entries: it never overrides one declared
+# here and never carries package:, and this repository carries none. It is how a fork declares
+# its own entries without editing this file (docs/decisions/0010-catalog-fragments.md).
 #
 # Field notes
 #   invocation        U = user-invoked, only a human starts it (held by the skill's
@@ -22,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.12
+  version: 0.1.15
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not
@@ -579,10 +582,10 @@ protocols:
       counts; the judge never does.
 
 # ---------------------------------------------------------------------------
-# Roles — 34. Role prompts, not skills. Never individually invocable.
+# Roles — 35. Role prompts, not skills. Never individually invocable.
 # ---------------------------------------------------------------------------
 roles:
-  # Core (4)
+  # Core (5)
   - id: supervisor
     batch: 1
     provenance_origin: conversation
@@ -595,6 +598,13 @@ roles:
     provenance_origin: donor
     status: authored
     summary: Executes one approved implementation ticket. May not approve or close its own work.
+  - id: verifier
+    batch: 13
+    provenance_origin: conversation
+    status: authored
+    summary: >-
+      Executes a frozen verification recipe in an independently assigned seat and returns receipts,
+      an acceptance-to-evidence matrix and, after successful discovery, a host-neutral recipe artifact.
   - id: reviewer-spec
     batch: 1
     provenance_origin: donor
@@ -813,7 +823,7 @@ roles:
       candidate for each. Repeated corrections become guardrails, not skills.
 
 # ---------------------------------------------------------------------------
-# References — 8. Loaded on demand. Never exposed as slash commands.
+# References — 9. Loaded on demand. Never exposed as slash commands.
 # ---------------------------------------------------------------------------
 references:
   - id: codebase-design-vocabulary
@@ -878,9 +888,17 @@ references:
     summary: >-
       Project-declared diff-scoped commands and receipt semantics for structural and test-strength
       evidence, blocking only through named mandatory constraints.
+  - id: verification-evidence
+    batch: 13
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-align, super-bound, super-build, super-verify, super-review, super-ship]
+    summary: >-
+      Host-neutral recipe semantics, surface evidence kinds, receipt representation, verifier-seat
+      lineage and the criterion coverage predicate shared across the lifecycle.
 
 # ---------------------------------------------------------------------------
-# Schemas — 30. `common` holds shared $defs and validates no document itself.
+# Schemas — 32. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -941,6 +959,12 @@ schemas:
     summary: >-
       Receipts: command or probe, exit status, output digest, revision, environment, criteria
       supported. passed / failed / not-run / not-applicable / inconclusive tracked separately.
+  - id: verification-recipe
+    batch: 13
+    status: authored
+    summary: >-
+      A host-neutral setup, build, launch, readiness, drive and cleanup path with declared surfaces
+      and evidence kinds, published only after the complete path succeeds.
   - id: charter
     batch: 1
     status: authored
@@ -1043,6 +1067,13 @@ schemas:
     summary: >-
       The memory ledger's watermarks and schedule marks, so a job resumes from the last evidence it
       consumed instead of replaying or skipping any.
+  - id: learn-span
+    batch: 9
+    status: authored
+    summary: >-
+      One line of the learning runtime's span log: one finished review, memory, skills or hook unit
+      with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
+      and hashes only.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.

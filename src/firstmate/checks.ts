@@ -150,9 +150,11 @@ export function checkBundle(bundleDir: string): Check {
 }
 
 /**
- * The host supplies isolated review contexts and independent contexts at least
- * partially. Partial is reported as partial: it is a pass with a named limit,
- * never a silent one.
+ * The host supplies isolated review contexts at least partially. Partial is
+ * reported as partial: it is a pass with a named limit, never a silent one.
+ * Independent context is reported but not required: no host attests it, so a
+ * host-only verifier receipt is host-unattested and attested independence comes
+ * from the runner (adapters/claude-code/CONTRACT.md, adapters/runner-contract/CONTRACT.md).
  */
 export function checkHost(akRoot: string, host: Host): Check {
   const id = "host-capabilities";
@@ -161,7 +163,9 @@ export function checkHost(akRoot: string, host: Host): Check {
     return fail(id, "the host capability table is unavailable, so no host capability could be checked");
   const wanted = ["isolated-review-context", "independent-context"];
   const states = wanted.map((cap) => [cap, table.status.get(cap)] as const);
-  const missing = states.filter(([, s]) => s === undefined || s === "not-provided");
+  const missing = states.filter(
+    ([cap, s]) => cap === "isolated-review-context" && (s === undefined || s === "not-provided"),
+  );
   const summary = states.map(([cap, s]) => `${cap}=${s ?? "unstated"}`).join(", ");
   if (missing.length > 0) return fail(id, `${host}: ${summary}`);
   return pass(id, `${host}: ${summary}`);

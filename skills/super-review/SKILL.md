@@ -150,7 +150,13 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    `reviewer-continuity-not-amnesia`). The mechanics are in `./references/delta.md`.
 10. For `readiness`: run the two independent lanes as a gate over the panel's synthesized verdict,
     not as a substitute for it. A missing lane is `unavailable`, and a blocking lane result vetoes
-    approval no matter what the panel concluded.
+    approval no matter what the panel concluded. Load
+    [verification evidence](../../references/verification-evidence/REFERENCE.md), then, where the build
+    gate records an implementer seat, require each criterion's current receipt to name a
+    runner-attested verifier seat distinct from it (without that record, only recipe-bound checks
+    need one, and a `host-unattested` seat counts, disclosed as worker-attested, only in a run that never held a grant). Each `frontend` or `backend` criterion needs a supporting check that declares
+    `evidence_required`, and receipts carrying every declared kind. A missing required attestation, a
+    missing declaration or a missing kind makes the verification lane `unavailable`; name the gap.
 11. Set the verdict from the lane results: `approved`, `changes-requested`, `blocked` or
     `unavailable`. Emit the review and its findings, and report what is still open.
 12. On `approved`, and only then, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record
@@ -158,7 +164,7 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
     above this skill). A delta record at the head is what lets a full review of an earlier head count.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--run` and `--dir` when it has them. A record on a run that
+    A binding's brief supplies `--dir` for the run opened with it. A record on a run that
     `ship-preflight` has closed is refused; the task needs a new `open`.
 
 ## Hard gates

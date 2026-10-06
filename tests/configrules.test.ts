@@ -113,6 +113,27 @@ profiles:
     );
   });
 
+  test("a second default declared in a catalog.d/ fragment is reported against the fragment", () => {
+    // The default is package.default_profile's to name, and a fragment carries
+    // no package block, so a fragment's `default: true` is the fragment's defect.
+    const fragment = "schema_version: 1\nprofiles:\n  - id: downstream\n    status: contract\n    default: true\n";
+    const issue = checkCatalogRules(ctxFor({ "catalog.yaml": clean, "catalog.d/downstream.yaml": fragment })).find(
+      (i) => i.rule === "catalog.exactly-one-default-profile-matching-package-default-profile",
+    );
+    expect(issue?.severity).toBe("error");
+    expect(issue?.file).toBe("catalog.d/downstream.yaml");
+    expect(issue?.message).toContain("core, downstream in catalog.d/downstream.yaml");
+  });
+
+  test("a fragment's reference with an undeclared loader is reported against the fragment", () => {
+    const fragment =
+      "schema_version: 1\nreferences:\n  - id: downstream-notes\n    status: contract\n    loaded_by: [ghost-skill]\n";
+    const issue = checkCatalogRules(ctxFor({ "catalog.yaml": clean, "catalog.d/downstream.yaml": fragment })).find(
+      (i) => i.rule === "catalog.reference-loaded-by-names-a-declared-skill",
+    );
+    expect(issue?.file).toBe("catalog.d/downstream.yaml");
+  });
+
   test("catalog.exactly-one-default-profile-matching-package-default-profile catches a mismatched package default", () => {
     const catalog = clean.replace("default_profile: core", "default_profile: autonomy");
     expect(rulesOf(checkCatalogRules(ctxFor({ "catalog.yaml": catalog })))).toContain(

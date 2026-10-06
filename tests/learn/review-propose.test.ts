@@ -15,6 +15,7 @@ import {
   rollback,
   skillCandidates,
 } from "../../src/learn/review/propose.ts";
+import { span } from "../../src/learn/core/trace.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
 import { gitRepo, scratch, testContext } from "./helpers.ts";
 
@@ -330,6 +331,18 @@ describe("team promotions and knowledgebase drafts", () => {
       { ref: "review-ledger:obs:44", kind: "receipt", note: "obs:44 (b pr 2 2026-09-10)" },
     ]);
     expect(record.kb_ref).toBeUndefined();
+  });
+
+  test("inside a propose span the draft's run id is that span's id", () => {
+    const { ctx, ledger, root, write } = setup();
+    write("rp-001", { count: 3 });
+    const pattern = loadPatterns(ledger).get("rp-001");
+    if (pattern === undefined) throw new Error("expected rp-001");
+    const runId = span(ctx, "review.propose", "cli", (inner) => {
+      expect(guardrailDraft(inner, pattern, root, new Date("2026-09-24T10:00:00Z")).run_id).toBe(inner.span?.spanId);
+      return inner.span?.spanId;
+    });
+    expect(runId).toMatch(/^[0-9a-f]{16}$/);
   });
 
   test("the draft carries the root cause as guidance and the day as its run id", () => {

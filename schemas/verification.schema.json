@@ -16,6 +16,42 @@
       "description": "The ticket verification id this receipt executed. Optional for compatibility; the evidence-bearing lifecycle gate requires it and refuses an id the ticket does not declare.",
       "$ref": "common.schema.json#/$defs/kebab_id"
     },
+    "recipe": {
+      "description": "The content-addressed verification recipe executed for this receipt. A changed id or hash makes the receipt stale for a ticket check bound to the earlier recipe.",
+      "$ref": "common.schema.json#/$defs/artifact_ref"
+    },
+    "evidence_kind": { "$ref": "common.schema.json#/$defs/evidence_kind" },
+    "verifier_seat": {
+      "description": "The independently assigned seat lineage for gate-eligible runtime evidence. Host-only freshness is recorded honestly and is not a runner attestation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "implementer_seat", "isolation", "attestation"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/artifact_id" },
+        "implementer_seat": { "$ref": "common.schema.json#/$defs/artifact_id" },
+        "isolation": { "enum": ["runner-attested", "host-unattested"] },
+        "attestation": {
+          "oneOf": [{ "$ref": "common.schema.json#/$defs/artifact_ref" }, { "type": "null" }]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "isolation": { "const": "runner-attested" } }, "required": ["isolation"] },
+          "then": { "properties": { "attestation": { "$ref": "common.schema.json#/$defs/artifact_ref" } } },
+          "else": { "properties": { "attestation": { "type": "null" } } }
+        }
+      ]
+    },
+    "api_response": {
+      "description": "The observed backend response. The body digest binds the complete response body; an excerpt does not replace it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "body_digest"],
+      "properties": {
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "body_digest": { "$ref": "common.schema.json#/$defs/hash" }
+      }
+    },
     "command": {
       "description": "The command as executed. Recorded as an argument vector so it is reproducible rather than paraphrased.",
       "type": "object",
@@ -88,7 +124,7 @@
         "properties": {
           "path": { "$ref": "common.schema.json#/$defs/repo_path" },
           "digest": { "$ref": "common.schema.json#/$defs/hash" },
-          "kind": { "enum": ["log", "report", "coverage", "artifact", "screenshot", "trace"] }
+          "kind": { "enum": ["log", "report", "coverage", "artifact", "screenshot", "trace", "response"] }
         }
       }
     },
@@ -265,6 +301,55 @@
           "kind": { "const": "command" },
           "status": { "const": "failed" },
           "exit_status": { "const": 0 }
+        }
+      }
+    },
+    {
+      "description": "Surface evidence is emitted by the verifier role and binds both its recipe and seat lineage. Older receipts without an evidence kind remain compatible for tickets that declare no surface requirement.",
+      "if": { "required": ["evidence_kind"] },
+      "then": {
+        "required": ["recipe", "verifier_seat"],
+        "properties": {
+          "created_by": {
+            "properties": { "role": { "const": "verifier" } },
+            "required": ["role"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "api-response" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["api_response", "artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "response" } }, "required": ["kind"] } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "rendered-screenshot" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "screenshot" } }, "required": ["kind"] } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "trace" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "trace" } }, "required": ["kind"] } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "evidence_kind": { "const": "log" } }, "required": ["evidence_kind"] },
+      "then": {
+        "required": ["artifacts"],
+        "properties": {
+          "artifacts": { "contains": { "properties": { "kind": { "const": "log" } }, "required": ["kind"] } }
         }
       }
     }

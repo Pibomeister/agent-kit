@@ -5,6 +5,7 @@
  * here and only here, under the opt-in `learning` profile, and no packaged
  * skill body depends on them (ruling `learning-runtime-is-host-adapter`).
  */
+import { readFileSync } from "node:fs";
 import { loadConfig } from "./core/config.ts";
 import type { LearnArea, LearnContext, LearnIo } from "./core/context.ts";
 import { parseLearnArgs } from "./core/context.ts";
@@ -14,6 +15,7 @@ import { memoryArea } from "./memory/cli.ts";
 import { reviewArea } from "./review/cli.ts";
 import { setupArea } from "./setup/cli.ts";
 import { skillsArea } from "./skills/cli.ts";
+import { statsArea } from "./stats.ts";
 
 export const LEARN_AREAS: Readonly<Record<string, LearnArea>> = {
   review: reviewArea,
@@ -21,6 +23,7 @@ export const LEARN_AREAS: Readonly<Record<string, LearnArea>> = {
   skills: skillsArea,
   setup: setupArea,
   hook: hookArea,
+  stats: statsArea,
 };
 
 export function learnUsage(): string[] {
@@ -30,6 +33,16 @@ export function learnUsage(): string[] {
     for (const verb of Object.values(area.verbs)) lines.push(`      ${verb.usage}`);
   }
   return lines;
+}
+
+/** The host's hook payload on stdin, read only for `ak learn hook …`; `argv` is the whole command line after `ak`. */
+export function readHookStdin(argv: readonly string[]): string | undefined {
+  if (argv[0] !== "learn" || argv[1] !== "hook" || process.stdin.isTTY) return undefined;
+  try {
+    return readFileSync(0, "utf8");
+  } catch {
+    return undefined;
+  }
 }
 
 export interface RunLearnOptions {
@@ -60,8 +73,11 @@ export function runLearn(argv: readonly string[], options: RunLearnOptions): num
 }
 
 function dispatch(argv: readonly string[], options: RunLearnOptions): number {
-  const [areaName, verbName, ...rest] = argv;
+  const [areaName, ...afterArea] = argv;
   const area = areaName === undefined ? undefined : LEARN_AREAS[areaName];
+  const fallback = area?.default;
+  const defaulted = fallback !== undefined && (afterArea[0] === undefined || afterArea[0].startsWith("--"));
+  const [verbName, ...rest] = defaulted ? [fallback, ...afterArea] : afterArea;
   if (area === undefined) {
     if (areaName !== undefined) options.io.err(`ak learn: unknown area ${areaName}`);
     for (const line of learnUsage()) options.io.err(line);

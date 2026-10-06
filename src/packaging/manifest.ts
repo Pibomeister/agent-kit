@@ -18,7 +18,7 @@ import { isSkillMode, type SkillMode } from "./hosts.ts";
  *
  * `unsupported` is prose, not a vocabulary. `adapters/claude-code/CONTRACT.md`
  * §3 calls it "the `unsupported` semantics this host cannot enforce" and
- * `adapters/codex/CONTRACT.md` §3.1 has each U skill name its unsuppressible
+ * `adapters/codex/CONTRACT.md` §3.1 has each U skill name its unsuppressed
  * model invocation in it. It is deliberately not checked against
  * `RESTRICTIONS`: that set is what a host *enforces*, `requires[]` speaks a
  * third vocabulary again (`common#/$defs/capability`), and conflating any two

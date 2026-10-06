@@ -12,10 +12,11 @@ improvise. See §10.
 **Which of this binds you.** §1–§11 are the skill contract: a writer authoring a `SKILL.md` reads
 them and stops at §12. The five other body shapes are routed by §12's opening paragraph — protocols
 (§12.1), roles (§12.2), loose doctrine files (§12.3), reference packs (§12.5), domain packs
-(§12.6) — and each of those writers reads §1–§11 first, then their own subsection and §12.4. §12.1 and §12.2 apply only to
-amending an existing protocol or role; both populations are complete (7/7 and 29/29 at `85e4d6a`)
-and no batch after batch 3 adds to either, so most readers of this file never need those two
-sections. What each shape inherits from §1–§11 is stated in §12 and not repeated here.
+(§12.6) — and each of those writers reads §1–§11 first, then their own subsection and §12.4. A new
+protocol or role is a design change: it needs a catalog entry, provenance, the body shape in §12, a
+runner path that can invoke or seat it, and a ruling when it changes an existing separation
+invariant. A directory without those declarations is not a batch implementation. What each shape
+inherits from §1–§11 is stated in §12 and not repeated here.
 
 ---
 
@@ -369,7 +370,7 @@ to compound, compound-refresh, diagnose, bakeoff and super-review that no output
 today.
 
 The `description` is the activation surface. It carries the trigger and at least one explicit
-non-trigger clause, because on a host that cannot suppress model invocation the description is the
+non-trigger clause, because on a host where model invocation is not suppressed the description is the
 only thing standing between a U skill and an unrequested start. For a user-invoked skill the
 non-trigger clause is fixed in form and checked: the description opens `Human-started command: it
 runs only when the human's message begins with /ak:<id>` (where the skill has phase operations, the
@@ -2467,10 +2468,10 @@ condition is a closed list rather than the writer's judgment.
 
 **Conditional, required exactly where the condition holds:**
 
-3. **Never edits: it judges and returns.** Carried by every seat except the two that produce an
-   artifact. `implementer` and `plan-review/planner` carry the converse instead, naming what the
-   seat writes and stating that it never writes a finding, a receipt, a review record or a ticket,
-   and never closes or approves what it produced.
+3. **Never edits: it judges and returns.** Carried by every seat except the three that produce an
+   artifact. `implementer`, `plan-review/planner` and `verifier` carry the converse instead, naming
+   what the seat writes and stating that it never writes a finding, a receipt, a review record or a
+   ticket, and never closes or approves what it produced.
 4. **Standards grounding.** Two seats judge against a project standard: `reviewer-standards` and
    `code-review/project-standards` (the catalog's only `tier: standards-gate`). They carry *"cites an
    actual project rule or returns empty; an absent standard is never an invented preference."* This
@@ -2649,7 +2650,10 @@ own section says which (§12.5, §12.6).
 - Every donor file cited that the dossier did not name is listed in the handback (§10).
 - Authoring a body makes that entry's `status: contract` stale and raises
   `catalog.status-behind-body`. **`catalog.yaml` is owned outside this batch — report the entries you
-  authored and let its owner flip them to `authored`; do not edit it yourself.**
+  authored and let its owner flip them to `authored`; do not edit it yourself.** A `catalog.d/`
+  fragment is not a way around that. This repository declares its entries in `catalog.yaml` and
+  carries no fragments; the directory is a fork's surface for its own entries
+  (`docs/decisions/0010-catalog-fragments.md`).
 
 ### 12.5 Reference packs
 

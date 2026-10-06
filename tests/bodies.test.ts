@@ -1015,7 +1015,7 @@ describe("the conditional authorship row (AUTHORING 12.2)", () => {
     ).toEqual([]);
   });
 
-  test.each(["implementer", "plan-review/planner"])("the producing seat %s carries the converse", (id) => {
+  test.each(["implementer", "plan-review/planner", "verifier"])("the producing seat %s carries the converse", (id) => {
     const never = neverSection([CLOSURE_ROW, UNAVAILABLE_ROW, CONVERSE_AUTHORSHIP_ROW]);
     expect(
       errors(checkBodyShapes(seatTree(id, never))).filter((i) => i.rule === "role.authorship-row-mismatch"),
@@ -1038,7 +1038,7 @@ describe("the conditional authorship row (AUTHORING 12.2)", () => {
     expect(issue?.severity).toBe("error");
   });
 
-  test("a judging seat carrying the converse is an error: only two seats produce", () => {
+  test("a judging seat carrying the converse is an error: only the declared producing seats produce", () => {
     const never = neverSection([CLOSURE_ROW, UNAVAILABLE_ROW, CONVERSE_AUTHORSHIP_ROW]);
     const issue = errors(checkBodyShapes(seatTree("supervisor", never))).find(
       (i) => i.rule === "role.authorship-row-mismatch",
@@ -1055,7 +1055,7 @@ describe("the conditional authorship row (AUTHORING 12.2)", () => {
   });
 
   test("the producing seats are a closed list, not something read off the bodies", () => {
-    expect([...PRODUCING_SEATS].sort()).toEqual(["implementer", "plan-review/planner"]);
+    expect([...PRODUCING_SEATS].sort()).toEqual(["implementer", "plan-review/planner", "verifier"]);
   });
 });
 
@@ -1167,20 +1167,20 @@ describe("the gate against the real contract and the real seats", () => {
     // The denominator this gate is measured on. §12.2 mandates the universal
     // rows in thirty-four seats and `required-lane-failure-is-unavailable`
     // binds exactly thirty-four role ids.
-    expect(bodies).toBe(34);
+    expect(bodies).toBe(35);
     return ctxFor(files);
   }
 
-  test("all thirty-four authored bodies carry the contract's rows exactly", () => {
+  test("all thirty-five authored bodies carry the contract's rows exactly", () => {
     const issues = checkBodyShapes(realTree()).filter((i) => i.rule.startsWith("role.never-row"));
     expect(issues).toEqual([]);
   });
 
-  test("the census over the real tree names 34, 32 and 2", () => {
+  test("the census over the real tree names 35, 32 and 3", () => {
     const census = checkBodyShapes(realTree()).find((i) => i.rule === "role.mandated-row-population");
-    expect(census?.message).toContain("34 for each universal row");
+    expect(census?.message).toContain("35 for each universal row");
     expect(census?.message).toContain("32 for the plain authorship row");
-    expect(census?.message).toContain("2 for the converse");
+    expect(census?.message).toContain("3 for the converse");
     expect(census?.message).toContain("2 for standards grounding");
   });
 

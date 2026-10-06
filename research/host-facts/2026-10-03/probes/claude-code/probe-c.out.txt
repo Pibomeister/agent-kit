@@ -1,0 +1,14 @@
+# Probe C output, claude 2.1.288, session window 2026-10-03T02:33:26Z to 2026-10-03T02:33:59Z
+# One claude -p process, stream-json input. InstructionsLoaded hook log (harness instrument):
+{"t":1790994806.927704,"load_reason":"session_start","memory_type":"Project","file_path":"<probe>/C/proj/CLAUDE.md","trigger_file_path":null,"globs":null}
+{"t":1790994815.120312,"load_reason":"path_glob_match","memory_type":"Project","file_path":"<probe>/C/proj/.claude/rules/read-scope.md","trigger_file_path":"<probe>/C/proj/src/read/a.ts","globs":["src/read"]}
+{"t":1790994815.139102,"load_reason":"path_glob_match","memory_type":"Project","file_path":"<probe>/C/proj/.claude/rules/write-scope.md","trigger_file_path":"<probe>/C/proj/src/write/new.ts","globs":["src/write"]}
+
+# Closing reply, the token table only (the reply also carried an unrelated account notice, omitted):
+| Token | Where it appears |
+|---|---|
+| `ROOT-TOKEN-alpha7` | In loaded instructions: the project `CLAUDE.md` included in the system reminder at the start of the session. On disk, step 5 has since changed it to `ROOT-TOKEN-omega4`. My loaded copy hasn't been refreshed, so it still says `alpha7`. |
+| `READRULE-charlie5` | In a system reminder: `.claude/rules/read-scope.md`, loaded along with your latest message. |
+| `WRITERULE-delta2` | In a system reminder: `.claude/rules/write-scope.md`, loaded at the same point. |
+
+- **`AGENTS-TOKEN-*`:** none in my context. `AGENTS.md` shows up in git status as an untracked file, but its contents were never loaded.

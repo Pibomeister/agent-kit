@@ -4,6 +4,7 @@ import type { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 import { parse as parseYaml } from "yaml";
 
+import { CATALOG_FILE } from "../catalog/load.ts";
 import { INSTALL_FILE } from "../packaging/install.ts";
 import { listDirs, listFiles, readTextIfPresent } from "../util/fs.ts";
 import type { CheckContext } from "./context.ts";
@@ -17,10 +18,20 @@ type AjvInstance = InstanceType<typeof Ajv2020>;
 export interface SchemaSet {
   ajv: AjvInstance;
   issues: Issue[];
-  /** Validator for a catalog schema id, e.g. "ticket". Undefined when absent or uncompilable. */
-  validatorFor(id: string): ValidateFunction | undefined;
+  /**
+   * Validator for a catalog schema id, e.g. "ticket". Undefined when absent or uncompilable.
+   *
+   * `pointer` selects a definition inside that schema instead of its root, e.g.
+   * `#/$defs/fragment`, for a document that is one part of a schema's subject
+   * rather than all of it. It resolves only inside a schema that itself
+   * compiled, so an uncompilable schema has no parts either.
+   */
+  validatorFor(id: string, pointer?: string): ValidateFunction | undefined;
   ids(): string[];
 }
+
+/** The definition in catalog.schema.json that a catalog.d/ fragment validates against. */
+export const CATALOG_FRAGMENT_POINTER = "#/$defs/fragment";
 
 /** `common` holds shared $defs and validates no document itself. */
 const NON_DOCUMENT_SCHEMAS = new Set(["common"]);
@@ -93,12 +104,15 @@ export function compileSchemas(root: string): SchemaSet {
   }
 
   const validators = new Map<string, ValidateFunction>();
+  const baseIds = new Map<string, string>();
   for (const { id, file, schema } of parsed) {
     const $id = typeof schema["$id"] === "string" ? schema["$id"] : undefined;
     try {
       const validate = $id === undefined ? ajv.compile(schema) : ajv.getSchema($id);
-      if (validate !== undefined) validators.set(id, validate);
-      else issues.push(error("schemas.uncompilable", file, `No compiled validator for $id ${$id}.`));
+      if (validate !== undefined) {
+        validators.set(id, validate);
+        if ($id !== undefined) baseIds.set(id, $id);
+      } else issues.push(error("schemas.uncompilable", file, `No compiled validator for $id ${$id}.`));
     } catch (cause) {
       issues.push(
         error(
@@ -113,7 +127,16 @@ export function compileSchemas(root: string): SchemaSet {
   return {
     ajv,
     issues,
-    validatorFor: (id) => validators.get(id),
+    validatorFor: (id, pointer) => {
+      if (pointer === undefined) return validators.get(id);
+      const base = baseIds.get(id);
+      if (base === undefined) return undefined;
+      try {
+        return ajv.getSchema(`${base}${pointer}`);
+      } catch {
+        return undefined;
+      }
+    },
     ids: () => [...validators.keys()].sort(),
   };
 }
@@ -146,11 +169,18 @@ function loadDocument(root: string, file: string): { value: unknown } | { failur
 interface Target {
   file: string;
   schemaId: string;
+  /** A definition inside the schema to validate against instead of its root. */
+  pointer?: string;
 }
 
 function documentTargets(ctx: CheckContext): Target[] {
   const { root, catalog } = ctx;
-  const targets: Target[] = [{ file: "catalog.yaml", schemaId: "catalog" }];
+  const targets: Target[] = [{ file: CATALOG_FILE, schemaId: "catalog" }];
+  // Each fragment the loader merged, against the fragment shape rather than the
+  // whole catalog's: a fragment is one part of the catalog and never carries
+  // the sections it does not add to. One the loader could not read is already
+  // reported by it and is not offered here a second time.
+  for (const file of catalog.fragments) targets.push({ file, schemaId: "catalog", pointer: CATALOG_FRAGMENT_POINTER });
 
   for (const entry of catalog.bySection("skills")) {
     const file = `skills/${entry.id}/skill.yaml`;
@@ -224,7 +254,7 @@ export function checkSchemas(ctx: CheckContext, precompiled?: SchemaSet): Issue[
 
   for (const target of targets) {
     if (NON_DOCUMENT_SCHEMAS.has(target.schemaId)) continue;
-    const validate = set.validatorFor(target.schemaId);
+    const validate = set.validatorFor(target.schemaId, target.pointer);
     if (validate === undefined) {
       const declared = ctx.catalog.get("schemas", target.schemaId);
       if (declared === undefined && target.file.startsWith("templates/")) {
@@ -237,14 +267,15 @@ export function checkSchemas(ctx: CheckContext, precompiled?: SchemaSet): Issue[
         );
         continue;
       }
-      if (!unavailable.has(target.schemaId)) {
-        unavailable.add(target.schemaId);
+      const wanted = `${target.schemaId}${target.pointer ?? ""}`;
+      if (!unavailable.has(wanted)) {
+        unavailable.add(wanted);
         issues.push(
           skipped(
             "schemas.validator-unavailable",
             `schemas/${target.schemaId}.schema.json`,
             "schema conformance",
-            `No compiled validator for '${target.schemaId}'; documents that need it were not checked.`,
+            `No compiled validator for '${wanted}'; documents that need it were not checked.`,
           ),
         );
       }
@@ -261,7 +292,7 @@ export function checkSchemas(ctx: CheckContext, precompiled?: SchemaSet): Issue[
         error(
           "schemas.document-invalid",
           target.file,
-          `Does not validate against ${target.schemaId}.schema.json: ${describeErrors(validate)}`,
+          `Does not validate against ${target.schemaId}.schema.json${target.pointer ?? ""}: ${describeErrors(validate)}`,
         ),
       );
     }

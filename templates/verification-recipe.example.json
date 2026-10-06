@@ -1,0 +1,33 @@
+{
+  "schema": "verification-recipe",
+  "schema_version": 1,
+  "id": "settings-runtime",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "verifier",
+    "skill": "super-verify"
+  },
+  "inputs": [],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "0000000000000000000000000000000000000000"
+  },
+  "created_at": "2026-09-30T09:00:00Z",
+  "status": "active",
+  "scope": ["app/settings/**"],
+  "surfaces": ["frontend"],
+  "evidence_kinds": ["rendered-screenshot", "user-path-trial", "log"],
+  "environment": "test",
+  "steps": {
+    "setup": [],
+    "build": [{ "kind": "command", "argv": ["bun", "run", "build"] }],
+    "launch": [{ "kind": "command", "argv": ["bun", "run", "start"] }],
+    "readiness": [{ "kind": "probe", "name": "health", "target": "http://127.0.0.1:3000/health" }],
+    "drive": [{ "kind": "probe", "name": "settings", "target": "http://127.0.0.1:3000/settings" }],
+    "cleanup": [{ "kind": "command", "argv": ["bun", "run", "stop"] }]
+  }
+}

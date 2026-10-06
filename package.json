@@ -1,6 +1,6 @@
 {
   "name": "agent-kit",
-  "version": "0.1.12",
+  "version": "0.1.15",
   "private": true,
   "description": "One engineering lifecycle amalgamated from nine donors (eight MIT, one Apache-2.0): seven super skills, packs, protocols and roles, installable as a Claude Code plugin under /ak:.",
   "license": "MIT",
@@ -17,6 +17,8 @@
     "lint": "bun tools/oxlint/ratchet.ts src tests tools",
     "lint:baseline": "bun tools/oxlint/ratchet.ts --update src tests tools",
     "lint:growth": "bun tools/oxlint/growth.ts origin/main",
+    "budget": "bun tools/budget/ratchet.ts",
+    "budget:baseline": "bun tools/budget/ratchet.ts --update",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check ."
   },

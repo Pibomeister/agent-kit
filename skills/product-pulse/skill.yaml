@@ -140,7 +140,7 @@ packaging:
     - adapter: codex
       mode: manual
       unsupported:
-        - suppression of model invocation, which this host cannot express
+        - suppression of model invocation, which this package does not request on this host
 
 provenance:
   origin: donor

@@ -367,6 +367,23 @@ describe("bundle planning", () => {
     expect(plan.issues.some((i) => i.rule === "packaging.unknown-profile")).toBe(false);
   });
 
+  test("--profile resolves a profile a catalog.d/ fragment declares, with catalog.yaml unchanged", () => {
+    // What the fragment directory exists for: a downstream install ships its
+    // own member list without editing catalog.yaml.
+    const plan = planBundle(
+      ctxFor({
+        "catalog.d/downstream.yaml": "schema_version: 1\nprofiles:\n  - id: downstream\n    status: authored\n",
+        "profiles/downstream.yaml": "id: downstream\nskills: [beta]\n",
+      }),
+      "claude-code",
+      { profile: "downstream" },
+    );
+    expect(plan.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const manifest: unknown = JSON.parse(plan.files.get(".claude-plugin/plugin.json")?.contents ?? "{}");
+    expect(manifest).toMatchObject({ skills: ["./skills/beta"] });
+    expect(recordOf(plan)).toMatchObject({ profile: "downstream" });
+  });
+
   test("an unknown profile is an error, not an empty bundle", () => {
     const plan = planBundle(ctxFor(), "claude-code", { profile: "nonesuch" });
     expect(plan.issues.some((i) => i.rule === "packaging.unknown-profile")).toBe(true);
@@ -862,16 +879,16 @@ describe("the two fields package.json is a party to, and the two it is not", () 
  * The shape is taken from the donor the contract cites,
  * `compound-engineering@05c42da:.claude-plugin/marketplace.json`, read at the
  * pin rather than remembered. Every field this package emits has a value the
- * tree already states. The donor's `homepage`, `tags` and
- * `metadata.description` are omitted because this tree states no value for
- * them, and a plausible-looking invented one is the failure mode this package
- * has already produced once.
+ * tree already states. The donor's `homepage` and `tags` are omitted because
+ * this tree states no value for them. Claude's strict marketplace validator
+ * requires `metadata.description`, so it is derived from the catalog package
+ * description already used by the plugin manifests.
  */
 describe("the marketplace entry each host bundle carries", () => {
   interface MarketplaceFixture {
     name: string;
     owner?: { name: string };
-    metadata: { version: string; description?: string };
+    metadata: { version: string; description: string };
     plugins: [
       {
         name: string;
@@ -965,6 +982,7 @@ describe("the marketplace entry each host bundle carries", () => {
     expect(market.owner).toEqual(manifest.author);
     expect(market.plugins[0].author).toEqual(manifest.author);
     expect(market.metadata.version).toBe(manifest.version);
+    expect(market.metadata.description).toBe(manifest.description);
     expect(market.plugins[0].name).toBe(manifest.name);
   });
 
@@ -990,15 +1008,12 @@ describe("the marketplace entry each host bundle carries", () => {
   });
 
   test("it carries no field this tree has no value for", () => {
-    // The donor carries `homepage`, `tags` and a `metadata.description`. This
-    // tree states none of them, and emitting a plausible one is how a manifest
-    // ends up asserting something nobody checked. Absence is the honest answer
-    // until a value exists, and this test is what stops one being invented
-    // later without a source.
+    // The donor carries `homepage` and `tags`, but this tree states neither.
+    // Absence is the honest answer until a value exists, and this test stops
+    // either field being invented later without a source.
     const market = marketplaceIn(planBundle(ctxFor(), "claude-code", {}));
     expect("homepage" in market.plugins[0]).toBe(false);
     expect("tags" in market.plugins[0]).toBe(false);
-    expect("description" in market.metadata).toBe(false);
     expect("description" in market).toBe(false);
   });
 
@@ -1267,10 +1282,10 @@ describe("the two host bundles, compared", () => {
   });
 
   /**
-   * Contract §5, test 3, which this adapter owns and did not have: "the codex
-   * bundle contains no `disable-model-invocation` and no `allowed-tools`; the
-   * claude-code bundle contains both where required. A key from one host's set
-   * appearing in the other's bundle is a failure."
+   * Contract §5, test 3, which this adapter owns and did not have: "neither
+   * bundle contains `disable-model-invocation`, and the codex bundle contains
+   * no `allowed-tools`; the claude-code bundle contains `allowed-tools` where
+   * required. A key outside a host's generated set is a failure."
    *
    * It was failing in the direction that leaves no trace. Both keys were
    * reaching the codex bundle, because `generateHostFrontmatter` took no host
@@ -1799,9 +1814,9 @@ describe("the mode a skill is packaged in, per host", () => {
  * what the codex bundle contains: "For every U skill in the codex bundle" the
  * description carries the non-trigger clause, the authority check is the first
  * step, and "Every U skill's `packaging.hosts[]` entry for `adapter: codex`
- * records this explicitly: `mode: manual`". The host has no manual-invocation
- * flag, so a U skill exposed as anything but manual there is a skill the model
- * may start on a host that cannot be told not to.
+ * records this explicitly: `mode: manual`". The package emits no suppression
+ * key there, so a U skill exposed as anything but manual is a skill the model
+ * may start on a host that has not been told not to.
  *
  * This became reachable and therefore necessary in the same change. While every
  * skill shipped `manual` by accident the bundle satisfied §3.1 without anyone
@@ -1811,7 +1826,7 @@ describe("the mode a skill is packaged in, per host", () => {
  * error, because a declaration that says `guided` where §3.1 requires `manual`
  * is precisely the weakening §3.1 says the declaration exists to notice.
  */
-describe("a U skill on a host that cannot suppress model invocation", () => {
+describe("a U skill on a host that does not suppress model invocation", () => {
   /** A skill.yaml for `alpha`, which the catalog declares U. */
   const alpha = (rows: string, invocation = "invocation: U\n") => ({
     "skills/alpha/skill.yaml": `id: alpha\nversion: 0.1.0\n${invocation}packaging:\n  hosts:\n${rows}`,
@@ -1868,13 +1883,13 @@ describe("a U skill on a host that cannot suppress model invocation", () => {
     // built, the mode here reads `guided` and looks like a rule having worked.
     const ctx = ctxFor(
       alpha(
-        "    - adapter: codex\n      mode: autonomous\n      unsupported:\n        - model invocation cannot be suppressed on this host.\n",
+        "    - adapter: codex\n      mode: autonomous\n      unsupported:\n        - model invocation is not suppressed on this host.\n",
       ),
     );
     const decision = decisionFor(planBundle(ctx, "codex", {}), "alpha");
     expect(decision?.mode).toBe("manual");
     expect(decision?.rejected).toEqual(["autonomous"]);
-    expect(decision?.unenforceable).toEqual(["model invocation cannot be suppressed on this host."]);
+    expect(decision?.unenforceable).toEqual(["model invocation is not suppressed on this host."]);
   });
 
   test("leaves an M skill's codex row alone, because the rule is about who may start the skill", () => {
@@ -1917,7 +1932,7 @@ describe("a U skill on a host that cannot suppress model invocation", () => {
   test("says nothing about a U skill that declares manual, which is what §3.1 asks for", () => {
     const ctx = ctxFor(
       alpha(
-        "    - adapter: codex\n      mode: manual\n      unsupported:\n        - model invocation cannot be suppressed on this host.\n",
+        "    - adapter: codex\n      mode: manual\n      unsupported:\n        - model invocation is not suppressed on this host.\n",
       ),
     );
     const plan = planBundle(ctx, "codex", {});
@@ -1927,10 +1942,10 @@ describe("a U skill on a host that cannot suppress model invocation", () => {
   });
 
   test("follows the capability rather than the host's name, in both directions", () => {
-    // The rule's subject is "a host with no manual-invocation flag", not "codex".
+    // The rule's subject is "a host that does not enforce suppression", not "codex".
     // Keyed on the host id it would be a rule that happens to be right about the
     // two hosts that exist today and silently wrong about the third, and it
-    // would keep firing at codex after codex grew the flag. Both directions,
+    // would keep firing at codex after its bundle enforced suppression. Both directions,
     // because either alone is satisfied by a constant: claude-code declaring it
     // enforces nothing forces the U skill to manual there, and codex declaring
     // it enforces no-model-invocation leaves the declared mode alone.
@@ -2211,7 +2226,7 @@ describe("the adapters an install attaches, and what they lift", () => {
     expect(byAdapter).toEqual({
       firstmate: ["firstmate-supervision"],
       knowledgebase: ["kb-write"],
-      "runner-contract": ["runner-grants", "trusted-evidence"],
+      "runner-contract": ["independent-context", "runner-grants", "trusted-evidence"],
       tracker: ["tracker-access"],
     });
     // adapters/tracker/CONTRACT.md §1: with no backend its refusal is kb-write's.

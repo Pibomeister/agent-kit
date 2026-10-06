@@ -1,0 +1,25 @@
+# codex-local-checks.sh output, codex-cli 0.153.4, run 2026-10-03T02:36:55Z. No model was called.
+### L1 AGENTS.md chain and a skill hidden by allow_implicit_invocation
+ROOT-AGENTS-L1         present
+SUB-AGENTS-L1          present
+SIBLING-AGENTS-L1      absent
+BELOW-CWD-AGENTS-L1    absent
+skill:manual-skill     absent from prompt
+skill:visible-skill    listed in prompt
+explicit $manual-skill SKILL.md body in debug prompt-input: no (prompt-input renders the mention as plain user text)
+### L2 hook trust: untrusted, trusted by hash, modified, script edit
+fresh user hook:
+  source=user trust=untrusted managed=False hash=sha256:e01ad8fd13c5
+after recording trusted_hash:
+  source=user trust=trusted managed=False hash=sha256:e01ad8fd13c5
+after editing the script body only:
+  source=user trust=trusted managed=False hash=sha256:e01ad8fd13c5
+after changing timeout 5 -> 7:
+  source=user trust=modified managed=False hash=sha256:6ab91f66ea05
+### M managed hooks from /etc/codex/requirements.toml (container, --network none)
+req-pinned (user config sets features.hooks = false; /enterprise/hooks does not exist in the container):
+  source=system trust=managed managed=True
+req-unpinned (user config sets features.hooks = false; /enterprise/hooks does not exist in the container):
+  (no hooks listed)
+### features
+hooks                                    stable             true

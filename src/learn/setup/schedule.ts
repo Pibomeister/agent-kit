@@ -11,13 +11,23 @@
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { splitCommand } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
+import launchdTemplate from "./templates/launchd.plist.tmpl" with { type: "text" };
+import serviceTemplate from "./templates/systemd.service.tmpl" with { type: "text" };
+import timerTemplate from "./templates/systemd.timer.tmpl" with { type: "text" };
+import { unitScopeDiffers } from "./scope.ts";
 import type { SetupDeps } from "./wire.ts";
 import { shellQuote } from "./wire.ts";
 
 export const LABEL = "dev.agent-kit.learn";
 export const DEFAULT_INTERVAL_S = 900;
-const TEMPLATES = join(import.meta.dir, "templates");
+/** Embedded, so the single-file bundle renders units with no template files beside it. */
+const TEMPLATES = {
+  "launchd.plist.tmpl": launchdTemplate,
+  "systemd.service.tmpl": serviceTemplate,
+  "systemd.timer.tmpl": timerTemplate,
+};
 
 export type SchedulerKind = "launchd" | "systemd" | "cron" | "none";
 
@@ -51,6 +61,11 @@ export function schedulerLog(ctx: LearnContext): string {
 
 /** Variables passed through to the unit when set: where claude-mem lives, and every `AK_LEARN_*` knob including the judge command. */
 const PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME"];
+/**
+ * Never baked: the repo scope lives in the runtime's scope file, which the hooks read too, so a
+ * re-run from a shell without the variable cannot widen the tick, nor one with it pin a stale scope.
+ */
+const NOT_BAKED = ["AK_LEARN_REPOS"];
 
 /** The unit's environment, in a stable order. */
 export function unitEnvironment(ctx: LearnContext): Array<[string, string]> {
@@ -59,7 +74,7 @@ export function unitEnvironment(ctx: LearnContext): Array<[string, string]> {
   if (configDir !== undefined && configDir.trim() !== "") out.push(["CLAUDE_CONFIG_DIR", configDir]);
   out.push(["PATH", ctx.env.PATH && ctx.env.PATH !== "" ? ctx.env.PATH : "/usr/local/bin:/usr/bin:/bin"]);
   const extra = Object.keys(ctx.env)
-    .filter((key) => PASSTHROUGH.includes(key) || key.startsWith("AK_LEARN_"))
+    .filter((key) => (PASSTHROUGH.includes(key) || key.startsWith("AK_LEARN_")) && !NOT_BAKED.includes(key))
     .sort();
   for (const key of extra) {
     const value = ctx.env[key];
@@ -69,8 +84,8 @@ export function unitEnvironment(ctx: LearnContext): Array<[string, string]> {
 }
 
 /** `$name` / `${name}` substitution. A variable with no value is an error, never an empty string. */
-export function renderTemplate(name: string, vars: Readonly<Record<string, string | number>>): string {
-  const text = readFileSync(join(TEMPLATES, name), "utf8");
+export function renderTemplate(name: keyof typeof TEMPLATES, vars: Readonly<Record<string, string | number>>): string {
+  const text = TEMPLATES[name];
   return text.replace(/\$(?:\{(\w+)\}|(\w+))/g, (_, braced: string | undefined, bare: string | undefined) => {
     const key = (braced ?? bare)!;
     const value = vars[key];
@@ -81,6 +96,19 @@ export function renderTemplate(name: string, vars: Readonly<Record<string, strin
 
 function xml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The command line a written unit runs, decoded from what `launchdPlist` (its argument strings) or
+ * `systemdService` (its ExecStart, with the `%%` and `$$` escapes undone) wrote. Each decoder sits
+ * beside its encoder so the two change together.
+ */
+export function unitArgv(text: string): string[] {
+  const exec = /^ExecStart=(.*)$/m.exec(text)?.[1];
+  if (exec !== undefined) return splitCommand(exec.replace(/%%/g, "%").replace(/\$\$/g, "$"));
+  return [...text.matchAll(/<string>([^<]*)<\/string>/g)].map((match) =>
+    (match[1] ?? "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"),
+  );
 }
 
 export function launchdPlist(ctx: LearnContext, deps: SetupDeps, intervalS: number): string {
@@ -159,6 +187,13 @@ export function schedule(
   options: { intervalS?: number; load?: boolean } = {},
 ): number {
   const intervalS = options.intervalS ?? DEFAULT_INTERVAL_S;
+  if (unitScopeDiffers(ctx)) {
+    ctx.io.err(
+      "ak learn setup schedule: AK_LEARN_REPOS is not carried into the unit, and the scope file differs, " +
+        "so the scheduled tick would run with another scope; run `ak learn setup scope --set` with the same roots first",
+    );
+    return 1;
+  }
   const kind = schedulerKind(deps);
   mkdirSync(ctx.config.runtimeDir, { recursive: true });
   if (kind === "none") {
