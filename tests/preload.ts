@@ -16,3 +16,5 @@ const root = realpathSync(mkdtempSync(join(tmpdir(), "ak-test-env-")));
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");
 process.env.CODEX_HOME = join(root, "codex");
+// The knowledgebase registry is the operator's, under their home; no test reads or writes the real one.
+process.env.AK_KB_REGISTRY = join(root, "agent-kit-kb", "registry.json");

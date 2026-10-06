@@ -133,6 +133,7 @@ constraints:
 references:
   - engineering-principles
   - verification-evidence
+  - knowledgebase-binding
 
 limits:
   fix-rounds: 5

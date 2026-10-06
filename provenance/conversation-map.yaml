@@ -1332,6 +1332,24 @@ capabilities:
       own answer to a constraint the transcript never addresses. Folded into `conversation` here
       because no donor implements them — every donor writes to a repository-local root.
 
+  - id: knowledgebase-binding
+    capability: A committed locator by which any checkout of a project reaches its central knowledgebase, with the machine's path registered outside the repository
+    disposition: reference
+    destination: references/knowledgebase-binding
+    locator: plan §1.2; plan §8
+    origin: conversation
+    acceptance_test: >-
+      A task copy of a bound project reads and publishes with no setup of its own, an unbound or
+      unregistered project reports unavailable with its setup step and never a missing install
+      file, and a publish creates nothing in the working repository (`tests/kb-adapter.test.ts`).
+    note: >-
+      Plan §1.2 allows the working repository "a small KB locator" and says nothing about its
+      shape; the binding file, the per-machine registration and the commands are this package's
+      (adapters/knowledgebase/CONTRACT.md §7, ruling kb-binding-is-a-locator). The pack condenses
+      them so an installed plugin, which does not carry adapters/, still knows how to reach a
+      knowledgebase. Building a file-backed backend here is the owner's decision recorded in
+      docs/decisions/0010-file-backed-knowledgebase.md.
+
   - id: knowledgebase-pr-linkage
     capability: Source PRs linked to their knowledgebase PRs, with a source merge activating the existing knowledgebase coordinator
     disposition: retained

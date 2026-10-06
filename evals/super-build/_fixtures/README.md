@@ -89,8 +89,8 @@ does not move the head they name. Where a case needs the knowledgebase, the
 scaffold supplies a read-only checkout of it as plain files (under
 `knowledge-base/`, or as the whole workspace for doc-review's
 `drafted-spec-gets-a-panel`), with a README saying what `kb://<path>`
-resolves to, because the knowledgebase adapter has no implementation in a
-run's workspace.
+resolves to, because a run's workspace has no knowledgebase binding and no
+registered knowledgebase.
 
 Cases scaffolded on these fixtures:
 

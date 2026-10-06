@@ -121,6 +121,9 @@ constraints:
   fourth-fix-attempt-may-follow-three-failures: false
   debug-instrumentation-may-outlive-the-run: false
 
+references:
+  - knowledgebase-binding
+
 limits:
   fix-attempts: 3
   hypotheses-maximum: 5
