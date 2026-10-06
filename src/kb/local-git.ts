@@ -237,7 +237,7 @@ function committed(root: string, path: string): string | null {
 }
 
 function normalizeBody(body: string): string {
-  return `${body.replaceAll("\r\n", "\n").replace(/^\n+/, "").replace(/\s+$/, "")}\n`;
+  return `${body.replace(/\r+\n/g, "\n").replace(/^\n+/, "").replace(/\s+$/, "")}\n`;
 }
 
 function parseDocument(text: string): { meta: DocumentMeta; body: string } | null {

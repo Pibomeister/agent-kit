@@ -550,6 +550,17 @@ describe("publishArtifact, kb-document placement", () => {
     expect(commits(fx.kb)).toBe(1);
   });
 
+  test("a page whose lines end in repeated carriage returns reads back as published", () => {
+    const fx = registered();
+    const sent = publishPage(fx, fx.project, page(fx, PAGE.replaceAll("\n", "\r\r\n")));
+    expect(sent.code).toBe(0);
+    expect(published(sent).effect).toBe("published");
+    const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));
+    expect(read.documents[0]?.body).toBe(PAGE);
+    expect(read.documents[0]?.content_hash).toBe(published(sent).content_hash);
+    expect(commits(fx.kb)).toBe(1);
+  });
+
   test("changed content under a reused record is refused, not overwritten", () => {
     const fx = registered();
     publishPage(fx, fx.project, page(fx));
