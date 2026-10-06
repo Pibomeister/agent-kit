@@ -10,6 +10,7 @@
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
+ * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` when the worker files above hold the row, else `claude-mem:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *
  * `memory.md` and the lessons are the revertible wiki layer; `episodes.jsonl`
@@ -38,6 +39,7 @@ import {
   writeJson,
 } from "../core/store.ts";
 import { lessonDraft, proposeLesson, type ProposalResult, type TriggerKind } from "../kb.ts";
+import type { WorkerSessionSource } from "../sources/worker-sessions.ts";
 
 /** The six sections a reflected memory must carry, in order. */
 export const SECTIONS = [
@@ -315,7 +317,12 @@ export function proposeConfirmed(
   ledger: Ledger,
   root: string,
   page: LessonPage,
-  options: { runId: string; createdBy: "learn/consolidator" | "learn/lesson-merger"; trigger: TriggerKind },
+  options: {
+    runId: string;
+    createdBy: "learn/consolidator" | "learn/lesson-merger";
+    trigger: TriggerKind;
+    workers: WorkerSessionSource;
+  },
 ): ProposalResult {
   const { meta } = page;
   const id = lessonId(page);
@@ -331,7 +338,10 @@ export function proposeConfirmed(
       statement,
       trigger: options.trigger,
       occurrence: { id: evidence[0] ?? id, content: { statement, evidence } },
-      evidence: evidence.map((ref) => ({ ref: `claude-mem:${ref}`, kind: "transcript" as const })),
+      evidence: evidence.map((ref) => ({
+        ref: `${options.workers.holds(ref) ? "worker" : "claude-mem"}:${ref}`,
+        kind: "transcript" as const,
+      })),
       domains,
       createdBy: options.createdBy,
     },

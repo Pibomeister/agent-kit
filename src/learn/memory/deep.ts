@@ -275,13 +275,19 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
     if (reply !== null) pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
   }
   const lessons = loadLessons(ledger);
+  const workers = WorkerSessionSource.open(ledger);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];
   for (const id of pairs.confirmed) {
     const page = lessons.get(id);
     if (page === undefined) continue;
     const trig = list(page.meta.tags).includes("preference") ? "correction" : "failure";
-    const proposal = proposeOrSkip(ctx, ledger, root, page, { runId, createdBy: "learn/lesson-merger", trigger: trig });
+    const proposal = proposeOrSkip(ctx, ledger, root, page, {
+      runId,
+      createdBy: "learn/lesson-merger",
+      trigger: trig,
+      workers,
+    });
     if ("ref" in proposal) proposals.push(proposal.ref);
     else skippedProposals.push(proposal.skipped);
   }

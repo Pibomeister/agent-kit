@@ -316,6 +316,46 @@ describe("weekly", () => {
     expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-shop-ls-001.json"]);
   });
 
+  test("a merged draft names the store each evidence id came from", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const workers = WorkerSessionSource.open(ledger);
+    workers.capture([workerSession("a", 100)]);
+    const row = workers.observationsSince("", 0)[0];
+    const captured = `obs:${row?.id}`;
+    const sid = (row?.memory_session_id ?? "").slice(0, 8);
+    applyConsolidation(
+      ledger,
+      {
+        lessons: [
+          { statement: "fix the code the rule flags", evidence: [captured], confidence: 0.6 },
+          { statement: "fix what the rule flags, not the token", evidence: ["obs:7", "Sbbbb2222"], confidence: 0.6 },
+        ],
+      },
+      new Set([captured, "obs:7", "Sbbbb2222"]),
+      new Map([
+        [captured, sid],
+        ["obs:7", "bbbb2222"],
+      ]),
+    );
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: join(scratch(), "missing.db") },
+      replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }],
+    });
+    deep(ctx, ledger, root, null);
+    const { draft } = readJson<{ draft: { evidence?: Array<{ ref: string }> } }>(
+      ledger.path("proposals", "learn-shop-ls-001.json"),
+      { draft: {} },
+    );
+    expect(draft.evidence?.map(({ ref }) => ref).toSorted((x, y) => x.localeCompare(y))).toEqual([
+      "claude-mem:obs:7",
+      "claude-mem:Sbbbb2222",
+      `worker:${captured}`,
+      `worker:S${sid}`,
+    ]);
+  });
+
   test("a lesson keeps its worker session after the captured row is dropped, so a recurrence a month later still confirms it", () => {
     const root = gitRepo(join(scratch(), "shop"));
     const ledger = ensureMemoryLedger(join(scratch(), "memory"));

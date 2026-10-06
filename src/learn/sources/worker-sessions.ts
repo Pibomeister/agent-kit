@@ -14,6 +14,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import type { Ledger } from "../core/ledger.ts";
 import { linkedWorktree } from "../core/paths.ts";
 import { appendJsonl, readJsonl, writeJsonl } from "../core/store.ts";
+import { sid8 } from "../memory/ledger.ts";
 import { scrubSecrets } from "../memory/redact.ts";
 import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
@@ -926,6 +927,12 @@ export class WorkerSessionSource implements MemoryObservationSource {
     const sessions = new Map<number, string>();
     for (const row of this.observations) if (wanted.has(row.id)) sessions.set(row.id, row.memory_session_id);
     return sessions;
+  }
+
+  /** Whether this store holds the row a lesson evidence id (`obs:N` or `S<sid>`) names. */
+  holds(evidence: string): boolean {
+    if (evidence.startsWith("obs:")) return this.observationSessions([Number(evidence.slice(4))]).size > 0;
+    return this.sessionRows.keys().some((sid) => sid8(sid) === evidence);
   }
 
   sessions(_project: string, sinceMs: number, staleBeforeMs: number): SessionRow[] {

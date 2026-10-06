@@ -30,7 +30,7 @@ import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated }
 import { runOf } from "../core/trace.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
 import type { MemoryObservationSource, ObservationRow } from "../sources/claude-mem.ts";
-import { isCapturedObservation } from "../sources/worker-sessions.ts";
+import { isCapturedObservation, WorkerSessionSource } from "../sources/worker-sessions.ts";
 import {
   consumedObsIds,
   type Episode,
@@ -564,13 +564,19 @@ export function consolidate(
     included.filter((episode) => episode.corrections > 0).map((episode) => sid8(episode.sid).slice(1)),
   );
   const lessons = loadLessons(ledger);
+  const workers = WorkerSessionSource.open(ledger);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];
   for (const id of summary.confirmed) {
     const page = lessons.get(id);
     if (page === undefined) continue;
     const trig = triggerOf(page.meta, obsSession, corrected);
-    const proposal = proposeOrSkip(ctx, ledger, root, page, { runId, createdBy: "learn/consolidator", trigger: trig });
+    const proposal = proposeOrSkip(ctx, ledger, root, page, {
+      runId,
+      createdBy: "learn/consolidator",
+      trigger: trig,
+      workers,
+    });
     if ("ref" in proposal) proposals.push(proposal.ref);
     else skippedProposals.push(proposal.skipped);
   }
