@@ -69,7 +69,7 @@ roles:
 
 references:
   baseline: 4
-  catalog: 8
+  catalog: 9
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -87,10 +87,17 @@ references:
         Surface evidence kinds, recipe semantics and verifier-seat lineage need one host-neutral
         vocabulary shared by the lifecycle phases that produce or consume them.
       commits: [1c509b9]
+    - ids: [knowledgebase-binding]
+      reason: >-
+        A lifecycle run in a task copy could reach no knowledgebase, and the contract that says how
+        to bind one does not ship with the plugin; the skills that read or publish need the check,
+        the commands and what unconfigured means inside the bundle.
+      commits: [c4d1f9cd]
+      docs: [docs/decisions/0010-file-backed-knowledgebase.md]
 
 schemas:
   baseline: 14
-  catalog: 33
+  catalog: 34
   expansions:
     - ids: [case]
       reason: >-
@@ -148,6 +155,12 @@ schemas:
         an overlay; agent-kit owns the article's shape and checks it, and the overlay owns the text.
       commits: [e0e95cc]
       docs: [docs/decisions/0009-constitution-support.md]
+    - ids: [kb-binding]
+      reason: >-
+        The committed knowledgebase locator, ak.kb.yaml, needed a shape that refuses a machine
+        path and a secret, so that every checkout of a project binds the same knowledgebase.
+      commits: [c4d1f9cd]
+      docs: [docs/decisions/0010-file-backed-knowledgebase.md]
 
 profiles:
   baseline: 4
