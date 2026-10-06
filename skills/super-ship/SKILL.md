@@ -89,11 +89,9 @@ The head being shipped, named. Verification receipts that bind to that head
 `needs-input` naming which.
 
 The mode: `dry-run` or `publish`. `dry-run` is a supported mode of this skill, not a flag an operator
-has to remember; it is the mode in which nothing leaves the machine.
-
-The transport, where the caller names one: `direct` or `no-mistakes`. A Firstmate binding's transport
-and the project's own conventions come before it, and where nothing names one the run stops with
-`needs-input` naming the choice (ruling `direct-push-as-ship-transport`).
+has to remember; it is the mode in which nothing leaves the machine. The transport, `direct` or
+`no-mistakes`: a Firstmate binding's, else the project conventions', else the caller's; named by
+none, the run stops with `needs-input` naming the choice (ruling `direct-push-as-ship-transport`).
 
 The charter, where one exists (`schemas/charter.schema.json`), with the actions it names and the
 approval bound to its hash. Absent, the run has no sensitive-action authority and does not acquire
@@ -165,10 +163,9 @@ The project's own release checks, discovered rather than assumed.
     Where the project ships through no-mistakes, the push and the pull request go through it with
     review, document and rebase skipped, and a parked gate returns to the lifecycle rather than
     being answered in the pipeline (ruling `no-mistakes-as-ship-transport`). The mechanics are in
-    `./references/transport-no-mistakes.md`. Where the transport is direct, super-ship commits,
-    pushes and opens the pull request itself with `git` and `gh`, no supervisor needed, and a commit
-    a hook rewrote is a new head (ruling `direct-push-as-ship-transport`):
-    `./references/transport-direct.md`.
+    `./references/transport-no-mistakes.md`. A direct transport commits, pushes and opens the pull
+    request itself with `git` and `gh`, no supervisor needed, and a commit a hook rewrote is a new
+    head (ruling `direct-push-as-ship-transport`): `./references/transport-direct.md`.
 11. Draft the lesson candidate through the knowledgebase adapter's draft operation. It stays a draft:
     publishing it is a separate authority this run does not hold.
 12. Hand the open pull request to the watch lane, and report the ship as prepared rather than
