@@ -11,6 +11,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -448,6 +449,37 @@ describe("worker scan against what the ledger holds", () => {
     expect([...scan.sessions.keys()]).toEqual(["/code/shop"]);
     expect([...scan.activity.keys()]).toEqual(["/code/shop"]);
     expect(scan.unmatched).toBe(0);
+    expect(warnings).toEqual([]);
+  });
+});
+
+describe("worker scan places every record before parsing any", () => {
+  test("a root is asked about once with its newest record time, and a refused root has no record parsed", () => {
+    const codex = scratch("ak-worker-idle-");
+    const rows = [codexMessage("user", "tidy the cart module"), CODEX_TASK_COMPLETE];
+    const old = new Date(Date.now() - 10 * 86_400_000);
+    const older = new Date(Date.now() - 12 * 86_400_000);
+    const idle = writeRollout(codex, "idle", "/code/idle", rows);
+    appendFileSync(idle, "\n{not json");
+    utimesSync(idle, old, old);
+    utimesSync(writeRollout(codex, "idle-older", "/code/idle", rows), older, older);
+    const busy = writeRollout(codex, "busy", "/code/busy", rows);
+    const cutoff = Date.now() - 7 * 86_400_000;
+    const asked: Array<[string, number]> = [];
+    const warnings: string[] = [];
+    const scan = scanWorkerSessions({ codex: [codex], grok: [], kimi: [] }, (cwd) => cwd, {
+      wanted: (root, newestMs) => {
+        asked.push([root, newestMs]);
+        return newestMs >= cutoff;
+      },
+      warn: (line) => warnings.push(line),
+    });
+    expect(asked.toSorted(([a], [b]) => a.localeCompare(b))).toEqual([
+      ["/code/busy", statSync(busy).mtimeMs],
+      ["/code/idle", statSync(idle).mtimeMs],
+    ]);
+    expect([...scan.sessions.keys()]).toEqual(["/code/busy"]);
+    expect([...scan.activity.keys()]).toEqual(["/code/busy"]);
     expect(warnings).toEqual([]);
   });
 });

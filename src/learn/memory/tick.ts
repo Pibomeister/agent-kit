@@ -393,6 +393,8 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;
       const capturedSince = nowMs() - CAPTURE_WINDOW_MS;
+      const memProjects = new Map(Object.values(registry).map((entry) => [entry.root, entry.mem_project]));
+      const claudeActivity = (root: string) => source?.lastActivityMs(memProjects.get(root) ?? "") ?? 0;
       const stores = new Map<string, WorkerSessionSource | null>();
       const stored = (root: string) => {
         if (!stores.has(root)) {
@@ -407,7 +409,9 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
         sinceMs: capturedSince,
         warn: (warning) => tickLog(ctx, warning),
-        wanted: (root) => (options.only === undefined || root === options.only) && allowed(root),
+        wanted: (root, newestMs) =>
+          allowed(root) &&
+          (options.only === undefined ? Math.max(claudeActivity(root), newestMs) >= cutoff : root === options.only),
         stored,
       });
       if (scan.unmatched > 0)
@@ -418,7 +422,7 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
         const workerSessions = scan.sessions.get(entry.root) ?? [];
         if (
           options.only === undefined &&
-          Math.max(source?.lastActivityMs(entry.mem_project) ?? 0, scan.activity.get(entry.root) ?? 0) < cutoff
+          Math.max(claudeActivity(entry.root), scan.activity.get(entry.root) ?? 0) < cutoff
         )
           continue;
         const name = entry.mem_project || basename(entry.root);

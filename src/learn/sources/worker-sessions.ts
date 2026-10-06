@@ -609,6 +609,14 @@ export function workerRootResolver(registry: Registry, worktrees: Worktrees): (c
   };
 }
 
+function writtenAt(path: string): number {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 export interface WorkerScan {
   /** Parsed sessions by the registered root their cwd resolved to, oldest first. */
   sessions: Map<string, CapturedSession[]>;
@@ -620,9 +628,11 @@ export interface WorkerScan {
 
 /**
  * Recent host sessions under a registered root. Only a record's cwd and id are read before `rootFor`
- * places it, so a session of an unregistered project costs one small read. A session under a root
- * `wanted` refuses is left alone, and so is one the root's `stored` rows already hold complete as
- * its record stands. An unreadable record is skipped and reported through `warn`.
+ * places it, so a session of an unregistered project costs one small read. Every record is placed
+ * before any is parsed: `wanted` is asked once per root with the newest time a host wrote under it,
+ * and a root it refuses has none of its sessions parsed. A session the root's `stored` rows already
+ * hold complete as its record stands is not parsed either. An unreadable record is skipped and
+ * reported through `warn`.
  */
 export function scanWorkerSessions(
   homes: WorkerHomes,
@@ -630,20 +640,21 @@ export function scanWorkerSessions(
   options: {
     sinceMs?: number;
     warn?: (line: string) => void;
-    wanted?: (root: string) => boolean;
+    wanted?: (root: string, newestMs: number) => boolean;
     stored?: (root: string) => WorkerSessionSource | null;
   } = {},
 ): WorkerScan {
   const sinceMs = options.sinceMs ?? Date.now() - CAPTURE_WINDOW_MS;
-  const recent = (path: string) => {
-    try {
-      return statSync(path).mtimeMs >= sinceMs;
-    } catch {
-      return false;
-    }
-  };
   const scan: WorkerScan = { sessions: new Map(), activity: new Map(), unmatched: 0 };
   const active = (root: string, at: number) => scan.activity.set(root, Math.max(scan.activity.get(root) ?? 0, at));
+  const placed = new Map<string, { newest: number; read: Array<() => void> }>();
+  const guarded = (path: string, step: () => void) => {
+    try {
+      step();
+    } catch (error) {
+      options.warn?.(`worker session skipped: ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
   const collect = (
     host: WorkerHost,
     path: string,
@@ -651,8 +662,9 @@ export function scanWorkerSessions(
     identify: () => { cwd: string | null; nativeId: string | null },
     parse: () => CapturedSession | null,
   ) => {
-    if (!recent(path)) return;
-    try {
+    const touched = writtenAt(path);
+    if (touched < sinceMs) return;
+    guarded(path, () => {
       const { cwd, nativeId } = identify();
       if (cwd === null) return;
       const root = rootFor(cwd);
@@ -660,23 +672,27 @@ export function scanWorkerSessions(
         scan.unmatched += 1;
         return;
       }
-      if (options.wanted?.(root) === false) return;
       const modified = statSync(record).mtimeMs;
-      const held =
-        nativeId !== null && modified >= sinceMs
-          ? (options.stored?.(root)?.completedAt(stableSessionId(host, nativeId), modified) ?? null)
-          : null;
-      if (held !== null) {
-        active(root, held);
-        return;
-      }
-      const parsed = parse();
-      if (parsed === null) return;
-      scan.sessions.set(root, [...(scan.sessions.get(root) ?? []), parsed]);
-      active(root, parsed.completed_at_epoch ?? parsed.observations.at(-1)?.at ?? parsed.started_at_epoch);
-    } catch (error) {
-      options.warn?.(`worker session skipped: ${path}: ${error instanceof Error ? error.message : String(error)}`);
-    }
+      const place = placed.get(root) ?? { newest: 0, read: [] };
+      placed.set(root, place);
+      place.newest = Math.max(place.newest, touched, modified);
+      place.read.push(() =>
+        guarded(path, () => {
+          const held =
+            nativeId !== null && modified >= sinceMs
+              ? (options.stored?.(root)?.completedAt(stableSessionId(host, nativeId), modified) ?? null)
+              : null;
+          if (held !== null) {
+            active(root, held);
+            return;
+          }
+          const parsed = parse();
+          if (parsed === null) return;
+          scan.sessions.set(root, [...(scan.sessions.get(root) ?? []), parsed]);
+          active(root, parsed.completed_at_epoch ?? parsed.observations.at(-1)?.at ?? parsed.started_at_epoch);
+        }),
+      );
+    });
   };
   for (const home of homes.codex) {
     for (const path of walk(
@@ -726,6 +742,8 @@ export function scanWorkerSessions(
         );
     }
   }
+  for (const [root, place] of placed)
+    if (options.wanted?.(root, place.newest) !== false) for (const read of place.read) read();
   for (const rows of scan.sessions.values())
     rows.sort(
       (a, b) => a.started_at_epoch - b.started_at_epoch || a.memory_session_id.localeCompare(b.memory_session_id),
