@@ -12,6 +12,7 @@
  * T tokens over the most tokens of any episode in the 30-day window, N the
  * share of modified files no earlier episode touched, A exp(-age_days / 14).
  */
+import { scrubSecrets } from "../core/secrets.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl } from "../core/store.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { type ClaudeMemSource, jsonList, type SessionRow } from "../sources/claude-mem.ts";
@@ -121,6 +122,11 @@ function round4(value: number): number {
   return Math.round(value * 10_000) / 10_000;
 }
 
+/** Stored episodes passed the secret gate, so a fresh path is compared in the form it will be stored in. */
+function stored(path: string): string {
+  return scrubSecrets(path).text;
+}
+
 /** Fill `priority`. T is relative to the most tokens in the 30-day window; N is against earlier episodes' files. */
 export function score(
   fresh: ReadonlyArray<Omit<Episode, "priority">>,
@@ -130,10 +136,10 @@ export function score(
   const inWindow = [...existing.filter((episode) => now - episode.ended <= WINDOW_MS), ...fresh];
   const maxTokens = Math.max(...inWindow.map((episode) => episode.tokens), 0) || 1;
   const seen = new Set<string>();
-  for (const episode of existing) for (const path of episode.files_modified) seen.add(path);
+  for (const episode of existing) for (const path of episode.files_modified) seen.add(stored(path));
   const scored = new Map<string, number>();
   for (const episode of [...fresh].sort((a, b) => a.started - b.started)) {
-    const files = episode.files_modified;
+    const files = episode.files_modified.map(stored);
     const novel = files.filter((path) => !seen.has(path)).length;
     const n = files.length > 0 ? novel / files.length : 0;
     for (const path of files) seen.add(path);
@@ -244,6 +250,7 @@ export function buildEpisodes(
     appendJsonl(
       ledger.path("episodes.jsonl"),
       [...fresh].sort((a, b) => a.started - b.started),
+      ledger.dir,
     );
   }
   return fresh;

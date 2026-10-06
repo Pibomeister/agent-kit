@@ -3,7 +3,7 @@
  *
  * | Layer | Files |
  * |---|---|
- * | Raw (append-only) | `raw/review-events.jsonl` |
+ * | Raw (append-only) | `raw/review-events.jsonl`, `raw/secret-redactions.jsonl` (the secret gate's record) |
  * | Wiki | `patterns/rp-NNN.md`, `index.md`, `log.md`, `skill-impact.md` |
  * | Policy | `guardrails.md` (loaded at session start), `pending-team-promotions.md` (proposed only) |
  *

@@ -3,11 +3,11 @@
  * touch: counts, sources, statuses, ids and the index table are computed here
  * from the ledger, so a bad reply cannot inflate them.
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Ledger } from "../core/ledger.ts";
 import { type PageMeta, parsePage, patchBody, renderPage } from "../core/pages.ts";
-import { nowIso, readText, todayUtc } from "../core/store.ts";
+import { appendGated, nowIso, readText, todayUtc, writeGated } from "../core/store.ts";
 import type { ReviewEvent } from "./events.ts";
 import { PATTERNS_HEADER, RUNS_HEADER } from "./ledger.ts";
 
@@ -38,9 +38,10 @@ export function loadPatterns(ledger: Ledger): Map<string, Pattern> {
   return out;
 }
 
+/** The page, `<ledger>/patterns/rp-NNN.md`, behind the secret gate of the ledger it sits in. */
 export function savePattern(pattern: Pattern): void {
   mkdirSync(dirname(pattern.path), { recursive: true });
-  writeFileSync(pattern.path, renderPage(pattern.meta, pattern.body));
+  writeGated(dirname(dirname(pattern.path)), pattern.path, renderPage(pattern.meta, pattern.body));
 }
 
 export function list(meta: PageMeta, key: string): string[] {
@@ -230,7 +231,8 @@ export function rebuildIndex(ledger: Ledger, patterns: ReadonlyMap<string, Patte
       return `| ${p.id} | ${num(p.meta, "count")} | ${str(p.meta, "last_seen")} | ${str(p.meta, "status")} | ${summary} |`;
     });
   const block = (lines: string[]) => lines.map((line) => `${line}\n`).join("");
-  writeFileSync(
+  writeGated(
+    ledger.dir,
     ledger.path("index.md"),
     `# Review patterns\n\n## Runs\n\n${RUNS_HEADER}${block(rows)}\n## Patterns\n\n${PATTERNS_HEADER}${block(patternRows)}`,
   );
@@ -238,12 +240,13 @@ export function rebuildIndex(ledger: Ledger, patterns: ReadonlyMap<string, Patte
 
 /** Append one line to the ledger's `log.md`. */
 export function logLine(ledger: Ledger, text: string): void {
-  appendFileSync(ledger.path("log.md"), `\n- ${nowIso()} ${text}\n`);
+  appendGated(ledger.dir, ledger.path("log.md"), `\n- ${nowIso()} ${text}\n`);
 }
 
 /** Append one row to `skill-impact.md`: the record of what each promotion or retirement did to the repeat rate. */
 export function impactRow(ledger: Ledger, action: string, patternId: string, note: string): void {
-  appendFileSync(
+  appendGated(
+    ledger.dir,
     ledger.path("skill-impact.md"),
     `| ${todayUtc()} | ${action} | ${patternId} | ${lastRate(ledger)} | ${note} |\n`,
   );
