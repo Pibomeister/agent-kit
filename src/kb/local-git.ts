@@ -237,7 +237,7 @@ function committed(root: string, path: string): string | null {
 }
 
 function normalizeBody(body: string): string {
-  return `${body.replace(/\s+$/, "")}\n`;
+  return `${body.replace(/^\n+/, "").replace(/\s+$/, "")}\n`;
 }
 
 function parseDocument(text: string): { meta: DocumentMeta; body: string } | null {
@@ -251,7 +251,7 @@ function parseDocument(text: string): { meta: DocumentMeta; body: string } | nul
     return null;
   }
   if (!validMeta(value)) return null;
-  return { meta: value, body: normalizeBody(text.slice(end + 5).replace(/^\n+/, "")) };
+  return { meta: value, body: normalizeBody(text.slice(end + 5)) };
 }
 
 function parseStored(text: string): StoredArtifact | null {
@@ -326,10 +326,12 @@ interface RecordIdentity {
   ref: string;
   hash: string;
   key: string;
+  links: readonly string[];
 }
 
 interface RecordDigests {
   published: (text: string) => string | null;
+  links: (text: string) => readonly string[];
   observed: (text: string) => string | null;
 }
 
@@ -366,7 +368,8 @@ function withLock(root: string, write: () => PublishOutcome | KbRefusal): Publis
  * Commit `content` at `path` as one record and read it back. `published`
  * reads the digest a record at that path was published with, which is how an
  * unchanged republish becomes a no-op and a changed one a refusal
- * (runner-contract §5); `observed` recomputes the digest from the committed
+ * (runner-contract §5), and `links` reads the links it was stored with, which
+ * a republish may not change either; `observed` recomputes the digest from the committed
  * bytes, which is what the read-back compares with what was sent.
  */
 function commitRecord(
@@ -385,6 +388,14 @@ function commitRecord(
         return refused(
           "kb.changed-under-reused-record",
           `${identity.ref} is already published with a different digest (${stored ?? "unreadable"}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`,
+        );
+      }
+      const linked = [...new Set(digests.links(existing))].toSorted();
+      const wanted = [...new Set(identity.links)].toSorted();
+      if (linked.join("\n") !== wanted.join("\n")) {
+        return refused(
+          "kb.changed-under-reused-record",
+          `${identity.ref} is already published with other links (${linked.join(", ") || "none"}). A stored record's links are not rewritten; publish the linked artifact as a new record that supersedes this one.`,
         );
       }
       return {
@@ -494,9 +505,10 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
     kb,
     documentPath(kb.binding.project, segments, request.kind, request.id),
     renderDocument(meta, body),
-    { ref, hash, key },
+    { ref, hash, key, links: [] },
     {
       published: (text) => parseDocument(text)?.meta.published_hash ?? null,
+      links: () => [],
       observed: (text) => {
         const parsed = parseDocument(text);
         return parsed === null ? null : documentHash({ ...parsed.meta, body: parsed.body });
@@ -551,9 +563,10 @@ export function publishRunArtifact(
     kb,
     artifactPath(project, run, artifact.schema, artifact.id),
     `${JSON.stringify(stored, null, 2)}\n`,
-    { ref, hash, key },
+    { ref, hash, key, links },
     {
       published: (content) => parseStored(content)?.record.content_hash ?? null,
+      links: (content) => parseStored(content)?.record.links ?? [],
       observed: (content) => {
         const value = parseStored(content);
         return value === null ? null : artifactHash(value.artifact);

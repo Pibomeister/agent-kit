@@ -284,8 +284,8 @@ export function registerKnowledgebase(file: string, id: string, path: string, cw
     ];
   }
   const target = isAbsolute(path) ? path : join(cwd, path);
-  const inProject = workTreeTop(cwd) === null ? null : cwd;
-  const rootIssues = checkRoot(target, inProject);
+  const projectRoot = findKbProjectRoot(cwd);
+  const rootIssues = checkRoot(target, existsSync(join(projectRoot, BINDING_FILE)) ? projectRoot : null);
   if (rootIssues.length > 0) return rootIssues;
   const loaded = readRegistry(file);
   if (loaded.registry === null) return loaded.issues;

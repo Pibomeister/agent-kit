@@ -358,6 +358,13 @@ describe("the knowledgebase is never the application repository", () => {
     expect(existsSync(fx.registry)).toBe(false);
   });
 
+  test("a knowledgebase can be registered from inside its own checkout", () => {
+    const fx = fixture();
+    const run = kb(fx, fx.kb, "register", "fixture-kb", ".");
+    expect(run.code).toBe(0);
+    expect(kb(fx, fx.project, "check").code).toBe(0);
+  });
+
   test("a registration pointing at a work tree of the project is refused on every operation", () => {
     const fx = fixture();
     const copy = taskCopy(fx);
@@ -515,6 +522,18 @@ describe("publishArtifact, kb-document placement", () => {
     expect(second.effect).toBe("none");
     expect(second.ref).toBe(first.ref);
     expect(second.revision).toBe(first.revision);
+    expect(commits(fx.kb)).toBe(1);
+  });
+
+  test("a page file that begins with blank lines reads back as what was published", () => {
+    const fx = registered();
+    const sent = publishPage(fx, fx.project, page(fx, `\n\n${PAGE}`));
+    expect(sent.code).toBe(0);
+    expect(published(sent).effect).toBe("published");
+    const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));
+    expect(read.documents[0]?.body).toBe(PAGE);
+    expect(read.documents[0]?.content_hash).toBe(published(sent).content_hash);
+    expect(published(publishPage(fx, fx.project, page(fx))).effect).toBe("none");
     expect(commits(fx.kb)).toBe(1);
   });
 
@@ -679,6 +698,21 @@ describe("publishArtifact, run-artifact placement", () => {
     });
     expect(refusal(kb(fx, fx.project, ...args, changed)).code).toBe("kb.changed-under-reused-record");
     expect(commits(fx.kb)).toBe(1);
+  });
+
+  test("a republish that changes the links is refused, not reported as stored", () => {
+    const fx = registered();
+    const doc = published(publishPage(fx, fx.project, page(fx)));
+    const args = ["publish", "artifact", "--run", "example-run-1", "--file"];
+    expect(published(kb(fx, fx.project, ...args, decision(fx))).effect).toBe("published");
+    const relinked = kb(fx, fx.project, ...args, decision(fx), "--link", doc.ref);
+    expect(relinked.code).toBe(1);
+    expect(refusal(relinked).code).toBe("kb.changed-under-reused-record");
+    expect(commits(fx.kb)).toBe(2);
+    const stored: unknown = JSON.parse(
+      git(fx.kb, "show", "HEAD:projects/example-project/runs/example-run-1/decision/example-decision-1.json"),
+    );
+    expect(stored).toMatchObject({ record: { links: [] } });
   });
 
   test("every envelope schema can be carried", () => {

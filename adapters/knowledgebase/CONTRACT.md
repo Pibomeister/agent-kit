@@ -406,7 +406,8 @@ machine has not been told where the knowledgebase is.
 | `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests`, `proposeLesson` | `ak kb record-decision` and its four siblings | no: each refuses and writes nothing |
 
 `ak kb check [<project-dir>]` reports the binding, the registration and which of these can run.
-Every command prints one JSON result and exits 0 when the operation completed, 1 when it failed or
+`read`, `publish` and the five refusing commands print one JSON result; `check` and `register` print
+lines for a person. Every command exits 0 when the operation completed, 1 when it failed or
 was refused, 2 on a usage error and 3 when no knowledgebase is configured, so a caller can tell an
 empty knowledgebase (0, an empty list) from an absent one (3).
 
