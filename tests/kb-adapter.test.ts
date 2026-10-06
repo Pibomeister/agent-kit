@@ -676,6 +676,25 @@ describe("readContext", () => {
     expect(refusal(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "docs/adr")).code).toBe("kb.scope-is-a-path");
   });
 
+  test("a scope with nothing at or below it is noted on stderr with the nearest scopes; the result is unchanged", () => {
+    const fx = registered();
+    const before = kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports");
+    expect(before.code).toBe(0);
+    expect(before.err).toBe(
+      "ak kb read: note: no committed page sits at scope 'billing/exports' or below it, so the result holds only the scopes above it: unknown scope 'billing/exports'; there are none to choose from",
+    );
+    expect(publishPage(fx, fx.project, page(fx)).code).toBe(0);
+
+    const typo = kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exprots");
+    expect(typo.code).toBe(0);
+    expect(readResult(typo).coverage.scopes).toEqual(["billing/exprots", "billing", "project"]);
+    expect(typo.err).toBe(
+      "ak kb read: note: no committed page sits at scope 'billing/exprots' or below it, so the result holds only the scopes above it: unknown scope 'billing/exprots'; did you mean billing/exports or billing?",
+    );
+    for (const scope of ["billing/exports", "billing", "project"])
+      expect(kb(fx, fx.project, "read", "--kind", "adr", "--scope", scope).err).toBe("");
+  });
+
   test("a mistyped kind names the kind it was probably meant to be", () => {
     const fx = registered();
     const typo = refusal(kb(fx, fx.project, "read", "--kind", "gotcah", "--scope", "project"));

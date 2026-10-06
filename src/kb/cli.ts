@@ -23,7 +23,9 @@ import {
   type ResolvedKb,
 } from "./binding.ts";
 import {
+  committedScopes,
   KB_KINDS,
+  PROJECT_SCOPE,
   publishDocument,
   publishRunArtifact,
   readContext,
@@ -202,7 +204,16 @@ function read(options: KbOptions, args: KbArgs): number {
   const resolution = resolveFor(options, args);
   if (resolution === null) return usage(options.io, "--dir is not a directory");
   if (resolution.resolved === null) return reportUnresolved(options.io, "kb-read", resolution);
-  return finish(options.io, readContext(resolution.resolved, kinds.split(","), scope));
+  const outcome = readContext(resolution.resolved, kinds.split(","), scope);
+  // The result stays what the contract says (§7); a scope with nothing at or below it is only noted, on stderr.
+  if (outcome.status === "complete" && scope !== PROJECT_SCOPE) {
+    const known = committedScopes(resolution.resolved);
+    if (!known.includes(scope))
+      options.io.err(
+        `ak kb read: note: no committed page sits at scope '${scope}' or below it, so the result holds only the scopes above it: ${unknownSelector("scope", scope, known)}`,
+      );
+  }
+  return finish(options.io, outcome);
 }
 
 function readFile(options: KbOptions, path: string): string | null {

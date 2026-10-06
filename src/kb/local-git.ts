@@ -289,6 +289,30 @@ function renderDocument(meta: DocumentMeta, body: string): string {
  * scope above it, most specific first. A project with no pages returns an
  * empty list, which is a fact and not an error.
  */
+/**
+ * Every scope the project's committed pages sit at, and every scope above one,
+ * sorted. `project` is left out: it always resolves. The read path names these
+ * when a scope it was given holds nothing, so a typo is not mistaken for a
+ * component with no knowledge.
+ */
+export function committedScopes(kb: ResolvedKb): string[] {
+  if (headCommit(kb.root) === null) return [];
+  const base = ["projects", kb.binding.project, "documents"].join("/");
+  const listed = git(kb.root, ["ls-tree", "-r", "-z", "--name-only", "HEAD", `${base}/`]);
+  if (listed.status !== 0) return [];
+  const scopes = new Set<string>();
+  for (const path of listed.stdout.split("\0")) {
+    if (!path.endsWith(".md")) continue;
+    // <base>/<segment>…/<kind>/<id>.md: the segments between base and kind are the scope.
+    const segments = path
+      .slice(base.length + 1)
+      .split("/")
+      .slice(0, -2);
+    for (let depth = 1; depth <= segments.length; depth += 1) scopes.add(segments.slice(0, depth).join("/"));
+  }
+  return [...scopes].toSorted();
+}
+
 export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: string): ReadOutcome | KbRefusal {
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined) return kindProblem(unknown);
