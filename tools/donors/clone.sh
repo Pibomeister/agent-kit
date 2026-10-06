@@ -2,7 +2,7 @@
 # Clones every donor in provenance/upstream.lock.yaml to the path its entry names, and checks out its pin.
 # Full history, never --depth: a shallow clone resolves the tip and fails at the pin (AGENTS.md, "Receipts
 # name their instrument"). Blob-filtered, so history is complete and only the pinned tree is downloaded.
-# A clone that already holds its pin is left alone; one that lacks it is fetched, never deleted.
+# An existing clone is reused and checked out at its pin; one that lacks the pin is fetched, never deleted.
 # CI runs this before `bun test`, so the donor snapshot byte comparison in tests/donor-snapshots.test.ts
 # runs there instead of being skipped.
 # Usage, from the repository root: tools/donors/clone.sh
