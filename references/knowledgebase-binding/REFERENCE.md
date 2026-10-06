@@ -97,8 +97,8 @@ Write the page or artifact to a scratch file outside the repository and pass its
   accepted, and a page body that begins with its own `---` header is refused. Acceptance is a
   human's edit in the knowledgebase.
 - **A refusal is the answer, not an obstacle.** A kind outside the nine, a scope that is a path, an
-  artifact failing its schema, a link that names no record, or changed content under an id already
-  published all refuse. Fix the request, or publish the change under a new id; never edit the
+  artifact failing its schema, a link that names no record, or changed content or changed links under an
+  id already published all refuse. Fix the request, or publish the change under a new id; never edit the
   knowledgebase checkout by hand to get past one.
 - **Exit 1 with `status: failed`** is the knowledgebase not doing what was asked. Stop and report
   it.

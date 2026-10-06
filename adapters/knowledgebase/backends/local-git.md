@@ -127,6 +127,7 @@ record ref and the content hash.
 | does not exist | written, committed, read back: `effect: published` |
 | exists with the same content hash | nothing written: `effect: none`, the existing commit returned |
 | exists with a different content hash | refused; a changed page is published under a new id that supersedes the old one |
+| is a run artifact with the same content hash and a different set of links | refused; a stored record's links are not rewritten |
 
 Two publishes at once are serialized by a lock in the knowledgebase's git directory, so the second
 sees the first's record (contract §5).
@@ -153,7 +154,8 @@ Also absent, and worth knowing before relying on this binding:
 
 ## 7. The knowledgebase is never the application repository
 
-The registered checkout is refused, on registration and again on every operation, when it is the
+The registered checkout is refused on every operation, and at registration too when `ak kb register`
+runs from a bound project, when it is the
 project's own checkout, another work tree of the same repository, or a directory inside or around
 the project's tree (contract §3). Every git call this binding makes drops the caller's `GIT_*`
 environment first, so a hook's `GIT_DIR` cannot point a publish at the repository the run is

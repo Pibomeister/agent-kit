@@ -392,7 +392,8 @@ ak kb register <knowledgebase-id> <path>
 ```
 
 It is the operator's step and starts no phase. It refuses a path that is not the top of a git work
-tree, and one that is the application repository (§3). A binding that names a knowledgebase the
+tree, and, run from a bound project, one that is that project's application repository (§3); every
+operation refuses such a registration wherever it was made. A binding that names a knowledgebase the
 machine has not registered is unconfigured, not failed: the project is bound correctly and this
 machine has not been told where the knowledgebase is.
 

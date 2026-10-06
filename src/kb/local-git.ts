@@ -237,7 +237,7 @@ function committed(root: string, path: string): string | null {
 }
 
 function normalizeBody(body: string): string {
-  return `${body.replace(/^\n+/, "").replace(/\s+$/, "")}\n`;
+  return `${body.replaceAll("\r\n", "\n").replace(/^\n+/, "").replace(/\s+$/, "")}\n`;
 }
 
 function parseDocument(text: string): { meta: DocumentMeta; body: string } | null {
@@ -296,9 +296,9 @@ export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: str
   for (const at of scopes) {
     for (const kind of kinds) {
       const dir = ["projects", project, "documents", ...at, kind].join("/");
-      const listed = git(kb.root, ["ls-tree", "--name-only", "HEAD", `${dir}/`]);
+      const listed = git(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
       if (listed.status !== 0) return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
-      for (const path of listed.stdout.split("\n").filter((name) => name.endsWith(".md"))) {
+      for (const path of listed.stdout.split("\0").filter((name) => name.endsWith(".md"))) {
         const parsed = parseDocument(committed(kb.root, path) ?? "");
         if (parsed === null) {
           outcome.coverage.unreadable.push(path);

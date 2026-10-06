@@ -537,6 +537,19 @@ describe("publishArtifact, kb-document placement", () => {
     expect(commits(fx.kb)).toBe(1);
   });
 
+  test("a CRLF page reads back as published where the knowledgebase normalizes line endings", () => {
+    const fx = registered();
+    git(fx.kb, "config", "core.autocrlf", "input");
+    const sent = publishPage(fx, fx.project, page(fx, PAGE.replaceAll("\n", "\r\n")));
+    expect(sent.code).toBe(0);
+    expect(published(sent).effect).toBe("published");
+    const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));
+    expect(read.documents[0]?.body).toBe(PAGE);
+    expect(read.documents[0]?.content_hash).toBe(published(sent).content_hash);
+    expect(published(publishPage(fx, fx.project, page(fx))).effect).toBe("none");
+    expect(commits(fx.kb)).toBe(1);
+  });
+
   test("changed content under a reused record is refused, not overwritten", () => {
     const fx = registered();
     publishPage(fx, fx.project, page(fx));
@@ -604,6 +617,18 @@ describe("readContext", () => {
     const fx = registered();
     publishPage(fx, fx.project, page(fx));
     const rel = "projects/example-project/documents/billing/exports/adr/hand-written.md";
+    writeFileSync(join(fx.kb, rel), "# no header\n");
+    git(fx.kb, "add", "--", rel);
+    git(fx.kb, "commit", "-q", "-m", "hand-written");
+    const read = readResult(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"));
+    expect(read.documents).toHaveLength(1);
+    expect(read.coverage.unreadable).toEqual([rel]);
+  });
+
+  test("a committed page whose file name is not ASCII is named too", () => {
+    const fx = registered();
+    publishPage(fx, fx.project, page(fx));
+    const rel = "projects/example-project/documents/billing/exports/adr/decisión.md";
     writeFileSync(join(fx.kb, rel), "# no header\n");
     git(fx.kb, "add", "--", rel);
     git(fx.kb, "commit", "-q", "-m", "hand-written");
