@@ -3,24 +3,30 @@
  * unit and claude-mem budget. Foreign hooks are untouched, and the ledgers are
  * kept: they are the user's data, removed only with `--purge`.
  */
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import { readJson } from "../core/store.ts";
 import { LABEL, schedulerKind, unitPaths } from "./schedule.ts";
+import { withHookBlock } from "./toml-hooks.ts";
 import {
   CONTEXT_OBSERVATIONS,
-  claudeSettingsPath,
-  codexHome,
+  droidHome,
+  droidStandalonePaths,
   dropHooks,
-  type HookDoc,
+  type HookFile,
+  hookFile,
   invalidJsonMessage,
+  kimiConfigPath,
   MEM_MODE,
   memDir,
   memPreviousPath,
+  openHookFile,
+  ourHookVerb,
   readJsonObject,
   type SetupDeps,
   writeJsonWithBackup,
+  writeTextWithBackup,
 } from "./wire.ts";
 
 /** Every `<configDir>/projects/*\/agent-kit` ledger root. */
@@ -72,18 +78,58 @@ function restoreMem(ctx: LearnContext, deps: SetupDeps): void {
   ctx.io.out(`${settingsPath}: observation budget and mode restored to their values before wire`);
 }
 
+/** Every JSON file `wire` may have merged hooks into. Droid has three, because the entry goes wherever SessionStart was declared. */
+function hookFiles(ctx: LearnContext, deps: SetupDeps): HookFile[] {
+  return [
+    hookFile(ctx, deps, "claude"),
+    hookFile(ctx, deps, "codex"),
+    hookFile(ctx, deps, "grok"),
+    { path: join(droidHome(ctx, deps), "settings.json"), bare: false },
+    ...droidStandalonePaths(ctx, deps).map((path) => ({ path, bare: true })),
+  ];
+}
+
+/** Whether a line of a file this runtime cannot parse runs a hook of ours; false when the file cannot be read at all. */
+function namesOurHook(path: string): boolean {
+  try {
+    return readFileSync(path, "utf8")
+      .split("\n")
+      .some((line) => ourHookVerb(line) !== null);
+  } catch {
+    return false;
+  }
+}
+
+/** Take the managed block out of Kimi's `config.toml`; the rest of the file is left byte for byte. */
+function unwireKimi(ctx: LearnContext, deps: SetupDeps): void {
+  const path = kimiConfigPath(ctx, deps);
+  if (!existsSync(path)) return;
+  const before = readFileSync(path, "utf8");
+  const after = withHookBlock(before, null);
+  if (after === null) {
+    ctx.io.err(`${path}: the agent-kit hook block is not one marked pair; remove it by hand`);
+    return;
+  }
+  if (after !== before) writeTextWithBackup(path, after);
+  ctx.io.out(`${path}: hook block ${after === before ? "not present" : "removed"}`);
+}
+
 export function uninstall(ctx: LearnContext, deps: SetupDeps, options: { purge?: boolean } = {}): number {
-  for (const path of [claudeSettingsPath(ctx), join(codexHome(ctx, deps), "hooks.json")]) {
-    if (!existsSync(path)) continue;
-    const doc = readJsonObject<HookDoc>(path, {});
-    if (doc === null) {
-      ctx.io.err(invalidJsonMessage(path));
+  for (const file of hookFiles(ctx, deps)) {
+    if (!existsSync(file.path)) continue;
+    const opened = openHookFile(file);
+    if ("refuse" in opened) {
+      if (namesOurHook(file.path)) ctx.io.err(opened.refuse);
+      else ctx.io.out(`${file.path}: cannot be read and names no agent-kit hook; left as it is`);
       continue;
     }
-    const removed = dropHooks(doc);
-    if (removed > 0) writeJsonWithBackup(path, doc);
-    ctx.io.out(`${path}: ${removed} hook entries removed`);
+    const removed = dropHooks(opened.doc);
+    const left = Object.keys(opened.doc.hooks ?? {}).length;
+    if (file.owned === true && left === 0) rmSync(file.path, { force: true });
+    else if (removed > 0) writeJsonWithBackup(file.path, opened.contents());
+    ctx.io.out(`${file.path}: ${removed} hook entries removed`);
   }
+  unwireKimi(ctx, deps);
 
   const kind = schedulerKind(deps);
   const paths = unitPaths(deps, kind);

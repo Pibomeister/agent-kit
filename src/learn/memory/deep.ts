@@ -8,12 +8,12 @@
  * the 90 days run from creation or last merge. Global lessons and lessons
  * tagged decision, security or blocker never go stale.
  */
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
-import { nowMs, todayLocal } from "../core/store.ts";
+import { nowMs, todayLocal, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { sessionsOf } from "./consolidate.ts";
@@ -126,7 +126,7 @@ export function compactReviewLedger(review: Ledger, today = todayLocal()): numbe
       const before = readFileSync(path, "utf8");
       const after = compactEvidence(before, today);
       if (after !== before) {
-        writeFileSync(path, after);
+        writeGated(review.dir, path, after);
         changed += 1;
       }
     }

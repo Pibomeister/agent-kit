@@ -19,14 +19,14 @@
  * draft, never a publication.
  */
 import { createHash } from "node:crypto";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import type { PageMeta } from "../core/pages.ts";
 import { renderPage } from "../core/pages.ts";
 import { buildPrompt } from "../core/roles.ts";
-import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens } from "../core/store.ts";
+import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
 import type { ClaudeMemSource, ObservationRow } from "../sources/claude-mem.ts";
@@ -319,7 +319,7 @@ export function applyConsolidation(
     }
     meta.supersedes = supersedes;
     const path = join(ledger.path("lessons"), `${id}.md`);
-    writeFileSync(path, renderLesson(meta, evidence));
+    writeGated(ledger.dir, path, renderLesson(meta, evidence));
     existing.set(id, { meta, body: "", path });
     summary.created.push(id);
     if (meta.status === "confirmed") summary.confirmed.push(id);
@@ -401,7 +401,7 @@ export function deliverReviewEvents(
 ): { forwarded: number; parked: number } {
   const release = review.tryLock();
   if (release === null) {
-    appendJsonl(memory.path(PENDING_REVIEW_FILE), events);
+    appendJsonl(memory.path(PENDING_REVIEW_FILE), events, memory.dir);
     return { forwarded: 0, parked: events.length };
   }
   try {

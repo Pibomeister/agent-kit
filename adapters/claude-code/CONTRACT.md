@@ -254,6 +254,10 @@ overrides it for one shell but reaches neither the hook commands nor the schedul
 and `schedule` refuse a scope held only there and `setup verify` fails on the mismatch. With no
 scope file and no variable, every repository is in scope.
 
+`wire` reaches every host whose home directory it finds, and the event that carries the
+session-start block differs per host; `research/dossiers/learning.md` §6 records each one with its
+evidence.
+
 The default judge model follows the operator's current host selection. An operator who needs a fixed
 judge model pins the complete command through `AK_LEARN_JUDGE` in their own environment; scheduler
 setup carries that setting into the unit. The default command disables session persistence and runs

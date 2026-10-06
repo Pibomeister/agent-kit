@@ -56,6 +56,11 @@
       "bytes": 9370,
       "tokens": 2341
     },
+    "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
+      "file": "references/verification-evidence/REFERENCE.md",
+      "bytes": 6204,
+      "tokens": 1551
+    },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
       "bytes": 20258,
@@ -63,8 +68,8 @@
     },
     "bundle/claude-code:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 15302,
-      "tokens": 3819
+      "bytes": 15314,
+      "tokens": 3822
     },
     "bundle/claude-code:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -273,23 +278,23 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 13624,
-      "tokens": 3399
+      "bytes": 13968,
+      "tokens": 3485
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 19526,
-      "tokens": 4874
+      "bytes": 20052,
+      "tokens": 5006
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 18712,
-      "tokens": 4673
+      "bytes": 19953,
+      "tokens": 4983
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 23493,
-      "tokens": 5867
+      "bytes": 24205,
+      "tokens": 6045
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -308,8 +313,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20500,
-      "tokens": 5121
+      "bytes": 21931,
+      "tokens": 5479
     },
     "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
@@ -318,8 +323,8 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 15999,
-      "tokens": 3994
+      "bytes": 18377,
+      "tokens": 4589
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
@@ -451,6 +456,11 @@
       "bytes": 9370,
       "tokens": 2341
     },
+    "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
+      "file": "references/verification-evidence/REFERENCE.md",
+      "bytes": 6204,
+      "tokens": 1551
+    },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
       "bytes": 20258,
@@ -458,8 +468,8 @@
     },
     "bundle/codex:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
-      "bytes": 14893,
-      "tokens": 3716
+      "bytes": 14874,
+      "tokens": 3712
     },
     "bundle/codex:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
@@ -468,13 +478,13 @@
     },
     "bundle/codex:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
-      "bytes": 15612,
-      "tokens": 3898
+      "bytes": 15580,
+      "tokens": 3890
     },
     "bundle/codex:skills/bakeoff/SKILL.md": {
       "file": "skills/bakeoff/SKILL.md",
-      "bytes": 10202,
-      "tokens": 2548
+      "bytes": 10220,
+      "tokens": 2552
     },
     "bundle/codex:skills/bakeoff/references/judging.md": {
       "file": "skills/bakeoff/references/judging.md",
@@ -488,18 +498,18 @@
     },
     "bundle/codex:skills/compound-refresh/SKILL.md": {
       "file": "skills/compound-refresh/SKILL.md",
-      "bytes": 8266,
-      "tokens": 2063
+      "bytes": 8284,
+      "tokens": 2067
     },
     "bundle/codex:skills/compound/SKILL.md": {
       "file": "skills/compound/SKILL.md",
-      "bytes": 9119,
-      "tokens": 2279
+      "bytes": 9137,
+      "tokens": 2283
     },
     "bundle/codex:skills/deprecate/SKILL.md": {
       "file": "skills/deprecate/SKILL.md",
-      "bytes": 9867,
-      "tokens": 2463
+      "bytes": 9885,
+      "tokens": 2468
     },
     "bundle/codex:skills/deprecate/assets/deprecation-notice.md": {
       "file": "skills/deprecate/assets/deprecation-notice.md",
@@ -528,13 +538,13 @@
     },
     "bundle/codex:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
-      "bytes": 9489,
-      "tokens": 2370
+      "bytes": 9507,
+      "tokens": 2375
     },
     "bundle/codex:skills/explain/SKILL.md": {
       "file": "skills/explain/SKILL.md",
-      "bytes": 7398,
-      "tokens": 1849
+      "bytes": 7416,
+      "tokens": 1853
     },
     "bundle/codex:skills/handoff/SKILL.md": {
       "file": "skills/handoff/SKILL.md",
@@ -543,8 +553,8 @@
     },
     "bundle/codex:skills/ideate/SKILL.md": {
       "file": "skills/ideate/SKILL.md",
-      "bytes": 9013,
-      "tokens": 2252
+      "bytes": 9031,
+      "tokens": 2257
     },
     "bundle/codex:skills/ideate/references/frameworks.md": {
       "file": "skills/ideate/references/frameworks.md",
@@ -553,8 +563,8 @@
     },
     "bundle/codex:skills/improve-architecture/SKILL.md": {
       "file": "skills/improve-architecture/SKILL.md",
-      "bytes": 8628,
-      "tokens": 2154
+      "bytes": 8646,
+      "tokens": 2159
     },
     "bundle/codex:skills/improve-architecture/references/survey.md": {
       "file": "skills/improve-architecture/references/survey.md",
@@ -563,8 +573,8 @@
     },
     "bundle/codex:skills/pov/SKILL.md": {
       "file": "skills/pov/SKILL.md",
-      "bytes": 9856,
-      "tokens": 2460
+      "bytes": 9874,
+      "tokens": 2465
     },
     "bundle/codex:skills/pov/references/independent-peers.md": {
       "file": "skills/pov/references/independent-peers.md",
@@ -573,8 +583,8 @@
     },
     "bundle/codex:skills/product-pulse/SKILL.md": {
       "file": "skills/product-pulse/SKILL.md",
-      "bytes": 8651,
-      "tokens": 2161
+      "bytes": 8669,
+      "tokens": 2166
     },
     "bundle/codex:skills/product-pulse/assets/report-template.md": {
       "file": "skills/product-pulse/assets/report-template.md",
@@ -608,8 +618,8 @@
     },
     "bundle/codex:skills/receiving-review/SKILL.md": {
       "file": "skills/receiving-review/SKILL.md",
-      "bytes": 14779,
-      "tokens": 3693
+      "bytes": 14747,
+      "tokens": 3685
     },
     "bundle/codex:skills/research/SKILL.md": {
       "file": "skills/research/SKILL.md",
@@ -648,8 +658,8 @@
     },
     "bundle/codex:skills/strategy/SKILL.md": {
       "file": "skills/strategy/SKILL.md",
-      "bytes": 8375,
-      "tokens": 2092
+      "bytes": 8393,
+      "tokens": 2096
     },
     "bundle/codex:skills/strategy/assets/strategy-template.md": {
       "file": "skills/strategy/assets/strategy-template.md",
@@ -668,23 +678,23 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 13724,
-      "tokens": 3424
+      "bytes": 14086,
+      "tokens": 3515
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
-      "bytes": 19626,
-      "tokens": 4899
+      "bytes": 20170,
+      "tokens": 5035
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 18712,
-      "tokens": 4673
+      "bytes": 19953,
+      "tokens": 4983
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 23673,
-      "tokens": 5911
+      "bytes": 24353,
+      "tokens": 6081
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -703,8 +713,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20693,
-      "tokens": 5169
+      "bytes": 22092,
+      "tokens": 5519
     },
     "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
@@ -713,13 +723,13 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 15999,
-      "tokens": 3994
+      "bytes": 18377,
+      "tokens": 4589
     },
     "bundle/codex:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",
-      "bytes": 10197,
-      "tokens": 2543
+      "bytes": 10215,
+      "tokens": 2547
     },
     "bundle/codex:skills/triage/assets/agent-brief.md": {
       "file": "skills/triage/assets/agent-brief.md",
@@ -743,8 +753,8 @@
     },
     "bundle/codex:skills/ultraqa/SKILL.md": {
       "file": "skills/ultraqa/SKILL.md",
-      "bytes": 14297,
-      "tokens": 3570
+      "bytes": 14265,
+      "tokens": 3562
     },
     "bundle/codex:skills/ultraqa/references/adversarial-cases.md": {
       "file": "skills/ultraqa/references/adversarial-cases.md",
@@ -753,13 +763,13 @@
     },
     "bundle/codex:skills/verify/SKILL.md": {
       "file": "skills/verify/SKILL.md",
-      "bytes": 10245,
-      "tokens": 2557
+      "bytes": 10263,
+      "tokens": 2561
     },
     "bundle/codex:skills/visual-edit/SKILL.md": {
       "file": "skills/visual-edit/SKILL.md",
-      "bytes": 10239,
-      "tokens": 2560
+      "bytes": 10257,
+      "tokens": 2565
     },
     "bundle/codex:skills/visual-edit/assets/receipt.example.json": {
       "file": "skills/visual-edit/assets/receipt.example.json",
@@ -778,13 +788,13 @@
     },
     "bundle/codex:skills/wayfind/SKILL.md": {
       "file": "skills/wayfind/SKILL.md",
-      "bytes": 13567,
-      "tokens": 3385
+      "bytes": 13585,
+      "tokens": 3390
     },
     "bundle/codex:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9586,
-      "tokens": 2393
+      "bytes": 9604,
+      "tokens": 2398
     },
     "bundle/codex:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -803,8 +813,8 @@
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",
-      "bytes": 5205,
-      "tokens": 1301
+      "bytes": 5567,
+      "tokens": 1392
     },
     "firstmate:stock-brief": {
       "file": "src/firstmate/stock.ts",
@@ -848,8 +858,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22097,
-      "tokens": 5510
+      "bytes": 22538,
+      "tokens": 5621
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",
@@ -1025,6 +1035,11 @@
       "file": "roles/supervisor/ROLE.md",
       "bytes": 7481,
       "tokens": 1870
+    },
+    "role:verifier": {
+      "file": "roles/verifier/ROLE.md",
+      "bytes": 5456,
+      "tokens": 1364
     }
   }
 }

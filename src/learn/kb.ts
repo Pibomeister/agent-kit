@@ -15,6 +15,7 @@ import { basename, join } from "node:path";
 import { artifactHash } from "../util/hash.ts";
 import type { LearnContext } from "./core/context.ts";
 import { run } from "./core/proc.ts";
+import { scrubJsonText } from "./core/secrets.ts";
 import { nowIso, readJson, writeJson } from "./core/store.ts";
 
 export type TriggerKind = "failure" | "correction" | "surprising-review-result";
@@ -114,6 +115,10 @@ export interface ProposalResult {
  * knowledgebase command when one is configured (`AK_LEARN_KB_COMMAND`, called
  * as `<command> proposeLesson` with the draft on stdin, answering `{"ref": ...}`).
  * A refused or failed proposal leaves the ledger record in place.
+ *
+ * The draft leaves the machine here, so what is sent and what is recorded is
+ * the draft after the secret gate (`core/secrets.ts`); the ledger record is
+ * where the gate records the redaction.
  */
 export function proposeLesson(ctx: LearnContext, ledgerDir: string, draft: Record<string, unknown>): ProposalResult {
   const id = String(draft.id);
@@ -128,7 +133,7 @@ export function proposeLesson(ctx: LearnContext, ledgerDir: string, draft: Recor
   let result: ProposalResult = { ref: `ledger:proposals/${id}.json`, delivered: false };
   if (command !== undefined && command.trim() !== "" && !ctx.config.dryRun) {
     const reply = run(["sh", "-c", `${command} proposeLesson`], {
-      input: JSON.stringify(draft),
+      input: scrubJsonText(JSON.stringify(draft)).text,
       timeoutMs: 60_000,
       env: ctx.env,
     });
@@ -144,6 +149,6 @@ export function proposeLesson(ctx: LearnContext, ledgerDir: string, draft: Recor
       record.kb_error = reply.stderr.trim() || "unparseable reply";
     }
   }
-  if (!ctx.config.dryRun) writeJson(recordPath, record);
+  if (!ctx.config.dryRun) writeJson(recordPath, record, ledgerDir);
   return result;
 }

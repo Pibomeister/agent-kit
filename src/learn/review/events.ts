@@ -78,12 +78,12 @@ export function appendEvents(ledger: Ledger, events: readonly ReviewEvent[]): nu
     seen.add(event.hash);
     fresh.push(event);
   }
-  appendJsonl(ledger.path(EVENTS_FILE), fresh);
+  appendJsonl(ledger.path(EVENTS_FILE), fresh, ledger.dir);
   return fresh.length;
 }
 
-/** The raw file's exact bytes, or null when it does not exist. Rollback uses it to keep the raw layer append-only. */
-export function rawSnapshot(ledger: Ledger): Buffer | null {
-  const path = ledger.path(EVENTS_FILE);
+/** A raw file's exact bytes, or null when it does not exist. Rollback uses it to keep the raw layer append-only. */
+export function rawSnapshot(ledger: Ledger, file: string = EVENTS_FILE): Buffer | null {
+  const path = ledger.path(file);
   return existsSync(path) ? readFileSync(path) : null;
 }
