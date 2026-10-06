@@ -18,14 +18,23 @@ const result = await Bun.build({
     {
       name: "verification-schema",
       setup(build) {
-        build.onLoad({ filter: /[/\\]verification-schema\.ts$/ }, () => ({ contents: standalone, loader: "js" }));
-        build.onLoad({ filter: /[/\\]gate\.ts$/ }, (args) => ({
-          contents: readFileSync(args.path, "utf8").replace(
-            adapterDeclaration,
-            `const BUNDLED_ADAPTER_IDS: readonly string[] = ${adapterIds};`,
-          ),
-          loader: "ts",
+        // Standalone code references the compiler's runtime packages, even when the input tree has no dependencies.
+        build.onResolve({ filter: /^ajv(?:-formats)?\// }, (args) => ({
+          path: Bun.resolveSync(args.path, import.meta.dir),
         }));
+        build.onLoad({ filter: /[/\\]verification-schema\.ts$/ }, () => ({ contents: standalone, loader: "js" }));
+        build.onLoad({ filter: /[/\\]gate\.ts$/ }, (args) => {
+          const contents = readFileSync(args.path, "utf8");
+          if (!contents.includes(adapterDeclaration))
+            throw new Error(`${args.path}: bundled adapter declaration missing`);
+          return {
+            contents: contents.replace(
+              adapterDeclaration,
+              `const BUNDLED_ADAPTER_IDS: readonly string[] = ${adapterIds};`,
+            ),
+            loader: "ts",
+          };
+        });
       },
     },
   ],
