@@ -293,6 +293,7 @@ describe("consolidate apply", () => {
       runId: "nightly-test",
       createdBy: "learn/consolidator",
       trigger: "failure",
+      claude: null,
       workers: WorkerSessionSource.open(ledger),
     });
     expect(result.ref).toBe("ledger:proposals/learn-repo-ls-001.json");

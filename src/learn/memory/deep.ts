@@ -276,20 +276,26 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
   }
   const lessons = loadLessons(ledger);
   const workers = WorkerSessionSource.open(ledger);
+  const claude = ClaudeMemSource.open(ctx.config.memDb);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];
-  for (const id of pairs.confirmed) {
-    const page = lessons.get(id);
-    if (page === undefined) continue;
-    const trig = list(page.meta.tags).includes("preference") ? "correction" : "failure";
-    const proposal = proposeOrSkip(ctx, ledger, root, page, {
-      runId,
-      createdBy: "learn/lesson-merger",
-      trigger: trig,
-      workers,
-    });
-    if ("ref" in proposal) proposals.push(proposal.ref);
-    else skippedProposals.push(proposal.skipped);
+  try {
+    for (const id of pairs.confirmed) {
+      const page = lessons.get(id);
+      if (page === undefined) continue;
+      const trig = list(page.meta.tags).includes("preference") ? "correction" : "failure";
+      const proposal = proposeOrSkip(ctx, ledger, root, page, {
+        runId,
+        createdBy: "learn/lesson-merger",
+        trigger: trig,
+        claude,
+        workers,
+      });
+      if ("ref" in proposal) proposals.push(proposal.ref);
+      else skippedProposals.push(proposal.skipped);
+    }
+  } finally {
+    claude?.close();
   }
   saveState(ledger, { ...readState(ledger), last_weekly: nowMs() });
   const run = {

@@ -929,9 +929,9 @@ export class WorkerSessionSource implements MemoryObservationSource {
     return sessions;
   }
 
-  /** Whether this store holds the row a lesson evidence id (`obs:N` or `S<sid>`) names. */
-  holds(evidence: string): boolean {
-    if (evidence.startsWith("obs:")) return this.observationSessions([Number(evidence.slice(4))]).size > 0;
+  /** Whether a lesson evidence id names a worker row: an `obs:N` in the captured range, held or dropped, or an `S<sid>` of a session held here. */
+  owns(evidence: string): boolean {
+    if (evidence.startsWith("obs:")) return isCapturedObservation({ id: Number(evidence.slice(4)) });
     return this.sessionRows.keys().some((sid) => sid8(sid) === evidence);
   }
 

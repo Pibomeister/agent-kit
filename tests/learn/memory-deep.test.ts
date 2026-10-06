@@ -318,29 +318,35 @@ describe("weekly", () => {
 
   test("a merged draft names the store each evidence id came from", () => {
     const root = gitRepo(join(scratch(), "shop"));
+    const memDb = join(scratch(), "mem.db");
+    const mem = new MemFixture(memDb);
+    mem.session({ sid: "bbbb2222-1", project: "shop", started: 100, completed: 200 });
+    const native = `obs:${mem.observation({ sid: "bbbb2222-1", project: "shop", type: "bugfix", at: 150 })}`;
+    mem.close();
     const ledger = ensureMemoryLedger(join(scratch(), "memory"));
     const workers = WorkerSessionSource.open(ledger);
     workers.capture([workerSession("a", 100)]);
     const row = workers.observationsSince("", 0)[0];
     const captured = `obs:${row?.id}`;
     const sid = (row?.memory_session_id ?? "").slice(0, 8);
+    const second = [native, "Sbbbb2222", "obs:999", "Scccc3333"];
     applyConsolidation(
       ledger,
       {
         lessons: [
           { statement: "fix the code the rule flags", evidence: [captured], confidence: 0.6 },
-          { statement: "fix what the rule flags, not the token", evidence: ["obs:7", "Sbbbb2222"], confidence: 0.6 },
+          { statement: "fix what the rule flags, not the token", evidence: second, confidence: 0.6 },
         ],
       },
-      new Set([captured, "obs:7", "Sbbbb2222"]),
+      new Set([captured, ...second]),
       new Map([
         [captured, sid],
-        ["obs:7", "bbbb2222"],
+        [native, "bbbb2222"],
       ]),
     );
     const ctx = testContext({
       cwd: root,
-      env: { AK_LEARN_MEM_DB: join(scratch(), "missing.db") },
+      env: { AK_LEARN_MEM_DB: memDb },
       replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }],
     });
     deep(ctx, ledger, root, null);
@@ -349,8 +355,10 @@ describe("weekly", () => {
       { draft: {} },
     );
     expect(draft.evidence?.map(({ ref }) => ref).toSorted((x, y) => x.localeCompare(y))).toEqual([
-      "claude-mem:obs:7",
+      `claude-mem:${native}`,
       "claude-mem:Sbbbb2222",
+      "unresolved:obs:999",
+      "unresolved:Scccc3333",
       `worker:${captured}`,
       `worker:S${sid}`,
     ]);
@@ -388,5 +396,15 @@ describe("weekly", () => {
     );
     const kept = loadLessons(ledger).get("ls-001")?.meta;
     expect([kept?.sessions, kept?.status]).toEqual([2, "confirmed"]);
+    const { draft } = readJson<{ draft: { evidence?: Array<{ ref: string }> } }>(
+      ledger.path("proposals", "learn-shop-ls-001.json"),
+      { draft: {} },
+    );
+    expect(draft.evidence?.map(({ ref }) => ref).toSorted((x, y) => x.localeCompare(y))).toEqual([
+      `unresolved:S${"a".repeat(8)}`,
+      `worker:${early}`,
+      `worker:${late}`,
+      `worker:S${"b".repeat(8)}`,
+    ]);
   });
 });

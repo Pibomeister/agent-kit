@@ -29,7 +29,7 @@ import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
-import type { MemoryObservationSource, ObservationRow } from "../sources/claude-mem.ts";
+import { ClaudeMemSource, type MemoryObservationSource, type ObservationRow } from "../sources/claude-mem.ts";
 import { isCapturedObservation, WorkerSessionSource } from "../sources/worker-sessions.ts";
 import {
   consumedObsIds,
@@ -565,20 +565,26 @@ export function consolidate(
   );
   const lessons = loadLessons(ledger);
   const workers = WorkerSessionSource.open(ledger);
+  const claude = ClaudeMemSource.open(ctx.config.memDb);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];
-  for (const id of summary.confirmed) {
-    const page = lessons.get(id);
-    if (page === undefined) continue;
-    const trig = triggerOf(page.meta, obsSession, corrected);
-    const proposal = proposeOrSkip(ctx, ledger, root, page, {
-      runId,
-      createdBy: "learn/consolidator",
-      trigger: trig,
-      workers,
-    });
-    if ("ref" in proposal) proposals.push(proposal.ref);
-    else skippedProposals.push(proposal.skipped);
+  try {
+    for (const id of summary.confirmed) {
+      const page = lessons.get(id);
+      if (page === undefined) continue;
+      const trig = triggerOf(page.meta, obsSession, corrected);
+      const proposal = proposeOrSkip(ctx, ledger, root, page, {
+        runId,
+        createdBy: "learn/consolidator",
+        trigger: trig,
+        claude,
+        workers,
+      });
+      if ("ref" in proposal) proposals.push(proposal.ref);
+      else skippedProposals.push(proposal.skipped);
+    }
+  } finally {
+    claude?.close();
   }
   const state = readState(ledger);
   const { last_nightly_attempt: _attempt, nightly_failures: _failures, ...withoutBackoff } = state;

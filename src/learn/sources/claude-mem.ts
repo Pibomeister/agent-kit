@@ -183,6 +183,18 @@ export class ClaudeMemSource {
     return out;
   }
 
+  /** Whether the database holds the row a lesson evidence id (`obs:N` or `S<sid>`) names. */
+  holds(evidence: string): boolean {
+    if (evidence.startsWith("obs:")) return this.observationSessions([Number(evidence.slice(4))]).size > 0;
+    return (
+      this.db
+        .query<{ found: number }, [string]>(
+          "select 1 as found from sdk_sessions where substr(memory_session_id, 1, 8) = ? limit 1",
+        )
+        .get(evidence.slice(1)) !== null
+    );
+  }
+
   /** Sessions started since `sinceMs` that have completed, or started before `staleBeforeMs` (abandoned). */
   sessions(project: string, sinceMs: number, staleBeforeMs: number): SessionRow[] {
     return this.db

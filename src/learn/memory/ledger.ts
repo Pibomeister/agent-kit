@@ -10,7 +10,7 @@
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
- * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` when the worker files above hold the row, else `claude-mem:<id>` |
+ * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the worker files above hold, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *
  * `memory.md` and the lessons are the revertible wiki layer; `episodes.jsonl`
@@ -39,6 +39,7 @@ import {
   writeJson,
 } from "../core/store.ts";
 import { lessonDraft, proposeLesson, type ProposalResult, type TriggerKind } from "../kb.ts";
+import type { ClaudeMemSource } from "../sources/claude-mem.ts";
 import type { WorkerSessionSource } from "../sources/worker-sessions.ts";
 
 /** The six sections a reflected memory must carry, in order. */
@@ -321,6 +322,7 @@ export function proposeConfirmed(
     runId: string;
     createdBy: "learn/consolidator" | "learn/lesson-merger";
     trigger: TriggerKind;
+    claude: ClaudeMemSource | null;
     workers: WorkerSessionSource;
   },
 ): ProposalResult {
@@ -339,7 +341,7 @@ export function proposeConfirmed(
       trigger: options.trigger,
       occurrence: { id: evidence[0] ?? id, content: { statement, evidence } },
       evidence: evidence.map((ref) => ({
-        ref: `${options.workers.holds(ref) ? "worker" : "claude-mem"}:${ref}`,
+        ref: `${options.workers.owns(ref) ? "worker" : options.claude?.holds(ref) === true ? "claude-mem" : "unresolved"}:${ref}`,
         kind: "transcript" as const,
       })),
       domains,
