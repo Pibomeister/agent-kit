@@ -65,6 +65,9 @@ approves its own specification or tickets.
   shape. Absent: the starting points below are advisory and nothing enforces them.
 - Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are
   never invented.
+- The project's verification recipes and surface declarations (`schemas/project.schema.json`).
+  Absent or empty: record the gap; never assume a browser, running service, trace collector or
+  command the project did not declare.
 - At `bound.run` only: a `charter` (`schemas/charter.schema.json`) listing `spec-approval`, and
   `ticket-approval` where tickets will be emitted. Absent: `needs-input`.
 
@@ -87,6 +90,9 @@ approves its own specification or tickets.
    test seams, verification commands, out of scope. No file paths and no code, except a fragment a
    prototype already settled exactly — a state machine, a reducer, a schema, a type shape. Turn
    each vague criterion into a frontier question that proposes how the answer would be verified.
+   For each criterion, record its surface and required evidence kinds from the project declaration.
+   Load [verification evidence](../../references/shared/references/verification-evidence/REFERENCE.md) for the
+   vocabulary; an undeclared facility becomes a visible gap, never an invented check.
 5. Choose the test seams before the slices. The fewer seams the feature is verified across the
    better, and the ideal number is one; name the seam you chose and why it is the highest one
    available. Use the vocabulary the alignment run already established with

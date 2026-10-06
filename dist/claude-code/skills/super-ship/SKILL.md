@@ -122,11 +122,20 @@ The project's own release checks, discovered rather than assumed.
    not proof. Under a delegated `ship.prepare` grant the check must be evidence-bearing: run on
    records the runner recorded for an opened run. A check on worker-writable records satisfies the
    manual form only, so where the runner recorded none, stop with `needs-input` naming trusted
-   evidence as unavailable. Once every precondition holds, record
+   evidence as unavailable. Load
+   [verification evidence](../../references/shared/references/verification-evidence/REFERENCE.md). Where the build
+   gate records an implementer seat, independent verification is declared available: every counted
+   receipt, `surface: none` included, must name a runner-attested verifier seat distinct from it.
+   Without that record only recipe-bound checks need one, and a `host-unattested` seat counts only in a human-typed ship of a run that never held a grant (else open a fresh run); report the gate's note. Where the ticket marks `frontend` or
+   `backend`, require a check declaring `evidence_required`, every declared kind, and re-hash its
+   artifacts. Refuse before preflight with
+   `refused: criterion <id> requires <surface> evidence <kind>, but no current receipt at
+   <revision>/<diff-hash> carries that evidence kind`, or with the corresponding seat-attestation
+   refusal. Once every precondition holds, record
    `node <this skill's directory>/../../bin/ak-gate.mjs record --gate ship-preflight`.
    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
    branch-named v1 run when none was opened) and records default to the repository's git directory.
-   A binding's brief supplies `--run` and `--dir` when it has them. Recording `ship-preflight` closes
+   A binding's brief supplies `--dir` for the run opened with it. Recording `ship-preflight` closes
    an opened run. A closed run accepts `ship-preflight` again only at the head that closed it, which
    is what lets a `dry-run` be followed by `publish`. Once `ship-preflight` is recorded, a fix that
    moves the head needs a new run: `open` again and re-run every gated phase for it.
@@ -137,7 +146,8 @@ The project's own release checks, discovered rather than assumed.
 6. Stage only the paths this change owns, named one by one. Never stage the whole tree and never
    stage by wildcard.
 7. Compose the commit message and the pull-request payload: what changed, why, the linked ticket,
-   the receipts and the review verdict.
+   the receipts and the review verdict. Link the recipe, acceptance-to-evidence matrix and evidence
+   artifact digests alongside the delegation class, sensitive factors and rollback fields.
 8. Detect whether an open pull request already exists for this branch, deterministically. Only an
    exit-0 empty result means there is none; any other outcome is unknown, and unknown is not none.
 9. In `dry-run`, emit the ship evidence record, holding the payload and the check results, and
@@ -171,6 +181,10 @@ Gate: the autonomous form, `ship.prepare` delegated under a grant, proceeds past
 on trusted evidence: gate evidence the runner recorded into the run's evidence store outside the
 worker's reach. Gate records the worker itself wrote are worker-attested, not trusted evidence, and
 neither a grant nor a host permission makes them so.
+
+Gate: no ship begins with an uncovered criterion, an implementer-authored receipt where independent
+verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant, or a missing project-declared surface evidence kind. The run
+stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
 Gate: `dry-run` makes no remote call. Not a reduced one, not a single harmless one — none. A run that
 pushed a branch to show what the push would look like was not a dry run.

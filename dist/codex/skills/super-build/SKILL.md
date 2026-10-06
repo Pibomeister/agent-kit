@@ -9,7 +9,7 @@ metadata:
     autonomy_unenforceable:
       - "artifact-write is storage only: the host does not compute or check the artifact hash, so envelope hash binding is this package's own work."
       - kb-write is not provided by the host; the knowledgebase adapter supplies it and refuses rather than falling back to a repository path when no knowledgebase is configured, which is why it does not cap this row while that adapter is attached (ruling `fail-closed-adapter-lifts-ceiling`).
-      - independent-context is provided as a fresh subagent context. The host does not attest that two contexts are independent, so seat independence is recorded by this package and checked against the ticket's authorship rather than assumed from the host.
+      - "independent-context is not provided by the host: a fresh subagent context exists, but the host does not attest that two contexts are independent, so seat independence is recorded by this package and checked against the ticket's authorship rather than assumed from the host."
 ---
 
 ## When to use
@@ -98,12 +98,14 @@ absence is recorded (`policies/limits.yaml`).
    retired when the ticket integrates, never retasked.
    On the standalone path, open the task-bound run next, from inside that worktree with the
    ticket's branch checked out and before implementation:
-   `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. The run binds
+   `node <this skill's directory>/../../bin/ak-gate.mjs open --ticket <ticket-file>`. A worker that
+   holds a Firstmate binding opens the run with the command its brief gives, which appends
+   `--binding <binding file> --dir <evidence store>`, so the run records the binding and the gate
+   finds its delegated grants. The run binds
    to the branch checked out where it runs, and later gate commands on that branch resolve the
    pointer it writes. A run never closed by `ship-preflight` stays the branch's default until a
    new `open`, and the gate does not tell an earlier task's unclosed run from this one, so every
-   new task opens a new run, even on a branch that already has one. A Firstmate binding already supplies a unique
-   `--run` and `--dir`; keep that path unchanged and do not open another run.
+   new task opens a new run, even on a branch that already has one.
 4. Dispatch one implementer (`roles/implementer/ROLE.md`) with the ticket as its single source of
    requirements. It spawns no implementers of its own, and no second implementer runs against this
    worktree.
@@ -130,15 +132,24 @@ absence is recorded (`policies/limits.yaml`).
 11. At the round cap, adjudicate every finding still open, one at a time: park it with a written
     ruling naming why the code stands and what it costs if that is wrong, or rule it load-bearing and
     stop. A silent discard is forbidden.
-12. Run the ticket's named verification and collect the receipts, commit the work on the ticket's own
-    branch, then publish the receipts and the ticket result through the knowledgebase adapter's
-    `publishArtifact` operation with a run-artifact placement. Report the ticket with every written
-    ruling and every out-of-scope observation collected into the report.
+12. Load [verification evidence](../../references/shared/references/verification-evidence/REFERENCE.md), run the
+    ticket's named checks as implementer self-checks and record each receipt with
+    `created_by.role: implementer`. They are self-check evidence: once the build gate records the
+    implementer seat (step 13) they never satisfy the verify gate, and without it they count only
+    for checks no recipe binds. Hand the claim, criteria, frozen revision, project
+    recipe and permitted commands to `super-verify`; its verifier seat reruns them and produces
+    gate-eligible receipts. Commit the work on the ticket's own branch, then publish the receipts and
+    ticket result through the knowledgebase adapter's `publishArtifact` operation. Report every
+    written ruling and out-of-scope observation.
 13. When both check seats pass, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate build-checks`
     (the bundle's `bin/`, two directories above this skill). super-ship refuses to ship without it.
+    When a runner assigned the implementer seat, declare it by appending
+    `--class <delegation class> --author-kind <human|agent> --host <host adapter id> --seat-id <implementer seat>`;
+    the seat is recorded on this gate, not on a receipt, and stays declared for commits descended
+    from the recorded one. After an amend or rebase, pass the flags again.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--run` and `--dir` when it has them.
+    A binding's brief supplies `--dir` for the run opened with it.
 
 ## Hard gates
 
@@ -149,6 +160,11 @@ Gate: a finding graded `smell`, or carrying `difficulty: null`, is refused as an
 ticket (`schemas/finding.schema.json`); the shared rule for applying a finding at all is
 `protocols/apply-findings/PROTOCOL.md`. Difficulty without a solution class is not a specification,
 and a re-grading performed by the lane that wants to execute it is the refusal being routed around.
+
+Gate: a receipt created by the implementer, change author, spec approver or recipe author is
+self-check evidence only. It never fills or substitutes for the verifier seat, even when its command
+and output are identical to the later independent run (ruling
+`missing-supervisor-never-implementer`).
 
 Gate: neither check seat emits `autofix_class: safe_auto`. At review time a code edit has no single
 mechanically correct answer, so a seat's classification is a proposal and applying it is the caller's
