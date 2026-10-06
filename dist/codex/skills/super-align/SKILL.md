@@ -62,11 +62,16 @@ comes from the supervisor through `needs-decision`; the worker never approves it
   inferred from repository state is not a request.
 - Recorded project context, read through the knowledgebase adapter's `readContext`: the glossary,
   the `concept` and `system` pages in scope, and any `adr` that already settles part of the
-  question. An empty result is a fact, not an error — say the project has recorded none and
-  continue. An unavailable adapter is a coverage limit: name missing `kb-read`, continue the
-  interview through the six-field restatement, then stop before publication with `needs-input`
-  naming both `kb-read` and `kb-write`. A configured knowledgebase that fails or cannot be reached
-  returns `failed`; stop and report it rather than proceeding from memory.
+  question. Load
+  [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md)
+  first and run its check: it gives the commands and tells an unconfigured knowledgebase from a
+  broken one. An empty result is a fact, not an error — say the project has recorded none and
+  continue. An unavailable adapter is a coverage limit: name missing `kb-read` and the cause the
+  check printed — no committed `ak.kb.yaml`, or a knowledgebase this machine has not registered —
+  never a missing `ak.install.yaml`, which no knowledgebase depends on. Continue the interview
+  through the six-field restatement, then stop before publication with `needs-input` naming both
+  `kb-read` and `kb-write` and that setup step. A configured knowledgebase that fails or cannot be
+  reached returns `failed`; stop and report it rather than proceeding from memory.
 - At `align.run` only: a `charter` (`schemas/charter.schema.json`) listing the `align-answer`
   checkpoint category. Absent, or listing a different category: `needs-input`.
 - Facts about the codebase are this skill's own job to find. A fact the agent could look up is
@@ -113,8 +118,9 @@ comes from the supervisor through `needs-decision`; the worker never approves it
 12. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
     ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish
-    nothing and return `needs-input` naming `kb-read` and `kb-write`; the completed interview is
-    returned in the session so publication can resume without repeating it.
+    nothing and return `needs-input` naming `kb-read`, `kb-write` and the setup step the check
+    printed; the completed interview is returned in the session so publication can resume without
+    repeating it.
 
 ## Hard gates
 

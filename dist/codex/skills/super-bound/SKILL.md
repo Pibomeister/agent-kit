@@ -60,7 +60,9 @@ approves its own specification or tickets.
   approval of this one.
 - Recorded project context, read through the knowledgebase adapter's `readContext`: the `prd` in
   scope, the settled `adr` pages, and the glossary the vocabulary was agreed in. An empty result is
-  a fact; an unreachable knowledgebase returns `failed`.
+  a fact; an unreachable knowledgebase returns `failed`. The commands, and what an unconfigured
+  knowledgebase obliges, are in
+  [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 - The project record's configured guidance (`schemas/project.schema.json`) for change size and test
   shape. Absent: the starting points below are advisory and nothing enforces them.
 - Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are

@@ -137,7 +137,9 @@ structured hits, the coverage limits, the unknowns, the files not to touch, and 
 further inspection only.
 
 The dossier is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`). The scout supplies no path: the
+run-artifact placement (`adapters/knowledgebase/CONTRACT.md`), by the commands in
+[the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
+The scout supplies no path: the
 knowledgebase resolves placement, and a scout that writes a documentation tree into the repository
 it is reading has broken the read-only gate and the central-ownership boundary in one step.
 

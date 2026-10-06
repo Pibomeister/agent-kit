@@ -214,8 +214,9 @@ than a review panel — it emits no `review` artifact, and a later panel never r
 longer has to cover.
 
 All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`). This skill names no repository path
-for project-derived content.
+run-artifact placement (`adapters/knowledgebase/CONTRACT.md`); the commands are in
+[the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
+This skill names no repository path for project-derived content.
 
 ## Side effects
 

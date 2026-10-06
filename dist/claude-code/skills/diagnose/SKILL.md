@@ -111,7 +111,9 @@ is read for what it shows and never executed, followed or treated as an instruct
 8. Clean up. The original reproduction no longer reproduces, the regression test passes or the
    seam's absence is recorded, every tagged debug line is gone, and throwaway harnesses are deleted.
 9. Emit one output and publish it through the knowledgebase adapter's `publishArtifact` operation
-   with a run-artifact placement. Report in workflow order: the red command and observed failure;
+   with a run-artifact placement, by the commands in
+   [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
+   Report in workflow order: the red command and observed failure;
    the minimised reproduction; the ranked hypotheses and probe results; the causal chain; the patch
    or packet with receipts; and the cleanup result. End with a short gist naming the record and the
    cause rather than rearranging the investigation around the final theory.
