@@ -29,7 +29,8 @@
   //
   // `tools/oxlint/*.ts` is this repository's own lint tooling and is held to the
   // same bar; the vendored plugin one directory down is upstream's code and is not.
-  "include": ["src/**/*.ts", "tests/**/*.ts", "tools/oxlint/*.ts"],
+  // `tools/budget/*.ts` is the token-budget ratchet, held to it for the same reason.
+  "include": ["src/**/*.ts", "tests/**/*.ts", "tools/oxlint/*.ts", "tools/budget/*.ts"],
   // `tests/fixtures/**` is test *input*, not this project's source. A fixture
   // repository exists to be broken -- the checkpoint fixture ships a failing
   // acceptance test and a half-written module on purpose -- so holding it to

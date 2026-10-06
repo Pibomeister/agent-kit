@@ -45,6 +45,7 @@ The package computes no prices, selects nothing, and schedules nothing.
 |---|---|---|
 | `runner-grants` | `fails-closed` | `delegated-grant` operations are unavailable and the entrypoint stops for explicit invocation (§2, "With no runner attached") |
 | `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach (§2, "How a runner signals trusted evidence") |
+| `independent-context` | `fails-closed` | A seat whose distinct context and excluded lineage cannot be attested is unavailable and is never backfilled (§3, "Failure behavior") |
 
 This table is read by `ak build` and `ak validate` (`loadAdapterSupplies` in
 `src/packaging/install.ts`). A row is a claim that an operation needing the capability refuses
@@ -156,6 +157,7 @@ must attest for two seats declared independent:
 | Either `supervisor` at a checkpoint | The `implementer` of the artifact under decision | plan §7.3, ruling `missing-supervisor-never-implementer` |
 | The security review seat | The `implementer`, or the seat that approved the spec | `AGENTS.md`, model-routing strip |
 | Any reviewer | The author of the change under review | ruling `missing-supervisor-never-implementer` |
+| A `verifier` | The implementer, change author, spec approver, recipe author for this change, or a seat already used on the same decision | ruling `missing-supervisor-never-implementer` |
 | The second `supervisor` | The first `supervisor` | plan §7.3 |
 
 Independence means independent **of the author**, not amnesiac between cycles: reviewer continuity

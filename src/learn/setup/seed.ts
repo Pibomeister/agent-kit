@@ -5,12 +5,15 @@
  * runs the review ingest as a dry path so the first report shows what the
  * sources can see. No judge is called: the judge is replaced by one that
  * refuses, so a seed that tried to judge would fail loudly rather than spend.
+ *
+ * A root the registry refuses (see `memory/registry.ts`) gets no ledgers: the
+ * seed prints the refusal and exits 1.
  */
 import { resolve } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { ensureMemoryLedger, memoryDir } from "../memory/ledger.ts";
-import { registerRoot } from "../memory/registry.ts";
+import { logRegistryWarnings, registerRoot } from "../memory/registry.ts";
 import { deferredNote, ingest, type IngestOptions } from "../review/ingest.ts";
 import { reviewLedger } from "../review/ledger.ts";
 import { skillsLedger } from "../skills/learn.ts";
@@ -28,7 +31,12 @@ export function seed(ctx: LearnContext, repo: string, options: SeedOptions = {})
     ctx.io.err(`ak learn setup seed: ${start} is not inside a git repository`);
     return 1;
   }
-  registerRoot(ctx.config, root);
+  const registration = registerRoot(ctx.config, root);
+  logRegistryWarnings(ctx.config, registration.warnings);
+  if (registration.refusal !== null) {
+    ctx.io.err(`ak learn setup seed: ${registration.refusal}`);
+    return 1;
+  }
   ctx.io.out(`registered ${root}`);
   const review = reviewLedger(ctx.config, root);
   const memory = ensureMemoryLedger(memoryDir(ctx.config, root));

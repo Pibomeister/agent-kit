@@ -128,6 +128,7 @@ as authoritative. Every row below is a claim about the tree, checkable against i
 | Path | Contents | Committed? |
 |---|---|---|
 | `catalog.yaml` | Single source of truth. Every skill, pack, protocol, role, reference | yes |
+| `catalog.d/*.yaml` | Fragments that add entries to `catalog.yaml` and never override one; the loader merges them (`docs/decisions/0010-catalog-fragments.md`). Upstream carries none: it is a downstream fork's surface for its own entries | yes |
 | `skills/<id>/SKILL.md` | Canonical skill bodies. Agent Skills spec frontmatter only | yes |
 | `packs/`, `protocols/`, `roles/`, `references/` | Attachable constraints, shared phase logic, role prompts, reference packs | yes |
 | `schemas/` | JSON Schemas; `common` holds the shared `$defs` | yes |
@@ -254,6 +255,16 @@ fixtures, donor material, recorded eval evidence and the eval inputs that receip
 `ignorePatterns`). `tools/oxlint/anti-slop/` is vendored upstream code: update it from upstream
 as its `UPSTREAM.md` describes, and never edit it in place.
 
+## Token budget
+
+`tests/token-budget.test.ts` pins the size of every fixed text agent-kit hands an agent, in bytes
+and in chars/4 estimated tokens: this file, every file the bundle ships under `skills/` and
+`references/`, role prompts, the learning hook's session-start block, the judge prompts and the
+Firstmate brief texts. `tools/budget/surfaces.ts` lists them, and new agent-facing text belongs
+there. Any change in size fails `bun test`, naming the file and the delta. `bun run
+budget:baseline` lowers a pin after a shrink. Growth also needs `-- --allow-growth`, and the
+`tools/budget/baseline.json` diff is where review sees it.
+
 ## Receipts name their instrument
 
 A receipt that reports a check without naming what it ran the check *with* is not reproducible.
@@ -292,6 +303,7 @@ donor paths for the tip while failing at the pin, which the validator reports as
 rather than as a broken instrument.
 
 `bunfig.toml` makes `tests/` the canonical test root: `bun test` runs every test there and excludes the `evals/super-build/_fixtures/**/*.test.js` scaffolds (the eval runner exercises them) and the `dist/` copies, so its population does not depend on whether the tree has been built.
+Its `[test] preload`, `tests/preload.ts`, keeps the operator's learn settings and config roots out of the test process; what it cannot reach, and the convention that covers it, is in its header.
 
 The install configuration is part of the instrument too: a skill's packaged mode depends on which
 adapters `ak.install.yaml` attaches and on whether it configures a tracker backend, so the summary

@@ -408,3 +408,32 @@ describe("super-ship's trusted-evidence ceiling", () => {
     });
   }
 });
+
+describe("super-verify's independent verifier ceiling", () => {
+  const table = loadCapabilityTable(REPO);
+  const manifest = loadSkillManifest(REPO, "super-verify");
+  const { catalog } = loadCatalog(REPO);
+  if (catalog === null) throw new Error("repository has no catalog");
+  const install = loadInstallConfig(REPO, catalog);
+  const allAttached: Supply = { ...install.supply, attached: new Set(install.attachable) };
+  const hostAlone: Supply = { ...install.supply, attached: new Set() };
+
+  test("host-only verification is guided and runner-attested verification may be autonomous", () => {
+    expect(manifest.requires).toContain("independent-context");
+    expect(manifest.requires).toContain("trusted-evidence");
+    expect(table.status.get("independent-context")).toBe("not-provided");
+    expect(install.supply.suppliers.get("independent-context")).toEqual(["runner-contract"]);
+
+    expect(ceilingFor(manifest.requires, table, allAttached).mode).toBe("autonomous");
+    const withoutRunner = ceilingFor(manifest.requires, table, hostAlone);
+    expect(withoutRunner.mode).toBe("guided");
+    expect(withoutRunner.detached).toContainEqual({
+      capability: "independent-context",
+      adapters: ["runner-contract"],
+    });
+    expect(withoutRunner.detached).toContainEqual({
+      capability: "trusted-evidence",
+      adapters: ["runner-contract"],
+    });
+  });
+});

@@ -2683,7 +2683,7 @@ that source can report what the schema is missing and cannot certify that it is 
 **Closed at `394c1b2` by sweep-reviewer, and kept here because it was a correct statement about the
 source then available.** The `claude` binary carries its JS bundle in cleartext, and the eval case
 definition is zod source at bytes **199533294--199535400** of
-`/Users/eduardopicazo/.local/share/claude/versions/2.1.278` -- offsets for that file on this
+`~/.local/share/claude/versions/2.1.278` -- offsets for that file on this
 machine, not a portable citation. That is the loader's own definition rather than a description of
 it, so the reconciling arm **can** certify completeness, and the limit above no longer binds.
 Re-derived here rather than taken on report: six grader variants, each `.strict()`; root,

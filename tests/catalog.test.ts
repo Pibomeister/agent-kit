@@ -136,6 +136,162 @@ describe("catalog loading", () => {
   });
 });
 
+/**
+ * `catalog.d/<name>.yaml` adds entries to catalog.yaml without editing it
+ * (docs/decisions/0010-catalog-fragments.md). Every case here is a property a
+ * downstream fork relies on when it takes catalog.yaml from upstream unchanged
+ * and declares its own entries beside it.
+ */
+describe("catalog.d fragments", () => {
+  const PROFILE_FRAGMENT = `schema_version: 1
+profiles:
+  - id: downstream
+    batch: 1
+    status: authored
+    summary: A downstream install set.
+`;
+
+  test("a fragment's entries join their section after catalog.yaml's, and say which file declared them", () => {
+    const { catalog, issues } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/b.yaml":
+          "schema_version: 1\nskills:\n  - id: delta\n    invocation: M\n    status: contract\n    summary: Four.\n",
+        "catalog.d/a.yaml":
+          "schema_version: 1\nskills:\n  - id: gamma\n    invocation: U\n    status: contract\n    summary: Three.\n",
+      }),
+    );
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+    // File-name order, not directory order and not the order the tree was written in.
+    expect(catalog?.bySection("skills").map((e) => e.id)).toEqual(["alpha", "beta", "gamma", "delta"]);
+    expect(catalog?.fragments).toEqual(["catalog.d/a.yaml", "catalog.d/b.yaml"]);
+    expect(catalog?.get("skills", "alpha")?.file).toBe("catalog.yaml");
+    expect(catalog?.get("skills", "gamma")?.file).toBe("catalog.d/a.yaml");
+    expect(catalog?.get("skills", "gamma")?.invocation).toBe("U");
+  });
+
+  test("a fragment redeclaring an id catalog.yaml declares is refused, and catalog.yaml's entry stands", () => {
+    // The override a last-writer-wins merge would allow is the defect: an
+    // upstream entry would change meaning in a fork without a line of
+    // catalog.yaml changing.
+    const { catalog, issues } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/downstream.yaml":
+          "schema_version: 1\nskills:\n  - id: alpha\n    invocation: M\n    status: authored\n    summary: Replaced.\n",
+      }),
+    );
+    const dup = issues.filter((i) => i.rule === "catalog.duplicate-id");
+    expect(dup.length).toBe(1);
+    expect(dup[0]?.severity).toBe("error");
+    expect(dup[0]?.file).toBe("catalog.d/downstream.yaml");
+    expect(dup[0]?.message).toContain("catalog.yaml");
+    expect(catalog?.get("skills", "alpha")?.invocation).toBe("U");
+    expect(catalog?.get("skills", "alpha")?.summary).toBe("One.");
+    expect(catalog?.get("skills", "alpha")?.file).toBe("catalog.yaml");
+  });
+
+  test("two fragments declaring one id are refused against the later file", () => {
+    const { issues } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/a.yaml": PROFILE_FRAGMENT,
+        "catalog.d/b.yaml": PROFILE_FRAGMENT,
+      }),
+    );
+    const dup = issues.filter((i) => i.rule === "catalog.duplicate-id");
+    expect(dup.map((i) => i.file)).toEqual(["catalog.d/b.yaml"]);
+    expect(dup[0]?.message).toContain("catalog.d/a.yaml");
+  });
+
+  test("a duplicate inside one fragment reads as a duplicate, not as a collision between files", () => {
+    const twice = `${PROFILE_FRAGMENT}  - id: downstream\n    batch: 1\n    status: authored\n    summary: Again.\n`;
+    const { issues } = loadCatalog(makeTree({ "catalog.yaml": MINIMAL, "catalog.d/a.yaml": twice }));
+    const dup = issues.filter((i) => i.rule === "catalog.duplicate-id");
+    expect(dup.length).toBe(1);
+    expect(dup[0]?.message).toBe("Section 'profiles' declares id 'downstream' more than once.");
+  });
+
+  test("an id a fragment puts in a second addressable section is reported against the fragment", () => {
+    const { issues } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/a.yaml":
+          "schema_version: 1\nprotocols:\n  - id: alpha\n    status: contract\n    summary: Also a protocol.\n",
+      }),
+    );
+    const hits = issues.filter((i) => i.rule === "catalog.id-in-two-addressable-sections");
+    expect(hits.map((i) => i.file)).toEqual(["catalog.d/a.yaml"]);
+  });
+
+  test("a fragment never supplies package identity", () => {
+    // The schema check reports the block (tests/schemas.test.ts); the loader
+    // must not have read it in the meantime, or every consumer that does not
+    // run the schema check would take a fork's identity from a fragment.
+    const { catalog } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/a.yaml": "schema_version: 1\npackage:\n  id: other\n  default_profile: downstream\n",
+      }),
+    );
+    expect(catalog?.package.id).toBe("ak");
+    expect(catalog?.package.defaultProfile).toBe("core");
+  });
+
+  test("an unreadable fragment is reported against itself and left out, and catalog.yaml's entries still load", () => {
+    const { catalog, issues } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/broken.yaml": "profiles: [unclosed\n",
+        "catalog.d/list.yaml": "- id: downstream\n",
+        "catalog.d/empty.yaml": "",
+      }),
+    );
+    const unparseable = issues.filter((i) => i.rule === "catalog.unparseable");
+    expect(unparseable.map((i) => i.file).toSorted()).toEqual([
+      "catalog.d/broken.yaml",
+      "catalog.d/empty.yaml",
+      "catalog.d/list.yaml",
+    ]);
+    expect(unparseable.every((i) => i.severity === "error")).toBe(true);
+    expect(catalog?.bySection("skills").map((e) => e.id)).toEqual(["alpha", "beta"]);
+    expect(catalog?.fragments).toEqual([]);
+  });
+
+  test("a section that is not a list is reported against the fragment that wrote it", () => {
+    const { issues } = loadCatalog(
+      makeTree({ "catalog.yaml": MINIMAL, "catalog.d/a.yaml": "schema_version: 1\nprofiles:\n  id: downstream\n" }),
+    );
+    const hits = issues.filter((i) => i.rule === "catalog.section-not-a-list");
+    expect(hits.map((i) => i.file)).toEqual(["catalog.d/a.yaml"]);
+  });
+
+  test("only .yaml and .yml files are fragments", () => {
+    const { catalog } = loadCatalog(
+      makeTree({
+        "catalog.yaml": MINIMAL,
+        "catalog.d/README.md": "profiles:\n  - id: prose\n",
+        "catalog.d/a.yml": PROFILE_FRAGMENT,
+      }),
+    );
+    expect(catalog?.fragments).toEqual(["catalog.d/a.yml"]);
+    expect(catalog?.bySection("profiles").map((e) => e.id)).toEqual(["downstream"]);
+  });
+
+  test("each merged fragment is named in the run's own output, and a tree without fragments reports nothing new", () => {
+    const withFragment = loadCatalog(makeTree({ "catalog.yaml": MINIMAL, "catalog.d/a.yaml": PROFILE_FRAGMENT }));
+    const notes = withFragment.issues.filter((i) => i.rule === "catalog.fragment-merged");
+    expect(notes.length).toBe(1);
+    expect(notes[0]?.severity).toBe("note");
+    expect(notes[0]?.file).toBe("catalog.d/a.yaml");
+    expect(notes[0]?.message).toContain("profiles/downstream");
+
+    const without = loadCatalog(makeTree({ "catalog.yaml": MINIMAL }));
+    expect(without.issues).toEqual([]);
+    expect(without.catalog?.fragments).toEqual([]);
+  });
+});
+
 describe("catalog layout", () => {
   test("directory-backed sections are the five with both-direction completeness", () => {
     expect([...DIRECTORY_SECTIONS]).toEqual(["skills", "packs", "protocols", "roles", "references"]);

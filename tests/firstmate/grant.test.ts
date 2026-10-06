@@ -9,9 +9,12 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { ENV_FILE, type LedgerRecord } from "../../src/firstmate/constants.ts";
+import { takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { artifactHash } from "../../src/util/hash.ts";
 import { FIXED_NOW, makeBundle, makeDir, makeHome, makeProject, REPO } from "./fixture.ts";
 
 const sha256 = (bytes: string | Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -65,6 +68,17 @@ function grant(ledger: string, bindingPath: string, operation: string, cwd: stri
   return { code, out, err };
 }
 
+function audit(ledger: string, bindingPath: string, project: string) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runFirstmate(
+    ["status", bindingPath, "--verify", "--project", project],
+    { out: (l) => out.push(l), err: (l) => err.push(l) },
+    ledger,
+  );
+  return { code, out, err };
+}
+
 function refused(r: { code: number; out: string[]; err: string[] }, reason: RegExp) {
   expect(r.code).not.toBe(0);
   expect(r.out).toEqual([]);
@@ -96,6 +110,106 @@ describe("ak firstmate grant", () => {
       });
     }
   });
+
+  test("a host-unattested verifier receipt ships by hand until the run holds a delegated grant", () => {
+    const { worktree, ledger, bindingPath, binding } = bound();
+    const store = binding.evidence.location;
+    const lifecycle = (...argv: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = runCli(["lifecycle", ...argv], {
+        cwd: worktree,
+        io: { out: (l) => out.push(l), err: (l) => err.push(l) },
+      });
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    const recipe = { id: "service-runtime", hash: `sha256:${"1".repeat(64)}` };
+    const ticket = {
+      schema: "ticket",
+      schema_version: 1,
+      id: binding.task_id,
+      acceptance_criteria: [{ id: "AC-1", text: "The service answers health requests.", surface: "backend" }],
+      verification: [
+        {
+          id: "project-check",
+          check: "Exercise the running service.",
+          kind: "command",
+          supports: ["AC-1"],
+          recipe,
+          evidence_required: ["smoke-test"],
+        },
+      ],
+      approvals: [{ role: "human", approved_at: "2026-09-29T00:00:00Z" }],
+    };
+    const ticketPath = join(makeDir(), "ticket.json");
+    writeFileSync(ticketPath, `${JSON.stringify(ticket)}\n`);
+    const run = lifecycle("open", "--ticket", ticketPath, "--binding", bindingPath, "--dir", store).out.match(
+      /^opened run (.+)$/m,
+    )?.[1];
+    if (run === undefined) throw new Error("open did not return a run id");
+    for (const gate of ["build-checks", "review-full", "review-readiness"])
+      expect(lifecycle("record", "--dir", store, "--gate", gate).code).toBe(0);
+    const snapshot = takeSnapshot(worktree);
+    const receiptDir = makeDir();
+    const log = "1 pass, 0 fail\n";
+    writeFileSync(join(receiptDir, "verification-output.log"), log);
+    const receiptPath = join(receiptDir, "verification-1.json");
+    writeFileSync(
+      receiptPath,
+      `${JSON.stringify({
+        schema: "verification",
+        schema_version: 1,
+        id: "verification-1",
+        project: { id: "demo" },
+        run_id: run,
+        created_by: { role: "verifier" },
+        inputs: [],
+        source_revision: snapshot,
+        created_at: "2026-09-29T00:00:00Z",
+        status: "passed",
+        kind: "command",
+        command: { argv: ["bun", "test"] },
+        exit_status: 0,
+        output_digest: sha256(log),
+        artifacts: [{ path: "verification-output.log", digest: sha256(log), kind: "log" }],
+        environment: { id: "test", isolated: true, secrets_policy: "none" },
+        supports: ["AC-1"],
+        check: "project-check",
+        ticket: { id: binding.task_id, schema: "ticket", hash: artifactHash(ticket) },
+        recipe,
+        evidence_kind: "smoke-test",
+        verifier_seat: { id: "verify-1", implementer_seat: "build-1", isolation: "host-unattested", attestation: null },
+      })}\n`,
+    );
+    expect(lifecycle("record", "--dir", store, "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+    const byHand = lifecycle("check", "--dir", store);
+    expect(byHand.err).toContain("note: verifier seat verify-1 on receipt verification-1 is host-unattested");
+    expect(byHand.code).toBe(0);
+    expect(grant(ledger, bindingPath, "ship.prepare", worktree).code).toBe(0);
+    const refusal = `refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation (the run holds grant record ${join(store, binding.run_id, "grants", "ship.prepare.json")})`;
+    const delegated = lifecycle("check", "--dir", store);
+    expect(delegated.code).toBe(1);
+    expect(delegated.err).toContain(refusal);
+
+    const elsewhere = makeDir();
+    expect(lifecycle("open", "--ticket", ticketPath, "--binding", bindingPath, "--dir", elsewhere).code).toBe(0);
+    for (const gate of ["build-checks", "review-full", "review-readiness"])
+      expect(lifecycle("record", "--dir", elsewhere, "--gate", gate).code).toBe(0);
+    expect(lifecycle("record", "--dir", elsewhere, "--gate", "verify", "--receipt", receiptPath).code).toBe(0);
+    const otherStore = lifecycle("check", "--dir", elsewhere);
+    expect(otherStore.code).toBe(1);
+    expect(otherStore.err).toContain(refusal);
+
+    for (const operation of ["review.full", "review.readiness"])
+      expect(grant(ledger, bindingPath, operation, worktree).code).toBe(0);
+    expect(lifecycle("record", "--dir", store, "--gate", "ship-preflight").code).toBe(0);
+    const audited = audit(ledger, bindingPath, worktree);
+    expect(audited.code).toBe(1);
+    expect(audited.err.join("\n")).toContain(
+      `refused: verifier seat verify-1 is host-unattested; autonomous ship requires a runner attestation (the run holds grant record ${join(store, binding.run_id, "grants", "review.full.json")})`,
+    );
+    expect(audited.err.join("\n")).not.toContain("has no current evidence");
+  }, 120_000);
 
   test("grants a binding bind wrote under a data-dir override, outside the home", () => {
     const { worktree, ledger, bindingPath } = bound({

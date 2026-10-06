@@ -1,5 +1,6 @@
 import { join } from "node:path";
 
+import { CATALOG_FRAGMENT_DIR } from "../catalog/load.ts";
 import {
   DENY_TERMS,
   LOCAL_DOC_TARGET_TERMS,
@@ -44,7 +45,15 @@ export const DENYLIST_EXEMPT_PREFIXES: ReadonlyArray<string> = [
   SCANNER_DEFINITION_FILE,
 ];
 
+/**
+ * Top-level directories the denylist walks. A tracked directory missing from
+ * this list is never scanned at all, which is why `catalog.d/` is here although
+ * this repository carries no fragments: a downstream fork's fragment is exactly
+ * the catalog content the denylist exists for, and a tree the scan does not
+ * walk reports clean whatever it holds.
+ */
 const SCAN_DIRS = [
+  CATALOG_FRAGMENT_DIR,
   "evals",
   "skills",
   "packs",
@@ -69,7 +78,7 @@ const AUTHORED_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references
 /** Where an application-local documentation write target is a release-scenario-21 failure. */
 const SKILL_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references"];
 
-const TEXT_FILE = /\.(md|ya?ml|json|ts|txt)$/;
+const TEXT_FILE = /\.(md|ya?ml|json|ts|txt|tmpl)$/;
 
 export function contentScanRoots(): string[] {
   return [...SCAN_DIRS];

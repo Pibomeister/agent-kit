@@ -38,7 +38,7 @@ export function isSkillStyleIssue(issue: Issue): boolean {
 }
 
 /** chars/4 is the usual rough estimate for English prose; good enough for a warning, not for a bill. */
-function estimateTokens(text: string): number {
+export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 

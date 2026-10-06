@@ -1,9 +1,38 @@
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
-import { readTextIfPresent } from "../util/fs.ts";
-import { error, warning, type Issue } from "../validation/types.ts";
+import { listFiles, readTextIfPresent } from "../util/fs.ts";
+import { error, note, warning, type Issue } from "../validation/types.ts";
 import { ALL_SECTIONS, type Section } from "./layout.ts";
+
+/** The catalog's own file. */
+export const CATALOG_FILE = "catalog.yaml";
+
+/**
+ * Where fragments that add entries to catalog.yaml live, one `<name>.yaml` each.
+ *
+ * The precedent is `provenance/adaptations.d/`, which exists so parallel batches
+ * merge without a conflict on one shared file. This directory exists so a
+ * downstream install can declare its own profile or entry and still take
+ * catalog.yaml from upstream unchanged. The two differ in one respect, on
+ * purpose: adaptation rows are rendered into a generated file that NOTICE
+ * points a reader at, while nothing reads the catalog except this loader, so
+ * the merge happens here, in memory, and there is no generated catalog to hold
+ * in sync.
+ *
+ * A fragment only adds. An id that catalog.yaml or an earlier fragment already
+ * declares in the same section is `catalog.duplicate-id`, never an override: a
+ * merge in which the last file wins makes an entry's meaning depend on file
+ * order, the same hazard `provenance.conflicting-adaptation` refuses. Nor does
+ * a fragment carry a `package:` block. Package identity is catalog.yaml's
+ * alone, so the loader never reads one from a fragment, and the schema check
+ * (`schemas/catalog.schema.json#/$defs/fragment`) reports one as a defect.
+ * Fragments merge in file-name order, each after catalog.yaml, so the order of
+ * a section is the same on every run.
+ *
+ * `docs/decisions/0010-catalog-fragments.md` records the decision.
+ */
+export const CATALOG_FRAGMENT_DIR = "catalog.d";
 
 export type EntryStatus = "contract" | "authored";
 export type Invocation = "U" | "M";
@@ -26,6 +55,8 @@ export interface CatalogEntry {
   activation?: string;
   loadedBy: string[];
   raw: Record<string, unknown>;
+  /** The file that declares the entry: catalog.yaml or one of its catalog.d/ fragments. */
+  file: string;
 }
 
 export interface PackageInfo {
@@ -44,8 +75,8 @@ export interface PackageInfo {
    * `adapters/codex/CONTRACT.md` §5.2 actually requires.
    *
    * Absent rather than required by the schema on purpose. Requiring them would
-   * add a second, unrelated error to all fourteen `tests/fixtures/invalid/`
-   * catalogs, each of which exists to demonstrate exactly one defect -- so the
+   * add a second, unrelated error to every `tests/fixtures/invalid/` catalog,
+   * each of which exists to demonstrate exactly one defect -- so the
    * failure belongs at the bundle boundary, where a manifest without them is
    * genuinely wrong, rather than on every catalog in the tree.
    */
@@ -67,7 +98,10 @@ export class Catalog {
   constructor(
     readonly packageInfo: PackageInfo,
     readonly entries: ReadonlyArray<CatalogEntry>,
+    /** catalog.yaml as parsed. A fragment's own document is not part of it. */
     readonly raw: Record<string, unknown>,
+    /** The catalog.d/ fragments merged into `entries`, in merge order. */
+    readonly fragments: ReadonlyArray<string> = [],
   ) {}
 
   get package(): PackageInfo {
@@ -163,67 +197,168 @@ export function loadCatalog(root: string): LoadResult {
   if (typeof pkg["license"] === "string") packageInfo.license = pkg["license"];
   if (typeof pkg["description"] === "string") packageInfo.description = pkg["description"];
 
+  const fragments = readFragments(root, issues);
+  const documents: CatalogDocument[] = [{ file: CATALOG_FILE, doc: rootDoc }, ...fragments];
+
   const entries: CatalogEntry[] = [];
   for (const section of ALL_SECTIONS) {
-    const list = rootDoc[section];
-    if (list === undefined || list === null) continue;
-    if (!Array.isArray(list)) {
-      issues.push(error("catalog.section-not-a-list", "catalog.yaml", `Section '${section}' must be a list.`));
-      continue;
-    }
-    const seen = new Set<string>();
-    for (const item of list) {
-      const raw = asRecord(item);
-      const id = raw["id"];
-      if (typeof id !== "string" || id.length === 0) {
-        issues.push(error("catalog.entry-without-id", "catalog.yaml", `An entry in section '${section}' has no id.`));
+    /** id -> the file that declared it first, across catalog.yaml and every fragment. */
+    const declaredIn = new Map<string, string>();
+    for (const { file, doc: declared } of documents) {
+      const list = declared[section];
+      if (list === undefined || list === null) continue;
+      if (!Array.isArray(list)) {
+        issues.push(error("catalog.section-not-a-list", file, `Section '${section}' must be a list.`));
         continue;
       }
-      if (seen.has(id)) {
-        issues.push(
-          error("catalog.duplicate-id", "catalog.yaml", `Section '${section}' declares id '${id}' more than once.`),
-        );
-        continue;
+      for (const item of list) {
+        const raw = asRecord(item);
+        const id = raw["id"];
+        if (typeof id !== "string" || id.length === 0) {
+          issues.push(error("catalog.entry-without-id", file, `An entry in section '${section}' has no id.`));
+          continue;
+        }
+        const prior = declaredIn.get(id);
+        if (prior !== undefined) {
+          issues.push(
+            error(
+              "catalog.duplicate-id",
+              file,
+              prior === file
+                ? `Section '${section}' declares id '${id}' more than once.`
+                : `Section '${section}' declares id '${id}' here and in ${prior}. A ${CATALOG_FRAGMENT_DIR}/ fragment adds entries and never replaces one, so which declaration stands cannot depend on file order; rename the entry or remove one declaration.`,
+            ),
+          );
+          continue;
+        }
+        declaredIn.set(id, file);
+        entries.push(readEntry(section, id, raw, file, issues));
       }
-      seen.add(id);
-
-      const statusRaw = raw["status"];
-      let status: EntryStatus = "contract";
-      if (statusRaw === "authored") status = "authored";
-      else if (statusRaw !== "contract" && statusRaw !== undefined) {
-        issues.push(
-          warning(
-            "catalog.unknown-status",
-            "catalog.yaml",
-            `Entry '${section}/${id}' has status '${String(statusRaw)}'; expected 'contract' or 'authored'.`,
-          ),
-        );
-      }
-
-      const entry: CatalogEntry = {
-        section,
-        id,
-        status,
-        profiles: asStringList(raw["profiles"]),
-        loadedBy: asStringList(raw["loaded_by"]),
-        raw,
-      };
-      if (raw["invocation"] === "U" || raw["invocation"] === "M") entry.invocation = raw["invocation"];
-      if (raw["provenance_origin"] === "donor" || raw["provenance_origin"] === "conversation") {
-        entry.provenanceOrigin = raw["provenance_origin"];
-      }
-      const entrypoints = readEntrypoints(raw["entrypoints"]);
-      if (entrypoints !== undefined) entry.entrypoints = entrypoints;
-      if (typeof raw["batch"] === "number") entry.batch = raw["batch"];
-      if (typeof raw["summary"] === "string") entry.summary = raw["summary"];
-      if (typeof raw["activation"] === "string") entry.activation = raw["activation"];
-      entries.push(entry);
     }
   }
 
   issues.push(...idsInTwoAddressableSections(entries));
+  issues.push(...fragmentNotes(fragments, entries));
 
-  return { catalog: new Catalog(packageInfo, entries, rootDoc), issues };
+  return {
+    catalog: new Catalog(
+      packageInfo,
+      entries,
+      rootDoc,
+      fragments.map((f) => f.file),
+    ),
+    issues,
+  };
+}
+
+interface CatalogDocument {
+  file: string;
+  /** Parsed the way catalog.yaml is, since a fragment holds the same sections. */
+  doc: Catalog["raw"];
+}
+
+/**
+ * Every `catalog.d/*.yaml` that parses to a mapping, in file-name order.
+ *
+ * A fragment that cannot be read as one is reported here and left out of the
+ * merge, rather than failing the whole catalog the way an unreadable
+ * catalog.yaml does: the entries catalog.yaml declares are still well defined
+ * without it, and every other check can still run against them. The schema
+ * check validates only the fragments this returns, so a broken one is reported
+ * once.
+ */
+function readFragments(root: string, issues: Issue[]): CatalogDocument[] {
+  const out: CatalogDocument[] = [];
+  for (const name of listFiles(join(root, CATALOG_FRAGMENT_DIR))) {
+    if (!/\.ya?ml$/.test(name)) continue;
+    const file = `${CATALOG_FRAGMENT_DIR}/${name}`;
+    const text = readTextIfPresent(join(root, file));
+    if (text === null) continue;
+    let doc: unknown;
+    try {
+      doc = parseYaml(text);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      issues.push(
+        error("catalog.unparseable", file, `${file} is not valid YAML, so none of its entries were merged: ${reason}`),
+      );
+      continue;
+    }
+    // asRecord hands a mapping back as itself and anything else as a fresh {}.
+    const mapping = asRecord(doc);
+    if (mapping !== doc) {
+      issues.push(error("catalog.unparseable", file, `${file} is not a mapping, so none of its entries were merged.`));
+      continue;
+    }
+    out.push({ file, doc: mapping });
+  }
+  return out;
+}
+
+function readEntry(
+  section: Section,
+  id: string,
+  raw: CatalogEntry["raw"],
+  file: string,
+  issues: Issue[],
+): CatalogEntry {
+  const statusRaw = raw["status"];
+  let status: EntryStatus = "contract";
+  if (statusRaw === "authored") status = "authored";
+  else if (statusRaw !== "contract" && statusRaw !== undefined) {
+    issues.push(
+      warning(
+        "catalog.unknown-status",
+        file,
+        `Entry '${section}/${id}' has status '${String(statusRaw)}'; expected 'contract' or 'authored'.`,
+      ),
+    );
+  }
+
+  const entry: CatalogEntry = {
+    section,
+    id,
+    status,
+    profiles: asStringList(raw["profiles"]),
+    loadedBy: asStringList(raw["loaded_by"]),
+    raw,
+    file,
+  };
+  if (raw["invocation"] === "U" || raw["invocation"] === "M") entry.invocation = raw["invocation"];
+  if (raw["provenance_origin"] === "donor" || raw["provenance_origin"] === "conversation") {
+    entry.provenanceOrigin = raw["provenance_origin"];
+  }
+  const entrypoints = readEntrypoints(raw["entrypoints"]);
+  if (entrypoints !== undefined) entry.entrypoints = entrypoints;
+  if (typeof raw["batch"] === "number") entry.batch = raw["batch"];
+  if (typeof raw["summary"] === "string") entry.summary = raw["summary"];
+  if (typeof raw["activation"] === "string") entry.activation = raw["activation"];
+  return entry;
+}
+
+/**
+ * One note per merged fragment, naming what it adds.
+ *
+ * A tree with fragments is a different catalog from the catalog.yaml it
+ * carries, and a figure quoted from it is a figure about both. The note is what
+ * puts that in the run's own output, the way the summary line's `install:`
+ * clause does for the install configuration. With no fragments there is no
+ * note, so a tree without them reports exactly what it reported before this
+ * directory existed.
+ */
+function fragmentNotes(fragments: ReadonlyArray<CatalogDocument>, entries: ReadonlyArray<CatalogEntry>): Issue[] {
+  return fragments.map(({ file }) => {
+    const added = entries.flatMap((e) => (e.file === file ? [`${e.section}/${e.id}`] : []));
+    const what =
+      added.length === 0
+        ? "adds no entries"
+        : `adds ${added.length} ${added.length === 1 ? "entry" : "entries"}: ${added.join(", ")}`;
+    return note(
+      "catalog.fragment-merged",
+      file,
+      `${file} ${what}. The catalog checked and packaged here is catalog.yaml plus this fragment.`,
+    );
+  });
 }
 
 /**
@@ -249,21 +384,27 @@ export function loadCatalog(root: string): LoadResult {
 const ADDRESSABLE_SECTIONS = ["skills", "protocols", "roles"] as const;
 
 function idsInTwoAddressableSections(entries: ReadonlyArray<CatalogEntry>): Issue[] {
-  const sectionsById = new Map<string, string[]>();
+  /** id -> one entry per addressable section that declares it, in catalog order. */
+  const declaredById = new Map<string, CatalogEntry[]>();
   for (const entry of entries) {
     if (!(ADDRESSABLE_SECTIONS as ReadonlyArray<string>).includes(entry.section)) continue;
-    const seen = sectionsById.get(entry.id);
-    if (seen === undefined) sectionsById.set(entry.id, [entry.section]);
-    else if (!seen.includes(entry.section)) seen.push(entry.section);
+    const seen = declaredById.get(entry.id);
+    if (seen === undefined) declaredById.set(entry.id, [entry]);
+    else if (!seen.some((e) => e.section === entry.section)) seen.push(entry);
   }
 
   const issues: Issue[] = [];
-  for (const [id, sections] of sectionsById) {
-    if (sections.length < 2) continue;
+  for (const [id, declared] of declaredById) {
+    if (declared.length < 2) continue;
+    const sections = declared.map((e) => e.section);
+    // Reported against catalog.yaml when every declaration is there, and against
+    // the first fragment among them otherwise: catalog.yaml alone never makes
+    // the collision a fragment brings, whichever section sorts first.
+    const file = declared.find((e) => e.file !== CATALOG_FILE)?.file ?? CATALOG_FILE;
     issues.push(
       error(
         "catalog.id-in-two-addressable-sections",
-        "catalog.yaml",
+        file,
         `Id '${id}' is declared in ${sections.join(" and ")}. A body citing '${id}' by name must reach exactly one artifact, and its invocation class must have one answer; declared twice it has neither. AGENTS.md's reclassification table holds only while no id is in two of these sections.`,
       ),
     );

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Replay the recurrence metric on a scratch ledger: PRs 1873+1874 first, then 1882+1885. Sarath raised the same
+"""Replay the recurrence metric on a scratch ledger: PRs 1873+1874 first, then 1882+1885. One reviewer raised the same
 classes across these, so the second run's repeat rate must be > 0. GitHub-only (no claude-mem) for isolation.
-    cd compliance_frontend && python3 ~/.claude/skills/review-learn/evals/recurrence_replay.py"""
+    cd sample_frontend && python3 ~/.claude/skills/review-learn/evals/recurrence_replay.py"""
 import os
 import subprocess
 import sys

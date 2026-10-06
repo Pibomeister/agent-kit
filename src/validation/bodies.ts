@@ -164,7 +164,7 @@ export interface GovernedNeverRow {
 }
 
 /**
- * The two rows mandatory in all twenty-nine seats.
+ * The two rows mandatory in every seat.
  *
  * These were previously welded to the two conditional rows below, and each weld
  * carried a seat-specific half the cited ruling does not state. Writers
@@ -192,7 +192,7 @@ export const MANDATORY_NEVER_RULINGS: ReadonlyArray<string> = UNIVERSAL_NEVER_RO
   .filter((ruling): ruling is string => ruling !== null)
   .toArray();
 
-/** What twenty-seven seats say: they judge, and judging is all they do. */
+/** What non-producing seats say: they judge, and judging is all they do. */
 export const AUTHORSHIP_PLAIN_ROW: GovernedNeverRow = {
   ruling: null,
   clauses: ["never edits", "judges and returns"],
@@ -200,7 +200,7 @@ export const AUTHORSHIP_PLAIN_ROW: GovernedNeverRow = {
 };
 
 /**
- * What the two producing seats say instead: they name what they write, and then
+ * What the producing seats say instead: they name what they write, and then
  * rule out the outputs that would let them mark their own work.
  */
 export const AUTHORSHIP_CONVERSE_ROW: GovernedNeverRow = {
@@ -217,7 +217,7 @@ export const AUTHORSHIP_CONVERSE_ROW: GovernedNeverRow = {
  * purpose: a check that learned which seats produce by reading the seats and
  * then verified the seats against what it learned could never fail.
  */
-export const PRODUCING_SEATS: ReadonlyArray<string> = ["implementer", "plan-review/planner"];
+export const PRODUCING_SEATS: ReadonlyArray<string> = ["implementer", "plan-review/planner", "verifier"];
 
 /**
  * Standards grounding, carried by the two seats that judge against a project
@@ -911,7 +911,7 @@ function checkNeverRows(
       error(
         "role.missing-universal-never-row",
         file,
-        `${id} does not carry the universal ## Never row citing ruling \`${String(governed.ruling)}\`: ${governed.description} §12.2 mandates both in all twenty-nine seats, and the row must carry the citation and the clause together.`,
+        `${id} does not carry the universal ## Never row citing ruling \`${String(governed.ruling)}\`: ${governed.description} §12.2 mandates both in every seat, and the row must carry the citation and the clause together.`,
         line,
       ),
     );
@@ -937,7 +937,7 @@ function checkNeverRows(
       error(
         "role.authorship-row-mismatch",
         file,
-        `${id} carries ${excluded.description}, which belongs to ${produces ? "the twenty-seven seats that only judge" : `${producingSeats} alone`}. ${produces ? `${id} writes an artifact; a seat that produces must not also claim it never edits.` : `${id} produces nothing, so the plain form is the one it carries.`}`,
+        `${id} carries ${excluded.description}, which belongs to ${produces ? "the seats that only judge" : `${producingSeats} alone`}. ${produces ? `${id} writes an artifact; a seat that produces must not also claim it never edits.` : `${id} produces nothing, so the plain form is the one it carries.`}`,
         line,
       ),
     );

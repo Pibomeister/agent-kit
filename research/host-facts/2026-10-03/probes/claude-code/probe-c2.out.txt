@@ -1,0 +1,9 @@
+# Probe C2 output, claude 2.1.288, session window 2026-10-03T02:34:25Z to 2026-10-03T02:34:44Z
+# One claude -p process; each message sent only after the previous result event.
+== results per message
+{'subtype': 'success', 'is_error': False, 'num_turns': 2, 'result': 'DONE'}
+{'subtype': 'success', 'is_error': False, 'num_turns': 0, 'result': ''}
+{'subtype': 'success', 'is_error': False, 'num_turns': 1, 'result': 'ROOT-TOKEN-omega4'}
+== InstructionsLoaded log
+{"t":1790994866.166132,"load_reason":"session_start","memory_type":"Project","file_path":"<probe>/C2/proj/CLAUDE.md"}
+{"t":1790994880.481196,"load_reason":"compact","memory_type":"Project","file_path":"<probe>/C2/proj/CLAUDE.md"}

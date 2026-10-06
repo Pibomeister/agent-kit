@@ -57,9 +57,11 @@ export class Ledger {
    * null when there was nothing to commit. Lock files are excluded here as well as
    * in `.gitignore`, because ledgers seeded before `.lock*` was ignored still list
    * only `.lock`, and a competing process's transient lock file must never be staged.
+   * The review pipeline log's rotated generation is excluded for the same reason:
+   * ledgers seeded before it existed do not ignore it.
    */
   commit(message: string): string | null {
-    this.git(["add", "-A", "--", ".", ":(exclude).lock*"]);
+    this.git(["add", "-A", "--", ".", ":(exclude).lock*", ":(exclude)raw/.pipeline.1.log"]);
     const result = this.git(["commit", "-q", "--no-gpg-sign", "-m", message]);
     if (result.code !== 0) return null;
     return this.head();

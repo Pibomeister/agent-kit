@@ -33,7 +33,7 @@ Rules
 - One event may match several patterns; give a list.
 - `fix` must be ONE imperative sentence usable as a guardrail bullet ("Before X, do Y.").
 - `team_target` is a tracked repo file path when the pattern is a repo-wide rule that belongs in a team file
-  (e.g. ".claude/skills/regulis-review/references/quality-traps.md" or "packages/api/CLAUDE.md"), else null.
+  (e.g. ".claude/skills/team-review/references/quality-traps.md" or "packages/api/CLAUDE.md"), else null.
 - Keep updates minimal: only append evidence or sharpen text when the new events add information.
 - Return ONLY a JSON object with this exact shape, no prose:
 

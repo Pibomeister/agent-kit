@@ -6,20 +6,52 @@
  * contract the parser enforces is appended here, next to the code that parses it.
  */
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import consolidator from "../../../roles/learn/consolidator/ROLE.md" with { type: "text" };
+import lessonMerger from "../../../roles/learn/lesson-merger/ROLE.md" with { type: "text" };
+import patternMaintainer from "../../../roles/learn/pattern-maintainer/ROLE.md" with { type: "text" };
+import reflector from "../../../roles/learn/reflector/ROLE.md" with { type: "text" };
+import skillScout from "../../../roles/learn/skill-scout/ROLE.md" with { type: "text" };
 
 export type LearnRole = "pattern-maintainer" | "reflector" | "consolidator" | "lesson-merger" | "skill-scout";
 
-/** The package root: `src/learn/core` is three levels down. */
-export const PACKAGE_ROOT = resolve(import.meta.dir, "..", "..", "..");
-
-export function rolesDir(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env.AK_LEARN_ROLES_DIR;
-  return override !== undefined && override.trim() !== "" ? override : join(PACKAGE_ROOT, "roles", "learn");
+/**
+ * Whether code in `dir` runs from the published bundle, where every module is inlined into `bin/ak`,
+ * rather than from a checkout, where this file is `src/learn/core/roles.ts`.
+ */
+function bundled(dir: string): boolean {
+  return basename(dir) === "bin";
 }
 
+/**
+ * The package root for code in `dir`: one level above the bundle's `bin/`, or three above
+ * `src/learn/core`. A bundle built inside a checkout must not read that checkout's catalog.
+ */
+export function packageRoot(dir: string): string {
+  return resolve(dir, ...(bundled(dir) ? [".."] : ["..", "..", ".."]));
+}
+
+const BUNDLED = bundled(import.meta.dir);
+
+export const PACKAGE_ROOT = packageRoot(import.meta.dir);
+
+/** The `ak` entry this process runs, which hooks, the scheduler unit and detached runs start again. */
+export const AK_ENTRY = BUNDLED ? import.meta.path : join(PACKAGE_ROOT, "src", "cli.ts");
+
+/** The catalog's role prompts, embedded so the single-file bundle carries them. */
+const ROLES: Record<LearnRole, string> = {
+  "pattern-maintainer": patternMaintainer,
+  reflector,
+  consolidator,
+  "lesson-merger": lessonMerger,
+  "skill-scout": skillScout,
+};
+
+/** A role prompt: from `AK_LEARN_ROLES_DIR` when it is set, otherwise the embedded catalog text. */
 export function loadRole(role: LearnRole, env: NodeJS.ProcessEnv = process.env): string {
-  return readFileSync(join(rolesDir(env), role, "ROLE.md"), "utf8").trim();
+  const override = env.AK_LEARN_ROLES_DIR;
+  if (override === undefined || override.trim() === "") return ROLES[role].trim();
+  return readFileSync(join(override, role, "ROLE.md"), "utf8").trim();
 }
 
 export interface PromptSection {

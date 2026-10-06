@@ -2,10 +2,13 @@
 
 **Status:** Accepted.
 **Date:** 2026-09-19.
+**Revised:** 2026-10-05. The prior-art citations now say what was read, not where it lives. The
+decision is unchanged.
 **Authority:** `research/sources/engineering-skills-repo-plan.md` §1.2, §8; release scenarios 21, 22, 24.
-**Prior art read:** `Casco-worktrees/knowledge-base/packages/knowledge-base` (`kb.config.yaml`,
-`templates/`, `schemas/index.schema.json`, `src/commands/`, `AGENTS.md`);
-`software-factory/docs/decisions/ADR-018` and `ADR-021`.
+**Prior art read:** a prior `kb` CLI implementation (its `kb.config.yaml`, `templates/`,
+`schemas/index.schema.json`, `src/commands/` and `AGENTS.md`), and a prior project's decision
+records on authority separation and on verification independence. Neither is part of this
+repository.
 
 ## Context
 
@@ -20,13 +23,12 @@ Three sources describe where durable project knowledge lives, and they do not ag
    sketch names `decisions, requirements, plans, tickets, reviews, solutions, runs` plus `CONTEXT.md`
    and `standards/`, and states that "the exact directory names are configurable; the central
    ownership is not."
-3. **A real, tested `kb` CLI** exists at
-   `Casco-worktrees/knowledge-base/packages/knowledge-base` and **postdates both documents**. It has
-   nine document kinds — `adr`, `concept`, `foundation`, `gotcha`, `pattern`, `prd`, `process`,
-   `sop`, `system` — a scope/component model resolved most-specific-match-first, multi-repo
-   enrollment already anticipated (`repos: { host: true }` plus `kb.config.local.yaml`), an
-   approvers list, and the rule that an ADR is created `proposed` and is **"accepted in review, never
-   by its author."**
+3. **A real, tested `kb` CLI**, the prior implementation named above, **postdates both
+   documents**. It has nine document kinds — `adr`, `concept`, `foundation`, `gotcha`, `pattern`,
+   `prd`, `process`, `sop`, `system` — a scope/component model resolved most-specific-match-first,
+   multi-repo enrollment already anticipated (`repos: { host: true }` plus `kb.config.local.yaml`),
+   an approvers list, and the rule that an ADR is created `proposed` and is **"accepted in review,
+   never by its author."**
 
 Precedence is arch doc over design brief. The `kb` CLI is not a fourth opinion: it is a working
 implementation of the arch doc's central-ownership requirement, and it is the thing an adapter would
@@ -73,9 +75,10 @@ prose. The arch doc's `requirements/ plans/ tickets/ reviews/ runs/` directories
 land; `decisions/` and `solutions/` are where class-one pages land.
 
 The distinction is load-bearing: a `gotcha` says *why* something is true and is reviewed by a human;
-a verification receipt says *what happened at a revision* and is proof, not prose. ADR-021's
-separation of an agent's outcome claim from an independent verification result is the same boundary,
-and this repo adopts its conclusion: **caller-provided pass flags are not proof by themselves.**
+a verification receipt says *what happened at a revision* and is proof, not prose. The prior
+project's verification-independence record separates an agent's outcome claim from an independent
+verification result. That is the same boundary, and this repo adopts its conclusion:
+**caller-provided pass flags are not proof by themselves.**
 
 ### 3. Per-skill emission table.
 
@@ -128,8 +131,9 @@ ADRs: absence of a decision is a recordable outcome, not a gap to fill with pros
 Source PRs link to their KB PRs. A source merge **activates** the existing KB merge coordinator,
 which still honors checks, protection rules, source dependencies and retry/idempotency rules. **A
 blocked KB merge stays visible and retryable and is never reported as complete** (release scenario
-22). ADR-018's authority table is the model: the KB owns git-backed decisions and reviewed history;
-the runner owns command authorization and receipts; neither claims the other's surface.
+22). The authority table in the prior project's authority-separation record is the model: the KB
+owns git-backed decisions and reviewed history; the runner owns command authorization and receipts;
+neither claims the other's surface.
 
 ### 7. Scope, not path, is how a document is placed.
 

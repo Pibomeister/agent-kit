@@ -24,6 +24,7 @@ import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowMs, readText, todayLocal, tokens } from "../core/store.ts";
+import { runOf } from "../core/trace.ts";
 import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
 import { unconsolidatedEpisodes } from "./episodes.ts";
 import {
@@ -261,7 +262,7 @@ function screenReply(
 
 /** The reflector's reply, or null when it carries no memory text. */
 function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectReply | null {
-  const reply = ctx.judge(prompt, { runId: null, loop: "memory", role: "reflector", project: memProject });
+  const reply = ctx.judge(prompt, { ...runOf(ctx), loop: "memory", role: "reflector", project: memProject });
   const memory = reply?.memory;
   if (typeof memory !== "string" || memory.trim() === "") return null;
   return { memory, security_notes: reply?.security_notes };

@@ -30,6 +30,7 @@ import { patchBody, renderPage } from "../core/pages.ts";
 import { type Candidate, type Comparable, contentKey, similarLine, similarTo } from "../core/similar.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens } from "../core/store.ts";
+import { runOf } from "../core/trace.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
 import type { ClaudeMemSource, ObservationRow } from "../sources/claude-mem.ts";
 import {
@@ -597,9 +598,11 @@ export function consolidate(
     ctx.io.out(prompt);
     return `nightly: dry run (${included.length}/${chosen.length} episodes fit, ${pairs.length} pairs, ${tokens(prompt)} prompt tokens)`;
   }
-  const runId = `nightly-${todayLocal()}-${nowMs() % 100_000}`;
+  // Inside a tick the run is the job's span; called on its own it keeps the dated id rollback also reads.
+  const runId = runOf(ctx).runId ?? `nightly-${todayLocal()}-${nowMs() % 100_000}`;
   const reply = ctx.judge(prompt, {
     runId,
+    traceId: runOf(ctx).traceId,
     loop: "memory",
     role: "consolidator",
     project: basename(root),

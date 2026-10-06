@@ -7,6 +7,7 @@ import {
   commandJudge,
   declaredUnavailable,
   extractJson,
+  judgeRows,
   judgeTraceSummary,
   type JudgeTraceRow,
 } from "../../src/learn/core/judge.ts";
@@ -91,7 +92,11 @@ describe("declared unavailable", () => {
     const calls = join(dir, "calls");
     const script = join(dir, "judge.sh");
     writeFileSync(script, `echo x >> '${calls}'\necho '{"unavailable": "observation ids missing"}'\n`);
-    const judge = commandJudge({ ...loadConfig({}), judgeCommand: ["sh", script], judgeTimeoutMs: 10_000 });
+    const judge = commandJudge({
+      ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+      judgeCommand: ["sh", script],
+      judgeTimeoutMs: 10_000,
+    });
     expect(judge("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId: null })).toBeNull();
     expect(readFileSync(calls, "utf8")).toBe("x\n");
     expect(declaredUnavailable({ unavailable: "why" })).toBe("why");
@@ -607,5 +612,102 @@ describe("claude-mem source", () => {
     expect(jsonList(mem.sessionObservations("s-1")[0]!.files_modified)).toEqual(["a.ts"]);
     expect(() => mem["db"].exec("delete from observations")).toThrow();
     mem.close();
+  });
+});
+
+describe("judge trace carrier", () => {
+  test("the judge sees its own child carrier, never the inherited one, and its row links to the run", () => {
+    const dir = projectScratch();
+    const saved = {
+      traceparent: process.env.TRACEPARENT,
+      tracestate: process.env.TRACESTATE,
+      baggage: process.env.BAGGAGE,
+    };
+    process.env.TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    process.env.TRACESTATE = "vendor=crewmate";
+    process.env.BAGGAGE = "task=crewmate";
+    try {
+      const seen = join(dir, "seen");
+      const script = join(dir, "judge.sh");
+      writeFileSync(
+        script,
+        `printf '%s|%s|%s' "$TRACEPARENT" "\${TRACESTATE-unset}" "\${BAGGAGE-unset}" > '${seen}'\necho '{"ok": true}'\n`,
+      );
+      const config = {
+        ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }),
+        judgeCommand: ["sh", script],
+        judgeTimeoutMs: 10_000,
+      };
+      const runId = "1111222233334444";
+      const traceId = "aaaabbbbccccddddeeeeffff00001111";
+      expect(
+        commandJudge(config)("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId, traceId }),
+      ).toEqual({ ok: true });
+      const [row] = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
+      if (row === undefined) throw new Error("expected a judge trace row");
+      expect(row).toMatchObject({ run_id: runId, trace_id: traceId, parent_span_id: runId });
+      expect(row.span_id).toMatch(/^[0-9a-f]{16}$/);
+      expect(row.span_id).not.toBe(runId);
+      expect(readFileSync(seen, "utf8")).toBe(`00-${traceId}-${row.span_id}-01|unset|unset`);
+    } finally {
+      if (saved.traceparent === undefined) delete process.env.TRACEPARENT;
+      else process.env.TRACEPARENT = saved.traceparent;
+      if (saved.tracestate === undefined) delete process.env.TRACESTATE;
+      else process.env.TRACESTATE = saved.tracestate;
+      if (saved.baggage === undefined) delete process.env.BAGGAGE;
+      else process.env.BAGGAGE = saved.baggage;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a call outside any run gets a fresh root carrier and records no run", () => {
+    const dir = projectScratch();
+    const saved = process.env.TRACEPARENT;
+    process.env.TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    try {
+      const seen = join(dir, "seen");
+      const script = join(dir, "judge.sh");
+      writeFileSync(script, `printf '%s' "$TRACEPARENT" > '${seen}'\necho '{"ok": true}'\n`);
+      const config = { ...loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") }), judgeCommand: ["sh", script] };
+      commandJudge(config)("prompt", { loop: "review", role: "pattern-maintainer", project: "shop", runId: null });
+      const [row] = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
+      if (row === undefined) throw new Error("expected a judge trace row");
+      expect(row).toMatchObject({ run_id: null, parent_span_id: null });
+      expect(row.trace_id).toMatch(/^[0-9a-f]{32}$/);
+      expect(readFileSync(seen, "utf8")).toBe(`00-${row.trace_id}-${row.span_id}-01`);
+      expect(readFileSync(seen, "utf8")).not.toContain("4bf92f3577b34da6a3ce929d0e0e4736");
+    } finally {
+      if (saved === undefined) delete process.env.TRACEPARENT;
+      else process.env.TRACEPARENT = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("judge rows for usage metrics", () => {
+  test("judgeRows reads both generations, keeps only metric fields and skips malformed lines", () => {
+    const dir = scratch();
+    const config = loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") });
+    mkdirSync(config.runtimeDir, { recursive: true });
+    const row = {
+      at: "2026-10-05T10:00:00.000Z",
+      call_id: "a2668a55-0000-4000-8000-000000000000",
+      run_id: "1111222233334444",
+      loop: "review",
+      role: "pattern-maintainer",
+      outcome: "ok",
+      duration_ms: 12,
+      total_cost_usd: 0.5,
+      stderr_tail: "private text",
+    };
+    writeFileSync(join(config.runtimeDir, "judge-calls.1.jsonl"), `${JSON.stringify(row)}\nnot json\n`);
+    writeFileSync(
+      join(config.runtimeDir, "judge-calls.jsonl"),
+      `${JSON.stringify({ ...row, outcome: "error", total_cost_usd: null })}\n{"at":1}\n`,
+    );
+    const rows = judgeRows(config);
+    expect(rows.map((r) => r.outcome)).toEqual(["ok", "error"]);
+    expect(rows[0]).not.toHaveProperty("stderr_tail");
+    expect(rows[1]?.total_cost_usd).toBeNull();
   });
 });

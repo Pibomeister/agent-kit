@@ -35,10 +35,10 @@ Take expected values from a spec literal.
 ## Evidence
 - https://x/old (greptile-apps[bot] P2 pr 1800 2026-09-01)
 """
-E1 = {"hash": "h1", "source": "github", "kind": "finding", "pr": 1873, "author": "sarathc-regulis", "severity": None, "ts": "2026-09-10T00:00:00Z", "url": "https://x/1", "text": "toBeNull on a value that is always null"}
+E1 = {"hash": "h1", "source": "github", "kind": "finding", "pr": 1873, "author": "example-reviewer", "severity": None, "ts": "2026-09-10T00:00:00Z", "url": "https://x/1", "text": "toBeNull on a value that is always null"}
 E2 = {"hash": "h2", "source": "github", "kind": "finding", "pr": 1873, "author": "greptile-apps[bot]", "severity": "P2", "ts": "2026-09-10T00:00:00Z", "url": "https://x/2", "text": "teardown leaves org rows"}
-E3 = {"hash": "h3", "source": "author-reply", "kind": "resolution", "pr": 1873, "author": "EduardoRegulis", "severity": None, "ts": "2026-09-10T00:00:00Z", "url": "https://x/3", "text": "fixed in abc", "in_reply_to": "h2"}
-E4 = {"hash": "h4", "source": "github", "kind": "finding", "pr": 1873, "author": "sarathc-regulis", "severity": None, "ts": "2026-09-10T00:00:00Z", "url": "https://x/4", "text": "unrelated nit the model ignores"}
+E3 = {"hash": "h3", "source": "author-reply", "kind": "resolution", "pr": 1873, "author": "example-author", "severity": None, "ts": "2026-09-10T00:00:00Z", "url": "https://x/3", "text": "fixed in abc", "in_reply_to": "h2"}
+E4 = {"hash": "h4", "source": "github", "kind": "finding", "pr": 1873, "author": "example-reviewer", "severity": None, "ts": "2026-09-10T00:00:00Z", "url": "https://x/4", "text": "unrelated nit the model ignores"}
 RESP = {
     "create_patterns": [{"tmp_id": "new-1", "title": "Teardown leaks fixtures", "problem": "Teardown removes some rows, leaves others.", "root_cause": "No dependency-ordered cleanup.", "fix": "Delete every created record leaf-first.", "team_target": None, "event_hashes": ["h2"]},
                         {"tmp_id": "new-2", "title": "incomplete", "problem": "", "root_cause": "x", "fix": "y", "event_hashes": ["h4"]}],
@@ -75,7 +75,7 @@ class ApplyResponseTest(unittest.TestCase):
         self.assertEqual(meta["status"], "active")
         self.assertEqual(meta["prs"], ["1800", "1873"])
         self.assertEqual(meta["last_seen"], "2026-09-10")
-        self.assertEqual(body.count("- https://x/1 (sarathc-regulis pr 1873 2026-09-10)"), 1)
+        self.assertEqual(body.count("- https://x/1 (example-reviewer pr 1873 2026-09-10)"), 1)
         self.assertIn("## Problem\nAlso identity asserts.\nAssertion cannot fail.", body)
 
     def test_new_pattern_gets_next_id_and_stays_candidate(self):

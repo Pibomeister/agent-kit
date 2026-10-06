@@ -28,7 +28,7 @@ export const REVIEW_SEED: Readonly<Record<string, string>> = {
   "skill-impact.md":
     "# Skill impact\n\n| date | action | pattern | repeat rate before | note |\n|---|---|---|---|---|\n",
   "log.md": "# Maintainer log\n",
-  ".gitignore": "raw/.last_run\nraw/.pipeline.log\n.lock*\n",
+  ".gitignore": "raw/.last_run\nraw/.pipeline.log\nraw/.pipeline.1.log\n.lock*\n",
 };
 
 /** The review ledger's directory for a project root. Creates nothing. */

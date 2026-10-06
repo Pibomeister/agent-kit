@@ -7,7 +7,7 @@
  * deterministic gates before it touches a ledger; the judge never sets counts,
  * status, ids or rates.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -24,13 +24,19 @@ import type { LearnConfig } from "./config.ts";
 import type { Loop } from "./paths.ts";
 import { run } from "./proc.ts";
 import type { LearnRole } from "./roles.ts";
+import { carrierOf, recordJudgeAttempt } from "./trace.ts";
 
 /** Variables that make a nested CLI believe it is running inside the parent session. */
 const NESTED_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
+/** Trace context the judge must not inherit: it gets its own child carrier instead. */
+const TRACE_CONTEXT_VARS = ["TRACEPARENT", "TRACESTATE", "BAGGAGE"];
 const HOST_MODEL_FIELD = "model";
 
 export interface JudgeCallContext {
+  /** The enclosing span's id (`trace.ts` `runOf`); null outside a span. */
   runId: string | null;
+  /** The enclosing span's trace; absent or null roots a fresh trace for the call. */
+  traceId?: string | null;
   loop: Loop;
   role: LearnRole;
   project: string;
@@ -49,6 +55,10 @@ export interface JudgeTraceRow {
   at: string;
   call_id: string;
   run_id: string | null;
+  trace_id: string;
+  /** This attempt's own span: the judge receives it as its `TRACEPARENT`. */
+  span_id: string;
+  parent_span_id: string | null;
   loop: Loop;
   role: LearnRole;
   project: string;
@@ -69,6 +79,8 @@ export interface JudgeTraceRow {
 
 const STDERR_TAIL_BYTES = 2 * 1024;
 const TRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Retained trace generations, oldest first; `rotateTrace` moves the second over the first. */
+const TRACE_GENERATIONS = ["judge-calls.1.jsonl", "judge-calls.jsonl"] as const;
 const jsonValidator = new Ajv({ strict: false });
 const validateHostEnvelope = jsonValidator.compile<HostEnvelope>({ type: "object" });
 const validateString = jsonValidator.compile<string>({ type: "string" });
@@ -81,20 +93,32 @@ export interface JudgeTraceSummary {
   totalCostUsd: number;
 }
 
-interface JudgeTraceSummaryRow {
+/** The fields of a retained judge row that usage metrics read; never `stderr_tail`, usage bodies or prompts. */
+export interface JudgeStatsRow {
   at: string;
-  call_id: string;
+  run_id: string | null;
+  loop: Loop;
+  role: LearnRole;
   outcome: JudgeOutcome;
+  duration_ms: number;
   total_cost_usd: number | null;
+}
+
+interface JudgeTraceSummaryRow extends JudgeStatsRow {
+  call_id: string;
 }
 
 const validateJudgeTraceSummaryRow = jsonValidator.compile<JudgeTraceSummaryRow>({
   type: "object",
-  required: ["at", "call_id", "outcome", "total_cost_usd"],
+  required: ["at", "call_id", "run_id", "loop", "role", "outcome", "duration_ms", "total_cost_usd"],
   properties: {
     at: { type: "string" },
     call_id: { type: "string", pattern: "^[0-9a-f-]{36}$" },
+    run_id: { type: ["string", "null"] },
+    loop: { enum: ["review", "memory", "skills"] },
+    role: { type: "string" },
     outcome: { enum: ["ok", "empty", "unparseable", "unavailable", "error"] },
+    duration_ms: { type: "number", minimum: 0 },
     total_cost_usd: { type: ["number", "null"] },
   },
   additionalProperties: true,
@@ -139,6 +163,12 @@ function hostModel(envelope: HostEnvelope): string | null {
   return names.length === 0 ? null : names.join(",");
 }
 
+function usageCount(usage: JsonValue | undefined, field: string): number {
+  if (!validateHostEnvelope(usage)) return 0;
+  const value = numberField(usage[field]);
+  return value !== null && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
 function traceSummaryRow(line: string): JudgeTraceSummaryRow | null {
   try {
     const parsed: unknown = JSON.parse(line);
@@ -165,7 +195,7 @@ function traceRows(path: string): JudgeTraceSummaryRow[] {
 
 /** Move the current trace over the previous one, dropping the bodies of the calls that leave with it. */
 function rotateTrace(config: LearnConfig, trace: string): void {
-  const rotated = join(config.runtimeDir, "judge-calls.1.jsonl");
+  const rotated = join(config.runtimeDir, TRACE_GENERATIONS[0]);
   const bodies = join(config.runtimeDir, "judge-bodies");
   for (const row of traceRows(rotated)) {
     rmSync(join(bodies, `${row.call_id}.prompt`), { force: true });
@@ -182,6 +212,7 @@ function traceAttempt(
   config: LearnConfig,
   prompt: string,
   context: JudgeCallContext,
+  carrier: { traceId: string; spanId: string },
   attempt: number,
   startedAt: number,
   result: ReturnType<typeof run>,
@@ -189,12 +220,23 @@ function traceAttempt(
 ): void {
   try {
     const envelope = hostEnvelope(result.stdout);
+    // The span's totals come first, so a trace file that cannot be written does not drop the attempt from them.
+    recordJudgeAttempt(context.runId, {
+      ok: outcome === "ok",
+      costUsd: numberField(envelope.total_cost_usd),
+      inputTokens: usageCount(envelope.usage, "input_tokens"),
+      outputTokens: usageCount(envelope.usage, "output_tokens"),
+    });
     const callId = randomUUID();
     mkdirSync(config.runtimeDir, { recursive: true });
     const row: JudgeTraceRow = {
       at: new Date(startedAt).toISOString(),
       call_id: callId,
       run_id: context.runId,
+      trace_id: carrier.traceId,
+      span_id: carrier.spanId,
+      // A run id outside a span (a dated id) names no span, so the attempt has no span parent.
+      parent_span_id: context.runId !== null && /^[0-9a-f]{16}$/.test(context.runId) ? context.runId : null,
       loop: context.loop,
       role: context.role,
       project: context.project,
@@ -213,7 +255,7 @@ function traceAttempt(
       is_error: booleanField(envelope.is_error),
     };
     const line = `${JSON.stringify(row)}\n`;
-    const trace = join(config.runtimeDir, "judge-calls.jsonl");
+    const trace = join(config.runtimeDir, TRACE_GENERATIONS[1]);
     if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes)
       rotateTrace(config, trace);
     appendFileSync(trace, line);
@@ -228,19 +270,33 @@ function traceAttempt(
   }
 }
 
+/** Every retained judge row, oldest generation first, reduced to the fields usage metrics read. */
+export function judgeRows(config: LearnConfig): JudgeStatsRow[] {
+  return TRACE_GENERATIONS.flatMap((name) =>
+    traceRows(join(config.runtimeDir, name)).map(
+      ({ at, run_id, loop, role, outcome, duration_ms, total_cost_usd }) => ({
+        at,
+        run_id,
+        loop,
+        role,
+        outcome,
+        duration_ms,
+        total_cost_usd,
+      }),
+    ),
+  );
+}
+
 /** Calls, calls without a usable reply and reported cost in the retained trace over the last 24 hours. */
 export function judgeTraceSummary(config: LearnConfig, now = Date.now()): JudgeTraceSummary {
   const summary: JudgeTraceSummary = { calls: 0, failures: 0, totalCostUsd: 0 };
   const cutoff = now - TRACE_WINDOW_MS;
-  for (const name of ["judge-calls.1.jsonl", "judge-calls.jsonl"]) {
-    for (const row of traceRows(join(config.runtimeDir, name))) {
-      const at = Date.parse(row.at);
-      if (!Number.isFinite(at) || at < cutoff || at > now) continue;
-      summary.calls += 1;
-      if (row.outcome !== "ok") summary.failures += 1;
-      if (row.total_cost_usd !== null && Number.isFinite(row.total_cost_usd))
-        summary.totalCostUsd += row.total_cost_usd;
-    }
+  for (const row of judgeRows(config)) {
+    const at = Date.parse(row.at);
+    if (!Number.isFinite(at) || at < cutoff || at > now) continue;
+    summary.calls += 1;
+    if (row.outcome !== "ok") summary.failures += 1;
+    if (row.total_cost_usd !== null && Number.isFinite(row.total_cost_usd)) summary.totalCostUsd += row.total_cost_usd;
   }
   return summary;
 }
@@ -306,19 +362,21 @@ export function commandJudge(config: LearnConfig): JudgeFn {
     mkdirSync(config.runtimeDir, { recursive: true });
     const env: NodeJS.ProcessEnv = {};
     for (const [key, value] of Object.entries(process.env)) {
-      if (!NESTED_SESSION_VARS.includes(key)) env[key] = value;
+      if (!NESTED_SESSION_VARS.includes(key) && !TRACE_CONTEXT_VARS.includes(key)) env[key] = value;
     }
+    const traceId = context.traceId ?? randomBytes(16).toString("hex");
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const carrier = { traceId, spanId: randomBytes(8).toString("hex") };
       const startedAt = Date.now();
       const result = run(config.judgeCommand, {
         cwd: config.runtimeDir,
         input: prompt,
-        env,
+        env: { ...env, TRACEPARENT: carrierOf(carrier) },
         timeoutMs: config.judgeTimeoutMs,
       });
       const parsed = result.timedOut || result.code !== 0 ? null : extractJson(result.stdout);
       const outcome = judgeOutcome(result, parsed);
-      traceAttempt(config, prompt, context, attempt + 1, startedAt, result, outcome);
+      traceAttempt(config, prompt, context, carrier, attempt + 1, startedAt, result, outcome);
       if (result.timedOut || outcome === "unavailable") return null;
       if (outcome === "ok") return parsed;
     }
