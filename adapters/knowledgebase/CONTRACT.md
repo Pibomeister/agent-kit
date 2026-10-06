@@ -1,6 +1,7 @@
 # adapters/knowledgebase — host contract
 
-Contract only. No implementation lives here.
+The contract, plus the documents of the backends that meet it (§7). The code that carries the
+operations is `src/kb/`.
 
 Project-derived material — context, standards, decisions, requirements, plans, ticket artifacts,
 review ledgers, solutions and lessons — is owned by a **central knowledgebase**, not by the
@@ -79,6 +80,17 @@ read-back per `adapters/runner-contract/CONTRACT.md` §5.
 With no KB configured, `kb-read` operations return an explicit **unavailable** result and `kb-write`
 operations refuse. They never fall back to writing the working repository — that failure is release
 scenario 21, and it is the single most common way a donor's behavior survives where it should not.
+
+**Configured** means two things, both stated in §7: the project folder commits a binding,
+`ak.kb.yaml`, and the machine has registered where that knowledgebase is checked out. Either one
+missing is the unconfigured case, and the result says which and names the step that supplies it.
+`ak.install.yaml` is neither: it decides which adapters an install *attaches*, which sets packaged
+mode ceilings (the table below), and it never makes a knowledgebase reachable. A checkout with no
+`ak.install.yaml` is the default install, not a broken one.
+
+A knowledgebase that is configured and cannot be used — a binding that does not parse, a registered
+checkout that is gone — is `failed`, not unavailable, and a run stops on it rather than continuing
+past a read.
 
 ### Capabilities this adapter supplies
 
@@ -265,6 +277,11 @@ published to the KB afterwards.
 `ak validate` fails a skill whose outputs name a repository path where a KB operation belongs; the
 corresponding eval case asserts that no application-local docs tree appears.
 
+The KB locator is the binding file of §7 and holds no project knowledge. A binding whose
+knowledgebase resolves to the application repository — its checkout, any of its work trees, or a
+directory inside its tree — is refused on every operation, because a publish through it would be
+the write this section forbids.
+
 ---
 
 ## 4. The paired-PR requirement (release scenario 22)
@@ -305,7 +322,9 @@ implement locking in its body.
 
 ## 6. Testing
 
-Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
+Tests this adapter owns. `tests/kb-adapter.test.ts` holds 2, 4, 5, 6, 7 and 9 against the
+`local-git` backend of §7, and the binding's own rules; the rest test operations no backend carries
+yet, or skill behavior, and are not held there:
 
 1. **No local docs tree** — for every skill whose outputs are project-derived, a fixture run leaves
    the working repository free of any documentation directory (scenario 21).
@@ -334,3 +353,77 @@ Tests this adapter owns, in `tests/adapters/` and `tests/scenarios/`:
 12. **Rollback independence** — rolling back a published skill revision leaves the supporting lesson
     and evidence history intact (scenario 24), because lessons are KB pages with supersession and
     skills are package files.
+
+---
+
+## 7. Bindings: how a project folder reaches its knowledgebase
+
+A binding is the **KB locator** plan §1.2 lets a working repository hold. It says which
+knowledgebase a project uses and which project it is there. It does not say where that
+knowledgebase is on a machine, because that differs per machine and a path in a committed file is
+wrong for everyone but its author (ruling `kb-binding-is-a-locator`).
+
+### The binding file
+
+`ak.kb.yaml` at the root of the project folder, shaped by `schemas/kb-binding.schema.json` and then
+by the backend's own `schemas/kb-backends/<backend>.schema.json`:
+
+```yaml
+backend: <binding id>            # names a document under adapters/knowledgebase/backends/
+project: <project id>            # the project_ref id this folder's records are filed under
+locator: { <key>: <value> }      # how the backend finds the knowledgebase; the keys are the backend's
+```
+
+**The binding file is committed and holds neither a secret nor a machine path.** It is committed so
+that every checkout of the project binds the same knowledgebase: a task copy made as a git work
+tree carries the file because it carries the commit, and needs no setup of its own. The **project
+folder** is the nearest directory at or above the working directory that holds `ak.kb.yaml`,
+searching no higher than the repository's top level; with none there, the folder is unbound and §1's
+unconfigured case applies. A `backend` with no document under `backends/` is refused, since nothing
+states how to reach it.
+
+### The registration
+
+Where a knowledgebase is checked out is recorded once per machine, outside every checkout, in the
+operator's registry: `~/.agent-kit/kb/registry.json`, or the file `AK_KB_REGISTRY` names.
+
+```sh
+ak kb register <knowledgebase-id> <path>
+```
+
+It is the operator's step and starts no phase. It refuses a path that is not the top of a git work
+tree, and one that is the application repository (§3). A binding that names a knowledgebase the
+machine has not registered is unconfigured, not failed: the project is bound correctly and this
+machine has not been told where the knowledgebase is.
+
+### The commands
+
+| Operation | Command | Carried |
+|---|---|---|
+| `readContext` | `ak kb read --kind <kind>[,<kind>…] --scope <scope>` | yes |
+| `publishArtifact`, `kb-document` placement | `ak kb publish document --kind <kind> --scope <scope> --id <id> --title <title> --file <page>` | yes |
+| `publishArtifact`, `run-artifact` placement | `ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]…` | yes |
+| `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests`, `proposeLesson` | `ak kb record-decision` and its four siblings | no: each refuses and writes nothing |
+
+`ak kb check [<project-dir>]` reports the binding, the registration and which of these can run.
+Every command prints one JSON result and exits 0 when the operation completed, 1 when it failed or
+was refused, 2 on a usage error and 3 when no knowledgebase is configured, so a caller can tell an
+empty knowledgebase (0, an empty list) from an absent one (3).
+
+A decision card is a run artifact, so until a backend carries `recordDecision` it travels as a
+`decision` through `publishArtifact`'s run-artifact placement, which validates it against
+`schemas/decision.schema.json` like any other. What that path does not do is resolve the card's
+evidence references or its supersession, which is `recordDecision`'s own guarantee and stays
+unmet.
+
+### Bindings
+
+| Binding id | The knowledgebase is | Document |
+|---|---|---|
+| `local-git` | a git repository of files on this machine | `adapters/knowledgebase/backends/local-git.md` |
+
+A binding is additive: a document under `backends/`, a row here, a schema at
+`schemas/kb-backends/<id>.schema.json` and the code that carries its operations under `src/kb/`.
+The generic binding schema names no backend, and nothing in §1–§6 depends on any one of them.
+Building a backend in this package rather than calling an existing knowledgebase tool is the
+decision recorded in `docs/decisions/0010-file-backed-knowledgebase.md`.

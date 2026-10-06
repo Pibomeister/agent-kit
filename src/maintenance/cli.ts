@@ -18,6 +18,8 @@ import {
   type TrackerBinding,
 } from "../tracker/binding.ts";
 import { scoreDelegationFiles } from "../delegation.ts";
+import { findKbProjectRoot, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
+import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
@@ -354,6 +356,41 @@ export function parseBinding(root: string | null): BindingCheck {
   };
 }
 
+/**
+ * Whether the project at `cwd` reaches a knowledgebase from this machine. No
+ * binding is a warning, not a failure: a project may run without one, and then
+ * knowledgebase reads return unavailable and publishes refuse.
+ */
+export function checkKnowledgebase(cwd: string, registry: string = registryPath()): Finding {
+  const resolution = resolveKnowledgebase(findKbProjectRoot(cwd), registry);
+  if (resolution.resolved !== null) {
+    const kb = resolution.resolved;
+    return finding(
+      "PASS",
+      "knowledgebase binding",
+      `${kb.binding.backend} reaches '${kb.knowledgebase}' for project '${kb.binding.project}'`,
+      "No action needed.",
+    );
+  }
+  const issue = resolution.issues[0];
+  if (resolution.state === "unavailable") {
+    return finding(
+      "WARN",
+      "knowledgebase binding",
+      issue?.rule === "kb.unregistered"
+        ? "ak.kb.yaml names a knowledgebase this machine has not registered"
+        : "no ak.kb.yaml, so knowledgebase reads are unavailable and publishes refuse",
+      "Commit ak.kb.yaml at the project root and run ak kb register <knowledgebase-id> <path>, then ak kb check.",
+    );
+  }
+  return finding(
+    "FAIL",
+    "knowledgebase binding",
+    issue?.message ?? "the configured knowledgebase cannot be used",
+    "Repair the binding or the registration, then run ak kb check.",
+  );
+}
+
 export function checkToken(root: string | null, binding: TrackerBinding | null): Finding {
   if (!root || !binding)
     return finding("WARN", "tracker token", "no binding token_file to check", "Add a valid tracker binding first.");
@@ -469,6 +506,7 @@ async function doctor(json = false): Promise<number> {
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
+    checkKnowledgebase(process.cwd()),
   ];
   if (!hasClaude && !hasCodex) {
     items.push(
@@ -595,6 +633,10 @@ if (import.meta.main) {
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     const argv = process.argv.slice(2);
     process.exitCode = runLearn(flags, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+  } else if (action === "kb") {
+    // The knowledgebase operations travel here too: a lifecycle skill calls them from an install with no checkout.
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    process.exitCode = runKb(flags, { cwd: process.cwd(), io });
   } else if (
     (action === "doctor" && flags.every((flag) => flag === "--json") && flags.length <= 1) ||
     (action === "update" && flags.length === 0)
@@ -609,7 +651,9 @@ if (import.meta.main) {
       process.exitCode = 1;
     }
   } else {
-    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn …");
+    console.error(
+      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak kb …",
+    );
     process.exitCode = 2;
   }
 }

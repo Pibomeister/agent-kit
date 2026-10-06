@@ -3,7 +3,7 @@
 One engineering lifecycle, amalgamated from nine donors (eight MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**36 public skills · 8 domain packs · 8 protocols · 35 role prompts · 8 reference packs · 32 schemas**,
+**36 public skills · 8 domain packs · 8 protocols · 35 role prompts · 9 reference packs · 33 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -132,10 +132,11 @@ Shared phase logic, invoked by skills rather than by humans:
 7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 5 learn (`learn/pattern-maintainer`,
 `learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`).
 
-### References (8)
+### References (9)
 
 `codebase-design-vocabulary` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
-`tracker-of-record` · `delegation` · `structural-checks` · `verification-evidence`. Loaded on demand,
+`tracker-of-record` · `delegation` · `structural-checks` · `verification-evidence` ·
+`knowledgebase-binding`. Loaded on demand,
 never exposed as slash commands. `structural-checks` is declared at `status: contract`; its body is
 not authored yet.
 
@@ -147,6 +148,7 @@ bun run ak validate       # the gate every batch passes
 bun run ak build          # validates, then writes dist/ for every host
 bun run ak attach <path>  # show which packs attach, and why
 bun run ak tracker check <project-dir>  # a project's tracker binding, and that its secret stays out of git
+bun run ak kb check <project-dir>       # a project's knowledgebase binding, and whether this machine can reach it
 ```
 
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the

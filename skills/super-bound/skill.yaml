@@ -118,6 +118,7 @@ references:
   - domain-modeling
   - delegation
   - verification-evidence
+  - knowledgebase-binding
 
 hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context

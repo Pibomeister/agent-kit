@@ -30,8 +30,8 @@ dispatches and verdicts before deciding a checkpoint.
 If no-mistakes auto-fixes or otherwise changes the head, the runner's snapshot check invalidates
 older verification and review evidence. The worker must sync, verify and review the new head before
 reporting done. Disabling auto-fix is optional project policy, not an installation prerequisite.
-The real knowledgebase adapter remains a separate follow-up; runner-owned evidence stays in a
-configurable private store until it is available.
+Publishing runner-owned evidence through the knowledgebase adapter remains a separate follow-up; it
+stays in a configurable private store until that is wired.
 
 The files beside this one:
 
@@ -65,8 +65,8 @@ Neither coding-agent host provides it.
 | `firstmate-supervision` | `fails-closed` | Stock preflight refuses a home without its normal brief and spawn commands; the runner refuses a standing start without the approved charter and Firstmate controller. Legacy bind retains its own patch checks |
 
 This adapter does **not** supply `kb-write`, and nothing about running under Firstmate lifts a
-skill that requires it. Evidence that must reach the knowledgebase fails closed until a knowledgebase
-exists (`adapters/knowledgebase/CONTRACT.md` §1). The one exception is a binding whose evidence store
+skill that requires it. Evidence that must reach the knowledgebase fails closed here until this
+adapter publishes through one (`adapters/knowledgebase/CONTRACT.md` §1, §7). The one exception is a binding whose evidence store
 is a labeled `mock`, which the binding schema forces to `dry-run` so it can never back a publish
 (`schemas/firstmate-binding.schema.json`).
 
@@ -118,7 +118,7 @@ worker started is not independent of the worker (ruling `missing-supervisor-neve
 | **Unmodified Firstmate** | The stock path above: normal brief, spawn, status, inbox and delivery mode, with runner-validated standing start. `ak firstmate preflight` passes compatibility checks without a patch; no runner means guided checkpoints |
 | **Upstream `a5d78f8` with patches 0001 then 0002** | Delivery mode `agent-kit` for Claude Code workers with the child guard enforced; other harnesses with the guard declared but not enforced (§5). Everything in §2 and §4. With 0002, a `dry-run` binding's worker publishes nothing, and Firstmate itself runs `ak firstmate status <binding> --verify` on every agent-kit `done:` and keeps it only on exit 0 |
 | **Upstream `a5d78f8` with patch 0001 only** | Legacy patched mode is unavailable: `ak firstmate preflight --legacy-patched` refuses it and names 0002; the stock path above still works |
-| **Not wired by these patches** | Evidence published to a knowledgebase (none exists); automatic startup of the separate runner service and seat launchers; any Firstmate commit the patches do not apply to cleanly. A Firstmate supervisor can start the runner and pass its worker token and socket without changing this binding adapter |
+| **Not wired by these patches** | Evidence published to a knowledgebase (this adapter publishes to none); automatic startup of the separate runner service and seat launchers; any Firstmate commit the patches do not apply to cleanly. A Firstmate supervisor can start the runner and pass its worker token and socket without changing this binding adapter |
 
 The patches are version-bound and form a stack: 0002 rewrites lines 0001 added, so it applies only
 on top of 0001. They are carried here, under the upstream commit they were made against, and never
