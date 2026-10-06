@@ -15,6 +15,7 @@ import { basename, join } from "node:path";
 import { artifactHash } from "../util/hash.ts";
 import type { LearnContext } from "./core/context.ts";
 import { run } from "./core/proc.ts";
+import { scrubJsonText } from "./core/secrets.ts";
 import type { Candidate } from "./core/similar.ts";
 import { nowIso, readJson, writeJson } from "./core/store.ts";
 
@@ -116,6 +117,10 @@ export interface ProposalResult {
  * as `<command> proposeLesson` with the draft on stdin, answering `{"ref": ...}`).
  * A refused or failed proposal leaves the ledger record in place.
  *
+ * The draft leaves the machine here, so what is sent and what is recorded is
+ * the draft after the secret gate (`core/secrets.ts`); the ledger record is
+ * where the gate records the redaction.
+ *
  * `similar` lists the ledger records the draft resembles. It is kept beside the
  * draft in the record, for whoever reviews the proposal to amend or supersede,
  * and never put in the draft itself.
@@ -139,7 +144,7 @@ export function proposeLesson(
   let result: ProposalResult = { ref: `ledger:proposals/${id}.json`, delivered: false };
   if (command !== undefined && command.trim() !== "" && !ctx.config.dryRun) {
     const reply = run(["sh", "-c", `${command} proposeLesson`], {
-      input: JSON.stringify(draft),
+      input: scrubJsonText(JSON.stringify(draft)).text,
       timeoutMs: 60_000,
       env: ctx.env,
     });
@@ -155,6 +160,6 @@ export function proposeLesson(
       record.kb_error = reply.stderr.trim() || "unparseable reply";
     }
   }
-  if (!ctx.config.dryRun) writeJson(recordPath, record);
+  if (!ctx.config.dryRun) writeJson(recordPath, record, ledgerDir);
   return result;
 }

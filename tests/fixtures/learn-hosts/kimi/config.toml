@@ -1,0 +1,51 @@
+default_thinking = true
+
+[loop_control]
+max_steps_per_turn = 100
+
+[[hooks]]
+event = "PostToolUse"
+matcher = "^(Edit|Write)$"
+command = "node ~/.kimi-code/hooks/lint-loop.mjs"
+timeout = 60
+
+[[hooks]]
+event = "Stop"
+command = "node ~/.kimi-code/hooks/lint-loop.mjs"
+timeout = 180
+
+# >>> pane kimi integration
+[[hooks]]
+event = "SessionStart"
+command = "bash '/home/operator/.kimi-code/hooks/agent-state.sh' session"
+timeout = 10
+
+[[hooks]]
+event = "UserPromptSubmit"
+command = "bash '/home/operator/.kimi-code/hooks/agent-state.sh' working"
+timeout = 10
+
+[[hooks]]
+event = "PreCompact"
+command = "bash '/home/operator/.kimi-code/hooks/agent-state.sh' working"
+timeout = 10
+
+# <<< pane kimi integration
+# BEGIN SUPERVISOR KIMI TURN-END HOOK
+[[hooks]]
+event = "Stop"
+matcher = "^$"
+command = "bash \"$HOME/.kimi-code/turn-end.sh\" >/dev/null 2>&1 || true"
+timeout = 1
+# END SUPERVISOR KIMI TURN-END HOOK
+
+# >>> mux-managed-kimi-hooks (managed by the multiplexer; do not edit) >>>
+[[hooks]]
+event = "UserPromptSubmit"
+command = "if [ -x '/home/operator/.mux/agent-hooks/kimi-hook.sh' ]; then /bin/sh '/home/operator/.mux/agent-hooks/kimi-hook.sh'; else cat >/dev/null 2>&1 || :; fi"
+timeout = 10
+[[hooks]]
+event = "PostToolUse"
+command = "if [ -x '/home/operator/.mux/agent-hooks/kimi-hook.sh' ]; then /bin/sh '/home/operator/.mux/agent-hooks/kimi-hook.sh'; else cat >/dev/null 2>&1 || :; fi"
+timeout = 10
+# <<< mux-managed-kimi-hooks <<<

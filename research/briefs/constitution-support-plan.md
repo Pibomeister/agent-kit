@@ -5,6 +5,9 @@ The plan for `docs/decisions/0009-constitution-support.md` (ADR-0009), accepted 
 `research/sources/mission-brief-constitution-support.md`; host facts cite the receipts under
 `research/host-facts/2026-10-03/` by name, for example `codex-2`.
 
+Amended on 2026-10-06 to fold in the ideas the maintainer chose from the Engram audit; "Ideas folded
+from the Engram audit" below lists them and where each landed.
+
 ## How a ticket ships
 
 One ticket is one PR on a feature branch, shipped with `git push no-mistakes <branch>`, never pushed
@@ -42,11 +45,13 @@ M1  CS-10 policy schema + evaluator                      │
 
 M2  CS-20 article schema + registry field + fixtures
       └─> CS-21 registry checks in ak validate
-            └─> CS-22 ak constitution coverage
+            ├─> CS-22 ak constitution coverage
+            └─> CS-23 ak constitution lookup, progressive disclosure  [E6]
 
 M3  CS-30 compiler core  (needs CS-21)
       ├─> CS-31 path rules + review sections
-      └─> CS-32 standards, pack stubs, guard policy  (also needs CS-10)
+      ├─> CS-32 standards, pack stubs, guard policy  (also needs CS-10)
+      └─> CS-33 the core after compaction  (also needs CS-13)  [E8]
 
 M4  CS-40 constitution seat  (needs CS-00, CS-20)
       └─> CS-41 seat evals  [decision 8 for live runs]
@@ -57,9 +62,33 @@ M5  CS-50 promotion draft carries a check  (needs CS-20, CS-16)
 M6  CS-60 Codex case results  (independent)
       └─> CS-61 four-arm experiment harness  (also needs CS-13, CS-30)  [decision 8]
           CS-60 builds on the case runner already in tests/learn/evals/case-runner.ts
+    CS-62 golden queries for lookup and path context  (needs CS-23, CS-31)  [E4]
 ```
 
 M1 and M2 can run in parallel. The longest chain is CS-10 → CS-11/12 → CS-13 → CS-15.
+
+## Ideas folded from the Engram audit
+
+The source is a research report dated 2026-09-24, held privately and not committed here. It audited
+the Engram agent-memory tool and compared it with a curated engineering knowledge base. Its
+recommendations were reimplementations of ideas, never Engram code, and need no new dependency. The
+maintainer chose seven of them. They are numbered E1 to E8 here, and the report's section 6 number
+follows each in brackets.
+
+| Id | Idea | State on 2026-10-06 | Where it lands in this plan |
+|---|---|---|---|
+| E1 | Token-budget ratchet on fixed agent-facing text [R4] | Merged: https://github.com/Pibomeister/agent-kit/pull/92 | Acceptance in CS-30 and CS-33: each new fixed text is a budget surface |
+| E2 | Similar candidates and repeat counting when a lesson is recorded [R3] | Open: https://github.com/Pibomeister/agent-kit/pull/94 | Acceptance in CS-50 |
+| E3 | Secret gate on recorded lessons and block logs [R7] | Open: https://github.com/Pibomeister/agent-kit/pull/97 | Acceptance in CS-13 (block log) and CS-50 (promotion draft) |
+| E4 | Golden-query evals for lookup and context [R8] | Not started | New ticket CS-62 |
+| E5 | Review-after dates and review-due reporting [R6] | Considered, not chosen | Nowhere. Re-adding it is a new decision, not a gap in this plan |
+| E6 | Progressive disclosure for registry lookups [from R1] | Not started | New ticket CS-23; the map in CS-30 points to it |
+| E7 | Unknown selectors fail with suggestions [R2] | Open: https://github.com/Pibomeister/agent-kit/pull/98 | Acceptance in CS-22 and CS-23 |
+| E8 | Compaction-aware session start [R9] | Not started | New ticket CS-33 |
+
+A ticket that names an open PR above depends on that PR. If the PR closes unmerged, its criterion
+here becomes the ticket's own work, and the ticket stops and asks before it builds a second
+implementation.
 
 ## Groundwork
 
@@ -183,7 +212,11 @@ the locator route ADR-0009 chose.
     permissions allow, citing ruling `guard-is-feedback-not-boundary` once the row exists.
   - Each deny is logged with its rule or article id, the host, the session and the tool, under the
     host configuration directory and never inside a project repository.
+  - Every block-log write passes through the learning runtime's secret gate (E3,
+    https://github.com/Pibomeister/agent-kit/pull/97). A denied command that carries a credential or a
+    home-directory path is logged with `[redacted:<kind>]` in its place, and a test plants one of each.
   - Skills behave the same with the guard absent; no skill body names a guard hook.
+- **Depends on:** CS-11, CS-12; E3's PR for the block-log criterion.
 - **Stop and ask:** no, provided no hook blocks by default in the core profile, which this ticket
   never does.
 
@@ -263,7 +296,34 @@ the locator route ADR-0009 chose.
   - It exits non-zero when a hard-constraint article has no boundary mapping.
   - It never reports a whole article covered because one predicate is.
   - Two runs on the fixtures produce byte-identical output.
+  - An unknown article id or tier selector exits non-zero and names the nearest valid values through
+    the shared suggester from E7 (https://github.com/Pibomeister/agent-kit/pull/98). It never prints
+    an empty report that reads as "nothing to cover".
+- **Depends on:** CS-21; E7's PR for the selector criterion.
 - **Stop and ask:** no.
+
+### CS-23 — `ak constitution lookup`, progressive disclosure (E6)
+
+An agent should not read the whole registry to find the one article that applies. The lookup answers
+in two steps: a short list first, then the article on request.
+
+- **Changes:** `ak constitution lookup <words>` and `ak constitution lookup --path <file>` over the
+  configured registry; `ak constitution show <id>` for one full article; a snapshot test over the
+  fixture registry.
+- **Acceptance:**
+  - A lookup prints one line per hit: article id and version, tier, the one-line rule, why it matched
+    (id, title, rule text or trigger) and the `show` command that expands it. It never prints article
+    bodies, and its output stays under a line cap the ticket records.
+  - `--path` returns every article whose triggers match the file. Hard-constraint articles are always
+    listed and never cut by the cap. Narrower triggers rank before broader ones.
+  - `show` prints the whole article with its source span, exceptions and related ids.
+  - No match exits with its own non-zero code, and the message says "not found by these words",
+    never "no article applies". An unknown id given to `show` fails with suggestions, as in CS-22
+    (E7).
+  - Matching is deterministic over the registry files, with no index service and no network. Two runs
+    produce byte-identical output.
+- **Depends on:** CS-21; E7's PR for the suggestions.
+- **Stop and ask:** yes if the lookup needs a new package dependency or a persisted index.
 
 ## M3 — compiler
 
@@ -276,6 +336,10 @@ the locator route ADR-0009 chose.
   operating protocol and a map of the rest; it stays near 100 lines and under 32 KiB, and the deepest
   AGENTS.md chain the fixtures produce stays under the Codex combined budget (`codex-6`); every
   emitted rule carries its article id and version.
+- **Acceptance (E1, E6):** the core compiled from the fixtures is a surface in
+  `tools/budget/surfaces.ts`, so its growth fails `bun test` as every other pinned text does. The map
+  of the rest names `ak constitution lookup` and `show` (CS-23) and never inlines a full article that
+  is not a hard constraint.
 - **Stop and ask:** no.
 
 ### CS-31 — Path rules and review sections
@@ -295,6 +359,32 @@ the locator route ADR-0009 chose.
 - **Acceptance:** the emitted policy round-trips through CS-10's loader; each stub and standards entry
   names its article id and version; `--check` covers all three.
 - **Stop and ask:** no.
+
+### CS-33 — The core after compaction (E8)
+
+The core is in context at session start. Hard constraints must still be there after the host
+compacts the conversation.
+
+- **Depends on:** CS-30; CS-13 for the guard's SessionStart hook.
+- **Changes:** a Codex host-fact receipt, `codex-9`, under a new dated folder in
+  `research/host-facts/`. It settles whether a root AGENTS.md is re-read after compaction at the
+  installed version, and whether SessionStart fires after compaction with a source that says so. A
+  `compact` branch in the guard's SessionStart hook, only for a host that does not re-read. The
+  sections of both adapter contracts that describe the guard's hooks.
+- **Acceptance:**
+  - On Claude Code the hook injects nothing after compaction. The project-root CLAUDE.md, and the core
+    it imports, is re-read there (`claude-code-7`), and a test asserts that the compiled CLAUDE.md
+    reaches the core through that import.
+  - On a host the receipt shows does not re-read, the hook prints the core's hard constraints with
+    their article ids and versions, plus one line pointing to `ak constitution lookup --path` for
+    scoped articles. The output stays under the 10,000-byte cap (`codex-8`) and is a budget surface
+    (E1).
+  - If the receipt shows Codex offers no event after compaction, the contract records that as a
+    known gap, and nothing tries to work around it.
+  - Path-scoped articles that were loaded before compaction are not re-injected. The first-write rule
+    of CS-14 covers them, as `claude-code-7` notes.
+  - The core profile's build output is byte-identical before and after.
+- **Stop and ask:** yes for the contract diff, and for the live probe behind `codex-9`.
 
 ## M4 — the constitution seat, advisory
 
@@ -334,6 +424,15 @@ the locator route ADR-0009 chose.
 - **Acceptance:** a promoted draft carries the article id or a proposed amendment, a proposed
   deterministic check, the original bad diff as a positive fixture and the fix as a negative one, and a
   repository-wide dry-run count; the article's rationale stays when the check lands (`C:L89-90`).
+- **Acceptance (E2, E3):**
+  - A draft lists up to three similar lessons or articles, with the action it suggests for each:
+    amend the article or record the repeat. It uses the matcher from E2
+    (https://github.com/Pibomeister/agent-kit/pull/94). The list is advisory. It never blocks the
+    draft, and it never says that no conflict exists.
+  - The draft and its fixtures pass the secret gate from E3
+    (https://github.com/Pibomeister/agent-kit/pull/97) before they are written. A planted credential
+    in the bad diff reaches the positive fixture redacted, and the draft records the redaction.
+- **Depends on:** CS-20, CS-16; the PRs for E2 and E3.
 - **Stop and ask:** yes, `schemas/lesson.schema.json` is an existing contract.
 
 ### CS-51 — Holdout and claim-to-source
@@ -370,6 +469,25 @@ gate. What is missing is a run of the corpus on Codex and the contract text that
   assurance comes from the M1 replay suite, and the report states that zero failures in 8 runs still
   allows a failure rate near 31% (`C:L96`).
 - **Stop and ask:** yes for any live run (`C:L97`).
+
+### CS-62 — Golden queries for lookup and path context (E4)
+
+A change to matching or ranking can quietly change what an agent finds. Golden queries fix the
+expected answers in a test.
+
+- **Depends on:** CS-23 for lookup; CS-31 for path rules.
+- **Changes:** 20 to 40 cases over the fixture registry in `tests/fixtures/constitution/golden/`; a
+  test in `bun test` that runs them.
+- **Acceptance:**
+  - Word queries give an expected article id that `ak constitution lookup` ranks in its top three.
+    The cases cover ids, trigger symbols, paraphrased rule text and an amended article whose earlier
+    version must not rank first.
+  - Path cases give the exact set of articles `--path` must return. A missing hard-constraint article
+    fails the case even when recall at three passes.
+  - The same path cases check the globs CS-31 emits, so lookup and path rules cannot drift apart.
+  - A case that fails names the query, the expected id and the ids returned instead.
+  - Changing an expected answer is a reviewed fixture edit. No command rewrites the answers.
+- **Stop and ask:** no. Yes if a live agent run is added, which falls under decision 8.
 
 ## Proposed catalog entries
 

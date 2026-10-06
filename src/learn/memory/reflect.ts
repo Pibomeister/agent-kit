@@ -19,11 +19,11 @@
  * quarantine, records the ids it screened and the observations it
  * quarantined, and writes neither `memory.md` nor the watermark.
  */
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
-import { nowMs, readText, todayLocal, tokens } from "../core/store.ts";
+import { nowMs, readText, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import type { ClaudeMemSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
 import { unconsolidatedEpisodes } from "./episodes.ts";
@@ -299,7 +299,7 @@ export function applyReflection(
     logLine(ledger, `reflect rejected: ${reason}`);
     return { ok: false, reason, dropped, redacted };
   }
-  writeFileSync(memoryPath, text);
+  writeGated(ledger.dir, memoryPath, text);
   const state = readState(ledger);
   const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
   saveState(ledger, {

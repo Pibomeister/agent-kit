@@ -9,7 +9,8 @@
 # the first raised by a user requirement: that the package work with any ticket tracker. Rows
 # 25-27 bound the opt-in learning runtime: where it runs, who judges for it, and what form its
 # output takes. Rows 28-32 govern delegation class, sensitive floors, independent acceptance
-# oracles, project-declared checks and host-conditional advisor consultation.
+# oracles, project-declared checks and host-conditional advisor consultation. Row 33 is the first
+# raised by a reproduced failure: a lifecycle run in a task copy that could reach no knowledgebase.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -191,7 +192,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 32
+rows: 33
 
 conflicts:
 
@@ -1296,3 +1297,36 @@ conflicts:
       D10 decision is recorded in `research/dossiers/delegation.md`.
     source:
       plan: "§10"
+
+  - id: kb-binding-is-a-locator
+    tension: >-
+      The central knowledgebase must be reachable from every checkout of a project, including a
+      disposable task copy that inherits nothing untracked, while the place it is checked out is
+      different on every machine and the working repository may hold no project knowledge.
+    ruling: >-
+      A project reaches its knowledgebase through a committed binding file, `ak.kb.yaml`, that
+      names a backend, the project id and a knowledgebase id, and holds neither a machine path nor
+      a secret. Where that knowledgebase is on a machine is registered once per machine, outside
+      every checkout. With no binding, or no registration, the knowledgebase is unconfigured: a
+      read is unavailable, a write refuses, and the report names the missing setup step. The
+      install file takes no part in this. A binding that resolves to the application repository,
+      one of its work trees or a directory inside it is refused, and a configured knowledgebase
+      that cannot be used is failed, never unavailable. A backend carries only the operations its
+      document names, and the rest refuse.
+    discharged_in: [inputs, side-effects, outputs]
+    binds:
+      adapters: [knowledgebase]
+      schemas: [kb-binding]
+      references: [knowledgebase-binding]
+    scenario: 21
+    coverage: indirect
+    note: >-
+      Scenario 21 tests that a decision, lesson or report is published centrally and creates no
+      application-local documentation tree; this row governs how the run finds that central place
+      and what it says when there is none, which the scenario presupposes.
+      `tests/kb-adapter.test.ts` tests it head-on, starting from the reproduced failure. No skill
+      is bound: a skill reaches a knowledgebase through the reference pack, and the unavailable
+      and failed outcomes it reports are already the contract's. The decision to carry a
+      file-backed backend in this package is `docs/decisions/0010-file-backed-knowledgebase.md`.
+    source:
+      plan: "§1.2, §8"

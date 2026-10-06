@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.14
+  version: 0.1.15
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not
@@ -823,7 +823,7 @@ roles:
       candidate for each. Repeated corrections become guardrails, not skills.
 
 # ---------------------------------------------------------------------------
-# References — 8. Loaded on demand. Never exposed as slash commands.
+# References — 9. Loaded on demand. Never exposed as slash commands.
 # ---------------------------------------------------------------------------
 references:
   - id: codebase-design-vocabulary
@@ -886,9 +886,18 @@ references:
     summary: >-
       Host-neutral recipe semantics, surface evidence kinds, receipt representation, verifier-seat
       lineage and the criterion coverage predicate shared across the lifecycle.
+  - id: knowledgebase-binding
+    batch: 14
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-align, super-bound, super-build, super-verify, super-scout, diagnose]
+    summary: >-
+      How a checkout reaches the project's knowledgebase: the binding check and what unconfigured
+      means, and the read and publish commands with what each result obliges, shipped inside the
+      plugin.
 
 # ---------------------------------------------------------------------------
-# Schemas — 32. `common` holds shared $defs and validates no document itself.
+# Schemas — 33. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1026,6 +1035,12 @@ schemas:
     summary: >-
       A project folder's ak.tracker.yaml: which tracker binding this checkout uses, where its
       gitignored secret is, and the backend defaults. Never the system-of-record decision.
+  - id: kb-binding
+    batch: 14
+    status: authored
+    summary: >-
+      A project folder's ak.kb.yaml: which knowledgebase backend this project uses, the project id
+      its records are filed under, and the backend's locator. Committed; never a machine path.
   - id: review-event
     batch: 9
     status: authored
@@ -1156,7 +1171,9 @@ adapters:
     status: authored
     summary: >-
       readContext, recordDecision, publishArtifact, linkCodeEvidence, requestImpactAnalysis,
-      linkPullRequests, proposeLesson. Contract only; no implementation lives here.
+      linkPullRequests, proposeLesson, and the binding by which a project folder reaches a
+      knowledgebase. The local-git backend carries readContext and publishArtifact; the other five
+      operations refuse.
   - id: firstmate
     batch: 5
     status: authored

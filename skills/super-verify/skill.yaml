@@ -129,6 +129,7 @@ constraints:
 
 references:
   - verification-evidence
+  - knowledgebase-binding
 
 budget:
   provided_by: runner

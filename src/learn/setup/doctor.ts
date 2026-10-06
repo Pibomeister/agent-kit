@@ -12,7 +12,7 @@ import { judgeTraceSummary } from "../core/judge.ts";
 import { readRegistry, registryHygiene } from "../memory/registry.ts";
 import { schedulerKind, unitEnvironment } from "./schedule.ts";
 import { scopeText } from "./scope.ts";
-import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
+import { codexHome, hostHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
 import { runsLine } from "../stats.ts";
 
 export interface Check {
@@ -126,6 +126,10 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(`  judge command       ${ctx.config.judgeCommand.join(" ")}`);
   ctx.io.out(`  claude-mem dir      ${memDir(ctx, deps)}   (db ${ctx.config.memDb})`);
   ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
+  for (const host of ["droid", "grok", "kimi"] as const) {
+    const home = hostHome(ctx, deps, host);
+    ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync(home) ? "" : "   (absent)"}`);
+  }
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
   ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
   const trace = judgeTraceSummary(ctx.config);

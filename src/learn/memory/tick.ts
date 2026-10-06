@@ -16,7 +16,7 @@ import { repoAllowed } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { acquireLock, Ledger } from "../core/ledger.ts";
 import { tickLogPath } from "../core/paths.ts";
-import { nowIso, nowMs, readText, todayLocal } from "../core/store.ts";
+import { gateText, nowIso, nowMs, readText, todayLocal } from "../core/store.ts";
 import { appendCapped, span, type SpanReason, type SpanStatus, type SpanTrigger } from "../core/trace.ts";
 import { loadEvents } from "../review/events.ts";
 import { deferredObservationIds } from "../review/ingest.ts";
@@ -317,8 +317,9 @@ export function runProject(
 function tickLog(ctx: LearnContext, line: string): void {
   ctx.io.out(line);
   if (ctx.config.dryRun) return;
-  if (!appendCapped(tickLogPath(ctx.config), `${line}\n`, ctx.config.traceMaxBytes))
-    ctx.io.err(`tick: could not write ${tickLogPath(ctx.config)}`);
+  const path = tickLogPath(ctx.config);
+  if (!appendCapped(path, gateText(ctx.config.runtimeDir, path, `${line}\n`), ctx.config.traceMaxBytes))
+    ctx.io.err(`tick: could not write ${path}`);
 }
 
 /**
