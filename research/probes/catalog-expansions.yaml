@@ -90,7 +90,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 32
+  catalog: 33
   expansions:
     - ids: [case]
       reason: >-
@@ -142,6 +142,12 @@ schemas:
         A successful host-neutral setup-through-cleanup path needs a content-addressed artifact
         shape that projects can declare and later verifier seats can replay.
       commits: [1c509b9]
+    - ids: [constitution-article]
+      reason: >-
+        Constitution support keeps each article of a project's constitution in a registry held in
+        an overlay; agent-kit owns the article's shape and checks it, and the overlay owns the text.
+      commits: [e0e95cc]
+      docs: [docs/decisions/0009-constitution-support.md]
 
 profiles:
   baseline: 4
