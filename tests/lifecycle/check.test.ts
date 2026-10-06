@@ -1678,6 +1678,7 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
     expect(checked.err).toContain("refused: gate review-full has no current evidence (the full review is for");
+    expect(checked.err).toContain("and no review-delta covers");
   });
 });
 

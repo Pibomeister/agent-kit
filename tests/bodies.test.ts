@@ -1151,9 +1151,10 @@ describe("the one row with no verbatim form keeps its clauses under check", () =
     expect(item).toContain("carry the converse instead");
 
     const flat = item.replace(/\s+/g, " ");
-    for (const clause of AUTHORSHIP_CONVERSE_ROW.clauses) {
-      expect(flat).toContain(clause);
-    }
+    // Literal, not AUTHORSHIP_CONVERSE_ROW.clauses: emptying the code's list must fail here.
+    const clauses = ["a finding, a receipt, a review record or a ticket", "never closes or approves what it produced"];
+    expect([...AUTHORSHIP_CONVERSE_ROW.clauses]).toEqual(clauses);
+    for (const clause of clauses) expect(flat).toContain(clause);
   });
 });
 

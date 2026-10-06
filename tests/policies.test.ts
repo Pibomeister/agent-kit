@@ -193,10 +193,6 @@ describe("policies/invocation.yaml", () => {
     expect(rulesOf(checkPolicies(ctxFor(policy)))).toContain("policy.skill-not-classified");
   });
 
-  // `per_entrypoint` is nested under `entrypoints:` in the authored policy, and
-  // every case below puts it there. It used to be appended at column 0 in this
-  // file, which is why the four checks that read it passed their tests for
-  // weeks while never once running against `policies/invocation.yaml`.
   // One defect per row on POLICY, each through its own path, asserted by its exact message.
   test.each([
     [
@@ -243,6 +239,10 @@ describe("policies/invocation.yaml", () => {
     expect(issues.filter((i) => i.severity === "error").map((i) => i.message)).toEqual([message]);
   });
 
+  // `per_entrypoint` is nested under `entrypoints:` in the authored policy, and
+  // every case below puts it there. It used to be appended at column 0 in this
+  // file, which is why the four checks that read it passed their tests for
+  // weeks while never once running against `policies/invocation.yaml`.
   const REVIEW_SKILL = `  - id: super-review
     invocation: U
     status: contract
@@ -290,6 +290,22 @@ policies:`;
       .filter((i) => i.rule === "policy.entrypoint-disagrees-with-catalog")
       .map((i) => i.message);
     expect(messages.some((m) => m.includes("authority") && m.includes("explicit-or-delegated"))).toBe(true);
+  });
+
+  test("a per-entrypoint authority outside the common vocabulary is an error naming it", () => {
+    const catalog = CATALOG.replace("policies:", REVIEW_SKILL);
+    const policy = policyWithPerEntrypoint(`  per_entrypoint:
+    super-review:
+      full:
+        invocation: U
+        authority: whenever
+      readiness:
+        invocation: U
+        authority: explicit-or-delegated
+`);
+    expect(checkPolicies(ctxFor(policy, catalog)).map((i) => i.message)).toContain(
+      "per_entrypoint.super-review.full.authority is whenever, which is not a value of common#/$defs/authority",
+    );
   });
 
   test("an entrypoint the catalog declares and the policy omits is an error", () => {

@@ -45,7 +45,8 @@ describe("ak validate against the live tree", () => {
   test("today's failures are about the tree being authored, not about the validator", () => {
     // Not an assertion that the tree is clean. Every issue, at every severity, must carry a rule id an
     // author can look up. Errors alone would leave this vacuous on a tree with none, as it was.
-    expect(run.issues.length).toBeGreaterThan(0);
+    // The population is never empty: the validator always reports its own coverage notes.
+    expect(run.issues.map((i) => i.rule)).toContain("schemas.validator-rule-coverage");
     const malformed = run.issues
       .filter((i) => !/^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$/.test(i.rule))
       .map((i) => `${i.severity} ${i.rule} ${i.file}`);

@@ -389,11 +389,6 @@ describe("every list of artifact schema ids names the same ids", () => {
   });
 });
 
-/**
- * One member at a time, from a valid shipped example, with the keyword that must refuse it. The member
- * lists are literal rather than read off the schema: a test that took them from the schema would shrink
- * with it, and dropping a member from `required` or `minItems` is the defect this exists to catch.
- */
 /** A shipped example, typed. */
 function template(name: string): JsonValue {
   return parseJson(readFileSync(join(REPO, "templates", name), "utf8"));
@@ -404,6 +399,11 @@ function errorsOf(id: string): string[] {
   return (validatorFor(id).errors ?? []).map((e) => `${e.keyword} ${e.instancePath} ${JSON.stringify(e.params)}`);
 }
 
+/**
+ * One member at a time, from a valid shipped example, with the keyword that must refuse it. The member
+ * lists are literal rather than read off the schema: a test that took them from the schema would shrink
+ * with it, and dropping a member from `required` or `minItems` is the defect this exists to catch.
+ */
 describe("each required member and non-empty list is enforced on its own", () => {
   const ruled = updated(template("run-ledger.example.json"), ["entries", 0, "ruling"], () => ({
     what: "Approve.",

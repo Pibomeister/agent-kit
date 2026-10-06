@@ -35,12 +35,12 @@ function skill(body: string, description: string = OK_DESCRIPTION): string {
   return `---\nname: alpha\ndescription: ${description}\n---\n\n${body}`;
 }
 
-/** An n-token filler line with no spaces, digits or punctuation: it cannot trip any other check. */
 /** A skill named `id`, for a tree that holds several. */
 function named(id: string, body: string, description = OK_DESCRIPTION): string {
   return `---\nname: ${id}\ndescription: ${description}\n---\n\n${body}`;
 }
 
+/** An n-token filler line with no spaces, digits or punctuation: it cannot trip any other check. */
 function tokensOfFiller(tokens: number): string {
   return "w".repeat(4 * tokens + 1);
 }

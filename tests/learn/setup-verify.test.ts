@@ -354,6 +354,36 @@ describe("setup verify", () => {
     });
   }
 
+  test("a seeded project whose ledger is gone fails that ledger's check alone", () => {
+    const deps = fakeDeps(["bun", "git", "judge"], "123\t0\tdev.agent-kit.learn\n");
+    const ctx = context(deps);
+    const repo = gitRepo(join(scratch(), "repo"));
+    seed(ctx, repo, { skipGithub: true });
+    const ledgers = (results: ReturnType<typeof verifyChecks>) =>
+      results.filter((r) => r.label.endsWith(`ledger (${repo})`)).map((r) => [r.label, r.ok]);
+    expect(ledgers(verifyChecks(ctx, deps, repo))).toEqual([
+      [`review ledger (${repo})`, true],
+      [`memory ledger (${repo})`, true],
+      [`skills ledger (${repo})`, true],
+    ]);
+    rmSync(join(loopDir(ctx.config, repo, "memory"), ".git"), { recursive: true, force: true });
+    expect(ledgers(verifyChecks(ctx, deps, repo))).toEqual([
+      [`review ledger (${repo})`, true],
+      [`memory ledger (${repo})`, false],
+      [`skills ledger (${repo})`, true],
+    ]);
+  });
+
+  test("under cron, a crontab without the tick line fails and one with it passes", () => {
+    for (const [stdout, ok] of [
+      ["", false],
+      ["*/15 * * * * /opt/bun ak learn memory tick\n", true],
+    ] as const) {
+      const deps = { ...fakeDeps(["bun", "git", "judge", "crontab"], stdout), platform: "linux" as const };
+      expect(verifyChecks(context(deps), deps).find((r) => r.label === "crontab line")?.ok).toBe(ok);
+    }
+  });
+
   test("an ak entry that a wired hook or the unit names but no longer exists fails verify", () => {
     for (const platform of ["darwin", "linux"] as const) {
       const deps = { ...fakeDeps(["bun", "git", "judge", "systemctl"]), platform };

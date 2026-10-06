@@ -854,6 +854,10 @@ describe("runner guards", () => {
     expect(() =>
       f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-b", "yes", ["dispatch-a"]),
     ).toThrow("seat is not independently dispatched");
+    // A different actor reusing seat-a's dispatch id is the same dispatch, so it cannot fill seat-b.
+    expect(() => f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-a", "yes", [])).toThrow(
+      "seat is not independently dispatched",
+    );
     expect(() =>
       f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-b", "yes", ["dispatch-elsewhere"]),
     ).toThrow("seat input includes another dispatch");
@@ -1417,7 +1421,9 @@ describe("runner guards", () => {
     const f = ready();
     const forged = join(f.worker, "green.txt");
     writeFileSync(forged, "green");
-    expect(() => f.runner.collect("toy-run", "forged", forged, f.revision, "verify")).toThrow();
+    expect(() => f.runner.collect("toy-run", "forged", forged, f.revision, "verify")).toThrow(
+      "worker-written evidence is not trusted",
+    );
     transcript.push("Refusal: worker-root file submitted as trusted gate evidence → rejected.");
   });
 
