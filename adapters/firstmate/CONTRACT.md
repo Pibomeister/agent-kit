@@ -160,7 +160,7 @@ finished, and it keeps ownership of the task rather than reporting `done` and le
 effects unowned. `ak firstmate status <binding> <outcome>` prints these lines; it writes nothing.
 
 `evidence=` refs are the verification receipts and the review the ship rested on, by artifact id.
-With no knowledgebase they point into the labeled mock store, and the line says `dry-run`.
+Under a `mock` evidence store they point into that labeled store, and the line says `dry-run`.
 
 `complete` is audited before its line is printed, by the same core check a standalone super-ship runs
 (`src/lifecycle/gate.ts`, `ak lifecycle check`). Every gate in the binding's `required_gates`, which
