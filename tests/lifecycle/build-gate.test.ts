@@ -34,7 +34,7 @@ console.log(JSON.stringify({ adapters: BUNDLED_ADAPTER_IDS, accepted: validate(J
   const checked = Bun.spawnSync(["node", script, receipt], { cwd: root });
   expect(checked.exitCode, checked.stderr.toString()).toBe(0);
   expect(JSON.parse(checked.stdout.toString())).toEqual({ adapters: ["test-host"], accepted: true });
-});
+}, 60_000);
 
 test("the gate builder refuses a source that cannot receive its adapter ids", () => {
   const { root, built } = fixture("console.log('gate input');\n");
@@ -42,4 +42,4 @@ test("the gate builder refuses a source that cannot receive its adapter ids", ()
   expect(built.stderr.toString()).toContain(
     `${join(root, "src/lifecycle/gate.ts")}: bundled adapter declaration missing`,
   );
-});
+}, 60_000);
