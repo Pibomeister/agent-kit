@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectFolderName, registryPath, rootOf, tickLogPath } from "../../src/learn/core/paths.ts";
+import { scrubSecrets } from "../../src/learn/core/secrets.ts";
 import { memoryDir } from "../../src/learn/memory/ledger.ts";
 import { discoverProjects, discoverySince, readRegistry, registerRoot } from "../../src/learn/memory/registry.ts";
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
@@ -217,8 +218,11 @@ describe("registry", () => {
     const block = sessionStartBlock(ctx);
     expect(block).not.toContain("registry warning");
     expect(ctx.out.join("\n")).not.toContain("registry warning");
+    // The tick log is written through the secret gate, which takes the home prefix off a scratch path under one.
     expect(readFileSync(tickLogPath(ctx.config), "utf8")).toContain(
-      `registry warning: claude-mem project 'api' is already registered at ${established}; refusing ${stray}\n`,
+      scrubSecrets(
+        `registry warning: claude-mem project 'api' is already registered at ${established}; refusing ${stray}\n`,
+      ).text,
     );
     expect(Object.values(readRegistry(ctx.config)).map((entry) => entry.root)).toEqual([established]);
   });

@@ -89,6 +89,9 @@ constraints:
   unread-index-hit-may-be-confirmed: false
   empty-search-may-be-omitted: false
 
+references:
+  - knowledgebase-binding
+
 limits:
   scout-turns: 4
   graph-query-tools: 1

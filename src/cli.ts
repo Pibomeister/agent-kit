@@ -14,6 +14,7 @@ import { attach, formatAttachResult } from "./attach/index.ts";
 import { scoreDelegationFiles } from "./delegation.ts";
 import { runFirstmate } from "./firstmate/cli.ts";
 import { main as runLifecycle } from "./lifecycle/gate.ts";
+import { runKb } from "./kb/cli.ts";
 import { readHookStdin, runLearn } from "./learn/cli.ts";
 import { runRunner } from "./runner/cli.ts";
 import { loadCatalog } from "./catalog/load.ts";
@@ -61,6 +62,7 @@ const USAGE = [
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
   "  ak firstmate <subcommand> …                bind agent-kit to a patched Firstmate home (optional)",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
+  "  ak kb check|read|publish|register …        reach the project's central knowledgebase (`ak kb help`)",
   "  ak doctor                                  inspect the installed hosts and current project",
   "  ak update                                  refresh installed ak plugins to the published version",
   "  ak learn <area> <verb> ...                 the opt-in learning runtime (`ak learn` for help)",
@@ -378,6 +380,8 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
   if (argv[0] === "learn") {
     return runLearn(argv.slice(1), { cwd: options.cwd, io: options.io, stdin: options.stdin });
   }
+  // `ak kb` likewise: its flags repeat and take values this parser does not know.
+  if (argv[0] === "kb") return runKb(argv.slice(1), { cwd: options.cwd, io: options.io });
   const parsed = parse(argv);
   for (const token of parsed.unknown) options.io.err(`ak: ${token} needs a value`);
   if (parsed.unknown.length > 0) return 2;

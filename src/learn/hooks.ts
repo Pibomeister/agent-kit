@@ -7,12 +7,14 @@
  * With a repo scope set, a session whose root is out of it is a strict no-op:
  * the check runs before the hook's span opens, so it leaves no row either.
  */
+import Ajv from "ajv";
 import { repoAllowed } from "./core/config.ts";
-import type { LearnArea, LearnContext } from "./core/context.ts";
+import { flag, type LearnArea, type LearnArgs, type LearnContext } from "./core/context.ts";
 import { mainRepoRoot } from "./core/paths.ts";
 import { tokens } from "./core/store.ts";
 import { span } from "./core/trace.ts";
-import { sessionRoot, sessionStartBlock } from "./memory/session-context.ts";
+import { type CarrierHost, claim, delivered, isCarrierHost, rearm } from "./memory/delivery.ts";
+import { sessionRoot, sessionStartBlock, sessionStartBlockWithin } from "./memory/session-context.ts";
 import { payloadCwd, promptHook, stopHook } from "./review/hooks.ts";
 
 export interface HookPayload {
@@ -49,15 +51,20 @@ function inScope(label: HookLabel, ctx: LearnContext): boolean {
   return repoAllowed(ctx.config, HOOK_ROOT[label](payloadCwd(payload, ctx.cwd)));
 }
 
-/** Runs `body` as the hook's span; a throw is reported on stderr and the hook still exits 0. */
-function guarded(label: HookLabel, ctx: LearnContext, body: (ctx: LearnContext) => void): number {
+/** Runs `body` when the session is in scope; a throw is reported on stderr and the hook still exits 0. */
+function reported(label: HookLabel, ctx: LearnContext, body: () => void): number {
   try {
     if (!inScope(label, ctx)) return 0;
-    span(ctx, `hook.${label}`, "hook", body);
+    body();
   } catch (error) {
     ctx.io.err(`ak learn ${label}: ${(error as Error).message}`);
   }
   return 0;
+}
+
+/** Runs `body` as the hook's span, reported as above. */
+function guarded(label: HookLabel, ctx: LearnContext, body: (ctx: LearnContext) => void): number {
+  return reported(label, ctx, () => span(ctx, `hook.${label}`, "hook", body));
 }
 
 /**
@@ -74,19 +81,107 @@ function recordExposure(ctx: LearnContext, block: string): void {
   if (block.trim() === "") ctx.span?.status("nothing");
 }
 
+/** What a session-start call reads from the host's payload. Grok names the session in camel case, the others in snake case. */
+interface SessionPayload {
+  cwd?: string;
+  session_id?: string;
+  sessionId?: string;
+}
+
+const isSessionPayload = new Ajv({ strict: false }).compile<SessionPayload>({
+  type: "object",
+  properties: { cwd: { type: "string" }, session_id: { type: "string" }, sessionId: { type: "string" } },
+});
+
+function parseSessionPayload(stdin: string | undefined): SessionPayload {
+  if (stdin === undefined || stdin.trim() === "") return {};
+  try {
+    const parsed: unknown = JSON.parse(stdin);
+    return isSessionPayload(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Grok clips a hook's `additionalContext` at this many characters. */
+export const GROK_CONTEXT_CHARS = 10_000;
+
+/**
+ * How a carrier host names the session and takes the block. Grok reads it
+ * from a PostToolUse hook's `additionalContext`; Kimi appends a
+ * UserPromptSubmit hook's stdout to the context as it is.
+ */
+const CARRIERS: Record<
+  CarrierHost,
+  {
+    sessionId: (payload: SessionPayload) => string | undefined;
+    block: (ctx: LearnContext) => string;
+    render: (block: string) => string;
+  }
+> = {
+  grok: {
+    sessionId: (payload) => payload.sessionId,
+    block: (ctx) => sessionStartBlockWithin(ctx, GROK_CONTEXT_CHARS),
+    render: (block) =>
+      JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: block } }),
+  },
+  kimi: {
+    sessionId: (payload) => payload.session_id,
+    block: sessionStartBlock,
+    render: (block) => block,
+  },
+};
+
+/**
+ * `session-start --host H`: print the block on the session's first carrier
+ * call and nothing after it; with `--arm`, clear the mark instead. A payload
+ * that names no session prints nothing, because a block that cannot be marked
+ * delivered would be repeated on every call. Only the call that builds the
+ * block is a span: one that arms, or finds the mark, leaves no row.
+ */
+function carrierHook(ctx: LearnContext, host: CarrierHost, payload: SessionPayload, arm: boolean): void {
+  const carrier = CARRIERS[host];
+  const sessionId = carrier.sessionId(payload) ?? "";
+  if (sessionId === "") return;
+  if (arm) {
+    rearm(ctx.config, host, sessionId);
+    return;
+  }
+  if (delivered(ctx.config, host, sessionId)) return;
+  span(ctx, "hook.session-start", "hook", (traced) => {
+    const block = carrier.block(traced).trimEnd();
+    const printed = claim(traced.config, host, sessionId) ? block : "";
+    if (printed !== "") traced.io.out(carrier.render(printed));
+    recordExposure(traced, printed);
+  });
+}
+
+function sessionStartHook(args: LearnArgs, ctx: LearnContext): void {
+  const payload = parseSessionPayload(ctx.stdin);
+  const session = { ...ctx, cwd: payloadCwd(parsePayload(ctx.stdin), ctx.cwd) };
+  const host = flag(args, "host");
+  if (isCarrierHost(host)) {
+    carrierHook(session, host, payload, args.flags.has("arm"));
+    return;
+  }
+  if (host !== undefined) {
+    ctx.io.err(`ak learn session-start: --host is ${Object.keys(CARRIERS).join(" or ")}`);
+    return;
+  }
+  span(session, "hook.session-start", "hook", (traced) => {
+    const block = sessionStartBlock(traced);
+    if (block.trim() !== "") traced.io.out(block.trimEnd());
+    recordExposure(traced, block);
+  });
+}
+
 export const hookArea: LearnArea = {
   summary: "entry points for host hooks; never blocks a session",
   verbs: {
     "session-start": {
-      usage: "hook session-start            print the merged context block (guardrails, memory, lessons, roster)",
-      run: (_args, ctx) =>
-        guarded("session-start", ctx, (hook) => {
-          const payload = parsePayload(hook.stdin);
-          const cwd = payloadCwd(payload, hook.cwd);
-          const block = sessionStartBlock({ ...hook, cwd });
-          if (block.trim() !== "") hook.io.out(block.trimEnd());
-          recordExposure(hook, block);
-        }),
+      usage:
+        "hook session-start [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --host: once per session, --arm: allow it again",
+      run: (args, ctx) => reported("session-start", ctx, () => sessionStartHook(args, ctx)),
     },
     stop: {
       usage: "hook stop [--source codex]    debounced: detach the review pipeline for this project",

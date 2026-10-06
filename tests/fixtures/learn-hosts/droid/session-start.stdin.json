@@ -1,0 +1,8 @@
+{
+  "session_id": "0b9f6c1e-droid-fixture",
+  "transcript_path": "/home/operator/.factory/projects/-home-operator-shop/0b9f6c1e/session.jsonl",
+  "cwd": "/home/operator/shop",
+  "permission_mode": "off",
+  "hook_event_name": "SessionStart",
+  "source": "startup"
+}

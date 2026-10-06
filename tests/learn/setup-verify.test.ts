@@ -321,6 +321,24 @@ describe("setup verify", () => {
     }
   });
 
+  test("an ak entry that only a Droid, Grok or Kimi hook names fails verify once it is gone", () => {
+    for (const [host, folder] of [
+      ["droid", ".factory"],
+      ["grok", ".grok"],
+      ["kimi", ".kimi-code"],
+    ] as const) {
+      const deps = fakeDeps(["bun", "git", "judge"]);
+      const ctx = context(deps);
+      mkdirSync(join(deps.home, folder));
+      expect(wire(ctx, deps, { host })).toBe(0);
+      const entry = deps.ak[1] ?? "";
+      const found = () => verifyChecks(ctx, deps).find((check) => check.label === "ak entry exists");
+      expect(found()).toEqual({ label: "ak entry exists", ok: true, detail: entry });
+      rmSync(entry);
+      expect(found()).toEqual({ label: "ak entry exists", ok: false, detail: `missing: ${entry}` });
+    }
+  });
+
   test("a scope only in AK_LEARN_REPOS is refused by wire and schedule and flagged by verify, since neither carries it", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const root = gitRepo(join(scratch(), "shop"));

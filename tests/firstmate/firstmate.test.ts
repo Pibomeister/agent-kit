@@ -103,7 +103,7 @@ describe("preflight", () => {
     expect(failed(result.checks)).toContain("upstream-commit");
   });
 
-  test("the knowledgebase evidence store fails closed: no knowledgebase exists", () => {
+  test("the knowledgebase evidence store fails closed: this adapter publishes to none", () => {
     const { home, project, opts } = env();
     const result = preflight(
       { fmHome: home, project, host: "claude-code", evidence: { store: "kb", location: "kb://x" } },

@@ -14,7 +14,7 @@ import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { run } from "../core/proc.ts";
-import { readText, todayUtc } from "../core/store.ts";
+import { readText, SECRET_REDACTIONS_FILE, todayUtc, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { lessonDraft, proposeLesson } from "../kb.ts";
 import { rawSnapshot } from "./events.ts";
@@ -201,8 +201,8 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
     ctx.span?.status("dry-run");
     return `dry run: would promote ${promoted.join(",")}`;
   }
-  writeFileSync(ledger.path("guardrails.md"), texts.guard);
-  writeFileSync(ledger.path("pending-team-promotions.md"), texts.pending);
+  writeGated(ledger.dir, ledger.path("guardrails.md"), texts.guard);
+  writeGated(ledger.dir, ledger.path("pending-team-promotions.md"), texts.pending);
   rebuildIndex(ledger, patterns);
   const teamNote = proposed.length > 0 ? `; team proposals ${proposed.join(",")}` : "";
   const sha = ledger.commit(`propose: guardrails +${promoted.join(",")}${teamNote}`);
@@ -224,8 +224,8 @@ export function promoteById(ctx: LearnContext, ledger: Ledger, root: string, id:
     pending: readText(ledger.path("pending-team-promotions.md")),
   };
   const team = promoteOne(ctx, ledger, root, pattern, texts);
-  writeFileSync(ledger.path("guardrails.md"), texts.guard);
-  writeFileSync(ledger.path("pending-team-promotions.md"), texts.pending);
+  writeGated(ledger.dir, ledger.path("guardrails.md"), texts.guard);
+  writeGated(ledger.dir, ledger.path("pending-team-promotions.md"), texts.pending);
   rebuildIndex(ledger, patterns);
   ledger.commit(`promote: guardrails +${id} (by hand)${team ? `; team proposal ${id}` : ""}`);
   return `promoted ${id} to guardrails${team ? `; team proposal ${id}` : ""}`;
@@ -245,7 +245,7 @@ export function retire(ledger: Ledger, id: string, dryRun = false): string {
   savePattern(pattern);
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const guard = ledger.path("guardrails.md");
-  writeFileSync(guard, readText(guard).replace(new RegExp(`^- \\[${escaped}\\].*\\n?`, "gm"), ""));
+  writeGated(ledger.dir, guard, readText(guard).replace(new RegExp(`^- \\[${escaped}\\].*\\n?`, "gm"), ""));
   impactRow(ledger, "retire", id, "bullet removed, page kept");
   rebuildIndex(ledger, patterns);
   ledger.commit(`retire: ${id}`);
@@ -254,8 +254,9 @@ export function retire(ledger: Ledger, id: string, dryRun = false): string {
 
 /**
  * The paths a rollback restores: judgement and policy, plus the processed map, so the events
- * whose classification is undone are classified again on the next maintain. The raw events and
- * the maintainer log are records of what happened and are never rolled back.
+ * whose classification is undone are classified again on the next maintain. The raw events, the
+ * secret gate's redaction record and the maintainer log are records of what happened and are
+ * never rolled back.
  */
 export const ROLLBACK_PATHS: readonly string[] = [
   "patterns",
@@ -279,7 +280,7 @@ export function rollback(ledger: Ledger, to?: string): string {
     const head = ledger.head();
     if (head === null) return "nothing to roll back";
     const subject = ledger.git(["log", "-1", "--format=%s", head]).stdout.trim();
-    const raw = rawSnapshot(ledger);
+    const raw = RAW_FILES.map((file) => [file, rawSnapshot(ledger, file)] as const);
     if (!ledger.revert(head)) return `revert of '${subject}' failed; nothing was changed`;
     keepRaw(ledger, raw);
     return `reverted '${subject}'`;
@@ -326,12 +327,19 @@ function restorePaths(ledger: Ledger, rev: string, paths: readonly string[]): st
   return null;
 }
 
-/** After a revert, put back any raw events it removed, in a commit of its own. */
-function keepRaw(ledger: Ledger, raw: Buffer | null): void {
-  if (raw === null || raw.equals(rawSnapshot(ledger) ?? Buffer.alloc(0))) return;
-  mkdirSync(ledger.path("raw"), { recursive: true });
-  writeFileSync(ledger.path(EVENTS_FILE), raw);
-  ledger.commit(`rollback: keep ${EVENTS_FILE} append-only`);
+/** The append-only files a revert of the latest commit must leave as they were. */
+const RAW_FILES = [EVENTS_FILE, SECRET_REDACTIONS_FILE] as const;
+
+/** After a revert, put back any raw rows it removed, in a commit of its own. */
+function keepRaw(ledger: Ledger, raw: ReadonlyArray<readonly [string, Buffer | null]>): void {
+  const restored: string[] = [];
+  for (const [file, bytes] of raw) {
+    if (bytes === null || bytes.equals(rawSnapshot(ledger, file) ?? Buffer.alloc(0))) continue;
+    mkdirSync(ledger.path("raw"), { recursive: true });
+    writeFileSync(ledger.path(file), bytes);
+    restored.push(file);
+  }
+  if (restored.length > 0) ledger.commit(`rollback: keep ${restored.join(", ")} append-only`);
 }
 
 export function pendingPromotions(ledger: Ledger): string {
