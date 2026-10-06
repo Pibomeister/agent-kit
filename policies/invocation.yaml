@@ -427,11 +427,11 @@ bypass:
     home and never through bun from a project directory; the worker runs that script's `bypass
     check --task <id>` before each phase, and exit 0 is the start. The task id comes from the brief and
     must equal the grant's, and the check must run from inside the task's worktree the grant
-    names; `--project` cannot substitute for that. A grant is valid only in the run it is first
-    used in, claimed atomically on first use in `<store>/grant-runs/<grant>.json`; another run
-    (super-build's `open --ticket` starts one) is refused and takes a fresh grant, which the
-    supervisor issues without a human step, and `--run .` or `--run ..` is refused. The
-    phase runs as its explicit form. It is not a phase operation, not a delegated grant and not
+    names; `--project` cannot substitute for that. A grant holds in every run of its task
+    (super-build's `open --ticket` starts one) until it expires, at most 12 hours after it was
+    issued. The run must be the current run of the branch the check runs on, so a run other than
+    the branch's current run is refused, and `--run .` or `--run ..` is refused. The phase runs as
+    its explicit form. It is not a phase operation, not a delegated grant and not
     trusted evidence.
   phases: [super-align, super-bound, "super-review:full", "super-review:readiness", super-ship]
   start_only: >-
@@ -448,12 +448,11 @@ bypass:
     that passes the check for the same task and worktree, whose record names the grant it
     supersedes in `superseded_grant_id`, or a typed record without `--bypass`, which records
     `authority: {mode: explicit, superseded_grant_id}` and ends the bypass for that phase in that
-    run: the grants it ended are refused there until a fresh grant for the same task re-starts it,
-    and as grants used in that run they are refused in any other. The use records and the
-    grant's run claim are worker-writable, so the run binding and the end guard against accidents, not a determined
-    worker; nothing is written to the ledger. A grant for another task or worktree, an expired one,
-    one first used in another run, or the grant a typed record
-    ended is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
+    run: the grants it ended are refused there until a fresh grant for the same task re-starts it.
+    The end is per run; another run is a fresh start under the same grant. The use records are
+    worker-writable, so the end guards against accidents, not a determined worker; nothing is
+    written to the ledger. A grant for another task or worktree, an expired one, one issued for
+    longer than 12 hours, or the grant a typed record ended in that run is refused; re-recording a hand-recorded snapshot with `--bypass` is refused; `--bypass`
     on a gate no bypass phase records is refused.
   trust: >-
     The grant lives outside every worktree and the git directory of its repository, and its real

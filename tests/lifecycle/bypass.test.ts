@@ -96,6 +96,22 @@ function akAt(now: () => Date, cwd: string, ledger: string, ...argv: string[]) {
 
 const ak = (cwd: string, ledger: string, ...argv: string[]) => akAt(() => new Date(), cwd, ledger, ...argv);
 
+/** The time a grant's text records under `key`, in milliseconds. */
+const stamp = (text: string, key: string) => Date.parse(new RegExp(`"${key}": "([^"]*)"`).exec(text)?.[1] ?? "");
+
+/** How long the grant at `path` was issued for, in milliseconds. */
+const life = (path: string) => {
+  const text = readFileSync(path, "utf8");
+  return stamp(text, "expires_at") - stamp(text, "created_at");
+};
+
+/** Whether the temp directory's filesystem tells `A` from `a`: it decides whether a case alias collides. */
+const caseSensitiveTmp = (() => {
+  const probe = dir("ak-bypass-case-");
+  writeFileSync(join(probe, "a"), "");
+  return !existsSync(join(probe, "A"));
+})();
+
 /** A clock a day and an hour on, past a default grant's expiry. */
 const dayLater = () => new Date(Date.now() + 25 * 3_600_000);
 
@@ -201,6 +217,8 @@ describe("bypass granted: phases start without a typed command", () => {
     expect(readdirSync(ledger)).toHaveLength(1);
     expect(brief).toContain(`bypass check --grant ${realpathSync(grantPath)} --task T-1 --phase`);
     expect(brief).toContain("Every approval inside a phase stops with needs-decision");
+    expect(brief).toContain("This grant holds in every run of the task until it expires");
+    expect(brief).not.toContain("valid only in the run");
   });
 
   test("the worker's check passes for every phase and leaves a use record naming who authorized it", () => {
@@ -425,6 +443,66 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     expect(!r.ok && r.reason).toContain("expired");
   });
 
+  test("a grant lasts 12 hours by default and at most 12; --hours 13 writes no grant and no ledger entry", () => {
+    const s = setup();
+    expect(grantFrom(s, s.home, s.grantPath).code).toBe(0);
+    expect(life(s.grantPath)).toBe(12 * 3_600_000);
+    const twelve = join(s.home, "data", "T-1", "twelve.json");
+    expect(grantFrom(s, s.home, twelve, "--hours", "12").code).toBe(0);
+    expect(life(twelve)).toBe(12 * 3_600_000);
+    const registered = entries(s.ledger).length;
+    const thirteen = join(s.home, "data", "T-1", "thirteen.json");
+    const r = grantFrom(s, s.home, thirteen, "--hours", "13");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("from 1 to 12");
+    expect(existsSync(thirteen)).toBe(false);
+    expect(entries(s.ledger)).toHaveLength(registered);
+  });
+
+  test("a registered grant issued for longer than 12 hours is refused at check", () => {
+    const s = setup();
+    expect(grantFrom(s, s.home, s.grantPath).code).toBe(0);
+    const id = grantId(s.ledger);
+    const lasting = (hours: number) => {
+      const genuine = readFileSync(s.grantPath, "utf8");
+      const expires = new Date(stamp(genuine, "created_at") + hours * 3_600_000).toISOString();
+      const text = genuine.replace(/"expires_at": "[^"]*"/, `"expires_at": "${expires}"`);
+      writeFileSync(s.grantPath, text);
+      const entryPath = join(s.ledger, `${id}.json`);
+      const digest = `sha256:${createHash("sha256").update(text).digest("hex")}`;
+      writeFileSync(
+        entryPath,
+        readFileSync(entryPath, "utf8").replace(/"grant_sha256": ?"[^"]*"/, `"grant_sha256": "${digest}"`),
+      );
+      return checkPhase(s, s.grantPath, "T-1", "super-align");
+    };
+    expect(lasting(12).code).toBe(0);
+    const long = lasting(13);
+    expect(long.code).toBe(1);
+    expect(long.err).toContain("longer than 12 hours");
+    expect(long.err).toContain("it issues a fresh grant for this task");
+    expect(long.err).not.toContain("the phase needs its typed command");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"));
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain("longer than 12 hours");
+    expect(recorded.err).toContain("hint: issue a fresh grant for this task");
+    expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).toEqual([]);
+    const otherTask = checkPhase(s, s.grantPath, "T-2", "super-align");
+    expect(otherTask.code).toBe(1);
+    expect(otherTask.err).toContain("is for task T-1, not T-2");
+    expect(otherTask.err).toContain("the phase needs its typed command");
+  });
+
+  test("a refusal whose text names the over-long reason does not earn the reissue hint", () => {
+    const s = granted();
+    const named = join(s.home, "was issued for longer than 12 hours", "bypass.json");
+    const r = checkPhase(s, named, "T-1", "super-align");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("does not exist");
+    expect(r.err).toContain("the phase needs its typed command");
+    expect(r.err).not.toContain("it issues a fresh grant for this task");
+  });
+
   test("a grant for another repository is refused", () => {
     const { ledger, grantPath } = granted();
     const other = setup();
@@ -576,32 +654,26 @@ describe("one task: the grant binds to the task it names and that task's worktre
     expect(existsSync(s.grantPath)).toBe(false);
   });
 
-  test("a grant works only in the run it starts in; super-build's new run takes a fresh grant through ship", () => {
+  test("one grant spans its task's runs: super-build's new run takes the same grant through ship", () => {
     const g = granted();
     const { worktree, ledger, grantPath, home } = g;
-    const check = (grant: string, phase: string) =>
-      ak(worktree, ledger, "bypass", "check", "--grant", grant, "--task", "T-1", "--phase", phase);
-    expect(check(grantPath, "super-align").code).toBe(0);
-    expect(check(grantPath, "super-bound").code).toBe(0);
+    const first = grantId(ledger);
+    const check = (phase: string) =>
+      ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-1", "--phase", phase);
+    expect(check("super-align").code).toBe(0);
+    expect(check("super-bound").code).toBe(0);
     const ticketPath = join(home, "ticket.json");
     writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
     const opened = ak(worktree, ledger, "open", "--ticket", ticketPath);
     expect(opened.code).toBe(0);
     const run = opened.out.replace(/^opened run /, "");
     expect(run).not.toBe("task");
-    const refused = check(grantPath, "super-review:full");
-    expect(refused.code).toBe(1);
-    expect(refused.err).toContain("first used in run task");
-    expect(refused.err).toContain("fresh grant for this run");
-    expect(ak(worktree, ledger, ...recordArgs("review-full", grantPath, "T-1")).code).toBe(1);
-    expect(readRecords(defaultEvidenceDir(worktree), run, "review-full")).toEqual([]);
-    const fresh = freshGrant(g, () => new Date(), "T-1");
-    expect(check(fresh.path, "super-review:full").code).toBe(0);
-    expect(ak(worktree, ledger, ...recordArgs("review-full", fresh.path, "T-1")).code).toBe(0);
-    expect(check(fresh.path, "super-ship").code).toBe(0);
-    expect(ak(worktree, ledger, ...recordArgs("ship-preflight", fresh.path, "T-1")).code).toBe(0);
+    expect(check("super-review:full").code).toBe(0);
+    expect(ak(worktree, ledger, ...recordArgs("review-full", grantPath, "T-1")).code).toBe(0);
+    expect(check("super-ship").code).toBe(0);
+    expect(ak(worktree, ledger, ...recordArgs("ship-preflight", grantPath, "T-1")).code).toBe(0);
     expect(readRecords(defaultEvidenceDir(worktree), run, "ship-preflight").map((r) => r.authority)).toEqual([
-      expect.objectContaining({ mode: "bypass", grant_id: fresh.id, task_id: "T-1" }),
+      expect.objectContaining({ mode: "bypass", grant_id: first, task_id: "T-1" }),
     ]);
   });
 
@@ -735,7 +807,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
     }
   });
 
-  test("--dir is refused with a bypass grant, so another store cannot dodge the typed end (P9b)", () => {
+  test("--dir is refused with a bypass grant, so its use records stay in the default store (P9b)", () => {
     const s = granted();
     const elsewhere = dir("ak-bypass-store-");
     const checked = ak(
@@ -841,7 +913,7 @@ describe("a typed record ends a bypassed phase for the run, and a hand-started p
   });
 });
 
-describe("one run per grant: the binding cannot be dodged by flag or by racing", () => {
+describe("--run . and --run .. are not run ids", () => {
   test.each([".", ".."])("--run %s is not a run id, at check and at record --bypass, and nothing is written", (dot) => {
     const s = granted();
     const store = defaultEvidenceDir(s.worktree);
@@ -866,37 +938,45 @@ describe("one run per grant: the binding cannot be dodged by flag or by racing",
     expect(existsSync(join(store, "bypass"))).toBe(false);
     expect(existsSync(join(store, "..", "bypass"))).toBe(false);
   });
+});
 
-  test("a grant first used under --run A is refused under --run B, with a hint naming the fresh grant", () => {
+/** Opens a new run on the setup's worktree branch with `open --ticket`, as super-build does: its id. */
+const openRun = (s: ReturnType<typeof granted>) => {
+  const ticketPath = join(s.home, "ticket.json");
+  writeFileSync(ticketPath, JSON.stringify({ id: "T-1" }));
+  const opened = ak(s.worktree, s.ledger, "open", "--ticket", ticketPath);
+  expect(opened.code).toBe(0);
+  return opened.out.replace(/^opened run /, "");
+};
+const checkIn = (s: ReturnType<typeof granted>, phase: string) => checkPhase(s, s.grantPath, "T-1", phase);
+
+describe("a grant holds in every run of its task's branch, and a typed end stays in its run", () => {
+  test("a grant that started and recorded a phase in one run starts and records it again in the next", () => {
     const s = granted();
-    const at = (run: string) =>
-      ak(
-        s.worktree,
-        s.ledger,
-        "bypass",
-        "check",
-        "--grant",
-        s.grantPath,
-        "--task",
-        "T-1",
-        "--phase",
-        "super-review:full",
-        "--run",
-        run,
-      );
-    expect(at("run-a").code).toBe(0);
-    const other = at("run-b");
-    expect(other.code).toBe(1);
-    expect(other.err).toContain("first used in run run-a");
-    expect(other.err).toContain("issues a fresh grant for this run");
-    expect(other.err).not.toContain("the phase needs its typed command");
-    expect(at("run-a").code).toBe(0);
+    const first = grantId(s.ledger);
+    expect(checkIn(s, "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(0);
+    const next = openRun(s);
+    expect(checkIn(s, "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(0);
+    for (const run of ["task", next])
+      expect(readRecords(defaultEvidenceDir(s.worktree), run, "review-full").map((r) => r.authority)).toEqual([
+        expect.objectContaining({ mode: "bypass", grant_id: first }),
+      ]);
+    expect(existsSync(join(defaultEvidenceDir(s.worktree), "grant-runs"))).toBe(false);
   });
 
-  test("first use through record --bypass binds the grant just as a check does", () => {
+  test("a typed end refuses the grant for that phase in its run only; a new run starts it again", () => {
     const s = granted();
-    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", "run-a").code).toBe(0);
-    const other = ak(
+    expect(checkIn(s, "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    const ended = checkIn(s, "super-review:full");
+    expect(ended.code).toBe(1);
+    expect(ended.err).toContain("ended by a typed record");
+    const next = openRun(s);
+    expect(checkIn(s, "super-review:full").code).toBe(0);
+    expect(ak(s.worktree, s.ledger, "record", "--gate", "review-full").code).toBe(0);
+    const back = ak(
       s.worktree,
       s.ledger,
       "bypass",
@@ -906,39 +986,228 @@ describe("one run per grant: the binding cannot be dodged by flag or by racing",
       "--task",
       "T-1",
       "--phase",
-      "super-ship",
+      "super-review:full",
       "--run",
-      "run-b",
+      "task",
     );
-    expect(other.code).toBe(1);
-    expect(other.err).toContain("first used in run run-a");
-    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1"), "--run", "run-b");
-    expect(recorded.code).toBe(1);
-    expect(recorded.err).toContain("issues a fresh grant for this run");
-    expect(readRecords(defaultEvidenceDir(s.worktree), "run-b", "review-readiness")).toEqual([]);
+    expect(back.code).toBe(1);
+    expect(back.err).toContain(`run task is not the current run of branch task, ${next}`);
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", "task").code).toBe(1);
+    expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-full")).toHaveLength(1);
+    const unstarted = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-align",
+      "--run",
+      "task",
+    );
+    expect(unstarted.code).toBe(1);
+    expect(unstarted.err).toContain(`run task is not the current run of branch task, ${next}`);
+    const readiness = ak(s.worktree, s.ledger, ...recordArgs("review-readiness", s.grantPath, "T-1"), "--run", "task");
+    expect(readiness.code).toBe(1);
+    expect(readiness.err).toContain("is not the current run of branch task");
+    expect(readRecords(defaultEvidenceDir(s.worktree), "task", "review-readiness")).toEqual([]);
   });
 
-  test("two first uses of one grant in two runs at the same moment: at most one wins", async () => {
-    const script = join(dir("ak-bypass-race-"), "check.ts");
-    writeFileSync(
-      script,
-      `import { main } from ${JSON.stringify(join(REPO, "src", "lifecycle", "gate.ts"))};
-const [cwd, ledger, grant, run] = process.argv.slice(2);
-process.exitCode = main(["bypass", "check", "--grant", grant, "--task", "T-1", "--phase", "super-review:full", "--run", run], { out: () => {}, err: () => {} }, cwd, ledger);
-`,
+  test("the current run named explicitly with --run passes; a detached head has no current run", () => {
+    const s = granted();
+    const next = openRun(s);
+    const explicit = [
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-review:full",
+      "--run",
+      next,
+    ];
+    expect(ak(s.worktree, s.ledger, ...explicit).code).toBe(0);
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", next).code).toBe(0);
+    git(s.worktree, "checkout", "-q", "--detach");
+    const detached = ak(s.worktree, s.ledger, ...explicit);
+    expect(detached.code).toBe(1);
+    expect(detached.err).toContain("is on a detached head, so it has no current run");
+  });
+
+  test("a branch run pointer that is not valid refuses an explicit --run under a grant", () => {
+    const s = granted();
+    openRun(s);
+    const branches = join(defaultEvidenceDir(s.worktree), "branches");
+    const [pointer] = readdirSync(branches).filter((name) => name.startsWith("task-"));
+    if (pointer === undefined) throw new Error("open wrote no branch pointer");
+    writeFileSync(join(branches, pointer), "not json");
+    const r = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-align",
+      "--run",
+      "task",
     );
-    let bothWon = 0;
-    for (let i = 0; i < 6; i += 1) {
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is not valid");
+    expect(existsSync(join(defaultEvidenceDir(s.worktree), "task", "bypass"))).toBe(false);
+  });
+
+  // On a case-sensitive store the two ids are two runs and nothing collides, so the case is skipped there.
+  test.skipIf(caseSensitiveTmp)(
+    "on a case-insensitive store, a branch named for another task's opened run in another case is refused",
+    () => {
       const s = granted();
-      const spawn = (run: string) =>
-        Bun.spawn(["bun", script, s.worktree, s.ledger, s.grantPath, run], { stdout: "ignore", stderr: "ignore" });
-      const [a, b] = [spawn(`run-a-${i}`), spawn(`run-b-${i}`)];
-      const codes = await Promise.all([a.exited, b.exited]);
-      expect(codes.toSorted()).toEqual(codes.includes(1) ? [0, 1] : [0, 0]);
-      if (codes[0] === 0 && codes[1] === 0) bothWon += 1;
+      const other = join(dir("ak-bypass-wt-"), "other");
+      git(s.project, "worktree", "add", "-q", "-b", "fm/t2", other);
+      const ticketPath = join(s.home, "other-ticket.json");
+      writeFileSync(ticketPath, JSON.stringify({ id: "T-2" }));
+      const opened = ak(other, s.ledger, "open", "--ticket", ticketPath);
+      expect(opened.code).toBe(0);
+      const theirs = opened.out.replace(/^opened run /, "");
+      const store = defaultEvidenceDir(s.worktree);
+      const alias = theirs.toUpperCase();
+      expect(existsSync(join(store, "runs", alias))).toBe(true);
+      git(s.worktree, "switch", "-q", "-c", alias);
+      const checked = checkIn(s, "super-align");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(`run ${alias} was opened as ${theirs} for branch fm/t2`);
+      expect(existsSync(join(store, theirs, "bypass"))).toBe(false);
+    },
+  );
+
+  test("a branch-named run another local branch shares, by separator or by case, is not this branch's", () => {
+    for (const [mine, theirs] of [
+      ["feat/y", "feat-y"],
+      ["FEAT-Z", "feat/z"],
+      ["feat/w", "feat-w"],
+    ] as const) {
+      const s = granted();
+      git(s.project, "branch", theirs);
+      // A tag of the same name makes git print the branch as `heads/<name>` in its short form.
+      if (theirs === "feat-w") git(s.project, "tag", theirs);
+      git(s.worktree, "switch", "-q", "-c", mine);
+      const store = defaultEvidenceDir(s.worktree);
+      const checked = checkIn(s, "super-align");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(`is also the branch-named run of branch ${theirs}`);
+      expect(existsSync(join(store, mine.replace("/", "-"), "bypass"))).toBe(false);
     }
-    expect(bothWon).toBe(0);
-  }, 120_000);
+  });
+
+  test("renaming the worktree's branch to another task's run id does not make that run its own", () => {
+    const s = granted();
+    const other = join(dir("ak-bypass-wt-"), "other");
+    git(s.project, "worktree", "add", "-q", "-b", "fm/t2", other);
+    const ticketPath = join(s.home, "other-ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-2" }));
+    const opened = ak(other, s.ledger, "open", "--ticket", ticketPath);
+    expect(opened.code).toBe(0);
+    const theirs = opened.out.replace(/^opened run /, "");
+    git(s.worktree, "switch", "-q", "-c", theirs);
+    const store = defaultEvidenceDir(s.worktree);
+    const checked = checkIn(s, "super-align");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(`for branch fm/t2, not ${theirs}`);
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(1);
+    expect(existsSync(join(store, theirs, "bypass"))).toBe(false);
+    expect(readRecords(store, theirs, "review-full")).toEqual([]);
+  });
+
+  test("a branch whose run id another worktree's branch shares (feat/x, feat-x) has no branch-named run under a grant", () => {
+    const s = granted();
+    const other = join(dir("ak-bypass-wt-"), "other");
+    git(s.project, "worktree", "add", "-q", "-b", "feat-x", other);
+    git(s.worktree, "switch", "-q", "-c", "feat/x");
+    const store = defaultEvidenceDir(s.worktree);
+    const checked = checkIn(s, "super-align");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("run feat-x is also the branch-named run of branch feat-x");
+    expect(ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1")).code).toBe(1);
+    expect(existsSync(join(store, "feat-x", "bypass"))).toBe(false);
+    openRun(s);
+    expect(checkIn(s, "super-align").code).toBe(0);
+  });
+
+  test("an over-long grant in another branch's run gets the run refusal, not the reissue hint", () => {
+    const s = granted();
+    const id = grantId(s.ledger);
+    const genuine = readFileSync(s.grantPath, "utf8");
+    const expires = new Date(stamp(genuine, "created_at") + 13 * 3_600_000).toISOString();
+    const text = genuine.replace(/"expires_at": "[^"]*"/, `"expires_at": "${expires}"`);
+    writeFileSync(s.grantPath, text);
+    const entryPath = join(s.ledger, `${id}.json`);
+    const digest = `sha256:${createHash("sha256").update(text).digest("hex")}`;
+    writeFileSync(
+      entryPath,
+      readFileSync(entryPath, "utf8").replace(/"grant_sha256": ?"[^"]*"/, `"grant_sha256": "${digest}"`),
+    );
+    const r = ak(
+      s.worktree,
+      s.ledger,
+      "bypass",
+      "check",
+      "--grant",
+      s.grantPath,
+      "--task",
+      "T-1",
+      "--phase",
+      "super-align",
+      "--run",
+      "elsewhere",
+    );
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("run elsewhere is not the current run of branch task");
+    expect(r.err).toContain("the phase needs its typed command");
+    expect(r.err).not.toContain("it issues a fresh grant for this task");
+  });
+
+  test("another task's run is refused with --run, at check and at record --bypass, and nothing is written there", () => {
+    const s = granted();
+    const other = join(dir("ak-bypass-wt-"), "other");
+    git(s.project, "worktree", "add", "-q", "-b", "other", other);
+    const ticketPath = join(s.home, "other-ticket.json");
+    writeFileSync(ticketPath, JSON.stringify({ id: "T-2" }));
+    const theirs = ak(other, s.ledger, "open", "--ticket", ticketPath).out.replace(/^opened run /, "");
+    const store = defaultEvidenceDir(s.worktree);
+    for (const run of [theirs, "other", "run-of-my-choosing"]) {
+      const checked = ak(
+        s.worktree,
+        s.ledger,
+        "bypass",
+        "check",
+        "--grant",
+        s.grantPath,
+        "--task",
+        "T-1",
+        "--phase",
+        "super-align",
+        "--run",
+        run,
+      );
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(`run ${run} is not the current run of branch task`);
+      expect(checked.err).toContain("the phase needs its typed command");
+      const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", run);
+      expect(recorded.code).toBe(1);
+      expect(recorded.err).toContain(`run ${run} is not the current run of branch task`);
+      expect(existsSync(join(store, run, "bypass"))).toBe(false);
+      expect(readRecords(store, run, "review-full")).toEqual([]);
+    }
+    expect(checkIn(s, "super-align").code).toBe(0);
+  });
 });
 
 describe("a forged grant cannot ride a genuine grant's hash", () => {
