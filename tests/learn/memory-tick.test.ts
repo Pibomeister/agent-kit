@@ -514,8 +514,9 @@ describe("tick", () => {
   });
 
   test("the scheduled tick skips a project with no activity in the last 7 days", () => {
+    // One hour inside and one day outside the cutoff, so both sides of the 7-day boundary are pinned.
     for (const [ageDays, runs] of [
-      [6, true],
+      [7 - 1 / 24, true],
       [8, false],
     ] as const) {
       const { ctx } = fixtureProject(ageDays);

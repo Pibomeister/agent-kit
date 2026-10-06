@@ -31,9 +31,11 @@ describe("donor snapshots", () => {
   // (tools/donors/clone.sh) and sets AK_REQUIRE_DONORS=1, where a missing clone
   // is a failure rather than a skip: a skip there is the content check never running.
   const donorsRequired = process.env.AK_REQUIRE_DONORS === "1";
-  const donorsPresent = existsSync(join(ROOT, ".donors"));
+  // Present means at least one cited donor is cloned: an empty or unrelated .donors/ compares nothing.
+  const donorsPresent = expected.some((snap) => snap.clone !== null && existsSync(join(ROOT, snap.clone)));
   test.if(donorsPresent || donorsRequired)("every snapshot is byte-identical to its pin", () => {
-    expect(donorsPresent ? [] : [".donors/ is absent; run tools/donors/clone.sh"]).toEqual([]);
+    expect(donorsPresent ? [] : ["no cited donor is cloned under .donors/; run tools/donors/clone.sh"]).toEqual([]);
+    let compared = 0;
     const drifted: string[] = [];
     const unresolved: string[] = [];
     for (const snap of expected) {
@@ -44,9 +46,11 @@ describe("donor snapshots", () => {
         continue;
       }
       const path = join(ROOT, snap.file);
+      compared += 1;
       if (existsSync(path) && !readFileSync(path).equals(pinned)) drifted.push(snap.file);
     }
     expect(drifted).toEqual([]);
     expect(unresolved).toEqual([]);
+    expect(compared).toBeGreaterThan(0);
   });
 });

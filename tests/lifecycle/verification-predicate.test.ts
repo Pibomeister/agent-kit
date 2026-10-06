@@ -2,13 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { verificationShapeReasons as reasonsOf } from "../../src/lifecycle/gate.ts";
+import { verificationShapeReasons } from "../../src/lifecycle/gate.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
-import { edited, parseJson, pathsOf } from "../helpers/json.ts";
+import { edited, parseJson, pathsOf, type JsonValue } from "../helpers/json.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const validate = compileSchemas(ROOT).validatorFor("verification")!;
 const read = (path: string): Record<string, unknown> => JSON.parse(readFileSync(path, "utf8"));
+
+/** Whether the bundled predicate accepts a receipt: it reports no reasons against it. */
+const accepts = (receipt: JsonValue) => verificationShapeReasons(receipt).length === 0;
 
 describe("the bundled verification predicate", () => {
   test("agrees with ajv over every receipt fixture and representative malformed shapes", () => {
@@ -53,14 +56,14 @@ describe("the bundled verification predicate", () => {
     ];
 
     for (const receipt of [...fixtures, ...templates, surface, ...malformed]) {
-      expect(reasonsOf(receipt).length === 0, JSON.stringify(receipt)).toBe(validate(receipt) as boolean);
+      expect(accepts(parseJson(JSON.stringify(receipt))), JSON.stringify(receipt)).toBe(validate(receipt) as boolean);
     }
   });
 
-  // Known divergences on main: the predicate accepts these and ajv rejects them. Each is an optional or
-  // nested metadata member the gate's refusals do not read. Reported as a product bug (Firstmate,
-  // 2026-10-06, ak-test-hardening predicate-divergence); fixing it in src/lifecycle/gate.ts makes this
-  // test fail until the fixed entries are removed, and any new divergence fails it too.
+  // Known divergences: verificationShapeReasons (src/lifecycle/gate.ts) accepts these single-member
+  // corruptions and ajv rejects them. Each is an optional or nested metadata member the gate's refusals do
+  // not read. This is a known predicate defect, not intended behaviour: a fix in gate.ts makes this test
+  // fail until the fixed entries are removed from this list, and any new divergence fails it too.
   const KNOWN_DIVERGENCES = [
     "delete environment.toolchain.0.name",
     "delete environment.toolchain.0.version",
@@ -134,11 +137,11 @@ describe("the bundled verification predicate", () => {
     const divergent = new Set<string>();
     for (const doc of base) {
       expect(validate(doc)).toBe(true);
-      for (const path of pathsOf(doc, [])) {
+      for (const path of pathsOf(doc)) {
         for (const how of ["delete", "null", "retype"] as const) {
           const receipt = edited(doc, path, how);
           const ajv = validate(receipt);
-          if ((reasonsOf(receipt).length === 0) !== ajv) divergent.add(`${how} ${path.join(".")}`);
+          if (accepts(receipt) !== ajv) divergent.add(`${how} ${path.join(".")}`);
           compared += 1;
           if (!ajv) rejected += 1;
         }

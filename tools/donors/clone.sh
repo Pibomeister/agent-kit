@@ -17,12 +17,20 @@ if [ -z "$rows" ]; then
   exit 1
 fi
 printf '%s\n' "$rows" | while read -r path url commit; do
+  # The lock is reviewed as data; refuse any row that could steer git (an option-shaped url, a path outside
+  # .donors/, or a pin that is not a full commit id).
+  case "$path" in .donors/*/* | .donors/ | *..*) path=invalid ;; .donors/?*) ;; *) path=invalid ;; esac
+  case "$url" in https://github.com/*/*) ;; *) url=invalid ;; esac
+  if [ "$path" = invalid ] || [ "$url" = invalid ] || ! printf '%s' "$commit" | grep -Eq '^[0-9a-f]{40}$'; then
+    echo "clone.sh: refusing lock row: path, url or commit is malformed" >&2
+    exit 1
+  fi
   if [ -e "$path" ] && [ ! -d "$path/.git" ]; then
     echo "clone.sh: $path exists and is not a git clone; move it aside" >&2
     exit 1
   fi
   if [ ! -d "$path/.git" ]; then
-    git clone --quiet --filter=blob:none --no-checkout "$url" "$path"
+    git clone --quiet --filter=blob:none --no-checkout -- "$url" "$path"
   elif ! git -C "$path" cat-file -e "$commit^{commit}" 2>/dev/null; then
     git -C "$path" fetch --quiet origin
   fi

@@ -222,7 +222,9 @@ function forcePush(approval: { by: string; hash: string }) {
 
 /** The sealed hash a charter fixture carries. */
 function hashOf(doc: Doc): string {
-  return JSON.stringify(doc["immutability"]).match(/"hash":"([^"]+)"/)?.[1] ?? "";
+  const hash = JSON.stringify(doc["immutability"]).match(/"hash":"([^"]+)"/)?.[1];
+  if (hash === undefined) throw new Error("charter fixture carries no sealed hash");
+  return hash;
 }
 
 describe("charter rules, one sealed defect per row", () => {

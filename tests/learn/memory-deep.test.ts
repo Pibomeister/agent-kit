@@ -180,10 +180,11 @@ describe("staleness", () => {
     expect(loadLessons(ledger).get("ls-001")!.meta.status).toBe("stale");
   });
 
-  test("the 90 days are a boundary: unseen for 89 days stays confirmed, 91 days goes stale", () => {
+  test("the 90 days are a boundary: unseen for 89 or exactly 90 days stays confirmed, 91 days goes stale", () => {
     const ledger = ensureMemoryLedger(join(scratch(), "memory"));
     const boundary: [string, string][] = [
       ["ls-089", "2026-06-21"],
+      ["ls-090", "2026-06-20"],
       ["ls-091", "2026-06-19"],
     ];
     for (const [id, lastSeen] of boundary)

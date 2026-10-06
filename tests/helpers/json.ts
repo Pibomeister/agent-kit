@@ -19,13 +19,13 @@ function membersOf(value: JsonValue): [string | number, JsonValue][] {
 }
 
 /** Every member path in the document, nested ones included. */
-export function pathsOf(value: JsonValue, at: Path): Path[] {
+export function pathsOf(value: JsonValue, at: Path = []): Path[] {
   return membersOf(value).flatMap(([key, child]) => [[...at, key], ...pathsOf(child, [...at, key])]);
 }
 
 /**
- * A copy of `value` whose member at `path` is `change(current)`. Returning `undefined` deletes the member,
- * and a member the path names that does not exist yet is added.
+ * A copy of `value` whose member at `path` is `change(current)`. Returning `undefined` deletes the member.
+ * An object member the path names that does not exist yet is added; an array index must already exist.
  */
 export function updated(
   value: JsonValue,
@@ -36,12 +36,15 @@ export function updated(
   if (step === undefined) return change(value) ?? null;
   const next = (child: JsonValue | undefined) =>
     rest.length === 0 ? change(child) : updated(child ?? {}, rest, change);
-  if (Array.isArray(value))
+  if (Array.isArray(value)) {
+    if (!Number.isInteger(step) || Number(step) < 0 || Number(step) >= value.length)
+      throw new Error(`no array member ${String(step)} to update`);
     return value.flatMap((child, i) => {
       if (i !== step) return [child];
       const replacement = next(child);
       return replacement === undefined ? [] : [replacement];
     });
+  }
   if (value instanceof Object) {
     const key = String(step);
     const others = Object.entries(value).filter(([member]) => member !== key);

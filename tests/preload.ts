@@ -23,6 +23,8 @@ process.env.AK_KB_REGISTRY = join(root, "agent-kit-kb", "registry.json");
 
 // Every test must reach at least one assertion. A loop over an empty list, an early return or a swallowed
 // callback otherwise passes having checked nothing, which is how a test once ran green with zero assertions.
+// Limits: an expect() in a beforeEach hook counts for every test under it, and running `bun test` from
+// inside tests/ skips this file, because bunfig.toml is read from the repository root only.
 beforeEach(() => {
   expect.hasAssertions();
 });
