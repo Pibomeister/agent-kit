@@ -163,3 +163,18 @@ adaptations:
   - path: tests/data/delegation/tier-key.yaml
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L177-199
     rationale: The invalid fixture proves the report's ladder vocabulary is translated into the repository's class key rather than copied into catalog content.
+  - path: schemas/common.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-256
+    rationale: The shared vocabulary gains surfaces, runtime evidence kinds and the recipe artifact id.
+  - path: schemas/project.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: Projects declare content-addressed runtime facilities instead of lifecycle bodies inventing them.
+  - path: schemas/ticket.schema.json
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
+    rationale: Criteria name their surface and checks bind recipe hashes to required evidence kinds.
+  - path: src/lifecycle/gate.ts
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
+    rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
+  - path: tests/lifecycle/check.test.ts
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
+    rationale: Lifecycle tests exercise prose-only green claims, self-verification, stale recipes, missing kinds, unattested seats and artifact tampering.

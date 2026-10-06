@@ -194,7 +194,7 @@ equivalent and broke OAuth on the build machine. Do not use it.
 
 ### 5.5 Two folder-name conventions
 
-Symptom: two project folders on disk, `...-compliance-frontend` and `...-compliance_frontend`,
+Symptom: two project folders on disk, `...-sample-frontend` and `...-sample_frontend`,
 and a source that finds nothing under one of them.
 Cause: Claude Code replaces every non-alphanumeric with `-`; claude-reflect keeps underscores.
 Fix: `common.py` has both, `project_folder_name` and `reflect_folder_name`. Use the right one per
@@ -338,8 +338,8 @@ What healthy output looks like, taken from the build machine on 2026-09-24:
 
 ```
 == 2026-09-24T16:40:19Z tick CLAUDE_CONFIG_DIR=/Users/<you>/.claude/.omc-launch
-compliance_frontend: episodes +0
-compliance_frontend: idle 5084s new_tokens 1592 new_obs 1 unconsolidated 1 due none
+sample_frontend: episodes +0
+sample_frontend: idle 5084s new_tokens 1592 new_obs 1 unconsolidated 1 due none
 ```
 
 `dream/runs.jsonl`, last two rows:

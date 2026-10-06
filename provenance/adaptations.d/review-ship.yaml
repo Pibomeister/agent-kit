@@ -23,6 +23,18 @@
 # written here.
 
 adaptations:
+  - path: skills/super-review/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L550-558
+    rationale: Readiness consumes seat and surface coverage without manufacturing missing verification evidence.
+  - path: skills/super-review/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L550-558
+    rationale: The readiness contract mirrors verifier-lineage and evidence-kind inputs.
+  - path: skills/super-ship/SKILL.md
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L559-568
+    rationale: Ship checks criterion, seat and evidence-kind coverage before preflight and links the recipe, matrix and evidence digests.
+  - path: skills/super-ship/skill.yaml
+    source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L559-568
+    rationale: The ship contract mirrors the stronger input predicate and pull-request payload.
   # ---- skills/super-review ----
   - path: skills/super-review/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-code-review/SKILL.md

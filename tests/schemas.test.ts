@@ -100,6 +100,13 @@ describe("schema compilation", () => {
     expect(set.validatorFor("ticket")).toBeUndefined();
   });
 
+  test("a schema without $id compiles with no uncompilable error", () => {
+    const plain = JSON.stringify({ type: "object" });
+    const set = compileSchemas(makeTree({ "schemas/plain.schema.json": plain }));
+    expect(set.issues.filter((i) => i.rule === "schemas.uncompilable")).toEqual([]);
+    expect(set.validatorFor("plain")?.({})).toBe(true);
+  });
+
   test("an unresolvable $ref is reported against the referencing schema", () => {
     const bad = JSON.stringify({
       $id: "https://agent-kit.local/schemas/bad.schema.json",
@@ -561,5 +568,80 @@ describe("a case may carry the keys the host reads, continued", () => {
     const issues = caseIssues(withKeys("nonsense_key: 1\n"), FILE);
     expect(issues.map((i) => i.rule)).toEqual(["schemas.document-invalid"]);
     expect(issues[0]?.message).toContain("nonsense_key");
+  });
+});
+
+/**
+ * A `catalog.d/` fragment validates against `catalog.schema.json#/$defs/fragment`,
+ * not against the whole catalog's shape: it carries only the sections it adds to,
+ * and never the `package:` block catalog.yaml alone owns
+ * (docs/decisions/0010-catalog-fragments.md).
+ *
+ * Built on the shipped schemas and the shipped catalog.yaml, because the
+ * property under test is that the fragment shape a downstream fork writes is
+ * the one this repository ships -- a schema written for the test would only
+ * agree with itself.
+ */
+describe("catalog.d fragments validate against the fragment shape", () => {
+  const FRAGMENT = "catalog.d/downstream.yaml";
+  const PROFILE = `schema_version: 1
+profiles:
+  - id: downstream
+    batch: 1
+    status: authored
+    summary: A downstream install set.
+`;
+
+  const fragmentTree = (fragment: string) =>
+    ctxFor({
+      "catalog.yaml": readFileSync(join(SCHEMAS_DIR, "..", "catalog.yaml"), "utf8"),
+      "schemas/common.schema.json": shipped("common.schema.json"),
+      "schemas/catalog.schema.json": shipped("catalog.schema.json"),
+      [FRAGMENT]: fragment,
+    });
+
+  test("a fragment declaring a profile validates, and so does the catalog.yaml beside it", () => {
+    // The positive control, and the shape a downstream install writes first.
+    expect(checkSchemas(fragmentTree(PROFILE))).toEqual([]);
+  });
+
+  test("a package block in a fragment is refused", () => {
+    const issues = checkSchemas(fragmentTree(`${PROFILE}package:\n  id: other\n`)).filter((i) => i.file === FRAGMENT);
+    expect(issues.map((i) => i.rule)).toEqual(["schemas.document-invalid"]);
+    expect(issues[0]?.message).toContain("#/$defs/fragment");
+    expect(issues[0]?.message).toContain("package");
+  });
+
+  test("a fragment entry has the same required fields as a catalog.yaml entry", () => {
+    const issues = checkSchemas(fragmentTree(PROFILE.replace("    summary: A downstream install set.\n", ""))).filter(
+      (i) => i.file === FRAGMENT,
+    );
+    expect(issues.map((i) => i.rule)).toEqual(["schemas.document-invalid"]);
+    expect(issues[0]?.message).toContain("/profiles/0");
+    expect(issues[0]?.message).toContain("summary");
+  });
+
+  test("a fragment with no schema_version is refused", () => {
+    const issues = checkSchemas(fragmentTree(PROFILE.replace("schema_version: 1\n", ""))).filter(
+      (i) => i.file === FRAGMENT,
+    );
+    expect(issues.map((i) => i.rule)).toEqual(["schemas.document-invalid"]);
+    expect(issues[0]?.message).toContain("schema_version");
+  });
+
+  test("a fragment the loader could not read is not reported a second time here", () => {
+    expect(checkSchemas(fragmentTree("profiles: [unclosed\n")).filter((i) => i.file === FRAGMENT)).toEqual([]);
+  });
+
+  test("a catalog schema with no fragment definition reports the fragment unchecked, not the catalog", () => {
+    const ctx = ctxFor({
+      "catalog.yaml": CATALOG_YAML,
+      "schemas/common.schema.json": COMMON,
+      "schemas/catalog.schema.json": CATALOG_SCHEMA,
+      [FRAGMENT]: PROFILE,
+    });
+    const skipped = checkSchemas(ctx).filter((i) => i.rule === "schemas.validator-unavailable");
+    expect(skipped.length).toBe(1);
+    expect(skipped[0]?.message).toContain("catalog#/$defs/fragment");
   });
 });

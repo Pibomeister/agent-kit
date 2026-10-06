@@ -71,7 +71,7 @@
       "label": "Review Finding",
       "emoji": "\ud83d\udd0e",
       "work_emoji": "\ud83d\udd0e",
-      "description": "A reviewer \u2014 human (PR comment), bot (Greptile/CodeRabbit), or an in-session persona/skill reviewer (review-fix-loop, regulis-review, phil-review, ce-code-review) \u2014 identified a defect or risk in the code under review. Record severity (P0\u2013P3 if given), who raised it, the file, and the claim in one sentence. Select this whenever a review lane or reviewer output names a specific problem."
+      "description": "A reviewer \u2014 human (PR comment), bot (Greptile/CodeRabbit), or an in-session persona/skill reviewer (review-fix-loop, team-review, lead-review, ce-code-review) \u2014 identified a defect or risk in the code under review. Record severity (P0\u2013P3 if given), who raised it, the file, and the claim in one sentence. Select this whenever a review lane or reviewer output names a specific problem."
     },
     {
       "id": "review-resolution",

@@ -22,8 +22,8 @@ non-unanimous verdict retains every per-reviewer vote and carries `split: true` 
 and compact receipt. A tie, a panel with no strict majority, or any unreadable vote remains
 ungraded.
 
-Superseding stop rule 6: an ungraded result stops the whole run before another launch. A row is
-ungraded when any scored grader has no pass or fail verdict after strict-majority resolution, even
+Superseding stop rule 6: an ungraded result stops that subject before its next launch; the runner
+continues with the next subject. A row is ungraded when any scored grader has no pass or fail verdict after strict-majority resolution, even
 if another grader in the same row failed. A judged grader has no verdict when its file is absent,
 leaves the session directory or is not a regular file; when readable PASS or FAIL votes have no
 strict majority; or when a reviewer gives no readable verdict. A file that exists and is empty is

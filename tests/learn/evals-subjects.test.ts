@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
 import { invalidSession, readOnlyShell, skillLoads } from "./evals/trigger-eval.ts";
 import { costOf, loadPriceTable } from "./evals/pricing.ts";
@@ -17,6 +18,7 @@ import { codex, codexThreadStart, runCodexAppServer } from "./evals/subjects/cod
 import { grok } from "./evals/subjects/grok.ts";
 import { rewriteAssignmentReadChain } from "./evals/subjects/grok-mediator.ts";
 import { privateHome } from "./evals/subjects/home.ts";
+import { kimi } from "./evals/subjects/kimi.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./evals/subjects/index.ts";
 import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
@@ -602,6 +604,99 @@ describe("grok", () => {
   });
 });
 
+describe("kimi", () => {
+  test("argv binds one text-only prompt and parser returns the plain reply", () => {
+    expect(kimi.command(req, "bound-d")).toEqual([
+      "kimi",
+      "--prompt",
+      "Load the greet skill.",
+      "--output-format",
+      "text",
+      "--model",
+      "bound-d",
+    ]);
+    expect(kimi.command(req, undefined)).toEqual([
+      "kimi",
+      "--prompt",
+      "Load the greet skill.",
+      "--output-format",
+      "text",
+    ]);
+    expect(kimi.parse('  {"verdict":"PASS","reason":"meets the criterion"}  \n')).toEqual({
+      events: [{ kind: "message", text: '{"verdict":"PASS","reason":"meets the criterion"}' }],
+      reply: '{"verdict":"PASS","reason":"meets the criterion"}',
+    });
+    expect(kimi.requestIds).toBe(false);
+    expect(kimi.injection).toBe("prompt-prefix");
+  });
+
+  test("a session runs tool-less against an empty skills directory, and both are removed afterwards", async () => {
+    const bin = join(scratch, "kimi-bin");
+    mkdirSync(bin, { recursive: true });
+    // Stands in for the CLI's own option check: prompt mode refuses the modes it cannot combine with.
+    writeFileSync(
+      join(bin, "kimi"),
+      '#!/bin/sh\nfor arg in "$@"; do printf \'%s\\n\' "$arg"; done\n' +
+        'for arg in "$@"; do case "$arg" in --plan|--yolo|--auto) echo "error: Cannot combine --prompt with $arg." >&2; exit 1;; esac; done\n' +
+        'while [ "$#" -gt 0 ]; do [ "$1" = "--skills-dir" ] && dir="$2"; [ "$1" = "--agent-file" ] && agent="$2"; shift; done\n' +
+        "printf 'entries=%s\\n' \"$(ls -A \"$dir\" | wc -l | tr -d ' ')\"\n" +
+        "printf 'agent<<\\n'; cat \"$agent\"\n",
+      { mode: 0o755 },
+    );
+    const result = await runSubject(kimi, "reviewer-d", "bound-d", {
+      ...req,
+      cwd: scratch,
+      env: { PATH: `${bin}:${process.env.PATH ?? ""}` },
+      maxTurns: 1,
+    });
+    const [argv = "", agentFile = ""] = result.reply.split("\nagent<<\n");
+    const lines = argv.split("\n");
+    const agent = lines[lines.indexOf("--agent-file") + 1] ?? "";
+    const skills = lines[lines.indexOf("--skills-dir") + 1] ?? "";
+    expect(lines).toEqual([
+      "--prompt",
+      "Load the greet skill.",
+      "--output-format",
+      "text",
+      "--model",
+      "bound-d",
+      "--agent-file",
+      agent,
+      "--skills-dir",
+      skills,
+      "entries=0",
+    ]);
+    const [, frontmatter = "", body = ""] = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(agentFile) ?? [];
+    const definition: unknown = parseYaml(frontmatter);
+    expect(definition).toMatchObject({ tools: [], subagents: [] });
+    expect(definition).toHaveProperty("description", expect.stringMatching(/\S/));
+    expect(definition).not.toHaveProperty("disallowedTools");
+    expect(definition).not.toHaveProperty("override");
+    expect(body.trim()).not.toBe("");
+    expect(body).not.toContain("${");
+    expect(isAbsolute(agent)).toBe(true);
+    expect(isAbsolute(skills)).toBe(true);
+    expect(existsSync(agent)).toBe(false);
+    expect(existsSync(skills)).toBe(false);
+    expect(result).toMatchObject({ host: "kimi", exitCode: 0, timedOut: false });
+  });
+
+  test("no request puts a mode flag beside --prompt", () => {
+    const requests: SessionRequest[] = [
+      req,
+      { ...req, appendSystemPrompt: "Judge strictly." },
+      { ...req, maxTurns: 1 },
+    ];
+    for (const request of requests) {
+      for (const model of ["bound-d", undefined]) {
+        const argv = kimi.command(request, model);
+        expect(argv).toContain("--prompt");
+        for (const flag of ["--plan", "--yolo", "-y", "--auto"]) expect(argv).not.toContain(flag);
+      }
+    }
+  });
+});
+
 describe("shell reads", () => {
   test("unwraps login shells and finds printed files across pipelines, skipping options, scripts and output redirects", () => {
     expect(unwrap("/bin/zsh -lc 'cat a b'")).toBe("cat a b");
@@ -849,7 +944,7 @@ describe("isolation", () => {
     ).toEqual({ ANTHROPIC_API_KEY: "k", PATH: "/bin" });
     const auth = { CLAUDE_CODE_OAUTH_TOKEN: "t", CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "1" };
     expect(withoutParentSession({ ...auth, CLAUDE_CODE_SSE_PORT: "1" })).toEqual(auth);
-    expect(BUNDLE_FOR).toEqual({ claude: "claude-code", codex: "codex", grok: "claude-code" });
+    expect(BUNDLE_FOR).toEqual({ claude: "claude-code", codex: "codex", grok: "claude-code", kimi: "claude-code" });
   });
 
   test("a refreshed credential is written back only while the caller's copy is unchanged", () => {
@@ -897,6 +992,7 @@ describe("runSubject", () => {
     expect(adapterFor("claude").host).toBe("claude");
     expect(adapterFor("codex").host).toBe("codex");
     expect(adapterFor("grok").host).toBe("grok");
+    expect(adapterFor("kimi").host).toBe("kimi");
   });
 
   test("a price table derives cost only for a matching bound Codex session", async () => {

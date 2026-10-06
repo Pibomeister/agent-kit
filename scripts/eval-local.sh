@@ -121,7 +121,7 @@ dirty=false
 fresh=null
 if [[ "$bundle" == "$root/dist/claude-code" ]]; then
   fresh=true
-  if [[ -n "$(cd "$root" && find catalog.yaml skills packs protocols roles references adapters schemas policies profiles provenance src evals -newer "$bundle" -print -quit 2>/dev/null)" ]]; then
+  if [[ -n "$(cd "$root" && find catalog.yaml catalog.d skills packs protocols roles references adapters schemas policies profiles provenance src evals -newer "$bundle" -print -quit 2>/dev/null)" ]]; then
     fresh=false
     echo "eval-local: $bundle is older than its sources; run 'bun run ak build --profile all' to measure this tree" >&2
   fi

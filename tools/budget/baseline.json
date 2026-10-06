@@ -1,0 +1,1030 @@
+{
+  "estimator": "chars/4 rounded up: ceil(UTF-16 code units / 4), estimateTokens in src/validation/skill-style.ts",
+  "surfaces": {
+    "bundle/claude-code:references/shared/packs/pack-delete/PACK.md": {
+      "file": "packs/pack-delete/PACK.md",
+      "bytes": 7310,
+      "tokens": 1822
+    },
+    "bundle/claude-code:references/shared/policies/authority-defaults.yaml": {
+      "file": "policies/authority-defaults.yaml",
+      "bytes": 17801,
+      "tokens": 4443
+    },
+    "bundle/claude-code:references/shared/protocols/consensus-plan-gate/PROTOCOL.md": {
+      "file": "protocols/consensus-plan-gate/PROTOCOL.md",
+      "bytes": 7464,
+      "tokens": 1862
+    },
+    "bundle/claude-code:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
+      "file": "references/codebase-design-vocabulary/DEEPENING.md",
+      "bytes": 2789,
+      "tokens": 696
+    },
+    "bundle/claude-code:references/shared/references/codebase-design-vocabulary/DESIGN-IT-TWICE.md": {
+      "file": "references/codebase-design-vocabulary/DESIGN-IT-TWICE.md",
+      "bytes": 2743,
+      "tokens": 684
+    },
+    "bundle/claude-code:references/shared/references/codebase-design-vocabulary/REFERENCE.md": {
+      "file": "references/codebase-design-vocabulary/REFERENCE.md",
+      "bytes": 6543,
+      "tokens": 1632
+    },
+    "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
+      "file": "references/delegation/REFERENCE.md",
+      "bytes": 11310,
+      "tokens": 2825
+    },
+    "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
+      "file": "references/domain-modeling/REFERENCE.md",
+      "bytes": 8044,
+      "tokens": 2006
+    },
+    "bundle/claude-code:references/shared/references/engineering-principles/REFERENCE.md": {
+      "file": "references/engineering-principles/REFERENCE.md",
+      "bytes": 13507,
+      "tokens": 3377
+    },
+    "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
+      "file": "references/prose-quality/REFERENCE.md",
+      "bytes": 13234,
+      "tokens": 3308
+    },
+    "bundle/claude-code:references/shared/references/tracker-of-record/REFERENCE.md": {
+      "file": "references/tracker-of-record/REFERENCE.md",
+      "bytes": 9370,
+      "tokens": 2341
+    },
+    "bundle/claude-code:skill-listing": {
+      "file": "skills/*/SKILL.md (description)",
+      "bytes": 20258,
+      "tokens": 5063
+    },
+    "bundle/claude-code:skills/autopilot/SKILL.md": {
+      "file": "skills/autopilot/SKILL.md",
+      "bytes": 15302,
+      "tokens": 3819
+    },
+    "bundle/claude-code:skills/autopilot/references/checkpoints.md": {
+      "file": "skills/autopilot/references/checkpoints.md",
+      "bytes": 3585,
+      "tokens": 896
+    },
+    "bundle/claude-code:skills/babysit-pr/SKILL.md": {
+      "file": "skills/babysit-pr/SKILL.md",
+      "bytes": 15423,
+      "tokens": 3851
+    },
+    "bundle/claude-code:skills/bakeoff/SKILL.md": {
+      "file": "skills/bakeoff/SKILL.md",
+      "bytes": 10102,
+      "tokens": 2523
+    },
+    "bundle/claude-code:skills/bakeoff/references/judging.md": {
+      "file": "skills/bakeoff/references/judging.md",
+      "bytes": 5764,
+      "tokens": 1440
+    },
+    "bundle/claude-code:skills/codebase-design/SKILL.md": {
+      "file": "skills/codebase-design/SKILL.md",
+      "bytes": 7858,
+      "tokens": 1963
+    },
+    "bundle/claude-code:skills/compound-refresh/SKILL.md": {
+      "file": "skills/compound-refresh/SKILL.md",
+      "bytes": 8166,
+      "tokens": 2038
+    },
+    "bundle/claude-code:skills/compound/SKILL.md": {
+      "file": "skills/compound/SKILL.md",
+      "bytes": 9019,
+      "tokens": 2254
+    },
+    "bundle/claude-code:skills/deprecate/SKILL.md": {
+      "file": "skills/deprecate/SKILL.md",
+      "bytes": 9962,
+      "tokens": 2487
+    },
+    "bundle/claude-code:skills/deprecate/assets/deprecation-notice.md": {
+      "file": "skills/deprecate/assets/deprecation-notice.md",
+      "bytes": 1134,
+      "tokens": 284
+    },
+    "bundle/claude-code:skills/deprecate/references/migration-patterns.md": {
+      "file": "skills/deprecate/references/migration-patterns.md",
+      "bytes": 4086,
+      "tokens": 1021
+    },
+    "bundle/claude-code:skills/diagnose/SKILL.md": {
+      "file": "skills/diagnose/SKILL.md",
+      "bytes": 16895,
+      "tokens": 4218
+    },
+    "bundle/claude-code:skills/diagnose/references/feedback-loops.md": {
+      "file": "skills/diagnose/references/feedback-loops.md",
+      "bytes": 3459,
+      "tokens": 861
+    },
+    "bundle/claude-code:skills/doc-review/SKILL.md": {
+      "file": "skills/doc-review/SKILL.md",
+      "bytes": 14361,
+      "tokens": 3583
+    },
+    "bundle/claude-code:skills/doubt-driven/SKILL.md": {
+      "file": "skills/doubt-driven/SKILL.md",
+      "bytes": 9389,
+      "tokens": 2345
+    },
+    "bundle/claude-code:skills/explain/SKILL.md": {
+      "file": "skills/explain/SKILL.md",
+      "bytes": 7298,
+      "tokens": 1824
+    },
+    "bundle/claude-code:skills/handoff/SKILL.md": {
+      "file": "skills/handoff/SKILL.md",
+      "bytes": 9935,
+      "tokens": 2480
+    },
+    "bundle/claude-code:skills/ideate/SKILL.md": {
+      "file": "skills/ideate/SKILL.md",
+      "bytes": 8913,
+      "tokens": 2227
+    },
+    "bundle/claude-code:skills/ideate/references/frameworks.md": {
+      "file": "skills/ideate/references/frameworks.md",
+      "bytes": 4356,
+      "tokens": 1089
+    },
+    "bundle/claude-code:skills/improve-architecture/SKILL.md": {
+      "file": "skills/improve-architecture/SKILL.md",
+      "bytes": 8723,
+      "tokens": 2178
+    },
+    "bundle/claude-code:skills/improve-architecture/references/survey.md": {
+      "file": "skills/improve-architecture/references/survey.md",
+      "bytes": 2522,
+      "tokens": 627
+    },
+    "bundle/claude-code:skills/pov/SKILL.md": {
+      "file": "skills/pov/SKILL.md",
+      "bytes": 9756,
+      "tokens": 2435
+    },
+    "bundle/claude-code:skills/pov/references/independent-peers.md": {
+      "file": "skills/pov/references/independent-peers.md",
+      "bytes": 4105,
+      "tokens": 1027
+    },
+    "bundle/claude-code:skills/product-pulse/SKILL.md": {
+      "file": "skills/product-pulse/SKILL.md",
+      "bytes": 8746,
+      "tokens": 2185
+    },
+    "bundle/claude-code:skills/product-pulse/assets/report-template.md": {
+      "file": "skills/product-pulse/assets/report-template.md",
+      "bytes": 2294,
+      "tokens": 570
+    },
+    "bundle/claude-code:skills/product-pulse/references/run.md": {
+      "file": "skills/product-pulse/references/run.md",
+      "bytes": 3599,
+      "tokens": 900
+    },
+    "bundle/claude-code:skills/product-pulse/references/setup.md": {
+      "file": "skills/product-pulse/references/setup.md",
+      "bytes": 2744,
+      "tokens": 686
+    },
+    "bundle/claude-code:skills/prototype/SKILL.md": {
+      "file": "skills/prototype/SKILL.md",
+      "bytes": 9796,
+      "tokens": 2447
+    },
+    "bundle/claude-code:skills/prototype/references/logic.md": {
+      "file": "skills/prototype/references/logic.md",
+      "bytes": 3926,
+      "tokens": 982
+    },
+    "bundle/claude-code:skills/prototype/references/ui.md": {
+      "file": "skills/prototype/references/ui.md",
+      "bytes": 3761,
+      "tokens": 941
+    },
+    "bundle/claude-code:skills/receiving-review/SKILL.md": {
+      "file": "skills/receiving-review/SKILL.md",
+      "bytes": 14596,
+      "tokens": 3647
+    },
+    "bundle/claude-code:skills/research/SKILL.md": {
+      "file": "skills/research/SKILL.md",
+      "bytes": 8025,
+      "tokens": 2003
+    },
+    "bundle/claude-code:skills/simplify/SKILL.md": {
+      "file": "skills/simplify/SKILL.md",
+      "bytes": 8310,
+      "tokens": 2075
+    },
+    "bundle/claude-code:skills/simplify/references/personas/code-quality.md": {
+      "file": "skills/simplify/references/personas/code-quality.md",
+      "bytes": 2615,
+      "tokens": 654
+    },
+    "bundle/claude-code:skills/simplify/references/personas/code-reuse.md": {
+      "file": "skills/simplify/references/personas/code-reuse.md",
+      "bytes": 1466,
+      "tokens": 367
+    },
+    "bundle/claude-code:skills/simplify/references/personas/efficiency.md": {
+      "file": "skills/simplify/references/personas/efficiency.md",
+      "bytes": 1357,
+      "tokens": 340
+    },
+    "bundle/claude-code:skills/source-driven/SKILL.md": {
+      "file": "skills/source-driven/SKILL.md",
+      "bytes": 7839,
+      "tokens": 1957
+    },
+    "bundle/claude-code:skills/source-driven/references/citation-formats.md": {
+      "file": "skills/source-driven/references/citation-formats.md",
+      "bytes": 4093,
+      "tokens": 1024
+    },
+    "bundle/claude-code:skills/strategy/SKILL.md": {
+      "file": "skills/strategy/SKILL.md",
+      "bytes": 8470,
+      "tokens": 2115
+    },
+    "bundle/claude-code:skills/strategy/assets/strategy-template.md": {
+      "file": "skills/strategy/assets/strategy-template.md",
+      "bytes": 1906,
+      "tokens": 474
+    },
+    "bundle/claude-code:skills/strategy/references/interview.md": {
+      "file": "skills/strategy/references/interview.md",
+      "bytes": 6467,
+      "tokens": 1616
+    },
+    "bundle/claude-code:skills/strategy/references/update-run.md": {
+      "file": "skills/strategy/references/update-run.md",
+      "bytes": 3194,
+      "tokens": 799
+    },
+    "bundle/claude-code:skills/super-align/SKILL.md": {
+      "file": "skills/super-align/SKILL.md",
+      "bytes": 13624,
+      "tokens": 3399
+    },
+    "bundle/claude-code:skills/super-bound/SKILL.md": {
+      "file": "skills/super-bound/SKILL.md",
+      "bytes": 19526,
+      "tokens": 4874
+    },
+    "bundle/claude-code:skills/super-build/SKILL.md": {
+      "file": "skills/super-build/SKILL.md",
+      "bytes": 18712,
+      "tokens": 4673
+    },
+    "bundle/claude-code:skills/super-review/SKILL.md": {
+      "file": "skills/super-review/SKILL.md",
+      "bytes": 23493,
+      "tokens": 5867
+    },
+    "bundle/claude-code:skills/super-review/references/delta.md": {
+      "file": "skills/super-review/references/delta.md",
+      "bytes": 4146,
+      "tokens": 1035
+    },
+    "bundle/claude-code:skills/super-review/references/panel.md": {
+      "file": "skills/super-review/references/panel.md",
+      "bytes": 9404,
+      "tokens": 2346
+    },
+    "bundle/claude-code:skills/super-scout/SKILL.md": {
+      "file": "skills/super-scout/SKILL.md",
+      "bytes": 12486,
+      "tokens": 3118
+    },
+    "bundle/claude-code:skills/super-ship/SKILL.md": {
+      "file": "skills/super-ship/SKILL.md",
+      "bytes": 20500,
+      "tokens": 5121
+    },
+    "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
+      "file": "skills/super-ship/references/transport-no-mistakes.md",
+      "bytes": 3798,
+      "tokens": 949
+    },
+    "bundle/claude-code:skills/super-verify/SKILL.md": {
+      "file": "skills/super-verify/SKILL.md",
+      "bytes": 15999,
+      "tokens": 3994
+    },
+    "bundle/claude-code:skills/triage/SKILL.md": {
+      "file": "skills/triage/SKILL.md",
+      "bytes": 10292,
+      "tokens": 2567
+    },
+    "bundle/claude-code:skills/triage/assets/agent-brief.md": {
+      "file": "skills/triage/assets/agent-brief.md",
+      "bytes": 1619,
+      "tokens": 405
+    },
+    "bundle/claude-code:skills/triage/assets/triage-notes.md": {
+      "file": "skills/triage/assets/triage-notes.md",
+      "bytes": 493,
+      "tokens": 124
+    },
+    "bundle/claude-code:skills/triage/references/rejections.md": {
+      "file": "skills/triage/references/rejections.md",
+      "bytes": 2604,
+      "tokens": 649
+    },
+    "bundle/claude-code:skills/triage/references/roles.md": {
+      "file": "skills/triage/references/roles.md",
+      "bytes": 2453,
+      "tokens": 610
+    },
+    "bundle/claude-code:skills/ultraqa/SKILL.md": {
+      "file": "skills/ultraqa/SKILL.md",
+      "bytes": 14114,
+      "tokens": 3524
+    },
+    "bundle/claude-code:skills/ultraqa/references/adversarial-cases.md": {
+      "file": "skills/ultraqa/references/adversarial-cases.md",
+      "bytes": 4099,
+      "tokens": 1024
+    },
+    "bundle/claude-code:skills/verify/SKILL.md": {
+      "file": "skills/verify/SKILL.md",
+      "bytes": 10173,
+      "tokens": 2539
+    },
+    "bundle/claude-code:skills/visual-edit/SKILL.md": {
+      "file": "skills/visual-edit/SKILL.md",
+      "bytes": 10167,
+      "tokens": 2542
+    },
+    "bundle/claude-code:skills/visual-edit/assets/receipt.example.json": {
+      "file": "skills/visual-edit/assets/receipt.example.json",
+      "bytes": 1478,
+      "tokens": 370
+    },
+    "bundle/claude-code:skills/visual-edit/references/receipt.md": {
+      "file": "skills/visual-edit/references/receipt.md",
+      "bytes": 3019,
+      "tokens": 755
+    },
+    "bundle/claude-code:skills/wait-what/SKILL.md": {
+      "file": "skills/wait-what/SKILL.md",
+      "bytes": 5466,
+      "tokens": 1366
+    },
+    "bundle/claude-code:skills/wayfind/SKILL.md": {
+      "file": "skills/wayfind/SKILL.md",
+      "bytes": 13467,
+      "tokens": 3360
+    },
+    "bundle/claude-code:skills/writing-skills/SKILL.md": {
+      "file": "skills/writing-skills/SKILL.md",
+      "bytes": 9486,
+      "tokens": 2368
+    },
+    "bundle/claude-code:skills/writing-skills/references/authoring-discipline.md": {
+      "file": "skills/writing-skills/references/authoring-discipline.md",
+      "bytes": 7483,
+      "tokens": 1871
+    },
+    "bundle/codex:references/shared/packs/pack-delete/PACK.md": {
+      "file": "packs/pack-delete/PACK.md",
+      "bytes": 7310,
+      "tokens": 1822
+    },
+    "bundle/codex:references/shared/policies/authority-defaults.yaml": {
+      "file": "policies/authority-defaults.yaml",
+      "bytes": 17801,
+      "tokens": 4443
+    },
+    "bundle/codex:references/shared/protocols/consensus-plan-gate/PROTOCOL.md": {
+      "file": "protocols/consensus-plan-gate/PROTOCOL.md",
+      "bytes": 7464,
+      "tokens": 1862
+    },
+    "bundle/codex:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
+      "file": "references/codebase-design-vocabulary/DEEPENING.md",
+      "bytes": 2789,
+      "tokens": 696
+    },
+    "bundle/codex:references/shared/references/codebase-design-vocabulary/DESIGN-IT-TWICE.md": {
+      "file": "references/codebase-design-vocabulary/DESIGN-IT-TWICE.md",
+      "bytes": 2743,
+      "tokens": 684
+    },
+    "bundle/codex:references/shared/references/codebase-design-vocabulary/REFERENCE.md": {
+      "file": "references/codebase-design-vocabulary/REFERENCE.md",
+      "bytes": 6543,
+      "tokens": 1632
+    },
+    "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
+      "file": "references/delegation/REFERENCE.md",
+      "bytes": 11310,
+      "tokens": 2825
+    },
+    "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
+      "file": "references/domain-modeling/REFERENCE.md",
+      "bytes": 8044,
+      "tokens": 2006
+    },
+    "bundle/codex:references/shared/references/engineering-principles/REFERENCE.md": {
+      "file": "references/engineering-principles/REFERENCE.md",
+      "bytes": 13507,
+      "tokens": 3377
+    },
+    "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
+      "file": "references/prose-quality/REFERENCE.md",
+      "bytes": 13234,
+      "tokens": 3308
+    },
+    "bundle/codex:references/shared/references/tracker-of-record/REFERENCE.md": {
+      "file": "references/tracker-of-record/REFERENCE.md",
+      "bytes": 9370,
+      "tokens": 2341
+    },
+    "bundle/codex:skill-listing": {
+      "file": "skills/*/SKILL.md (description)",
+      "bytes": 20258,
+      "tokens": 5063
+    },
+    "bundle/codex:skills/autopilot/SKILL.md": {
+      "file": "skills/autopilot/SKILL.md",
+      "bytes": 14893,
+      "tokens": 3716
+    },
+    "bundle/codex:skills/autopilot/references/checkpoints.md": {
+      "file": "skills/autopilot/references/checkpoints.md",
+      "bytes": 3585,
+      "tokens": 896
+    },
+    "bundle/codex:skills/babysit-pr/SKILL.md": {
+      "file": "skills/babysit-pr/SKILL.md",
+      "bytes": 15612,
+      "tokens": 3898
+    },
+    "bundle/codex:skills/bakeoff/SKILL.md": {
+      "file": "skills/bakeoff/SKILL.md",
+      "bytes": 10202,
+      "tokens": 2548
+    },
+    "bundle/codex:skills/bakeoff/references/judging.md": {
+      "file": "skills/bakeoff/references/judging.md",
+      "bytes": 5764,
+      "tokens": 1440
+    },
+    "bundle/codex:skills/codebase-design/SKILL.md": {
+      "file": "skills/codebase-design/SKILL.md",
+      "bytes": 7858,
+      "tokens": 1963
+    },
+    "bundle/codex:skills/compound-refresh/SKILL.md": {
+      "file": "skills/compound-refresh/SKILL.md",
+      "bytes": 8266,
+      "tokens": 2063
+    },
+    "bundle/codex:skills/compound/SKILL.md": {
+      "file": "skills/compound/SKILL.md",
+      "bytes": 9119,
+      "tokens": 2279
+    },
+    "bundle/codex:skills/deprecate/SKILL.md": {
+      "file": "skills/deprecate/SKILL.md",
+      "bytes": 9867,
+      "tokens": 2463
+    },
+    "bundle/codex:skills/deprecate/assets/deprecation-notice.md": {
+      "file": "skills/deprecate/assets/deprecation-notice.md",
+      "bytes": 1134,
+      "tokens": 284
+    },
+    "bundle/codex:skills/deprecate/references/migration-patterns.md": {
+      "file": "skills/deprecate/references/migration-patterns.md",
+      "bytes": 4086,
+      "tokens": 1021
+    },
+    "bundle/codex:skills/diagnose/SKILL.md": {
+      "file": "skills/diagnose/SKILL.md",
+      "bytes": 16895,
+      "tokens": 4218
+    },
+    "bundle/codex:skills/diagnose/references/feedback-loops.md": {
+      "file": "skills/diagnose/references/feedback-loops.md",
+      "bytes": 3459,
+      "tokens": 861
+    },
+    "bundle/codex:skills/doc-review/SKILL.md": {
+      "file": "skills/doc-review/SKILL.md",
+      "bytes": 14361,
+      "tokens": 3583
+    },
+    "bundle/codex:skills/doubt-driven/SKILL.md": {
+      "file": "skills/doubt-driven/SKILL.md",
+      "bytes": 9489,
+      "tokens": 2370
+    },
+    "bundle/codex:skills/explain/SKILL.md": {
+      "file": "skills/explain/SKILL.md",
+      "bytes": 7398,
+      "tokens": 1849
+    },
+    "bundle/codex:skills/handoff/SKILL.md": {
+      "file": "skills/handoff/SKILL.md",
+      "bytes": 9935,
+      "tokens": 2480
+    },
+    "bundle/codex:skills/ideate/SKILL.md": {
+      "file": "skills/ideate/SKILL.md",
+      "bytes": 9013,
+      "tokens": 2252
+    },
+    "bundle/codex:skills/ideate/references/frameworks.md": {
+      "file": "skills/ideate/references/frameworks.md",
+      "bytes": 4356,
+      "tokens": 1089
+    },
+    "bundle/codex:skills/improve-architecture/SKILL.md": {
+      "file": "skills/improve-architecture/SKILL.md",
+      "bytes": 8628,
+      "tokens": 2154
+    },
+    "bundle/codex:skills/improve-architecture/references/survey.md": {
+      "file": "skills/improve-architecture/references/survey.md",
+      "bytes": 2522,
+      "tokens": 627
+    },
+    "bundle/codex:skills/pov/SKILL.md": {
+      "file": "skills/pov/SKILL.md",
+      "bytes": 9856,
+      "tokens": 2460
+    },
+    "bundle/codex:skills/pov/references/independent-peers.md": {
+      "file": "skills/pov/references/independent-peers.md",
+      "bytes": 4105,
+      "tokens": 1027
+    },
+    "bundle/codex:skills/product-pulse/SKILL.md": {
+      "file": "skills/product-pulse/SKILL.md",
+      "bytes": 8651,
+      "tokens": 2161
+    },
+    "bundle/codex:skills/product-pulse/assets/report-template.md": {
+      "file": "skills/product-pulse/assets/report-template.md",
+      "bytes": 2294,
+      "tokens": 570
+    },
+    "bundle/codex:skills/product-pulse/references/run.md": {
+      "file": "skills/product-pulse/references/run.md",
+      "bytes": 3599,
+      "tokens": 900
+    },
+    "bundle/codex:skills/product-pulse/references/setup.md": {
+      "file": "skills/product-pulse/references/setup.md",
+      "bytes": 2744,
+      "tokens": 686
+    },
+    "bundle/codex:skills/prototype/SKILL.md": {
+      "file": "skills/prototype/SKILL.md",
+      "bytes": 9796,
+      "tokens": 2447
+    },
+    "bundle/codex:skills/prototype/references/logic.md": {
+      "file": "skills/prototype/references/logic.md",
+      "bytes": 3926,
+      "tokens": 982
+    },
+    "bundle/codex:skills/prototype/references/ui.md": {
+      "file": "skills/prototype/references/ui.md",
+      "bytes": 3761,
+      "tokens": 941
+    },
+    "bundle/codex:skills/receiving-review/SKILL.md": {
+      "file": "skills/receiving-review/SKILL.md",
+      "bytes": 14779,
+      "tokens": 3693
+    },
+    "bundle/codex:skills/research/SKILL.md": {
+      "file": "skills/research/SKILL.md",
+      "bytes": 8025,
+      "tokens": 2003
+    },
+    "bundle/codex:skills/simplify/SKILL.md": {
+      "file": "skills/simplify/SKILL.md",
+      "bytes": 8310,
+      "tokens": 2075
+    },
+    "bundle/codex:skills/simplify/references/personas/code-quality.md": {
+      "file": "skills/simplify/references/personas/code-quality.md",
+      "bytes": 2615,
+      "tokens": 654
+    },
+    "bundle/codex:skills/simplify/references/personas/code-reuse.md": {
+      "file": "skills/simplify/references/personas/code-reuse.md",
+      "bytes": 1466,
+      "tokens": 367
+    },
+    "bundle/codex:skills/simplify/references/personas/efficiency.md": {
+      "file": "skills/simplify/references/personas/efficiency.md",
+      "bytes": 1357,
+      "tokens": 340
+    },
+    "bundle/codex:skills/source-driven/SKILL.md": {
+      "file": "skills/source-driven/SKILL.md",
+      "bytes": 7839,
+      "tokens": 1957
+    },
+    "bundle/codex:skills/source-driven/references/citation-formats.md": {
+      "file": "skills/source-driven/references/citation-formats.md",
+      "bytes": 4093,
+      "tokens": 1024
+    },
+    "bundle/codex:skills/strategy/SKILL.md": {
+      "file": "skills/strategy/SKILL.md",
+      "bytes": 8375,
+      "tokens": 2092
+    },
+    "bundle/codex:skills/strategy/assets/strategy-template.md": {
+      "file": "skills/strategy/assets/strategy-template.md",
+      "bytes": 1906,
+      "tokens": 474
+    },
+    "bundle/codex:skills/strategy/references/interview.md": {
+      "file": "skills/strategy/references/interview.md",
+      "bytes": 6467,
+      "tokens": 1616
+    },
+    "bundle/codex:skills/strategy/references/update-run.md": {
+      "file": "skills/strategy/references/update-run.md",
+      "bytes": 3194,
+      "tokens": 799
+    },
+    "bundle/codex:skills/super-align/SKILL.md": {
+      "file": "skills/super-align/SKILL.md",
+      "bytes": 13724,
+      "tokens": 3424
+    },
+    "bundle/codex:skills/super-bound/SKILL.md": {
+      "file": "skills/super-bound/SKILL.md",
+      "bytes": 19626,
+      "tokens": 4899
+    },
+    "bundle/codex:skills/super-build/SKILL.md": {
+      "file": "skills/super-build/SKILL.md",
+      "bytes": 18712,
+      "tokens": 4673
+    },
+    "bundle/codex:skills/super-review/SKILL.md": {
+      "file": "skills/super-review/SKILL.md",
+      "bytes": 23673,
+      "tokens": 5911
+    },
+    "bundle/codex:skills/super-review/references/delta.md": {
+      "file": "skills/super-review/references/delta.md",
+      "bytes": 4146,
+      "tokens": 1035
+    },
+    "bundle/codex:skills/super-review/references/panel.md": {
+      "file": "skills/super-review/references/panel.md",
+      "bytes": 9404,
+      "tokens": 2346
+    },
+    "bundle/codex:skills/super-scout/SKILL.md": {
+      "file": "skills/super-scout/SKILL.md",
+      "bytes": 12486,
+      "tokens": 3118
+    },
+    "bundle/codex:skills/super-ship/SKILL.md": {
+      "file": "skills/super-ship/SKILL.md",
+      "bytes": 20693,
+      "tokens": 5169
+    },
+    "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
+      "file": "skills/super-ship/references/transport-no-mistakes.md",
+      "bytes": 3798,
+      "tokens": 949
+    },
+    "bundle/codex:skills/super-verify/SKILL.md": {
+      "file": "skills/super-verify/SKILL.md",
+      "bytes": 15999,
+      "tokens": 3994
+    },
+    "bundle/codex:skills/triage/SKILL.md": {
+      "file": "skills/triage/SKILL.md",
+      "bytes": 10197,
+      "tokens": 2543
+    },
+    "bundle/codex:skills/triage/assets/agent-brief.md": {
+      "file": "skills/triage/assets/agent-brief.md",
+      "bytes": 1619,
+      "tokens": 405
+    },
+    "bundle/codex:skills/triage/assets/triage-notes.md": {
+      "file": "skills/triage/assets/triage-notes.md",
+      "bytes": 493,
+      "tokens": 124
+    },
+    "bundle/codex:skills/triage/references/rejections.md": {
+      "file": "skills/triage/references/rejections.md",
+      "bytes": 2604,
+      "tokens": 649
+    },
+    "bundle/codex:skills/triage/references/roles.md": {
+      "file": "skills/triage/references/roles.md",
+      "bytes": 2453,
+      "tokens": 610
+    },
+    "bundle/codex:skills/ultraqa/SKILL.md": {
+      "file": "skills/ultraqa/SKILL.md",
+      "bytes": 14297,
+      "tokens": 3570
+    },
+    "bundle/codex:skills/ultraqa/references/adversarial-cases.md": {
+      "file": "skills/ultraqa/references/adversarial-cases.md",
+      "bytes": 4099,
+      "tokens": 1024
+    },
+    "bundle/codex:skills/verify/SKILL.md": {
+      "file": "skills/verify/SKILL.md",
+      "bytes": 10245,
+      "tokens": 2557
+    },
+    "bundle/codex:skills/visual-edit/SKILL.md": {
+      "file": "skills/visual-edit/SKILL.md",
+      "bytes": 10239,
+      "tokens": 2560
+    },
+    "bundle/codex:skills/visual-edit/assets/receipt.example.json": {
+      "file": "skills/visual-edit/assets/receipt.example.json",
+      "bytes": 1478,
+      "tokens": 370
+    },
+    "bundle/codex:skills/visual-edit/references/receipt.md": {
+      "file": "skills/visual-edit/references/receipt.md",
+      "bytes": 3019,
+      "tokens": 755
+    },
+    "bundle/codex:skills/wait-what/SKILL.md": {
+      "file": "skills/wait-what/SKILL.md",
+      "bytes": 5466,
+      "tokens": 1366
+    },
+    "bundle/codex:skills/wayfind/SKILL.md": {
+      "file": "skills/wayfind/SKILL.md",
+      "bytes": 13567,
+      "tokens": 3385
+    },
+    "bundle/codex:skills/writing-skills/SKILL.md": {
+      "file": "skills/writing-skills/SKILL.md",
+      "bytes": 9586,
+      "tokens": 2393
+    },
+    "bundle/codex:skills/writing-skills/references/authoring-discipline.md": {
+      "file": "skills/writing-skills/references/authoring-discipline.md",
+      "bytes": 7483,
+      "tokens": 1871
+    },
+    "firstmate:adapters/firstmate/CHILD-ROLES.md": {
+      "file": "adapters/firstmate/CHILD-ROLES.md",
+      "bytes": 3335,
+      "tokens": 832
+    },
+    "firstmate:adapters/firstmate/SUPERVISOR.md": {
+      "file": "adapters/firstmate/SUPERVISOR.md",
+      "bytes": 8950,
+      "tokens": 2232
+    },
+    "firstmate:adapters/firstmate/WORKER.md": {
+      "file": "adapters/firstmate/WORKER.md",
+      "bytes": 5205,
+      "tokens": 1301
+    },
+    "firstmate:stock-brief": {
+      "file": "src/firstmate/stock.ts",
+      "bytes": 2442,
+      "tokens": 611
+    },
+    "hook:session-start (invented project)": {
+      "file": "src/learn/memory/session-context.ts",
+      "bytes": 2394,
+      "tokens": 597
+    },
+    "hook:session-start (no repository)": {
+      "file": "src/learn/skills/roster.ts",
+      "bytes": 1673,
+      "tokens": 419
+    },
+    "judge:consolidator": {
+      "file": "src/learn/memory/consolidate.ts",
+      "bytes": 6219,
+      "tokens": 1555
+    },
+    "judge:lesson-merger": {
+      "file": "src/learn/memory/deep.ts",
+      "bytes": 4071,
+      "tokens": 1018
+    },
+    "judge:pattern-maintainer": {
+      "file": "src/learn/review/maintain.ts",
+      "bytes": 7127,
+      "tokens": 1782
+    },
+    "judge:reflector": {
+      "file": "src/learn/memory/reflect.ts",
+      "bytes": 8990,
+      "tokens": 2246
+    },
+    "judge:skill-scout": {
+      "file": "src/learn/skills/learn.ts",
+      "bytes": 6025,
+      "tokens": 1507
+    },
+    "repo:AGENTS.md": {
+      "file": "AGENTS.md",
+      "bytes": 22097,
+      "tokens": 5510
+    },
+    "repo:CLAUDE.md": {
+      "file": "CLAUDE.md",
+      "bytes": 90,
+      "tokens": 23
+    },
+    "role:code-review/adversarial": {
+      "file": "roles/code-review/adversarial/ROLE.md",
+      "bytes": 10190,
+      "tokens": 2542
+    },
+    "role:code-review/agent-native": {
+      "file": "roles/code-review/agent-native/ROLE.md",
+      "bytes": 8677,
+      "tokens": 2166
+    },
+    "role:code-review/api-contract": {
+      "file": "roles/code-review/api-contract/ROLE.md",
+      "bytes": 8555,
+      "tokens": 2135
+    },
+    "role:code-review/correctness": {
+      "file": "roles/code-review/correctness/ROLE.md",
+      "bytes": 8389,
+      "tokens": 2094
+    },
+    "role:code-review/data-migration": {
+      "file": "roles/code-review/data-migration/ROLE.md",
+      "bytes": 9256,
+      "tokens": 2311
+    },
+    "role:code-review/frontend-races": {
+      "file": "roles/code-review/frontend-races/ROLE.md",
+      "bytes": 8284,
+      "tokens": 2069
+    },
+    "role:code-review/learnings": {
+      "file": "roles/code-review/learnings/ROLE.md",
+      "bytes": 9318,
+      "tokens": 2328
+    },
+    "role:code-review/maintainability": {
+      "file": "roles/code-review/maintainability/ROLE.md",
+      "bytes": 9524,
+      "tokens": 2371
+    },
+    "role:code-review/performance": {
+      "file": "roles/code-review/performance/ROLE.md",
+      "bytes": 7604,
+      "tokens": 1900
+    },
+    "role:code-review/previous-comments": {
+      "file": "roles/code-review/previous-comments/ROLE.md",
+      "bytes": 8148,
+      "tokens": 2034
+    },
+    "role:code-review/project-standards": {
+      "file": "roles/code-review/project-standards/ROLE.md",
+      "bytes": 8511,
+      "tokens": 2126
+    },
+    "role:code-review/reliability": {
+      "file": "roles/code-review/reliability/ROLE.md",
+      "bytes": 7414,
+      "tokens": 1850
+    },
+    "role:code-review/security": {
+      "file": "roles/code-review/security/ROLE.md",
+      "bytes": 9548,
+      "tokens": 2383
+    },
+    "role:code-review/swift-ios": {
+      "file": "roles/code-review/swift-ios/ROLE.md",
+      "bytes": 8915,
+      "tokens": 2225
+    },
+    "role:code-review/testing": {
+      "file": "roles/code-review/testing/ROLE.md",
+      "bytes": 9144,
+      "tokens": 2280
+    },
+    "role:doc-review/adversarial-document": {
+      "file": "roles/doc-review/adversarial-document/ROLE.md",
+      "bytes": 9786,
+      "tokens": 2443
+    },
+    "role:doc-review/coherence": {
+      "file": "roles/doc-review/coherence/ROLE.md",
+      "bytes": 8790,
+      "tokens": 2196
+    },
+    "role:doc-review/design-lens": {
+      "file": "roles/doc-review/design-lens/ROLE.md",
+      "bytes": 8209,
+      "tokens": 2050
+    },
+    "role:doc-review/feasibility": {
+      "file": "roles/doc-review/feasibility/ROLE.md",
+      "bytes": 8568,
+      "tokens": 2139
+    },
+    "role:doc-review/product-lens": {
+      "file": "roles/doc-review/product-lens/ROLE.md",
+      "bytes": 8549,
+      "tokens": 2136
+    },
+    "role:doc-review/scope-guardian": {
+      "file": "roles/doc-review/scope-guardian/ROLE.md",
+      "bytes": 8742,
+      "tokens": 2183
+    },
+    "role:doc-review/security-lens": {
+      "file": "roles/doc-review/security-lens/ROLE.md",
+      "bytes": 8026,
+      "tokens": 2004
+    },
+    "role:implementer": {
+      "file": "roles/implementer/ROLE.md",
+      "bytes": 7777,
+      "tokens": 1941
+    },
+    "role:learn/consolidator": {
+      "file": "roles/learn/consolidator/ROLE.md",
+      "bytes": 5068,
+      "tokens": 1267
+    },
+    "role:learn/lesson-merger": {
+      "file": "roles/learn/lesson-merger/ROLE.md",
+      "bytes": 3436,
+      "tokens": 859
+    },
+    "role:learn/pattern-maintainer": {
+      "file": "roles/learn/pattern-maintainer/ROLE.md",
+      "bytes": 5807,
+      "tokens": 1452
+    },
+    "role:learn/reflector": {
+      "file": "roles/learn/reflector/ROLE.md",
+      "bytes": 7022,
+      "tokens": 1755
+    },
+    "role:learn/skill-scout": {
+      "file": "roles/learn/skill-scout/ROLE.md",
+      "bytes": 4945,
+      "tokens": 1237
+    },
+    "role:plan-review/architect": {
+      "file": "roles/plan-review/architect/ROLE.md",
+      "bytes": 6140,
+      "tokens": 1534
+    },
+    "role:plan-review/critic": {
+      "file": "roles/plan-review/critic/ROLE.md",
+      "bytes": 6754,
+      "tokens": 1687
+    },
+    "role:plan-review/planner": {
+      "file": "roles/plan-review/planner/ROLE.md",
+      "bytes": 5698,
+      "tokens": 1423
+    },
+    "role:reviewer-spec": {
+      "file": "roles/reviewer-spec/ROLE.md",
+      "bytes": 9251,
+      "tokens": 2307
+    },
+    "role:reviewer-standards": {
+      "file": "roles/reviewer-standards/ROLE.md",
+      "bytes": 8460,
+      "tokens": 2112
+    },
+    "role:supervisor": {
+      "file": "roles/supervisor/ROLE.md",
+      "bytes": 7481,
+      "tokens": 1870
+    }
+  }
+}

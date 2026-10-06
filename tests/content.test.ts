@@ -67,6 +67,19 @@ describe("model and pricing denylist", () => {
     expect(checkContent(ctx).some((i) => i.rule === "content.denylist" && i.file === "src/thing.ts")).toBe(true);
   });
 
+  test("the scan covers catalog.d/, though this repository carries no fragment there", () => {
+    // A tracked tree missing from the scan roots reports clean whatever it
+    // holds, and a downstream fork's catalog fragment is catalog content.
+    expect(contentScanRoots()).toContain("catalog.d");
+    const ctx = ctxFor({
+      "skills/alpha/SKILL.md": HEAD,
+      "catalog.d/downstream.yaml": `schema_version: 1\nprofiles:\n  - id: downstream\n    summary: Route it to ${sampleModelTerm()}.\n`,
+    });
+    expect(checkContent(ctx).some((i) => i.rule === "content.denylist" && i.file === "catalog.d/downstream.yaml")).toBe(
+      true,
+    );
+  });
+
   test("the scanner's own definition file is not flagged by its own terms", () => {
     const body = DENY_TERMS.map((t) => t.probe).join("\n");
     const ctx = ctxFor({ "skills/alpha/SKILL.md": HEAD, [SCANNER_DEFINITION_FILE]: body });

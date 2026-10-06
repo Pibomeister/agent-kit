@@ -58,6 +58,7 @@
         "finding",
         "review",
         "verification",
+        "verification-recipe",
         "charter",
         "decision",
         "event",
@@ -482,6 +483,14 @@
         },
         "depth": { "type": "integer", "minimum": 1, "maximum": 1 }
       }
+    },
+    "evidence_kind": {
+      "description": "Runtime evidence vocabulary selected by a project recipe and required per ticket check. It is not a universal instruction to collect every kind.",
+      "enum": ["rendered-screenshot", "user-path-trial", "trace", "log", "api-response", "dry-run", "smoke-test"]
+    },
+    "surface": {
+      "description": "The observable surface an acceptance criterion exercises. none keeps non-runtime and compatibility criteria explicit.",
+      "enum": ["frontend", "backend", "none"]
     },
     "option": {
       "type": "object",

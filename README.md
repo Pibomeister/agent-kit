@@ -3,7 +3,7 @@
 One engineering lifecycle, amalgamated from nine donors (eight MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**36 public skills · 8 domain packs · 8 protocols · 34 role prompts · 7 reference packs · 30 schemas**,
+**36 public skills · 8 domain packs · 8 protocols · 35 role prompts · 8 reference packs · 32 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -40,7 +40,8 @@ installed host and reports old and new versions; it is safe to rerun. If the cur
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
 `ak delegation <ticket> --project <project-record>`, which `/ak:super-bound` runs to score each
 ticket, so that skill needs a current `ak` on `PATH`
-([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). The `published` branch
+([`skills/super-bound/SKILL.md`](skills/super-bound/SKILL.md)). It also carries `ak learn`, the opt-in learning runtime
+([`adapters/claude-code/CONTRACT.md`](adapters/claude-code/CONTRACT.md) §7). The `published` branch
 is created by `.github/workflows/publish-bundle.yml` after a green push to `main`. On the first
 merge, wait for that workflow to complete before using the commands above; no release tag is
 needed. Later bundle changes require a new matching version in `catalog.yaml` and `package.json`;
@@ -125,17 +126,18 @@ Shared phase logic, invoked by skills rather than by humans:
 `phase-operations` · `consensus-plan-gate` · `tdd` · `apply-findings` · `review-delta` ·
 `worktree-ownership` · `attach-pack` · `evidence-gate`
 
-### Roles (34)
+### Roles (35)
 
-4 core (`supervisor`, `implementer`, `reviewer-spec`, `reviewer-standards`) · 15 code-review ·
+5 core (`supervisor`, `implementer`, `verifier`, `reviewer-spec`, `reviewer-standards`) · 15 code-review ·
 7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 5 learn (`learn/pattern-maintainer`,
 `learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`).
 
-### References (7)
+### References (8)
 
 `codebase-design-vocabulary` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
-`tracker-of-record` · `delegation` · `structural-checks`. Loaded on demand, never exposed as slash
-commands. `structural-checks` is declared at `status: contract`; its body is not authored yet.
+`tracker-of-record` · `delegation` · `structural-checks` · `verification-evidence`. Loaded on demand,
+never exposed as slash commands. `structural-checks` is declared at `status: contract`; its body is
+not authored yet.
 
 ## What makes it self-checking
 
@@ -205,6 +207,7 @@ Attribution: `NOTICE`. Full license texts: `provenance/licenses/`.
 | `AGENTS.md` | Maintainer guide and the invocation law |
 | `AUTHORING.md` | The contract every skill body obeys |
 | `catalog.yaml` | Single source of truth; drives validation and packaging |
+| `catalog.d/` | Fragments that add entries without editing `catalog.yaml`; upstream carries none, a downstream fork adds its own (`docs/decisions/0010-catalog-fragments.md`) |
 | `policies/resolved-conflicts.yaml` | Where the sources disagreed, and how it was settled |
 | `docs/decisions/` | ADRs |
 | `research/` | Design sources and ~7,000 lines of citation-verified donor dossiers |

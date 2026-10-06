@@ -11,6 +11,7 @@ import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { readText } from "../core/store.ts";
+import { span, type SpanName, triggerOf } from "../core/trace.ts";
 import { deferredNote, ingest, type IngestOptions } from "./ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "./ledger.ts";
 import { maintain } from "./maintain.ts";
@@ -26,22 +27,44 @@ function rootFor(args: LearnArgs, ctx: LearnContext): string | null {
 /** Resolve the root, open the ledger and hold its lock around `body`. */
 function locked(args: LearnArgs, ctx: LearnContext, body: (ledger: Ledger, root: string) => number): number {
   const root = rootFor(args, ctx);
-  if (root === null) return 1;
+  if (root === null) {
+    ctx.span?.status("failed", "not-a-repo");
+    return 1;
+  }
+  ctx.span?.project(root);
   // A dry run writes nothing, so it neither creates the ledger nor takes its lock.
   const ledger = ctx.config.dryRun ? new Ledger(reviewLedgerDir(ctx.config, root)) : reviewLedger(ctx.config, root);
   const release = ctx.config.dryRun ? () => {} : ledger.tryLock();
   if (release === null) {
+    ctx.span?.status("locked", "lock-held");
     ctx.io.err("ak learn review: another run holds the ledger lock");
     return 0;
   }
   try {
-    return body(ledger, root);
+    const code = body(ledger, root);
+    if (ctx.config.dryRun) ctx.span?.status("dry-run");
+    return code;
   } catch (error) {
+    ctx.span?.status("failed", "error");
     ctx.io.err(`ak learn review: ${(error as Error).message}`);
     return 1;
   } finally {
     release();
   }
+}
+
+/** One review stage as its own span under the run, keyed to the run's project. */
+function stage<T>(ctx: LearnContext, name: SpanName, root: string, body: (ctx: LearnContext) => T): T {
+  return span(ctx, name, triggerOf(ctx, "cli"), (inner) => {
+    inner.span?.project(root);
+    return body(inner);
+  });
+}
+
+/** A writing verb as one span: `review.run` around the three stages, or a single stage on its own. */
+function spanned(name: SpanName, body: (args: LearnArgs, ctx: LearnContext) => number) {
+  return (args: LearnArgs, ctx: LearnContext): number =>
+    span(ctx, name, triggerOf(ctx, "cli"), (inner) => body(args, inner));
 }
 
 /** `--pr 12` or `--pr 12,15`. Non-numbers are refused rather than dropped. */
@@ -71,8 +94,18 @@ export function ingestOptions(args: LearnArgs, ctx: LearnContext): IngestOptions
   };
 }
 
+const INGEST_SOURCES = ["github", "claude-mem", "claude-reflect"];
+
 function doIngest(args: LearnArgs, ctx: LearnContext, ledger: Ledger, root: string): void {
   const result = ingest(ctx, ledger, root, ingestOptions(args, ctx));
+  ctx.span?.attr("events", result.events.length);
+  ctx.span?.attr("fresh", result.fresh);
+  ctx.span?.attr("deferred", result.deferred);
+  ctx.span?.attr(
+    "unavailable",
+    result.unavailable.filter((source) => INGEST_SOURCES.includes(source)),
+  );
+  ctx.span?.status(ctx.config.dryRun ? "dry-run" : result.fresh > 0 ? "ok" : "nothing");
   if (ctx.config.dryRun) {
     for (const event of result.events) {
       const where = `${event.path ?? ""}:${event.line ?? ""}`;
@@ -93,46 +126,53 @@ export const reviewArea: LearnArea = {
     run: {
       usage:
         "review run [--pr N[,N]] [--repo PATH] [--cwd PATH] [--gh-repo owner/name] [--since YYYY-MM-DD] [--source codex]   ingest, maintain, propose",
-      run: (args, ctx) =>
+      run: spanned("review.run", (args, ctx) =>
         locked(args, ctx, (ledger, root) => {
           // Maintain runs even with nothing fresh: a batch the judge failed on earlier is still waiting.
-          doIngest(args, ctx, ledger, root);
-          ctx.io.out(`maintain: ${maintain(ctx, ledger, basename(root))}`);
-          ctx.io.out(`propose: ${propose(ctx, ledger, root)}`);
+          stage(ctx, "review.ingest", root, (inner) => doIngest(args, inner, ledger, root));
+          ctx.io.out(
+            `maintain: ${stage(ctx, "review.maintain", root, (inner) => maintain(inner, ledger, basename(root)))}`,
+          );
+          ctx.io.out(`propose: ${stage(ctx, "review.propose", root, (inner) => propose(inner, ledger, root))}`);
           return 0;
         }),
+      ),
     },
     ingest: {
       usage:
         "review ingest [--pr N[,N]] [--repo PATH] [--cwd PATH] [--gh-repo owner/name] [--since YYYY-MM-DD] [--no-github] [--no-mem]",
-      run: (args, ctx) =>
+      run: spanned("review.ingest", (args, ctx) =>
         locked(args, ctx, (ledger, root) => {
           doIngest(args, ctx, ledger, root);
           return 0;
         }),
+      ),
     },
     maintain: {
       usage: "review maintain               classify unprocessed events into pattern pages",
-      run: (args, ctx) =>
+      run: spanned("review.maintain", (args, ctx) =>
         locked(args, ctx, (ledger, root) => {
           ctx.io.out(`maintain: ${maintain(ctx, ledger, basename(root))}`);
           return 0;
         }),
+      ),
     },
     propose: {
       usage: "review propose                promote active patterns at the threshold to guardrails",
-      run: (args, ctx) =>
+      run: spanned("review.propose", (args, ctx) =>
         locked(args, ctx, (ledger, root) => {
           ctx.io.out(`propose: ${propose(ctx, ledger, root)}`);
           return 0;
         }),
+      ),
     },
     report: {
       usage: "review report                 index, guardrails and the last runs",
       run: (args, ctx) => {
         const root = rootFor(args, ctx);
         if (root === null) return 1;
-        const ledger = reviewLedger(ctx.config, root);
+        // A read: a repo with no review ledger is reported as empty, never seeded.
+        const ledger = new Ledger(reviewLedgerDir(ctx.config, root));
         ctx.io.out(readText(ledger.path("index.md")).trimEnd());
         const guard = readText(ledger.path("guardrails.md")).trim();
         ctx.io.out("");

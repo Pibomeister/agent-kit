@@ -37,8 +37,8 @@ class PatchTest(unittest.TestCase):
 
     def test_append_replace_insert_after(self):
         _, body = common.parse_page(PAGE)
-        b = common.patch_body(body, "append", None, "- https://example/b (sarath pr 1874)")
-        self.assertTrue(b.endswith("- https://example/a (greptile P2 pr 1873)\n- https://example/b (sarath pr 1874)\n"))
+        b = common.patch_body(body, "append", None, "- https://example/b (example-reviewer pr 1874)")
+        self.assertTrue(b.endswith("- https://example/a (greptile P2 pr 1873)\n- https://example/b (example-reviewer pr 1874)\n"))
         b = common.patch_body(b, "replace", "Take expected values from a spec literal or fixture.",
                               "Take expected values from a spec literal, fixture, or user example.")
         self.assertIn("## Fix\nTake expected values from a spec literal, fixture, or user example.\n", b)
@@ -49,14 +49,14 @@ class PatchTest(unittest.TestCase):
 
     def test_add_evidence_activates_on_second_distinct_pr(self):
         meta, body = common.parse_page(PAGE)
-        event = {"source": "github", "pr": 1874, "author": "sarathc-regulis", "ts": "2026-09-16T10:00:00Z",
+        event = {"source": "github", "pr": 1874, "author": "example-reviewer", "ts": "2026-09-16T10:00:00Z",
                  "url": "https://example/b", "hash": "h2", "severity": "P2"}
         meta, body = maintain.add_evidence(meta, body, event)
         self.assertEqual(meta["count"], 2)
         self.assertEqual(meta["status"], "active")
         self.assertEqual(meta["last_seen"], "2026-09-16")
         self.assertEqual(meta["prs"], ["1873", "1874"])
-        self.assertIn("- https://example/b (sarathc-regulis P2 pr 1874 2026-09-16)", body)
+        self.assertIn("- https://example/b (example-reviewer P2 pr 1874 2026-09-16)", body)
 
     def test_same_pr_same_source_stays_candidate(self):
         meta, body = common.parse_page(PAGE)

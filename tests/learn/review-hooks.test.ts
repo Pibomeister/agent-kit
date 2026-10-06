@@ -291,3 +291,13 @@ describe("prompt hook", () => {
     expect(loadEvents(reviewLedger(ctx.config, repo))).toHaveLength(1);
   });
 });
+
+describe("review report", () => {
+  test("reads a repo with no review ledger without creating one", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ctx = testContext({ cwd: root });
+    expect(reviewArea.verbs.report?.run(parseLearnArgs(["--repo", root]), ctx)).toBe(0);
+    expect(existsSync(reviewLedgerDir(ctx.config, root))).toBe(false);
+    expect(ctx.out).toContain("(none)");
+  });
+});

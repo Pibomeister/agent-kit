@@ -155,3 +155,38 @@ describe("catalog completeness", () => {
     expect(issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 });
+
+describe("catalog completeness across catalog.d fragments", () => {
+  const PROFILE_FRAGMENT =
+    "schema_version: 1\nprofiles:\n  - id: downstream\n    batch: 1\n    status: authored\n    summary: A downstream install set.\n";
+
+  test("a profile a fragment declares is complete once its file exists, with catalog.yaml unchanged", () => {
+    // The case the directory exists for: a downstream install adds a profile
+    // without a line of catalog.yaml changing.
+    const { issues } = run({
+      "catalog.yaml": catalogYaml("profiles: []\n"),
+      "catalog.d/downstream.yaml": PROFILE_FRAGMENT,
+      "profiles/downstream.yaml": "schema_version: 1\nprofile: downstream\n",
+    });
+    expect(issues).toEqual([]);
+  });
+
+  test("a fragment's authored entry with no file names the fragment, not catalog.yaml", () => {
+    const { issues } = run({
+      "catalog.yaml": catalogYaml("profiles: []\n"),
+      "catalog.d/downstream.yaml": PROFILE_FRAGMENT,
+    });
+    const issue = issues.find((i) => i.rule === "catalog.entry-without-file");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toStartWith("catalog.d/downstream.yaml declares profiles/downstream as authored");
+  });
+
+  test("an undeclared file says a fragment could have declared it", () => {
+    const { issues } = run({
+      "catalog.yaml": catalogYaml("profiles: []\n"),
+      "profiles/downstream.yaml": "schema_version: 1\n",
+    });
+    const issue = issues.find((i) => i.rule === "catalog.file-without-entry");
+    expect(issue?.message).toContain("no catalog.d/ fragment does");
+  });
+});

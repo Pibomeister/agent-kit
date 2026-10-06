@@ -52,6 +52,8 @@ requires:
   - process-exec
   - artifact-write
   - kb-write
+  - independent-context
+  - trusted-evidence
 
 inputs:
   - id: claim
@@ -69,6 +71,18 @@ inputs:
     summary: >-
       The environment the checks ran in, recorded on every receipt alongside the command and its
       exit status.
+  - id: verification-recipe
+    schema: verification-recipe
+    required: false
+    summary: >-
+      The content-addressed setup, build, launch, readiness, drive and cleanup path plus the
+      project-declared surface evidence kinds. Discovery may replace a missing recipe only after
+      the complete candidate succeeds.
+  - id: verifier-seat
+    required: true
+    summary: >-
+      A runner-assigned verifier context outside implementer lineage. A host-only fresh context is
+      recorded as host-unattested and cannot satisfy autonomous closure.
   - id: prior-receipts
     schema: verification
     required: false
@@ -91,6 +105,11 @@ outputs:
   - id: invalidation-records
     summary: >-
       What a superseded receipt no longer describes and what changed. Nothing is rewritten in place.
+  - id: verification-recipe
+    schema: verification-recipe
+    summary: >-
+      A host-neutral content-addressed recipe emitted only after setup, build, launch, readiness,
+      drive and cleanup all succeed.
 
 side_effects:
   - process-exec
@@ -105,12 +124,21 @@ constraints:
   check-may-be-weakened-to-obtain-a-pass: false
   verify-may-edit-what-it-verifies: false
   pass-may-be-selected-from-repeated-attempts: false
+  implementer-may-fill-verifier-seat: false
+  test-only-evidence-may-cover-runtime-surface: false
+
+references:
+  - verification-evidence
 
 budget:
   provided_by: runner
   enforces: []
 
 hard_gates:
+  - A runnable frontend or backend criterion needs every project-declared running-surface evidence
+    kind; tests, type checks and builds alone never pass it.
+  - An implementer-authored or host-unattested receipt cannot satisfy autonomous closure. A missing
+    verifier seat is unavailable and never backfilled (ruling `missing-supervisor-never-implementer`).
   - No completion claim without fresh evidence for the revision claimed. A description of a green run
     is not a receipt, and a patch that changed after a receipt was taken does not inherit it.
   - A classifier, a confidence score and a reviewer's judgement are advisory and recorded as such.
@@ -167,6 +195,9 @@ packaging:
         - >-
           environment identity is not attested by the host. This package records what it observed of
           the environment and never reports an identity it could not read.
+        - >-
+          independent-context and trusted-evidence are not provided by the host. The attached runner
+          supplies them fail-closed; without it this skill is guided and receipts are host-unattested.
     - adapter: codex
       mode: autonomous
       unsupported:
@@ -181,6 +212,9 @@ packaging:
         - >-
           environment identity is not attested by the host. This package records what it observed of
           the environment and never reports an identity it could not read.
+        - >-
+          independent-context and trusted-evidence are not provided by the host. The attached runner
+          supplies them fail-closed; without it this skill is guided and receipts are host-unattested.
 
 provenance:
   origin: donor

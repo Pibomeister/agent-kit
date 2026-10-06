@@ -1,7 +1,8 @@
 /**
  * What `ak firstmate status complete` and `ak firstmate status --verify` check before a run may be
  * called done. The lifecycle half is core (src/lifecycle/gate.ts); this only supplies the binding's
- * evidence store, run id and required gates, then audits the grants the run was given.
+ * evidence store, the run the worker opened with the binding and the required gates, then audits the
+ * grants the run was given.
  *
  * The head the gates must be current for is the one the latest ship-preflight record names, because a
  * publish commits and pushes after that record and the live tree has moved on.
@@ -13,7 +14,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
-import { checkGates, GATES, readRecords, type Gate, type Snapshot } from "../lifecycle/gate.ts";
+import { boundRun, checkGates, GATES, readRecords, type Gate, type Snapshot } from "../lifecycle/gate.ts";
 import type { LedgerRecord } from "./constants.ts";
 import { GRANT_OPERATIONS, grantRecordPath, type GrantOperation, type GrantRecord } from "./grant.ts";
 import type { Binding } from "./schema.ts";
@@ -58,18 +59,16 @@ export function auditRun(a: AuditArgs): string[] {
   const gates = b.required_gates.filter((g): g is Gate => (GATES as readonly string[]).includes(g));
   const dir = b.evidence.location;
   const project = a.project ?? b.project.path;
+  const run = boundRun(dir, b.run_id) ?? b.run_id;
   let head: Snapshot | undefined;
   if (gates.includes("ship-preflight")) {
-    const ships = readRecords(dir, b.run_id, "ship-preflight").sort((x, y) =>
-      x.recorded_at.localeCompare(y.recorded_at),
-    );
+    const ships = readRecords(dir, run, "ship-preflight").sort((x, y) => x.recorded_at.localeCompare(y.recorded_at));
     head = ships[ships.length - 1]?.snapshot;
     if (head === undefined)
-      refusals.push(`refused: gate ship-preflight has no current evidence (no record for run ${b.run_id} in ${dir})`);
+      refusals.push(`refused: gate ship-preflight has no current evidence (no record for run ${run} in ${dir})`);
   }
   if (head !== undefined || !gates.includes("ship-preflight")) {
-    // Judged on phase records; a binding-declared evidence run needs `open` to accept the binding's run id.
-    refusals.push(...checkGates({ dir, run: b.run_id, gates, project, head }).refusals);
+    refusals.push(...checkGates({ dir, run, gates, project, head }).refusals);
   }
 
   // Every operation the gates put on the slip ran under a grant, and every grant names this binding.

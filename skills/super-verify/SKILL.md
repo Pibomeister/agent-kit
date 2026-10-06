@@ -50,10 +50,11 @@ Authority: `model`. A controller or a parent skill starts it when a claim needs 
 command exposes it and no human act is required to start it.
 
 No grant covers delegation, because no phase operation exposes this skill
-(`policies/invocation.yaml`). Who starts the run also does not change what it may conclude: the
-implementer of the change may invoke it, and the receipts still close what they close, because
-closure is a property of the evidence and of a policy rule saying that evidence suffices, never of
-the caller's confidence in the work (ruling `closure-requires-independent-verification`).
+(`policies/invocation.yaml`). The implementer may start the skill, but may not fill its verifier seat
+or author gate-eligible receipts. The runner assigns a distinct `verifier` seat, and closure depends
+on that seat's receipts plus the applicable policy rule, never on the caller's confidence. A seat
+that cannot be filled independently is `unavailable` and is never backfilled by the implementer,
+author, spec approver or another seated role (ruling `missing-supervisor-never-implementer`).
 
 ## Inputs
 
@@ -64,9 +65,14 @@ the criterion it would need.
 The repository at the revision being verified, readable (`repository-read`). Unreadable, or no
 revision named: stop and report `failed`. A receipt whose revision is null is not a receipt.
 
-The project's own test, build and check commands, discovered rather than assumed. A command guessed
-from the ecosystem's convention verifies whatever that command happens to do, which is not the same
-claim.
+The project's content-addressed verification recipe and surface declarations. With no matching
+recipe, discover a candidate from project files, but do not substitute tests for a runnable surface;
+publish a recipe only after its complete build, launch, readiness, drive and cleanup path succeeds.
+
+One runner-assigned verifier context (`independent-context`) and trusted evidence storage for the
+autonomous form. A fresh host context without attestation remains valid in guided mode and records
+`host-unattested`; the gate refuses it once the build gate records an implementer seat or the run
+holds any bypass or delegated grant record, for the rest of that run.
 
 The environment the checks run in, identified (`schemas/verification.schema.json`). Test execution
 belongs in the appropriate isolated environment, and repository test code does not receive production
@@ -81,13 +87,19 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
 
 1. Resolve the claim into the acceptance criteria it is made of, by id. A claim that resolves to no
    criterion stops here with `needs-input`.
-2. Discover the project's own commands — the test runner, the build, the type check, the wrapper the
-   repository actually uses — before deciding what to run.
-3. For each criterion, identify the command or probe that would prove it. Where no realistic check
-   exists, say so on the criterion rather than leaving it out: the outcome is recorded with its
-   reason, not dropped from the matrix.
+2. Resolve the matching project-declared recipe by id and content hash. If none exists, discover the
+   setup, build, launch, readiness, drive and cleanup steps from project files. Record a candidate
+   only after the whole path works; never write a host-specific recipe into the application tree.
+   Load [verification evidence](../../references/verification-evidence/REFERENCE.md) before matching
+   a surface to an evidence kind.
+3. Seat `roles/verifier/ROLE.md` outside the implementer lineage. Give it the claim, criteria,
+   revision, recipe, permitted commands, environment and required evidence kinds—never the
+   implementer's narrative, claimed result or reviewer verdict. An unfillable seat is `unavailable`.
 4. Run each command fresh and complete, at the revision under verification. A partial run, a cached
    result and a previous run's output are not this run's evidence.
+   Where a criterion declares a runnable surface, build and launch the application, wait for the
+   declared readiness signal, and drive the declared path or request. Tests, type checks and builds
+   may support the receipt; none substitutes for the running-app evidence kind the criterion names.
 5. Read the whole output: exit status first, then the counts the output reports. A suite that reports
    failures while exiting zero is read by its output, and the disagreement is recorded as
    `exit_disagreement` with `verdict_from: output` and an `output_reports` quote.
@@ -98,6 +110,8 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
    ticket ref `{id, hash}` whose hash is `artifactHash` of the ticket (`common#/$defs/hash`: sha256
    over its canonical JSON without `approvals`), the value `open` wrote as the ticket's hash in the
    run record.
+   Each receipt also records the recipe id and hash, `evidence_kind`, every evidence artifact and
+   digest, and the verifier seat id plus its runner attestation or `host-unattested` state.
 7. Set the outcome of each check to what happened: it ran and confirmed, it ran and refuted, it did
    not run, it does not apply to this change, or it ran and settled nothing. Each outcome that is not
    a pass carries a reason.
@@ -107,20 +121,22 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
    when. The old receipt stays readable; what changes is whether it still describes the current state.
 10. Claim exactly what the receipts support, and publish the matrix and the receipts through the
     knowledgebase adapter's `publishArtifact` operation with a run-artifact placement. Return the
-    verdict per criterion, not a summary sentence over them.
+    receipts and matrix exactly as artifacts. Do not add a prose approval over them; each criterion's
+    outcome is the verdict. Publish a successful newly discovered recipe as a content-addressed
+    `verification-recipe` artifact for later runs.
 11. When every criterion is confirmed, record the gate with every receipt file recorded at this
     head: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate verify --receipt <file>`
-    (repeat `--receipt` for each receipt). The bundle's gate copies each receipt and its digested
-    output into the run store and writes references in the v2 phase record; it does not turn those
+    (repeat `--receipt` for each receipt). The bundle's gate copies each receipt and every
+    artifact it lists into the run store and writes references in the v2 phase record; it does not turn those
     references into a verdict. It skips, with a note, a receipt bound to another revision and
-    refuses one whose output log it cannot find, and the pre-ship check refuses one whose ticket ref
+    refuses one with a listed artifact it cannot find, and the pre-ship check refuses one whose ticket ref
     is not the run record's `artifactHash` value from step 6. Re-recording a corrected receipt under
     the same id replaces the earlier one at this head, except a failed receipt, which stays.
     The record names this revision and diff hash, so any later edit makes it stale and super-ship
     sends you back here.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--run` and `--dir` when it has them. A run that was never opened,
+    A binding's brief supplies `--dir` for the run opened with it. A run that was never opened,
     whether branch-named or supplied by a binding, has no task record, so retain its compatible
     marker-only call without `--receipt`; it is history, not proof. A record on a run that
     `ship-preflight` has closed is refused; the task needs a new `open`.
@@ -131,6 +147,12 @@ Gate: no completion claim without fresh evidence for the revision claimed. An ag
 a green run is not a receipt — a receipt carries the command or probe, exit status, output digest,
 revision and environment identity — and a patch that changed after a receipt was taken does not
 inherit it (ruling `closure-requires-independent-verification`).
+
+Gate: a runnable frontend or backend criterion is never passed by tests, type checks or a build alone.
+It needs the project-declared running-surface evidence kind, or an explicit non-pass outcome.
+
+Gate: an implementer-authored or host-unattested receipt cannot satisfy autonomous closure. A missing
+independent seat is `unavailable`, never self-verification with a note.
 
 Gate: a classifier, a confidence score and a reviewer's judgement are advisory and are recorded as
 such. None of them turns missing proof into a pass, and a criterion with no check is reported as
@@ -167,12 +189,16 @@ is the result; a run that reports nothing because the news was bad has failed at
 ## Outputs
 
 One receipt per check (`schemas/verification.schema.json`), each naming the criteria it supports and
-bound to the revision it describes. A receipt that supports nothing is not part of the matrix and is
-not evidence for anything.
+bound to the revision it describes. Each receipt names its recipe digest, evidence kind, evidence
+artifacts and verifier seat. A receipt that supports nothing is not part of the matrix and is not
+evidence for anything.
 
 The acceptance-to-evidence matrix: every acceptance criterion with its outcome and the receipt that
-produced it, including the criteria that were not run, do not apply, or settled nothing. The shape is
-a matrix because the missing cell is the point.
+produced it, including the criteria that were not run, do not apply, or settled nothing. It never
+promotes `host-unattested` evidence into an independent result.
+
+A successful newly discovered recipe, published as a content-addressed `verification-recipe`
+artifact for later runs.
 
 Invalidation records against receipts this run supersedes, naming what changed. Nothing is rewritten
 in place.

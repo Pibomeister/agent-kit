@@ -1,16 +1,16 @@
 [
  {
   "arm": "installed",
-  "prompt": "Review PR 1885 the way Phil would, with his severity calibration.",
+  "prompt": "Review PR 1885 the way the lead reviewer would, with their severity calibration.",
   "expected": [
-   "phil-review"
+   "lead-review"
   ]
  },
  {
   "arm": "installed",
-  "prompt": "Run the Regulis subagent team review on this pushed PR.",
+  "prompt": "Run the subagent team review on this pushed PR.",
   "expected": [
-   "regulis-review"
+   "team-review"
   ]
  },
  {
@@ -31,12 +31,12 @@
   "arm": "installed",
   "prompt": "Debug trace 8f2c1a3b and show me what happened in that run.",
   "expected": [
-   "regulis-logs"
+   "team-logs"
   ]
  },
  {
   "arm": "installed",
-  "prompt": "Run the per-org SMS launch-readiness audit and KPI funnel for the RUAN org.",
+  "prompt": "Run the per-org SMS launch-readiness audit and KPI funnel for the ACME org.",
   "expected": [
    "sms-data-validation"
   ]
@@ -71,7 +71,7 @@
  },
  {
   "arm": "installed",
-  "prompt": "Check REG-301 and tell me what state it's in.",
+  "prompt": "Check ENG-301 and tell me what state it's in.",
   "expected": [
    "linearis"
   ]
