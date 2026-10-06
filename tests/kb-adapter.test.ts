@@ -6,6 +6,7 @@ import { basename, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import commonSchema from "../schemas/common.schema.json" with { type: "json" };
+import charterExample from "../templates/charter.example.json" with { type: "json" };
 import decisionExample from "../templates/decision.example.json" with { type: "json" };
 import { runCli } from "../src/cli.ts";
 import { ARTIFACT_SCHEMA_IDS } from "../src/kb/artifacts.ts";
@@ -136,6 +137,8 @@ interface Published {
   status: string;
   ref: string;
   content_hash: string;
+  idempotency_key: string;
+  run: string | null;
   revision: string;
   effect: string;
 }
@@ -165,7 +168,7 @@ interface ReadResult {
 const ajv = new Ajv2020({ strict: false });
 const isPublished = ajv.compile<Published>({
   type: "object",
-  required: ["status", "ref", "content_hash", "revision", "effect"],
+  required: ["status", "ref", "content_hash", "idempotency_key", "run", "revision", "effect"],
 });
 const isRefusal = ajv.compile<Refusal>({ type: "object", required: ["status", "code", "message"] });
 const isRead = ajv.compile<ReadResult>({ type: "object", required: ["status", "documents", "coverage"] });
@@ -525,6 +528,18 @@ describe("publishArtifact, kb-document placement", () => {
     expect(commits(fx.kb)).toBe(1);
   });
 
+  test("a republish under another run reports the stored key and run", () => {
+    const fx = registered();
+    const file = page(fx);
+    const first = published(publishPage(fx, fx.project, file, "--run", "run-1"));
+    const second = published(publishPage(fx, fx.project, file, "--run", "run-2"));
+    expect(first.run).toBe("run-1");
+    expect(second.effect).toBe("none");
+    expect(second.run).toBe("run-1");
+    expect(second.idempotency_key).toBe(first.idempotency_key);
+    expect(commits(fx.kb)).toBe(1);
+  });
+
   test("a page file that begins with blank lines reads back as what was published", () => {
     const fx = registered();
     const sent = publishPage(fx, fx.project, page(fx, `\n\n${PAGE}`));
@@ -749,6 +764,45 @@ describe("publishArtifact, run-artifact placement", () => {
       git(fx.kb, "show", "HEAD:projects/example-project/runs/example-run-1/decision/example-decision-1.json"),
     );
     expect(stored).toMatchObject({ record: { links: [] } });
+  });
+
+  test("an approved copy published after its draft is stored on the same record", () => {
+    const fx = registered();
+    const { approvals, ...unapproved } = charterExample;
+    const write = (name: string, artifact: object): string => {
+      const file = join(fx.scratch, name);
+      writeFileSync(file, JSON.stringify(artifact));
+      return file;
+    };
+    const args = ["publish", "artifact", "--run", "example-run-1", "--file"];
+    const path = "projects/example-project/runs/example-run-1/charter/example-charter-1.json";
+    const stored = (): unknown => JSON.parse(git(fx.kb, "show", `HEAD:${path}`));
+
+    const draft = published(kb(fx, fx.project, ...args, write("draft.json", unapproved)));
+    expect(draft.effect).toBe("published");
+    expect(stored()).not.toHaveProperty("artifact.approvals");
+
+    const approved = published(kb(fx, fx.project, ...args, write("approved.json", charterExample)));
+    expect(approved.effect).toBe("published");
+    expect(approved.ref).toBe(draft.ref);
+    expect(approved.content_hash).toBe(draft.content_hash);
+    expect(approved.revision).not.toBe(draft.revision);
+    expect(approved.revision).toBe(git(fx.kb, "rev-parse", "HEAD").trim());
+    expect(commits(fx.kb)).toBe(2);
+    expect(stored()).toMatchObject({
+      record: { ref: approved.ref, content_hash: approved.content_hash, idempotency_key: approved.idempotency_key },
+      artifact: { approvals },
+    });
+    expect(approved.run).toBe("example-run-1");
+
+    const again = published(kb(fx, fx.project, ...args, write("approved.json", charterExample)));
+    expect(again.effect).toBe("none");
+    expect(again.revision).toBe(approved.revision);
+    const lateDraft = published(kb(fx, fx.project, ...args, write("draft.json", unapproved)));
+    expect(lateDraft.effect).toBe("none");
+    expect(stored()).toMatchObject({ artifact: { approvals } });
+    expect(commits(fx.kb)).toBe(2);
+    expect(git(fx.kb, "status", "--porcelain")).toBe("");
   });
 
   test("every envelope schema can be carried", () => {

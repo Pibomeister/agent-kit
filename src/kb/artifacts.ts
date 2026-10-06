@@ -27,6 +27,8 @@ export interface RunArtifact {
   id: string;
   project: { id: string };
   run_id: string | null;
+  /** Outside the artifact hash (`artifactHash`), so an approved copy has its draft's digest. */
+  approvals?: unknown;
 }
 
 /**

@@ -75,10 +75,13 @@ export interface PublishOutcome {
   ref: string;
   /** The stored digest, read back from the knowledgebase commit. */
   content_hash: string;
+  /** The key the stored record carries, which a republish under another run does not change. */
   idempotency_key: string;
+  /** The run the stored record was published under; null when a human published it outside any run. */
+  run: string | null;
   /** The knowledgebase commit holding the record. */
   revision: string;
-  /** `none` when the record was already there with the same digest: nothing was written twice. */
+  /** `none` when the record was already there and nothing was written; `published` when a commit was made. */
   effect: "published" | "none";
 }
 
@@ -225,6 +228,12 @@ function idempotencyKey(run: string | null, ref: string, hash: string): string {
   return `sha256:${sha256Hex([run ?? "", "publishArtifact", ref, hash].join("\n"))}`;
 }
 
+/** The approvals an artifact carries, canonical; empty when it carries none. */
+function approvalsOf(artifact: RunArtifact): string {
+  const approvals = artifact.approvals;
+  return Array.isArray(approvals) && approvals.length > 0 ? canonicalJson(approvals) : "";
+}
+
 function headCommit(root: string): string | null {
   const head = git(root, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
   return head.status === 0 ? head.stdout.trim() : null;
@@ -327,12 +336,20 @@ interface RecordIdentity {
   hash: string;
   key: string;
   links: readonly string[];
+  /** The approvals sent, canonical; empty when the request carries none. */
+  approvals: string;
 }
 
-interface RecordDigests {
-  published: (text: string) => string | null;
-  links: (text: string) => readonly string[];
-  observed: (text: string) => string | null;
+/** What a committed record says of itself. */
+interface StoredRecord {
+  /** The digest it was published with. */
+  published: string;
+  /** The digest recomputed from the committed bytes. */
+  observed: string;
+  key: string;
+  run: string | null;
+  links: readonly string[];
+  approvals: string;
 }
 
 function sleep(ms: number): void {
@@ -365,32 +382,37 @@ function withLock(root: string, write: () => PublishOutcome | KbRefusal): Publis
 }
 
 /**
- * Commit `content` at `path` as one record and read it back. `published`
- * reads the digest a record at that path was published with, which is how an
- * unchanged republish becomes a no-op and a changed one a refusal
- * (runner-contract §5), and `links` reads the links it was stored with, which
- * a republish may not change either; `observed` recomputes the digest from the committed
- * bytes, which is what the read-back compares with what was sent.
+ * Commit `content` at `path` as one record and read it back. `read` parses a
+ * committed record at that path. Its published digest is how an unchanged
+ * republish becomes a no-op and a changed one a refusal (runner-contract §5),
+ * and its links may not change either. Approvals are outside the digest, so a
+ * republish that brings approvals the record does not hold is committed over
+ * it. Every result reports what the knowledgebase holds, not what was sent.
  */
 function commitRecord(
   kb: ResolvedKb,
   path: string,
   content: string,
   identity: RecordIdentity,
-  digests: RecordDigests,
+  read: (text: string) => StoredRecord | null,
 ): PublishOutcome | KbRefusal {
   return withLock(kb.root, () => {
     const before = headCommit(kb.root);
     const existing = before === null ? null : committed(kb.root, path);
+    const file = join(kb.root, path);
+    const uncommitted = failed(
+      "kb.uncommitted-record",
+      `${path} has uncommitted content in the knowledgebase checkout. Nothing was written over it; commit or remove it there first.`,
+    );
     if (existing !== null) {
-      const stored = digests.published(existing);
-      if (stored !== identity.hash) {
+      const stored = read(existing);
+      if (stored === null || stored.published !== identity.hash) {
         return refused(
           "kb.changed-under-reused-record",
-          `${identity.ref} is already published with a different digest (${stored ?? "unreadable"}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`,
+          `${identity.ref} is already published with a different digest (${stored?.published ?? "unreadable"}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`,
         );
       }
-      const linked = [...new Set(digests.links(existing))].toSorted();
+      const linked = [...new Set(stored.links)].toSorted();
       const wanted = [...new Set(identity.links)].toSorted();
       if (linked.join("\n") !== wanted.join("\n")) {
         return refused(
@@ -398,21 +420,20 @@ function commitRecord(
           `${identity.ref} is already published with other links (${linked.join(", ") || "none"}). A stored record's links are not rewritten; publish the linked artifact as a new record that supersedes this one.`,
         );
       }
-      return {
-        status: "complete",
-        ref: identity.ref,
-        content_hash: identity.hash,
-        idempotency_key: identity.key,
-        revision: git(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
-        effect: "none",
-      };
-    }
-    const file = join(kb.root, path);
-    if (existsSync(file)) {
-      return failed(
-        "kb.uncommitted-record",
-        `${path} exists in the knowledgebase checkout but is not committed. Nothing was written over it; commit or remove it there first.`,
-      );
+      if (identity.approvals === "" || identity.approvals === stored.approvals) {
+        return {
+          status: "complete",
+          ref: identity.ref,
+          content_hash: stored.published,
+          idempotency_key: stored.key,
+          run: stored.run,
+          revision: git(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
+          effect: "none",
+        };
+      }
+      if (git(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "") return uncommitted;
+    } else if (existsSync(file)) {
+      return uncommitted;
     }
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, content);
@@ -432,7 +453,8 @@ function commitRecord(
         : added;
     if (made.status !== 0) {
       git(kb.root, ["reset", "-q", "--", path]);
-      rmSync(file, { force: true });
+      if (existing === null) rmSync(file, { force: true });
+      else git(kb.root, ["checkout", "-q", "HEAD", "--", path]);
       return failed(
         "kb.commit-failed",
         `The knowledgebase did not take the record: ${made.stderr.trim().split("\n")[0] ?? "git failed"}`,
@@ -440,7 +462,14 @@ function commitRecord(
     }
     const readBack = committed(kb.root, path);
     const after = headCommit(kb.root);
-    if (readBack === null || after === null || after === before || digests.observed(readBack) !== identity.hash) {
+    const stored = readBack === null ? null : read(readBack);
+    if (
+      stored === null ||
+      after === null ||
+      after === before ||
+      stored.observed !== identity.hash ||
+      stored.approvals !== identity.approvals
+    ) {
       return failed(
         "kb.read-back-mismatch",
         `${identity.ref} was written but its read-back does not match what was sent.`,
@@ -449,8 +478,9 @@ function commitRecord(
     return {
       status: "complete",
       ref: identity.ref,
-      content_hash: identity.hash,
-      idempotency_key: identity.key,
+      content_hash: stored.observed,
+      idempotency_key: stored.key,
+      run: stored.run,
       revision: after,
       effect: "published",
     };
@@ -505,14 +535,18 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
     kb,
     documentPath(kb.binding.project, segments, request.kind, request.id),
     renderDocument(meta, body),
-    { ref, hash, key, links: [] },
-    {
-      published: (text) => parseDocument(text)?.meta.published_hash ?? null,
-      links: () => [],
-      observed: (text) => {
-        const parsed = parseDocument(text);
-        return parsed === null ? null : documentHash({ ...parsed.meta, body: parsed.body });
-      },
+    { ref, hash, key, links: [], approvals: "" },
+    (text) => {
+      const parsed = parseDocument(text);
+      if (parsed === null) return null;
+      return {
+        published: parsed.meta.published_hash,
+        observed: documentHash({ ...parsed.meta, body: parsed.body }),
+        key: parsed.meta.idempotency_key,
+        run: parsed.meta.run,
+        links: [],
+        approvals: "",
+      };
     },
   );
 }
@@ -563,14 +597,18 @@ export function publishRunArtifact(
     kb,
     artifactPath(project, run, artifact.schema, artifact.id),
     `${JSON.stringify(stored, null, 2)}\n`,
-    { ref, hash, key, links },
-    {
-      published: (content) => parseStored(content)?.record.content_hash ?? null,
-      links: (content) => parseStored(content)?.record.links ?? [],
-      observed: (content) => {
-        const value = parseStored(content);
-        return value === null ? null : artifactHash(value.artifact);
-      },
+    { ref, hash, key, links, approvals: approvalsOf(artifact) },
+    (content) => {
+      const value = parseStored(content);
+      if (value === null) return null;
+      return {
+        published: value.record.content_hash,
+        observed: artifactHash(value.artifact),
+        key: value.record.idempotency_key,
+        run,
+        links: value.record.links,
+        approvals: approvalsOf(value.artifact),
+      };
     },
   );
 }
