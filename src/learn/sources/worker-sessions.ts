@@ -1,10 +1,11 @@
 /**
  * Offline capture for worker hosts that already persist their own sessions.
- * The parser never calls a host or a model: it reads Codex rollouts, Grok
- * session folders and Kimi wire logs, then condenses their public transcript
- * into one observation per turn, in the observation-source shape used by the
- * memory loop. Captured text is scrubbed of credentials and home directories
- * and cut to short excerpts before it is stored; full tool output never is.
+ * The parser never calls a host or a model: it reads Codex rollouts, Droid
+ * session records, Grok session folders and Kimi wire logs, then condenses
+ * their public transcript into one observation per turn, in the
+ * observation-source shape used by the memory loop. Captured text is scrubbed
+ * of credentials and home directories and cut to short excerpts before it is
+ * stored; full tool output never is.
  */
 import { createHash } from "node:crypto";
 import Ajv from "ajv";
@@ -20,10 +21,11 @@ import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
 
-export type WorkerHost = "codex" | "grok" | "kimi";
+export type WorkerHost = "codex" | "droid" | "grok" | "kimi";
 
 export interface WorkerHomes {
   codex: string[];
+  droid: string[];
   grok: string[];
   kimi: string[];
 }
@@ -123,6 +125,9 @@ const EXIT_HEADER = /^(?:Process exited with code|Exit code:|exit:) (-?\d+)$/;
 const EXIT_FIELD = /"chunk_id":"[^"]*","wall_time_seconds":[\d.]+,"exit_code":(-?\d+)/g;
 const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
+/** The blocks Droid injects into a user message. One left open runs to the end of the text. */
+const DROID_INJECTED = /<(system-reminder|system-notification)>[\s\S]*?(?:<\/\1>|$)/g;
+const DROID_EXIT = /\[Process exited with code (-?\d+)\]\s*$/;
 const jsonValidator = new Ajv({ strict: false });
 const validateJsonValue = jsonValidator.compile<JsonValue>({
   $defs: {
@@ -303,9 +308,13 @@ function toolInput(value: JsonValue | undefined): ParsedToolInput {
   return { text: clipped(JSON.stringify(value ?? {})), parsed: value ?? {} };
 }
 
-/** Collects a session's events into turns. A prompt opens a turn; a tool output joins the oldest call still waiting for one. */
+/**
+ * Collects a session's events into turns. A prompt opens a turn; a tool output joins the call its
+ * host named by id, or else the oldest call still waiting for one.
+ */
 function turnLog() {
   const turns: Turn[] = [];
+  const named = new Map<string, ToolCall>();
   const start = (prompt: string, at: number): Turn => {
     const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
     turns.push(turn);
@@ -324,12 +333,26 @@ function turnLog() {
     reply(text: string, at: number): void {
       current(at).reply = text;
     },
-    call(name: string, input: ParsedToolInput, cwd: string, at: number): void {
+    call(
+      name: string,
+      input: ParsedToolInput,
+      cwd: string,
+      at: number,
+      host: { id?: string | null; writes?: boolean } = {},
+    ): void {
       const turn = current(at);
-      turn.calls.push({ name, input: input.text, output: "", failed: false });
-      if (WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
+      const call: ToolCall = { name, input: input.text, output: "", failed: false };
+      turn.calls.push(call);
+      if (host.id !== undefined && host.id !== null) named.set(host.id, call);
+      if (host.writes === true || WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
     },
-    output(output: ToolOutput, at: number): void {
+    output(output: ToolOutput, at: number, id: string | null = null): void {
+      const answered = id === null ? undefined : named.get(id);
+      if (answered !== undefined) {
+        answered.output = output.text;
+        answered.failed = output.failed;
+        return;
+      }
       if (output.text === "") return;
       const turn = current(at);
       const waiting = turn.calls.find((call) => call.output === "");
@@ -435,6 +458,32 @@ function codexNativeId(payload: JsonObject | null): string | null {
   return string(payload?.id) ?? string(payload?.session_id);
 }
 
+/** A Droid record opens with its `session_start` row, which is all the scan reads to place a session. */
+function droidStart(row: JsonObject | null | undefined): JsonObject | null {
+  return row?.type === "session_start" ? row : null;
+}
+
+/** A Droid message's `text` parts. Its `thinking` parts are private and its tool parts are read apart. */
+function droidText(parts: readonly JsonObject[], injected?: RegExp): string {
+  const texts = parts.flatMap((part) => {
+    const text = part.type === "text" ? string(part.text) : null;
+    const kept = injected === undefined ? text : (text?.replace(injected, "").trim() ?? null);
+    return kept === null || kept === "" ? [] : [kept];
+  });
+  return clipped(texts.join("\n"));
+}
+
+/**
+ * A Droid tool result, failing by the error flag its host recorded on it. A result with no flag
+ * fails by the exit line that closes its output, and by its wording where it has neither.
+ */
+function droidOutput(part: JsonObject): ToolOutput {
+  const output = toolOutput(part.content);
+  if (part.is_error === true || part.is_error === false) return { text: output.text, failed: part.is_error };
+  const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0 };
+}
+
 function grokNativeId(dir: string, summary: JsonObject | null): string {
   return string(object(summary?.info)?.id) ?? basename(dir);
 }
@@ -490,6 +539,56 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
+}
+
+/**
+ * A message row is public when it carries no `visibility`: Droid marks its hook runs, its notices
+ * and the context it injects with one. Only a public message's role and content are read, never
+ * the provider fields beside them nor the `.settings.json` next to the record. A turn ends where
+ * the record holds its outcome or the session's end, and any later public message reopens it.
+ * `Create` writes a file under a name the shared write-tool pattern does not cover.
+ */
+export function parseDroidSession(path: string, now = Date.now()): CapturedSession | null {
+  const rows = readJsonLines(path);
+  const start = droidStart(rows[0]);
+  const cwd = string(start?.cwd);
+  const nativeId = string(start?.id);
+  if (cwd === null || nativeId === null) return null;
+  const modified = statSync(path).mtimeMs;
+  const started = epoch(rows.find((row) => row.timestamp !== undefined)?.timestamp, modified);
+  let ended: number | null = null;
+  let at = started;
+  const log = turnLog();
+  for (const row of rows) {
+    at = epoch(row.timestamp, at);
+    if (row.type === "agent_turn_outcome" || row.type === "session_end") {
+      ended = Math.max(ended ?? 0, at);
+      continue;
+    }
+    const message = row.type === "message" ? object(row.message) : null;
+    if (message === null || message.visibility !== undefined) continue;
+    const parts = (Array.isArray(message.content) ? message.content : []).flatMap((part) => {
+      const item = object(part);
+      return item === null ? [] : [item];
+    });
+    if (message.role === "user") {
+      ended = null;
+      const text = droidText(parts, DROID_INJECTED);
+      if (text !== "") log.prompt(text, at);
+      for (const part of parts)
+        if (part.type === "tool_result") log.output(droidOutput(part), at, string(part.tool_use_id));
+    } else if (message.role === "assistant") {
+      ended = null;
+      const text = droidText(parts);
+      if (text !== "") log.reply(text, at);
+      for (const part of parts) {
+        if (part.type !== "tool_use") continue;
+        const name = string(part.name) ?? "tool";
+        log.call(name, toolInput(part.input), cwd, at, { id: string(part.id), writes: name === "Create" });
+      }
+    }
+  }
+  return session("droid", nativeId, cwd, { started, ended, modified, now }, log.turns);
 }
 
 function grokCwd(dir: string, summary: JsonObject | null): string | null {
@@ -599,10 +698,14 @@ function splitHomes(value: string | undefined, fallback: string): string[] {
 export function workerHomes(env: NodeJS.ProcessEnv = process.env): WorkerHomes {
   const home = env.HOME && env.HOME.trim() !== "" ? env.HOME : homedir();
   const codex = env.CODEX_HOME && env.CODEX_HOME.trim() !== "" ? env.CODEX_HOME : join(home, ".codex");
+  // Droid's override replaces the home directory, not the folder in it.
+  const factory =
+    env.FACTORY_HOME_OVERRIDE && env.FACTORY_HOME_OVERRIDE.trim() !== "" ? env.FACTORY_HOME_OVERRIDE : home;
   const grok = env.GROK_HOME && env.GROK_HOME.trim() !== "" ? env.GROK_HOME : join(home, ".grok");
   const kimi = env.KIMI_HOME && env.KIMI_HOME.trim() !== "" ? env.KIMI_HOME : join(home, ".kimi-code");
   return {
     codex: splitHomes(env.AK_LEARN_CODEX_HOMES, codex),
+    droid: splitHomes(env.AK_LEARN_DROID_HOMES, join(factory, ".factory")),
     grok: splitHomes(env.AK_LEARN_GROK_HOMES, grok),
     kimi: splitHomes(env.AK_LEARN_KIMI_HOMES, kimi),
   };
@@ -749,6 +852,19 @@ export function scanWorkerSessions(
           return { cwd: string(meta?.cwd), nativeId: codexNativeId(meta) };
         },
         () => parseCodexSession(path),
+      );
+  }
+  for (const home of homes.droid) {
+    for (const path of walk(join(home, "sessions"), (file) => file.endsWith(".jsonl")))
+      collect(
+        "droid",
+        path,
+        path,
+        () => {
+          const start = droidStart(object(parseJson(firstLine(path))));
+          return { cwd: string(start?.cwd), nativeId: string(start?.id) };
+        },
+        () => parseDroidSession(path),
       );
   }
   for (const home of homes.grok) {

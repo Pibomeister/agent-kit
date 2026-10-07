@@ -179,6 +179,7 @@ describe("paths", () => {
         context({
           PATH: "/bin",
           CODEX_HOME: "/hosts/codex",
+          FACTORY_HOME_OVERRIDE: "/hosts/droid",
           GROK_HOME: "/hosts/grok",
           KIMI_HOME: "/hosts/kimi",
           AK_LEARN_CODEX_HOMES: "/hosts/codex:/isolated/codex",
@@ -188,6 +189,7 @@ describe("paths", () => {
       ["PATH", "/bin"],
       ["AK_LEARN_CODEX_HOMES", "/hosts/codex:/isolated/codex"],
       ["CODEX_HOME", "/hosts/codex"],
+      ["FACTORY_HOME_OVERRIDE", "/hosts/droid"],
       ["GROK_HOME", "/hosts/grok"],
       ["KIMI_HOME", "/hosts/kimi"],
     ]);
