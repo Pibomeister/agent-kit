@@ -39,6 +39,21 @@ export function inOutsideRepo<T>(probe: (cwd: string) => T): T {
   return withGitCeiling(ceiling, () => probe(cwd));
 }
 
+/** `inOutsideRepo` for an async probe: the ceiling stays set until the probe settles. */
+export async function inOutsideRepoAsync<T>(probe: (cwd: string) => Promise<T>): Promise<T> {
+  const ceiling = scratch();
+  const cwd = join(ceiling, "outside");
+  mkdirSync(cwd);
+  const previous = process.env.GIT_CEILING_DIRECTORIES;
+  process.env.GIT_CEILING_DIRECTORIES = ceiling;
+  try {
+    return await probe(cwd);
+  } finally {
+    if (previous === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+    else process.env.GIT_CEILING_DIRECTORIES = previous;
+  }
+}
+
 const projectScratches: string[] = [];
 
 /**
@@ -56,6 +71,25 @@ export function projectScratch(): string {
 
 export function removeProjectScratch(): void {
   for (const dir of projectScratches.splice(0)) rmSync(dir, { recursive: true, force: true });
+}
+
+const startScratches: string[] = [];
+
+/**
+ * A fresh directory for a script a test starts with bun, and for that run's
+ * HOME. It sits under `/tmp`, not `tmpdir()`: bun lists every directory above
+ * a script it starts, and a per-user temporary directory that has collected
+ * many entries (macOS `$TMPDIR`) turns each start into tens of seconds. `/tmp`
+ * is outside any checkout on every runner. Remove with `removeStartScratch`.
+ */
+export function startScratch(prefix = "ak-learn-"): string {
+  const dir = realpathSync(mkdtempSync(join("/tmp", prefix)));
+  startScratches.push(dir);
+  return dir;
+}
+
+export function removeStartScratch(): void {
+  for (const dir of startScratches.splice(0)) rmSync(dir, { recursive: true, force: true });
 }
 
 export const ROLE_IDS = ["pattern-maintainer", "reflector", "consolidator", "lesson-merger", "skill-scout"] as const;

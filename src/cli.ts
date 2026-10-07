@@ -44,8 +44,6 @@ export interface CliIo {
 export interface CliOptions {
   cwd: string;
   io: CliIo;
-  /** A host hook's JSON payload, read from stdin by the entrypoint for `ak learn hook`. */
-  stdin?: string;
 }
 
 const USAGE = [
@@ -330,11 +328,6 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
   // Its own flags and its own parser: see src/firstmate/cli.ts.
   if (argv[0] === "lifecycle") return runLifecycle(argv.slice(1), options.io, options.cwd);
   if (argv[0] === "firstmate") return runFirstmate(argv.slice(1), options.io);
-  // `ak learn` has its own argument grammar per area, so it is dispatched before
-  // this file's parser sees flags it does not know.
-  if (argv[0] === "learn") {
-    return runLearn(argv.slice(1), { cwd: options.cwd, io: options.io, stdin: options.stdin });
-  }
   // `ak kb` likewise: its flags repeat and take values this parser does not know.
   if (argv[0] === "kb") return runKb(argv.slice(1), { cwd: options.cwd, io: options.io });
   const parsed = parse(argv);
@@ -365,9 +358,13 @@ export function runCli(argv: readonly string[], options: CliOptions): number {
 if (import.meta.main) {
   const argv = process.argv.slice(2);
   const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+  // `ak learn` has its own argument grammar per area and loads its areas on demand,
+  // so it is dispatched here, before runCli's parser sees flags it does not know.
   const code =
     argv[0] === "runner"
       ? await runRunner(argv.slice(1), io)
-      : runCli(argv, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+      : argv[0] === "learn"
+        ? await runLearn(argv.slice(1), { cwd: process.cwd(), io, stdin: readHookStdin(argv) })
+        : runCli(argv, { cwd: process.cwd(), io });
   if (argv[0] !== "runner" || argv[1] !== "serve" || code !== 0) process.exit(code);
 }
