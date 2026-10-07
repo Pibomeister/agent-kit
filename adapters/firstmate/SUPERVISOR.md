@@ -86,17 +86,23 @@ into the brief:
 ```
 cd <home>
 node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <task-id> --by <who authorized it> \
-  --reason <why> --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree> [--hours <n>]
+  --reason <why> --out data/<task-id>/bypass.json --project <repo> --worktree <task worktree> --hours 12
 ```
 
-**One grant per run, issued automatically.** A grant is valid only in the lifecycle run it is first
-used in, and every new run needs one: super-build's `open --ticket` starts a run per ticket, and a ship
-after the head moves past a closed run starts another. Expect one fresh grant per run. When a worker reports `needs-decision` because its check was refused as "first used in run …",
-issue a fresh grant with the same command, task and worktree, under a new `--out` (for example
-`data/<task-id>/bypass-<n>.json`), and send the worker the section it prints. That is not a new
-authorization: the captain's bypass for the task already covers it, so do not ask the captain again.
-Do not reissue for any other refusal; an expired grant, a wrong task or worktree, an edited file or an
-approval card are still decisions.
+**One grant per task, for at most 12 hours.** A grant holds in each lifecycle run of its task while
+that run is its branch's current run: super-build's `open --ticket` starts a run per ticket, a ship
+after the head moves past a closed run needs another opened the same way, and the same grant starts
+the phases in each. Reissue without asking the captain in two cases. A grant issued for longer than
+12 hours (such as any grant a release before the 12-hour cap issued with its 24-hour default) is refused
+as "issued for longer than 12 hours", and a grant that expired while its task was still running is
+refused as "expired"; Firstmate decided to reissue on expiry, and a worker never issues its own grant. Issue a fresh
+grant with the same command, task and worktree, `--hours 12` included so a bundle of either version
+writes one the check accepts, under a new `--out` (for example `data/<task-id>/bypass-<n>.json`),
+and send the worker the section it prints. That is not a new authorization: the captain's bypass for
+the task already covers it. A second over-long refusal for the same task is a decision. A "first
+used in run" refusal comes from a worker on a release before this change: have that worker restart on
+the current bundle rather than reissuing. Do not reissue for any other refusal; a wrong task or
+worktree, an edited file or an approval card are still decisions.
 
 `<agent-kit bundle>` is the installed plugin's directory, or `dist/claude-code` after `ak build`. Run it
 with `node` and with the home as the working directory, never through `bun` and never from a project
@@ -110,7 +116,7 @@ home itself: `grant` refuses from inside a task checkout or `projects/`, and rec
 an audit can spot a grant you did not issue. It cannot stop a same-user worker issuing one from
 elsewhere; ADR-0008 records that limit as accepted.
 It starts super-align, super-bound, super-review full and readiness, and super-ship for that task
-only, until it expires (24 hours by default). It starts phases only: the worker still sends you
+only, until it expires (12 hours by default and at most). It starts phases only: the worker still sends you
 `needs-decision` for every approval inside them — the design yes, the specification and ticket
 approvals, and every push, pull request or publish — and you answer each one. It never covers merge
 or deploy. Delete the file to revoke it. ADR-0008 has the design and its trust limit.

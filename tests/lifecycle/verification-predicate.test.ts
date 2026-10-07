@@ -152,6 +152,18 @@ describe("the bundled verification predicate", () => {
     expect(withoutCriteria).toContain("supports is invalid");
   });
 
+  test("names each unknown member, at the root and nested, beside the other schema errors", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    receipt.stray = 1;
+    receipt.notes = 5;
+    receipt.project = { id: "example-project", repo: "example-org/example-service", extra: true };
+    expect(verificationRefusals(receipt)).toEqual([
+      "/project must NOT have additional properties (extra)",
+      "/notes must be string",
+      "receipt must NOT have unevaluated properties (stray)",
+    ]);
+  });
+
   test("agrees with ajv over every receipt fixture and representative malformed shapes", () => {
     const fixtureDir = join(ROOT, "tests", "fixtures", "verification-zero-exit");
     const fixtures = readdirSync(fixtureDir)

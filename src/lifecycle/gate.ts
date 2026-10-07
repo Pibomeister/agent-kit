@@ -33,7 +33,6 @@ import {
   copyFileSync,
   existsSync,
   fstatSync,
-  linkSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -43,7 +42,6 @@ import {
   renameSync,
   rmSync,
   statSync,
-  unlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -536,18 +534,13 @@ export function recordGate(
   // The run's use record is the one place a bypassed start lives; a typed record ends it for the phase.
   const covered = BYPASS_GATE_PHASE[a.gate];
   const usePath = covered === undefined ? undefined : bypassUsePath(a.dir, a.run, covered);
-  // A grant is valid only in the run it was first used in; a phase starts and ends within one run.
+  // A grant holds in each run of its task while that run is current; a phase starts and ends within one run.
   const started = usePath === undefined ? undefined : readObject(usePath);
   if (a.bypass !== undefined && previous !== undefined && previous.authority === undefined)
     return refuse(
       `${a.gate} at this snapshot was recorded with the typed command, so it did not start under a grant; record it with the typed command and no --bypass`,
     );
-  const continued = continueBypass(
-    started,
-    a.bypass,
-    a.gate,
-    a.bypass === undefined ? undefined : claimGrant(a.dir, a.bypass.grant_id, a.run),
-  );
+  const continued = continueBypass(started, a.bypass, a.gate);
   if (!continued.ok) return continued;
   if (continued.authority !== undefined) record.authority = continued.authority;
   if (record.schema_version === 2 && previous?.schema_version === 2 && Array.isArray(previous.evidence)) {
@@ -727,7 +720,11 @@ export function verificationShapeReasons(value: unknown): string[] {
   const validateVerification = verificationValidator();
   const reasons = validateVerification(value)
     ? []
-    : (validateVerification.errors ?? []).map((error) => `${error.instancePath || "receipt"} ${error.message}`);
+    : (validateVerification.errors ?? []).map((error) => {
+        const params: { additionalProperty?: string; unevaluatedProperty?: string } = error.params;
+        const member = params.additionalProperty ?? params.unevaluatedProperty;
+        return `${error.instancePath || "receipt"} ${error.message ?? "is invalid"}${member === undefined ? "" : ` (${member})`}`;
+      });
   const receipt = object(value);
   if (receipt === undefined) return reasons;
   if (receipt.supports === undefined) reasons.push("supports is invalid");
@@ -1193,8 +1190,8 @@ const BYPASS_GATE_PHASE: Partial<Record<Gate, BypassPhase>> = {
   "ship-preflight": "super-ship",
 };
 
-/** No grant may outlive a week, whatever `--hours` asks for. */
-const BYPASS_MAX_HOURS = 168;
+/** No grant may outlive 12 hours, whatever `--hours` asks for; it is also the default. */
+const BYPASS_MAX_HOURS = 12;
 
 export interface BypassGrant {
   schema: "bypass-grant";
@@ -1300,32 +1297,6 @@ const bypassWellFormed = (authority: GateRecord["authority"]): boolean =>
 const bypassUsePath = (dir: string, run: string, phase: BypassPhase): string =>
   join(dir, safeRunId(run), "bypass", `${phase.replace(":", "-")}.json`);
 
-/**
- * Claims a grant for `run` on first use and returns the run it belongs to when that is another one. The
- * claim is an exclusive create of `<store>/grant-runs/<grant>.json` naming the exact run id, written to a
- * temporary file and hard-linked into place, so two first uses at the same moment cannot both win and a
- * reader never sees a half-written claim. It is taken before any use record or gate record is written. The
- * store is worker-writable, so the binding holds against accidents, not a worker that edits it (ADR-0008).
- */
-function claimGrant(dir: string, grantId: string, run: string): string | undefined {
-  const path = join(dir, "grant-runs", `${safeRunId(grantId)}.json`);
-  mkdirSync(dirname(path), { recursive: true });
-  const staging = `${path}.claim-${process.pid}-${randomBytes(6).toString("hex")}`;
-  writeFileSync(
-    staging,
-    `${JSON.stringify({ grant_id: grantId, run_id: run, claimed_at: new Date().toISOString() })}\n`,
-  );
-  try {
-    linkSync(staging, path);
-  } catch {
-    // Already claimed; the existing file is complete because it was linked into place whole.
-  } finally {
-    unlinkSync(staging);
-  }
-  const owner = readObject(path)?.run_id;
-  return owner === run ? undefined : String(owner);
-}
-
 /** Every grant a typed record ended in this phase of the run; none of them starts it again. */
 const endedGrants = (started: ReturnType<typeof readObject>): string[] => strings(started?.ended_grant_ids) ?? [];
 
@@ -1362,12 +1333,7 @@ function continueBypass(
   started: ReturnType<typeof readObject>,
   bypass: BypassAttribution | undefined,
   what: string,
-  usedInRun: string | undefined,
 ): { ok: true; authority: GateAuthority | undefined } | { ok: false; reason: string } {
-  if (bypass !== undefined && usedInRun !== undefined)
-    return refuse(
-      `bypass grant ${bypass.grant_id} was first used in run ${usedInRun}, and ${RUN_BOUND}; ask the supervisor for a fresh grant for this run, or record it with the typed command and no --bypass`,
-    );
   if (started === undefined) return { ok: true, authority: bypass };
   const origin = String(started.grant_id);
   if (bypass === undefined) return { ok: true, authority: { mode: "explicit", superseded_grant_id: origin } };
@@ -1388,10 +1354,43 @@ function continueBypass(
 
 const refuse = (reason: string) => ({ ok: false as const, reason });
 
-/** Marks the run-binding refusal, whose remedy is a fresh grant the supervisor issues without a decision. */
-const RUN_BOUND = "a grant is valid only in the run it starts in";
-const RUN_BOUND_HINT =
-  "hint: report this refusal to the supervisor as is; it issues a fresh grant for this run (SUPERVISOR.md), no captain decision needed";
+/**
+ * Why `run` is not one a grant may start a phase in, or undefined when it is. Under a grant the run must be
+ * the current run of the branch `project` is on, the one the lifecycle resolves without `--run`: the run `open`
+ * last recorded for the branch, or before any the branch-named one. Any other run (another task's, an
+ * earlier one of this branch, an id the worker makes up) is refused.
+ */
+function foreignRun(dir: string, project: string, run: string): string | undefined {
+  const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  if (branch.code !== 0 || branch.text === "")
+    return `${project} is on a detached head, so it has no current run, and a bypass grant starts phases only in its branch's current run`;
+  const pointer = pointerRun(dir, branch.text);
+  if (pointer.error !== undefined) return pointer.error;
+  const current = pointer.run ?? safeRunId(branch.text);
+  if (run !== current)
+    return `run ${run} is not the current run of branch ${branch.text}, ${current}, and a bypass grant starts phases only there; a new run comes from \`open --ticket\``;
+  if (pointer.run !== undefined) return undefined;
+  // A branch-named id is lossy (`feat/x` and `feat-x` share one, and a case-insensitive store folds case),
+  // so it must be no other branch's run: not one `open` recorded, which is read raw because a case-folded
+  // path finds a record whose `run_id` differs, nor another local branch's branch-named run.
+  const opened = readObject(runRecordPath(dir, run));
+  if (opened !== undefined && opened.branch !== branch.text)
+    return `run ${run} was opened as ${String(opened.run_id)} for branch ${String(opened.branch)}, not ${branch.text}; open a run for this branch with \`open --ticket\``;
+  const folded = run.toLowerCase();
+  const branches = git(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]);
+  if (branches.code !== 0)
+    return `cannot list the branches of ${project}, so run ${run} cannot be shown to be branch ${branch.text}'s`;
+  const shared = branches.text
+    .split("\n")
+    .find((other) => other !== "" && other !== branch.text && safeRunId(other).toLowerCase() === folded);
+  return shared === undefined
+    ? undefined
+    : `run ${run} is also the branch-named run of branch ${shared}; open a run for this branch with \`open --ticket\``;
+}
+
+/** The hint for a grant issued past the cap and wrong in nothing else, whose remedy is a fresh grant without a decision. */
+const OVERLONG_HINT =
+  "hint: report this refusal to the supervisor as is; it issues a fresh grant for this task (SUPERVISOR.md), no captain decision needed";
 
 export interface BypassGrantArgs {
   task: string;
@@ -1481,12 +1480,12 @@ export interface BypassCheckArgs {
 
 /**
  * Validates the grant: registered, unedited, unexpired, for this task, phase, repository and worktree.
- * It does not apply the run binding or the run's typed end: callers pass the grant's run (`claimGrant`) and
- * the run's use record to `continueBypass` before treating the result as a start.
+ * It does not apply the run's typed end: callers pass the run's use record to `continueBypass` before
+ * treating the result as a start.
  */
 export function checkBypass(
   a: BypassCheckArgs,
-): { ok: true; attribution: BypassAttribution } | { ok: false; reason: string } {
+): { ok: true; attribution: BypassAttribution } | { ok: false; reason: string; overlong?: true } {
   const no = refuse;
   if (a.phase !== undefined && !isBypassPhase(a.phase))
     return no(
@@ -1546,6 +1545,15 @@ export function checkBypass(
   if (a.phase !== undefined && !(Array.isArray(g.covers) && g.covers.includes(a.phase)))
     return no(`bypass grant ${id} does not cover ${a.phase}`);
   if (g.task_id !== a.task) return no(`bypass grant ${id} is for task ${String(g.task_id)}, not ${a.task}`);
+  // Last, so the reissue hint it earns never masks a refusal that is a decision. A grant issued before
+  // the cap could otherwise ride each run of its task until its own expiry.
+  if (!(Date.parse(expires) - Date.parse(String(g.created_at)) <= BYPASS_MAX_HOURS * 3_600_000))
+    return {
+      ...no(
+        `bypass grant ${id} was issued for longer than ${BYPASS_MAX_HOURS} hours (${String(g.created_at)} to ${expires}); ask the supervisor for a fresh one`,
+      ),
+      overlong: true,
+    };
   return {
     ok: true,
     attribution: {
@@ -1586,8 +1594,9 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
     `Pass \`--bypass ${shellWord(path)} --task ${shellWord(grant.task_id)}\` when you record review-full, review-readiness or ship-preflight.`,
-    "This grant is valid only in the run it is first used in. When a check in another run (after `open --ticket`)",
-    "is refused for that reason, report needs-decision and the supervisor issues a fresh grant for this run.",
+    "This grant holds in each run of the task while that run is its branch's current run, until it expires;",
+    "the ticket's run after `open --ticket` is included, and only a new run from `open --ticket` restarts a phase",
+    "a typed record ended.",
     "A typed record ends the bypass for that phase in the run.",
   ].join("\n");
 }
@@ -1702,7 +1711,7 @@ export function main(
       by,
       reason,
       out: resolve(cwd, out),
-      hours: Number(str("hours") ?? "24"),
+      hours: Number(str("hours") ?? String(BYPASS_MAX_HOURS)),
       cwd,
       ledger: bypassLedger ?? defaultBypassLedger(),
       now,
@@ -1762,8 +1771,8 @@ export function main(
     return 2;
   }
 
-  // The run binding is read from the default store; a store of the worker's choosing would not hold it.
-  const otherStore = "--dir is refused with a bypass grant: its run binding lives in the default evidence store";
+  // The use records and typed ends a supervisor audits live in the default store, not one of the worker's choosing.
+  const otherStore = "--dir is refused with a bypass grant: its use records live in the default evidence store";
   if (sub === "bypass check") {
     const grantPath = str("grant");
     const task = str("task");
@@ -1776,6 +1785,7 @@ export function main(
       return 2;
     }
     const phase = str("phase");
+    const foreign = phase === undefined ? undefined : foreignRun(dir, project, run);
     const checked = checkBypass({
       grant: resolve(cwd, grantPath),
       task,
@@ -1785,24 +1795,17 @@ export function main(
       ledger: bypassLedger ?? defaultBypassLedger(),
       now,
     });
-    const stop = (reason: string) => {
+    const stop = (reason: string, overlong = false) => {
       io.err(`ak lifecycle bypass check: refused: ${reason}`);
-      io.err(
-        reason.includes(RUN_BOUND)
-          ? RUN_BOUND_HINT
-          : "hint: stop and report needs-decision; the phase needs its typed command",
-      );
+      io.err(overlong ? OVERLONG_HINT : "hint: stop and report needs-decision; the phase needs its typed command");
       return 1;
     };
-    if (!checked.ok) return stop(checked.reason);
+    // A run that is not the branch's is a decision, so it is reported before an over-long grant's reissue hint.
+    if (foreign !== undefined) return stop(foreign);
+    if (!checked.ok) return stop(checked.reason, checked.overlong);
     const usePath = phase !== undefined && isBypassPhase(phase) ? bypassUsePath(dir, run, phase) : undefined;
     const started = usePath === undefined ? undefined : readObject(usePath);
-    const continued = continueBypass(
-      started,
-      checked.attribution,
-      phase ?? "",
-      phase !== undefined && isBypassPhase(phase) ? claimGrant(dir, checked.attribution.grant_id, run) : undefined,
-    );
+    const continued = continueBypass(started, checked.attribution, phase ?? "");
     if (!continued.ok) return stop(continued.reason);
     const used = useRecord(continued.authority, phase ?? null, run, now().toISOString(), started);
     // A typed record that ended the phase since `started` was read must not be overwritten by this start.
@@ -1845,6 +1848,12 @@ export function main(
         ledger: bypassLedger ?? defaultBypassLedger(),
         now,
       });
+      // As at `bypass check`, a run that is not the branch's is reported before an over-long grant.
+      const foreign = foreignRun(dir, project, run);
+      if (foreign !== undefined && (checked.ok || checked.overlong === true)) {
+        io.err(`ak lifecycle record: refused: ${foreign}`);
+        return 1;
+      }
       if (!checked.ok) {
         io.err(`ak lifecycle record: refused: ${checked.reason}`);
         io.err("hint: issue a fresh grant for this task, or record it with the typed command and no --bypass");
@@ -1916,7 +1925,6 @@ export function main(
     });
     if (!r.ok) {
       io.err(`ak lifecycle record: ${r.reason}`);
-      if (r.reason.includes(RUN_BOUND)) io.err(RUN_BOUND_HINT);
       return 1;
     }
     if (gate === "ship-preflight") closeRun(dir, run, r.record.recorded_at);
