@@ -108,9 +108,41 @@ describe("the map is a receipt, not a wish", () => {
 
 describe("a pending rule is declared, not missing", () => {
   test("a declared-pending rule is a warning naming its reason, not silence and not an error", () => {
-    const registry = Object.entries(SCHEMA_RULE_IMPLEMENTATIONS).filter(([, v]) => isPending(v));
-    // Nothing is pending today; the shape is still exercised so the path cannot rot.
-    expect(Array.isArray(registry)).toBe(true);
+    // Nothing in the registry is pending today, so the test registers one for its own duration.
+    const pendingRule = "thing.pending-for-this-test";
+    expect(SCHEMA_RULE_IMPLEMENTATIONS[pendingRule]).toBeUndefined();
+    expect(
+      Reflect.set(SCHEMA_RULE_IMPLEMENTATIONS, pendingRule, {
+        status: "not-implemented",
+        reason: "waits on the thing checker",
+      }),
+    ).toBe(true);
+    try {
+      const registered = SCHEMA_RULE_IMPLEMENTATIONS[pendingRule];
+      expect(registered !== undefined && isPending(registered)).toBe(true);
+      const pendingCtx = ctxFor({
+        "schemas/thing.schema.json": JSON.stringify({
+          $id: "thing.schema.json",
+          type: "object",
+          properties: { a: { type: "string", "x-validator-rule": [pendingRule, "review.third-fix-cycle-stops"] } },
+        }),
+      });
+      const pendingIssues = checkSchemaRuleCoverage(pendingCtx);
+      expect(pendingIssues.filter((i) => i.rule === "schemas.validator-rule-pending")).toEqual([
+        {
+          severity: "warning",
+          rule: "schemas.validator-rule-pending",
+          file: "schemas/thing.schema.json",
+          message: `x-validator-rule '${pendingRule}' is declared not-implemented: waits on the thing checker`,
+        },
+      ]);
+      expect(pendingIssues.filter((i) => i.severity === "error")).toEqual([]);
+      expect(pendingIssues.find((i) => i.rule === "schemas.validator-rule-coverage")?.message).toBe(
+        "2 rules, 1 implemented, 1 declared pending.",
+      );
+    } finally {
+      Reflect.deleteProperty(SCHEMA_RULE_IMPLEMENTATIONS, pendingRule);
+    }
     const ctx = ctxFor({
       "schemas/thing.schema.json": JSON.stringify({
         $id: "thing.schema.json",

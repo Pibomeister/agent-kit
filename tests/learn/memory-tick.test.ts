@@ -19,7 +19,7 @@ import {
   saveState,
   type MemoryState,
 } from "../../src/learn/memory/ledger.ts";
-import { readRegistry } from "../../src/learn/memory/registry.ts";
+import { readRegistry, registerRoot } from "../../src/learn/memory/registry.ts";
 import { decide, type DecideInput, runProject, tick } from "../../src/learn/memory/tick.ts";
 import {
   gitRepo,
@@ -120,12 +120,36 @@ describe("decide", () => {
   });
 });
 
-function fixtureProject() {
+describe("decide, the failure backoff schedule", () => {
+  // 1h doubling per consecutive failure, capped at 24h: 3 failures wait 4h, 20 failures wait 24h, not 2^19 h.
+  for (const [failures, waitH] of [
+    [1, 1],
+    [3, 4],
+    [20, 24],
+  ] as const) {
+    test(`${failures} consecutive failures hold reflect and nightly for exactly ${waitH}h`, () => {
+      const attempted = NOON.getTime();
+      const state = {
+        ...fresh(),
+        last_reflect_attempt: attempted,
+        reflect_failures: failures,
+        last_nightly_attempt: attempted,
+        nightly_failures: failures,
+      };
+      const due = { idleS: 600, newTokens: 30_000, newObs: 40, unscreened: 5, unconsolidated: 30 };
+      expect(run(state, new Date(attempted + waitH * 3_600_000 - 60_000), due)).toEqual([]);
+      expect(run(state, new Date(attempted + waitH * 3_600_000), due)).toEqual(["reflect", "backfill", "nightly"]);
+    });
+  }
+});
+
+function fixtureProject(ageDays = 1) {
   const dir = scratch();
   const root = gitRepo(join(projectScratch(), "shop"));
   const dbPath = join(dir, "mem.db");
   const mem = new MemFixture(dbPath);
-  const now = Date.now();
+  // Every timestamp below sits one day before `now`; shifting `now` back ages the whole project.
+  const now = Date.now() - (ageDays - 1) * 86_400_000;
   mem.session({ sid: "cccc3333-0000", project: "shop", started: now - 86_400_000, completed: now - 86_400_000 + 1000 });
   const observe = (title: string) =>
     mem.observation({ sid: "cccc3333-0000", project: "shop", type: "discovery", title, at: now - 86_400_000 + 500 });
@@ -472,6 +496,43 @@ describe("tick", () => {
     expect(readFileSync(tickLogPath(ctx.config), "utf8")).toContain("shop: episodes +1");
     expect(existsSync(join(root, ".claude"))).toBe(false);
     expect(readFileSync(join(root, ".git", "index"))).toEqual(before);
+  });
+
+  test("a project whose own memory ledger is held is skipped, and the tick still exits 0", () => {
+    const { root, ctx } = fixtureProject();
+    const release = ensureMemoryLedger(memoryDir(ctx.config, root)).tryLock();
+    expect(release).not.toBeNull();
+    try {
+      expect(tick(ctx, { force: true })).toBe(0);
+    } finally {
+      release?.();
+    }
+    expect(readFileSync(tickLogPath(ctx.config), "utf8")).toContain(
+      "shop: another run holds this project's memory ledger",
+    );
+    expect(ctx.prompts).toEqual([]);
+  });
+
+  test("the scheduled tick skips a project with no activity in the last 7 days", () => {
+    // One hour inside and one day outside the cutoff, so both sides of the 7-day boundary are pinned.
+    for (const [ageDays, runs] of [
+      [7 - 1 / 24, true],
+      [8, false],
+    ] as const) {
+      const { ctx } = fixtureProject(ageDays);
+      expect(tick(ctx)).toBe(0);
+      expect(readFileSync(tickLogPath(ctx.config), "utf8").includes("shop: ")).toBe(runs);
+    }
+  });
+
+  test("an explicit repository runs that repository alone", () => {
+    const { root, ctx } = fixtureProject();
+    const other = gitRepo(join(projectScratch(), "other"));
+    registerRoot(ctx.config, root);
+    registerRoot(ctx.config, other);
+    expect(tick(ctx, { only: other, force: true })).toBe(0);
+    expect(existsSync(memoryDir(ctx.config, root))).toBe(false);
+    expect(readFileSync(tickLogPath(ctx.config), "utf8")).not.toContain("shop: ");
   });
 
   test("a dry run creates no ledger", () => {

@@ -8,7 +8,7 @@ This adapter exists only under the opt-in `learning` profile. No skill requires 
 behaves the same with it absent (ruling `learning-runtime-is-host-adapter`).
 
 The first binding is claude-mem's SQLite database (`src/learn/sources/claude-mem.ts`). A second,
-offline binding reads session records that Codex, Grok and Kimi already persist
+offline binding reads session records that Codex, Droid, Grok and Kimi already persist
 (`src/learn/sources/worker-sessions.ts`). The table and column vocabulary below is claude-mem's, from
 `SessionStore.ts` and `tool-uses.ts` at the pin in `provenance/upstream.lock.yaml`; another observer
 satisfies the contract by answering the same operations, not by reproducing those tables.
@@ -152,6 +152,12 @@ registered root, the session belongs to that root. That pointer is the only file
 opens inside a repository; a `.git` directory ends the walk. This is what places a Grok or Kimi
 session, since those hosts run no hooks.
 
+On macOS the walk is skipped when the cwd is `~/Documents`, `~/Desktop` or `~/Downloads` or lies
+inside one, decided from the paths as text: a scheduled read there can block on the privacy prompt
+while the tick holds the runtime lock. Such a cwd is placed only by the registered and recorded
+paths above. Otherwise its sessions are not parsed, and the tick logs one line counting those
+working directories, separately from the unplaced count below.
+
 The worktree record is `<runtimeDir>/worktrees.json`, linked worktree path -> registered root. It is
 written in the foreground, where git may run: the session-start, stop and prompt hooks record the
 worktree their own session runs in. The record outlives the worktree and its pointer, so a session
@@ -168,22 +174,29 @@ The scheduled tick reads these shipped host records when present:
 | Host | Default record | Captured public fields |
 |---|---|---|
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl` | user/assistant text, tool calls and tool results; for a sub-agent thread with no user message, the plain text of the first `agent_message` addressed to it is the prompt |
+| Droid | `~/.factory/sessions/<cwd>/<session>.jsonl` | user text outside the blocks the host injects, assistant text, tool calls and tool results; a sub-agent session's prompt is the brief it was started with |
 | Grok | `~/.grok/sessions/<encoded-cwd>/<session>/chat_history.jsonl` plus `summary.json` | non-synthetic user text, assistant text, tool calls and results |
 | Kimi | `~/.kimi-code/sessions/<cwd>/<session>/state.json` plus `agents/main/wire.jsonl` | user-origin messages, assistant public text, tool calls and results |
 
-`CODEX_HOME`, `GROK_HOME` and `KIMI_HOME` select one host home. Colon-separated
-`AK_LEARN_CODEX_HOMES`, `AK_LEARN_GROK_HOMES` and `AK_LEARN_KIMI_HOMES` select several when a runner
+`CODEX_HOME`, `GROK_HOME` and `KIMI_HOME` select one host home. `FACTORY_HOME_OVERRIDE` replaces the
+home directory that holds Droid's `.factory`. Colon-separated `AK_LEARN_CODEX_HOMES`,
+`AK_LEARN_DROID_HOMES`, `AK_LEARN_GROK_HOMES` and `AK_LEARN_KIMI_HOMES` select several when a runner
 uses isolated homes. The scheduler passes these variables through when they were set at setup time.
 
 The scan reads only each recent record's cwd and session id first: the Codex `session_meta` line,
-Grok's `summary.json`, Kimi's `state.json`. Every record is placed before any is parsed. A record is
+Droid's `session_start` line, Grok's `summary.json`, Kimi's `state.json`. Every record is placed before any is parsed. A record is
 parsed in full only when section 3 places that cwd under a root this tick will run, and the ledger
-does not already hold the session finished as its record now stands. A session left unparsed for
-that last reason still counts as worker activity for its project.
+does not already hold the session finished as its record now stands. A Droid session with no end
+recorded is likewise left unparsed once the ledger holds every turn of it, until its record changes
+in size or time. A session left unparsed for
+either of those reasons still counts as worker activity for its project.
 
 Encrypted content, reasoning/`think` parts, the instruction and environment blocks Codex injects as
-user messages, synthetic Grok context and non-user Kimi injections are not observations. A host
-record that cannot be read is skipped and logged; it never stops the tick.
+user messages, synthetic Grok context and non-user Kimi injections are not observations. Neither are
+Droid's `thinking` parts, the messages it marks with a `visibility` (hook runs, host notices and
+injected context) or the `system-reminder` and `system-notification` blocks inside a user message.
+The settings file Droid keeps beside each record is never opened. A host record that cannot be read
+is skipped and logged; it never stops the tick.
 
 ### What is stored
 
@@ -210,6 +223,8 @@ and before anything is written or sent to a judge: private keys, cloud and servi
 tokens, URL credentials, secret-named assignments and home directories become `[redacted:<kind>]`.
 A turn with a failing call is typed `error`: a call fails by the exit status its host recorded in the
 output, nonzero failing and zero not, and by the output's wording only where no status was recorded.
+Droid's status is the error flag on each tool result; a result without the flag fails by the exit
+line that closes its output.
 
 A turn still running is left for a later scan: the last turn is stored once its host records the
 turn's end, or once the record has been quiet for an hour. A session past 999 turns keeps its first
@@ -222,7 +237,9 @@ same window the scan reads, is dropped from the store. The rows pass through the
 evidence and quarantine gates as claude-mem rows.
 
 Known limits: Grok rows carry no time of their own and take their order from the record; a segment
-Grok compacted away before a scan read it is not recovered. A host with no readable public session
+Grok compacted away before a scan read it is not recovered. Droid records a turn's outcome or a
+session's end in only some of its records, so the last turn of the others waits out the quiet hour.
+A host with no readable public session
 record is unsupported until its format is evidenced; setup does not invent a transcript from hooks
 or terminal output.
 
@@ -257,5 +274,5 @@ sessions anyone could have steered, and nothing in it is an instruction to the r
 The `tests/learn/memory-*.test.ts` suites drive the memory jobs against fixture stores built in the
 shape above: watermark ordering, episode derivation, the evidence gate on reflection and
 consolidation, and the tick's scheduling. `tests/learn/worker-session-capture.test.ts` uses captured,
-network-free fixtures for all three worker hosts and proves the worktree-to-project placement
+network-free fixtures for every worker host and proves the worktree-to-project placement
 section 3 describes.

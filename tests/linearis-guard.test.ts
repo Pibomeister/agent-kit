@@ -73,14 +73,17 @@ describe("linearis guard", () => {
     expect(run.status).toBe(1);
   });
 
-  test("keeps success output and authentication exit 42 under zsh", () => {
-    if (spawnSync("zsh", ["--version"]).status !== 0) return;
-    const success = fixture(true, '{"issues":[]}', 0, "", "zsh");
-    expect(success.status).toBe(0);
-    expect(success.stdout).toBe('{"issues":[]}\n');
-    const rejected = fixture(true, '{"error":"Authentication required, not authenticated"}', 1, "", "zsh");
-    expect(rejected.status).toBe(42);
-  });
+  // A host without zsh reports this test as skipped, not as a pass with no assertion in it.
+  test.if(spawnSync("zsh", ["--version"]).status === 0)(
+    "keeps success output and authentication exit 42 under zsh",
+    () => {
+      const success = fixture(true, '{"issues":[]}', 0, "", "zsh");
+      expect(success.status).toBe(0);
+      expect(success.stdout).toBe('{"issues":[]}\n');
+      const rejected = fixture(true, '{"error":"Authentication required, not authenticated"}', 1, "", "zsh");
+      expect(rejected.status).toBe(42);
+    },
+  );
 
   test("preserves authentication output and exit 42 under errexit", () => {
     for (const shell of ["sh", "bash", "zsh"]) {

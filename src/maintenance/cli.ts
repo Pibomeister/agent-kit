@@ -632,7 +632,7 @@ if (import.meta.main) {
     // The learning runtime travels in this bundle so a plugin install can run it without a checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     const argv = process.argv.slice(2);
-    process.exitCode = runLearn(flags, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+    process.exitCode = await runLearn(flags, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
   } else if (action === "kb") {
     // The knowledgebase operations travel here too: a lifecycle skill calls them from an install with no checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };

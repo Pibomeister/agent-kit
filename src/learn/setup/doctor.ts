@@ -132,7 +132,7 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
     ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync(home) ? "" : "   (absent)"}`);
   }
   const stores = workerHomes(ctx.env);
-  for (const host of ["codex", "grok", "kimi"] as const) {
+  for (const host of ["codex", "droid", "grok", "kimi"] as const) {
     const homes = stores[host];
     const present = homes.filter((home) => existsSync(join(home, "sessions"))).length;
     ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
