@@ -61,6 +61,7 @@ prerequisites:
   - an observation source for the memory loop; claude-mem and offline Codex, Droid, Grok and Kimi session stores are the shipped bindings
   - a review source for the review loop; the `gh` CLI, authenticated, is the first binding
   - a judge command in `AK_LEARN_JUDGE`, defaulting to the host CLI's non-interactive mode; a judged job whose command fails records the failure and writes nothing
+  - "optionally a tool-call distiller per worker host in `AK_LEARN_DISTILL_<HOST>`, with no default; a host with none keeps the excerpt of each call"
   - "`ak learn setup wire` run once to register Claude and Codex context/review hooks and the claude-mem mode file; offline worker capture itself needs no host hook"
 
 deliberately_excludes:

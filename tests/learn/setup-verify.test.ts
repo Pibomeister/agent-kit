@@ -122,6 +122,32 @@ describe("setup doctor", () => {
     expect(doctor(context(deps, { AK_LEARN_JUDGE: `${judge}.missing` }), deps)).toBe(1);
   });
 
+  test("names each worker host's tool distiller, or says its calls keep their excerpts", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps, { AK_LEARN_DISTILL_GROK: "fixture-distiller --quiet" });
+    doctor(ctx, deps);
+    const lines = ctx.out.filter((line) => line.includes("tool distiller"));
+    expect(lines.map((line) => line.trim().replace(/\s+/g, " "))).toEqual([
+      "codex tool distiller unset (AK_LEARN_DISTILL_CODEX); calls keep their excerpts",
+      "grok tool distiller fixture-distiller --quiet",
+      "kimi tool distiller unset (AK_LEARN_DISTILL_KIMI); calls keep their excerpts",
+      "tool distiller (24h) 0 calls, 0 failures, $0.000000 reported cost",
+    ]);
+  });
+
+  test("says so when a distiller is bound to a name that is no worker host", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps, { AK_LEARN_DISTILL_CODX: "fixture-distiller", AK_LEARN_DISTILL_CONSTRUCTOR: "x" });
+    doctor(ctx, deps);
+    const lines = ctx.out.filter((line) => line.includes("tool distiller"));
+    expect(lines.map((line) => line.trim().replace(/\s+/g, " "))).toEqual(
+      expect.arrayContaining([
+        "codx tool distiller bound (AK_LEARN_DISTILL_CODX), but no worker host has that name; never used",
+        "constructor tool distiller bound (AK_LEARN_DISTILL_CONSTRUCTOR), but no worker host has that name; never used",
+      ]),
+    );
+  });
+
   test("reports judge calls, failures and cost from the last 24 hours across rotation", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const ctx = context(deps);

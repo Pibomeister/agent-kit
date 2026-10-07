@@ -3,7 +3,9 @@
  *
  * No setting names a model. The judge is one configurable command, and which
  * model sits behind it is the runner's binding, not this package's (ruling
- * `learning-judge-is-runner-bound`).
+ * `learning-judge-is-runner-bound`). The tool-call distiller is bound the same
+ * way, one command per worker host, and has no default: a host the operator
+ * binds nothing to is never sent anywhere.
  */
 import { lstatSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -17,6 +19,14 @@ export interface LearnConfig {
   /** The judge command as argv. The prompt goes to stdin; JSON comes back on stdout. */
   judgeCommand: string[];
   judgeTimeoutMs: number;
+  /**
+   * The tool-call distiller per worker host, as argv: `AK_LEARN_DISTILL_<HOST>`, the host's name in
+   * capitals. The prompt goes to stdin; JSON comes back on stdout. A host with no entry keeps excerpts.
+   */
+  distillCommands: Readonly<Record<string, readonly string[]>>;
+  distillTimeoutMs: number;
+  /** The most distiller requests one project's capture makes in a run; calls past it keep their excerpts. */
+  distillMaxRequests: number;
   /** `AK_LEARN_TRACE=full`: also write each call's prompt and reply bodies beside the metadata trace. */
   traceFull: boolean;
   /** Maximum bytes in the current judge-call metadata file before rotation. Fixed; not an environment option. */
@@ -122,6 +132,24 @@ export function splitCommand(text: string): string[] {
   return out;
 }
 
+/** One distiller binding: a single-word host name, so the stage's other settings never read as a host. */
+const DISTILL_BINDING = /^AK_LEARN_DISTILL_([A-Z][A-Z0-9]*)$/;
+
+/** The variable that binds `host`'s tool-call distiller. */
+export function distillVariable(host: string): string {
+  return `AK_LEARN_DISTILL_${host.toUpperCase()}`;
+}
+
+function distillCommands(env: NodeJS.ProcessEnv) {
+  const commands: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(env)) {
+    const host = DISTILL_BINDING.exec(key)?.[1];
+    if (host === undefined || value === undefined || value.trim() === "") continue;
+    commands[host.toLowerCase()] = splitCommand(value);
+  }
+  return commands;
+}
+
 /** The scope file `ak learn setup scope` manages. */
 export function scopeFile(runtimeDir: string): string {
   return join(runtimeDir, "repos");
@@ -214,6 +242,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LearnConfig {
     runtimeDir,
     judgeCommand: judge,
     judgeTimeoutMs: int(env, "AK_LEARN_JUDGE_TIMEOUT_S", 300) * 1000,
+    distillCommands: distillCommands(env),
+    distillTimeoutMs: int(env, "AK_LEARN_DISTILL_TIMEOUT_S", 120) * 1000,
+    distillMaxRequests: Math.max(0, int(env, "AK_LEARN_DISTILL_MAX_REQUESTS", 20)),
     traceFull: env.AK_LEARN_TRACE === "full",
     traceMaxBytes: 10 * 1024 * 1024,
     memDb:

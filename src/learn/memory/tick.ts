@@ -3,6 +3,8 @@
  * discover projects from claude-mem, capture offline worker session stores,
  * and for each project active in the last seven days record new episodes,
  * then run whichever jobs are due. Failures are logged, never raised.
+ * A captured tool call goes to its host's distiller where the operator bound
+ * one (`sources/tool-distill.ts`), and keeps its excerpt where not.
  *
  * The scheduled path never spawns git in a repository, and opens one kind of
  * file inside one: the `.git` pointer of a linked worktree, read to place a
@@ -19,6 +21,7 @@ import { basename, join } from "node:path";
 import Ajv from "ajv";
 import { repoAllowed } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
+import { commandDistiller } from "../core/distill.ts";
 import { acquireLock, Ledger } from "../core/ledger.ts";
 import { tickLogPath } from "../core/paths.ts";
 import { gateText, nowIso, nowMs, readText, todayLocal } from "../core/store.ts";
@@ -27,6 +30,7 @@ import { loadEvents } from "../review/events.ts";
 import { deferredObservationIds } from "../review/ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "../review/ledger.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
+import { toolDistiller } from "../sources/tool-distill.ts";
 import {
   CAPTURE_WINDOW_MS,
   type CapturedSession,
@@ -272,12 +276,18 @@ export function runProject(
     let captured = 0;
     let refreshed = 0;
     const captures = WorkerSessionSource.open(ledger);
+    const distiller = toolDistiller(ctx.config, ctx.distill ?? commandDistiller(ctx.config), {
+      project: memProject || basename(root),
+      dryRun,
+    });
     try {
       ({ observations: captured, sessions: refreshed } = captures.capture(options.captured ?? [], {
         dryRun,
         sinceMs: options.capturedSince,
+        rewrite: distiller.rewrite,
       }));
       if ((options.captured?.length ?? 0) > 0) out.push(`worker observations +${captured}`);
+      out.push(...distiller.report());
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       out.push(`worker capture failed: ${message}`);
@@ -289,12 +299,14 @@ export function runProject(
         jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
           const fresh = buildEpisodes(source, ledger, memProject, reviewEvents(ctx, root), { dryRun });
           if ((fresh.length > 0 || captured > 0) && !dryRun) {
-            appendRun(ledger, {
+            const run: Parameters<typeof appendRun>[1] = {
               job: "episodes",
               status: "ok",
               new: fresh.map((episode) => episode.sid),
               worker_observations: captured,
-            });
+            };
+            if (distiller.distilled > 0) run.distilled_calls = distiller.distilled;
+            appendRun(ledger, run);
             ledger.commit(`episodes +${fresh.length}, worker observations +${captured}`);
           } else if (refreshed > 0 && !dryRun) ledger.commit(`worker sessions refreshed ${refreshed}`);
           return `episodes +${fresh.length}`;

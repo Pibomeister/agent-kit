@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { loadConfig } from "./core/config.ts";
 import type { LearnArea, LearnContext, LearnIo } from "./core/context.ts";
 import { parseLearnArgs } from "./core/context.ts";
+import type { DistillFn } from "./core/distill.ts";
 import { commandJudge, type JudgeFn } from "./core/judge.ts";
 
 /**
@@ -53,6 +54,7 @@ export interface RunLearnOptions {
   io: LearnIo;
   env?: NodeJS.ProcessEnv;
   judge?: JudgeFn;
+  distill?: DistillFn;
   stdin?: string;
 }
 
@@ -100,6 +102,7 @@ async function dispatch(argv: readonly string[], options: RunLearnOptions): Prom
     io: options.io,
     config,
     judge: options.judge ?? commandJudge(config),
+    distill: options.distill,
     env,
     stdin: options.stdin,
   };

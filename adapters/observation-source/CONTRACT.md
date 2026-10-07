@@ -215,12 +215,13 @@ The detail follows it:
 | Part | Stored |
 |---|---|
 | Tool calls | each tool's name and how often it ran |
-| Each call | an excerpt of its arguments (120 characters) and of its output (300 characters), failing calls first |
+| Each call | one line, `tool arguments -> output`, failing calls first: an excerpt of its arguments (120 characters) and of its output (300 characters), or the distilled record below within the same limits |
 
 Full tool output is never stored. The session row adds the first prompt, the last reply and the
 repository paths the session's write tools named. Every stored string is scrubbed before it is cut
-and before anything is written or sent to a judge: private keys, cloud and service tokens, bearer
-tokens, URL credentials, secret-named assignments and home directories become `[redacted:<kind>]`.
+and before anything is written or sent to a judge or a distiller: private keys, cloud and service
+tokens, bearer tokens, URL credentials, secret-named assignments and home directories become
+`[redacted:<kind>]`.
 A turn with a failing call is typed `error`: a call fails by the exit status its host recorded in the
 output, nonzero failing and zero not, and by the output's wording only where no status was recorded.
 Droid's status is the error flag on each tool result; a result without the flag fails by the exit
@@ -231,10 +232,46 @@ turn's end, or once the record has been quiet for an hour. A session past 999 tu
 prompt and its most recent turns, with a `truncated` row counting the turns left out between them.
 
 Rows are append-only with a separate numeric id range. A row is new when the ledger holds no row of
-that session with the same digest of title and text, so a record its host rewrites (Grok compaction)
-still appends only what was not captured. A session its host last wrote more than 30 days ago, the
-same window the scan reads, is dropped from the store. The rows pass through the same reflection,
-evidence and quarantine gates as claude-mem rows.
+that session with the same digest of title and excerpt-form text, so a record its host rewrites
+(Grok compaction) still appends only what was not captured. A distilled row keeps the digest of the
+excerpt form it replaced, which is the form every later scan rebuilds. A session its host last wrote
+more than 30 days ago, the same window the scan reads, is dropped from the store. The rows pass
+through the same reflection, evidence and quarantine gates as claude-mem rows.
+
+### Tool-call distillation
+
+An excerpt is the head of a call's arguments and of its output, cut at a fixed length whatever they
+held: a banner, a progress bar or the first lines of a file as often as the result. Where the
+operator binds a distiller to a host, each call of that host's sessions is stored instead as a short
+record of what was attempted and what came back (`src/learn/sources/tool-distill.ts`).
+
+| Step | What happens |
+|---|---|
+| Scrub | The stage scrubs every call again, itself, before a prompt exists. Only scrubbed text reaches the distiller: at most 2,000 characters each of a call's arguments and output, under the tool's name made one line of at most 80 |
+| Bind | `AK_LEARN_DISTILL_<HOST>`, the host's name in capitals, holds that host's command: the prompt on stdin, one JSON object on stdout. It is read from the operator's environment and nothing is bound by default; no file in this package names what answers |
+| Send | Only the rows the ledger does not hold yet, and of each row only the leading calls whose records can land inside its 2,000 characters, counting a record at 120: a long turn has far more calls than lines that fit, and a call past the cut is stored in neither form. Requests carry at most 20 calls. `AK_LEARN_DISTILL_MAX_REQUESTS` caps one project's requests in a run (20), `AK_LEARN_DISTILL_TIMEOUT_S` one request's time (120) |
+| Gate | Each record is scrubbed again, flattened to one line and cut to the excerpt's limits. The distiller words a line and nothing else: capture takes a rewritten row's text and its count of distilled lines, and the row's type, title, time, files, order, id, digest and its list of failed tools stay the parser's |
+
+A call keeps its excerpt, and the tick's output says how many did and why, counting the calls it
+would have sent, when its host has no binding, when the request fails or returns no record for it,
+and when the request cap is spent. A failed request is not retried, and neither it nor a request
+that returned no usable record at all is followed by another to that host in that run. A record is
+counted as distilled, in the output and in the run's `distilled_calls`, only when it is stored
+whole; the output says how many the row's length cut off, which is how an operator sees a distiller
+writing longer records than the 120 characters the stage counts on. A row is stored once either way,
+so a call that kept its excerpt is not sent later, and a row captured before a binding existed is
+never sent: a backlog met on the first bound run is distilled up to the request cap and no further.
+A dry run sends nothing and reports the calls and characters it would send, and how many the request
+cap would leave as excerpts.
+
+The distiller is not one of the learning roles: it rewrites text and decides nothing, so it carries no
+role prompt and its reply passes no judgement gate (ruling `learning-judge-is-runner-bound` binds
+the judgements). Bind a command that can use no tools, as the default judge cannot: a call's output
+is text anyone could have steered. Every request leaves one row of metadata, never the prompt or the
+reply, in `distill-calls.jsonl` under the runtime directory: sizes, the outcome, the scrubbed tail of
+what the command wrote to stderr, and the cost its command reported when it reports one.
+`ak learn setup doctor` prints each host's binding, a binding whose name is no worker host, and the
+last day's requests.
 
 Known limits: Grok rows carry no time of their own and take their order from the record; a segment
 Grok compacted away before a scan read it is not recovered. Droid records a turn's outcome or a
@@ -275,4 +312,6 @@ The `tests/learn/memory-*.test.ts` suites drive the memory jobs against fixture 
 shape above: watermark ordering, episode derivation, the evidence gate on reflection and
 consolidation, and the tick's scheduling. `tests/learn/worker-session-capture.test.ts` uses captured,
 network-free fixtures for every worker host and proves the worktree-to-project placement
-section 3 describes.
+section 3 describes. `tests/learn/tool-distill.test.ts` answers the distiller seam with a fake and
+proves that a planted secret never reaches it, that an unbound host keeps its excerpts and says so,
+and that a row is sent once.

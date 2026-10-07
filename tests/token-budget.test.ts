@@ -58,6 +58,7 @@ describe("this tree's agent-facing text", () => {
       "firstmate:adapters/firstmate/WORKER.md",
       "firstmate:stock-brief",
       ...["pattern-maintainer", "reflector", "consolidator", "lesson-merger", "skill-scout"].map((r) => `judge:${r}`),
+      "distill:tool-calls",
       ...catalog
         .bySection("roles")
         .filter((entry) => entry.status === "authored")

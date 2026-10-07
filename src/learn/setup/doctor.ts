@@ -1,13 +1,14 @@
 /**
  * `ak learn setup doctor` — report prerequisites, registry hygiene, the
- * scheduled judge's login, the resolved environment and the last 24 hours of
- * judge calls and spans.
+ * scheduled judge's login, the resolved environment with each worker host's
+ * tool distiller, and the last 24 hours of judge calls, distiller calls and spans.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { DEFAULT_JUDGE } from "../core/config.ts";
+import { DEFAULT_JUDGE, distillVariable } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
+import { distillTraceSummary } from "../core/distill.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
 import { readRegistry, registryHygiene } from "../memory/registry.ts";
 import { schedulerKind, unitEnvironment } from "./schedule.ts";
@@ -137,11 +138,27 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
     const present = homes.filter((home) => existsSync(join(home, "sessions"))).length;
     ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
   }
+  for (const host of ["codex", "grok", "kimi"] as const) {
+    const command = ctx.config.distillCommands[host];
+    ctx.io.out(
+      `  ${`${host} tool distiller`.padEnd(19)} ${command === undefined ? `unset (${distillVariable(host)}); calls keep their excerpts` : command.join(" ")}`,
+    );
+  }
+  for (const name of Object.keys(ctx.config.distillCommands).toSorted()) {
+    if (Object.hasOwn(stores, name)) continue;
+    ctx.io.out(
+      `  ${`${name} tool distiller`.padEnd(19)} bound (${distillVariable(name)}), but no worker host has that name; never used`,
+    );
+  }
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
   ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
   const trace = judgeTraceSummary(ctx.config);
   ctx.io.out(
     `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,
+  );
+  const distilled = distillTraceSummary(ctx.config);
+  ctx.io.out(
+    `  tool distiller (24h)  ${distilled.calls} ${distilled.calls === 1 ? "call" : "calls"}, ${distilled.failures} ${distilled.failures === 1 ? "failure" : "failures"}, $${distilled.totalCostUsd.toFixed(6)} reported cost`,
   );
   ctx.io.out(runsLine(ctx.config));
   const blocked = checks.filter((check) => check.hard && !check.ok).map((check) => check.name);
