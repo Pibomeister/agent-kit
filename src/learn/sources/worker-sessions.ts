@@ -429,7 +429,7 @@ function session(
           },
         ]
       : [];
-  return {
+  const captured: CapturedSession = {
     native_id: nativeId,
     memory_session_id: stableSessionId(host, nativeId),
     platform: host,
@@ -437,7 +437,6 @@ function session(
     started_at_epoch: times.started,
     completed_at_epoch: times.ended === null ? null : Math.max(times.started, times.ended),
     modified_at_epoch: times.modified,
-    ...(times.ended === null && settled && times.bytes !== undefined ? { quiet_bytes: times.bytes } : {}),
     prompt_count: prompts.length,
     request: prompts[0]?.prompt ?? null,
     completed: turns.findLast((turn) => turn.reply !== "")?.reply ?? null,
@@ -445,6 +444,8 @@ function session(
     files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
     observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)],
   };
+  if (times.ended === null && settled && times.bytes !== undefined) captured.quiet_bytes = times.bytes;
+  return captured;
 }
 
 /** A Codex user message without the instruction and environment blocks the host injects. */
@@ -941,14 +942,13 @@ function storedObservation(item: CapturedSession, row: CapturedObservation, id: 
 }
 
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
-  return {
+  const stored: StoredSession = {
     id: 0,
     memory_session_id: item.memory_session_id,
     platform_source: item.platform,
     started_at_epoch: item.started_at_epoch,
     completed_at_epoch: item.completed_at_epoch,
     modified_at_epoch: item.modified_at_epoch,
-    ...(item.quiet_bytes === undefined ? {} : { quiet_bytes: item.quiet_bytes }),
     observation_count: observationCount,
     native_id: item.native_id,
     prompt_count: item.prompt_count,
@@ -957,6 +957,8 @@ function storedSession(item: CapturedSession, observationCount: number): StoredS
     next_steps: item.next_steps,
     files_modified: item.files_modified,
   };
+  if (item.quiet_bytes !== undefined) stored.quiet_bytes = item.quiet_bytes;
+  return stored;
 }
 
 export function isCapturedObservation(row: Pick<ObservationRow, "id">): boolean {

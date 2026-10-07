@@ -548,9 +548,7 @@ describe("worker session parsers", () => {
     ]);
     const session = requiredSession(parseDroidSession(path));
     expect(session.request).toBe(asked);
-    expect(session.observations.map((row) => row.text)).toEqual([
-      `prompt: ${asked}\nreply: It runs once per matcher.`,
-    ]);
+    expect(session.observations.map((row) => row.text)).toEqual([`prompt: ${asked}\nreply: It runs once per matcher.`]);
   });
 
   test("a Droid sub-agent session takes its request from the brief it was started with", () => {
