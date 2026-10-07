@@ -285,11 +285,6 @@ function renderDocument(meta: DocumentMeta, body: string): string {
 }
 
 /**
- * `readContext`: the committed pages of the given kinds at `scope` and at each
- * scope above it, most specific first. A project with no pages returns an
- * empty list, which is a fact and not an error.
- */
-/**
  * Every scope the project's committed pages sit at, and every scope above one,
  * sorted. `project` is left out: it always resolves. The read path names these
  * when a scope it was given holds nothing, so a typo is not mistaken for a
@@ -313,6 +308,11 @@ export function committedScopes(kb: ResolvedKb): string[] {
   return [...scopes].toSorted();
 }
 
+/**
+ * `readContext`: the committed pages of the given kinds at `scope` and at each
+ * scope above it, most specific first. A project with no pages returns an
+ * empty list, which is a fact and not an error.
+ */
 export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: string): ReadOutcome | KbRefusal {
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined) return kindProblem(unknown);
