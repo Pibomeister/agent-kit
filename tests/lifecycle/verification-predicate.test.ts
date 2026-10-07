@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { createHash } from "node:crypto";
 
 import { verificationShapeReasons as verificationRefusals } from "../../src/lifecycle/gate.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
-import { edited, parseJson, pathsOf, updated, type JsonValue, type Path } from "../helpers/json.ts";
+import { type JsonValue } from "../helpers/json.ts";
+import { verificationPopulations } from "../helpers/verification-cases.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const validate = compileSchemas(ROOT).validatorFor("verification")!;
@@ -16,20 +16,6 @@ const read = (path: string): JsonObject => JSON.parse(readFileSync(path, "utf8")
 
 function jsonObject(value: JsonValue | undefined): value is JsonObject {
   return value !== null && value !== undefined && value instanceof Object && !Array.isArray(value);
-}
-
-function at(value: JsonValue, path: Path): JsonValue {
-  let current = value;
-  for (const key of path) {
-    const child = Array.isArray(current)
-      ? current[Number(key)]
-      : jsonObject(current)
-        ? current[String(key)]
-        : undefined;
-    if (child === undefined) throw new Error(`Missing fixture member ${path.join(".")}`);
-    current = child;
-  }
-  return current;
 }
 
 // These are lifecycle policy, not JSON schema: neither may become a general parity exemption.
@@ -55,58 +41,52 @@ function predicateOnlyRules(doc: JsonValue): string[] {
 const accepts = (receipt: JsonValue) => verificationRefusals(receipt).length === 0;
 
 describe("the bundled verification predicate", () => {
+  test("refuses every unknown own top-level Object.prototype member", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    for (const key of Object.getOwnPropertyNames(Object.prototype)) {
+      const candidate = Object.fromEntries([...Object.entries(receipt), [key, 1]]);
+      expect(verificationRefusals(candidate), key).toContain(`receipt must NOT have unevaluated properties (${key})`);
+    }
+  });
+
+  test("refuses overflow numbers in integer fields", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    receipt.status = "failed";
+    for (const number of [Infinity, -Infinity]) {
+      receipt.exit_status = number;
+      expect(verificationRefusals(receipt)).toContain("/exit_status must be integer");
+    }
+  });
+
+  test("bounds receipt bytes and member count before collecting schema errors", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    expect(verificationRefusals({ ...receipt, notes: "x".repeat(1024 * 1024) })).toEqual([
+      "receipt exceeds the 1048576-byte limit",
+    ]);
+    expect(verificationRefusals({ ...receipt, artifacts: Array.from({ length: 100_000 }, () => ({})) })).toEqual([
+      "receipt exceeds the 4096-member limit",
+    ]);
+  });
+
   test("agrees with ajv across per-member corruptions, unknown members and invalid strings", () => {
-    const names = [
-      "verification.example.json",
-      "verification.surface.example.json",
-      "verification.weakened.example.json",
-      "verification.zero-exit-failure.example.json",
-    ];
-    const examples = names.map((name) => ({ name, path: join(ROOT, "templates", name) }));
-    examples.push({ name: "all-members", path: join(ROOT, "tests", "fixtures", "verification-all-members.json") });
     const disagreements: string[] = [];
-    for (const { name, path } of examples) {
-      const bytes = readFileSync(path);
-      const hash = createHash("sha256").update(bytes).digest("hex");
-      const doc = parseJson(bytes.toString("utf8"));
-      let compared = 0;
+    for (const { name, hash, doc, cases } of verificationPopulations()) {
+      expect(validate(doc), `${name}: ${JSON.stringify(validate.errors)}`).toBe(true);
       let rejected = 0;
-      const compare = (candidate: JsonValue, label: string) => {
+      for (const { label, doc: candidate } of cases) {
         const schemaAccepted = validate(candidate);
         const policyReasons = schemaAccepted ? predicateOnlyRules(candidate) : [];
-        compared++;
         if (!schemaAccepted) rejected++;
         if (accepts(candidate) !== (schemaAccepted && policyReasons.length === 0))
           disagreements.push(`${name} sha256:${hash} ${label}: ajv=${schemaAccepted} predicate=${accepts(candidate)}`);
-      };
-      expect(validate(doc), `${name}: ${JSON.stringify(validate.errors)}`).toBe(true);
-      compare(doc, "unchanged");
-      for (const member of pathsOf(doc)) {
-        for (const how of ["delete", "null", "retype"] as const)
-          compare(edited(doc, member, how), `${how} ${member.join(".")}`);
-        // Probe every string, including plain strings whose acceptance must not be narrowed.
-        if (JSON.stringify(at(doc, member)).startsWith('"'))
-          for (const invalid of ["", " ", "../escape", "/absolute", "Jan 1 2026", "invalid", "a".repeat(129)])
-            compare(
-              updated(doc, member, () => invalid),
-              `string ${member.join(".")}=${JSON.stringify(invalid)}`,
-            );
       }
-      for (const objectPath of [[], ...pathsOf(doc)]) {
-        if (!jsonObject(at(doc, objectPath))) continue;
-        compare(
-          updated(doc, [...objectPath, "unknown_member"], () => true),
-          `unknown member ${objectPath.join(".")}`,
-        );
-      }
-      // The sweep must reach the predicate's reasons: most single corruptions are invalid.
-      expect(rejected, `${name} sha256:${hash}`).toBeGreaterThan(compared / 2);
-      console.info(`parity: ${name} sha256:${hash} compared=${compared}`);
+      expect(rejected, `${name} sha256:${hash}`).toBeGreaterThan(cases.length / 2);
+      console.info(`parity: ${name} sha256:${hash} compared=${cases.length}`);
     }
     expect(disagreements).toEqual([]);
   });
 
-  test("names the only two schema-valid predicate-only rejections", () => {
+  test("preserves the two lifecycle policy rejections on bounded schema-valid receipts", () => {
     const noCriteria = read(join(ROOT, "templates", "verification.example.json"));
     delete noCriteria.supports;
     noCriteria.no_criteria = "No criteria were supplied.";

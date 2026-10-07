@@ -61,12 +61,12 @@ export interface BuildResult {
 }
 
 export function writeBundles(ctx: CheckContext, options: BuildOptions): BuildResult {
-  const issues: Issue[] = [];
-  let profile = "all";
-
-  for (const plan of planAll(ctx, options)) {
-    issues.push(...plan.issues);
-    profile = plan.profile;
+  const plans = planAll(ctx, options);
+  const issues = plans.flatMap((plan) => plan.issues);
+  const profile = plans.at(-1)?.profile ?? "all";
+  // A failure in any host must leave every installed bundle intact.
+  if (issues.some((issue) => issue.severity === "error")) return { issues: collapseDuplicates(issues), profile };
+  for (const plan of plans) {
     const outRoot = join(ctx.root, distDir(plan.host));
     rmSync(outRoot, { recursive: true, force: true });
     for (const file of plan.files.values()) {

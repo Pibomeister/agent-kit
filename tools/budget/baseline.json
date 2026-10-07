@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6469,
+      "tokens": 1618
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -468,8 +468,8 @@
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6469,
+      "tokens": 1618
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",

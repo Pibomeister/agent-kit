@@ -288,15 +288,10 @@ const boundTo = (receipt: Record<string, unknown>, snapshot: Snapshot): boolean 
   return source?.revision === snapshot.revision && source?.diff_hash === snapshot.diff_hash;
 };
 
-/** Whether the store still holds this reference as a well-formed failed receipt at this snapshot, which no re-record replaces. */
+/** A declared failure bound to this snapshot stays recorded even when its receipt is malformed. */
 function storedFailure(dir: string, run: string, ref: ArtifactRef, snapshot: Snapshot): boolean {
   const receipt = storedReceipt(dir, run, ref);
-  return (
-    receipt !== undefined &&
-    receipt.status === "failed" &&
-    boundTo(receipt, snapshot) &&
-    verificationShapeReasons(receipt).length === 0
-  );
+  return receipt !== undefined && receipt.status === "failed" && boundTo(receipt, snapshot);
 }
 
 const runRecordPath = (dir: string, run: string): string => join(dir, "runs", safeRunId(run), "run.json");
@@ -715,8 +710,37 @@ const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
 
+const MAX_VERIFICATION_BYTES = 1024 * 1024;
+const MAX_VERIFICATION_MEMBERS = 4096;
+
+/** Bound allErrors work even for compact arrays of empty objects; failure retention never calls this. */
+function verificationBudgetReason(receipt: NonNullable<ReturnType<typeof object>>): string | undefined {
+  const pending: unknown[] = [receipt];
+  let members = 0;
+  while (pending.length > 0) {
+    const value = pending.pop();
+    const children = Array.isArray(value) ? value : Object.values(object(value) ?? {});
+    for (const child of children) {
+      if (++members > MAX_VERIFICATION_MEMBERS) return `receipt exceeds the ${MAX_VERIFICATION_MEMBERS}-member limit`;
+      pending.push(child);
+    }
+  }
+  try {
+    if (Buffer.byteLength(JSON.stringify(receipt), "utf8") > MAX_VERIFICATION_BYTES)
+      return `receipt exceeds the ${MAX_VERIFICATION_BYTES}-byte limit`;
+  } catch {
+    return "receipt is not JSON-serializable";
+  }
+  return undefined;
+}
+
 /** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
+  const receipt = object(value);
+  if (receipt !== undefined) {
+    const budget = verificationBudgetReason(receipt);
+    if (budget !== undefined) return [budget];
+  }
   const validateVerification = verificationValidator();
   const reasons = validateVerification(value)
     ? []
@@ -725,8 +749,9 @@ export function verificationShapeReasons(value: unknown): string[] {
         const member = params.additionalProperty ?? params.unevaluatedProperty;
         return `${error.instancePath || "receipt"} ${error.message ?? "is invalid"}${member === undefined ? "" : ` (${member})`}`;
       });
-  const receipt = object(value);
   if (receipt === undefined) return reasons;
+  for (const key of Object.keys(receipt))
+    if (Object.hasOwn(Object.prototype, key)) reasons.push(`receipt must NOT have unevaluated properties (${key})`);
   if (receipt.supports === undefined) reasons.push("supports is invalid");
   if (receipt.evidence_kind === "api-response") {
     const response = object(receipt.api_response);
@@ -848,6 +873,14 @@ function evaluateEvidence(
     const path = artifactPath(a.dir, a.run, ref.hash);
     if (path === undefined || !existsSync(path)) {
       reasons.push({ code: "missing", detail: `receipt ${ref.id} is absent from the run store`, evidence: ref.id });
+      continue;
+    }
+    if (statSync(path).size > MAX_VERIFICATION_BYTES) {
+      reasons.push({
+        code: "malformed",
+        detail: `receipt ${ref.id} exceeds the ${MAX_VERIFICATION_BYTES}-byte limit`,
+        evidence: ref.id,
+      });
       continue;
     }
     const bytes = readFileSync(path);

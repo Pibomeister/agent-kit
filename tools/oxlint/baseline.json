@@ -287,7 +287,7 @@
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-known-value-widening)": 10,
     "anti-slop(no-runtime-typeof)": 27,
-    "anti-slop(no-shape-in-symbol-names)": 6,
+    "anti-slop(no-shape-in-symbol-names)": 5,
     "anti-slop(no-unknown-parameters)": 5,
     "anti-slop(no-unsafe-dictionary-type)": 16,
     "anti-slop(require-safety-comment-for-type-assertion)": 23,
