@@ -217,7 +217,8 @@ describe("bypass granted: phases start without a typed command", () => {
     expect(readdirSync(ledger)).toHaveLength(1);
     expect(brief).toContain(`bypass check --grant ${realpathSync(grantPath)} --task T-1 --phase`);
     expect(brief).toContain("Every approval inside a phase stops with needs-decision");
-    expect(brief).toContain("This grant holds in every run of the task until it expires");
+    expect(brief).toContain("This grant holds in each run of the task while that run is its branch's current run");
+    expect(brief).toContain("only a new run from `open --ticket` restarts a phase");
     expect(brief).not.toContain("valid only in the run");
   });
 
@@ -1172,6 +1173,10 @@ describe("a grant holds in every run of its task's branch, and a typed end stays
     expect(r.err).toContain("run elsewhere is not the current run of branch task");
     expect(r.err).toContain("the phase needs its typed command");
     expect(r.err).not.toContain("it issues a fresh grant for this task");
+    const recorded = ak(s.worktree, s.ledger, ...recordArgs("review-full", s.grantPath, "T-1"), "--run", "elsewhere");
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain("run elsewhere is not the current run of branch task");
+    expect(recorded.err).not.toContain("longer than 12 hours");
   });
 
   test("another task's run is refused with --run, at check and at record --bypass, and nothing is written there", () => {

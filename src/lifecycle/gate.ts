@@ -533,7 +533,7 @@ export function recordGate(
   // The run's use record is the one place a bypassed start lives; a typed record ends it for the phase.
   const covered = BYPASS_GATE_PHASE[a.gate];
   const usePath = covered === undefined ? undefined : bypassUsePath(a.dir, a.run, covered);
-  // A grant holds in every run of its task; a phase starts and ends within one run.
+  // A grant holds in each run of its task while that run is current; a phase starts and ends within one run.
   const started = usePath === undefined ? undefined : readObject(usePath);
   if (a.bypass !== undefined && previous !== undefined && previous.authority === undefined)
     return refuse(
@@ -1591,8 +1591,8 @@ const refuse = (reason: string) => ({ ok: false as const, reason });
 /**
  * Why `run` is not one a grant may start a phase in, or undefined when it is. Under a grant the run must be
  * the current run of the branch `project` is on, the one the lifecycle resolves without `--run`: the run `open`
- * last recorded for the branch, or before any the branch-named one. A grant holds in every run of its task,
- * so any other run (another task's, an earlier one of this branch, an id the worker makes up) is refused.
+ * last recorded for the branch, or before any the branch-named one. Any other run (another task's, an
+ * earlier one of this branch, an id the worker makes up) is refused.
  */
 function foreignRun(dir: string, project: string, run: string): string | undefined {
   const branch = git(project, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
@@ -1611,8 +1611,11 @@ function foreignRun(dir: string, project: string, run: string): string | undefin
   if (opened !== undefined && opened.branch !== branch.text)
     return `run ${run} was opened as ${String(opened.run_id)} for branch ${String(opened.branch)}, not ${branch.text}; open a run for this branch with \`open --ticket\``;
   const folded = run.toLowerCase();
-  const shared = git(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"])
-    .text.split("\n")
+  const branches = git(project, ["for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads"]);
+  if (branches.code !== 0)
+    return `cannot list the branches of ${project}, so run ${run} cannot be shown to be branch ${branch.text}'s`;
+  const shared = branches.text
+    .split("\n")
     .find((other) => other !== "" && other !== branch.text && safeRunId(other).toLowerCase() === folded);
   return shared === undefined
     ? undefined
@@ -1777,7 +1780,7 @@ export function checkBypass(
     return no(`bypass grant ${id} does not cover ${a.phase}`);
   if (g.task_id !== a.task) return no(`bypass grant ${id} is for task ${String(g.task_id)}, not ${a.task}`);
   // Last, so the reissue hint it earns never masks a refusal that is a decision. A grant issued before
-  // the cap could otherwise ride every run of its task until its own expiry.
+  // the cap could otherwise ride each run of its task until its own expiry.
   if (!(Date.parse(expires) - Date.parse(String(g.created_at)) <= BYPASS_MAX_HOURS * 3_600_000))
     return {
       ...no(
@@ -1825,7 +1828,9 @@ export function bypassBrief(grant: BypassGrant, path: string): string {
     "It starts phases only. Every approval inside a phase stops with needs-decision for the supervisor;",
     "never approve your own design, spec, tickets or publish. Merge and deploy are never covered.",
     `Pass \`--bypass ${shellWord(path)} --task ${shellWord(grant.task_id)}\` when you record review-full, review-readiness or ship-preflight.`,
-    "This grant holds in every run of the task until it expires, the ticket's run after `open --ticket` included.",
+    "This grant holds in each run of the task while that run is its branch's current run, until it expires;",
+    "the ticket's run after `open --ticket` is included, and only a new run from `open --ticket` restarts a phase",
+    "a typed record ended.",
     "A typed record ends the bypass for that phase in the run.",
   ].join("\n");
 }
@@ -2077,14 +2082,15 @@ export function main(
         ledger: bypassLedger ?? defaultBypassLedger(),
         now,
       });
+      // As at `bypass check`, a run that is not the branch's is reported before an over-long grant.
+      const foreign = foreignRun(dir, project, run);
+      if (foreign !== undefined && (checked.ok || checked.overlong === true)) {
+        io.err(`ak lifecycle record: refused: ${foreign}`);
+        return 1;
+      }
       if (!checked.ok) {
         io.err(`ak lifecycle record: refused: ${checked.reason}`);
         io.err("hint: issue a fresh grant for this task, or record it with the typed command and no --bypass");
-        return 1;
-      }
-      const foreign = foreignRun(dir, project, run);
-      if (foreign !== undefined) {
-        io.err(`ak lifecycle record: refused: ${foreign}`);
         return 1;
       }
       bypass = checked.attribution;

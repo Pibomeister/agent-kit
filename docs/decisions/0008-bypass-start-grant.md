@@ -1,14 +1,15 @@
 # ADR-0008 — A supervisor-held bypass grant starts the lifecycle phases for one task
 
 **Status:** Accepted.
-**Date:** 2026-10-01. Amended 2026-10-06: a grant holds in every run of its task, for at most 12 hours
-(see **Every run of the task**).
+**Date:** 2026-10-01. Amended 2026-10-06: a grant holds in each run of its task while that run is its
+branch's current run, for at most 12 hours (see **Every run of the task**).
 **Authority:** the captain's request for a bypass mode for agent-kit, and the captain's choice of
 start-only scope ("agent-kit: A"), both relayed by Firstmate on 2026-10-01. Amends the source
 invocation law's human-only start rule for super-align, super-bound, super-review `full` and
 `readiness`, and super-ship. The same-user limit under Consequences was accepted by Firstmate on the
 captain's behalf on 2026-10-01, after an independent review of PR #52. The 2026-10-06 amendment is
-the captain's decision, relayed by Firstmate, reversing the run binding chosen on 2026-10-02. Numbered 0008 because ADR-0007 is taken by the runner's standing grant on
+the captain's decision, relayed by Firstmate, reversing the run binding chosen on 2026-10-02.
+Numbered 0008 because ADR-0007 is taken by the runner's standing grant on
 its own branch.
 **Prior art read:** `policies/invocation.yaml`, ADR-0004 (the binding as grant and its ledger),
 ADR-0007 on branch `fm/ak-runner` at `63bf3c3` (the runner's standing grant for autopilot),
@@ -84,21 +85,22 @@ the directory they run from, never with a flag: `--project` must name that same 
 task's worktree is refused even with the right `--task` and `--project` naming the granted one.
 A check without `--phase` writes nothing.
 
-**Every run of the task.** A grant holds in every lifecycle run of its task, from its worktree,
-until it expires or its file is deleted. The lifecycle opens a new run when super-build runs
-`open --ticket`, and a ship after the head moves past a closed run needs another, opened the same
-way; the same grant starts the phases in each. The run must be the branch's current run, the one the lifecycle resolves without
-`--run`: the run `open` last recorded for the branch the check runs on, or before any such run the
-branch-named one. A branch-named id is lossy (`feat/x` and `feat-x` share `feat-x`, and a
-case-insensitive store folds `FEAT-X` into it), so it is refused when another branch opened a run
-under it or another local branch shares it, case aside; such a branch opens a run with
-`open --ticket` first. `check` and `record --bypass` refuse every other run: an earlier run of the
-branch, another branch's run, or a run id the worker makes up. Three cases still reach a run another
-task made. A branch reused for a new task keeps its earlier task's run current until `open --ticket`
-opens the new one, and a branch-named run whose branch was deleted is no longer seen as shared. A
-worker that checks out another task's branch reaches that task's run too. The binding guards against
-accidents, not a determined worker, like the rest of this section. `--run .`
-and `--run ..` are refused as run ids, since they would put a run's records at or above the store root.
+**Every run of the task.** A grant holds in each lifecycle run of its task while that run is its
+branch's current run, from its worktree, until it expires or its file is deleted. The lifecycle
+opens a new run when super-build runs `open --ticket`, and a ship after the head moves past a closed
+run needs another, opened the same way; the same grant starts the phases in each. The current run is
+the one the lifecycle resolves without `--run`: the run `open` last recorded for the branch the
+check runs on, or before any such run the branch-named one. A branch-named id is lossy (`feat/x` and
+`feat-x` share `feat-x`, and a case-insensitive store folds `FEAT-X` into it), so it is refused when
+another branch opened a run under it or another local branch shares it, case aside, and when the
+branches cannot be listed; such a branch opens a run with `open --ticket` first. `check` and `record
+--bypass` refuse every other run: an earlier run of the branch, another branch's run, or a run id
+the worker makes up. Three cases still reach a run another task made. A branch reused for a new task
+keeps its earlier task's run current until `open --ticket` opens the new one, a branch-named run
+whose branch was deleted is no longer seen as shared, and a worker that checks out another task's
+branch reaches that task's run. The binding guards against accidents, not a determined worker, like
+the rest of this section. `--run .` and `--run ..` are refused as run ids, since they would put a
+run's records at or above the store root.
 
 *Amendment, 2026-10-06.* From 2026-10-02 until this amendment a grant was valid only in the run it was
 first used in, claimed by an exclusive create of `<store>/grant-runs/<grant>.json`, and every later run
@@ -128,10 +130,12 @@ record with `superseded_grant_id`. The end is per run: a later run is a fresh st
 grant starts the phase there. Only the branch's current run accepts the grant, and a new current run
 comes only from `open --ticket`, so restarting a phase a typed record ended takes a run opened that
 way; the captain accepted this with the amendment, and the use records of both runs show it. A grant for
-another task or another worktree is refused. The mirror holds too: a gate recorded by hand at a snapshot cannot be relabelled by
+another task or another worktree is refused. The mirror holds too: a gate recorded by hand at a
+snapshot cannot be relabelled by
 re-recording that snapshot with `--bypass`, even after a check starts the phase under a grant.
 `--dir` is refused with a bypass grant, at `check` and at `record --bypass`, so the use records and
-typed ends a supervisor audits stay in the default evidence store. Nothing in this is written to the ledger: the worker never
+typed ends a supervisor audits stay in the default evidence store. Nothing in this is written to
+the ledger: the worker never
 writes `~/.agent-kit`. **Trust:** the use records live in the evidence store under the git common
 directory, which the worker can write, so a worker that deletes or edits them can lift an end. It
 guards against accidents, not against a determined worker. A typed record and a
