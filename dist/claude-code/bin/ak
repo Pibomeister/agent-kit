@@ -14626,12 +14626,12 @@ var require_dist = __commonJS((exports, module) => {
 });
 
 // src/maintenance/cli.ts
-var import_ajv6 = __toESM(require_ajv(), 1);
+var import_ajv7 = __toESM(require_ajv(), 1);
 var import__20208 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync4 } from "child_process";
-import { existsSync as existsSync30, readFileSync as readFileSync20, realpathSync as realpathSync6 } from "fs";
-import { homedir as homedir4 } from "os";
-import { basename as basename15, isAbsolute as isAbsolute8, join as join30, relative as relative5 } from "path";
+import { existsSync as existsSync31, readFileSync as readFileSync22, realpathSync as realpathSync6 } from "fs";
+import { homedir as homedir5 } from "os";
+import { basename as basename16, isAbsolute as isAbsolute9, join as join32, relative as relative6 } from "path";
 // schemas/common.schema.json
 var common_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -21381,7 +21381,7 @@ function runKb(argv, options) {
 }
 
 // src/learn/cli.ts
-import { readFileSync as readFileSync19 } from "fs";
+import { readFileSync as readFileSync21 } from "fs";
 
 // src/learn/core/config.ts
 import { lstatSync, readFileSync as readFileSync4, statSync as statSync5 } from "fs";
@@ -21741,6 +21741,12 @@ function readJsonl(path) {
       out.push(JSON.parse(line));
   }
   return out;
+}
+function writeJsonl(path, rows, gate) {
+  mkdirSync4(dirname4(path), { recursive: true });
+  const lines = rows.map((row) => `${JSON.stringify(row)}
+`).join("");
+  writeFileSync4(path, gate === undefined ? lines : gateJsonText(gate, path, lines));
 }
 function appendJsonl(path, rows, gate) {
   if (rows.length === 0)
@@ -22413,7 +22419,7 @@ function commandJudge(config) {
 var import_ajv2 = __toESM(require_ajv(), 1);
 
 // src/learn/core/paths.ts
-import { statSync as statSync8 } from "fs";
+import { readFileSync as readFileSync8, statSync as statSync8 } from "fs";
 import { delimiter, dirname as dirname6, join as join12, resolve as resolve3 } from "path";
 function projectFolderName(path) {
   return resolve3(path).replace(/[^A-Za-z0-9-]/g, "-");
@@ -22430,6 +22436,11 @@ function mainRepoRoot(cwd) {
     return null;
   return common.endsWith("/.git") || common.endsWith("\\.git") ? dirname6(common) : common;
 }
+function worktreeRoot(cwd) {
+  const result = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 1e4 });
+  const top = result.stdout.trim();
+  return result.code !== 0 || top === "" ? null : resolve3(top);
+}
 function isDirectory(path) {
   try {
     return statSync8(path).isDirectory();
@@ -22437,17 +22448,39 @@ function isDirectory(path) {
     return false;
   }
 }
-function rootOf(cwd) {
+function searched(cwd) {
   const ceilings = new Set((process.env.GIT_CEILING_DIRECTORIES ?? "").split(delimiter).filter((entry) => entry !== "").map((entry) => resolve3(entry)));
-  let dir = resolve3(cwd);
+  const dirs = [resolve3(cwd)];
   for (;; ) {
-    if (isDirectory(join12(dir, ".git")))
-      return dir;
+    const dir = dirs[dirs.length - 1] ?? "";
     const parent = dirname6(dir);
     if (parent === dir || ceilings.has(parent))
-      return null;
-    dir = parent;
+      return dirs;
+    dirs.push(parent);
   }
+}
+function rootOf(cwd) {
+  return searched(cwd).find((dir) => isDirectory(join12(dir, ".git"))) ?? null;
+}
+function linkedWorktree(cwd) {
+  for (const worktree of searched(cwd)) {
+    const pointer = join12(worktree, ".git");
+    try {
+      const stat = statSync8(pointer, { throwIfNoEntry: false });
+      if (stat === undefined)
+        continue;
+      if (!stat.isFile())
+        return null;
+      const gitdir = /^gitdir: (.+)$/m.exec(readFileSync8(pointer, "utf8"))?.[1];
+      if (gitdir === undefined)
+        return null;
+      const root = /^(.+)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/.exec(resolve3(worktree, gitdir.trim()))?.[1];
+      return root === undefined ? null : { worktree, root };
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 function projectLedgerRoot(config, repoRoot) {
   return join12(config.configDir, "projects", projectFolderName(repoRoot), "agent-kit");
@@ -22457,6 +22490,9 @@ function loopDir(config, repoRoot, loop) {
 }
 function registryPath2(config) {
   return join12(config.runtimeDir, "projects.json");
+}
+function worktreesPath(config) {
+  return join12(config.runtimeDir, "worktrees.json");
 }
 function tickLogPath(config) {
   return join12(config.runtimeDir, "tick.log");
@@ -22508,7 +22544,7 @@ function rearm(config, host, sessionId) {
 import { existsSync as existsSync16 } from "fs";
 
 // src/learn/core/ledger.ts
-import { existsSync as existsSync11, linkSync as linkSync2, mkdirSync as mkdirSync8, readFileSync as readFileSync8, renameSync as renameSync3, rmSync as rmSync6, statSync as statSync10, writeFileSync as writeFileSync7 } from "fs";
+import { existsSync as existsSync11, linkSync as linkSync2, mkdirSync as mkdirSync8, readFileSync as readFileSync9, renameSync as renameSync3, rmSync as rmSync6, statSync as statSync10, writeFileSync as writeFileSync7 } from "fs";
 import { join as join14 } from "path";
 var GIT_ENV = {
   GIT_AUTHOR_NAME: "ak learn",
@@ -22583,7 +22619,7 @@ function alive(pid) {
 var UNPARSEABLE_GRACE_MS = 30000;
 function readLock(path) {
   try {
-    return { text: readFileSync8(path, "utf8"), mtimeMs: statSync10(path).mtimeMs };
+    return { text: readFileSync9(path, "utf8"), mtimeMs: statSync10(path).mtimeMs };
   } catch {
     return null;
   }
@@ -22687,7 +22723,7 @@ function reviewLedger(config, root) {
 }
 
 // src/learn/review/patterns.ts
-import { existsSync as existsSync12, mkdirSync as mkdirSync9, readdirSync as readdirSync3, readFileSync as readFileSync9 } from "fs";
+import { existsSync as existsSync12, mkdirSync as mkdirSync9, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "fs";
 import { dirname as dirname7 } from "path";
 
 // src/learn/core/pages.ts
@@ -22755,7 +22791,7 @@ function loadPatterns(ledger) {
     return out;
   for (const name of readdirSync3(dir).filter((file) => /^rp-.*\.md$/.test(file)).sort()) {
     const path = ledger.path("patterns", name);
-    const { meta, body } = parsePage(readFileSync9(path, "utf8"));
+    const { meta, body } = parsePage(readFileSync10(path, "utf8"));
     const id = name.slice(0, -3);
     out.set(id, { id, meta: { ...meta, id }, body, path });
   }
@@ -22973,11 +23009,11 @@ function guardrailsSection(ctx, root) {
 }
 
 // src/learn/skills/roster.ts
-import { existsSync as existsSync14, readdirSync as readdirSync4, readFileSync as readFileSync11, realpathSync as realpathSync5, statSync as statSync11 } from "fs";
+import { existsSync as existsSync14, readdirSync as readdirSync4, readFileSync as readFileSync12, realpathSync as realpathSync5, statSync as statSync11 } from "fs";
 import { basename as basename4, dirname as dirname8, join as join16 } from "path";
 
 // src/learn/core/roles.ts
-import { readFileSync as readFileSync10 } from "fs";
+import { readFileSync as readFileSync11 } from "fs";
 import { basename as basename3, join as join15, resolve as resolve4 } from "path";
 
 // roles/learn/consolidator/ROLE.md
@@ -23430,7 +23466,7 @@ function loadRole(role, env = process.env) {
   const override = env.AK_LEARN_ROLES_DIR;
   if (override === undefined || override.trim() === "")
     return ROLES[role].trim();
-  return readFileSync10(join15(override, role, "ROLE.md"), "utf8").trim();
+  return readFileSync11(join15(override, role, "ROLE.md"), "utf8").trim();
 }
 function buildPrompt(role, outputContract, inputs, env = process.env) {
   const parts = [
@@ -23527,7 +23563,7 @@ function installedSkills(root) {
   return skillsUnder(root).map((path) => {
     let fm = {};
     try {
-      fm = frontmatter(readFileSync11(path, "utf8"));
+      fm = frontmatter(readFileSync12(path, "utf8"));
     } catch {}
     const name = basename4(dirname8(path));
     return {
@@ -23746,11 +23782,13 @@ function screenedObservationRanges(ledger) {
   for (const run2 of readJsonl(ledger.path("runs.jsonl"))) {
     if (run2.status !== "ok")
       continue;
-    if (run2.job === "reflect" && run2.min_obs_id !== undefined && run2.max_obs_id !== undefined)
-      ranges.push([run2.min_obs_id, run2.max_obs_id]);
-    if (run2.job === "backfill")
+    if ((run2.obs_ids?.length ?? 0) > 0) {
       for (const id of run2.obs_ids ?? [])
         ranges.push([id, id]);
+      continue;
+    }
+    if (run2.job === "reflect" && run2.min_obs_id !== undefined && run2.max_obs_id !== undefined)
+      ranges.push([run2.min_obs_id, run2.max_obs_id]);
   }
   return ranges;
 }
@@ -23863,7 +23901,10 @@ function proposeConfirmed(ctx, ledger, root, page, options) {
     statement,
     trigger: options.trigger,
     occurrence: { id: evidence[0] ?? id, content: { statement, evidence } },
-    evidence: evidence.map((ref) => ({ ref: `claude-mem:${ref}`, kind: "transcript" })),
+    evidence: evidence.map((ref) => ({
+      ref: `${options.workers.owns(ref) ? "worker" : options.claude?.holds(ref) === true ? "claude-mem" : "unresolved"}:${ref}`,
+      kind: "transcript"
+    })),
     domains,
     createdBy: options.createdBy
   }, { root, revision: null }, options.runId);
@@ -23901,6 +23942,20 @@ var SKIP_CWD = ["/plugins/cache/", "/tmp/", "/private/tmp/"];
 var DISCOVERY_DAYS = 14;
 function readRegistry2(config) {
   return readJson(registryPath2(config), {});
+}
+function readWorktrees(config) {
+  return readJson(worktreesPath(config), {});
+}
+function recordWorktree(config, cwd, root) {
+  if (config.dryRun || rootOf(cwd) !== null)
+    return;
+  const worktree = worktreeRoot(cwd);
+  if (worktree === null || worktree === root)
+    return;
+  const worktrees = readWorktrees(config);
+  if (worktrees[worktree] === root)
+    return;
+  writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
 }
 function ineligible(root) {
   if (`${root}${sep2}`.includes(`${sep2}.no-mistakes${sep2}repos${sep2}`))
@@ -24162,6 +24217,7 @@ function sessionStartBlock(ctx) {
     return roster;
   ctx.span?.project(root);
   logRegistryWarnings(ctx.config, registerRoot(ctx.config, root).warnings);
+  recordWorktree(ctx.config, ctx.cwd, root);
   const parts = blockBody(ctx, root, ctx.config.memoryTokens);
   if (roster.trim() !== "")
     parts.push(roster.trim());
@@ -24204,7 +24260,7 @@ import { join as join21 } from "path";
 
 // src/learn/review/events.ts
 import { createHash as createHash4 } from "crypto";
-import { existsSync as existsSync17, readFileSync as readFileSync12 } from "fs";
+import { existsSync as existsSync17, readFileSync as readFileSync13 } from "fs";
 function eventHash(source, key) {
   return createHash4("sha1").update(`${source}\x00${key}`, "utf8").digest("hex").slice(0, 16);
 }
@@ -24237,7 +24293,7 @@ function appendEvents(ledger, events) {
 }
 function rawSnapshot(ledger, file = EVENTS_FILE) {
   const path = ledger.path(file);
-  return existsSync17(path) ? readFileSync12(path) : null;
+  return existsSync17(path) ? readFileSync13(path) : null;
 }
 
 // src/learn/review/ingest.ts
@@ -24307,6 +24363,11 @@ class ClaudeMemSource {
     }
     return out;
   }
+  holds(evidence) {
+    if (evidence.startsWith("obs:"))
+      return this.observationSessions([Number(evidence.slice(4))]).size > 0;
+    return this.db.query("select 1 as found from sdk_sessions where substr(memory_session_id, 1, 8) = ? limit 1").get(evidence.slice(1)) !== null;
+  }
   sessions(project, sinceMs, staleBeforeMs) {
     return this.db.query(`select s.id, s.memory_session_id, s.platform_source, s.started_at_epoch, s.completed_at_epoch,
            (select count(*) from observations o where o.memory_session_id = s.memory_session_id) as observation_count
@@ -24323,7 +24384,7 @@ class ClaudeMemSource {
     const marks = memorySessionIds.map(() => "?").join(", ");
     return this.db.query(`select memory_session_id, request, completed, next_steps from session_summaries where memory_session_id in (${marks}) order by id`).all(...memorySessionIds);
   }
-  promptCount(sessionDbId) {
+  promptCount(sessionDbId, _memorySessionId) {
     const row = this.db.query("select count(*) as n from user_prompts where session_db_id = ?").get(sessionDbId);
     return row?.n ?? 0;
   }
@@ -24746,6 +24807,7 @@ function stopHook(ctx, payload, args, spawner = detachSpawner) {
     return;
   }
   ctx.span?.project(root);
+  recordWorktree(ctx.config, cwd, root);
   const mark = join21(reviewLedgerDir(ctx.config, root), LAST_RUN_FILE);
   if (existsSync19(mark) && Date.now() - statSync13(mark).mtimeMs < DEBOUNCE_MS) {
     ctx.span?.status("skipped", "debounced");
@@ -24953,6 +25015,7 @@ function promptHook(ctx, payload, args) {
     ctx.span?.status("dry-run");
     return;
   }
+  recordWorktree(ctx.config, cwd, root);
   const ledger = reviewLedger(ctx.config, root);
   const platform = flag(args, "source") === "codex" ? "codex" : "claude";
   appendEvents(ledger, [
@@ -25095,7 +25158,7 @@ var hookArea = {
 
 // src/learn/memory/cli.ts
 import { rmSync as rmSync8 } from "fs";
-import { basename as basename12 } from "path";
+import { basename as basename13 } from "path";
 
 // src/learn/memory/episodes.ts
 var CONSOLIDATED_FILE = "raw/consolidated.jsonl";
@@ -25137,7 +25200,7 @@ function rawEpisode(source, session, events) {
     platform: session.platform_source,
     started: session.started_at_epoch,
     ended,
-    prompts: source.promptCount(session.id),
+    prompts: source.promptCount(session.id, sid),
     obs: obs.length,
     tokens: obs.reduce((sum, row) => sum + (row.discovery_tokens ?? 0), 0),
     files_modified: [...files].sort(),
@@ -25250,617 +25313,16 @@ function buildEpisodes(source, ledger, memProject2, events, options = {}) {
 }
 
 // src/learn/memory/tick.ts
-var import_ajv3 = __toESM(require_ajv(), 1);
+var import_ajv4 = __toESM(require_ajv(), 1);
 import { mkdirSync as mkdirSync12 } from "fs";
-import { basename as basename11, join as join24 } from "path";
+import { basename as basename12, join as join25 } from "path";
 
-// src/learn/memory/consolidate.ts
+// src/learn/sources/worker-sessions.ts
+var import_ajv3 = __toESM(require_ajv(), 1);
 import { createHash as createHash5 } from "crypto";
-import { existsSync as existsSync20, rmSync as rmSync7 } from "fs";
-import { basename as basename9, join as join22 } from "path";
-var INPUT_CHARS = 80000;
-var OBS_PER_EPISODE = 15;
-var SCOPES = new Set(["repo", "subtree", "technology", "global"]);
-function stratify(episodes, batch) {
-  const seen = new Set;
-  const repeats = new Set;
-  for (const episode of [...episodes].sort((a, b) => a.started - b.started)) {
-    if (episode.completed && episode.files_modified.some((path) => seen.has(path)))
-      repeats.add(episode.sid);
-    for (const path of episode.files_modified)
-      seen.add(path);
-  }
-  const byPriority = (a, b) => b.priority - a.priority;
-  const fail = episodes.filter((episode) => episode.failure_signals > 0 || episode.corrections > 0).sort(byPriority);
-  const failSids = new Set(fail.map((episode) => episode.sid));
-  const rep = episodes.filter((episode) => repeats.has(episode.sid) && !failSids.has(episode.sid)).sort(byPriority);
-  const repSids = new Set(rep.map((episode) => episode.sid));
-  const nov = episodes.filter((episode) => !failSids.has(episode.sid) && !repSids.has(episode.sid)).sort(byPriority);
-  const quota = [Math.round(batch * 0.4), Math.round(batch * 0.4)];
-  quota.push(batch - quota[0] - quota[1]);
-  const chosen = [...fail.slice(0, quota[0]), ...rep.slice(0, quota[1]), ...nov.slice(0, quota[2])];
-  const rest = [...fail.slice(quota[0]), ...rep.slice(quota[1]), ...nov.slice(quota[2])].sort(byPriority);
-  chosen.push(...rest.slice(0, Math.max(0, batch - chosen.length)));
-  return { chosen, failures: fail.slice(0, quota[0]) };
-}
-function pairFailures(failures, all) {
-  const pairs = [];
-  for (const failure of failures) {
-    const later = all.filter((episode) => episode.started > failure.started && episode.completed && episode.files_modified.some((path) => failure.files_modified.includes(path)));
-    if (later.length > 0)
-      pairs.push([failure, later.reduce((a, b) => b.started < a.started ? b : a)]);
-  }
-  return pairs;
-}
-function rankObs(rows, quarantined = new Set, cap = OBS_PER_EPISODE) {
-  const rank = (row) => isFailureObservation(row) ? 0 : row.type === "decision" ? 1 : 2;
-  return rows.filter((row) => !quarantined.has(`obs:${row.id}`)).sort((a, b) => rank(a) - rank(b) || a.id - b.id).slice(0, cap);
-}
-function formatEpisode(episode, rows) {
-  const head = `${sid8(episode.sid)} ${episode.platform} start=${episode.started} completed=${episode.completed ? "True" : "False"} ` + `failure_signals=${episode.failure_signals} corrections=${episode.corrections} priority=${episode.priority}
-` + `  request: ${(episode.request ?? "").slice(0, 300)}
-` + `  files: ${episode.files_modified.slice(0, 12).join(", ")}
-`;
-  const body = rows.map((row) => `  obs:${row.id} [${row.type}] ${row.title ?? ""} \u2014 ${(row.subtitle ?? "").slice(0, 160)}` + (row.facts ? ` | ${row.facts.slice(0, 300)}` : "") + `
-`).join("");
-  return head + body;
-}
-var OUTPUT_CONTRACT = `Reply with one object:
-{"lessons": [{"statement": "...", "scope": "repo", "evidence": ["obs:123", "S1a2b3c4d"], "confidence": 0.7, "supersedes": [], "tags": []}],
- "review_events": [{"text": "...", "kind": "finding", "evidence": ["obs:123"], "files": ["path"]}],
- "log": "one line on what this batch covered"}
-- evidence: ids copied verbatim from the episodes below. A lesson or review event with no such id is deleted.
-- scope: one of repo | subtree | technology | global. confidence: 0..1. At most 8 lessons.
-- tags may include: decision, security, blocker, preference, contrastive.
-- supersedes: only ids (ls-NNN) listed under existing lessons.
-- review_events kind: finding | correction. Leave the list empty when there are none.
-- Status, ids, session counts and dates are set by the runtime; any you send are ignored.`;
-function consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid, inputChars = INPUT_CHARS) {
-  const texts = [];
-  const included = [];
-  let used = 0;
-  for (const episode of chosen) {
-    const text = formatEpisode(episode, obsBySid.get(episode.sid) ?? []);
-    if (used + text.length > inputChars)
-      break;
-    used += text.length;
-    texts.push(text);
-    included.push(episode);
-  }
-  const pairText = pairs.map(([failure, success]) => {
-    const shared = failure.files_modified.filter((path) => success.files_modified.includes(path)).sort().slice(0, 6);
-    return `${sid8(failure.sid)} -> ${sid8(success.sid)} (shared files: ${shared.join(", ")})`;
-  }).join(`
-`) || "(none)";
-  const prompt = buildPrompt("consolidator", OUTPUT_CONTRACT, [
-    { title: "Existing lessons", body: lessonsIndexText(ledger) },
-    {
-      title: "Failure pairs (failed or corrected episode -> later completed episode on the same files)",
-      body: pairText
-    },
-    { title: "Episodes", body: texts.join(`
-`) || "(none)" }
-  ], ctx.env);
-  return { prompt, included };
-}
-function sessionsOf(evidence, obsSession) {
-  const out = new Set;
-  for (const id of evidence) {
-    if (id.startsWith("S"))
-      out.add(id.slice(1));
-    else if (id.startsWith("obs:") && obsSession.has(id))
-      out.add(obsSession.get(id));
-  }
-  return out;
-}
-function nextLessonId(ledger) {
-  const numbers = loadLessons(ledger).values().map(({ path }) => basename9(path, ".md").slice(3)).filter((digits) => /^\d+$/.test(digits)).map(Number).toArray();
-  return `ls-${String(numbers.length > 0 ? Math.max(...numbers) + 1 : 1).padStart(3, "0")}`;
-}
-function renderLesson(meta, evidence) {
-  return renderPage(meta, `
-## Statement
-${str2(meta.statement)}
-
-## Evidence
-${evidence.map((id) => `- ${id}
-`).join("")}`);
-}
-function strings(value) {
-  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
-}
-function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
-  const today = options.today ?? todayLocal();
-  const existing = loadLessons(ledger);
-  const summary = {
-    created: [],
-    dropped: 0,
-    superseded: [],
-    confirmed: [],
-    review_events: 0,
-    review_events_parked: 0
-  };
-  const lessons = Array.isArray(reply.lessons) ? reply.lessons : [];
-  for (const lesson of lessons) {
-    if (lesson === null || typeof lesson !== "object")
-      continue;
-    const evidence = strings(lesson.evidence).filter((id2) => valid.has(id2));
-    const statement = oneLine3(lesson.statement);
-    if (evidence.length === 0 || statement === "") {
-      summary.dropped += 1;
-      continue;
-    }
-    const id = nextLessonId(ledger);
-    const sessions = sessionsOf(evidence, obsSession).size;
-    const confidence = Number(lesson.confidence);
-    const meta = {
-      id,
-      statement,
-      scope: typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo",
-      status: sessions >= 2 ? "confirmed" : "hypothesis",
-      confidence: Math.min(1, Math.max(0, Number.isFinite(confidence) && confidence !== 0 ? confidence : 0.5)).toFixed(2),
-      sessions,
-      tags: cleanTags(lesson.tags),
-      evidence,
-      supersedes: [],
-      first_seen: today,
-      last_seen: today,
-      valid_until: ""
-    };
-    const confirmed = meta.status === "confirmed";
-    const supersedes = [];
-    for (const old of strings(lesson.supersedes)) {
-      const page = existing.get(old);
-      if (old === id || page === undefined)
-        continue;
-      if (page.meta.status !== "hypothesis" && page.meta.status !== "confirmed")
-        continue;
-      if (page.meta.status === "confirmed" && !confirmed) {
-        meta.status = "conflict";
-        page.meta = { ...page.meta, status: "conflict" };
-      } else {
-        page.meta = { ...page.meta, status: "superseded", valid_until: today, superseded_by: id };
-        supersedes.push(old);
-        summary.superseded.push(old);
-      }
-      writeLesson(page.path, page.meta, page.body);
-    }
-    meta.supersedes = supersedes;
-    const path = join22(ledger.path("lessons"), `${id}.md`);
-    writeGated(ledger.dir, path, renderLesson(meta, evidence));
-    existing.set(id, { meta, body: "", path });
-    summary.created.push(id);
-    if (meta.status === "confirmed")
-      summary.confirmed.push(id);
-  }
-  if (options.review !== undefined) {
-    const events = Array.isArray(reply.review_events) ? reply.review_events : [];
-    const delivered2 = forwardReviewEvents(options.review.ledger, ledger, options.review.project, events, valid, options.runId ?? null);
-    summary.review_events = delivered2.forwarded;
-    summary.review_events_parked = delivered2.parked;
-  }
-  rewriteIndex(ledger);
-  return summary;
-}
-var PENDING_REVIEW_FILE = "raw/pending-review-events.jsonl";
-function buildReviewEvents(project, events, valid, runId) {
-  const out = [];
-  for (const event of events) {
-    if (event === null || typeof event !== "object")
-      continue;
-    const text = oneLine3(event.text);
-    const evidence = strings(event.evidence).filter((id) => valid.has(id));
-    if (text === "" || evidence.length === 0)
-      continue;
-    const obsIds = evidence.filter((id) => id.startsWith("obs:")).map((id) => Number(id.slice(4)));
-    const files = strings(event.files).map((file) => oneLine3(file, 500)).filter((file) => file !== "");
-    const forwarded = makeEvent({
-      source: MEMORY_SOURCE,
-      kind: event.kind === "correction" ? "correction" : "finding",
-      project,
-      pr: null,
-      sha: null,
-      author: MEMORY_SOURCE,
-      severity: null,
-      path: files[0] ?? null,
-      line: null,
-      text: `${text}
-(evidence: ${evidence.join(", ")})`,
-      url: runId === null ? null : `${MEMORY_SOURCE}:run/${runId}`,
-      ts: nowIso()
-    }, createHash5("sha1").update(text).digest("hex"));
-    if (obsIds[0] !== undefined)
-      forwarded.obs_id = obsIds[0];
-    out.push(forwarded);
-  }
-  return out;
-}
-function deliverReviewEvents(review, memory, events) {
-  const release = review.tryLock();
-  if (release === null) {
-    appendJsonl(memory.path(PENDING_REVIEW_FILE), events, memory.dir);
-    return { forwarded: 0, parked: events.length };
-  }
-  try {
-    const pendingPath = memory.path(PENDING_REVIEW_FILE);
-    const parked = readJsonl(pendingPath);
-    const fresh = appendEvents(review, [...parked, ...events]);
-    if (fresh > 0)
-      review.commit(`learn memory: +${fresh} review events`);
-    if (existsSync20(pendingPath))
-      rmSync7(pendingPath);
-    return { forwarded: fresh, parked: 0 };
-  } finally {
-    release();
-  }
-}
-function forwardReviewEvents(review, memory, project, events, valid, runId) {
-  return deliverReviewEvents(review, memory, buildReviewEvents(project, events, valid, runId));
-}
-function triggerOf2(meta, obsSession, corrected) {
-  if (list2(meta.tags).includes("preference"))
-    return "correction";
-  const sessions = sessionsOf(list2(meta.evidence), obsSession);
-  return [...sessions].some((sid) => corrected.has(sid)) ? "correction" : "failure";
-}
-function readyEpisodes(source, ledger, pending) {
-  const ranges = screenedObservationRanges(ledger);
-  const consumed = consumedObsIds(ledger);
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
-  const ready = new Map;
-  for (const episode of pending) {
-    const allRows = source.sessionObservations(episode.sid);
-    if (allRows.some((row) => row.id <= watermark && !isScreened(ranges, row.id)))
-      continue;
-    const after = consumed.get(episode.sid) ?? 0;
-    const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
-    const last = rows.at(-1);
-    if (last !== undefined)
-      ready.set(episode.sid, { rows, obs: allRows.filter((row) => row.id <= last.id).length, obs_id: last.id });
-  }
-  return ready;
-}
-function nothingToConsolidate(ctx, ledger, message) {
-  if (!ctx.config.dryRun)
-    saveState(ledger, { ...readState(ledger), last_nightly: todayLocal() });
-  return message;
-}
-function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
-  if (review !== null && !ctx.config.dryRun && existsSync20(ledger.path(PENDING_REVIEW_FILE)))
-    deliverReviewEvents(review, ledger, []);
-  const all = loadEpisodes(ledger);
-  const pending = unconsolidatedEpisodes(ledger);
-  if (pending.length === 0)
-    return nothingToConsolidate(ctx, ledger, "nightly: no unconsolidated episodes");
-  const unseen = readyEpisodes(source, ledger, pending);
-  const ready = pending.filter((episode) => unseen.has(episode.sid));
-  if (ready.length === 0)
-    return nothingToConsolidate(ctx, ledger, "nightly: no reflected observations to consolidate");
-  const { chosen, failures } = stratify(ready, ctx.config.batch);
-  const pairs = pairFailures(failures, all);
-  const quarantined = quarantinedObservationIds(ledger);
-  const obsBySid = new Map;
-  const obsSessionAll = new Map;
-  for (const episode of chosen)
-    obsBySid.set(episode.sid, rankObs(unseen.get(episode.sid)?.rows ?? [], quarantined));
-  for (const [sid, rows] of obsBySid)
-    for (const row of rows)
-      obsSessionAll.set(`obs:${row.id}`, sid8(sid).slice(1));
-  const { prompt, included } = consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid);
-  if (ctx.config.dryRun) {
-    ctx.io.out(prompt);
-    return `nightly: dry run (${included.length}/${chosen.length} episodes fit, ${pairs.length} pairs, ${tokens(prompt)} prompt tokens)`;
-  }
-  const runId = runOf(ctx).runId ?? `nightly-${todayLocal()}-${nowMs() % 1e5}`;
-  const reply = ctx.judge(prompt, {
-    runId,
-    traceId: runOf(ctx).traceId,
-    loop: "memory",
-    role: "consolidator",
-    project: basename9(root)
-  });
-  if (reply === null) {
-    const state2 = readState(ledger);
-    saveState(ledger, {
-      ...state2,
-      last_nightly_attempt: nowMs(),
-      nightly_failures: (state2.nightly_failures ?? 0) + 1
-    });
-    appendRun(ledger, { job: "nightly", id: runId, status: "failed", reason: "no judge output", trigger });
-    logLine2(ledger, "nightly failed: no judge output");
-    return "nightly: judge call failed";
-  }
-  const shown = new Set(included.map((episode) => sid8(episode.sid).slice(1)));
-  const obsSession = new Map([...obsSessionAll].filter(([, sid]) => shown.has(sid)));
-  const valid = new Set([...obsSession.keys(), ...included.map((episode) => sid8(episode.sid))]);
-  const summary = applyConsolidation(ledger, reply, valid, obsSession, {
-    review: review === null ? undefined : { ledger: review, project: basename9(root) },
-    runId
-  });
-  markConsolidated(ledger, new Map(included.flatMap((episode) => {
-    const mark = unseen.get(episode.sid);
-    return mark === undefined ? [] : [[episode.sid, { obs: mark.obs, obs_id: mark.obs_id }]];
-  })), runId);
-  const corrected = new Set(included.filter((episode) => episode.corrections > 0).map((episode) => sid8(episode.sid).slice(1)));
-  const lessons = loadLessons(ledger);
-  const proposals = [];
-  const skippedProposals = [];
-  for (const id of summary.confirmed) {
-    const page = lessons.get(id);
-    if (page === undefined)
-      continue;
-    const trig = triggerOf2(page.meta, obsSession, corrected);
-    const proposal = proposeOrSkip(ctx, ledger, root, page, { runId, createdBy: "learn/consolidator", trigger: trig });
-    if ("ref" in proposal)
-      proposals.push(proposal.ref);
-    else
-      skippedProposals.push(proposal.skipped);
-  }
-  const state = readState(ledger);
-  const { last_nightly_attempt: _attempt, nightly_failures: _failures, ...withoutBackoff } = state;
-  saveState(ledger, { ...withoutBackoff, last_nightly: todayLocal() });
-  const log = typeof reply.log === "string" ? reply.log : "";
-  const run2 = {
-    job: "nightly",
-    id: runId,
-    status: "ok",
-    trigger,
-    episodes: included.map((episode) => episode.sid),
-    selected: chosen.length,
-    pairs: pairs.length,
-    tokens_in: tokens(prompt),
-    ...summary,
-    proposals
-  };
-  const recorded = skippedProposals.length > 0 ? { ...run2, proposals_skipped: skippedProposals } : run2;
-  appendRun(ledger, { ...recorded, log: log.slice(0, 200) });
-  logLine2(ledger, `nightly ${runId}: ${included.length}/${chosen.length} episodes, +${summary.created.length} lessons, ${summary.dropped} dropped, ` + `${summary.superseded.length} superseded, ${summary.review_events} review events forwarded, ${summary.review_events_parked} parked, ${proposals.length} proposals. ${log}`);
-  ledger.commit(`nightly ${runId}: +${summary.created.length} lessons`);
-  return `nightly: ${included.length}/${chosen.length} episodes -> +${summary.created.length} lessons, ${summary.review_events} review events`;
-}
-
-// src/learn/memory/deep.ts
-import { existsSync as existsSync21, readdirSync as readdirSync6, readFileSync as readFileSync13 } from "fs";
-import { basename as basename10, join as join23 } from "path";
-var EVIDENCE_RE = /^- (\S+) \((.*?)(\d{4}-\d{2}-\d{2})\)\s*$/;
-var MONTH_RE = /^- (\d{4}-\d{2}): (\d+) events? \((?:obs (\d+)(?:\u2026(\d+))?)?(?:; )?(?:prs ([\d, ]+))?\)\s*$/;
-var PROTECTED_TAGS = new Set(["decision", "security", "blocker"]);
-function daysBefore(day, days) {
-  const at = new Date(`${day}T00:00:00Z`);
-  at.setUTCDate(at.getUTCDate() - days);
-  return at.toISOString().slice(0, 10);
-}
-function compactEvidence(text, today) {
-  const cutoff = daysBefore(today, 30);
-  const lines = text.split(`
-`);
-  const heading = lines.indexOf("## Evidence");
-  if (heading < 0)
-    return text;
-  const start = heading + 1;
-  let end = lines.length;
-  for (let i = start;i < lines.length; i += 1) {
-    if (lines[i].startsWith("## ")) {
-      end = i;
-      break;
-    }
-  }
-  const months = new Map;
-  const out = [];
-  const bucket = (month) => {
-    let found = months.get(month);
-    if (found === undefined) {
-      found = { n: 0, obs: [], prs: new Set };
-      months.set(month, found);
-      out.push(`@@${month}`);
-    }
-    return found;
-  };
-  for (const line of lines.slice(start, end)) {
-    const rolled = MONTH_RE.exec(line);
-    if (rolled !== null) {
-      const b2 = bucket(rolled[1]);
-      b2.n += Number(rolled[2]);
-      for (const value of [rolled[3], rolled[4]])
-        if (value)
-          b2.obs.push(Number(value));
-      for (const pr of (rolled[5] ?? "").split(","))
-        if (pr.trim() !== "")
-          b2.prs.add(pr.trim());
-      continue;
-    }
-    const match = EVIDENCE_RE.exec(line);
-    if (match === null || match[3] >= cutoff) {
-      out.push(line);
-      continue;
-    }
-    const b = bucket(match[3].slice(0, 7));
-    b.n += 1;
-    if (match[1].startsWith("obs:"))
-      b.obs.push(Number(match[1].slice(4)));
-    for (const pr of match[2].matchAll(/\bpr (\d+)/g))
-      b.prs.add(pr[1]);
-  }
-  for (const [month, b] of months) {
-    const parts = [];
-    if (b.obs.length > 0)
-      parts.push(b.obs.length > 1 ? `obs ${Math.min(...b.obs)}\u2026${Math.max(...b.obs)}` : `obs ${b.obs[0]}`);
-    if (b.prs.size > 0)
-      parts.push(`prs ${[...b.prs].sort((x, y) => Number(x) - Number(y)).join(", ")}`);
-    out[out.indexOf(`@@${month}`)] = `- ${month}: ${b.n} event${b.n === 1 ? "" : "s"} (${parts.join("; ")})`;
-  }
-  return [...lines.slice(0, start), ...out, ...lines.slice(end)].join(`
-`);
-}
-function compactReviewLedger(review, today = todayLocal()) {
-  const dir = review.path("patterns");
-  if (!existsSync21(dir))
-    return 0;
-  const release = review.tryLock();
-  if (release === null)
-    return -1;
-  try {
-    let changed = 0;
-    for (const name of readdirSync6(dir).filter((file) => /^rp-.*\.md$/.test(file)).sort()) {
-      const path = join23(dir, name);
-      const before = readFileSync13(path, "utf8");
-      const after = compactEvidence(before, today);
-      if (after !== before) {
-        writeGated(review.dir, path, after);
-        changed += 1;
-      }
-    }
-    if (changed > 0)
-      review.commit("learn memory: compact evidence");
-    return changed;
-  } finally {
-    release();
-  }
-}
-function decayLessons(ledger, today = todayLocal()) {
-  const cutoff = daysBefore(today, 90);
-  const stale = [];
-  for (const [id, { meta, body, path }] of loadLessons(ledger)) {
-    const guarded2 = meta.scope === "global" || list2(meta.tags).some((tag) => PROTECTED_TAGS.has(tag));
-    const lastSeen = str2(meta.last_seen) || today;
-    if (meta.status === "confirmed" && lastSeen < cutoff && !guarded2) {
-      writeLesson(path, { ...meta, status: "stale" }, body);
-      stale.push(id);
-    }
-  }
-  return stale;
-}
-function lessonObsSessions(ctx, ledger) {
-  const ids = loadLessons(ledger).values().flatMap(({ meta }) => list2(meta.evidence)).filter((id) => /^obs:\d+$/.test(id)).map((id) => Number(id.slice(4))).toArray();
-  const mem = ClaudeMemSource.open(ctx.config.memDb);
-  if (mem === null || ids.length === 0) {
-    mem?.close();
-    return new Map;
-  }
-  try {
-    return new Map([...mem.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
-  } finally {
-    mem.close();
-  }
-}
-function pairsOf(value, known) {
-  if (!Array.isArray(value))
-    return [];
-  return value.filter((pair) => Array.isArray(pair) && pair.length === 2 && pair.every((id) => typeof id === "string" && known.has(id)));
-}
-function applyPairs(ledger, reply, today = todayLocal(), obsSession = new Map) {
-  const lessons = loadLessons(ledger);
-  const result = { merged: [], conflicts: [], confirmed: [] };
-  for (const pair of pairsOf(reply.merge, lessons)) {
-    if (pair[0] === pair[1])
-      continue;
-    const [keep, drop] = [...pair].sort();
-    const kept = lessons.get(keep);
-    const dropped = lessons.get(drop);
-    const km = kept.meta;
-    const dm = dropped.meta;
-    const before = km.status;
-    km.evidence = [...new Set([...list2(km.evidence), ...list2(dm.evidence)])].sort();
-    km.tags = [...new Set([...list2(km.tags), ...list2(dm.tags)])].sort();
-    km.last_seen = [str2(km.last_seen), str2(dm.last_seen)].sort().at(-1);
-    km.merged = [...new Set([...list2(km.merged), drop])].sort();
-    km.sessions = Math.max(sessionsOf(km.evidence, obsSession).size, Number(km.sessions) || 0, Number(dm.sessions) || 0);
-    if (km.status === "hypothesis")
-      km.status = km.sessions >= 2 ? "confirmed" : "hypothesis";
-    const body = `
-## Statement
-${str2(km.statement)}
-
-## Merged from ${drop}
-${str2(dm.statement)}
-
-## Evidence
-` + km.evidence.map((id) => `- ${id}
-`).join("");
-    writeLesson(kept.path, km, body);
-    kept.body = body;
-    writeLesson(dropped.path, { ...dm, status: "superseded", valid_until: today, superseded_by: keep }, dropped.body);
-    dropped.meta = { ...dm, status: "superseded", valid_until: today, superseded_by: keep };
-    result.merged.push(pair);
-    if (before !== "confirmed" && km.status === "confirmed")
-      result.confirmed.push(keep);
-  }
-  for (const pair of pairsOf(reply.contradict, lessons)) {
-    for (const id of pair) {
-      const page = lessons.get(id);
-      if (page.meta.status === "hypothesis" || page.meta.status === "confirmed") {
-        page.meta = { ...page.meta, status: "conflict" };
-        writeLesson(page.path, page.meta, page.body);
-      }
-    }
-    result.conflicts.push(pair);
-  }
-  rewriteIndex(ledger);
-  return result;
-}
-var OUTPUT_CONTRACT2 = `Reply with {"merge": [["ls-001", "ls-002"]], "contradict": [["ls-003", "ls-004"]]}.
-- merge: pairs that state the same lesson about the same subject.
-- contradict: pairs that cannot both be true or give opposite instructions for the same situation.
-- Only ids that appear in the index. Empty lists are fine.`;
-function deepPrompt(ctx, index) {
-  return buildPrompt("lesson-merger", OUTPUT_CONTRACT2, [{ title: "Lessons index", body: index }], ctx.env);
-}
-function deep(ctx, ledger, root, review, trigger = "tick") {
-  const index = lessonsIndexText(ledger);
-  if (ctx.config.dryRun) {
-    ctx.io.out(deepPrompt(ctx, index));
-    return "weekly: dry run";
-  }
-  const compacted = review === null ? 0 : compactReviewLedger(review);
-  const stale = decayLessons(ledger);
-  let pairs = { merged: [], conflicts: [], confirmed: [] };
-  const runId = runOf(ctx).runId ?? `weekly-${todayLocal()}-${nowMs() % 1e5}`;
-  if (index !== "(none)") {
-    const reply = ctx.judge(deepPrompt(ctx, index), {
-      runId,
-      traceId: runOf(ctx).traceId,
-      loop: "memory",
-      role: "lesson-merger",
-      project: basename10(root)
-    });
-    if (reply !== null)
-      pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
-  }
-  const lessons = loadLessons(ledger);
-  const proposals = [];
-  const skippedProposals = [];
-  for (const id of pairs.confirmed) {
-    const page = lessons.get(id);
-    if (page === undefined)
-      continue;
-    const trig = list2(page.meta.tags).includes("preference") ? "correction" : "failure";
-    const proposal = proposeOrSkip(ctx, ledger, root, page, { runId, createdBy: "learn/lesson-merger", trigger: trig });
-    if ("ref" in proposal)
-      proposals.push(proposal.ref);
-    else
-      skippedProposals.push(proposal.skipped);
-  }
-  saveState(ledger, { ...readState(ledger), last_weekly: nowMs() });
-  const run2 = {
-    job: "weekly",
-    id: runId,
-    status: "ok",
-    trigger,
-    compacted_pages: compacted,
-    stale_lessons: stale,
-    merged: pairs.merged,
-    conflicts: pairs.conflicts,
-    proposals
-  };
-  appendRun(ledger, skippedProposals.length > 0 ? { ...run2, proposals_skipped: skippedProposals } : run2);
-  const compactNote = compacted === -1 ? "evidence compaction skipped (review ledger locked, retries next week)" : `${compacted} review pattern pages compacted`;
-  logLine2(ledger, `weekly: ${compactNote}, ${stale.length} lessons stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`);
-  ledger.commit(`weekly ${runId}`);
-  return `weekly: ${compactNote}, ${stale.length} stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`;
-}
-
-// src/learn/memory/reflect.ts
-import { existsSync as existsSync22 } from "fs";
+import { closeSync as closeSync2, existsSync as existsSync20, openSync as openSync2, readdirSync as readdirSync6, readFileSync as readFileSync14, readSync, statSync as statSync14 } from "fs";
+import { homedir as homedir3 } from "os";
+import { basename as basename9, delimiter as delimiter2, dirname as dirname11, isAbsolute as isAbsolute6, join as join22, relative as relative5, resolve as resolve6, sep as sep3 } from "path";
 
 // src/learn/memory/redact.ts
 var SECURITY_KINDS = [
@@ -25937,6 +25399,16 @@ function candidateTokens(text) {
 }
 function normalWords(text) {
   return text.normalize("NFKC").replace(/\p{Cf}/gu, "").toLowerCase().normalize("NFKD").replace(/\p{M}/gu, "").split(/[^\p{L}\p{N}]+/u).filter((w) => w !== "");
+}
+var SECRETS = [
+  ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
+  [
+    "env-secret",
+    /(?<=\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*["']?)[^\s"']{8,}/g
+  ]
+];
+function scrubCaptured(text) {
+  return scrubSecrets(SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text)).text;
 }
 function observationText(row) {
   return [row.title, row.subtitle, row.narrative, row.facts, row.concepts, row.files_read, row.files_modified].filter((v) => v).join(`
@@ -26070,8 +25542,1496 @@ function redact(lines, inputs) {
   return { kept, flagged, tokens: drop.size, quarantine, inferred: [...inferred].sort() };
 }
 
+// src/learn/sources/worker-sessions.ts
+var CAPTURE_ID_BASE = 4000000000000000;
+var CAPTURE_OBSERVATIONS_FILE = "raw/worker-observations.jsonl";
+var CAPTURE_SESSIONS_FILE = "raw/worker-sessions.jsonl";
+var CAPTURE_WINDOW_MS = 30 * 86400000;
+var MAX_OBSERVATIONS = 999;
+var IDLE_MS = 3600000;
+var READ_TEXT = 8000;
+var MAX_TEXT = 2000;
+var PROMPT_CHARS = 110;
+var REPLY_CHARS = 110;
+var FAILED_CHARS = 50;
+var INPUT_CHARS = 120;
+var OUTPUT_CHARS = 300;
+var FAILURE_WORDS = "(?:errors?|fail(?:s|ed|ures?|ing)?|warnings?|regressions?|timeouts?|blocked|findings?|violations?)";
+var FAILURE_TEXT = new RegExp(`\\b${FAILURE_WORDS}\\b`, "i");
+var ZERO_FAILURES = new RegExp(`\\b(?:0|no)\\s+${FAILURE_WORDS}\\b`, "gi");
+var EXIT_HEADER = /^(?:Process exited with code|Exit code:|exit:) (-?\d+)$/;
+var EXIT_FIELD = /"chunk_id":"[^"]*","wall_time_seconds":[\d.]+,"exit_code":(-?\d+)/g;
+var CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
+var WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
+var jsonValidator2 = new import_ajv3.default({ strict: false });
+var validateJsonValue = jsonValidator2.compile({
+  $defs: {
+    value: {
+      anyOf: [
+        { type: "string" },
+        { type: "number" },
+        { type: "boolean" },
+        { type: "null" },
+        { type: "array", items: { $ref: "#/$defs/value" } },
+        { type: "object", additionalProperties: { $ref: "#/$defs/value" } }
+      ]
+    }
+  },
+  $ref: "#/$defs/value"
+});
+var validateObject = jsonValidator2.compile({ type: "object" });
+var validateString2 = jsonValidator2.compile({ type: "string" });
+var validateNumber2 = jsonValidator2.compile({ type: "number" });
+function object(value) {
+  return value !== undefined && validateObject(value) ? value : null;
+}
+function string(value) {
+  return value !== undefined && validateString2(value) && value.trim() !== "" ? value : null;
+}
+function number(value) {
+  return value !== undefined && validateNumber2(value) && Number.isFinite(value) ? value : null;
+}
+function parseJson(value) {
+  try {
+    const parsed = JSON.parse(value);
+    return validateJsonValue(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+function readObject(path) {
+  if (!existsSync20(path))
+    return null;
+  return object(parseJson(readFileSync14(path, "utf8")));
+}
+function readJsonLines(path) {
+  if (!existsSync20(path))
+    return [];
+  return readFileSync14(path, "utf8").split(`
+`).flatMap((line) => {
+    if (line.trim() === "")
+      return [];
+    const row = object(parseJson(line));
+    return row === null ? [] : [row];
+  });
+}
+function firstLine2(path) {
+  const fd = openSync2(path, "r");
+  try {
+    const chunks = [];
+    const buffer = Buffer.alloc(65536);
+    for (;; ) {
+      const read2 = readSync(fd, buffer, 0, buffer.length, null);
+      if (read2 === 0)
+        break;
+      const end = buffer.subarray(0, read2).indexOf(10);
+      chunks.push(Buffer.from(buffer.subarray(0, end === -1 ? read2 : end)));
+      if (end !== -1)
+        break;
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    closeSync2(fd);
+  }
+}
+function epoch(value, fallback) {
+  const direct = number(value);
+  if (direct !== null)
+    return direct > 10000000000 ? direct : Math.round(direct * 1000);
+  const text = string(value);
+  if (text === null)
+    return fallback;
+  const parsed = Date.parse(text);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+function clipped(value) {
+  return scrubCaptured(value.replace(/\p{Cc}/gu, (character) => character === `
+` || character === "\t" ? character : " ").trim().slice(0, READ_TEXT)).slice(0, MAX_TEXT);
+}
+function excerpt(text, max) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}\u2026` : flat;
+}
+function publicText(value) {
+  return clipped(rawPublicText(value));
+}
+function rawPublicText(value) {
+  if (value !== undefined && validateString2(value))
+    return value;
+  if (!Array.isArray(value))
+    return "";
+  return value.flatMap((part) => {
+    const item = object(part);
+    if (item === null || item.type === "encrypted_content" || item.type === "think")
+      return [];
+    const text = string(item.text);
+    return text === null ? [] : [text];
+  }).join(`
+`);
+}
+function stableSessionId(host, nativeId) {
+  return createHash5("sha256").update(`${host}:${nativeId}`).digest("hex").slice(0, 32);
+}
+function reportsFailure(text) {
+  return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, ""));
+}
+function exitStatuses(raw) {
+  const headers = raw.split(`
+`, 4).flatMap((line) => EXIT_HEADER.exec(line.trim())?.[1] ?? []);
+  return [...headers, ...[...raw.matchAll(EXIT_FIELD)].flatMap((match) => match[1] ?? [])].map(Number);
+}
+function toolOutput(value) {
+  const raw = rawPublicText(value);
+  const text = clipped(raw);
+  const statuses = exitStatuses(raw);
+  return { text, failed: statuses.length > 0 ? statuses.some((status) => status !== 0) : reportsFailure(text) };
+}
+function normalizedFile(path, cwd) {
+  const clean2 = path.trim();
+  if (clean2 === "" || clean2.includes(`
+`))
+    return null;
+  if (!isAbsolute6(clean2))
+    return clean2.replace(/^\.\//, "");
+  const rel = relative5(cwd, clean2);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute6(rel) ? rel : scrubCaptured(clean2);
+}
+function filesFromValue(value, cwd) {
+  const found = new Set;
+  const visit2 = (item, key = "") => {
+    if (item !== undefined && validateString2(item)) {
+      if (/^(?:file_path|path|filename)$/i.test(key)) {
+        const path = normalizedFile(item, cwd);
+        if (path !== null)
+          found.add(path);
+      }
+      for (const match of item.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)) {
+        const matchedPath = match[1];
+        if (matchedPath === undefined)
+          continue;
+        const path = normalizedFile(matchedPath, cwd);
+        if (path !== null)
+          found.add(path);
+      }
+      return;
+    }
+    if (Array.isArray(item)) {
+      for (const child of item)
+        visit2(child, key);
+      return;
+    }
+    const record = object(item);
+    if (record !== null)
+      for (const [childKey, child] of Object.entries(record))
+        visit2(child, childKey);
+  };
+  visit2(value);
+  return [...found].toSorted();
+}
+function toolInput(value) {
+  if (value !== undefined && validateString2(value))
+    return { text: clipped(value), parsed: parseJson(value) ?? value };
+  return { text: clipped(JSON.stringify(value ?? {})), parsed: value ?? {} };
+}
+function turnLog() {
+  const turns = [];
+  const start = (prompt, at) => {
+    const turn = { prompt, reply: "", calls: [], files: [], at };
+    turns.push(turn);
+    return turn;
+  };
+  const current = (at) => {
+    const turn = turns.at(-1) ?? start("", at);
+    turn.at = at;
+    return turn;
+  };
+  return {
+    turns,
+    prompt(text, at) {
+      start(text, at);
+    },
+    reply(text, at) {
+      current(at).reply = text;
+    },
+    call(name, input, cwd, at) {
+      const turn = current(at);
+      turn.calls.push({ name, input: input.text, output: "", failed: false });
+      if (WRITE_TOOLS.test(name))
+        turn.files.push(...filesFromValue(input.parsed, cwd));
+    },
+    output(output, at) {
+      if (output.text === "")
+        return;
+      const turn = current(at);
+      const waiting = turn.calls.find((call) => call.output === "");
+      if (waiting === undefined)
+        turn.calls.push({ name: "tool", input: "", output: output.text, failed: output.failed });
+      else {
+        waiting.output = output.text;
+        waiting.failed = output.failed;
+      }
+    }
+  };
+}
+function turnObservation(turn) {
+  const failing = turn.calls.filter((call) => call.failed);
+  const counts = new Map;
+  for (const call of turn.calls)
+    counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
+  const lines = [];
+  if (turn.prompt !== "")
+    lines.push(`prompt: ${excerpt(turn.prompt, PROMPT_CHARS)}`);
+  if (turn.reply !== "")
+    lines.push(`reply: ${excerpt(turn.reply, REPLY_CHARS)}`);
+  if (failing.length > 0)
+    lines.push(`failed: ${excerpt([...new Set(failing.map((call) => call.name))].join(", "), FAILED_CHARS)}`);
+  if (counts.size > 0)
+    lines.push(`tools: ${[...counts].map(([name, count]) => `${name} x${count}`).join(", ")}`);
+  for (const call of [...failing, ...turn.calls.filter((item) => !failing.includes(item))])
+    lines.push(`${call.name} ${excerpt(call.input, INPUT_CHARS)} -> ${excerpt(call.output, OUTPUT_CHARS)}`);
+  return {
+    type: failing.length > 0 ? "error" : "turn",
+    title: "worker turn",
+    text: lines.join(`
+`).slice(0, MAX_TEXT),
+    at: turn.at,
+    files_modified: [...new Set(turn.files)].toSorted()
+  };
+}
+function session(host, nativeId, cwd, times, log) {
+  const settled = times.ended !== null || times.now - times.modified > IDLE_MS;
+  const turns = (settled ? log : log.slice(0, -1)).filter((turn) => turn.prompt !== "" || turn.reply !== "" || turn.calls.length > 0);
+  if (turns.length === 0)
+    return null;
+  const prompts = turns.filter((turn) => turn.prompt !== "");
+  const tail = turns.length > MAX_OBSERVATIONS ? turns.slice(2 - MAX_OBSERVATIONS) : turns;
+  const head = prompts.slice(0, 1).filter((turn) => !tail.includes(turn));
+  const dropped = turns.length - tail.length - head.length;
+  const marker = dropped > 0 ? [
+    {
+      type: "truncated",
+      title: "worker turns omitted",
+      text: `${dropped} earlier turns of this session were left out`,
+      at: tail[0]?.at ?? times.started,
+      files_modified: []
+    }
+  ] : [];
+  return {
+    native_id: nativeId,
+    memory_session_id: stableSessionId(host, nativeId),
+    platform: host,
+    cwd,
+    started_at_epoch: times.started,
+    completed_at_epoch: times.ended === null ? null : Math.max(times.started, times.ended),
+    modified_at_epoch: times.modified,
+    prompt_count: prompts.length,
+    request: prompts[0]?.prompt ?? null,
+    completed: turns.findLast((turn) => turn.reply !== "")?.reply ?? null,
+    next_steps: null,
+    files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
+    observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)]
+  };
+}
+function codexUserContent(value) {
+  if (Array.isArray(value))
+    return value.filter((part) => !CODEX_INJECTED.test(string(object(part)?.text) ?? ""));
+  return CODEX_INJECTED.test(string(value) ?? "") ? undefined : value;
+}
+function codexMeta(row) {
+  return row?.type === "session_meta" ? object(row.payload) : null;
+}
+function codexNativeId(payload) {
+  return string(payload?.id) ?? string(payload?.session_id);
+}
+function grokNativeId(dir, summary) {
+  return string(object(summary?.info)?.id) ?? basename9(dir);
+}
+function kimiNativeId(dir, state) {
+  return string(state?.id) ?? basename9(dir);
+}
+function parseCodexSession(path, now = Date.now()) {
+  const rows = readJsonLines(path);
+  const meta = rows[0];
+  const payload = codexMeta(meta);
+  const cwd = string(payload?.cwd);
+  const nativeId = codexNativeId(payload);
+  if (cwd === null || nativeId === null)
+    return null;
+  const modified = statSync14(path).mtimeMs;
+  const started = epoch(payload?.timestamp ?? meta?.timestamp, modified);
+  let ended = null;
+  const log = turnLog();
+  const agentPath = string(payload?.agent_path);
+  let briefed = rows.some((row) => {
+    const event = object(row.payload);
+    return event?.type === "message" && event.role === "user" && publicText(codexUserContent(event.content)) !== "";
+  });
+  let offset = 0;
+  for (const row of rows) {
+    const event = object(row.payload);
+    if (event === null)
+      continue;
+    const at = epoch(row.timestamp ?? event.timestamp, started + offset++);
+    if (!briefed && agentPath !== null && event.type === "agent_message" && event.recipient === agentPath) {
+      const parts = Array.isArray(event.content) ? event.content : [];
+      const text = publicText(parts.filter((part) => object(part)?.type === "input_text"));
+      if (text === "")
+        continue;
+      log.prompt(text, at);
+      briefed = true;
+      continue;
+    }
+    if (event.type === "task_started")
+      ended = null;
+    if (event.type === "task_complete")
+      ended = Math.max(ended ?? 0, epoch(event.completed_at, at));
+    if (event.type === "message" && (event.role === "user" || event.role === "assistant")) {
+      const text = publicText(event.role === "user" ? codexUserContent(event.content) : event.content);
+      if (text === "")
+        continue;
+      if (event.role === "user")
+        log.prompt(text, at);
+      else
+        log.reply(text, at);
+      continue;
+    }
+    if (event.type === "custom_tool_call" || event.type === "function_call") {
+      log.call(string(event.name) ?? "tool", toolInput(event.input ?? event.arguments), cwd, at);
+      continue;
+    }
+    if (event.type === "custom_tool_call_output" || event.type === "function_call_output") {
+      log.output(toolOutput(event.output), at);
+    }
+  }
+  return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
+}
+function grokCwd(dir, summary) {
+  const recorded = string(object(summary?.info)?.cwd);
+  if (recorded !== null)
+    return recorded;
+  try {
+    return decodeURIComponent(basename9(dirname11(dir)));
+  } catch {
+    return null;
+  }
+}
+function parseGrokSession(dir, now = Date.now()) {
+  const historyPath = join22(dir, "chat_history.jsonl");
+  if (!existsSync20(historyPath))
+    return null;
+  const summary = readObject(join22(dir, "summary.json"));
+  const cwd = grokCwd(dir, summary);
+  if (cwd === null)
+    return null;
+  const nativeId = grokNativeId(dir, summary);
+  const modified = statSync14(historyPath).mtimeMs;
+  const started = epoch(summary?.created_at, modified);
+  let ended = null;
+  const log = turnLog();
+  let offset = 0;
+  const history = readJsonLines(historyPath);
+  for (const row of history) {
+    const at = started + offset++;
+    if (row.type === "user" && row.synthetic_reason === undefined) {
+      const text = publicText(row.content);
+      if (text !== "")
+        log.prompt(text, at);
+    } else if (row.type === "assistant") {
+      const text = publicText(row.content);
+      if (text !== "")
+        log.reply(text, at);
+      for (const call of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
+        const tool = object(call);
+        const fn = object(tool?.function);
+        log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at);
+      }
+    } else if (row.type === "tool_result") {
+      log.output(toolOutput(row.content), at);
+    }
+  }
+  const lastPublic = history.findLast((row) => row.type === "user" || row.type === "assistant" || row.type === "tool_result");
+  if (lastPublic?.type === "assistant" && publicText(lastPublic.content) !== "" && (!Array.isArray(lastPublic.tool_calls) || lastPublic.tool_calls.length === 0))
+    ended = epoch(summary?.last_active_at ?? summary?.updated_at, modified);
+  return session("grok", nativeId, cwd, { started, ended, modified, now }, log.turns);
+}
+function parseKimiSession(dir, now = Date.now()) {
+  const state = readObject(join22(dir, "state.json"));
+  const path = join22(dir, "agents", "main", "wire.jsonl");
+  if (state === null || !existsSync20(path))
+    return null;
+  const cwd = string(state.cwd);
+  const nativeId = kimiNativeId(dir, state);
+  if (cwd === null)
+    return null;
+  const modified = statSync14(path).mtimeMs;
+  const started = epoch(state.createdAt, modified);
+  let ended = null;
+  const log = turnLog();
+  for (const row of readJsonLines(path)) {
+    const at = epoch(row.time, started);
+    if (row.type === "turn.prompt" || row.type === "agent.turn.started" || row.type === "turn.steer")
+      ended = null;
+    if (row.type === "turn.ended" || row.type === "agent.turn.ended") {
+      ended = Math.max(ended ?? 0, at);
+      continue;
+    }
+    if (row.type !== "agent.message.appended")
+      continue;
+    const envelope = object(row.message);
+    const message = object(envelope?.message);
+    if (message === null)
+      continue;
+    const role = string(message.role);
+    const origin = object(message.origin) ?? object(object(envelope?.meta)?.origin);
+    if (role === "user" && origin?.kind !== "user")
+      continue;
+    const text = publicText(message.content);
+    if (role === "tool")
+      log.output(toolOutput(message.content), at);
+    else if (text !== "") {
+      if (role === "user")
+        log.prompt(text, at);
+      else if (role === "assistant")
+        log.reply(text, at);
+    }
+    if (role !== "assistant")
+      continue;
+    for (const call of Array.isArray(message.toolCalls) ? message.toolCalls : []) {
+      const tool = object(call);
+      if (tool !== null)
+        log.call(string(tool.name) ?? "tool", toolInput(tool.arguments), cwd, at);
+    }
+  }
+  const parsed = session("kimi", nativeId, cwd, { started, ended, modified, now }, log.turns);
+  const lastPrompt = string(state.lastPrompt);
+  if (parsed !== null && parsed.request === null && lastPrompt !== null)
+    parsed.request = clipped(lastPrompt);
+  return parsed;
+}
+function splitHomes(value, fallback) {
+  const homes = value?.split(delimiter2).map((entry) => entry.trim()).filter((entry) => entry !== "") ?? [];
+  return homes.length > 0 ? [...new Set(homes.map((entry) => resolve6(entry)))] : [fallback];
+}
+function workerHomes(env = process.env) {
+  const home = env.HOME && env.HOME.trim() !== "" ? env.HOME : homedir3();
+  const codex = env.CODEX_HOME && env.CODEX_HOME.trim() !== "" ? env.CODEX_HOME : join22(home, ".codex");
+  const grok = env.GROK_HOME && env.GROK_HOME.trim() !== "" ? env.GROK_HOME : join22(home, ".grok");
+  const kimi = env.KIMI_HOME && env.KIMI_HOME.trim() !== "" ? env.KIMI_HOME : join22(home, ".kimi-code");
+  return {
+    codex: splitHomes(env.AK_LEARN_CODEX_HOMES, codex),
+    grok: splitHomes(env.AK_LEARN_GROK_HOMES, grok),
+    kimi: splitHomes(env.AK_LEARN_KIMI_HOMES, kimi)
+  };
+}
+function walk(dir, accept) {
+  if (!existsSync20(dir))
+    return [];
+  const out = [];
+  const pending = [dir];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined)
+      break;
+    let entries;
+    try {
+      entries = readdirSync6(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const path = join22(current, entry.name);
+      if (entry.isDirectory())
+        pending.push(path);
+      else if (entry.isFile() && accept(path))
+        out.push(path);
+    }
+  }
+  return out.toSorted();
+}
+function workerRootResolver(registry, worktrees) {
+  const roots = new Set(Object.values(registry).map((entry) => entry.root));
+  const places = [
+    ...[...roots].map((root) => [root, root]),
+    ...Object.entries(worktrees).filter(([, root]) => roots.has(root))
+  ].toSorted((a, b) => b[0].length - a[0].length);
+  return (cwd) => {
+    const path = resolve6(cwd);
+    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep3}`))?.[1];
+    if (placed !== undefined)
+      return placed;
+    const root = linkedWorktree(path)?.root;
+    return root !== undefined && roots.has(root) ? root : null;
+  };
+}
+function writtenAt(path) {
+  try {
+    return statSync14(path).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+function scanWorkerSessions(homes, rootFor, options = {}) {
+  const sinceMs = options.sinceMs ?? Date.now() - CAPTURE_WINDOW_MS;
+  const scan = { sessions: new Map, activity: new Map, unmatched: 0 };
+  const active = (root, at) => scan.activity.set(root, Math.max(scan.activity.get(root) ?? 0, at));
+  const placed = new Map;
+  const guarded2 = (path, step) => {
+    try {
+      step();
+    } catch (error2) {
+      options.warn?.(`worker session skipped: ${path}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    }
+  };
+  const collect = (host, path, record, identify, parse) => {
+    const touched = writtenAt(path);
+    if (touched < sinceMs)
+      return;
+    guarded2(path, () => {
+      const { cwd, nativeId } = identify();
+      if (cwd === null)
+        return;
+      const root = rootFor(cwd);
+      if (root === null) {
+        scan.unmatched += 1;
+        return;
+      }
+      const modified = statSync14(record).mtimeMs;
+      const place = placed.get(root) ?? { newest: 0, read: [] };
+      placed.set(root, place);
+      place.newest = Math.max(place.newest, touched, modified);
+      place.read.push(() => guarded2(path, () => {
+        const held = nativeId !== null && modified >= sinceMs ? options.stored?.(root)?.completedAt(stableSessionId(host, nativeId), modified) ?? null : null;
+        if (held !== null) {
+          active(root, held);
+          return;
+        }
+        const parsed = parse();
+        if (parsed === null)
+          return;
+        scan.sessions.set(root, [...scan.sessions.get(root) ?? [], parsed]);
+        active(root, parsed.completed_at_epoch ?? parsed.observations.at(-1)?.at ?? parsed.started_at_epoch);
+      }));
+    });
+  };
+  for (const home of homes.codex) {
+    for (const path of walk(join22(home, "sessions"), (file) => basename9(file).startsWith("rollout-") && file.endsWith(".jsonl")))
+      collect("codex", path, path, () => {
+        const meta = codexMeta(object(parseJson(firstLine2(path))));
+        return { cwd: string(meta?.cwd), nativeId: codexNativeId(meta) };
+      }, () => parseCodexSession(path));
+  }
+  for (const home of homes.grok) {
+    for (const path of walk(join22(home, "sessions"), (file) => basename9(file) === "chat_history.jsonl")) {
+      const dir = dirname11(path);
+      collect("grok", path, path, () => {
+        const summary = readObject(join22(dir, "summary.json"));
+        return { cwd: grokCwd(dir, summary), nativeId: grokNativeId(dir, summary) };
+      }, () => parseGrokSession(dir));
+    }
+  }
+  for (const home of homes.kimi) {
+    for (const path of walk(join22(home, "sessions"), (file) => basename9(file) === "state.json")) {
+      const dir = dirname11(path);
+      const wire = join22(dir, "agents", "main", "wire.jsonl");
+      if (existsSync20(wire))
+        collect("kimi", path, wire, () => {
+          const state = readObject(path);
+          return { cwd: string(state?.cwd), nativeId: kimiNativeId(dir, state) };
+        }, () => parseKimiSession(dir));
+    }
+  }
+  for (const [root, place] of placed)
+    if (options.wanted?.(root, place.newest) !== false)
+      for (const read2 of place.read)
+        read2();
+  for (const rows of scan.sessions.values())
+    rows.sort((a, b) => a.started_at_epoch - b.started_at_epoch || a.memory_session_id.localeCompare(b.memory_session_id));
+  return scan;
+}
+function rowKey(row) {
+  return createHash5("sha256").update(`${row.title}
+${row.text}`).digest("hex").slice(0, 16);
+}
+function storedObservation(item, row, id) {
+  return {
+    id,
+    key: rowKey(row),
+    memory_session_id: item.memory_session_id,
+    project: "",
+    type: row.type,
+    title: row.title,
+    subtitle: null,
+    narrative: null,
+    facts: row.text,
+    concepts: JSON.stringify([]),
+    files_read: JSON.stringify([]),
+    files_modified: JSON.stringify(row.files_modified),
+    discovery_tokens: Math.ceil(row.text.length / 4),
+    created_at: new Date(row.at).toISOString(),
+    created_at_epoch: row.at,
+    platform_source: item.platform
+  };
+}
+function storedSession(item, observationCount) {
+  return {
+    id: 0,
+    memory_session_id: item.memory_session_id,
+    platform_source: item.platform,
+    started_at_epoch: item.started_at_epoch,
+    completed_at_epoch: item.completed_at_epoch,
+    modified_at_epoch: item.modified_at_epoch,
+    observation_count: observationCount,
+    native_id: item.native_id,
+    prompt_count: item.prompt_count,
+    request: item.request,
+    completed: item.completed,
+    next_steps: item.next_steps,
+    files_modified: item.files_modified
+  };
+}
+function isCapturedObservation(row) {
+  return row.id >= CAPTURE_ID_BASE;
+}
+
+class WorkerSessionSource {
+  observationsPath;
+  sessionsPath;
+  gate;
+  observations = [];
+  bySession = new Map;
+  sessionRows = new Map;
+  constructor(observationsPath, sessionsPath, gate) {
+    this.observationsPath = observationsPath;
+    this.sessionsPath = sessionsPath;
+    this.gate = gate;
+    this.hold(readJsonl(observationsPath), readJsonl(sessionsPath));
+  }
+  static open(ledger) {
+    return new WorkerSessionSource(ledger.path(CAPTURE_OBSERVATIONS_FILE), ledger.path(CAPTURE_SESSIONS_FILE), ledger.dir);
+  }
+  hold(observations, sessions) {
+    this.observations = observations.toSorted((a, b) => a.id - b.id);
+    this.sessionRows = new Map(sessions.map((row) => [row.memory_session_id, row]));
+    this.bySession.clear();
+    for (const row of this.observations) {
+      const rows = this.bySession.get(row.memory_session_id);
+      if (rows === undefined)
+        this.bySession.set(row.memory_session_id, [row]);
+      else
+        rows.push(row);
+    }
+  }
+  capture(sessions, options = {}) {
+    const held = this.observations;
+    const scanned = new Set(sessions.map((item) => item.memory_session_id));
+    const expired = (sid) => !scanned.has(sid) && (this.sessionRows.get(sid)?.modified_at_epoch ?? 0) < (options.sinceMs ?? 0);
+    const newestId = held.at(-1)?.id ?? CAPTURE_ID_BASE - 1;
+    let nextId2 = newestId;
+    const fresh = [];
+    const revisions = [];
+    for (const item of sessions) {
+      const stored2 = this.bySession.get(item.memory_session_id) ?? [];
+      const unseen = new Map;
+      for (const row2 of stored2)
+        unseen.set(row2.key, (unseen.get(row2.key) ?? 0) + 1);
+      const appended = [];
+      for (const row2 of item.observations) {
+        const key = rowKey(row2);
+        const count = unseen.get(key) ?? 0;
+        if (count > 0)
+          unseen.set(key, count - 1);
+        else
+          appended.push(storedObservation(item, row2, ++nextId2));
+      }
+      const row = this.sessionRows.get(item.memory_session_id);
+      if (appended.length === 0 && (row === undefined || item.completed_at_epoch === null || row.modified_at_epoch === item.modified_at_epoch && row.completed_at_epoch === item.completed_at_epoch))
+        continue;
+      fresh.push(...appended);
+      revisions.push(storedSession(item, stored2.length + appended.length));
+    }
+    const written = { observations: fresh.length, sessions: revisions.length };
+    if (options.dryRun === true)
+      return written;
+    const kept = held.filter((row) => !expired(row.memory_session_id) || fresh.length === 0 && row.id === newestId);
+    const pruned = kept.length < held.length;
+    const latest = [...this.sessionRows.values(), ...revisions].filter((row) => !pruned || !expired(row.memory_session_id));
+    if (pruned) {
+      writeJsonl(this.observationsPath, [...kept, ...fresh], this.gate);
+      writeJsonl(this.sessionsPath, [...new Map(latest.map((row) => [row.memory_session_id, row])).values()], this.gate);
+    } else {
+      appendJsonl(this.observationsPath, fresh, this.gate);
+      appendJsonl(this.sessionsPath, revisions, this.gate);
+    }
+    this.hold([...kept, ...fresh], latest);
+    return written;
+  }
+  completedAt(memorySessionId, modifiedMs) {
+    const row = this.sessionRows.get(memorySessionId);
+    return row !== undefined && row.modified_at_epoch === modifiedMs ? row.completed_at_epoch : null;
+  }
+  close() {}
+  lastActivityMs(_project) {
+    return this.observations.reduce((latest, row) => Math.max(latest, row.created_at_epoch), 0);
+  }
+  newTokensSince(_project, afterId) {
+    const rows = this.observations.filter((row) => row.id > afterId);
+    return { tokens: rows.reduce((sum, row) => sum + (row.discovery_tokens ?? 0), 0), count: rows.length };
+  }
+  observationsSince(_project, afterId, options = {}) {
+    const rows = this.observations.filter((row) => row.id > afterId && row.created_at_epoch >= (options.sinceEpochMs ?? 0));
+    return rows.toSorted((a, b) => options.newestFirst === true ? b.id - a.id : a.id - b.id);
+  }
+  observationsById(ids) {
+    const wanted = new Set(ids);
+    return this.observations.filter((row) => wanted.has(row.id));
+  }
+  sessionObservations(memorySessionId) {
+    return this.bySession.get(memorySessionId) ?? [];
+  }
+  observationSessions(ids) {
+    const wanted = new Set(ids);
+    const sessions = new Map;
+    for (const row of this.observations)
+      if (wanted.has(row.id))
+        sessions.set(row.id, row.memory_session_id);
+    return sessions;
+  }
+  owns(evidence) {
+    if (evidence.startsWith("obs:"))
+      return isCapturedObservation({ id: Number(evidence.slice(4)) });
+    return this.sessionRows.keys().some((sid) => sid8(sid) === evidence);
+  }
+  sessions(_project, sinceMs, staleBeforeMs) {
+    return [...this.sessionRows.values()].filter((row) => row.started_at_epoch >= sinceMs && (row.completed_at_epoch !== null || row.started_at_epoch < staleBeforeMs)).toSorted((a, b) => a.started_at_epoch - b.started_at_epoch);
+  }
+  latestSummary(memorySessionId) {
+    const row = this.sessionRows.get(memorySessionId);
+    return row === undefined ? null : {
+      memory_session_id: row.memory_session_id,
+      request: row.request,
+      completed: row.completed,
+      next_steps: row.next_steps
+    };
+  }
+  summaries(memorySessionIds) {
+    return memorySessionIds.flatMap((sid) => {
+      const row = this.latestSummary(sid);
+      return row === null ? [] : [row];
+    });
+  }
+  promptCount(_sessionDbId, memorySessionId) {
+    return memorySessionId === undefined ? 0 : this.sessionRows.get(memorySessionId)?.prompt_count ?? 0;
+  }
+  editedFiles(memorySessionId) {
+    return this.sessionRows.get(memorySessionId)?.files_modified ?? [];
+  }
+}
+
+class ProjectMemorySource {
+  claude;
+  workers;
+  constructor(claude, workers) {
+    this.claude = claude;
+    this.workers = workers;
+  }
+  close() {}
+  lastActivityMs(project) {
+    return Math.max(this.claude?.lastActivityMs(project) ?? 0, this.workers.lastActivityMs(project));
+  }
+  newTokensSince(project, afterId) {
+    return this.claude?.newTokensSince(project, afterId) ?? { tokens: 0, count: 0 };
+  }
+  capturedTokensSince(project, afterId) {
+    return this.workers.newTokensSince(project, afterId);
+  }
+  observationsSince(project, afterId, options = {}) {
+    return this.claude?.observationsSince(project, afterId, options) ?? [];
+  }
+  capturedObservationsSince(project, afterId, options = {}) {
+    return this.workers.observationsSince(project, afterId, options);
+  }
+  observationsById(ids) {
+    const native = ids.filter((observationId) => observationId < CAPTURE_ID_BASE);
+    const captured = ids.filter((observationId) => observationId >= CAPTURE_ID_BASE);
+    return [...this.claude?.observationsById(native) ?? [], ...this.workers.observationsById(captured)].toSorted((a, b) => a.id - b.id);
+  }
+  sessionObservations(memorySessionId) {
+    const captured = this.workers.sessionObservations(memorySessionId);
+    return captured.length > 0 ? captured : this.claude?.sessionObservations(memorySessionId) ?? [];
+  }
+  observationSessions(ids) {
+    const out = this.claude?.observationSessions(ids.filter((observationId) => observationId < CAPTURE_ID_BASE)) ?? new Map;
+    for (const [observationId, sid] of this.workers.observationSessions(ids.filter((candidateId) => candidateId >= CAPTURE_ID_BASE)))
+      out.set(observationId, sid);
+    return out;
+  }
+  sessions(project, sinceMs, staleBeforeMs) {
+    return [
+      ...this.claude?.sessions(project, sinceMs, staleBeforeMs) ?? [],
+      ...this.workers.sessions(project, sinceMs, staleBeforeMs)
+    ].toSorted((a, b) => a.started_at_epoch - b.started_at_epoch);
+  }
+  latestSummary(memorySessionId) {
+    return this.workers.latestSummary(memorySessionId) ?? this.claude?.latestSummary(memorySessionId) ?? null;
+  }
+  summaries(memorySessionIds) {
+    return memorySessionIds.flatMap((sid) => {
+      const row = this.latestSummary(sid);
+      return row === null ? [] : [row];
+    });
+  }
+  promptCount(sessionDbId, memorySessionId) {
+    return this.workers.promptCount(sessionDbId, memorySessionId) || this.claude?.promptCount(sessionDbId) || 0;
+  }
+  editedFiles(memorySessionId) {
+    return [
+      ...new Set([...this.workers.editedFiles(memorySessionId), ...this.claude?.editedFiles(memorySessionId) ?? []])
+    ].toSorted();
+  }
+}
+
+// src/learn/memory/consolidate.ts
+import { createHash as createHash6 } from "crypto";
+import { existsSync as existsSync21, rmSync as rmSync7 } from "fs";
+import { basename as basename10, join as join23 } from "path";
+var INPUT_CHARS2 = 80000;
+var OBS_PER_EPISODE = 15;
+var SCOPES = new Set(["repo", "subtree", "technology", "global"]);
+function stratify(episodes, batch) {
+  const seen = new Set;
+  const repeats = new Set;
+  for (const episode of [...episodes].sort((a, b) => a.started - b.started)) {
+    if (episode.completed && episode.files_modified.some((path) => seen.has(path)))
+      repeats.add(episode.sid);
+    for (const path of episode.files_modified)
+      seen.add(path);
+  }
+  const byPriority = (a, b) => b.priority - a.priority;
+  const fail = episodes.filter((episode) => episode.failure_signals > 0 || episode.corrections > 0).sort(byPriority);
+  const failSids = new Set(fail.map((episode) => episode.sid));
+  const rep = episodes.filter((episode) => repeats.has(episode.sid) && !failSids.has(episode.sid)).sort(byPriority);
+  const repSids = new Set(rep.map((episode) => episode.sid));
+  const nov = episodes.filter((episode) => !failSids.has(episode.sid) && !repSids.has(episode.sid)).sort(byPriority);
+  const quota = [Math.round(batch * 0.4), Math.round(batch * 0.4)];
+  quota.push(batch - quota[0] - quota[1]);
+  const chosen = [...fail.slice(0, quota[0]), ...rep.slice(0, quota[1]), ...nov.slice(0, quota[2])];
+  const rest = [...fail.slice(quota[0]), ...rep.slice(quota[1]), ...nov.slice(quota[2])].sort(byPriority);
+  chosen.push(...rest.slice(0, Math.max(0, batch - chosen.length)));
+  return { chosen, failures: fail.slice(0, quota[0]) };
+}
+function pairFailures(failures, all) {
+  const pairs = [];
+  for (const failure of failures) {
+    const later = all.filter((episode) => episode.started > failure.started && episode.completed && episode.files_modified.some((path) => failure.files_modified.includes(path)));
+    if (later.length > 0)
+      pairs.push([failure, later.reduce((a, b) => b.started < a.started ? b : a)]);
+  }
+  return pairs;
+}
+function rankObs(rows, quarantined = new Set, cap = OBS_PER_EPISODE) {
+  const rank = (row) => isFailureObservation(row) ? 0 : row.type === "decision" ? 1 : 2;
+  return rows.filter((row) => !quarantined.has(`obs:${row.id}`)).sort((a, b) => rank(a) - rank(b) || a.id - b.id).slice(0, cap);
+}
+function formatEpisode(episode, rows) {
+  const head = `${sid8(episode.sid)} ${episode.platform} start=${episode.started} completed=${episode.completed ? "True" : "False"} ` + `failure_signals=${episode.failure_signals} corrections=${episode.corrections} priority=${episode.priority}
+` + `  request: ${(episode.request ?? "").slice(0, 300)}
+` + `  files: ${episode.files_modified.slice(0, 12).join(", ")}
+`;
+  const body = rows.map((row) => `  obs:${row.id} [${row.type}] ${row.title ?? ""} \u2014 ${(row.subtitle ?? "").slice(0, 160)}` + (row.facts ? ` | ${row.facts.slice(0, 300)}` : "") + `
+`).join("");
+  return head + body;
+}
+var OUTPUT_CONTRACT = `Reply with one object:
+{"lessons": [{"statement": "...", "scope": "repo", "evidence": ["obs:123", "S1a2b3c4d"], "confidence": 0.7, "supersedes": [], "tags": []}],
+ "review_events": [{"text": "...", "kind": "finding", "evidence": ["obs:123"], "files": ["path"]}],
+ "log": "one line on what this batch covered"}
+- evidence: ids copied verbatim from the episodes below. A lesson or review event with no such id is deleted.
+- scope: one of repo | subtree | technology | global. confidence: 0..1. At most 8 lessons.
+- tags may include: decision, security, blocker, preference, contrastive.
+- supersedes: only ids (ls-NNN) listed under existing lessons.
+- review_events kind: finding | correction. Leave the list empty when there are none.
+- Status, ids, session counts and dates are set by the runtime; any you send are ignored.`;
+function consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid, inputChars = INPUT_CHARS2) {
+  const texts = [];
+  const included = [];
+  let used = 0;
+  for (const episode of chosen) {
+    const text = formatEpisode(episode, obsBySid.get(episode.sid) ?? []);
+    if (used + text.length > inputChars)
+      break;
+    used += text.length;
+    texts.push(text);
+    included.push(episode);
+  }
+  const pairText = pairs.map(([failure, success]) => {
+    const shared = failure.files_modified.filter((path) => success.files_modified.includes(path)).sort().slice(0, 6);
+    return `${sid8(failure.sid)} -> ${sid8(success.sid)} (shared files: ${shared.join(", ")})`;
+  }).join(`
+`) || "(none)";
+  const prompt = buildPrompt("consolidator", OUTPUT_CONTRACT, [
+    { title: "Existing lessons", body: lessonsIndexText(ledger) },
+    {
+      title: "Failure pairs (failed or corrected episode -> later completed episode on the same files)",
+      body: pairText
+    },
+    { title: "Episodes", body: texts.join(`
+`) || "(none)" }
+  ], ctx.env);
+  return { prompt, included };
+}
+function sessionsOf(evidence, obsSession) {
+  const out = new Set;
+  for (const id of evidence) {
+    if (id.startsWith("S"))
+      out.add(id.slice(1));
+    else if (id.startsWith("obs:") && obsSession.has(id))
+      out.add(obsSession.get(id));
+  }
+  return out;
+}
+function nextLessonId(ledger) {
+  const numbers = loadLessons(ledger).values().map(({ path }) => basename10(path, ".md").slice(3)).filter((digits) => /^\d+$/.test(digits)).map(Number).toArray();
+  return `ls-${String(numbers.length > 0 ? Math.max(...numbers) + 1 : 1).padStart(3, "0")}`;
+}
+function renderLesson(meta, evidence) {
+  return renderPage(meta, `
+## Statement
+${str2(meta.statement)}
+
+## Evidence
+${evidence.map((id) => `- ${id}
+`).join("")}`);
+}
+function strings(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+}
+function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
+  const today = options.today ?? todayLocal();
+  const existing = loadLessons(ledger);
+  const summary = {
+    created: [],
+    dropped: 0,
+    superseded: [],
+    confirmed: [],
+    review_events: 0,
+    review_events_parked: 0
+  };
+  const lessons = Array.isArray(reply.lessons) ? reply.lessons : [];
+  for (const lesson of lessons) {
+    if (lesson === null || typeof lesson !== "object")
+      continue;
+    const cited = strings(lesson.evidence).filter((id2) => valid.has(id2));
+    const evidence = [
+      ...new Set([
+        ...cited,
+        ...cited.flatMap((id2) => {
+          const sid = isCapturedObservation({ id: Number(id2.slice(4)) }) ? obsSession.get(id2) : undefined;
+          return sid === undefined ? [] : [`S${sid}`];
+        })
+      ])
+    ];
+    const statement = oneLine3(lesson.statement);
+    if (evidence.length === 0 || statement === "") {
+      summary.dropped += 1;
+      continue;
+    }
+    const id = nextLessonId(ledger);
+    const sessions = sessionsOf(evidence, obsSession).size;
+    const confidence = Number(lesson.confidence);
+    const meta = {
+      id,
+      statement,
+      scope: typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo",
+      status: sessions >= 2 ? "confirmed" : "hypothesis",
+      confidence: Math.min(1, Math.max(0, Number.isFinite(confidence) && confidence !== 0 ? confidence : 0.5)).toFixed(2),
+      sessions,
+      tags: cleanTags(lesson.tags),
+      evidence,
+      supersedes: [],
+      first_seen: today,
+      last_seen: today,
+      valid_until: ""
+    };
+    const confirmed = meta.status === "confirmed";
+    const supersedes = [];
+    for (const old of strings(lesson.supersedes)) {
+      const page = existing.get(old);
+      if (old === id || page === undefined)
+        continue;
+      if (page.meta.status !== "hypothesis" && page.meta.status !== "confirmed")
+        continue;
+      if (page.meta.status === "confirmed" && !confirmed) {
+        meta.status = "conflict";
+        page.meta = { ...page.meta, status: "conflict" };
+      } else {
+        page.meta = { ...page.meta, status: "superseded", valid_until: today, superseded_by: id };
+        supersedes.push(old);
+        summary.superseded.push(old);
+      }
+      writeLesson(page.path, page.meta, page.body);
+    }
+    meta.supersedes = supersedes;
+    const path = join23(ledger.path("lessons"), `${id}.md`);
+    writeGated(ledger.dir, path, renderLesson(meta, evidence));
+    existing.set(id, { meta, body: "", path });
+    summary.created.push(id);
+    if (meta.status === "confirmed")
+      summary.confirmed.push(id);
+  }
+  if (options.review !== undefined) {
+    const events = Array.isArray(reply.review_events) ? reply.review_events : [];
+    const delivered2 = forwardReviewEvents(options.review.ledger, ledger, options.review.project, events, valid, options.runId ?? null);
+    summary.review_events = delivered2.forwarded;
+    summary.review_events_parked = delivered2.parked;
+  }
+  rewriteIndex(ledger);
+  return summary;
+}
+var PENDING_REVIEW_FILE = "raw/pending-review-events.jsonl";
+function buildReviewEvents(project, events, valid, runId) {
+  const out = [];
+  for (const event of events) {
+    if (event === null || typeof event !== "object")
+      continue;
+    const text = oneLine3(event.text);
+    const evidence = strings(event.evidence).filter((id) => valid.has(id));
+    if (text === "" || evidence.length === 0)
+      continue;
+    const obsIds = evidence.filter((id) => id.startsWith("obs:")).map((id) => Number(id.slice(4)));
+    const files = strings(event.files).map((file) => oneLine3(file, 500)).filter((file) => file !== "");
+    const forwarded = makeEvent({
+      source: MEMORY_SOURCE,
+      kind: event.kind === "correction" ? "correction" : "finding",
+      project,
+      pr: null,
+      sha: null,
+      author: MEMORY_SOURCE,
+      severity: null,
+      path: files[0] ?? null,
+      line: null,
+      text: `${text}
+(evidence: ${evidence.join(", ")})`,
+      url: runId === null ? null : `${MEMORY_SOURCE}:run/${runId}`,
+      ts: nowIso()
+    }, createHash6("sha1").update(text).digest("hex"));
+    if (obsIds[0] !== undefined)
+      forwarded.obs_id = obsIds[0];
+    out.push(forwarded);
+  }
+  return out;
+}
+function deliverReviewEvents(review, memory, events) {
+  const release = review.tryLock();
+  if (release === null) {
+    appendJsonl(memory.path(PENDING_REVIEW_FILE), events, memory.dir);
+    return { forwarded: 0, parked: events.length };
+  }
+  try {
+    const pendingPath = memory.path(PENDING_REVIEW_FILE);
+    const parked = readJsonl(pendingPath);
+    const fresh = appendEvents(review, [...parked, ...events]);
+    if (fresh > 0)
+      review.commit(`learn memory: +${fresh} review events`);
+    if (existsSync21(pendingPath))
+      rmSync7(pendingPath);
+    return { forwarded: fresh, parked: 0 };
+  } finally {
+    release();
+  }
+}
+function forwardReviewEvents(review, memory, project, events, valid, runId) {
+  return deliverReviewEvents(review, memory, buildReviewEvents(project, events, valid, runId));
+}
+function triggerOf2(meta, obsSession, corrected) {
+  if (list2(meta.tags).includes("preference"))
+    return "correction";
+  const sessions = sessionsOf(list2(meta.evidence), obsSession);
+  return [...sessions].some((sid) => corrected.has(sid)) ? "correction" : "failure";
+}
+function readyEpisodes(source, ledger, pending) {
+  const ranges = screenedObservationRanges(ledger);
+  const consumed = consumedObsIds(ledger);
+  const state = readState(ledger);
+  const nativeWatermark = state.last_obs_id_reflected ?? 0;
+  const capturedWatermark = state.last_worker_obs_id_reflected ?? 0;
+  const ready = new Map;
+  for (const episode of pending) {
+    const allRows = source.sessionObservations(episode.sid);
+    if (allRows.some((row) => row.id <= (isCapturedObservation(row) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, row.id)))
+      continue;
+    const after = consumed.get(episode.sid) ?? 0;
+    const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
+    const last = rows.at(-1);
+    if (last !== undefined)
+      ready.set(episode.sid, { rows, obs: allRows.filter((row) => row.id <= last.id).length, obs_id: last.id });
+  }
+  return ready;
+}
+function nothingToConsolidate(ctx, ledger, message) {
+  if (!ctx.config.dryRun)
+    saveState(ledger, { ...readState(ledger), last_nightly: todayLocal() });
+  return message;
+}
+function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
+  if (review !== null && !ctx.config.dryRun && existsSync21(ledger.path(PENDING_REVIEW_FILE)))
+    deliverReviewEvents(review, ledger, []);
+  const all = loadEpisodes(ledger);
+  const pending = unconsolidatedEpisodes(ledger);
+  if (pending.length === 0)
+    return nothingToConsolidate(ctx, ledger, "nightly: no unconsolidated episodes");
+  const unseen = readyEpisodes(source, ledger, pending);
+  const ready = pending.filter((episode) => unseen.has(episode.sid));
+  if (ready.length === 0)
+    return nothingToConsolidate(ctx, ledger, "nightly: no reflected observations to consolidate");
+  const { chosen, failures } = stratify(ready, ctx.config.batch);
+  const pairs = pairFailures(failures, all);
+  const quarantined = quarantinedObservationIds(ledger);
+  const obsBySid = new Map;
+  const obsSessionAll = new Map;
+  for (const episode of chosen)
+    obsBySid.set(episode.sid, rankObs(unseen.get(episode.sid)?.rows ?? [], quarantined));
+  for (const [sid, rows] of obsBySid)
+    for (const row of rows)
+      obsSessionAll.set(`obs:${row.id}`, sid8(sid).slice(1));
+  const { prompt, included } = consolidatePrompt(ctx, ledger, chosen, pairs, obsBySid);
+  if (ctx.config.dryRun) {
+    ctx.io.out(prompt);
+    return `nightly: dry run (${included.length}/${chosen.length} episodes fit, ${pairs.length} pairs, ${tokens(prompt)} prompt tokens)`;
+  }
+  const runId = runOf(ctx).runId ?? `nightly-${todayLocal()}-${nowMs() % 1e5}`;
+  const reply = ctx.judge(prompt, {
+    runId,
+    traceId: runOf(ctx).traceId,
+    loop: "memory",
+    role: "consolidator",
+    project: basename10(root)
+  });
+  if (reply === null) {
+    const state2 = readState(ledger);
+    saveState(ledger, {
+      ...state2,
+      last_nightly_attempt: nowMs(),
+      nightly_failures: (state2.nightly_failures ?? 0) + 1
+    });
+    appendRun(ledger, { job: "nightly", id: runId, status: "failed", reason: "no judge output", trigger });
+    logLine2(ledger, "nightly failed: no judge output");
+    return "nightly: judge call failed";
+  }
+  const shown = new Set(included.map((episode) => sid8(episode.sid).slice(1)));
+  const obsSession = new Map([...obsSessionAll].filter(([, sid]) => shown.has(sid)));
+  const valid = new Set([...obsSession.keys(), ...included.map((episode) => sid8(episode.sid))]);
+  const summary = applyConsolidation(ledger, reply, valid, obsSession, {
+    review: review === null ? undefined : { ledger: review, project: basename10(root) },
+    runId
+  });
+  markConsolidated(ledger, new Map(included.flatMap((episode) => {
+    const mark = unseen.get(episode.sid);
+    return mark === undefined ? [] : [[episode.sid, { obs: mark.obs, obs_id: mark.obs_id }]];
+  })), runId);
+  const corrected = new Set(included.filter((episode) => episode.corrections > 0).map((episode) => sid8(episode.sid).slice(1)));
+  const lessons = loadLessons(ledger);
+  const workers = WorkerSessionSource.open(ledger);
+  const claude = ClaudeMemSource.open(ctx.config.memDb);
+  const proposals = [];
+  const skippedProposals = [];
+  try {
+    for (const id of summary.confirmed) {
+      const page = lessons.get(id);
+      if (page === undefined)
+        continue;
+      const trig = triggerOf2(page.meta, obsSession, corrected);
+      const proposal = proposeOrSkip(ctx, ledger, root, page, {
+        runId,
+        createdBy: "learn/consolidator",
+        trigger: trig,
+        claude,
+        workers
+      });
+      if ("ref" in proposal)
+        proposals.push(proposal.ref);
+      else
+        skippedProposals.push(proposal.skipped);
+    }
+  } finally {
+    claude?.close();
+  }
+  const state = readState(ledger);
+  const { last_nightly_attempt: _attempt, nightly_failures: _failures, ...withoutBackoff } = state;
+  saveState(ledger, { ...withoutBackoff, last_nightly: todayLocal() });
+  const log = typeof reply.log === "string" ? reply.log : "";
+  const run2 = {
+    job: "nightly",
+    id: runId,
+    status: "ok",
+    trigger,
+    episodes: included.map((episode) => episode.sid),
+    selected: chosen.length,
+    pairs: pairs.length,
+    tokens_in: tokens(prompt),
+    ...summary,
+    proposals
+  };
+  const recorded = skippedProposals.length > 0 ? { ...run2, proposals_skipped: skippedProposals } : run2;
+  appendRun(ledger, { ...recorded, log: log.slice(0, 200) });
+  logLine2(ledger, `nightly ${runId}: ${included.length}/${chosen.length} episodes, +${summary.created.length} lessons, ${summary.dropped} dropped, ` + `${summary.superseded.length} superseded, ${summary.review_events} review events forwarded, ${summary.review_events_parked} parked, ${proposals.length} proposals. ${log}`);
+  ledger.commit(`nightly ${runId}: +${summary.created.length} lessons`);
+  return `nightly: ${included.length}/${chosen.length} episodes -> +${summary.created.length} lessons, ${summary.review_events} review events`;
+}
+
+// src/learn/memory/deep.ts
+import { existsSync as existsSync22, readdirSync as readdirSync7, readFileSync as readFileSync15 } from "fs";
+import { basename as basename11, join as join24 } from "path";
+var EVIDENCE_RE = /^- (\S+) \((.*?)(\d{4}-\d{2}-\d{2})\)\s*$/;
+var MONTH_RE = /^- (\d{4}-\d{2}): (\d+) events? \((?:obs (\d+)(?:\u2026(\d+))?)?(?:; )?(?:prs ([\d, ]+))?\)\s*$/;
+var PROTECTED_TAGS = new Set(["decision", "security", "blocker"]);
+function daysBefore(day, days) {
+  const at = new Date(`${day}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() - days);
+  return at.toISOString().slice(0, 10);
+}
+function compactEvidence(text, today) {
+  const cutoff = daysBefore(today, 30);
+  const lines = text.split(`
+`);
+  const heading = lines.indexOf("## Evidence");
+  if (heading < 0)
+    return text;
+  const start = heading + 1;
+  let end = lines.length;
+  for (let i = start;i < lines.length; i += 1) {
+    if (lines[i].startsWith("## ")) {
+      end = i;
+      break;
+    }
+  }
+  const months = new Map;
+  const out = [];
+  const bucket = (month) => {
+    let found = months.get(month);
+    if (found === undefined) {
+      found = { n: 0, obs: [], prs: new Set };
+      months.set(month, found);
+      out.push(`@@${month}`);
+    }
+    return found;
+  };
+  for (const line of lines.slice(start, end)) {
+    const rolled = MONTH_RE.exec(line);
+    if (rolled !== null) {
+      const b2 = bucket(rolled[1]);
+      b2.n += Number(rolled[2]);
+      for (const value of [rolled[3], rolled[4]])
+        if (value)
+          b2.obs.push(Number(value));
+      for (const pr of (rolled[5] ?? "").split(","))
+        if (pr.trim() !== "")
+          b2.prs.add(pr.trim());
+      continue;
+    }
+    const match = EVIDENCE_RE.exec(line);
+    if (match === null || match[3] >= cutoff) {
+      out.push(line);
+      continue;
+    }
+    const b = bucket(match[3].slice(0, 7));
+    b.n += 1;
+    if (match[1].startsWith("obs:"))
+      b.obs.push(Number(match[1].slice(4)));
+    for (const pr of match[2].matchAll(/\bpr (\d+)/g))
+      b.prs.add(pr[1]);
+  }
+  for (const [month, b] of months) {
+    const parts = [];
+    if (b.obs.length > 0)
+      parts.push(b.obs.length > 1 ? `obs ${Math.min(...b.obs)}\u2026${Math.max(...b.obs)}` : `obs ${b.obs[0]}`);
+    if (b.prs.size > 0)
+      parts.push(`prs ${[...b.prs].sort((x, y) => Number(x) - Number(y)).join(", ")}`);
+    out[out.indexOf(`@@${month}`)] = `- ${month}: ${b.n} event${b.n === 1 ? "" : "s"} (${parts.join("; ")})`;
+  }
+  return [...lines.slice(0, start), ...out, ...lines.slice(end)].join(`
+`);
+}
+function compactReviewLedger(review, today = todayLocal()) {
+  const dir = review.path("patterns");
+  if (!existsSync22(dir))
+    return 0;
+  const release = review.tryLock();
+  if (release === null)
+    return -1;
+  try {
+    let changed = 0;
+    for (const name of readdirSync7(dir).filter((file) => /^rp-.*\.md$/.test(file)).sort()) {
+      const path = join24(dir, name);
+      const before = readFileSync15(path, "utf8");
+      const after = compactEvidence(before, today);
+      if (after !== before) {
+        writeGated(review.dir, path, after);
+        changed += 1;
+      }
+    }
+    if (changed > 0)
+      review.commit("learn memory: compact evidence");
+    return changed;
+  } finally {
+    release();
+  }
+}
+function decayLessons(ledger, today = todayLocal()) {
+  const cutoff = daysBefore(today, 90);
+  const stale = [];
+  for (const [id, { meta, body, path }] of loadLessons(ledger)) {
+    const guarded2 = meta.scope === "global" || list2(meta.tags).some((tag) => PROTECTED_TAGS.has(tag));
+    const lastSeen = str2(meta.last_seen) || today;
+    if (meta.status === "confirmed" && lastSeen < cutoff && !guarded2) {
+      writeLesson(path, { ...meta, status: "stale" }, body);
+      stale.push(id);
+    }
+  }
+  return stale;
+}
+function lessonObsSessions(ctx, ledger) {
+  const ids = loadLessons(ledger).values().flatMap(({ meta }) => list2(meta.evidence)).filter((id) => /^obs:\d+$/.test(id)).map((id) => Number(id.slice(4))).toArray();
+  if (ids.length === 0)
+    return new Map;
+  const mem = ClaudeMemSource.open(ctx.config.memDb);
+  try {
+    const source = new ProjectMemorySource(mem, WorkerSessionSource.open(ledger));
+    return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
+  } finally {
+    mem?.close();
+  }
+}
+function pairsOf(value, known) {
+  if (!Array.isArray(value))
+    return [];
+  return value.filter((pair) => Array.isArray(pair) && pair.length === 2 && pair.every((id) => typeof id === "string" && known.has(id)));
+}
+function applyPairs(ledger, reply, today = todayLocal(), obsSession = new Map) {
+  const lessons = loadLessons(ledger);
+  const result = { merged: [], conflicts: [], confirmed: [] };
+  for (const pair of pairsOf(reply.merge, lessons)) {
+    if (pair[0] === pair[1])
+      continue;
+    const [keep, drop] = [...pair].sort();
+    const kept = lessons.get(keep);
+    const dropped = lessons.get(drop);
+    const km = kept.meta;
+    const dm = dropped.meta;
+    const before = km.status;
+    km.evidence = [...new Set([...list2(km.evidence), ...list2(dm.evidence)])].sort();
+    km.tags = [...new Set([...list2(km.tags), ...list2(dm.tags)])].sort();
+    km.last_seen = [str2(km.last_seen), str2(dm.last_seen)].sort().at(-1);
+    km.merged = [...new Set([...list2(km.merged), drop])].sort();
+    km.sessions = Math.max(sessionsOf(km.evidence, obsSession).size, Number(km.sessions) || 0, Number(dm.sessions) || 0);
+    if (km.status === "hypothesis")
+      km.status = km.sessions >= 2 ? "confirmed" : "hypothesis";
+    const body = `
+## Statement
+${str2(km.statement)}
+
+## Merged from ${drop}
+${str2(dm.statement)}
+
+## Evidence
+` + km.evidence.map((id) => `- ${id}
+`).join("");
+    writeLesson(kept.path, km, body);
+    kept.body = body;
+    writeLesson(dropped.path, { ...dm, status: "superseded", valid_until: today, superseded_by: keep }, dropped.body);
+    dropped.meta = { ...dm, status: "superseded", valid_until: today, superseded_by: keep };
+    result.merged.push(pair);
+    if (before !== "confirmed" && km.status === "confirmed")
+      result.confirmed.push(keep);
+  }
+  for (const pair of pairsOf(reply.contradict, lessons)) {
+    for (const id of pair) {
+      const page = lessons.get(id);
+      if (page.meta.status === "hypothesis" || page.meta.status === "confirmed") {
+        page.meta = { ...page.meta, status: "conflict" };
+        writeLesson(page.path, page.meta, page.body);
+      }
+    }
+    result.conflicts.push(pair);
+  }
+  rewriteIndex(ledger);
+  return result;
+}
+var OUTPUT_CONTRACT2 = `Reply with {"merge": [["ls-001", "ls-002"]], "contradict": [["ls-003", "ls-004"]]}.
+- merge: pairs that state the same lesson about the same subject.
+- contradict: pairs that cannot both be true or give opposite instructions for the same situation.
+- Only ids that appear in the index. Empty lists are fine.`;
+function deepPrompt(ctx, index) {
+  return buildPrompt("lesson-merger", OUTPUT_CONTRACT2, [{ title: "Lessons index", body: index }], ctx.env);
+}
+function deep(ctx, ledger, root, review, trigger = "tick") {
+  const index = lessonsIndexText(ledger);
+  if (ctx.config.dryRun) {
+    ctx.io.out(deepPrompt(ctx, index));
+    return "weekly: dry run";
+  }
+  const compacted = review === null ? 0 : compactReviewLedger(review);
+  const stale = decayLessons(ledger);
+  let pairs = { merged: [], conflicts: [], confirmed: [] };
+  const runId = runOf(ctx).runId ?? `weekly-${todayLocal()}-${nowMs() % 1e5}`;
+  if (index !== "(none)") {
+    const reply = ctx.judge(deepPrompt(ctx, index), {
+      runId,
+      traceId: runOf(ctx).traceId,
+      loop: "memory",
+      role: "lesson-merger",
+      project: basename11(root)
+    });
+    if (reply !== null)
+      pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
+  }
+  const lessons = loadLessons(ledger);
+  const workers = WorkerSessionSource.open(ledger);
+  const claude = ClaudeMemSource.open(ctx.config.memDb);
+  const proposals = [];
+  const skippedProposals = [];
+  try {
+    for (const id of pairs.confirmed) {
+      const page = lessons.get(id);
+      if (page === undefined)
+        continue;
+      const trig = list2(page.meta.tags).includes("preference") ? "correction" : "failure";
+      const proposal = proposeOrSkip(ctx, ledger, root, page, {
+        runId,
+        createdBy: "learn/lesson-merger",
+        trigger: trig,
+        claude,
+        workers
+      });
+      if ("ref" in proposal)
+        proposals.push(proposal.ref);
+      else
+        skippedProposals.push(proposal.skipped);
+    }
+  } finally {
+    claude?.close();
+  }
+  saveState(ledger, { ...readState(ledger), last_weekly: nowMs() });
+  const run2 = {
+    job: "weekly",
+    id: runId,
+    status: "ok",
+    trigger,
+    compacted_pages: compacted,
+    stale_lessons: stale,
+    merged: pairs.merged,
+    conflicts: pairs.conflicts,
+    proposals
+  };
+  appendRun(ledger, skippedProposals.length > 0 ? { ...run2, proposals_skipped: skippedProposals } : run2);
+  const compactNote = compacted === -1 ? "evidence compaction skipped (review ledger locked, retries next week)" : `${compacted} review pattern pages compacted`;
+  logLine2(ledger, `weekly: ${compactNote}, ${stale.length} lessons stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`);
+  ledger.commit(`weekly ${runId}`);
+  return `weekly: ${compactNote}, ${stale.length} stale, ${pairs.merged.length} merged, ${pairs.conflicts.length} conflicts`;
+}
+
 // src/learn/memory/reflect.ts
-var INPUT_CHARS2 = 60000;
+import { existsSync as existsSync23 } from "fs";
+var INPUT_CHARS3 = 60000;
 var SUMMARY_CHARS = 20000;
 var BACKFILL_BATCH = 100;
 function formatObservation(row) {
@@ -26100,17 +27060,26 @@ function fit(rows, inputChars) {
   }
   return out.sort((a, b) => a.id - b.id);
 }
-function fetchNew(source, memProject2, watermark, inputChars = INPUT_CHARS2 - SUMMARY_CHARS) {
-  return fit(source.observationsSince(memProject2, watermark, { newestFirst: watermark === 0 }), inputChars);
+function fetchNew(source, memProject2, watermark, inputChars = INPUT_CHARS3 - SUMMARY_CHARS, capturedWatermark = 0) {
+  const native = source.observationsSince(memProject2, watermark, { newestFirst: watermark === 0 });
+  const captured = source.capturedObservationsSince?.(memProject2, capturedWatermark) ?? [];
+  const rows = [];
+  for (let index = 0;index < Math.max(native.length, captured.length); index++)
+    for (const row of [native[index], captured[index]])
+      if (row !== undefined)
+        rows.push(row);
+  return fit(rows, inputChars);
 }
 function unscreenedIds(source, ledger, deferred) {
   const ranges = screenedObservationRanges(ledger);
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
+  const state = readState(ledger);
+  const nativeWatermark = state.last_obs_id_reflected ?? 0;
+  const capturedWatermark = state.last_worker_obs_id_reflected ?? 0;
   const ids = new Set(deferred);
   for (const episode of unconsolidatedEpisodes(ledger))
     for (const row of source.sessionObservations(episode.sid))
       ids.add(row.id);
-  return [...ids].filter((id) => id <= watermark && !isScreened(ranges, id)).toSorted((a, b) => a - b);
+  return [...ids].filter((id) => id <= (isCapturedObservation({ id }) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, id)).toSorted((a, b) => a - b);
 }
 var field = (value) => (value ?? "").slice(0, 600);
 function formatSummaries(rows, cap = SUMMARY_CHARS) {
@@ -26146,7 +27115,7 @@ function outputContract(cap, today) {
 }
 function reflectPrompt(ctx, previous, observations, summaries, today = todayLocal()) {
   const observed = observations.map(formatObservation).join("");
-  const summaryChars = Math.min(SUMMARY_CHARS, Math.max(0, INPUT_CHARS2 - observed.length));
+  const summaryChars = Math.min(SUMMARY_CHARS, Math.max(0, INPUT_CHARS3 - observed.length));
   return buildPrompt("reflector", outputContract(ctx.config.memoryTokens, today), [
     { title: "Previous memory", body: previous.trim() || "(empty)" },
     { title: "New session summaries (oldest first)", body: formatSummaries(summaries, summaryChars) },
@@ -26222,9 +27191,9 @@ function askReflector(ctx, prompt, memProject2) {
     return null;
   return { memory, security_notes: reply?.security_notes };
 }
-function applyReflection(ledger, reply, valid, inputTokens, maxObsId, cap, meta = {}, inputs = {}) {
+function applyReflection(ledger, reply, valid, inputTokens, maxObsId, cap, meta = {}, inputs = {}, workerMaxObsId) {
   const memoryPath = ledger.path("memory.md");
-  const previous = existsSync22(memoryPath) ? readText(memoryPath) : "";
+  const previous = existsSync23(memoryPath) ? readText(memoryPath) : "";
   const { red, record, reason, outcome } = screenReply(ledger, typeof reply === "string" ? { memory: reply } : reply, valid, previous, inputTokens, cap, inputs);
   const dropped = outcome.dropped_by_provenance;
   const redacted = outcome.dropped_by_redaction;
@@ -26240,11 +27209,14 @@ function applyReflection(ledger, reply, valid, inputTokens, maxObsId, cap, meta 
   writeGated(ledger.dir, memoryPath, text);
   const state = readState(ledger);
   const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
-  saveState(ledger, {
+  const nextState = {
     ...withoutBackoff,
     last_obs_id_reflected: Math.max(withoutBackoff.last_obs_id_reflected ?? 0, maxObsId),
     last_reflect: nowMs()
-  });
+  };
+  if (workerMaxObsId !== undefined)
+    nextState.last_worker_obs_id_reflected = Math.max(withoutBackoff.last_worker_obs_id_reflected ?? 0, workerMaxObsId);
+  saveState(ledger, nextState);
   appendRun(ledger, {
     job: "reflect",
     status: "ok",
@@ -26259,8 +27231,10 @@ function applyReflection(ledger, reply, valid, inputTokens, maxObsId, cap, meta 
   return { ok: true, reason: null, dropped, redacted };
 }
 function reflect(ctx, source, ledger, memProject2, trigger = "tick") {
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
-  const observations = fetchNew(source, memProject2, watermark);
+  const state = readState(ledger);
+  const watermark = state.last_obs_id_reflected ?? 0;
+  const workerWatermark = state.last_worker_obs_id_reflected ?? 0;
+  const observations = fetchNew(source, memProject2, watermark, INPUT_CHARS3 - SUMMARY_CHARS, workerWatermark);
   if (observations.length === 0)
     return "reflect: nothing new";
   const sids = [...new Set(observations.map((row) => row.memory_session_id))].sort();
@@ -26280,9 +27254,18 @@ function reflect(ctx, source, ledger, memProject2, trigger = "tick") {
   }
   const valid = new Set([...observations.map((row) => `obs:${row.id}`), ...sids.map(sid8)]);
   const inputTokens = tokens(observations.map(formatObservation).join(""));
-  const minObsId = Math.min(...observations.map((row) => row.id));
-  const maxObsId = Math.max(...observations.map((row) => row.id));
-  const result = applyReflection(ledger, reply, valid, inputTokens, maxObsId, ctx.config.memoryTokens, { trigger, observations: observations.length, sessions: sids.length, min_obs_id: minObsId }, { observations, summaries });
+  const native = observations.filter((row) => !isCapturedObservation(row));
+  const workers = observations.filter(isCapturedObservation);
+  const minObsId = native.length > 0 ? Math.min(...native.map((row) => row.id)) : watermark;
+  const maxObsId = native.length > 0 ? Math.max(...native.map((row) => row.id)) : watermark;
+  const workerMaxObsId = workers.length > 0 ? Math.max(...workers.map((row) => row.id)) : workerWatermark;
+  const result = applyReflection(ledger, reply, valid, inputTokens, maxObsId, ctx.config.memoryTokens, {
+    trigger,
+    observations: observations.length,
+    sessions: sids.length,
+    min_obs_id: minObsId,
+    obs_ids: observations.map((row) => row.id)
+  }, { observations, summaries }, workerMaxObsId);
   const redacted = result.redacted > 0 ? `, ${result.redacted} redacted` : "";
   return `reflect: ${result.ok ? "ok" : `rejected: ${result.reason}`} (${observations.length} obs, ${result.dropped} dropped${redacted})`;
 }
@@ -26290,7 +27273,7 @@ function backfill(ctx, source, ledger, memProject2, deferred, trigger = "tick") 
   const pending = unscreenedIds(source, ledger, deferred);
   if (pending.length === 0)
     return "backfill: nothing unscreened";
-  const observations = fit(source.observationsById(pending.slice(-BACKFILL_BATCH)).toReversed(), INPUT_CHARS2 - SUMMARY_CHARS);
+  const observations = fit(source.observationsById(pending.slice(-BACKFILL_BATCH)).toReversed(), INPUT_CHARS3 - SUMMARY_CHARS);
   const sids = [...new Set(observations.map((row) => row.memory_session_id))].toSorted();
   const previous = readText(ledger.path("memory.md"));
   const summaries = source.summaries(sids);
@@ -26374,7 +27357,7 @@ var COUNT = { type: "integer", minimum: 0 };
 var IDS = { type: "array", items: { type: "string" } };
 var runRowValidator;
 function validateRunRow(row) {
-  runRowValidator ??= new import_ajv3.default({ strict: false }).compile(RUN_ROW_SCHEMA);
+  runRowValidator ??= new import_ajv4.default({ strict: false }).compile(RUN_ROW_SCHEMA);
   return runRowValidator(row);
 }
 var RUN_ROW_SCHEMA = {
@@ -26459,7 +27442,7 @@ function reviewEvents(ctx, root) {
   const ledger = new Ledger(reviewLedgerDir(ctx.config, root));
   return ledger.initialized ? loadEvents(ledger) : [];
 }
-function runProject(ctx, source, root, memProject2, options = {}) {
+function runProject(ctx, claude, root, memProject2, options = {}) {
   const dryRun = ctx.config.dryRun;
   const ledger = dryRun ? new Ledger(memoryDir(ctx.config, root)) : ensureMemoryLedger(memoryDir(ctx.config, root));
   const release = dryRun ? () => {
@@ -26470,13 +27453,36 @@ function runProject(ctx, source, root, memProject2, options = {}) {
   const trigger = options.force === true ? "force" : "tick";
   try {
     const out = [];
+    let captured = 0;
+    let refreshed = 0;
+    const captures = WorkerSessionSource.open(ledger);
+    try {
+      ({ observations: captured, sessions: refreshed } = captures.capture(options.captured ?? [], {
+        dryRun,
+        sinceMs: options.capturedSince
+      }));
+      if ((options.captured?.length ?? 0) > 0)
+        out.push(`worker observations +${captured}`);
+    } catch (error2) {
+      const message = error2 instanceof Error ? error2.message : String(error2);
+      out.push(`worker capture failed: ${message}`);
+      if (!dryRun)
+        logLine2(ledger, `worker capture failed: ${message}`);
+    }
+    const source = new ProjectMemorySource(claude, captures);
     try {
       out.push(jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
         const fresh = buildEpisodes(source, ledger, memProject2, reviewEvents(ctx, root), { dryRun });
-        if (fresh.length > 0 && !dryRun) {
-          appendRun(ledger, { job: "episodes", status: "ok", new: fresh.map((episode) => episode.sid) });
-          ledger.commit(`episodes +${fresh.length}`);
-        }
+        if ((fresh.length > 0 || captured > 0) && !dryRun) {
+          appendRun(ledger, {
+            job: "episodes",
+            status: "ok",
+            new: fresh.map((episode) => episode.sid),
+            worker_observations: captured
+          });
+          ledger.commit(`episodes +${fresh.length}, worker observations +${captured}`);
+        } else if (refreshed > 0 && !dryRun)
+          ledger.commit(`worker sessions refreshed ${refreshed}`);
         return `episodes +${fresh.length}`;
       }));
     } catch (error2) {
@@ -26487,9 +27493,12 @@ function runProject(ctx, source, root, memProject2, options = {}) {
     const state = readState(ledger);
     const lastActivity = source.lastActivityMs(memProject2);
     if (!lastActivity)
-      return [...out, `no claude-mem observations under project '${memProject2}'; check the folder basename matches`];
+      return [...out, `no observations under project '${memProject2}'; check the registry and worker-session homes`];
     const idleS = (nowMs() - lastActivity) / 1000;
-    const { tokens: newTokens, count: newObs } = source.newTokensSince(memProject2, state.last_obs_id_reflected ?? 0);
+    const native = source.newTokensSince(memProject2, state.last_obs_id_reflected ?? 0);
+    const workers = source.capturedTokensSince(memProject2, state.last_worker_obs_id_reflected ?? 0);
+    const newTokens = native.tokens + workers.tokens;
+    const newObs = native.count + workers.count;
     const existingReview = new Ledger(reviewLedgerDir(ctx.config, root));
     const deferred = deferredObservationIds(existingReview);
     const unscreened = unscreenedIds(source, ledger, deferred).length;
@@ -26540,7 +27549,7 @@ function tick(ctx, options = {}) {
 }
 function tickRun(ctx, options) {
   mkdirSync12(ctx.config.runtimeDir, { recursive: true });
-  const release = acquireLock(join24(ctx.config.runtimeDir, ".tick.lock"));
+  const release = acquireLock(join25(ctx.config.runtimeDir, ".tick.lock"));
   if (release === null) {
     ctx.span?.status("locked", "lock-held");
     ctx.io.out("tick: another run holds the lock");
@@ -26548,29 +27557,54 @@ function tickRun(ctx, options) {
   }
   try {
     const source = ClaudeMemSource.open(ctx.config.memDb);
-    if (source === null) {
-      ctx.span?.status("failed", "no-source");
-      tickLog(ctx, `${nowIso()} tick: claude-mem database not found at ${ctx.config.memDb}`);
-      return 0;
-    }
     try {
       tickLog(ctx, `== ${nowIso()} tick${ctx.config.dryRun ? " DRY RUN" : ""}`);
+      if (source === null)
+        tickLog(ctx, `observer: claude-mem database not found at ${ctx.config.memDb}; worker capture continues`);
       const allowed = (root) => options.only !== undefined || repoAllowed(ctx.config, root);
-      const registry = options.only === undefined ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()), (warning2) => tickLog(ctx, warning2), allowed) : readRegistry2(ctx.config);
+      const registry = options.only === undefined && source !== null ? discoverProjects(ctx.config, source.toolUseCwds(discoverySince()), (warning2) => tickLog(ctx, warning2), allowed) : readRegistry2(ctx.config);
       const cutoff = nowMs() - ACTIVE_DAYS * 86400000;
       let projects = 0;
+      const capturedSince = nowMs() - CAPTURE_WINDOW_MS;
+      const memProjects = new Map(Object.values(registry).map((entry) => [entry.root, entry.mem_project]));
+      const claudeActivity = (root) => source?.lastActivityMs(memProjects.get(root) ?? "") ?? 0;
+      const stores = new Map;
+      const stored2 = (root) => {
+        if (!stores.has(root)) {
+          try {
+            stores.set(root, WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, root))));
+          } catch {
+            stores.set(root, null);
+          }
+        }
+        return stores.get(root) ?? null;
+      };
+      const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
+        sinceMs: capturedSince,
+        warn: (warning2) => tickLog(ctx, warning2),
+        wanted: (root, newestMs) => allowed(root) && (options.only === undefined ? Math.max(claudeActivity(root), newestMs) >= cutoff : root === options.only),
+        stored: stored2
+      });
+      if (scan.unmatched > 0)
+        tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and worktree`);
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only)
           continue;
         if (!allowed(entry.root))
           continue;
-        if (options.only === undefined && source.lastActivityMs(entry.mem_project) < cutoff)
+        const workerSessions = scan.sessions.get(entry.root) ?? [];
+        if (options.only === undefined && Math.max(claudeActivity(entry.root), scan.activity.get(entry.root) ?? 0) < cutoff)
           continue;
-        const name = entry.mem_project || basename11(entry.root);
+        const name = entry.mem_project || basename12(entry.root);
         projects += 1;
         let lines;
         try {
-          lines = runProject(ctx, source, entry.root, entry.mem_project, { job: options.job, force: options.force });
+          lines = runProject(ctx, source, entry.root, entry.mem_project, {
+            job: options.job,
+            force: options.force,
+            captured: workerSessions,
+            capturedSince
+          });
         } catch (error2) {
           lines = [`failed: ${error2.message}`];
         }
@@ -26578,12 +27612,14 @@ function tickRun(ctx, options) {
           tickLog(ctx, `${name}: ${line}`);
       }
       ctx.span?.attr("projects", projects);
-      if (ctx.config.dryRun)
+      if (source === null && projects === 0)
+        ctx.span?.status("failed", "no-source");
+      else if (ctx.config.dryRun)
         ctx.span?.status("dry-run");
       else if (projects === 0)
         ctx.span?.status("nothing");
     } finally {
-      source.close();
+      source?.close();
     }
   } catch (error2) {
     ctx.span?.status("failed", "error");
@@ -26698,7 +27734,7 @@ function status(args, ctx) {
     ctx.io.out(JSON.stringify(run2));
   if (runs.length === 0)
     ctx.io.out("(none)");
-  const name = entry?.mem_project || basename12(root);
+  const name = entry?.mem_project || basename13(root);
   const ticks = generations(tickLogPath(ctx.config)).flatMap((path) => readText(path).split(`
 `)).filter((line) => line.startsWith(`${name}: `)).slice(-20);
   ctx.io.out("");
@@ -26710,7 +27746,7 @@ function status(args, ctx) {
   return 0;
 }
 var memoryArea = {
-  summary: "claude-mem observations -> working memory and lessons, merged into the session-start block",
+  summary: "observed host sessions -> working memory and lessons, merged into the session-start block",
   verbs: {
     tick: {
       usage: "memory tick [--force] [--job reflect|backfill|nightly|weekly|all]   the scheduled pass over every active project",
@@ -26804,7 +27840,7 @@ var memoryArea = {
 };
 
 // src/learn/review/cli.ts
-import { basename as basename13 } from "path";
+import { basename as basename14 } from "path";
 
 // src/learn/review/maintain.ts
 var PROCESSED_FILE = "raw/.processed.json";
@@ -27368,7 +28404,7 @@ var reviewArea = {
       usage: "review run [--pr N[,N]] [--repo PATH] [--cwd PATH] [--gh-repo owner/name] [--since YYYY-MM-DD] [--source codex]   ingest, maintain, propose",
       run: spanned("review.run", (args, ctx) => locked2(args, ctx, (ledger, root) => {
         stage(ctx, "review.ingest", root, (inner) => doIngest(args, inner, ledger, root));
-        ctx.io.out(`maintain: ${stage(ctx, "review.maintain", root, (inner) => maintain(inner, ledger, basename13(root)))}`);
+        ctx.io.out(`maintain: ${stage(ctx, "review.maintain", root, (inner) => maintain(inner, ledger, basename14(root)))}`);
         ctx.io.out(`propose: ${stage(ctx, "review.propose", root, (inner) => propose(inner, ledger, root))}`);
         return 0;
       }))
@@ -27383,7 +28419,7 @@ var reviewArea = {
     maintain: {
       usage: "review maintain               classify unprocessed events into pattern pages",
       run: spanned("review.maintain", (args, ctx) => locked2(args, ctx, (ledger, root) => {
-        ctx.io.out(`maintain: ${maintain(ctx, ledger, basename13(root))}`);
+        ctx.io.out(`maintain: ${maintain(ctx, ledger, basename14(root))}`);
         return 0;
       }))
     },
@@ -27461,12 +28497,12 @@ var reviewArea = {
 };
 
 // src/learn/setup/doctor.ts
-import { existsSync as existsSync26 } from "fs";
-import { isAbsolute as isAbsolute6 } from "path";
+import { existsSync as existsSync27 } from "fs";
+import { isAbsolute as isAbsolute7, join as join28 } from "path";
 
 // src/learn/setup/schedule.ts
-import { chmodSync, existsSync as existsSync25, mkdirSync as mkdirSync16, readFileSync as readFileSync15, writeFileSync as writeFileSync11 } from "fs";
-import { dirname as dirname12, join as join26 } from "path";
+import { chmodSync, existsSync as existsSync26, mkdirSync as mkdirSync16, readFileSync as readFileSync17, writeFileSync as writeFileSync11 } from "fs";
+import { dirname as dirname13, join as join27 } from "path";
 
 // src/learn/setup/templates/launchd.plist.tmpl
 var launchd_plist_default = `<?xml version="1.0" encoding="UTF-8"?>
@@ -27522,7 +28558,7 @@ WantedBy=timers.target
 `;
 
 // src/learn/setup/scope.ts
-import { existsSync as existsSync23, mkdirSync as mkdirSync14, renameSync as renameSync4, rmSync as rmSync10, writeFileSync as writeFileSync9 } from "fs";
+import { existsSync as existsSync24, mkdirSync as mkdirSync14, renameSync as renameSync4, rmSync as rmSync10, writeFileSync as writeFileSync9 } from "fs";
 function scopeText(config) {
   if (config.repos === null)
     return "unscoped (every repository)";
@@ -27562,25 +28598,25 @@ function scope(ctx, options) {
     renameSync4(`${path}.tmp`, path);
     ctx.io.out(`${path}: written`);
   } else if (options.clear === true) {
-    const existed = existsSync23(path);
+    const existed = existsSync24(path);
     rmSync10(path, { recursive: true, force: true });
     ctx.io.out(existed ? `${path}: removed` : `${path}: no scope file`);
   }
   const config = loadConfig(ctx.env);
   ctx.io.out(`scope: ${scopeText(config)}`);
-  if (config.reposSource === "env" && existsSync23(path))
+  if (config.reposSource === "env" && existsSync24(path))
     ctx.io.out(`  (AK_LEARN_REPOS overrides ${path})`);
   return 0;
 }
 
 // src/learn/setup/wire.ts
-var import_ajv5 = __toESM(require_ajv(), 1);
-import { copyFileSync, existsSync as existsSync24, mkdirSync as mkdirSync15, readdirSync as readdirSync7, readFileSync as readFileSync14, writeFileSync as writeFileSync10 } from "fs";
-import { homedir as homedir3 } from "os";
-import { dirname as dirname11, join as join25 } from "path";
+var import_ajv6 = __toESM(require_ajv(), 1);
+import { copyFileSync, existsSync as existsSync25, mkdirSync as mkdirSync15, readdirSync as readdirSync8, readFileSync as readFileSync16, writeFileSync as writeFileSync10 } from "fs";
+import { homedir as homedir4 } from "os";
+import { dirname as dirname12, join as join26 } from "path";
 
 // src/learn/setup/toml-hooks.ts
-var import_ajv4 = __toESM(require_ajv(), 1);
+var import_ajv5 = __toESM(require_ajv(), 1);
 var BLOCK_BEGIN = "# >>> agent-kit learn hooks >>>";
 var BLOCK_END = "# <<< agent-kit learn hooks <<<";
 var BLOCK_NOTE = "# Written by `ak learn setup wire`; `ak learn setup uninstall` removes this block.";
@@ -27630,7 +28666,7 @@ function withHookBlock(text2, block) {
   return [...before, ...after].join(`
 `);
 }
-var hooksConfig = new import_ajv4.default({ strict: false }).compile({
+var hooksConfig = new import_ajv5.default({ strict: false }).compile({
   type: "object",
   properties: {
     hooks: {
@@ -27665,7 +28701,7 @@ function assignsHooksKey(text2) {
 function defaultDeps(ctx) {
   const which = (bin) => Bun.which(bin, { PATH: ctx.env.PATH ?? "" });
   return {
-    home: ctx.env.HOME && ctx.env.HOME !== "" ? ctx.env.HOME : homedir3(),
+    home: ctx.env.HOME && ctx.env.HOME !== "" ? ctx.env.HOME : homedir4(),
     platform: process.platform,
     uid: process.getuid?.() ?? 0,
     run: (cmd, options) => run(cmd, { timeoutMs: 60000, env: options?.env ?? ctx.env }),
@@ -27697,7 +28733,7 @@ function ourHookVerb(command) {
   const match = OUR_HOOK.exec(command.trim());
   return match === null ? null : match[1].trim().replace(/\s+/g, " ");
 }
-var ajv3 = new import_ajv5.default({ strict: false });
+var ajv3 = new import_ajv6.default({ strict: false });
 var isJsonObject = ajv3.compile({ type: "object" });
 var isEventList = ajv3.compile({
   type: "array",
@@ -27769,10 +28805,10 @@ function countHook(doc, event, verb) {
   return ourHookCommands(doc, event).filter((command) => ourHookVerb(command) === verb).length;
 }
 function readJsonObject(path, empty) {
-  if (!existsSync24(path))
+  if (!existsSync25(path))
     return empty;
   try {
-    const parsed = JSON.parse(readFileSync14(path, "utf8"));
+    const parsed = JSON.parse(readFileSync16(path, "utf8"));
     return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
@@ -27782,49 +28818,49 @@ function invalidJsonMessage(path) {
   return `${path} is not valid JSON; fix it or remove it, nothing written`;
 }
 function writeJsonWithBackup(path, doc) {
-  if (existsSync24(path) && !existsSync24(`${path}.bak`))
+  if (existsSync25(path) && !existsSync25(`${path}.bak`))
     copyFileSync(path, `${path}.bak`);
-  mkdirSync15(dirname11(path), { recursive: true });
+  mkdirSync15(dirname12(path), { recursive: true });
   writeFileSync10(path, `${JSON.stringify(doc, null, 2)}
 `);
 }
 function claudeSettingsPath(ctx) {
-  return join25(ctx.config.configDir, "settings.json");
+  return join26(ctx.config.configDir, "settings.json");
 }
 function codexHome(ctx, deps) {
   const override = ctx.env.CODEX_HOME;
-  return override !== undefined && override.trim() !== "" ? override : join25(deps.home, ".codex");
+  return override !== undefined && override.trim() !== "" ? override : join26(deps.home, ".codex");
 }
 function droidHome(ctx, deps) {
   const override = ctx.env.FACTORY_HOME_OVERRIDE;
-  return join25(override !== undefined && override.trim() !== "" ? override : deps.home, ".factory");
+  return join26(override !== undefined && override.trim() !== "" ? override : deps.home, ".factory");
 }
 function grokHome(ctx, deps) {
   const override = ctx.env.GROK_HOME;
-  return override !== undefined && override.trim() !== "" ? override : join25(deps.home, ".grok");
+  return override !== undefined && override.trim() !== "" ? override : join26(deps.home, ".grok");
 }
 function kimiHome(ctx, deps) {
   const override = ctx.env.KIMI_CODE_HOME;
-  return override !== undefined && override.trim() !== "" ? override : join25(deps.home, ".kimi-code");
+  return override !== undefined && override.trim() !== "" ? override : join26(deps.home, ".kimi-code");
 }
 function memDir(ctx, deps) {
   const override = ctx.env.CLAUDE_MEM_DATA_DIR;
-  return override !== undefined && override.trim() !== "" ? override : join25(deps.home, ".claude-mem");
+  return override !== undefined && override.trim() !== "" ? override : join26(deps.home, ".claude-mem");
 }
 var MEM_MODE = "code--review-learning";
 var CONTEXT_OBSERVATIONS = "25";
 var SESSION_MATCHER = "startup|resume|clear|compact";
 function modeSource(deps) {
-  return join25(deps.packageRoot, "adapters", "observation-source", "claude-mem", `${MEM_MODE}.json`);
+  return join26(deps.packageRoot, "adapters", "observation-source", "claude-mem", `${MEM_MODE}.json`);
 }
 function memWorkerScript(ctx, deps) {
   const found = [];
-  for (const base of new Set([ctx.config.configDir, join25(deps.home, ".claude")])) {
-    const cache = join25(base, "plugins", "cache");
+  for (const base of new Set([ctx.config.configDir, join26(deps.home, ".claude")])) {
+    const cache = join26(base, "plugins", "cache");
     for (const market of safeList(cache)) {
-      for (const version of safeList(join25(cache, market, "claude-mem"))) {
-        const script = join25(cache, market, "claude-mem", version, "scripts", "worker-service.cjs");
-        if (existsSync24(script))
+      for (const version of safeList(join26(cache, market, "claude-mem"))) {
+        const script = join26(cache, market, "claude-mem", version, "scripts", "worker-service.cjs");
+        if (existsSync25(script))
           found.push(script);
       }
     }
@@ -27833,7 +28869,7 @@ function memWorkerScript(ctx, deps) {
 }
 function safeList(dir) {
   try {
-    return readdirSync7(dir);
+    return readdirSync8(dir);
   } catch {
     return [];
   }
@@ -27884,16 +28920,16 @@ function hostHome(ctx, deps, host) {
 }
 var GROK_HOOKS_FILE = "agent-kit-learn.json";
 function kimiConfigPath(ctx, deps) {
-  return join25(kimiHome(ctx, deps), "config.toml");
+  return join26(kimiHome(ctx, deps), "config.toml");
 }
 function droidStandalonePaths(ctx, deps) {
   const home = droidHome(ctx, deps);
-  return [join25(home, "hooks.json"), join25(home, "hooks", "hooks.json")];
+  return [join26(home, "hooks.json"), join26(home, "hooks", "hooks.json")];
 }
 function droidHookFile(ctx, deps) {
-  const settings = { path: join25(droidHome(ctx, deps), "settings.json"), bare: false };
+  const settings = { path: join26(droidHome(ctx, deps), "settings.json"), bare: false };
   const standalone = {
-    path: droidStandalonePaths(ctx, deps).find((path) => existsSync24(path)) ?? join25(droidHome(ctx, deps), "hooks.json"),
+    path: droidStandalonePaths(ctx, deps).find((path) => existsSync25(path)) ?? join26(droidHome(ctx, deps), "hooks.json"),
     bare: true
   };
   const inStandalone = readJsonObject(standalone.path, {});
@@ -27902,15 +28938,15 @@ function droidHookFile(ctx, deps) {
     return standalone;
   if (inSettings === null || declaresSessionStart(inSettings))
     return settings;
-  return existsSync24(standalone.path) || inSettings.hooks === undefined ? standalone : settings;
+  return existsSync25(standalone.path) || inSettings.hooks === undefined ? standalone : settings;
 }
 function hookFile(ctx, deps, host) {
   if (host === "claude")
     return { path: claudeSettingsPath(ctx), bare: false };
   if (host === "codex")
-    return { path: join25(codexHome(ctx, deps), "hooks.json"), bare: false };
+    return { path: join26(codexHome(ctx, deps), "hooks.json"), bare: false };
   if (host === "grok")
-    return { path: join25(grokHome(ctx, deps), "hooks", GROK_HOOKS_FILE), bare: false, owned: true };
+    return { path: join26(grokHome(ctx, deps), "hooks", GROK_HOOKS_FILE), bare: false, owned: true };
   return droidHookFile(ctx, deps);
 }
 function openHookFile(file) {
@@ -27972,7 +29008,7 @@ function wiredCount(ctx, deps, host, spec) {
   const verb = ourHookVerb(spec.command) ?? "";
   if (host === "kimi") {
     const path = kimiConfigPath(ctx, deps);
-    return existsSync24(path) ? countTomlHook(readFileSync14(path, "utf8"), spec.event, verb) : 0;
+    return existsSync25(path) ? countTomlHook(readFileSync16(path, "utf8"), spec.event, verb) : 0;
   }
   const opened = openHookFile(hookFile(ctx, deps, host));
   return "refuse" in opened ? 0 : countHook(opened.doc, spec.event, verb);
@@ -27980,20 +29016,20 @@ function wiredCount(ctx, deps, host, spec) {
 function wiredCommands(ctx, deps, host) {
   if (host === "kimi") {
     const path = kimiConfigPath(ctx, deps);
-    const tables = existsSync24(path) ? tomlHooks(readFileSync14(path, "utf8")) ?? [] : [];
+    const tables = existsSync25(path) ? tomlHooks(readFileSync16(path, "utf8")) ?? [] : [];
     return tables.flatMap((hook) => hook.command !== undefined && ourHookVerb(hook.command) !== null ? [hook.command] : []);
   }
   const opened = openHookFile(hookFile(ctx, deps, host));
   return "refuse" in opened ? [] : ourHookCommands(opened.doc);
 }
 function writeTextWithBackup(path, text2) {
-  if (existsSync24(path) && !existsSync24(`${path}.bak`))
+  if (existsSync25(path) && !existsSync25(`${path}.bak`))
     copyFileSync(path, `${path}.bak`);
-  mkdirSync15(dirname11(path), { recursive: true });
+  mkdirSync15(dirname12(path), { recursive: true });
   writeFileSync10(path, text2);
 }
 function kimiPlan(ctx, path, specs) {
-  const before = existsSync24(path) ? readFileSync14(path, "utf8") : "";
+  const before = existsSync25(path) ? readFileSync16(path, "utf8") : "";
   if (tomlHooks(before) === null) {
     return {
       refuse: `${path} cannot be read as TOML by this runtime, whose parser also rejects some valid files, date and time values among them; fix the file or quote that value, nothing written`
@@ -28031,26 +29067,26 @@ function wireRefusal(ctx, deps, host) {
 function wireMem(ctx, deps) {
   const dir = memDir(ctx, deps);
   const source = modeSource(deps);
-  const target = join25(dir, "modes", `${MEM_MODE}.json`);
-  let modeReady = existsSync24(target);
-  if (!existsSync24(source)) {
+  const target = join26(dir, "modes", `${MEM_MODE}.json`);
+  let modeReady = existsSync25(target);
+  if (!existsSync25(source)) {
     ctx.io.out(`mode file not shipped at ${source}; claude-mem keeps its current mode`);
   } else {
-    const text2 = readFileSync14(source, "utf8");
-    if (!existsSync24(target) || readFileSync14(target, "utf8") !== text2) {
-      if (existsSync24(target) && !existsSync24(`${target}.bak`))
+    const text2 = readFileSync16(source, "utf8");
+    if (!existsSync25(target) || readFileSync16(target, "utf8") !== text2) {
+      if (existsSync25(target) && !existsSync25(`${target}.bak`))
         copyFileSync(target, `${target}.bak`);
-      mkdirSync15(dirname11(target), { recursive: true });
+      mkdirSync15(dirname12(target), { recursive: true });
       writeFileSync10(target, text2);
       ctx.io.out(`${target}: mode installed`);
     }
     modeReady = true;
   }
-  const settingsPath = join25(dir, "settings.json");
+  const settingsPath = join26(dir, "settings.json");
   const doc = readJsonObject(settingsPath, {}) ?? {};
   const before = JSON.stringify(doc);
   const previous = memPreviousPath(ctx);
-  if (!existsSync24(previous)) {
+  if (!existsSync25(previous)) {
     writeJson(previous, {
       CLAUDE_MEM_CONTEXT_OBSERVATIONS: doc.CLAUDE_MEM_CONTEXT_OBSERVATIONS ?? null,
       CLAUDE_MEM_MODE: doc.CLAUDE_MEM_MODE ?? null
@@ -28068,7 +29104,7 @@ function wireMem(ctx, deps) {
   return true;
 }
 function memPreviousPath(ctx) {
-  return join25(ctx.config.runtimeDir, "claude-mem-previous.json");
+  return join26(ctx.config.runtimeDir, "claude-mem-previous.json");
 }
 function restartWorker(ctx, deps) {
   const script = memWorkerScript(ctx, deps);
@@ -28083,7 +29119,7 @@ function restartWorker(ctx, deps) {
   ctx.io.out(`claude-mem worker: ${result.code === 0 && last !== "" ? last : `restart failed; run it by hand: ${runner} ${script} restart`}`);
 }
 function memPlan(ctx, deps, options) {
-  const settings = join25(memDir(ctx, deps), "settings.json");
+  const settings = join26(memDir(ctx, deps), "settings.json");
   if (readJsonObject(settings, {}) === null)
     return { refuse: invalidJsonMessage(settings) };
   return {
@@ -28108,7 +29144,7 @@ function wire(ctx, deps, options = {}) {
     if (options.host !== undefined && options.host !== host)
       continue;
     const home = hostHome(ctx, deps, host);
-    if (host !== "claude" && options.host !== host && !existsSync24(home)) {
+    if (host !== "claude" && options.host !== host && !existsSync25(home)) {
       const skipped2 = `${home} not present; skipping ${HOST_LABEL[host]} hooks (pass --host ${host} to create it)`;
       plans.push([host, { apply: () => ctx.io.out(skipped2) }]);
       continue;
@@ -28145,10 +29181,10 @@ function schedulerKind(deps) {
 }
 function unitPaths(deps, kind) {
   if (kind === "launchd")
-    return { unit: join26(deps.home, "Library", "LaunchAgents", `${LABEL}.plist`) };
+    return { unit: join27(deps.home, "Library", "LaunchAgents", `${LABEL}.plist`) };
   if (kind === "systemd") {
-    const dir = join26(deps.home, ".config", "systemd", "user");
-    return { unit: join26(dir, `${LABEL}.service`), timer: join26(dir, `${LABEL}.timer`) };
+    const dir = join27(deps.home, ".config", "systemd", "user");
+    return { unit: join27(dir, `${LABEL}.service`), timer: join27(dir, `${LABEL}.timer`) };
   }
   return null;
 }
@@ -28156,9 +29192,9 @@ function tickArgv(deps) {
   return [...deps.ak, "learn", "memory", "tick"];
 }
 function schedulerLog(ctx) {
-  return join26(ctx.config.runtimeDir, "scheduler.log");
+  return join27(ctx.config.runtimeDir, "scheduler.log");
 }
-var PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME"];
+var PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME", "GROK_HOME", "KIMI_HOME"];
 var NOT_BAKED = ["AK_LEARN_REPOS"];
 function unitEnvironment(ctx) {
   const out = [];
@@ -28240,12 +29276,12 @@ function parseInterval(value) {
   return n >= 60 ? n : null;
 }
 function writeIfChanged(ctx, path, text2) {
-  if (existsSync25(path) && readFileSync15(path, "utf8") === text2) {
+  if (existsSync26(path) && readFileSync17(path, "utf8") === text2) {
     chmodSync(path, 384);
     ctx.io.out(`${path}: unchanged`);
     return;
   }
-  mkdirSync16(dirname12(path), { recursive: true });
+  mkdirSync16(dirname13(path), { recursive: true });
   writeFileSync11(path, text2, { mode: 384 });
   chmodSync(path, 384);
   ctx.io.out(`${path}: written`);
@@ -28480,8 +29516,8 @@ function judgeBinary(ctx, deps) {
   const bin = ctx.config.judgeCommand[0];
   if (bin === undefined)
     return null;
-  if (isAbsolute6(bin) || bin.includes("/"))
-    return existsSync26(bin) ? bin : null;
+  if (isAbsolute7(bin) || bin.includes("/"))
+    return existsSync27(bin) ? bin : null;
   return deps.which(bin);
 }
 var SCHEDULER_BASE = ["HOME", "USER", "LOGNAME"];
@@ -28524,7 +29560,7 @@ function doctorChecks(ctx, deps) {
     },
     {
       name: "claude-mem db",
-      ok: existsSync26(ctx.config.memDb),
+      ok: existsSync27(ctx.config.memDb),
       hard: false,
       why: "observations for the memory loop and skill discovery"
     },
@@ -28563,10 +29599,16 @@ function doctor(ctx, deps) {
   ctx.io.out(`  ak command          ${deps.ak.join(" ")}`);
   ctx.io.out(`  judge command       ${ctx.config.judgeCommand.join(" ")}`);
   ctx.io.out(`  claude-mem dir      ${memDir(ctx, deps)}   (db ${ctx.config.memDb})`);
-  ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync26(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
+  ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync27(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
   for (const host of ["droid", "grok", "kimi"]) {
     const home = hostHome(ctx, deps, host);
-    ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync26(home) ? "" : "   (absent)"}`);
+    ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync27(home) ? "" : "   (absent)"}`);
+  }
+  const stores = workerHomes(ctx.env);
+  for (const host of ["codex", "grok", "kimi"]) {
+    const homes = stores[host];
+    const present = homes.filter((home) => existsSync27(join28(home, "sessions"))).length;
+    ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
   }
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
   ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
@@ -28585,11 +29627,11 @@ All hard requirements present.`);
 }
 
 // src/learn/setup/seed.ts
-import { resolve as resolve6 } from "path";
+import { resolve as resolve7 } from "path";
 
 // src/learn/skills/learn.ts
-import { existsSync as existsSync27, mkdirSync as mkdirSync17, readdirSync as readdirSync8, readFileSync as readFileSync16, rmSync as rmSync11, statSync as statSync14 } from "fs";
-import { basename as basename14, join as join27 } from "path";
+import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync9, readFileSync as readFileSync18, rmSync as rmSync11, statSync as statSync15 } from "fs";
+import { basename as basename15, join as join29 } from "path";
 var EMPTY_REGISTRY = { next: 1, candidates: {}, rejected: [], seen_sessions: {} };
 var DEFAULT_DAYS2 = 14;
 var MIN_SESSIONS = 3;
@@ -28646,7 +29688,7 @@ function shouldIncludeMessage(text2) {
 function extractUserMessages(transcript) {
   let text2;
   try {
-    text2 = readFileSync16(transcript, "utf8");
+    text2 = readFileSync18(transcript, "utf8");
   } catch {
     return [];
   }
@@ -28684,18 +29726,18 @@ function gatherSessions(ctx, root, days, registry, force = false) {
   const cutoffMs = Date.now() - days * 86400000;
   const files = new Map;
   for (const folder of new Set([projectFolderName(root), reflectFolderName(root)])) {
-    const dir = join27(ctx.config.configDir, "projects", folder);
+    const dir = join29(ctx.config.configDir, "projects", folder);
     let names = [];
     try {
-      names = readdirSync8(dir);
+      names = readdirSync9(dir);
     } catch {
       continue;
     }
     for (const name of names) {
       if (!name.endsWith(".jsonl"))
         continue;
-      const path = join27(dir, name);
-      const stat = statSync14(path);
+      const path = join29(dir, name);
+      const stat = statSync15(path);
       if (stat.mtimeMs >= cutoffMs)
         files.set(name, { path, mtime: stat.mtimeMs, size: stat.size });
     }
@@ -28733,8 +29775,8 @@ function gatherSessions(ctx, root, days, registry, force = false) {
 function existingSkills(ctx, root, packageRoot2) {
   const skills = [
     ...catalogSkills(packageRoot2 ?? PACKAGE_ROOT),
-    ...installedSkills(join27(ctx.config.configDir, "skills")),
-    ...installedSkills(join27(root, ".claude", "skills"))
+    ...installedSkills(join29(ctx.config.configDir, "skills")),
+    ...installedSkills(join29(root, ".claude", "skills"))
   ];
   const byName = new Map;
   for (const skill of skills)
@@ -28882,7 +29924,7 @@ ${s.messages.map((m) => `- ${m.slice(0, 300)}`).join(`
 `) || "(none)"
       },
       { title: "Rejected names (never propose again)", body: registry.rejected.join(", ") || "(none)" },
-      { title: `Sessions (${sessions.length}, repository ${basename14(root)})`, body }
+      { title: `Sessions (${sessions.length}, repository ${basename15(root)})`, body }
     ], ctx.env);
     if (ctx.config.dryRun) {
       ctx.span?.status("dry-run");
@@ -28893,7 +29935,7 @@ ${s.messages.map((m) => `- ${m.slice(0, 300)}`).join(`
       ...runOf(ctx),
       loop: "skills",
       role: "skill-scout",
-      project: basename14(root)
+      project: basename15(root)
     }));
     if (proposed === null) {
       ctx.span?.status("failed", "no-judge-output");
@@ -29013,9 +30055,9 @@ function promoteCandidate(ctx, root, id) {
   const registry = loadRegistry(ledger);
   const info = registry.candidates[id];
   const path = ledger.path("candidates", `${id}.md`);
-  if (info === undefined || !existsSync27(path))
+  if (info === undefined || !existsSync28(path))
     return null;
-  const draft = readFileSync16(path, "utf8");
+  const draft = readFileSync18(path, "utf8");
   if (info.status === "candidate" && !ctx.config.dryRun) {
     info.status = "promoted";
     info.promoted = todayUtc();
@@ -29049,7 +30091,7 @@ function rejectCandidate(ctx, root, id) {
 
 // src/learn/setup/seed.ts
 function seed(ctx, repo, options = {}) {
-  const start = resolve6(ctx.cwd, repo);
+  const start = resolve7(ctx.cwd, repo);
   const root = mainRepoRoot(start);
   if (root === null) {
     ctx.io.err(`ak learn setup seed: ${start} is not inside a git repository`);
@@ -29092,21 +30134,21 @@ function seed(ctx, repo, options = {}) {
 }
 
 // src/learn/setup/uninstall.ts
-import { existsSync as existsSync28, readdirSync as readdirSync9, readFileSync as readFileSync17, rmSync as rmSync12 } from "fs";
-import { join as join28 } from "path";
+import { existsSync as existsSync29, readdirSync as readdirSync10, readFileSync as readFileSync19, rmSync as rmSync12 } from "fs";
+import { join as join30 } from "path";
 function ledgerRoots(ctx) {
-  const projects = join28(ctx.config.configDir, "projects");
+  const projects = join30(ctx.config.configDir, "projects");
   let folders = [];
   try {
-    folders = readdirSync9(projects);
+    folders = readdirSync10(projects);
   } catch {
     return [];
   }
-  return folders.map((folder) => join28(projects, folder, "agent-kit")).filter((dir) => existsSync28(dir));
+  return folders.map((folder) => join30(projects, folder, "agent-kit")).filter((dir) => existsSync29(dir));
 }
 function restoreMem(ctx, deps) {
-  const settingsPath = join28(memDir(ctx, deps), "settings.json");
-  if (!existsSync28(settingsPath)) {
+  const settingsPath = join30(memDir(ctx, deps), "settings.json");
+  if (!existsSync29(settingsPath)) {
     rmSync12(memPreviousPath(ctx), { force: true });
     return;
   }
@@ -29143,13 +30185,13 @@ function hookFiles(ctx, deps) {
     hookFile(ctx, deps, "claude"),
     hookFile(ctx, deps, "codex"),
     hookFile(ctx, deps, "grok"),
-    { path: join28(droidHome(ctx, deps), "settings.json"), bare: false },
+    { path: join30(droidHome(ctx, deps), "settings.json"), bare: false },
     ...droidStandalonePaths(ctx, deps).map((path) => ({ path, bare: true }))
   ];
 }
 function namesOurHook(path) {
   try {
-    return readFileSync17(path, "utf8").split(`
+    return readFileSync19(path, "utf8").split(`
 `).some((line) => ourHookVerb(line) !== null);
   } catch {
     return false;
@@ -29157,9 +30199,9 @@ function namesOurHook(path) {
 }
 function unwireKimi(ctx, deps) {
   const path = kimiConfigPath(ctx, deps);
-  if (!existsSync28(path))
+  if (!existsSync29(path))
     return;
-  const before = readFileSync17(path, "utf8");
+  const before = readFileSync19(path, "utf8");
   const after = withHookBlock(before, null);
   if (after === null) {
     ctx.io.err(`${path}: the agent-kit hook block is not one marked pair; remove it by hand`);
@@ -29171,7 +30213,7 @@ function unwireKimi(ctx, deps) {
 }
 function uninstall(ctx, deps, options = {}) {
   for (const file of hookFiles(ctx, deps)) {
-    if (!existsSync28(file.path))
+    if (!existsSync29(file.path))
       continue;
     const opened = openHookFile(file);
     if ("refuse" in opened) {
@@ -29192,11 +30234,11 @@ function uninstall(ctx, deps, options = {}) {
   unwireKimi(ctx, deps);
   const kind = schedulerKind(deps);
   const paths = unitPaths(deps, kind);
-  if (kind === "launchd" && paths !== null && existsSync28(paths.unit)) {
+  if (kind === "launchd" && paths !== null && existsSync29(paths.unit)) {
     deps.run(["launchctl", "bootout", `gui/${deps.uid}/${LABEL}`]);
     rmSync12(paths.unit, { force: true });
     ctx.io.out(`${paths.unit}: unloaded and removed`);
-  } else if (kind === "systemd" && paths !== null && (existsSync28(paths.unit) || existsSync28(paths.timer))) {
+  } else if (kind === "systemd" && paths !== null && (existsSync29(paths.unit) || existsSync29(paths.timer))) {
     deps.run(["systemctl", "--user", "disable", "--now", `${LABEL}.timer`]);
     rmSync12(paths.unit, { force: true });
     rmSync12(paths.timer, { force: true });
@@ -29214,25 +30256,25 @@ function uninstall(ctx, deps, options = {}) {
     rmSync12(ctx.config.runtimeDir, { recursive: true, force: true });
     ctx.io.out(`${ctx.config.runtimeDir}: purged`);
   } else {
-    ctx.io.out(`ledgers under ${join28(ctx.config.configDir, "projects")}/*/agent-kit were kept (they are your data; --purge removes them)`);
+    ctx.io.out(`ledgers under ${join30(ctx.config.configDir, "projects")}/*/agent-kit were kept (they are your data; --purge removes them)`);
   }
   return 0;
 }
 
 // src/learn/setup/verify.ts
-import { existsSync as existsSync29, readFileSync as readFileSync18 } from "fs";
-import { isAbsolute as isAbsolute7, join as join29, resolve as resolve7 } from "path";
+import { existsSync as existsSync30, readFileSync as readFileSync20 } from "fs";
+import { isAbsolute as isAbsolute8, join as join31, resolve as resolve8 } from "path";
 var LOOPS2 = ["review", "memory", "skills"];
 function wiredAkPath(argv) {
   const at = argv.indexOf("learn");
   const path = at > 0 ? argv[at - 1] ?? "" : "";
-  return isAbsolute7(path) ? [path] : [];
+  return isAbsolute8(path) ? [path] : [];
 }
 function wiredAkPaths(hookLines, unit) {
   const commands = hookLines.map((command) => splitCommand(command));
-  if (unit !== null && existsSync29(unit)) {
+  if (unit !== null && existsSync30(unit)) {
     try {
-      commands.push(unitArgv(readFileSync18(unit, "utf8")));
+      commands.push(unitArgv(readFileSync20(unit, "utf8")));
     } catch {}
   }
   return [...new Set(commands.flatMap(wiredAkPath))];
@@ -29249,8 +30291,8 @@ function verifyChecks(ctx, deps, repo) {
     check2(`claude ${event} hook`, n === 1, `${n} entries`);
   }
   const hookLines = ourHookCommands(claude);
-  const codexHooks = join29(codexHome(ctx, deps), "hooks.json");
-  if (existsSync29(codexHooks)) {
+  const codexHooks = join31(codexHome(ctx, deps), "hooks.json");
+  if (existsSync30(codexHooks)) {
     const codex = readJson(codexHooks, {});
     hookLines.push(...ourHookCommands(codex));
     for (const [event, verb] of [
@@ -29264,7 +30306,7 @@ function verifyChecks(ctx, deps, repo) {
   }
   const hooks = hostHooks(hookCommands(deps));
   for (const host of ["droid", "grok", "kimi"]) {
-    if (!existsSync29(hostHome(ctx, deps, host)))
+    if (!existsSync30(hostHome(ctx, deps, host)))
       continue;
     const refusal = wireRefusal(ctx, deps, host);
     if (refusal !== null) {
@@ -29277,23 +30319,23 @@ function verifyChecks(ctx, deps, repo) {
       check2(`${host} ${spec.event} hook`, n === 1, `${n} entries`);
     }
   }
-  if (existsSync29(ctx.config.memDb)) {
+  if (existsSync30(ctx.config.memDb)) {
     const dir = memDir(ctx, deps);
-    const settings = readJson(join29(dir, "settings.json"), {});
+    const settings = readJson(join31(dir, "settings.json"), {});
     check2("claude-mem observation budget", settings.CLAUDE_MEM_CONTEXT_OBSERVATIONS === CONTEXT_OBSERVATIONS, String(settings.CLAUDE_MEM_CONTEXT_OBSERVATIONS));
-    check2("claude-mem mode file", existsSync29(join29(dir, "modes", `${MEM_MODE}.json`)));
+    check2("claude-mem mode file", existsSync30(join31(dir, "modes", `${MEM_MODE}.json`)));
   }
   const kind = schedulerKind(deps);
   const paths = unitPaths(deps, kind);
   const entries = wiredAkPaths(hookLines, paths?.unit ?? null);
   if (entries.length > 0) {
-    const missing = entries.filter((entry) => !existsSync29(entry));
+    const missing = entries.filter((entry) => !existsSync30(entry));
     check2("ak entry exists", missing.length === 0, missing.length === 0 ? entries.join(" ") : `missing: ${missing.join(" ")}`);
   }
   if (paths !== null) {
-    check2(`${kind} unit written`, existsSync29(paths.unit), paths.unit);
+    check2(`${kind} unit written`, existsSync30(paths.unit), paths.unit);
     if (paths.timer !== undefined)
-      check2(`${kind} timer written`, existsSync29(paths.timer), paths.timer);
+      check2(`${kind} timer written`, existsSync30(paths.timer), paths.timer);
     if (kind === "launchd")
       check2("launchd job loaded", deps.run(["launchctl", "list"]).stdout.includes(LABEL));
   } else if (kind === "cron") {
@@ -29303,7 +30345,7 @@ function verifyChecks(ctx, deps, repo) {
   }
   const roots = [];
   if (repo !== undefined) {
-    const start = resolve7(ctx.cwd, repo);
+    const start = resolve8(ctx.cwd, repo);
     roots.push(mainRepoRoot(start) ?? start);
   } else {
     roots.push(...Object.values(readRegistry2(ctx.config)).map((entry) => entry.root));
@@ -29313,7 +30355,7 @@ function verifyChecks(ctx, deps, repo) {
   for (const root of roots) {
     for (const loop of LOOPS2) {
       const dir = loopDir(ctx.config, root, loop);
-      check2(`${loop} ledger (${root})`, existsSync29(join29(dir, ".git")), dir);
+      check2(`${loop} ledger (${root})`, existsSync30(join31(dir, ".git")), dir);
     }
   }
   check2("repo scope", true, scopeText(ctx.config));
@@ -29409,10 +30451,10 @@ function createSetupArea(depsFor = defaultDeps) {
 var setupArea = createSetupArea();
 
 // src/learn/skills/cli.ts
-import { resolve as resolve8 } from "path";
+import { resolve as resolve9 } from "path";
 function repoRoot(args, ctx) {
   const repo = flag(args, "repo");
-  const start = repo === undefined ? ctx.cwd : resolve8(ctx.cwd, repo);
+  const start = repo === undefined ? ctx.cwd : resolve9(ctx.cwd, repo);
   return mainRepoRoot(start) ?? (repo === undefined ? null : start);
 }
 function sinceDays(value, now = Date.now()) {
@@ -29549,7 +30591,7 @@ function readHookStdin(argv) {
   if (argv[0] !== "learn" || argv[1] !== "hook" || process.stdin.isTTY)
     return;
   try {
-    return readFileSync19(0, "utf8");
+    return readFileSync21(0, "utf8");
   } catch {
     return;
   }
@@ -29600,7 +30642,7 @@ function dispatch(argv, options) {
 }
 
 // src/maintenance/cli.ts
-var ajv4 = new import_ajv6.default;
+var ajv4 = new import_ajv7.default;
 var pluginSchema = {
   type: "object",
   properties: {
@@ -29681,7 +30723,7 @@ function command(binary, args, cwd = process.cwd(), env = process.env, timeoutMs
   const run2 = spawnSync4(binary, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run2.status === 0, output: (run2.stdout || run2.stderr || run2.error?.message || "").trim() };
 }
-function parseJson(source, validate) {
+function parseJson2(source, validate) {
   try {
     const value = JSON.parse(source);
     return validate(value) ? value : null;
@@ -29710,7 +30752,7 @@ function inProject(row, root) {
 }
 function claudeRecords(root) {
   const output = jsonCommand("claude", ["plugin", "list", "--json"], root);
-  const rows = output ? parseJson(output, validPluginList) ?? [] : [];
+  const rows = output ? parseJson2(output, validPluginList) ?? [] : [];
   return rows.filter((row) => inProject(row, root));
 }
 function isClaudeSource(marketplace) {
@@ -29722,15 +30764,15 @@ function isClaudeSource(marketplace) {
 }
 function claudeSourceConfigured(root) {
   const output = jsonCommand("claude", ["plugin", "marketplace", "list", "--json"], root);
-  return output ? (parseJson(output, validClaudeMarketplaces) ?? []).some(isClaudeSource) : false;
+  return output ? (parseJson2(output, validClaudeMarketplaces) ?? []).some(isClaudeSource) : false;
 }
 function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join30(process.env.CODEX_HOME ?? join30(homedir4(), ".codex"), "config.toml");
+  const file = join32(process.env.CODEX_HOME ?? join32(homedir5(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync20(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync22(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -29741,7 +30783,7 @@ function codexSourceConfigured() {
 }
 function codexRecords() {
   const output = jsonCommand("codex", ["plugin", "list", "--json"]);
-  return output ? parseJson(output, validCodexList)?.installed ?? [] : [];
+  return output ? parseJson2(output, validCodexList)?.installed ?? [] : [];
 }
 function checkPlugin(host, installed, latest) {
   const matches = installed.filter((row) => row.id === ID || row.pluginId === ID);
@@ -29769,10 +30811,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join30(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join32(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson(readFileSync20(file, "utf8"), validSettings);
+    settings = parseJson2(readFileSync22(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID}"] to true in ${file}.`);
   }
@@ -29783,7 +30825,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync30(join30(root, BINDING_FILE)) ? root : null;
+  return existsSync31(join32(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -29795,7 +30837,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join30(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join32(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -29838,11 +30880,11 @@ function checkLinearis(root, backend) {
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync6(topResult.output) : realpathSync6(root);
   for (const base of new Set([root, top])) {
-    const binary = join30(base, "node_modules", ".bin", "linearis");
-    if (!existsSync30(binary))
+    const binary = join32(base, "node_modules", ".bin", "linearis");
+    if (!existsSync31(binary))
       continue;
     const target = realpathSync6(binary);
-    if ([root, top].every((folder) => relative5(join30(realpathSync6(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative6(join32(realpathSync6(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version = command(binary, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version.ok && version.output === "2026.8.0")
@@ -29854,8 +30896,8 @@ function checkLinearis(root, backend) {
 async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute8(root)) {
-      const value = parseJson(readFileSync20(join30(root, suffix), "utf8"), validManifest);
+    if (isAbsolute9(root)) {
+      const value = parseJson2(readFileSync22(join32(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -29864,11 +30906,11 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
           value: null,
           failure: { reason: response.status === 404 ? "missing" : "http-error", status: response.status }
         };
-      const value = parseJson(await response.text(), validManifest);
+      const value = parseJson2(await response.text(), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return { value: null, failure: { reason: isAbsolute8(root) ? "missing" : "network" } };
+    return { value: null, failure: { reason: isAbsolute9(root) ? "missing" : "network" } };
   }
 }
 function print(items, json = false) {
@@ -29913,11 +30955,11 @@ function checkMaintenanceCommand(current, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename15(path) !== "ak")
+  if (!path || basename16(path) !== "ak")
     return null;
   try {
-    const current = readFileSync20(path, "utf8");
-    const published = isAbsolute8(ROOT) ? readFileSync20(join30(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current = readFileSync22(path, "utf8");
+    const published = isAbsolute9(ROOT) ? readFileSync22(join32(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
