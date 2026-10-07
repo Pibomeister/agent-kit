@@ -27,7 +27,7 @@ import { buildPrompt } from "../core/roles.ts";
 import { nowMs, readText, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import type { MemoryObservationSource, ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
-import { isCapturedObservation } from "../sources/worker-sessions.ts";
+import { FACTS_SHOWN, isCapturedObservation } from "../sources/worker-sessions.ts";
 import { unconsolidatedEpisodes } from "./episodes.ts";
 import {
   appendRun,
@@ -52,7 +52,7 @@ export const SUMMARY_CHARS = 20_000;
 /** The most observations one backfill call screens. */
 export const BACKFILL_BATCH = 100;
 
-/** Observation id, time, type, session, title, subtitle, and facts cut at 600 characters. */
+/** Observation id, time, type, session, title, subtitle, and facts cut at `FACTS_SHOWN` characters. */
 export function formatObservation(row: ObservationRow): string {
   const facts = (row.facts ?? "").trim();
   const bits = [
@@ -60,7 +60,7 @@ export function formatObservation(row: ObservationRow): string {
     `  ${row.title ?? ""}`,
   ];
   if (row.subtitle) bits.push(`  ${row.subtitle}`);
-  if (facts !== "") bits.push(`  facts: ${facts.slice(0, 600)}`);
+  if (facts !== "") bits.push(`  facts: ${facts.slice(0, FACTS_SHOWN)}`);
   return `${bits.join("\n")}\n`;
 }
 

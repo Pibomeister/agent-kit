@@ -122,6 +122,20 @@ describe("setup doctor", () => {
     expect(doctor(context(deps, { AK_LEARN_JUDGE: `${judge}.missing` }), deps)).toBe(1);
   });
 
+  test("names each worker host's tool distiller, or says its calls keep their excerpts", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps, { AK_LEARN_DISTILL_GROK: "fixture-distiller --quiet" });
+    doctor(ctx, deps);
+    const lines = ctx.out.filter((line) => line.includes("tool distiller"));
+    expect(lines.map((line) => line.trim().replace(/\s+/g, " "))).toEqual([
+      "codex tool distiller unset (AK_LEARN_DISTILL_CODEX); calls keep their excerpts",
+      "droid tool distiller unset (AK_LEARN_DISTILL_DROID); calls keep their excerpts",
+      "grok tool distiller fixture-distiller --quiet",
+      "kimi tool distiller unset (AK_LEARN_DISTILL_KIMI); calls keep their excerpts",
+      "tool distiller (24h) 0 calls, 0 failures, $0.000000 reported cost",
+    ]);
+  });
+
   test("reports judge calls, failures and cost from the last 24 hours across rotation", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const ctx = context(deps);

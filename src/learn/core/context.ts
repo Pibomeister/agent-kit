@@ -3,6 +3,7 @@
  * config directory and a scripted judge; nothing reads global state directly.
  */
 import type { LearnConfig } from "./config.ts";
+import type { DistillFn } from "./distill.ts";
 import type { JudgeFn } from "./judge.ts";
 import type { SpanHandle } from "./trace.ts";
 
@@ -16,6 +17,8 @@ export interface LearnContext {
   io: LearnIo;
   config: LearnConfig;
   judge: JudgeFn;
+  /** The tool-call distiller seam; absent, the memory tick binds the configured per-host commands. */
+  distill?: DistillFn;
   env: NodeJS.ProcessEnv;
   /** Hook payload read from stdin, when the command was started by a host hook. */
   stdin?: string;
