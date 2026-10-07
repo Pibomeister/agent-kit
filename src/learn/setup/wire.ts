@@ -556,7 +556,7 @@ export function wireMem(ctx: LearnContext, deps: SetupDeps): boolean {
   const source = modeSource(deps);
   const target = join(dir, "modes", `${MEM_MODE}.json`);
   const text = existsSync(source) ? readFileSync(source, "utf8") : `${JSON.stringify(embeddedMemMode, null, 2)}\n`;
-  if (!existsSync(target) || readFileSync(target, "utf8") !== text) {
+  if (!existsSync(target) || JSON.stringify(readJsonObject(target, {})) !== JSON.stringify(JSON.parse(text))) {
     if (existsSync(target) && !existsSync(`${target}.bak`)) copyFileSync(target, `${target}.bak`);
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, text);
