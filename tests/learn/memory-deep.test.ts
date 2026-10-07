@@ -169,10 +169,11 @@ describe("merge and contradiction", () => {
 
   test("a merge adds the merged lesson's repeat count to the kept one", () => {
     const ledger = twoLessons();
-    const dropped = loadLessons(ledger).get("ls-002")!;
+    const dropped = loadLessons(ledger).get("ls-002");
+    if (!dropped) throw new Error("ls-002 missing");
     writeLesson(dropped.path, { ...dropped.meta, count: 4 }, dropped.body);
     applyPairs(ledger, { merge: [["ls-001", "ls-002"]] }, "2026-09-18");
-    expect(loadLessons(ledger).get("ls-001")!.meta.count).toBe(5);
+    expect(loadLessons(ledger).get("ls-001")?.meta.count).toBe(5);
   });
 
   test("a contradiction marks both sides conflict", () => {
