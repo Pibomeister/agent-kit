@@ -1671,13 +1671,13 @@ capabilities:
       adapters/observation-source; it has no reflection step of this shape.
 
   - id: learning-offline-worker-capture
-    capability: Read public Codex, Grok and Kimi session records offline and fold linked-worktree sessions into the registered repository's memory by the placement rule in the contract's section 3
+    capability: Read public Codex, Droid, Grok and Kimi session records offline and fold linked-worktree sessions into the registered repository's memory by the placement rule in the contract's section 3
     disposition: retained
     destination: adapters/observation-source
     locator: plan §8
     origin: conversation
     acceptance_test: >-
-      Captured fixtures for all three hosts become evidence-gated observations under one registered
+      Captured fixtures for every captured host become evidence-gated observations under one registered
       root; a cwd reaches that root by path prefix, by the recorded worktrees.json mapping or by
       the linked worktree's .git pointer, while a cwd none of these places is not captured there.
     note: >-

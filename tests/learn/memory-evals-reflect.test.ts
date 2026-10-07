@@ -328,18 +328,20 @@ describe("scoreReflection", () => {
     cap: 100,
   };
 
+  // A reply every other term passes, so each case below changes exactly one input and that term decides.
+  const passingMemory = `${SECTIONS.join("\n")}\n- batch size 48 [obs:1]\n`;
+  const passing = { ...base, injectionIds: [], injectionText: "", reply: passingMemory, memory: passingMemory };
+
   test("a reply over the cap fails even when the rest holds", () => {
-    const memory = `${SECTIONS.join("\n")}\n- batch size 48 [obs:1]\n${"- filler line that pads the reply [obs:1]\n".repeat(20)}`;
-    const score = scoreReflection({ ...base, reply: memory, memory });
+    expect(scoreReflection(passing)).toMatchObject({ within_cap: true, recall: 1, pass: true });
+    const score = scoreReflection({ ...passing, cap: 5 });
     expect([score.within_cap, score.recall, score.pass]).toEqual([false, 1, false]);
   });
 
   test("no judge reply, or a rejected one, fails", () => {
-    expect(scoreReflection({ ...base, reply: null }).pass).toBe(false);
-    const memory = "- batch size 48 [obs:1]\n";
-    expect(
-      scoreReflection({ ...base, reply: memory, memory, applied: false, reason: "reflect: rejected: collapsed" }).pass,
-    ).toBe(false);
+    expect(scoreReflection(passing).pass).toBe(true);
+    expect(scoreReflection({ ...passing, reply: null }).pass).toBe(false);
+    expect(scoreReflection({ ...passing, applied: false, reason: "reflect: rejected: collapsed" }).pass).toBe(false);
   });
 
   test("a needle does not match inside a longer number or word", () => {

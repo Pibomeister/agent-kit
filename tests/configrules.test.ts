@@ -7,6 +7,7 @@ import {
   checkSkillManifests,
 } from "../src/validation/configrules.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
+import { expectError } from "./helpers/issues.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 const HEAD = `schema_version: 1
@@ -17,6 +18,11 @@ package:
   namespace: "/ak:"
   default_profile: core
 `;
+
+/** A message up to its first `;`, the part that names the defect rather than the rule's rationale. */
+function firstClause(message: string): string {
+  return message.split(";")[0] ?? message;
+}
 
 function ctxFor(files: Record<string, string>) {
   const root = makeTree(files);
@@ -134,6 +140,23 @@ profiles:
     expect(issue?.file).toBe("catalog.d/downstream.yaml");
   });
 
+  test("each catalog branch reports its own message on a catalog with only that defect", () => {
+    for (const [defect, message] of [
+      [
+        clean.replace("    loaded_by: [super-review]\n", "    loaded_by: []\n"),
+        "reference review-lanes declares no loaded_by",
+      ],
+      [
+        clean.replace("default_profile: core", "default_profile: ghost").replace("    default: true\n", ""),
+        "package.default_profile is ghost, which is not a declared profile",
+      ],
+    ] as const) {
+      expect(checkCatalogRules(ctxFor({ "catalog.yaml": clean }))).toEqual([]);
+      const messages = checkCatalogRules(ctxFor({ "catalog.yaml": defect })).map((i) => firstClause(i.message));
+      expect(messages).toContain(message);
+    }
+  });
+
   test("catalog.exactly-one-default-profile-matching-package-default-profile catches a mismatched package default", () => {
     const catalog = clean.replace("default_profile: core", "default_profile: autonomy");
     expect(rulesOf(checkCatalogRules(ctxFor({ "catalog.yaml": catalog })))).toContain(
@@ -170,6 +193,18 @@ describe("skill manifest rules", () => {
       "skills/super-review/skill.yaml": "id: super-review\ninvocation: U\nchild_skills: [super-ship]\n",
     });
     expect(rulesOf(checkSkillManifests(ctx))).toContain("skill.user-invoked-never-starts-user-invoked");
+  });
+
+  test("a child skill that is not declared is an error naming it", () => {
+    const ctx = ctxFor({
+      "catalog.yaml": catalog,
+      "skills/super-review/skill.yaml": "id: super-review\ninvocation: U\nchild_skills: [ghost-skill]\n",
+    });
+    expectError(
+      checkSkillManifests(ctx),
+      "skill.user-invoked-never-starts-user-invoked",
+      "child_skills names ghost-skill, which is not a declared skill",
+    );
   });
 
   test("skill.user-invoked-never-starts-user-invoked reads the child's own invocation, not the parent's claim", () => {
@@ -259,6 +294,61 @@ describe("pack manifest rules", () => {
     expect(
       rulesOf(checkPackManifests(ctxFor({ "catalog.yaml": catalog, "packs/pack-secure/pack.yaml": manifest }))),
     ).toContain("pack.activation-requires-artifact-and-semantics");
+  });
+
+  // Each row starts from goodRule (no issues) and introduces exactly one defect.
+  test.each([
+    [
+      "no rules",
+      goodRule.replace(/  rules:\n[\s\S]*?  examples:/, "  rules: []\n  examples:"),
+      "activation declares no rules",
+    ],
+    [
+      "no artifact kinds",
+      goodRule.replace("artifact_kinds: [source-file]", "artifact_kinds: []"),
+      "activation rule auth-surface declares 0 artifact kind(s) and 1 semantic(s)",
+    ],
+    [
+      "no semantics",
+      goodRule.replace("semantics: [authentication]", "semantics: []"),
+      "activation rule auth-surface declares 1 artifact kind(s) and 0 semantic(s)",
+    ],
+    [
+      "one example",
+      goodRule.replace(
+        "    - artifact: src/auth/session.ts\n      attaches: true\n      why: authentication boundary\n",
+        "",
+      ),
+      "activation declares 1 example(s); at least two are required",
+    ],
+  ])("a pack manifest with %s is refused by that message alone", (_name, manifest, message) => {
+    const issues = checkPackManifests(ctxFor({ "catalog.yaml": catalog, "packs/pack-secure/pack.yaml": manifest }));
+    expect(issues.map((i) => firstClause(i.message))).toEqual([firstClause(message)]);
+  });
+
+  /** A review record attaching one pack, given that attachment as JSON text. */
+  const attachment = (record: string) =>
+    ctxFor({ "catalog.yaml": catalog, "templates/review.json": `{"schema":"review","packs_attached":[${record}]}` });
+  const attached = {
+    pack: "pack-secure",
+    matched_rules: ["auth-surface"],
+    rationale: "authentication boundary",
+    evidence: [{ ref: "e" }],
+    attached_at: "2026-09-19T00:00:00Z",
+  };
+
+  test("an attachment with no rationale, or carrying any authority key, is refused by name", () => {
+    expect(checkPackManifests(attachment(JSON.stringify(attached)))).toEqual([]);
+    const { rationale: _rationale, ...unexplained } = attached;
+    expect(checkPackManifests(attachment(JSON.stringify(unexplained))).map((i) => i.message)).toEqual([
+      "packs_attached[0] (pack-secure) records no rationale",
+    ]);
+    for (const key of ["grant", "grants", "approval", "approvals", "authority"])
+      expect(
+        checkPackManifests(attachment(JSON.stringify({ ...attached, [key]: { covers: "ship" } }))).map(
+          (i) => i.message,
+        ),
+      ).toEqual([`packs_attached[0] (pack-secure) carries ${key}; attaching a pack authorizes nothing`]);
   });
 
   test("pack.attachment-records-rationale-and-matched-rule catches a record with no matched rule", () => {

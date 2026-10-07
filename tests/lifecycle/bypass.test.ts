@@ -441,7 +441,37 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
       "super-align",
     );
     expect(r.code).toBe(1);
-    expect(r.err).toContain("is for");
+    // The repository refusal, not the worktree refusal behind it: its message names a path, not "worktree".
+    expect(r.err).toMatch(/bypass grant \S+ is for \/\S+, not \//);
+  });
+
+  test("a grant past one week, or with a blank task, grantor or reason, is never written", () => {
+    const s = setup();
+    expect(grantFrom(s, s.home, join(s.home, "week.json"), "--hours", "168").code).toBe(0);
+    const tooLong = grantFrom(s, s.home, join(s.home, "long.json"), "--hours", "169");
+    expect(tooLong.code).toBe(1);
+    expect(tooLong.err).toContain("--hours must be a whole number from 1 to 168");
+    expect(existsSync(join(s.home, "long.json"))).toBe(false);
+    for (const blank of ["--task", "--by", "--reason"]) {
+      const out = join(s.home, `blank${blank}.json`);
+      const values = { "--task": "T-1", "--by": "captain", "--reason": "r", [blank]: " " };
+      const r = ak(
+        s.home,
+        s.ledger,
+        "bypass",
+        "grant",
+        ...Object.entries(values).flat(),
+        "--out",
+        out,
+        "--project",
+        s.project,
+        "--worktree",
+        s.worktree,
+      );
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("--task, --by and --reason each need a non-empty value");
+      expect(existsSync(out)).toBe(false);
+    }
   });
 
   test("record --bypass with a forged grant writes no record", () => {
