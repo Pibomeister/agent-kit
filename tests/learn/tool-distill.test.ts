@@ -28,6 +28,7 @@ import {
   type CapturedObservation,
   type CapturedSession,
   parseCodexSession,
+  turnDetail,
   type WorkerHost,
   WorkerSessionSource,
 } from "../../src/learn/sources/worker-sessions.ts";
@@ -78,7 +79,7 @@ function turnRow(calls: readonly CapturedCall[], at = 1_000): CapturedObservatio
     text: [...lead, ...calls.map((item) => `${item.name} ${item.input} -> ${item.output}`)].join("\n"),
     at,
     files_modified: [],
-    detail: { lead, calls },
+    detail: turnDetail(lead, calls),
   };
 }
 
@@ -537,7 +538,7 @@ describe("the distilled record", () => {
         .slice(0, 2_000),
       at: 1_000,
       files_modified: [],
-      detail: { lead, calls },
+      detail: turnDetail(lead, calls),
     };
     const bound = fakeSeam();
     const stage = toolDistiller(config({ AK_LEARN_DISTILL_CODEX: BINDING }), bound.distill, { project: "shop" });
@@ -573,7 +574,7 @@ describe("the distilled record", () => {
       text: "prompt: p",
       at: 1_000,
       files_modified: [],
-      detail: { lead, calls },
+      detail: turnDetail(lead, calls),
     };
     // Every record as long as the prompt allows: a 310-character line, so six fit in the 1,990 left.
     const seam = fakeSeam((request) => ({
@@ -653,7 +654,42 @@ describe("captured rows and the distilled text", () => {
           failed: true,
         },
       ],
+      rest: [],
     });
+  });
+
+  test("a long turn's row keeps only the calls the stage can send and the excerpt lines that can follow them", () => {
+    const home = scratch("ak-distill-long-");
+    const path = writeRollout(home, "long", "/fixture/worktree", [
+      codexMessage("user", "Run every step."),
+      ...Array.from({ length: 67 }, (_, index) => [
+        codexToolCall("shell", `step ${index} ${"a".repeat(500)}`),
+        codexToolOutput(`out ${index} ${"b".repeat(500)}`),
+      ]).flat(),
+      codexMessage("assistant", "Done."),
+      CODEX_TASK_COMPLETE,
+    ]);
+
+    const row = parsed(path).observations[0];
+    const detail = row?.detail;
+
+    // The row keeps 2,000 characters and its summary takes 54: 1,946 are left, and a record is counted at 120.
+    expect(detail?.calls.map((item) => item.input.split(" ", 2).join(" "))).toEqual(
+      Array.from({ length: 17 }, (_, index) => `step ${index}`),
+    );
+    expect(detail?.rest[0]).toStartWith("shell step 17 ");
+    expect((detail?.rest ?? []).join("\n").length).toBeLessThan(2_000 + 400);
+
+    const seam = fakeSeam();
+    const stage = toolDistiller(config({ AK_LEARN_DISTILL_CODEX: BINDING }), seam.distill, { project: "shop" });
+    const [out] = stage.rewrite(parsed(path), row === undefined ? [] : [row]);
+    const lines = out?.text.split("\n") ?? [];
+    const first = lines.findIndex((line) => line.includes("came back"));
+    expect(lines.slice(first, first + 18)).toEqual([
+      ...Array.from({ length: 17 }, (_, index) => `shell did step ${index + 1} -> step ${index + 1} came back`),
+      detail?.rest[0] ?? "",
+    ]);
+    expect(out?.text.length).toBe(2_000);
   });
 
   test("a row is stored once: a later scan matches it by its excerpt form and asks for nothing", () => {

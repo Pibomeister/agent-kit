@@ -40,10 +40,15 @@ export interface CapturedCall {
   failed: boolean;
 }
 
-/** What a turn row's text was built from: its summary lines, then its calls in the order their lines follow. */
+/**
+ * What the distillation stage rewrites a turn row from: its summary lines, the leading calls a
+ * record could be stored for, then the excerpt lines of the calls after them, as far as the stored
+ * text reaches.
+ */
 export interface TurnDetail {
   lead: readonly string[];
   calls: readonly CapturedCall[];
+  rest: readonly string[];
 }
 
 export interface CapturedObservation {
@@ -133,6 +138,13 @@ export const MAX_OBSERVATIONS = 999;
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
 const MAX_TEXT = 2_000;
+/**
+ * What one distilled record is counted at when deciding how many of a turn's calls a row keeps for
+ * the distillation stage. A row's text is cut at the stored length, and a long turn has far more
+ * calls than lines that fit, so a call whose record would start past the cut is never kept: it
+ * would be paid for and thrown away.
+ */
+const RECORD_CHARS = 120;
 const PROMPT_CHARS = 110;
 const REPLY_CHARS = 110;
 const FAILED_CHARS = 50;
@@ -262,6 +274,21 @@ export function callRoom(lead: readonly string[]): number {
 /** A turn row's text: the summary lines, then one line per call, cut to the stored length. */
 export function turnText(lead: readonly string[], callLines: readonly string[]): string {
   return [...lead, ...callLines].join("\n").slice(0, MAX_TEXT);
+}
+
+/** A turn's detail: its leading calls, each counted at `RECORD_CHARS`, and the excerpt lines that can follow them. */
+export function turnDetail(lead: readonly string[], calls: readonly CapturedCall[]): TurnDetail {
+  const room = callRoom(lead);
+  const leading = calls.slice(0, Math.ceil(room / RECORD_CHARS));
+  const rest: string[] = [];
+  let used = 0;
+  for (const call of calls.slice(leading.length)) {
+    if (used >= room) break;
+    const line = callLine(call.name, call.input, call.output);
+    rest.push(line);
+    used += line.length + 1;
+  }
+  return { lead, calls: leading, rest };
 }
 
 /** Public text parts only. Encrypted content and Kimi `think` parts are deliberately excluded. */
@@ -429,7 +456,8 @@ function turnObservation(turn: Turn): CapturedObservation {
     at: turn.at,
     files_modified: [...new Set(turn.files)].toSorted(),
   };
-  if (calls.length > 0) row.detail = { lead, calls };
+  const detail = turnDetail(lead, calls);
+  if (detail.calls.length > 0) row.detail = detail;
   return row;
 }
 

@@ -19,8 +19,8 @@
  *
  * The distiller never decides what is stored, in what order, under which id or
  * as which type; it only words a line. `WorkerSessionSource.capture` hands it
- * the rows the ledger does not hold yet, so a row is paid for once, and of a
- * row only the leading calls whose records can land inside its stored text.
+ * the rows the ledger does not hold yet, so a row is paid for once, and a row
+ * carries only the leading calls whose records can land inside its stored text.
  */
 import Ajv from "ajv";
 import { distillVariable, type LearnConfig } from "../core/config.ts";
@@ -38,12 +38,6 @@ import {
 /** The most calls one request carries, and the most call text; a request closes at whichever comes first. */
 const REQUEST_CALLS = 20;
 const REQUEST_CHARS = 24_000;
-/**
- * What one record is counted at when deciding how many of a turn's calls to send. A row's text is
- * cut at the stored length, and a long turn has far more calls than lines that fit, so a call whose
- * record would start past the cut is never sent: it would be paid for and thrown away.
- */
-const RECORD_CHARS = 120;
 /** A tool's name as it heads a call in the prompt and in the stored line. */
 const NAME_CHARS = 80;
 
@@ -131,12 +125,6 @@ const KEPT_WHY: ReadonlyArray<readonly [Kept, (config: LearnConfig) => string]> 
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-/** The row's calls a record could be stored for: the leading ones, each counted at `RECORD_CHARS`. */
-function sendable(row: CapturedObservation): readonly CapturedCall[] {
-  if (row.detail === undefined) return [];
-  return row.detail.calls.slice(0, Math.ceil(callRoom(row.detail.lead) / RECORD_CHARS));
 }
 
 /**
@@ -268,7 +256,9 @@ export function toolDistiller(
 
   return {
     rewrite: (item, rows) => {
-      const slots = rows.map((row) => sendable(row).map((call): Slot => ({ call: scrubbed(call), line: null })));
+      const slots = rows.map((row) =>
+        (row.detail?.calls ?? []).map((call): Slot => ({ call: scrubbed(call), line: null })),
+      );
       const all = slots.flat();
       if (all.length === 0) return [...rows];
       const tally = tallyOf(item.platform);
@@ -297,9 +287,7 @@ export function toolDistiller(
             text: slot.line ?? callLine(slot.call.name, slot.call.input, slot.call.output),
             distilled: slot.line !== null,
           })),
-          ...row.detail.calls
-            .slice(mine.length)
-            .map((call): RowLine => ({ text: callLine(call.name, call.input, call.output), distilled: false })),
+          ...row.detail.rest.map((text): RowLine => ({ text, distilled: false })),
         ];
         const worded = lines.filter((line) => line.distilled).length;
         const distilled = lines
