@@ -83,7 +83,7 @@ function buildMaintenanceScript(root: string): MaintenanceScript | null {
     const inlined = new Set<string>();
     for (const input of Object.keys(Object(meta?.inputs))) {
       const match = /.*node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
-      if (match) inlined.add(match[1]);
+      if (match?.[1]) inlined.add(match[1]);
     }
     return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined: [...inlined].toSorted() };
   } finally {
