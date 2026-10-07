@@ -299,14 +299,12 @@ export function runProject(
         jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
           const fresh = buildEpisodes(source, ledger, memProject, reviewEvents(ctx, root), { dryRun });
           if ((fresh.length > 0 || captured > 0) && !dryRun) {
-            const run: Parameters<typeof appendRun>[1] = {
+            appendRun(ledger, {
               job: "episodes",
               status: "ok",
               new: fresh.map((episode) => episode.sid),
               worker_observations: captured,
-            };
-            if (distiller.distilled > 0) run.distilled_calls = distiller.distilled;
-            appendRun(ledger, run);
+            });
             ledger.commit(`episodes +${fresh.length}, worker observations +${captured}`);
           } else if (refreshed > 0 && !dryRun) ledger.commit(`worker sessions refreshed ${refreshed}`);
           return `episodes +${fresh.length}`;

@@ -41,9 +41,9 @@ export interface CapturedCall {
 }
 
 /**
- * What the distillation stage rewrites a turn row from: its summary lines, the leading calls a
- * record could be stored for, then the excerpt lines of the calls after them, as far as the stored
- * text reaches.
+ * What the distillation stage rewrites a turn row from: its summary lines, the leading calls whose
+ * records land whole inside what the reflector shows of the row, then the excerpt lines of the calls
+ * after them, as far as the stored text reaches.
  */
 export interface TurnDetail {
   lead: readonly string[];
@@ -59,8 +59,6 @@ export interface CapturedObservation {
   files_modified: string[];
   /** In memory only, never stored: what the distillation stage rewrites the row from. */
   detail?: TurnDetail;
-  /** How many of the row's call lines a distiller wrote; absent on a row that is all excerpts. */
-  distilled?: number;
 }
 
 export interface CapturedSession {
@@ -99,8 +97,6 @@ interface StoredObservation extends ObservationRow {
    * A distilled row keeps the digest of the excerpt form it replaced, since that is what a scan rebuilds.
    */
   key: string;
-  /** How many of the row's call lines a distiller wrote; absent on a row that is all excerpts. */
-  distilled?: number;
 }
 
 type JsonScalar = string | number | boolean | null;
@@ -139,12 +135,15 @@ const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
 const MAX_TEXT = 2_000;
 /**
- * What one distilled record is counted at when deciding how many of a turn's calls a row keeps for
- * the distillation stage. A row's text is cut at the stored length, and a long turn has far more
- * calls than lines that fit, so a call whose record would start past the cut is never kept: it
- * would be paid for and thrown away.
+ * How much of an observation's facts the reflector shows (`formatObservation`), and so how far into
+ * a turn row a distilled record may end. A record past it would be paid for and never read.
  */
-const RECORD_CHARS = 120;
+export const FACTS_SHOWN = 600;
+/** The most a distilled record's two statements run: the prompt asks for these, and the stage cuts to them. */
+export const RECORD_INPUT_CHARS = 100;
+export const RECORD_OUTPUT_CHARS = 200;
+/** A tool's name as it heads a call in the distiller's prompt and in a distilled line. */
+const NAME_CHARS = 80;
 const PROMPT_CHARS = 110;
 const REPLY_CHARS = 110;
 const FAILED_CHARS = 50;
@@ -266,9 +265,19 @@ export function callLine(name: string, input: string, output: string): string {
   return `${name} ${excerpt(input, INPUT_CHARS)} -> ${excerpt(output, OUTPUT_CHARS)}`;
 }
 
-/** How much of a turn row's stored text is left for call lines once its summary lines are in. */
-export function callRoom(lead: readonly string[]): number {
-  return Math.max(0, MAX_TEXT - (lead.length > 0 ? lead.join("\n").length + 1 : 0));
+/** A tool's name as the distillation stage uses it: scrubbed, made one line and cut. */
+export function callName(name: string): string {
+  return scrubCaptured(name).replace(/\s+/g, " ").trim().slice(0, NAME_CHARS);
+}
+
+/** A distilled call's line in a turn row, in the excerpt's shape and within the record's allowances. */
+export function recordLine(name: string, input: string, output: string): string {
+  return `${name} ${excerpt(input, RECORD_INPUT_CHARS)} -> ${excerpt(output, RECORD_OUTPUT_CHARS)}`;
+}
+
+/** The longest line a call's record can make: its name, and both statements at their allowance. */
+function recordMax(call: CapturedCall): number {
+  return recordLine(callName(call.name), "", "").length + RECORD_INPUT_CHARS + RECORD_OUTPUT_CHARS;
 }
 
 /** A turn row's text: the summary lines, then one line per call, cut to the stored length. */
@@ -276,14 +285,26 @@ export function turnText(lead: readonly string[], callLines: readonly string[]):
   return [...lead, ...callLines].join("\n").slice(0, MAX_TEXT);
 }
 
-/** A turn's detail: its leading calls, each counted at `RECORD_CHARS`, and the excerpt lines that can follow them. */
+/**
+ * A turn's detail: the leading calls whose records, each counted at its longest, end inside
+ * `FACTS_SHOWN`, and the excerpt lines that can follow them inside the stored text however short
+ * those records come back.
+ */
 export function turnDetail(lead: readonly string[], calls: readonly CapturedCall[]): TurnDetail {
-  const room = callRoom(lead);
-  const leading = calls.slice(0, Math.ceil(room / RECORD_CHARS));
+  const head = lead.length > 0 ? lead.join("\n").length + 1 : 0;
+  const leading: CapturedCall[] = [];
+  let used = head;
+  for (const call of calls) {
+    const end = used + recordMax(call);
+    if (end > FACTS_SHOWN) break;
+    leading.push(call);
+    used = end + 1;
+  }
+  // A record may come back far shorter than its longest, so the excerpt lines are kept as if it took no room.
   const rest: string[] = [];
-  let used = 0;
+  used = head;
   for (const call of calls.slice(leading.length)) {
-    if (used >= room) break;
+    if (used >= MAX_TEXT) break;
     const line = callLine(call.name, call.input, call.output);
     rest.push(line);
     used += line.length + 1;
@@ -1013,11 +1034,7 @@ function rowKey(row: CapturedObservation): string {
 
 /** The parser's row in a rewrite's wording. Its type, title, time and files stay the parser's. */
 function reworded(row: CapturedObservation, rewrite: CapturedObservation | undefined): CapturedObservation {
-  if (rewrite === undefined) return row;
-  const out: CapturedObservation = { ...row, text: rewrite.text.slice(0, MAX_TEXT) };
-  const distilled = rewrite.distilled ?? 0;
-  if (Number.isInteger(distilled) && distilled > 0) out.distilled = distilled;
-  return out;
+  return rewrite === undefined ? row : { ...row, text: rewrite.text.slice(0, MAX_TEXT) };
 }
 
 function storedObservation(
@@ -1026,7 +1043,7 @@ function storedObservation(
   id: number,
   key: string,
 ): StoredObservation {
-  const stored: StoredObservation = {
+  return {
     id,
     key,
     memory_session_id: item.memory_session_id,
@@ -1044,8 +1061,6 @@ function storedObservation(
     created_at_epoch: row.at,
     platform_source: item.platform,
   };
-  if (row.distilled !== undefined) stored.distilled = row.distilled;
-  return stored;
 }
 
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
@@ -1116,8 +1131,8 @@ export class WorkerSessionSource implements MemoryObservationSource {
    * written; a dry run counts them and changes nothing.
    *
    * `rewrite` is handed the rows of one session the ledger does not hold yet, and only those, and
-   * returns them in the same order. Only a row's text, cut to the stored length, and its count of
-   * distilled lines are taken from what it returns. A row is matched by the digest of the text the
+   * returns them in the same order. Only a row's text, cut to the stored length, is taken from what
+   * it returns. A row is matched by the digest of the text the
    * parser built, before any rewrite, so a rewritten row is recognized by every later scan and is
    * rewritten once. It is called on a dry run too, and writes nothing there itself.
    */

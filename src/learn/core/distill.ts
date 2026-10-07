@@ -5,10 +5,12 @@
  * The command is configuration (`AK_LEARN_DISTILL_<HOST>`), read from the
  * operator's environment and never from this package, so what answers for a
  * host is the operator's binding. Nothing is bound by default, and a host with
- * no binding is never passed here. The distiller rewrites text and decides
- * nothing, so it is not one of the learning roles and takes no role prompt
- * (ruling `learning-judge-is-runner-bound` covers judgements); its caller
- * scrubs what goes in and gates what comes back.
+ * no binding is never passed here. The scheduled tick sees a binding only once
+ * `ak learn setup schedule` writes the unit again, since the unit keeps the
+ * `AK_LEARN_*` environment it was written with. The distiller rewrites text
+ * and decides nothing, so it is not one of the learning roles and takes no
+ * role prompt (ruling `learning-judge-is-runner-bound` covers judgements); its
+ * caller scrubs what goes in and gates what comes back.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";

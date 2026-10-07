@@ -43,11 +43,6 @@
     "compacted_pages": { "type": "integer", "minimum": 0 },
     "stale_lessons": { "type": "integer", "minimum": 0 },
     "new": { "type": "integer", "minimum": 0 },
-    "worker_observations": { "type": "integer", "minimum": 0 },
-    "distilled_calls": {
-      "description": "On an episodes run, how many captured tool calls a bound distiller worded; absent when none was.",
-      "type": "integer",
-      "minimum": 1
-    }
+    "worker_observations": { "type": "integer", "minimum": 0 }
   }
 }

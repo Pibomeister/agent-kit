@@ -135,19 +135,6 @@ describe("setup doctor", () => {
     ]);
   });
 
-  test("says so when a distiller is bound to a name that is no worker host", () => {
-    const deps = fakeDeps(["bun", "git", "judge"]);
-    const ctx = context(deps, { AK_LEARN_DISTILL_CODX: "fixture-distiller", AK_LEARN_DISTILL_CONSTRUCTOR: "x" });
-    doctor(ctx, deps);
-    const lines = ctx.out.filter((line) => line.includes("tool distiller"));
-    expect(lines.map((line) => line.trim().replace(/\s+/g, " "))).toEqual(
-      expect.arrayContaining([
-        "codx tool distiller bound (AK_LEARN_DISTILL_CODX), but no worker host has that name; never used",
-        "constructor tool distiller bound (AK_LEARN_DISTILL_CONSTRUCTOR), but no worker host has that name; never used",
-      ]),
-    );
-  });
-
   test("reports judge calls, failures and cost from the last 24 hours across rotation", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const ctx = context(deps);

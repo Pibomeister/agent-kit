@@ -144,12 +144,6 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
       `  ${`${host} tool distiller`.padEnd(19)} ${command === undefined ? `unset (${distillVariable(host)}); calls keep their excerpts` : command.join(" ")}`,
     );
   }
-  for (const name of Object.keys(ctx.config.distillCommands).toSorted()) {
-    if (Object.hasOwn(stores, name)) continue;
-    ctx.io.out(
-      `  ${`${name} tool distiller`.padEnd(19)} bound (${distillVariable(name)}), but no worker host has that name; never used`,
-    );
-  }
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
   ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
   const trace = judgeTraceSummary(ctx.config);

@@ -22,6 +22,7 @@ export interface LearnConfig {
   /**
    * The tool-call distiller per worker host, as argv: `AK_LEARN_DISTILL_<HOST>`, the host's name in
    * capitals. The prompt goes to stdin; JSON comes back on stdout. A host with no entry keeps excerpts.
+   * The scheduled tick sees a binding only once `ak learn setup schedule` writes the unit again.
    */
   distillCommands: Readonly<Record<string, readonly string[]>>;
   distillTimeoutMs: number;
