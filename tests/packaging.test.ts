@@ -213,8 +213,9 @@ describe("host capability honesty", () => {
  * these are a licensing obligation, not bundle tidiness, and a bundle without
  * them is defective however clean the rest of the build reports.
  *
- * Both host contracts specify them at the bundle root (`NOTICE, LICENSE` in
- * `adapters/claude-code/CONTRACT.md` §1 and `adapters/codex/CONTRACT.md` §2),
+ * Both host contracts specify `NOTICE, LICENSE` at the bundle root and the
+ * ajv notices under `provenance/licenses/` (`adapters/claude-code/CONTRACT.md`
+ * §1 and `adapters/codex/CONTRACT.md` §2),
  * so the filenames and the placement are taken from the contract rather than
  * chosen here.
  */
