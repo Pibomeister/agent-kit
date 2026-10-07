@@ -5,7 +5,7 @@
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { DEFAULT_JUDGE } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
@@ -14,6 +14,7 @@ import { schedulerKind, unitEnvironment } from "./schedule.ts";
 import { scopeText } from "./scope.ts";
 import { codexHome, hostHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
 import { runsLine } from "../stats.ts";
+import { workerHomes } from "../sources/worker-sessions.ts";
 
 export interface Check {
   name: string;
@@ -129,6 +130,12 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   for (const host of ["droid", "grok", "kimi"] as const) {
     const home = hostHome(ctx, deps, host);
     ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync(home) ? "" : "   (absent)"}`);
+  }
+  const stores = workerHomes(ctx.env);
+  for (const host of ["codex", "grok", "kimi"] as const) {
+    const homes = stores[host];
+    const present = homes.filter((home) => existsSync(join(home, "sessions"))).length;
+    ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
   }
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
   ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);

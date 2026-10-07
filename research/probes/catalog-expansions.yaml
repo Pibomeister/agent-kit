@@ -132,7 +132,7 @@ schemas:
       reason: >-
         The learning runtime's run spans record each unit's ids, duration, status and judge
         totals; a closed shape is what keeps prose, paths and names out of them.
-      commits: [238fb34]
+      commits: [b109153]
     - ids: [guard-policy]
       reason: >-
         The opt-in guard runtime judges tool calls against a policy data file, which needs a

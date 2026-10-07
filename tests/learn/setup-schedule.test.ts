@@ -173,6 +173,26 @@ describe("paths", () => {
     expect(launchdPlist(ctx, deps(), 900)).not.toContain("AK_LEARN_REPOS");
   });
 
+  test("the scheduler carries configured worker session homes", () => {
+    expect(
+      unitEnvironment(
+        context({
+          PATH: "/bin",
+          CODEX_HOME: "/hosts/codex",
+          GROK_HOME: "/hosts/grok",
+          KIMI_HOME: "/hosts/kimi",
+          AK_LEARN_CODEX_HOMES: "/hosts/codex:/isolated/codex",
+        }),
+      ),
+    ).toEqual([
+      ["PATH", "/bin"],
+      ["AK_LEARN_CODEX_HOMES", "/hosts/codex:/isolated/codex"],
+      ["CODEX_HOME", "/hosts/codex"],
+      ["GROK_HOME", "/hosts/grok"],
+      ["KIMI_HOME", "/hosts/kimi"],
+    ]);
+  });
+
   test("the config dir follows the environment", () => {
     expect(loadConfig({ CLAUDE_CONFIG_DIR: "/somewhere/else" }).configDir).toBe("/somewhere/else");
     expect(loadConfig({}).configDir).toBe(join(homedir(), ".claude"));
