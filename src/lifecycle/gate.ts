@@ -722,7 +722,7 @@ const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
 
-/** The schema-shape half of the bundled predicate. Cross-checked against ajv in lifecycle tests. */
+/** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
   const validateVerification = verificationValidator();
   const reasons = validateVerification(value)
