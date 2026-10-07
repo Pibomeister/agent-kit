@@ -17,6 +17,7 @@ import {
   ARMS,
   type Arm,
   blockProblem,
+  buildBlock,
   capForArm,
   type CaseRecord,
   commitsSince,
@@ -59,7 +60,7 @@ import {
   SHAM_FACT,
 } from "./evals/influence/scenarios.ts";
 import type { SessionEvent } from "./evals/subjects/types.ts";
-import { scratch, testContext } from "./helpers.ts";
+import { gitRepo, scratch, testContext } from "./helpers.ts";
 
 const ROOT = "/work/repo";
 const bash = (command: string): SessionEvent => ({ kind: "tool", name: "Bash", raw: "Bash", input: { command } });
@@ -988,4 +989,18 @@ describe("the seeded block", () => {
     expect(run([join(docs, "scripts", "docs.sh"), "build"], { cwd: docs }).stdout.trim()).toBe("built 2 pages");
     expect([...snapshot(docs).keys()]).not.toContain(".claude/settings.local.json");
   });
+});
+
+describe("buildBlock", () => {
+  test("a codex subject gets the block its wired hook prints, naming human-only commands as $ak:<id>", () => {
+    const root = gitRepo(join(scratch(), "repo"));
+    const humanOnly = (host: string) =>
+      buildBlock(join(scratch(), "config"), root, host)
+        .split("\n")
+        .find((line) => line.startsWith("Human-only commands"));
+    expect(humanOnly("codex")).toContain("$ak:super-align");
+    expect(humanOnly("codex")).not.toContain("/ak:super-align");
+    expect(humanOnly("claude")).toContain("/ak:super-align");
+    expect(humanOnly("claude")).not.toContain("$ak:super-align");
+  }, 240_000);
 });

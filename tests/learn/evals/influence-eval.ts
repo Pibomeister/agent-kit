@@ -375,10 +375,11 @@ export function seedLedger(config: LearnConfig, root: string, scenario: Scenario
   return ledgerHash(dir);
 }
 
-/** What `ak learn hook session-start` prints for a session starting at `root`, under an optional token cap. */
-export function buildBlock(configDir: string, root: string, cap?: number): string {
+/** What `ak learn hook session-start` prints for a `host` session starting at `root`, as that host's hook is wired, under an optional token cap. */
+export function buildBlock(configDir: string, root: string, host: string, cap?: number): string {
+  const source = host === "codex" ? ["--source", "codex"] : [];
   const once = () =>
-    run([process.execPath, CLI, "learn", "hook", "session-start"], {
+    run([process.execPath, CLI, "learn", "hook", "session-start", ...source], {
       cwd: root,
       input: JSON.stringify({ cwd: root }),
       env: hookEnv(configDir, cap),
@@ -863,7 +864,7 @@ function prepare(scenario: Scenario, arm: Arm, host: string, baseCap: number): P
   const hash = seedLedger(config, root, scenario, arm);
   let block: string;
   try {
-    block = buildBlock(configDir, root, cap);
+    block = buildBlock(configDir, root, host, cap);
   } catch (err) {
     // One case's hook failure aborts that case, not the run: the case is recorded with the reason.
     return { base, root, configDir, baseCommit, block: "", hash, cap, problem: (err as Error).message };
