@@ -194,6 +194,30 @@ describe("sessionStartBlock", () => {
     expect(head).toContain("- preference number 0 [obs:0]");
   });
 
+  test("a page over the cap spends its completed work before any lesson", () => {
+    const { ctx, root } = project({ AK_LEARN_MEMORY_TOKENS: "200" });
+    const completed = Array.from({ length: 20 }, (_, i) => `- completed item number ${i} [obs:${i}]`).join("\n");
+    const memory = MEMORY.replace("## Completed ✅ (last 7 days)", `## Completed ✅ (last 7 days)\n${completed}`);
+    expect(tokens(memory)).toBeGreaterThan(ctx.config.memoryTokens);
+    seedMemory(ctx, root, memory);
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    for (let i = 3; i <= 8; i += 1) {
+      writeLesson(
+        ledger.path("lessons", `ls-00${i}.md`),
+        { id: `ls-00${i}`, statement: `lesson ${i} keep`, status: "confirmed", confidence: `0.${9 - i}0` },
+        "\n",
+      );
+    }
+    const block = sessionStartBlock(ctx);
+    const head = block.slice(0, block.indexOf("\nmemory: reflected"));
+    expect(tokens(head)).toBeLessThanOrEqual(200);
+    for (const id of ["ls-001", "ls-003", "ls-004", "ls-005", "ls-006", "ls-007", "ls-008"]) {
+      expect(head).toContain(`[${id}]`);
+    }
+    expect(head).toContain("- the api moved to v2 [obs:1]");
+    expect(head).not.toContain("completed item number 19");
+  });
+
   test("mute drops memory and lessons but keeps guardrails; unmute restores them", () => {
     const { ctx, root } = project();
     seedGuardrails(ctx, root);

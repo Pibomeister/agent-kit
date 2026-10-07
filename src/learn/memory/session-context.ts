@@ -135,19 +135,29 @@ function lessonsWithin(text: string, cap: number): string {
 }
 
 /**
- * The memory page, then the lessons, within `cap` tokens. Lessons are fitted
- * to their share first and the page is trimmed to what they leave, so a page
- * larger than the cap gives up bullets and never the lessons.
+ * The memory page, then the lessons, within `cap` tokens. The two are trimmed
+ * as one first, which spends completed work before any lesson. When that keeps
+ * fewer lessons than their share would, lessons are fitted to the share and
+ * the page is trimmed to what they leave, so a page larger than the cap gives
+ * up bullets and never the lessons.
  */
 function memoryWithLessons(memory: string, lessons: string, cap: number): string {
   const whole = `${`${memory}\n\n${lessons}`.trim()}\n`;
-  if (memory === "" || lessons === "" || tokens(whole) <= cap) return trim(whole, cap);
+  const together = trim(whole, cap);
+  if (memory === "" || lessons === "" || tokens(whole) <= cap) return together;
   const share = Math.max(Math.floor(cap * LESSONS_SHARE), cap - tokens(`${memory}\n\n`));
   const kept = lessonsWithin(lessons, share);
-  if (kept === "") return trim(`${memory}\n`, cap);
+  if (lessonRows(together) >= lessonRows(kept)) return together;
   // The page's budget is the cap less the lessons and the blank line joining the two, rounded against the page.
   const page = trim(`${memory}\n`, cap - Math.ceil((kept.length + 1) / 4)).trimEnd();
   return page === "" ? kept : `${page}\n\n${kept}`;
+}
+
+/** How many lesson rows a block carries. */
+function lessonRows(text: string): number {
+  return sections(text)
+    .filter(([header]) => header === "## Lessons")
+    .reduce((count, [, lines]) => count + lines.filter((line) => line.startsWith("- ")).length, 0);
 }
 
 function nextNightly(lastNightly: string | undefined, now = new Date()): string {
