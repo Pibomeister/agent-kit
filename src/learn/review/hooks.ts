@@ -16,6 +16,7 @@ import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
+import { recordWorktree } from "../memory/registry.ts";
 import { AK_ENTRY } from "../core/roles.ts";
 import { nowIso } from "../core/store.ts";
 import { appendCapped, carrierOf } from "../core/trace.ts";
@@ -113,6 +114,7 @@ export function stopHook(
     return;
   }
   ctx.span?.project(root);
+  recordWorktree(ctx.config, cwd, root);
   const mark = join(reviewLedgerDir(ctx.config, root), LAST_RUN_FILE);
   if (existsSync(mark) && Date.now() - statSync(mark).mtimeMs < DEBOUNCE_MS) {
     ctx.span?.status("skipped", "debounced");
@@ -345,6 +347,7 @@ export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnA
     ctx.span?.status("dry-run");
     return;
   }
+  recordWorktree(ctx.config, cwd, root);
   const ledger = reviewLedger(ctx.config, root);
   const platform = hookSource(args, ctx);
   appendEvents(ledger, [

@@ -172,7 +172,7 @@ function status(args: LearnArgs, ctx: LearnContext): number {
 }
 
 export const memoryArea: LearnArea = {
-  summary: "claude-mem observations -> working memory and lessons, merged into the session-start block",
+  summary: "observed host sessions -> working memory and lessons, merged into the session-start block",
   verbs: {
     tick: {
       usage:
