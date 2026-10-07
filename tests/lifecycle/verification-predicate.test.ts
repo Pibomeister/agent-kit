@@ -198,3 +198,17 @@ describe("the bundled verification predicate", () => {
     }
   });
 });
+
+test("the source predicate checks receipts under node, which the eval scaffolds run gate.ts with", () => {
+  const receipt = join(ROOT, "templates/verification.example.json");
+  const script = `
+const { verificationShapeReasons } = await import(process.env.GATE);
+const receipt = JSON.parse((await import("node:fs")).readFileSync(process.env.RECEIPT, "utf8"));
+console.log(JSON.stringify([verificationShapeReasons(receipt), verificationShapeReasons({ ...receipt, notes: 5 })]));
+`;
+  const run = Bun.spawnSync(["node", "--input-type=module", "-e", script], {
+    env: { ...process.env, GATE: join(ROOT, "src/lifecycle/gate.ts"), RECEIPT: receipt },
+  });
+  expect(run.exitCode, run.stderr.toString()).toBe(0);
+  expect(JSON.parse(run.stdout.toString())).toEqual([[], ["/notes must be string"]]);
+});

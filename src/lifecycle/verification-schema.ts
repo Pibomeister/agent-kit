@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 /** The source CLI and standalone emitter compile the same two schema documents. */
-export function compileVerificationSchema(root = join(import.meta.dir, "..", "..")) {
+export function compileVerificationSchema(root = fileURLToPath(new URL("../..", import.meta.url))) {
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true, code: { source: true, esm: true } });
   addFormats(ajv);
   ajv.addSchema(JSON.parse(readFileSync(join(root, "schemas/common.schema.json"), "utf8")));
