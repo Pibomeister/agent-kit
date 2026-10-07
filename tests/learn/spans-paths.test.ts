@@ -25,7 +25,15 @@ import { correctionEvent } from "../../src/learn/review/ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "../../src/learn/review/ledger.ts";
 import { maintain } from "../../src/learn/review/maintain.ts";
 import { skillsLedger } from "../../src/learn/skills/learn.ts";
-import { gitRepo, inOutsideRepo, MemFixture, scratch, type TestContext, testContext } from "./helpers.ts";
+import {
+  gitRepo,
+  inOutsideRepo,
+  inOutsideRepoAsync,
+  MemFixture,
+  scratch,
+  type TestContext,
+  testContext,
+} from "./helpers.ts";
 
 function explodingJudge(): never {
   throw new Error("judge exploded");
@@ -40,7 +48,7 @@ function named(ctx: TestContext, name: SpanRow["name"]): SpanRow[] {
   return spans(ctx).filter((row) => row.name === name);
 }
 
-function learn(ctx: TestContext, argv: string[], stdin?: string): number {
+async function learn(ctx: TestContext, argv: string[], stdin?: string): Promise<number> {
   return runLearn(argv, {
     cwd: ctx.cwd,
     io: { out: (line) => ctx.out.push(line), err: (line) => ctx.err.push(line) },
@@ -64,19 +72,19 @@ function correction() {
 }
 
 describe("review spans", () => {
-  test("a run with nothing to do: run ok, stages nothing", () => {
+  test("a run with nothing to do: run ok, stages nothing", async () => {
     const { ctx } = reviewRepo();
-    expect(learn(ctx, ["review", "run", "--no-github", "--no-mem"])).toBe(0);
+    expect(await learn(ctx, ["review", "run", "--no-github", "--no-mem"])).toBe(0);
     expect(named(ctx, "review.run")[0]).toMatchObject({ status: "ok", trigger: "cli" });
     expect(named(ctx, "review.ingest")[0]).toMatchObject({ status: "nothing" });
     expect(named(ctx, "review.maintain")[0]).toMatchObject({ status: "nothing" });
     expect(named(ctx, "review.propose")[0]).toMatchObject({ status: "nothing" });
   });
 
-  test("an unusable judge reply fails the maintain stage with no-judge-output", () => {
+  test("an unusable judge reply fails the maintain stage with no-judge-output", async () => {
     const { root, ctx } = reviewRepo({ replies: [null] });
     appendEvents(reviewLedger(ctx.config, root), [correction()]);
-    expect(learn(ctx, ["review", "maintain"])).toBe(0);
+    expect(await learn(ctx, ["review", "maintain"])).toBe(0);
     expect(named(ctx, "review.maintain")[0]).toMatchObject({
       status: "failed",
       reason: "no-judge-output",
@@ -85,12 +93,12 @@ describe("review spans", () => {
     expect(named(ctx, "review.maintain")[0]?.commit).toMatch(/^[0-9a-f]{40}$/);
   });
 
-  test("a held lock records locked/lock-held and still exits 0", () => {
+  test("a held lock records locked/lock-held and still exits 0", async () => {
     const { root, ctx } = reviewRepo();
     const ledger = reviewLedger(ctx.config, root);
     const release = ledger.tryLock();
     try {
-      expect(learn(ctx, ["review", "run", "--no-github", "--no-mem"])).toBe(0);
+      expect(await learn(ctx, ["review", "run", "--no-github", "--no-mem"])).toBe(0);
     } finally {
       release?.();
     }
@@ -98,24 +106,24 @@ describe("review spans", () => {
     expect(named(ctx, "review.ingest")).toHaveLength(0);
   });
 
-  test("a dry run records dry-run", () => {
+  test("a dry run records dry-run", async () => {
     const { root, ctx } = reviewRepo();
     appendEvents(reviewLedger(ctx.config, root), [correction()]);
     const dry = { ...ctx, env: { ...ctx.env, AK_LEARN_DRY_RUN: "1" } };
-    expect(learn(dry, ["review", "maintain"])).toBe(0);
+    expect(await learn(dry, ["review", "maintain"])).toBe(0);
     expect(named(ctx, "review.maintain")[0]).toMatchObject({ status: "dry-run" });
   });
 
-  test("a thrown error records failed/error and keeps the verb's exit code", () => {
+  test("a thrown error records failed/error and keeps the verb's exit code", async () => {
     const { ctx } = reviewRepo();
-    expect(learn(ctx, ["review", "run", "--no-github", "--no-mem", "--since", "not-a-date"])).toBe(1);
+    expect(await learn(ctx, ["review", "run", "--no-github", "--no-mem", "--since", "not-a-date"])).toBe(1);
     expect(named(ctx, "review.run")[0]).toMatchObject({ status: "failed", reason: "error" });
   });
 
-  test("outside a repository the run fails with not-a-repo", () => {
-    inOutsideRepo((cwd) => {
+  test("outside a repository the run fails with not-a-repo", async () => {
+    await inOutsideRepoAsync(async (cwd) => {
       const ctx = testContext({ cwd });
-      expect(learn(ctx, ["review", "run"])).toBe(1);
+      expect(await learn(ctx, ["review", "run"])).toBe(1);
       expect(named(ctx, "review.run")[0]).toMatchObject({ status: "failed", reason: "not-a-repo", project_key: null });
     });
   });
@@ -150,7 +158,7 @@ describe("memory spans", () => {
     expect(named(ctx, "memory.tick")[0]).toMatchObject({ status: "failed", reason: "no-source" });
   });
 
-  test("memory run writes memory.tick (force) and a job span per job, failed reflect included", () => {
+  test("memory run writes memory.tick (force) and a job span per job, failed reflect included", async () => {
     const dir = scratch();
     const root = gitRepo(join(dir, "shop"));
     const dbPath = join(dir, "mem.db");
@@ -166,7 +174,7 @@ describe("memory spans", () => {
     });
     mem.close();
     const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [null] });
-    expect(learn(ctx, ["memory", "run", "--job", "reflect"])).toBe(0);
+    expect(await learn(ctx, ["memory", "run", "--job", "reflect"])).toBe(0);
     const tickRow = named(ctx, "memory.tick")[0];
     expect(tickRow).toMatchObject({ trigger: "force", status: "ok", attrs: { projects: 1 }, project_key: null });
     expect(named(ctx, "memory.episodes")[0]).toMatchObject({ status: "ok", attrs: { episodes: 1 } });
@@ -176,7 +184,7 @@ describe("memory spans", () => {
     expect(reflect?.project_key).toMatch(/^[0-9a-f]{12}$/);
   });
 
-  test("a reflection the gates reject records rejected/gate-rejected", () => {
+  test("a reflection the gates reject records rejected/gate-rejected", async () => {
     const dir = scratch();
     const root = gitRepo(join(dir, "shop"));
     const dbPath = join(dir, "mem.db");
@@ -193,11 +201,11 @@ describe("memory spans", () => {
     mem.close();
     const invented = `${SECTIONS.join("\n- invented and cites nothing shown [obs:99999]\n")}\n`;
     const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [{ memory: invented }] });
-    expect(learn(ctx, ["memory", "run", "--job", "reflect"])).toBe(0);
+    expect(await learn(ctx, ["memory", "run", "--job", "reflect"])).toBe(0);
     expect(named(ctx, "memory.reflect")[0]).toMatchObject({ status: "rejected", reason: "gate-rejected" });
   });
 
-  test("a job that throws records failed/error and the tick carries on", () => {
+  test("a job that throws records failed/error and the tick carries on", async () => {
     const dir = scratch();
     const root = gitRepo(join(dir, "shop"));
     const dbPath = join(dir, "mem.db");
@@ -213,7 +221,7 @@ describe("memory spans", () => {
     });
     mem.close();
     const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath }, replies: [explodingJudge] });
-    expect(learn(ctx, ["memory", "run", "--job", "reflect"])).toBe(0);
+    expect(await learn(ctx, ["memory", "run", "--job", "reflect"])).toBe(0);
     expect(ctx.out.join("\n")).toContain("reflect failed: judge exploded");
     expect(named(ctx, "memory.reflect")[0]).toMatchObject({ status: "failed", reason: "error" });
     expect(named(ctx, "memory.tick")[0]).toMatchObject({ status: "ok" });
@@ -230,20 +238,20 @@ describe("memory spans", () => {
 });
 
 describe("fix-round regressions", () => {
-  test("the skills discover verb runs inside its own span", () => {
+  test("the skills discover verb runs inside its own span", async () => {
     const root = gitRepo(join(scratch(), "repo"));
     const ctx = testContext({ cwd: root });
-    expect(learn(ctx, ["skills", "discover", "--repo", root])).toBe(0);
+    expect(await learn(ctx, ["skills", "discover", "--repo", root])).toBe(0);
     expect(named(ctx, "skills.discover")[0]).toMatchObject({ status: "nothing", trigger: "cli" });
     expect(named(ctx, "skills.discover")[0]?.project_key).toMatch(/^[0-9a-f]{12}$/);
   });
 
-  test("session-start in a linked worktree keys the main repository, like the Stop hook", () => {
+  test("session-start in a linked worktree keys the main repository, like the Stop hook", async () => {
     const root = gitRepo(join(scratch(), "main"));
     const worktree = join(scratch(), "linked");
     run(["git", "worktree", "add", "-q", "-b", "side", worktree], { cwd: root });
     const ctx = testContext({ cwd: worktree });
-    expect(learn(ctx, ["hook", "session-start"], JSON.stringify({ cwd: worktree }))).toBe(0);
+    expect(await learn(ctx, ["hook", "session-start"], JSON.stringify({ cwd: worktree }))).toBe(0);
     span(ctx, "hook.stop", "hook", (hook) => stopHook(hook, { cwd: worktree }, parseLearnArgs([]), recorder().spawner));
     const [start] = named(ctx, "hook.session-start");
     const [stop] = named(ctx, "hook.stop");
@@ -265,14 +273,14 @@ describe("fix-round regressions", () => {
     expect(ctx.err.join("\n")).toContain("tick: could not write");
   });
 
-  test("memory status reads the rotated tick log too", () => {
+  test("memory status reads the rotated tick log too", async () => {
     const root = gitRepo(join(scratch(), "shop"));
     const ctx = testContext({ cwd: root });
     ensureMemoryLedger(memoryDir(ctx.config, root));
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
     writeFileSync(tickLogPath(ctx.config).replace(/tick\.log$/, "tick.1.log"), "shop: episodes +1 (rotated)\n");
     writeFileSync(tickLogPath(ctx.config), "");
-    expect(learn(ctx, ["memory", "status"])).toBe(0);
+    expect(await learn(ctx, ["memory", "status"])).toBe(0);
     expect(ctx.out).toContain("shop: episodes +1 (rotated)");
   });
 
@@ -309,21 +317,21 @@ describe("memory rollback", () => {
 });
 
 describe("skills spans", () => {
-  test("discover with too few sessions records nothing; run and uses record ok", () => {
+  test("discover with too few sessions records nothing; run and uses record ok", async () => {
     const root = gitRepo(join(scratch(), "repo"));
     const ctx = testContext({ cwd: root });
-    expect(learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
+    expect(await learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
     expect(named(ctx, "skills.discover")[0]).toMatchObject({ status: "nothing", attrs: { sessions: 0 } });
     expect(named(ctx, "skills.run")[0]).toMatchObject({ status: "ok", trigger: "cli" });
     expect(named(ctx, "skills.uses")[0]).toMatchObject({ status: "ok", attrs: { changed: 0, pending: 0 } });
   });
 
-  test("a held skills lock records locked on both steps", () => {
+  test("a held skills lock records locked on both steps", async () => {
     const root = gitRepo(join(scratch(), "repo"));
     const ctx = testContext({ cwd: root });
     const release = skillsLedger(ctx, root).tryLock();
     try {
-      expect(learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
+      expect(await learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
     } finally {
       release?.();
     }
@@ -331,7 +339,7 @@ describe("skills spans", () => {
     expect(named(ctx, "skills.uses")[0]).toMatchObject({ status: "locked", reason: "lock-held" });
   });
 
-  test("an unusable discovery reply records failed/no-judge-output", () => {
+  test("an unusable discovery reply records failed/no-judge-output", async () => {
     const root = gitRepo(join(scratch(), "repo"));
     const ctx = testContext({ cwd: root, replies: [null] });
     const transcripts = join(ctx.config.configDir, "projects", projectFolderName(root));
@@ -345,7 +353,7 @@ describe("skills spans", () => {
         join(transcripts, `${sid}.jsonl`),
         lines.map((content) => `${JSON.stringify({ type: "user", message: { role: "user", content } })}\n`).join(""),
       );
-    expect(learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
+    expect(await learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
     expect(named(ctx, "skills.discover")[0]).toMatchObject({
       status: "failed",
       reason: "no-judge-output",
@@ -353,17 +361,17 @@ describe("skills spans", () => {
     });
   });
 
-  test("a dry run records dry-run on the run", () => {
+  test("a dry run records dry-run on the run", async () => {
     const root = gitRepo(join(scratch(), "repo"));
     const ctx = testContext({ cwd: root, env: { AK_LEARN_DRY_RUN: "1" } });
-    expect(learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
+    expect(await learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
     expect(named(ctx, "skills.run")[0]).toMatchObject({ status: "dry-run" });
   });
 
-  test("the pipeline the Stop hook detaches records hook as its trigger", () => {
+  test("the pipeline the Stop hook detaches records hook as its trigger", async () => {
     const root = gitRepo(join(scratch(), "repo"));
     const ctx = testContext({ cwd: root, env: { AK_LEARN_TRIGGER: "hook" } });
-    expect(learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
+    expect(await learn(ctx, ["skills", "run", "--repo", root])).toBe(0);
     expect(named(ctx, "skills.run")[0]).toMatchObject({ trigger: "hook" });
   });
 });
@@ -419,33 +427,37 @@ describe("hook spans", () => {
     expect(ledger.git(["ls-files", "raw"]).stdout).not.toContain(".pipeline");
   });
 
-  test("stop and prompt in a dry run record dry-run and write nothing", () => {
+  test("stop and prompt in a dry run record dry-run and write nothing", async () => {
     const repo = gitRepo(join(scratch(), "app"));
     const ctx = testContext({ cwd: repo, env: { AK_LEARN_DRY_RUN: "1" } });
     const { calls, spawner } = recorder();
     span(ctx, "hook.stop", "hook", (hook) => stopHook(hook, { cwd: repo }, parseLearnArgs([]), spawner));
-    expect(learn(ctx, ["hook", "prompt"], JSON.stringify({ cwd: repo, prompt: "no, use the fixture clock" }))).toBe(0);
+    expect(
+      await learn(ctx, ["hook", "prompt"], JSON.stringify({ cwd: repo, prompt: "no, use the fixture clock" })),
+    ).toBe(0);
     expect(calls).toHaveLength(0);
     expect(named(ctx, "hook.stop")[0]).toMatchObject({ status: "dry-run" });
     expect(named(ctx, "hook.prompt")[0]).toMatchObject({ status: "dry-run" });
     expect(existsSync(reviewLedgerDir(ctx.config, repo))).toBe(false);
   });
 
-  test("prompt: a correction is captured; an ordinary prompt is nothing", () => {
+  test("prompt: a correction is captured; an ordinary prompt is nothing", async () => {
     const repo = gitRepo(join(scratch(), "app"));
     const ctx = testContext({ cwd: repo });
-    expect(learn(ctx, ["hook", "prompt"], JSON.stringify({ cwd: repo, prompt: "no, use the fixture clock" }))).toBe(0);
-    expect(learn(ctx, ["hook", "prompt"], JSON.stringify({ cwd: repo, prompt: "please add a test" }))).toBe(0);
+    expect(
+      await learn(ctx, ["hook", "prompt"], JSON.stringify({ cwd: repo, prompt: "no, use the fixture clock" })),
+    ).toBe(0);
+    expect(await learn(ctx, ["hook", "prompt"], JSON.stringify({ cwd: repo, prompt: "please add a test" }))).toBe(0);
     const [captured, plain] = named(ctx, "hook.prompt");
     expect(captured).toMatchObject({ status: "ok", attrs: { captured: true }, trigger: "hook" });
     expect(captured?.attrs.detection).not.toBe("none");
     expect(plain).toMatchObject({ status: "nothing", attrs: { captured: false, detection: "none" } });
   });
 
-  test("session-start outside any repository prints the roster only and records no project", () => {
-    inOutsideRepo((cwd) => {
+  test("session-start outside any repository prints the roster only and records no project", async () => {
+    await inOutsideRepoAsync(async (cwd) => {
       const ctx = testContext({ cwd });
-      expect(learn(ctx, ["hook", "session-start"], JSON.stringify({ cwd }))).toBe(0);
+      expect(await learn(ctx, ["hook", "session-start"], JSON.stringify({ cwd }))).toBe(0);
       expect(named(ctx, "hook.session-start")[0]).toMatchObject({
         project_key: null,
         attrs: { guardrails: 0, lessons: 0 },

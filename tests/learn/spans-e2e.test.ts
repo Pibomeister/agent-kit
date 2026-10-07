@@ -108,22 +108,22 @@ interface Outcome {
   err: string[];
 }
 
-function learn(p: Project, argv: string[], stdin?: string): Outcome {
+async function learn(p: Project, argv: string[], stdin?: string): Promise<Outcome> {
   const out: string[] = [];
   const err: string[] = [];
   const io = { out: (line: string) => out.push(line), err: (line: string) => err.push(line) };
-  const code = runLearn(argv, { cwd: p.root, io, env: p.env, stdin });
+  const code = await runLearn(argv, { cwd: p.root, io, env: p.env, stdin });
   return { code, out, err };
 }
 
 /** The scripted session: a correction, then the review, memory and skills runs a Stop hook would detach. */
-function session(p: Project): Outcome[] {
+async function session(p: Project): Promise<Outcome[]> {
   return [
-    learn(p, ["hook", "prompt"], JSON.stringify({ cwd: p.root, prompt: CORRECTION })),
-    learn(p, ["review", "run", "--repo", p.root, "--no-github", "--no-mem"]),
-    learn(p, ["memory", "run", "--job", "all", "--repo", p.root]),
-    learn(p, ["skills", "run", "--repo", p.root]),
-    learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root })),
+    await learn(p, ["hook", "prompt"], JSON.stringify({ cwd: p.root, prompt: CORRECTION })),
+    await learn(p, ["review", "run", "--repo", p.root, "--no-github", "--no-mem"]),
+    await learn(p, ["memory", "run", "--job", "all", "--repo", p.root]),
+    await learn(p, ["skills", "run", "--repo", p.root]),
+    await learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root })),
   ];
 }
 
@@ -136,9 +136,9 @@ function judgeRows(p: Project): JudgeTraceRow[] {
 }
 
 describe("run-id linkage", () => {
-  test("every judge row of all five roles names a span the same session wrote, in that span's trace", () => {
+  test("every judge row of all five roles names a span the same session wrote, in that span's trace", async () => {
     const p = project();
-    for (const outcome of session(p)) expect(outcome.code).toBe(0);
+    for (const outcome of await session(p)) expect(outcome.code).toBe(0);
     const byId = new Map(spans(p).map((row) => [row.span_id, row]));
     const rows = judgeRows(p);
     expect(new Set(rows.map((row) => row.role))).toEqual(new Set(ROLES));
@@ -176,9 +176,9 @@ describe("run-id linkage", () => {
     for (const row of rows) expect(byId.get(row.run_id ?? "")?.name).toBe(owner.get(row.role));
   });
 
-  test("the nightly and weekly run ids, commit subjects and rollback all carry the job's span id", () => {
+  test("the nightly and weekly run ids, commit subjects and rollback all carry the job's span id", async () => {
     const p = project();
-    session(p);
+    await session(p);
     const nightly = spans(p).find((row) => row.name === "memory.nightly");
     const weekly = spans(p).find((row) => row.name === "memory.weekly");
     if (nightly === undefined || weekly === undefined) throw new Error("expected nightly and weekly spans");
@@ -200,9 +200,9 @@ describe("run-id linkage", () => {
     expect(undone).toContain(nightly.span_id);
   });
 
-  test("judge totals roll up: the review run carries its maintainer's calls and cost", () => {
+  test("judge totals roll up: the review run carries its maintainer's calls and cost", async () => {
     const p = project();
-    session(p);
+    await session(p);
     const rows = spans(p);
     const maintain = rows.find((row) => row.name === "review.maintain");
     const run = rows.find((row) => row.name === "review.run");
@@ -212,9 +212,9 @@ describe("run-id linkage", () => {
     expect(run?.judge.cost_usd).toBeCloseTo(0.01 * (maintain?.judge.calls ?? 0));
   });
 
-  test("an ambient carrier roots the whole session in its trace", () => {
+  test("an ambient carrier roots the whole session in its trace", async () => {
     const p = project({ TRACEPARENT: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01" });
-    session(p);
+    await session(p);
     const rows = spans(p);
     expect(new Set(rows.map((row) => row.trace_id))).toEqual(new Set(["4bf92f3577b34da6a3ce929d0e0e4736"]));
     for (const row of rows.filter((r) => r.parent_span_id === "00f067aa0ba902b7"))
@@ -223,9 +223,9 @@ describe("run-id linkage", () => {
 });
 
 describe("redaction by construction", () => {
-  test("no seeded secret, correction, narrative, path or repository name reaches the span file or judge trace", () => {
+  test("no seeded secret, correction, narrative, path or repository name reaches the span file or judge trace", async () => {
     const p = project();
-    session(p);
+    await session(p);
     const spanText = readFileSync(join(p.runtimeDir, SPAN_FILE), "utf8");
     // `project` is the judge trace's existing basename field and stays out of scope here (spec AC-8).
     const judgeText = judgeRows(p)
@@ -252,26 +252,26 @@ function normalize(p: Project, outcome: Outcome): string[] {
 }
 
 describe("best effort", () => {
-  test("an unwritable span file and salt change no exit code and no output", () => {
+  test("an unwritable span file and salt change no exit code and no output", async () => {
     const working = project();
     const broken = project();
     mkdirSync(join(broken.runtimeDir, SPAN_FILE), { recursive: true });
     mkdirSync(join(broken.runtimeDir, ".salt"), { recursive: true });
-    const a = session(working);
-    const b = session(broken);
+    const a = await session(working);
+    const b = await session(broken);
     expect(b.map((o) => o.code)).toEqual(a.map((o) => o.code));
     expect(b.map((o) => normalize(broken, o))).toEqual(a.map((o) => normalize(working, o)));
   });
 });
 
 describe("session-start exposure", () => {
-  test("the hook span lists exactly the guardrail and lesson ids in the printed block", () => {
+  test("the hook span lists exactly the guardrail and lesson ids in the printed block", async () => {
     const p = project();
     writeFileSync(
       reviewLedger(loadConfig(p.env), p.root).path("guardrails.md"),
       "# Guardrails\n\n- [rp-007] check the diff against the PR body\n",
     );
-    const out = learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root }));
+    const out = await learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root }));
     const printed = out.out.join("\n");
     expect(printed).toContain("[rp-007]");
     expect(printed).toContain("[ls-001]");
@@ -283,7 +283,7 @@ describe("session-start exposure", () => {
     expect(row?.project_key).toMatch(/^[0-9a-f]{12}$/);
   });
 
-  test("a memory page over the token cap still leaves the confirmed lessons in the block and on the span", () => {
+  test("a memory page over the token cap still leaves the confirmed lessons in the block and on the span", async () => {
     const p = project();
     const config = loadConfig(p.env);
     const bullets = Array.from(
@@ -293,7 +293,7 @@ describe("session-start exposure", () => {
     const page = `## Current state\n${bullets.join("\n")}\n`;
     expect(tokens(page)).toBeGreaterThan(2 * config.memoryTokens);
     writeFileSync(new Ledger(memoryDir(config, p.root)).path("memory.md"), page);
-    const out = learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root }));
+    const out = await learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root }));
     const printed = out.out.join("\n");
     expect(printed).toContain("- never hand-edit dist/ [ls-001]");
     expect(printed).toContain("- never edit generated files [ls-002]");
@@ -304,7 +304,7 @@ describe("session-start exposure", () => {
     expect(row?.attrs.shown).toEqual(["ls-001", "ls-002"]);
   });
 
-  test("a session's episode row carries the ids it was shown, beside how it turned out", () => {
+  test("a session's episode row carries the ids it was shown, beside how it turned out", async () => {
     // The host's hooks name the session one way and the observer's rows another; the join goes through the first.
     const hostSession = "0b9d4c1e-7a52-4f6e-9c1d-canaryhostid";
     const sid = "eeee5555-0000";
@@ -319,9 +319,9 @@ describe("session-start exposure", () => {
       "# Guardrails\n\n- [rp-007] check the diff against the PR body\n",
     );
     const payload = { cwd: p.root, session_id: hostSession };
-    expect(learn(p, ["hook", "session-start"], JSON.stringify(payload)).code).toBe(0);
-    expect(learn(p, ["hook", "prompt"], JSON.stringify({ ...payload, prompt: CORRECTION })).code).toBe(0);
-    expect(learn(p, ["memory", "run", "--job", "all", "--repo", p.root]).code).toBe(0);
+    expect((await learn(p, ["hook", "session-start"], JSON.stringify(payload))).code).toBe(0);
+    expect((await learn(p, ["hook", "prompt"], JSON.stringify({ ...payload, prompt: CORRECTION }))).code).toBe(0);
+    expect((await learn(p, ["memory", "run", "--job", "all", "--repo", p.root])).code).toBe(0);
 
     const start = spans(p).find((r) => r.name === "hook.session-start");
     expect(start?.attrs.shown).toEqual(["rp-007", "ls-001", "ls-002"]);

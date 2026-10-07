@@ -85,9 +85,11 @@ function carried(lines: string[]): string {
 }
 
 /** Run the whole `ak learn` command line in process and return what it printed. */
-function cli(ctx: TestContext, argv: string[], stdin: string): string[] {
+async function cli(ctx: TestContext, argv: string[], stdin: string): Promise<string[]> {
   const before = ctx.out.length;
-  expect(runLearn(["hook", "session-start", ...argv], { cwd: scratch(), io: ctx.io, env: ctx.env, stdin })).toBe(0);
+  expect(await runLearn(["hook", "session-start", ...argv], { cwd: scratch(), io: ctx.io, env: ctx.env, stdin })).toBe(
+    0,
+  );
   return ctx.out.slice(before);
 }
 
@@ -363,20 +365,20 @@ describe("session-start for every host", () => {
 });
 
 describe("ak learn hook session-start --host through the CLI", () => {
-  test("the command lines `setup wire` writes do what their hooks are wired for", () => {
+  test("the command lines `setup wire` writes do what their hooks are wired for", async () => {
     const { ctx, root } = seeded();
     const block = sessionStartBlock(ctx).trimEnd();
     const prompt = payload("kimi/user-prompt-submit.stdin.json", root);
-    expect(cli(ctx, ["--host", "kimi"], prompt)).toEqual([block]);
-    expect(cli(ctx, ["--host", "kimi"], prompt)).toEqual([]);
-    expect(cli(ctx, ["--host", "kimi", "--arm"], payload("kimi/session-start.stdin.json", root))).toEqual([]);
-    expect(cli(ctx, ["--host", "kimi"], prompt)).toEqual([block]);
+    expect(await cli(ctx, ["--host", "kimi"], prompt)).toEqual([block]);
+    expect(await cli(ctx, ["--host", "kimi"], prompt)).toEqual([]);
+    expect(await cli(ctx, ["--host", "kimi", "--arm"], payload("kimi/session-start.stdin.json", root))).toEqual([]);
+    expect(await cli(ctx, ["--host", "kimi"], prompt)).toEqual([block]);
 
-    const tool = cli(ctx, ["--host", "grok"], payload("grok/post-tool-use.stdin.json", root));
+    const tool = await cli(ctx, ["--host", "grok"], payload("grok/post-tool-use.stdin.json", root));
     expect(tool[0]?.split("\n")).toHaveLength(1);
     expect(carried(tool)).toBe(block);
-    expect(cli(ctx, ["--host", "grok", "--arm"], payload("grok/post-compact.stdin.json", root))).toEqual([]);
-    expect(cli(ctx, ["--host", "grok"], payload("grok/post-tool-use.stdin.json", root))).toHaveLength(1);
+    expect(await cli(ctx, ["--host", "grok", "--arm"], payload("grok/post-compact.stdin.json", root))).toEqual([]);
+    expect(await cli(ctx, ["--host", "grok"], payload("grok/post-tool-use.stdin.json", root))).toHaveLength(1);
     expect(ctx.err).toEqual([]);
   });
 

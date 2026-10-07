@@ -218,17 +218,17 @@ describe("sessionStartBlock", () => {
     expect(head).not.toContain("completed item number 19");
   });
 
-  test("mute drops memory and lessons but keeps guardrails; unmute restores them", () => {
+  test("mute drops memory and lessons but keeps guardrails; unmute restores them", async () => {
     const { ctx, root } = project();
     seedGuardrails(ctx, root);
     seedMemory(ctx, root, MEMORY);
     const io = { out: (line: string) => ctx.out.push(line), err: (line: string) => ctx.err.push(line) };
-    expect(runLearn(["memory", "mute"], { cwd: root, io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["memory", "mute"], { cwd: root, io, env: ctx.env })).toBe(0);
     const muted = sessionStartBlock(ctx);
     expect(muted).toContain("- [rp-001]");
     expect(muted).not.toContain("Working memory");
     expect(muted).not.toContain("confirmed lesson text");
-    expect(runLearn(["memory", "unmute"], { cwd: root, io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["memory", "unmute"], { cwd: root, io, env: ctx.env })).toBe(0);
     expect(sessionStartBlock(ctx)).toContain("Working memory");
   });
 });
