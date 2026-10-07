@@ -167,7 +167,7 @@ The scheduled tick reads these shipped host records when present:
 
 | Host | Default record | Captured public fields |
 |---|---|---|
-| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | user/assistant text, tool calls and tool results |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | user/assistant text, tool calls and tool results; for a sub-agent thread with no user message, the plain text of the first `agent_message` addressed to it is the prompt |
 | Grok | `~/.grok/sessions/<encoded-cwd>/<session>/chat_history.jsonl` plus `summary.json` | non-synthetic user text, assistant text, tool calls and results |
 | Kimi | `~/.kimi-code/sessions/<cwd>/<session>/state.json` plus `agents/main/wire.jsonl` | user-origin messages, assistant public text, tool calls and results |
 
@@ -195,7 +195,7 @@ characters, which is as far as the shortest judge excerpt reads:
 |---|---|
 | User prompt | an excerpt of at most 110 characters |
 | Assistant reply | an excerpt of the turn's last reply, at most 110 characters |
-| Failing calls | the names of the tools whose output reports a failure, at most 50 characters |
+| Failing calls | the names of the tools with a failing call, at most 50 characters |
 
 The detail follows it:
 
