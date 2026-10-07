@@ -138,7 +138,7 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
     const present = homes.filter((home) => existsSync(join(home, "sessions"))).length;
     ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
   }
-  for (const host of ["codex", "grok", "kimi"] as const) {
+  for (const host of ["codex", "droid", "grok", "kimi"] as const) {
     const command = ctx.config.distillCommands[host];
     ctx.io.out(
       `  ${`${host} tool distiller`.padEnd(19)} ${command === undefined ? `unset (${distillVariable(host)}); calls keep their excerpts` : command.join(" ")}`,

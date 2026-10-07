@@ -229,6 +229,7 @@ function hostsCtx(env: Record<string, string>) {
     cwd: root,
     env: {
       AK_LEARN_CODEX_HOMES: join(homes, "codex"),
+      AK_LEARN_DROID_HOMES: join(homes, "droid"),
       AK_LEARN_GROK_HOMES: join(homes, "grok"),
       AK_LEARN_KIMI_HOMES: join(homes, "kimi"),
       ...env,
@@ -804,6 +805,9 @@ describe("memory tick tool distillation", () => {
     const lines = ctx.out.join("\n");
     expect(lines).toContain("tool distillation: codex 1 call distilled in 1 request");
     expect(lines).toContain(
+      "tool distillation: no binding for droid (AK_LEARN_DISTILL_DROID is unset); 1 call kept in excerpt form",
+    );
+    expect(lines).toContain(
       "tool distillation: no binding for grok (AK_LEARN_DISTILL_GROK is unset); 1 call kept in excerpt form",
     );
     expect(lines).toContain(
@@ -831,10 +835,31 @@ describe("memory tick tool distillation", () => {
     const lines = ctx.out.filter((line) => line.includes("tool distillation"));
     expect(lines.map((line) => line.replace(/^.*?: /, ""))).toEqual([
       "tool distillation: no binding for codex (AK_LEARN_DISTILL_CODEX is unset); 1 call kept in excerpt form",
+      "tool distillation: no binding for droid (AK_LEARN_DISTILL_DROID is unset); 1 call kept in excerpt form",
       "tool distillation: no binding for grok (AK_LEARN_DISTILL_GROK is unset); 1 call kept in excerpt form",
       "tool distillation: no binding for kimi (AK_LEARN_DISTILL_KIMI is unset); 1 call kept in excerpt form",
     ]);
     expect(ctx.prompts[0]).toContain("200 warnings remain");
+  });
+
+  test("a Droid binding distills Droid's calls through the same seam", () => {
+    const { root, ctx } = hostsCtx({ AK_LEARN_DISTILL_DROID: BINDING });
+    const seam = fakeSeam(() => ({
+      calls: [{ n: 1, input: "ran the upload tests", output: "one test fails: upload retries twice" }],
+    }));
+    ctx.distill = seam.distill;
+
+    expect(tick(ctx, { only: root, job: "reflect", force: true })).toBe(0);
+
+    expect(seam.requests.map(({ host, command, calls }) => ({ host, command, calls }))).toEqual([
+      { host: "droid", command: ["fixture-distiller", "--quiet"], calls: 1 },
+    ]);
+    const lines = ctx.out.join("\n");
+    expect(lines).toContain("tool distillation: droid 1 call distilled in 1 request");
+    expect(lines).toContain(
+      "tool distillation: no binding for codex (AK_LEARN_DISTILL_CODEX is unset); 1 call kept in excerpt form",
+    );
+    expect(ctx.prompts[0]).toContain("ran the upload tests -> one test fails: upload retries twice");
   });
 
   test("a dry tick sends nothing to the seam", () => {

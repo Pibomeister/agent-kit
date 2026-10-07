@@ -129,6 +129,7 @@ describe("setup doctor", () => {
     const lines = ctx.out.filter((line) => line.includes("tool distiller"));
     expect(lines.map((line) => line.trim().replace(/\s+/g, " "))).toEqual([
       "codex tool distiller unset (AK_LEARN_DISTILL_CODEX); calls keep their excerpts",
+      "droid tool distiller unset (AK_LEARN_DISTILL_DROID); calls keep their excerpts",
       "grok tool distiller fixture-distiller --quiet",
       "kimi tool distiller unset (AK_LEARN_DISTILL_KIMI); calls keep their excerpts",
       "tool distiller (24h) 0 calls, 0 failures, $0.000000 reported cost",

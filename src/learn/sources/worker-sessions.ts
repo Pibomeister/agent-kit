@@ -398,7 +398,7 @@ function toolInput(value: JsonValue | undefined): ParsedToolInput {
  */
 function turnLog() {
   const turns: Turn[] = [];
-  const named = new Map<string, ToolCall>();
+  const named = new Map<string, CapturedCall>();
   const start = (prompt: string, at: number): Turn => {
     const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
     turns.push(turn);
@@ -425,7 +425,7 @@ function turnLog() {
       host: { id?: string | null; writes?: boolean } = {},
     ): void {
       const turn = current(at);
-      const call: ToolCall = { name, input: input.text, output: "", failed: false };
+      const call: CapturedCall = { name, input: input.text, output: "", failed: false };
       turn.calls.push(call);
       if (host.id !== undefined && host.id !== null) named.set(host.id, call);
       if (host.writes === true || WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
