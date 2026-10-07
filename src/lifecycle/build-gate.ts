@@ -14,6 +14,7 @@ const result = await Bun.build({
   entrypoints: [source],
   target: "node",
   format: "esm",
+  minify: { whitespace: true },
   plugins: [
     {
       name: "verification-schema",
@@ -22,7 +23,10 @@ const result = await Bun.build({
         build.onResolve({ filter: /^ajv(?:-formats)?\// }, (args) => ({
           path: Bun.resolveSync(args.path, import.meta.dir),
         }));
-        build.onLoad({ filter: /[/\\]verification-schema\.ts$/ }, () => ({ contents: standalone, loader: "js" }));
+        build.onLoad({ filter: /[/\\]verification-schema\.ts$/ }, () => ({
+          contents: `${standalone}\nexport const verificationValidator = () => validate;`,
+          loader: "js",
+        }));
         build.onLoad({ filter: /[/\\]gate\.ts$/ }, (args) => {
           const contents = readFileSync(args.path, "utf8");
           if (!contents.includes(adapterDeclaration))

@@ -50,7 +50,7 @@ import {
 import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import validateVerification from "./verification-schema.ts";
+import { verificationValidator } from "./verification-schema.ts";
 
 // ── the snapshot ─────────────────────────────────────────────────────────────
 
@@ -724,6 +724,7 @@ const nonempty = (value: unknown): value is string => typeof value === "string" 
 
 /** The schema-shape half of the bundled predicate. Cross-checked against ajv in lifecycle tests. */
 export function verificationShapeReasons(value: unknown): string[] {
+  const validateVerification = verificationValidator();
   const reasons = validateVerification(value)
     ? []
     : (validateVerification.errors ?? []).map((error) => `${error.instancePath || "receipt"} ${error.message}`);

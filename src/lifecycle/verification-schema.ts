@@ -12,4 +12,10 @@ export function compileVerificationSchema(root = join(import.meta.dir, "..", "..
   return { ajv, validate };
 }
 
-export default compileVerificationSchema().validate;
+let compiled: ReturnType<typeof compileVerificationSchema>["validate"] | undefined;
+
+/** Compiled on first use, so a broken schema fails the receipt check rather than every `ak` command. */
+export function verificationValidator() {
+  compiled ??= compileVerificationSchema().validate;
+  return compiled;
+}
