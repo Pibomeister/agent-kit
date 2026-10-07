@@ -128,6 +128,9 @@ function uncited(item: (typeof LABELLED)[number]): string {
     .join("\n");
 }
 
+/** The checker's coverage note from each scan, read by the corpus test below. */
+const coverage: string[] = [];
+
 /** Every case in its own body, so one case cannot cite or shadow another. */
 function scanAll(body: (item: (typeof LABELLED)[number]) => string = (item) => item.text): Map<string, Measured> {
   const files: Record<string, string> = {
@@ -139,7 +142,9 @@ function scanAll(body: (item: (typeof LABELLED)[number]) => string = (item) => i
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error("fixture has no catalog");
 
-  const issues = checkRestatements({ root, catalog }, 0.02).filter((i) => i.rule === "rulings.uncited-restatement");
+  const all = checkRestatements({ root, catalog }, 0.02);
+  coverage.push(all.find((i) => i.rule === "rulings.restatement-scan-coverage")?.message ?? "");
+  const issues = all.filter((i) => i.rule === "rulings.uncited-restatement");
 
   // The score of a case is the best window in the block its anchor sits in --
   // the same unit the capture used. Taking the best in the whole file would
@@ -174,6 +179,8 @@ function scanAll(body: (item: (typeof LABELLED)[number]) => string = (item) => i
 }
 
 const scores = scanAll();
+/** Whether the checker, as it scores today, reports a case. */
+const reported = (c: (typeof LABELLED)[number]) => (scores.get(c.id)?.score ?? 0) >= RESTATEMENT_THRESHOLD;
 /** The same cases with their own citation removed. Only suppressed cases differ. */
 const uncitedScores = scanAll(uncited);
 
@@ -371,13 +378,15 @@ describe("the labelled corpus, which is what any recall claim rests on", () => {
   });
 
   test("the set holds cases on both sides of the threshold, and on both axes", () => {
-    // A corpus of accepted cases only measures nothing about the threshold.
-    expect(LABELLED.some((c) => c.score >= RESTATEMENT_THRESHOLD)).toBe(true);
-    expect(LABELLED.some((c) => c.score < RESTATEMENT_THRESHOLD)).toBe(true);
+    // Measured by the checker, not read off the labels: a corpus of accepted cases only measures nothing
+    // about the threshold, and labels alone hold whatever the checker stops doing.
+    expect(LABELLED.some(reported)).toBe(true);
+    expect(LABELLED.some((c) => !reported(c))).toBe(true);
     // And a corpus with no known miss in it cannot support a recall claim at
     // all -- it can only report the instrument's own output back to itself.
-    expect(LABELLED.some((c) => c.label === "defect" && !c.reported)).toBe(true);
-    expect(LABELLED.some((c) => c.label === "not-a-defect" && !c.reported)).toBe(true);
+    expect(LABELLED.some((c) => c.label === "defect" && reported(c))).toBe(true);
+    expect(LABELLED.some((c) => c.label === "defect" && !reported(c))).toBe(true);
+    expect(LABELLED.some((c) => c.label === "not-a-defect" && !reported(c))).toBe(true);
   });
 
   test("cosine does not order these by how much they quote, so no threshold fixes the misses", () => {
@@ -405,9 +414,10 @@ describe("the labelled corpus, which is what any recall claim rests on", () => {
     expect(runs.get("authoring-second-lifecycle-entrypoint")).toBe(80);
     expect(runs.get("authoring-repeated-failure")).toBe(79);
 
-    const missedDefects = LABELLED.filter((c) => c.label === "defect" && !c.reported);
+    // Reported as the checker scores it now, so the inversion is a property of the check, not of the labels.
+    const missedDefects = LABELLED.filter((c) => c.label === "defect" && !reported(c));
     const inversions = missedDefects.flatMap((missed) =>
-      LABELLED.filter((c) => c.reported && (runs.get(c.id) ?? 0) <= (runs.get(missed.id) ?? 0)).map((c) => ({
+      LABELLED.filter((c) => reported(c) && (runs.get(c.id) ?? 0) <= (runs.get(missed.id) ?? 0)).map((c) => ({
         missed: missed.id,
         reported: c.id,
       })),
@@ -432,14 +442,22 @@ describe("the labelled corpus, which is what any recall claim rests on", () => {
     // the numbers above, and the fixture would silently stop being a fixture.
     expect(RULINGS_AT_REVISION.length).toBe(19);
     expect(new Set(RULINGS_AT_REVISION.map((r) => r.id)).size).toBe(RULINGS_AT_REVISION.length);
+    // And the checker scored every scan against all of them, not a subset.
+    expect(coverage.length).toBeGreaterThan(0);
+    for (const note of coverage) expect(note).toContain(`against ${RULINGS_AT_REVISION.length} ruling(s)`);
   });
 
   test("each case records why it carries its label, not just the label", () => {
     // Three agents classified the same case wrong in the same direction, and a
-    // bare TP/FP column is what let that reading propagate.
+    // bare TP/FP column is what let that reading propagate. The reason travels with the checker's own
+    // verdict on the case: a labelled defect the check reports, or a rejection it keeps below the line.
     for (const item of LABELLED) {
       expect(item.why.length).toBeGreaterThan(40);
       expect(item.origin).toMatch(/ at [0-9a-f]{7}$/);
+      expect(scores.has(item.id)).toBe(true);
     }
+    const caught = LABELLED.filter((c) => c.label === "defect" && c.reported);
+    expect(caught.length).toBeGreaterThan(0);
+    for (const item of caught) expect(scores.get(item.id)?.score ?? 0).toBeGreaterThanOrEqual(RESTATEMENT_THRESHOLD);
   });
 });

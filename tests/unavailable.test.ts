@@ -139,6 +139,8 @@ describe("the summary line says which kind, at zero as well as above it", () => 
     );
     const { text, code } = validateWith({ "CONTRACT-DEFECTS.md": open });
     expect(text).toContain("1 check unavailable: defect entry quotations");
+    // No error stands in the run, so exit 1 is the unavailable check's alone.
+    expect(text).toMatch(/^ak validate: 0 errors, /m);
     expect(code).toBe(1);
   });
 

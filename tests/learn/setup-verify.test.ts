@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import { loopDir, projectFolderName, registryPath } from "../../src/learn/core/paths.ts";
@@ -61,6 +61,17 @@ function context(deps: SetupDeps, extra: Record<string, string> = {}): TestConte
 }
 
 describe("setup doctor", () => {
+  test("reports the session store of every captured worker host", () => {
+    const deps = fakeDeps(["bun", "git", "judge", "gh"]);
+    const store = scratch("ak-droid-store-");
+    mkdirSync(join(store, "sessions"), { recursive: true });
+    const ctx = context(deps, { AK_LEARN_DROID_HOMES: store });
+    expect(doctor(ctx, deps)).toBe(0);
+    const stores = ctx.out.filter((line) => line.includes("session stores"));
+    expect(stores.map((line) => line.trim().split(" ")[0])).toEqual(["codex", "droid", "grok", "kimi"]);
+    expect(stores).toContain(`  droid session stores  1/1 present   ${store}`);
+  });
+
   test("all hard requirements present: exit 0 and nothing changes", () => {
     const deps = fakeDeps(["bun", "git", "judge", "gh"]);
     const ctx = context(deps);
@@ -82,6 +93,25 @@ describe("setup doctor", () => {
     ]);
     expect(doctor(ctx, deps)).toBe(1);
     expect(ctx.out.at(-1)).toBe("\nBLOCKED: judge (judge)");
+  });
+
+  test("a missing bun or git blocks, and a gh that is installed but logged out only narrows", () => {
+    for (const [bins, failed, blocked] of [
+      [["git", "judge", "gh"], ["bun"], true],
+      [["bun", "judge", "gh"], ["git"], true],
+    ] as const) {
+      const deps = fakeDeps([...bins]);
+      const checks = doctorChecks(context(deps), deps);
+      expect(checks.filter((c) => !c.ok && c.hard).map((c) => c.name)).toEqual([...failed]);
+      expect(doctor(context(deps), deps)).toBe(blocked ? 1 : 0);
+    }
+    const loggedOut = {
+      ...fakeDeps(["bun", "git", "judge", "gh"]),
+      run: (): RunResult => ({ code: 1, stdout: "", stderr: "", timedOut: false }),
+    };
+    const gh = doctorChecks(context(loggedOut), loggedOut).find((c) => c.name === "gh authenticated");
+    expect(gh).toMatchObject({ ok: false, hard: false });
+    expect(doctor(context(loggedOut), loggedOut)).toBe(0);
   });
 
   test("a judge given as a path must exist", () => {
@@ -278,6 +308,91 @@ describe("setup verify", () => {
     expect(verify(ctx, deps, repo)).toBe(0);
     expect(ctx.out.at(-1)).toBe("\nall checks passed");
     expect(deps.calls.every((call) => call[0] === "launchctl" && call[1] === "list")).toBe(true);
+  });
+
+  // Each row starts from the passing setup above and breaks exactly one thing verify claims to check.
+  for (const [label, breakIt] of [
+    [
+      "claude-mem observation budget",
+      (deps: SetupDeps) => {
+        const settings = join(deps.home, ".claude-mem", "settings.json");
+        writeFileSync(
+          settings,
+          JSON.stringify({ ...JSON.parse(readFileSync(settings, "utf8")), CLAUDE_MEM_CONTEXT_OBSERVATIONS: "50" }),
+        );
+      },
+    ],
+    ["claude-mem mode file", (deps: SetupDeps) => rmSync(join(deps.home, ".claude-mem", "modes", `${MEM_MODE}.json`))],
+    [
+      "codex Stop hook",
+      (deps: SetupDeps) => {
+        const stop = hook("ak learn hook stop --source codex");
+        mkdirSync(join(deps.home, ".codex"), { recursive: true });
+        writeFileSync(
+          join(deps.home, ".codex", "hooks.json"),
+          JSON.stringify({
+            hooks: {
+              SessionStart: [hook("ak learn hook session-start")],
+              UserPromptSubmit: [hook("ak learn hook prompt")],
+              Stop: [stop, stop],
+            },
+          }),
+        );
+      },
+    ],
+    [
+      "launchd unit written",
+      (deps: SetupDeps) => rmSync(join(deps.home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist")),
+    ],
+  ] as const) {
+    test(`verify fails "${label}" when only that is broken`, () => {
+      const deps = fakeDeps(["bun", "git", "judge"], "123\t0\tdev.agent-kit.learn\n");
+      const memDb = join(deps.home, ".claude-mem", "claude-mem.db");
+      mkdirSync(join(deps.home, ".claude-mem"), { recursive: true });
+      new MemFixture(memDb).close();
+      const ctx = context(deps, { AK_LEARN_MEM_DB: memDb });
+      const repo = gitRepo(join(scratch(), "repo"));
+      wire(ctx, deps);
+      schedule(ctx, deps);
+      seed(ctx, repo, { skipGithub: true });
+      expect(verifyChecks(ctx, deps).filter((r) => !r.ok)).toEqual([]);
+      breakIt(deps);
+      expect(
+        verifyChecks(ctx, deps)
+          .filter((r) => !r.ok)
+          .map((r) => r.label),
+      ).toEqual([label]);
+    });
+  }
+
+  test("a seeded project whose ledger is gone fails that ledger's check alone", () => {
+    const deps = fakeDeps(["bun", "git", "judge"], "123\t0\tdev.agent-kit.learn\n");
+    const ctx = context(deps);
+    const repo = gitRepo(join(scratch(), "repo"));
+    seed(ctx, repo, { skipGithub: true });
+    const ledgers = (results: ReturnType<typeof verifyChecks>) =>
+      results.filter((r) => r.label.endsWith(`ledger (${repo})`)).map((r) => [r.label, r.ok]);
+    expect(ledgers(verifyChecks(ctx, deps, repo))).toEqual([
+      [`review ledger (${repo})`, true],
+      [`memory ledger (${repo})`, true],
+      [`skills ledger (${repo})`, true],
+    ]);
+    rmSync(join(loopDir(ctx.config, repo, "memory"), ".git"), { recursive: true, force: true });
+    expect(ledgers(verifyChecks(ctx, deps, repo))).toEqual([
+      [`review ledger (${repo})`, true],
+      [`memory ledger (${repo})`, false],
+      [`skills ledger (${repo})`, true],
+    ]);
+  });
+
+  test("under cron, a crontab without the tick line fails and one with it passes", () => {
+    for (const [stdout, ok] of [
+      ["", false],
+      ["*/15 * * * * /opt/bun ak learn memory tick\n", true],
+    ] as const) {
+      const deps = { ...fakeDeps(["bun", "git", "judge", "crontab"], stdout), platform: "linux" as const };
+      expect(verifyChecks(context(deps), deps).find((r) => r.label === "crontab line")?.ok).toBe(ok);
+    }
   });
 
   test("an ak entry that a wired hook or the unit names but no longer exists fails verify", () => {

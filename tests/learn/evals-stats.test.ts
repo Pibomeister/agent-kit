@@ -106,6 +106,12 @@ describe("pairedBootstrap", () => {
     expect(pairedBootstrap(cases, { seed: 3, iterations: 500 })).toEqual(
       pairedBootstrap(cases, { seed: 3, iterations: 500 }),
     );
+    // And the seed is used: two seeds at a small iteration count resample differently.
+    const interval = (seed: number) => {
+      const r = pairedBootstrap(cases, { seed, iterations: 20 });
+      return [r.lo, r.hi];
+    };
+    expect(interval(3)).not.toEqual(interval(6));
   });
 
   test("identical arms give a zero-width interval at zero", () => {
@@ -125,4 +131,8 @@ test("rng is deterministic per seed and stays in [0, 1)", () => {
   const xs = Array.from({ length: 100 }, () => a());
   expect(xs).toEqual(Array.from({ length: 100 }, () => b()));
   expect(xs.every((x) => x >= 0 && x < 1)).toBe(true);
+  // mulberry32's published sequence for seed 42, and a different seed gives a different one.
+  expect(xs.slice(0, 3)).toEqual([0.6011037519201636, 0.44829055899754167, 0.8524657934904099]);
+  const c = rng(43);
+  expect(Array.from({ length: 3 }, () => c())).not.toEqual(xs.slice(0, 3));
 });

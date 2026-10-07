@@ -1,5 +1,5 @@
 /**
- * Offline worker-session capture: the three supported host stores condense to
+ * Offline worker-session capture: the supported host stores condense to
  * one observation per turn, reach their project through a registered root or a
  * recorded worktree, and append idempotently to that project's memory ledger.
  */
@@ -18,6 +18,7 @@ import {
 import { dirname, join } from "node:path";
 import type { LearnContext } from "../../src/learn/core/context.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
+import { inProtectedFolder } from "../../src/learn/core/paths.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
@@ -30,12 +31,15 @@ import { tick } from "../../src/learn/memory/tick.ts";
 import {
   CAPTURE_ID_BASE,
   type CapturedSession,
+  PROTECTED_FOLDER,
   ProjectMemorySource,
   WorkerSessionSource,
   parseCodexSession,
+  parseDroidSession,
   parseGrokSession,
   parseKimiSession,
   scanWorkerSessions,
+  workerHomes,
   workerRootResolver,
 } from "../../src/learn/sources/worker-sessions.ts";
 import {
@@ -62,14 +66,19 @@ function linkedRepo() {
   });
 
   const linked = join(projectScratch(), "linked");
-  const linkedGit = join(main, ".git", "worktrees", "fixture");
+  linkWorktree(main, linked, "fixture");
+  return { main, linked };
+}
+
+/** A linked worktree of `main` at `linked`, written as git would leave it. */
+function linkWorktree(main: string, linked: string, name: string): void {
+  const linkedGit = join(main, ".git", "worktrees", name);
   mkdirSync(linkedGit, { recursive: true });
   mkdirSync(linked, { recursive: true });
   writeFileSync(join(linked, ".git"), `gitdir: ${linkedGit}\n`);
   writeFileSync(join(linkedGit, "commondir"), "../..\n");
   writeFileSync(join(linkedGit, "gitdir"), `${join(linked, ".git")}\n`);
   writeFileSync(join(linkedGit, "HEAD"), readFileSync(join(main, ".git", "HEAD"), "utf8"));
-  return { main, linked };
 }
 
 /** Start a session in the fixture's linked worktree; the ceiling keeps the checkout holding the test scratch out of root discovery. */
@@ -188,6 +197,72 @@ function exitHeader(code: number, body: string): string {
 
 function execResult(code: number): string {
   return `Script completed\nWall time 0.4 seconds\nOutput:\n{"chunk_id":"1f2e3d","wall_time_seconds":0.4,"exit_code":${code},"output":"error budget ok"}`;
+}
+
+/** Every host's fixture home under `dir`. */
+function hostHomes(dir: string) {
+  return {
+    codex: [join(dir, "codex")],
+    droid: [join(dir, "droid")],
+    grok: [join(dir, "grok")],
+    kimi: [join(dir, "kimi")],
+  };
+}
+
+function droidPrompt(text: string, extra: { visibility?: string } = {}) {
+  return { type: "message", message: { role: "user", content: [{ type: "text", text }], ...extra } };
+}
+
+function droidReply(text: string) {
+  return { type: "message", message: { role: "assistant", content: [{ type: "text", text }] } };
+}
+
+function droidCall(id: string, name: string, input: Record<string, string>) {
+  return { type: "message", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] } };
+}
+
+function droidResult(id: string, content: string, flag: { is_error?: boolean } = {}) {
+  return {
+    type: "message",
+    message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content, ...flag }] },
+  };
+}
+
+const DROID_TURN_OUTCOME = { type: "agent_turn_outcome", turnId: "turn", reason: "completed", resultKind: "text" };
+
+/** A Droid record under `home`, whose first line is the `session_start` the scan places it by; rows are a second apart. */
+function writeDroid(home: string, id: string, cwd: string, rows: readonly object[]): string {
+  const dir = join(home, "sessions", cwd.replaceAll("/", "-"));
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `${id}.jsonl`);
+  const at = Date.parse("2026-10-04T14:00:00.000Z");
+  writeFileSync(
+    path,
+    [
+      { type: "session_start", id, cwd, version: 2 },
+      ...rows.map((row, index) =>
+        "message" in row ? { ...row, timestamp: new Date(at + index * 1000).toISOString() } : row,
+      ),
+    ]
+      .map((row) => JSON.stringify(row))
+      .join("\n"),
+  );
+  return path;
+}
+
+/** The first observation of a one-turn Droid record whose only tool call returned `content`. */
+function droidShellTurn(id: string, content: string, flag: { is_error?: boolean } = {}) {
+  return requiredSession(
+    parseDroidSession(
+      writeDroid(scratch("ak-droid-exit-"), id, "/fixture/worktree", [
+        droidPrompt("Run the checks."),
+        droidCall("call_1", "Execute", { command: "bun test" }),
+        droidResult("call_1", content, flag),
+        droidReply("Done."),
+        DROID_TURN_OUTCOME,
+      ]),
+    ),
+  ).observations[0];
 }
 
 /** A Codex rollout under `home`, whose first line is the `session_meta` the scan places it by. */
@@ -399,19 +474,154 @@ describe("worker session parsers", () => {
     expect(text).toContain("Typecheck failed");
   });
 
+  test("condenses a captured Droid session and excludes hook records, injections, host notices and private reasoning", () => {
+    const path = join(FIXTURES, "droid", "sessions", "-fixture-worktree", "00000000-0000-4000-8000-000000000004.jsonl");
+    const session = requiredSession(parseDroidSession(path));
+    expect(session.platform).toBe("droid");
+    expect(session.native_id).toBe("00000000-0000-4000-8000-000000000004");
+    expect(session.cwd).toBe("/fixture/worktree");
+    expect(session.request).toBe("Stop the upload test from flaking.");
+    expect(session.completed).toBe("The upload test waited on a fixed timer; it now awaits the retry.");
+    expect(session.prompt_count).toBe(1);
+    expect(session.started_at_epoch).toBe(Date.parse("2026-10-04T14:00:00.000Z"));
+    expect(session.completed_at_epoch).toBe(Date.parse("2026-10-04T14:00:11.000Z"));
+    expect(session.files_modified).toEqual(["src/upload.ts", "tests/upload-retry.test.ts"]);
+    expect(session.observations.map((row) => row.type)).toEqual(["error"]);
+    const lines = (session.observations[0]?.text ?? "").split("\n");
+    expect(lines.slice(0, 4)).toEqual([
+      "prompt: Stop the upload test from flaking.",
+      "reply: The upload test waited on a fixed timer; it now awaits the retry.",
+      "failed: Execute",
+      "tools: Execute x2, Edit x1, Create x1",
+    ]);
+    expect(lines.slice(4).map((line) => line.split(" ")[0])).toEqual(["Execute", "Edit", "Create", "Execute"]);
+    expect(lines[4]).toContain("-> Error: Command failed (exit code: 1) 1 fail: upload retries twice");
+    expect(lines[5]).toEndWith("-> File edited: src/upload.ts");
+    expect(lines[6]).toEndWith("-> File created: tests/upload-retry.test.ts");
+    expect(lines[7]).toContain("-> error handling: 4 pass");
+    const stored = JSON.stringify(session);
+    for (const excluded of [
+      "injected hook context",
+      "injected skill catalog",
+      "injected environment block",
+      "injected reminder",
+      "host notice",
+      "private reasoning",
+      "fixture-signature",
+      "host todo list entry",
+    ])
+      expect(stored).not.toContain(excluded);
+  });
+
+  test("a Droid result's error flag decides whether its call failed, and the exit line closing the output where no flag was recorded", () => {
+    const passed = droidShellTurn("flag-false", "error handling: 14 pass\n\n[Process exited with code 0]", {
+      is_error: false,
+    });
+    expect(passed?.type).toBe("turn");
+    expect(passed?.text).not.toContain("failed:");
+
+    const failed = droidShellTurn("flag-true", "nothing to report", { is_error: true });
+    expect(failed?.type).toBe("error");
+    expect(failed?.text).toContain("failed: Execute");
+
+    expect(droidShellTurn("line-zero", "warnings as errors enabled\n\n[Process exited with code 0]")?.type).toBe(
+      "turn",
+    );
+    expect(droidShellTurn("line-nonzero", "nothing to report\n\n[Process exited with code 2]")?.type).toBe("error");
+    expect(droidShellTurn("unrecorded", "error: preview quota exceeded")?.type).toBe("error");
+  });
+
+  test("a Droid prompt is what the user sent after any injected block, and a host notice is never a prompt", () => {
+    const path = writeDroid(scratch("ak-droid-prompt-"), "prompts", "/fixture/worktree", [
+      droidPrompt("<system-reminder>\ninjected command context\n</system-reminder>\n\nShip the retry fix."),
+      droidReply("Shipped."),
+      droidPrompt("<system-notification>injected background notice</system-notification>"),
+      droidPrompt("Request cancelled by user", { visibility: "both" }),
+      droidPrompt("<system-reminder>injected reminder</system-reminder>", { visibility: "llm_only" }),
+      droidPrompt("host usage notice", { visibility: "user_only" }),
+      DROID_TURN_OUTCOME,
+    ]);
+    const session = requiredSession(parseDroidSession(path));
+    expect(session.prompt_count).toBe(1);
+    expect(session.observations.map((row) => row.text)).toEqual(["prompt: Ship the retry fix.\nreply: Shipped."]);
+  });
+
+  test("a Droid prompt that names an injected block's opening tag is kept whole", () => {
+    const asked = "why does the hook print <system-reminder> twice?";
+    const path = writeDroid(scratch("ak-droid-tag-"), "tag", "/fixture/worktree", [
+      droidPrompt(asked),
+      droidReply("It runs once per matcher."),
+      DROID_TURN_OUTCOME,
+    ]);
+    const session = requiredSession(parseDroidSession(path));
+    expect(session.request).toBe(asked);
+    expect(session.observations.map((row) => row.text)).toEqual([`prompt: ${asked}\nreply: It runs once per matcher.`]);
+  });
+
+  test("a Droid sub-agent session takes its request from the brief it was started with", () => {
+    const path = writeDroid(scratch("ak-droid-sub-"), "sub", "/fixture/worktree", [
+      droidPrompt("# Task Tool Invocation\nSubagent type: worker\n\nAudit the retry helper."),
+      droidReply("The retry helper is sound."),
+      {
+        type: "session_end",
+        timestamp: "2026-10-04T14:00:09.000Z",
+        durationMs: 9000,
+        toolCount: 0,
+        finalText: "host copy",
+      },
+    ]);
+    const session = requiredSession(parseDroidSession(path));
+    expect(session.request).toBe("# Task Tool Invocation\nSubagent type: worker\n\nAudit the retry helper.");
+    expect(session.completed_at_epoch).toBe(Date.parse("2026-10-04T14:00:09.000Z"));
+    expect(JSON.stringify(session)).not.toContain("host copy");
+  });
+
+  test("a Droid turn is stored once its outcome is recorded, and work after an outcome reopens it", () => {
+    const home = scratch("ak-droid-open-");
+    const first = [droidPrompt("first request"), droidReply("first answer"), DROID_TURN_OUTCOME];
+    const second = [droidPrompt("second request"), droidCall("call_1", "Execute", { command: "bun test" })];
+    const running = requiredSession(
+      parseDroidSession(writeDroid(home, "open", "/fixture/worktree", [...first, ...second])),
+    );
+    expect(running.observations.map((row) => row.text)).toEqual(["prompt: first request\nreply: first answer"]);
+    expect(running.completed_at_epoch).toBeNull();
+
+    const quiet = requiredSession(
+      parseDroidSession(join(home, "sessions", "-fixture-worktree", "open.jsonl"), Date.now() + 2 * 3_600_000),
+    );
+    expect(quiet.observations).toHaveLength(2);
+
+    const done = requiredSession(
+      parseDroidSession(
+        writeDroid(home, "open", "/fixture/worktree", [
+          ...first,
+          ...second,
+          droidResult("call_1", "4 pass", { is_error: false }),
+          droidReply("second answer"),
+          DROID_TURN_OUTCOME,
+        ]),
+      ),
+    );
+    expect(done.observations).toHaveLength(2);
+    expect(done.completed_at_epoch).toBe(Date.parse("2026-10-04T14:00:06.000Z"));
+  });
+
+  test("a file that does not open with a Droid session start is not a session", () => {
+    const path = writeDroid(scratch("ak-droid-other-"), "other", "/fixture/worktree", [droidPrompt("a request")]);
+    writeFileSync(path, readFileSync(path, "utf8").replace('"session_start"', '"favorites"'));
+    expect(parseDroidSession(path)).toBeNull();
+  });
+
   test("scans captured fixture homes for every supported host", () => {
     const scan = scanWorkerSessions(
-      {
-        codex: [join(FIXTURES, "codex")],
-        grok: [join(FIXTURES, "grok")],
-        kimi: [join(FIXTURES, "kimi")],
-      },
+      hostHomes(FIXTURES),
       (cwd) => (cwd === "/fixture/worktree" ? "/registered" : null),
       { sinceMs: 0 },
     );
     expect([...scan.sessions.keys()]).toEqual(["/registered"]);
     expect((scan.sessions.get("/registered") ?? []).map((session) => session.platform).toSorted()).toEqual([
       "codex",
+      "droid",
       "grok",
       "kimi",
     ]);
@@ -425,13 +635,13 @@ describe("worker session parsers", () => {
     mkdirSync(join(broken, "agents", "main", "wire.jsonl"), { recursive: true });
     writeFileSync(join(broken, "state.json"), JSON.stringify({ id: "broken", cwd: "/fixture/worktree" }));
     const warnings: string[] = [];
-    const scan = scanWorkerSessions(
-      { codex: [join(homes, "codex")], grok: [join(homes, "grok")], kimi: [join(homes, "kimi")] },
-      () => "/registered",
-      { sinceMs: 0, warn: (line) => warnings.push(line) },
-    );
+    const scan = scanWorkerSessions(hostHomes(homes), () => "/registered", {
+      sinceMs: 0,
+      warn: (line) => warnings.push(line),
+    });
     expect((scan.sessions.get("/registered") ?? []).map((session) => session.platform).toSorted()).toEqual([
       "codex",
+      "droid",
       "grok",
       "kimi",
     ]);
@@ -449,20 +659,40 @@ describe("worker session parsers", () => {
       codexMessage("user", "work in another project"),
       CODEX_TASK_COMPLETE,
     ]);
+    writeDroid(join(homes, "droid"), "elsewhere", "/unregistered/project", [
+      droidPrompt("work in another project"),
+      DROID_TURN_OUTCOME,
+    ]);
     const asked: string[] = [];
     const warnings: string[] = [];
     const scan = scanWorkerSessions(
-      { codex: [join(homes, "codex")], grok: [join(homes, "grok")], kimi: [join(homes, "kimi")] },
+      hostHomes(homes),
       (cwd) => {
         asked.push(cwd);
         return cwd === "/fixture/worktree" ? "/registered" : null;
       },
       { sinceMs: 0, warn: (line) => warnings.push(line) },
     );
-    expect(scan.unmatched).toBe(2);
-    expect(scan.sessions.get("/registered")).toHaveLength(3);
-    expect(asked.filter((cwd) => cwd === "/unregistered/project")).toHaveLength(2);
+    expect(scan.unmatched).toBe(3);
+    expect(scan.sessions.get("/registered")).toHaveLength(4);
+    expect(asked.filter((cwd) => cwd === "/unregistered/project")).toHaveLength(3);
     expect(warnings).toEqual([]);
+  });
+});
+
+describe("worker session homes", () => {
+  test("Droid's store sits in the .factory folder of its home override, else of the home directory", () => {
+    expect(workerHomes({ HOME: "/home/dev" }).droid).toEqual(["/home/dev/.factory"]);
+    expect(workerHomes({ HOME: "/home/dev", FACTORY_HOME_OVERRIDE: "/isolated" }).droid).toEqual([
+      "/isolated/.factory",
+    ]);
+    expect(workerHomes({ HOME: "/home/dev", FACTORY_HOME_OVERRIDE: " " }).droid).toEqual(["/home/dev/.factory"]);
+  });
+
+  test("a colon-separated list names several Droid homes", () => {
+    expect(
+      workerHomes({ HOME: "/home/dev", AK_LEARN_DROID_HOMES: "/runs/one/.factory:/runs/two/.factory" }).droid,
+    ).toEqual(["/runs/one/.factory", "/runs/two/.factory"]);
   });
 });
 
@@ -476,7 +706,7 @@ describe("worker scan against what the ledger holds", () => {
   test("a finished session the ledger holds as its record stands is not parsed again and still counts as activity", () => {
     const codex = scratch("ak-worker-held-");
     const path = writeRollout(codex, "held", "/code/shop", rows);
-    const homes = { codex: [codex], grok: [], kimi: [] };
+    const homes = { codex: [codex], droid: [], grok: [], kimi: [] };
     const ledger = ensureMemoryLedger(scratch("ak-capture-held-"));
     const stored = WorkerSessionSource.open(ledger);
     const first = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
@@ -498,6 +728,32 @@ describe("worker scan against what the ledger holds", () => {
     expect(scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored }).sessions.size).toBe(0);
   });
 
+  test("a quiet Droid session with no end recorded is parsed once, and again once its record changes", () => {
+    const droid = scratch("ak-worker-quiet-");
+    const turn = [droidPrompt("tidy the cart module"), droidReply("The cart module is tidy.")];
+    const quiet = new Date(Date.now() - 2 * 3_600_000);
+    const path = writeDroid(droid, "quiet", "/code/shop", turn);
+    utimesSync(path, quiet, quiet);
+    const homes = { codex: [], droid: [droid], grok: [], kimi: [] };
+    const stored = WorkerSessionSource.open(ensureMemoryLedger(scratch("ak-capture-quiet-")));
+    const first = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    const parsed = first.sessions.get("/code/shop") ?? [];
+    expect(parsed.map((item) => item.completed_at_epoch)).toEqual([null]);
+    expect(stored.capture(parsed)).toEqual({ observations: 1, sessions: 1 });
+
+    const second = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    expect(second.sessions.size).toBe(0);
+    expect(second.activity.get("/code/shop")).toBe(first.activity.get("/code/shop") ?? 0);
+
+    writeDroid(droid, "quiet", "/code/shop", [...turn, droidPrompt("now the checkout"), droidReply("Done too.")]);
+    utimesSync(path, quiet, quiet);
+    const third = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    const grown = third.sessions.get("/code/shop") ?? [];
+    expect(grown).toHaveLength(1);
+    expect(stored.capture(grown)).toEqual({ observations: 1, sessions: 1 });
+    expect(scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored }).sessions.size).toBe(0);
+  });
+
   test("a session still running is parsed on every scan", () => {
     const codex = scratch("ak-worker-running-");
     writeRollout(codex, "running", "/code/shop", [
@@ -505,7 +761,7 @@ describe("worker scan against what the ledger holds", () => {
       { type: "event_msg", payload: { type: "task_started" } },
       codexMessage("user", "now the checkout"),
     ]);
-    const homes = { codex: [codex], grok: [], kimi: [] };
+    const homes = { codex: [codex], droid: [], grok: [], kimi: [] };
     const stored = WorkerSessionSource.open(ensureMemoryLedger(scratch("ak-capture-running-")));
     const first = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
     expect(stored.capture(first.sessions.get("/code/shop") ?? [])).toEqual({ observations: 1, sessions: 1 });
@@ -520,7 +776,7 @@ describe("worker scan against what the ledger holds", () => {
     const other = writeRollout(codex, "other", "/code/blog", rows);
     appendFileSync(other, "\n{not json");
     const warnings: string[] = [];
-    const scan = scanWorkerSessions({ codex: [codex], grok: [], kimi: [] }, (cwd) => cwd, {
+    const scan = scanWorkerSessions({ codex: [codex], droid: [], grok: [], kimi: [] }, (cwd) => cwd, {
       wanted: (root) => root === "/code/shop",
       warn: (line) => warnings.push(line),
     });
@@ -545,7 +801,7 @@ describe("worker scan places every record before parsing any", () => {
     const cutoff = Date.now() - 7 * 86_400_000;
     const asked: Array<[string, number]> = [];
     const warnings: string[] = [];
-    const scan = scanWorkerSessions({ codex: [codex], grok: [], kimi: [] }, (cwd) => cwd, {
+    const scan = scanWorkerSessions({ codex: [codex], droid: [], grok: [], kimi: [] }, (cwd) => cwd, {
       wanted: (root, newestMs) => {
         asked.push([root, newestMs]);
         return newestMs >= cutoff;
@@ -590,7 +846,7 @@ describe("worker capture project resolution", () => {
 });
 
 describe("memory tick worker capture", () => {
-  test("records all three hosts under the root their worktree was recorded for, without a claude-mem database", () => {
+  test("records every host under the root their worktree was recorded for, without a claude-mem database", () => {
     const { main, linked } = linkedRepo();
     const homes = scratch("ak-worker-homes-");
     cpSync(FIXTURES, homes, { recursive: true });
@@ -599,6 +855,7 @@ describe("memory tick worker capture", () => {
       cwd: linked,
       env: {
         AK_LEARN_CODEX_HOMES: join(homes, "codex"),
+        AK_LEARN_DROID_HOMES: join(homes, "droid"),
         AK_LEARN_GROK_HOMES: join(homes, "grok"),
         AK_LEARN_KIMI_HOMES: join(homes, "kimi"),
       },
@@ -613,21 +870,22 @@ describe("memory tick worker capture", () => {
       loadEpisodes(ledger)
         .map((episode) => episode.platform)
         .toSorted(),
-    ).toEqual(["codex", "grok", "kimi"]);
-    expect(ctx.out.some((line) => line.includes("worker observations +3"))).toBe(true);
+    ).toEqual(["codex", "droid", "grok", "kimi"]);
+    expect(ctx.out.some((line) => line.includes("worker observations +4"))).toBe(true);
     expect(ctx.prompts).toHaveLength(1);
     expect(ctx.prompts[0]).toContain("200 warnings remain");
     expect(ctx.prompts[0]).toContain("verifier still reports the same finding");
     expect(ctx.prompts[0]).toContain("Typecheck failed in src/capture.ts");
+    expect(ctx.prompts[0]).toContain("1 fail: upload retries twice");
     expect(readState(ledger).last_worker_obs_id_reflected).toBeGreaterThanOrEqual(CAPTURE_ID_BASE);
 
     expect(tick(ctx, { only: main, job: "nightly", force: true })).toBe(0);
     expect(ctx.prompts).toHaveLength(2);
-    expect(ctx.out.some((line) => line.includes("nightly: 3/3 episodes"))).toBe(true);
+    expect(ctx.out.some((line) => line.includes("nightly: 4/4 episodes"))).toBe(true);
 
     expect(tick(ctx, { only: main, job: "reflect", force: true })).toBe(0);
     expect(ctx.prompts).toHaveLength(2);
-    expect(WorkerSessionSource.open(ledger).observationsSince("", 0)).toHaveLength(3);
+    expect(WorkerSessionSource.open(ledger).observationsSince("", 0)).toHaveLength(4);
     expect(ctx.out.some((line) => line.includes("worker sessions skipped"))).toBe(false);
   });
 
@@ -660,6 +918,7 @@ describe("memory tick worker capture", () => {
     const ctx = testContext({
       cwd: main,
       env: {
+        HOME: scratch("ak-fake-home-"),
         AK_LEARN_CODEX_HOMES: join(homes, "codex"),
         AK_LEARN_GROK_HOMES: join(homes, "grok"),
         AK_LEARN_KIMI_HOMES: join(homes, "kimi"),
@@ -680,8 +939,9 @@ describe("memory tick worker capture", () => {
   test("a worktree pointer naming an unregistered root places nothing", () => {
     const { main, linked } = linkedRepo();
     const entry = { mem_project: "registered", last_seen: 1 };
-    expect(workerRootResolver({ other: { ...entry, root: "/code/other" } }, {})(linked)).toBeNull();
-    expect(workerRootResolver({ main: { ...entry, root: main } }, {})(join(linked, "src"))).toBe(main);
+    const guard = { home: scratch("ak-fake-home-") };
+    expect(workerRootResolver({ other: { ...entry, root: "/code/other" } }, {}, guard)(linked)).toBeNull();
+    expect(workerRootResolver({ main: { ...entry, root: main } }, {}, guard)(join(linked, "src"))).toBe(main);
   });
 
   test("a removed worktree's sessions still reach its project, and unplaced sessions are counted in one line", () => {
@@ -707,6 +967,112 @@ describe("memory tick worker capture", () => {
     expect(ctx.out.filter((line) => line.includes("worker sessions skipped"))).toEqual([
       "worker sessions skipped: 2 outside every registered root and worktree",
     ]);
+  });
+});
+
+describe("worker capture in a macOS protected folder", () => {
+  const entry = { mem_project: "registered", last_seen: 1 };
+  const rows = [codexMessage("user", "tidy the cart module"), CODEX_TASK_COMPLETE];
+
+  test("the protected-folder test reads the path alone", () => {
+    const home = "/Users/nobody-ak-fixture";
+    for (const folder of ["Documents", "Desktop", "Downloads"]) {
+      expect(inProtectedFolder(join(home, folder), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, folder, "code", "shop", "src"), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, folder, "..", folder, "shop"), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, folder.toLowerCase(), "shop"), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, `${folder}-old`, "shop"), home, "darwin")).toBe(false);
+      expect(inProtectedFolder(join(home, folder, "shop"), home, "linux")).toBe(false);
+      expect(inProtectedFolder(join(home, folder, "shop"), home, "win32")).toBe(false);
+    }
+    expect(inProtectedFolder(home, home, "darwin")).toBe(false);
+    expect(inProtectedFolder(join(home, "orca", "workspaces", "shop"), home, "darwin")).toBe(false);
+    expect(inProtectedFolder(join(home, "code", "Documents", "shop"), home, "darwin")).toBe(false);
+    expect(inProtectedFolder("/Users/someone-else/Documents/shop", home, "darwin")).toBe(false);
+  });
+
+  test("a linked worktree in Documents, Desktop or Downloads is skipped without its pointer being read", () => {
+    const { main } = linkedRepo();
+    const home = scratch("ak-fake-home-");
+    const registry = { main: { ...entry, root: main } };
+    const onMac = workerRootResolver(registry, {}, { home, platform: "darwin" });
+    for (const folder of ["Documents", "Desktop", "Downloads"]) {
+      const linked = join(home, folder, "linked");
+      linkWorktree(main, linked, folder);
+      mkdirSync(join(linked, "packages", "web"), { recursive: true });
+      // The pointer names the registered root, so any read of it would place the cwd there.
+      expect(onMac(linked)).toBe(PROTECTED_FOLDER);
+      expect(onMac(join(linked, "packages", "web"))).toBe(PROTECTED_FOLDER);
+      expect(workerRootResolver(registry, {}, { home, platform: "linux" })(join(linked, "packages", "web"))).toBe(main);
+    }
+    expect(onMac(join(home, "Documents", "no-repository"))).toBe(PROTECTED_FOLDER);
+  });
+
+  test("a linked worktree outside the protected folders is still placed by its pointer", () => {
+    const { main } = linkedRepo();
+    const home = scratch("ak-fake-home-");
+    const linked = join(home, "orca", "workspaces", "linked");
+    linkWorktree(main, linked, "elsewhere");
+    const rootFor = workerRootResolver({ main: { ...entry, root: main } }, {}, { home, platform: "darwin" });
+    expect(rootFor(linked)).toBe(main);
+    expect(rootFor(join(home, "orca", "workspaces", "no-repository"))).toBeNull();
+  });
+
+  test("a registered root or recorded worktree in a protected folder still places its sessions by path", () => {
+    const home = "/Users/nobody-ak-fixture";
+    const root = join(home, "Documents", "shop");
+    const recorded = join(home, "Desktop", "shop-fix");
+    const rootFor = workerRootResolver(
+      { shop: { ...entry, root } },
+      { [recorded]: root },
+      { home, platform: "darwin" },
+    );
+    expect(rootFor(join(root, "packages", "web"))).toBe(root);
+    expect(rootFor(join(recorded, "src"))).toBe(root);
+    expect(rootFor(join(home, "Documents", "other"))).toBe(PROTECTED_FOLDER);
+  });
+
+  test("the scan counts each skipped working directory once, apart from the unplaced sessions", () => {
+    const codex = scratch("ak-worker-protected-");
+    writeRollout(codex, "docs-one", "/home/Documents/shop", rows);
+    writeRollout(codex, "docs-two", "/home/Documents/shop", rows);
+    writeRollout(codex, "desktop", "/home/Desktop/blog", rows);
+    writeRollout(codex, "stray", "/unregistered/project", rows);
+    writeRollout(codex, "placed", "/code/shop", rows);
+    const scan = scanWorkerSessions({ codex: [codex], droid: [], grok: [], kimi: [] }, (cwd) =>
+      cwd.startsWith("/home/") ? PROTECTED_FOLDER : cwd === "/code/shop" ? cwd : null,
+    );
+    expect(scan.protectedFolders).toBe(2);
+    expect(scan.unmatched).toBe(1);
+    expect([...scan.sessions.keys()]).toEqual(["/code/shop"]);
+  });
+
+  test("the tick reports the skipped working directories in one line and still captures the rest", () => {
+    const { main } = linkedRepo();
+    const home = scratch("ak-fake-home-");
+    const codex = scratch("ak-worker-protected-tick-");
+    const ctx = testContext({ cwd: main, env: { HOME: home, AK_LEARN_CODEX_HOMES: codex } });
+    registerRoot(ctx.config, main);
+    const linked = join(home, "Documents", "linked");
+    linkWorktree(main, linked, "protected");
+    for (const id of ["one", "two"]) writeRollout(codex, `documents-${id}`, linked, rows);
+    writeRollout(codex, "downloads", join(home, "Downloads", "unpacked"), rows);
+    writeRollout(codex, "main", main, [
+      codexMessage("user", "finish the cart fix"),
+      codexMessage("assistant", "The cart fix is done."),
+      CODEX_TASK_COMPLETE,
+    ]);
+
+    expect(tick(ctx, { only: main, job: "reflect" })).toBe(0);
+    const skipped = ctx.out.filter((line) => line.includes("skipped"));
+    // Only macOS guards the folders; elsewhere the pointer is read and the Documents sessions are placed.
+    if (process.platform === "darwin")
+      expect(skipped).toEqual([
+        "worker working directories skipped: 2 in a macOS protected folder, worktree pointer not read",
+      ]);
+    else expect(skipped).toEqual(["worker sessions skipped: 1 outside every registered root and worktree"]);
+    const stored = WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, main))).observationsSince("", 0);
+    expect(stored.some((row) => row.facts === "prompt: finish the cart fix\nreply: The cart fix is done.")).toBe(true);
   });
 });
 
