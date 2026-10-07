@@ -36,6 +36,11 @@
     "corrections": { "type": "integer", "minimum": 0 },
     "review_events": { "type": "integer", "minimum": 0 },
     "priority": { "type": "number", "minimum": 0 },
+    "shown": {
+      "description": "The guardrail and lesson ids the session-start block showed this session, joined from its hook.session-start spans (schemas/learn-span.schema.json) by a salted key of the host's session id. Ids only, never a guardrail's or a lesson's text. Empty when a start was recorded and showed none; absent when no start was recorded for the session.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^(rp|ls)-[0-9]{1,6}$" }
+    },
     "consolidated_run": {
       "description": "The run id of the consolidation that included this episode.",
       "type": "string"

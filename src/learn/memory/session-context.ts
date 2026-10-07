@@ -5,10 +5,12 @@
  * a host that clips the block.
  *
  * Guardrails are placed first and are never trimmed for memory; memory and
- * lessons get what remains of the cap and lose bullets from their least
- * valuable section first. Muting a project (`ak learn memory mute`) stops the
- * memory and lessons immediately; guardrails and the roster belong to other
- * loops and stay.
+ * lessons get what remains of the cap. When the two do not fit it together,
+ * lessons keep `LESSONS_SHARE` of it, or whatever the memory page leaves when
+ * that is more, and the memory page loses bullets from its least valuable
+ * section first to fit the rest. Muting a project (`ak learn memory mute`)
+ * stops the memory and lessons immediately; guardrails and the roster belong
+ * to other loops and stay.
  *
  * Session start is also where a repository registers itself, because it runs
  * in the user's own context: a linked worktree, whose `.git` is a file the
@@ -25,6 +27,13 @@ import { ageWords, loadLessons, memoryDir, readState, splitLines, str } from "./
 import { logRegistryWarnings, recordWorktree, registerRoot } from "./registry.ts";
 
 export const MAX_LESSONS = 8;
+
+/**
+ * The fraction of the cap left after guardrails that confirmed lessons keep
+ * when the memory page alone would fill it. A page over the cap used to trim
+ * every lesson away, because lessons sat behind it in one shared trim.
+ */
+export const LESSONS_SHARE = 0.25;
 
 /** Least valuable first: bullets are dropped from the bottom of the first section that still has one. */
 export const TRIM_ORDER = [
@@ -117,6 +126,30 @@ export function lessonsBlock(ledger: Ledger): { text: string; confirmed: number;
   return { text: `## Lessons\n${rows.join("\n")}\n`, confirmed: confirmed.length, total: lessons.length };
 }
 
+/** The lessons section within `cap` tokens, losing rows from the bottom (the least confident); empty when no row fits. */
+function lessonsWithin(text: string, cap: number): string {
+  const [header = "", ...rows] = splitLines(text.trimEnd());
+  const section = () => `${[header, ...rows].join("\n")}\n`;
+  while (rows.length > 0 && tokens(section()) > cap) rows.pop();
+  return rows.length === 0 ? "" : section();
+}
+
+/**
+ * The memory page, then the lessons, within `cap` tokens. Lessons are fitted
+ * to their share first and the page is trimmed to what they leave, so a page
+ * larger than the cap gives up bullets and never the lessons.
+ */
+function memoryWithLessons(memory: string, lessons: string, cap: number): string {
+  const whole = `${`${memory}\n\n${lessons}`.trim()}\n`;
+  if (memory === "" || lessons === "" || tokens(whole) <= cap) return trim(whole, cap);
+  const share = Math.max(Math.floor(cap * LESSONS_SHARE), cap - tokens(`${memory}\n\n`));
+  const kept = lessonsWithin(lessons, share);
+  if (kept === "") return trim(`${memory}\n`, cap);
+  // The page's budget is the cap less the lessons and the blank line joining the two, rounded against the page.
+  const page = trim(`${memory}\n`, cap - Math.ceil((kept.length + 1) / 4)).trimEnd();
+  return page === "" ? kept : `${page}\n\n${kept}`;
+}
+
 function nextNightly(lastNightly: string | undefined, now = new Date()): string {
   const today = todayLocal(now);
   if ((lastNightly ?? "") < today) return today;
@@ -151,8 +184,7 @@ function blockBody(ctx: LearnContext, root: string, cap: number): string[] {
       const lessons = lessonsBlock(ledger);
       // The cap covers what the model reads: guardrails, the header and the memory itself.
       const remaining = Math.max(0, cap - (guardrails === "" ? 0 : tokens(guardrails) + 1) - tokens(MEMORY_HEADER) - 1);
-      const merged =
-        memory !== "" || lessons.text !== "" ? trim(`${`${memory}\n\n${lessons.text}`.trim()}\n`, remaining) : "";
+      const merged = memory !== "" || lessons.text !== "" ? memoryWithLessons(memory, lessons.text, remaining) : "";
       if (merged.trim() !== "") {
         parts.push(`${MEMORY_HEADER}\n${merged.trimEnd()}`);
       }

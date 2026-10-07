@@ -12,7 +12,7 @@ import { runLearn } from "../../src/learn/cli.ts";
 import { ensureMemoryLedger, memoryDir, SECTIONS, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { applyReflection } from "../../src/learn/memory/reflect.ts";
 import { readRegistry } from "../../src/learn/memory/registry.ts";
-import { sessionStartBlock, trim } from "../../src/learn/memory/session-context.ts";
+import { LESSONS_SHARE, sessionStartBlock, trim } from "../../src/learn/memory/session-context.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { gitRepo, inOutsideRepo, scratch, testContext, type TestContext } from "./helpers.ts";
 
@@ -133,6 +133,65 @@ describe("sessionStartBlock", () => {
     expect(head).toContain("- [rp-001] check the diff against the PR body");
     expect(head).toContain("- the api moved to v2 [obs:1]");
     expect(head).not.toContain("completed item number 29");
+  });
+
+  test("a memory page larger than the cap gives up bullets so confirmed lessons are still shown", () => {
+    const { ctx, root } = project({ AK_LEARN_MEMORY_TOKENS: "200" });
+    const preferences = Array.from(
+      { length: 40 },
+      (_, i) => `- preference number ${i} about the checkout flow [obs:${i}]`,
+    ).join("\n");
+    const memory = MEMORY.replace("## Preferences & corrections", `## Preferences & corrections\n${preferences}`);
+    expect(tokens(memory)).toBeGreaterThan(ctx.config.memoryTokens);
+    seedMemory(ctx, root, memory);
+    const block = sessionStartBlock(ctx);
+    const head = block.slice(0, block.indexOf("\nmemory: reflected"));
+    expect(tokens(head)).toBeLessThanOrEqual(200);
+    expect(head).toContain("- confirmed lesson text [ls-001]");
+    expect(head).toContain("- preference number 0 about the checkout flow [obs:0]");
+    expect(head).not.toContain("- preference number 39 ");
+    expect(head.indexOf("## Lessons")).toBeGreaterThan(head.indexOf("## Preferences & corrections"));
+  });
+
+  test("memory prose no bullet pass can shrink is cut ahead of the lessons, not through them", () => {
+    const { ctx, root } = project({ AK_LEARN_MEMORY_TOKENS: "200" });
+    const prose = "a line of prose the bullet pass cannot drop\n".repeat(60);
+    seedMemory(ctx, root, MEMORY.replace("## Decisions", `## Decisions\n${prose}`));
+    const block = sessionStartBlock(ctx);
+    const head = block.slice(0, block.indexOf("\nmemory: reflected"));
+    expect(tokens(head)).toBeLessThanOrEqual(200);
+    expect(head).toEndWith("(truncated at the memory token cap)\n\n## Lessons\n- confirmed lesson text [ls-001]\n");
+  });
+
+  test("lessons keep a share of the cap, not all of it: the most confident stay and memory still leads", () => {
+    const { ctx, root } = project({ AK_LEARN_MEMORY_TOKENS: "200" });
+    const preferences = Array.from({ length: 40 }, (_, i) => `- preference number ${i} [obs:${i}]`).join("\n");
+    seedMemory(
+      ctx,
+      root,
+      MEMORY.replace("## Preferences & corrections", `## Preferences & corrections\n${preferences}`),
+    );
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    for (let i = 3; i <= 9; i += 1) {
+      writeLesson(
+        ledger.path("lessons", `ls-00${i}.md`),
+        {
+          id: `ls-00${i}`,
+          statement: `lesson ${i} ${"with a long statement ".repeat(4)}`.trim(),
+          status: "confirmed",
+          confidence: `0.${9 - i}0`,
+        },
+        "\n",
+      );
+    }
+    const block = sessionStartBlock(ctx);
+    const head = block.slice(0, block.indexOf("\nmemory: reflected"));
+    expect(tokens(head)).toBeLessThanOrEqual(200);
+    const lessons = head.slice(head.indexOf("## Lessons"));
+    expect(lessons).toContain("- confirmed lesson text [ls-001]");
+    expect(lessons).not.toContain("[ls-009]");
+    expect(tokens(lessons)).toBeLessThanOrEqual(LESSONS_SHARE * 200);
+    expect(head).toContain("- preference number 0 [obs:0]");
   });
 
   test("mute drops memory and lessons but keeps guardrails; unmute restores them", () => {

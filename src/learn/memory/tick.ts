@@ -40,6 +40,7 @@ import {
 import { consolidate, readyEpisodes } from "./consolidate.ts";
 import { deep } from "./deep.ts";
 import { buildEpisodes, type EpisodeEvent, unconsolidatedEpisodes } from "./episodes.ts";
+import { shownLookup } from "./exposure.ts";
 import { appendRun, ensureMemoryLedger, logLine, type MemoryState, memoryDir, readState } from "./ledger.ts";
 import { backfill, reflect, unscreenedIds } from "./reflect.ts";
 import { discoverProjects, discoverySince, readRegistry, readWorktrees } from "./registry.ts";
@@ -287,7 +288,10 @@ export function runProject(
     try {
       out.push(
         jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
-          const fresh = buildEpisodes(source, ledger, memProject, reviewEvents(ctx, root), { dryRun });
+          const fresh = buildEpisodes(source, ledger, memProject, reviewEvents(ctx, root), {
+            dryRun,
+            shown: shownLookup(ctx.config),
+          });
           if ((fresh.length > 0 || captured > 0) && !dryRun) {
             appendRun(ledger, {
               job: "episodes",
