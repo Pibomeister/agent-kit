@@ -174,6 +174,27 @@ describe("merge and contradiction", () => {
     writeLesson(dropped.path, { ...dropped.meta, count: 4 }, dropped.body);
     applyPairs(ledger, { merge: [["ls-001", "ls-002"]] }, "2026-09-18");
     expect(loadLessons(ledger).get("ls-001")?.meta.count).toBe(5);
+    expect(applyPairs(ledger, { merge: [["ls-001", "ls-002"]] }, "2026-09-25").merged).toEqual([]);
+    expect(loadLessons(ledger).get("ls-001")?.meta.count).toBe(5);
+  });
+
+  test("both orderings of one merge pair count the dropped lesson once", () => {
+    const ledger = twoLessons();
+    const dropped = loadLessons(ledger).get("ls-002");
+    if (!dropped) throw new Error("ls-002 missing");
+    writeLesson(dropped.path, { ...dropped.meta, count: 4 }, dropped.body);
+    const result = applyPairs(
+      ledger,
+      {
+        merge: [
+          ["ls-001", "ls-002"],
+          ["ls-002", "ls-001"],
+        ],
+      },
+      "2026-09-18",
+    );
+    expect(result.merged).toEqual([["ls-001", "ls-002"]]);
+    expect(loadLessons(ledger).get("ls-001")?.meta.count).toBe(5);
   });
 
   test("a contradiction marks both sides conflict", () => {

@@ -193,13 +193,18 @@ export function applyPairs(
 ): PairResult {
   const lessons = loadLessons(ledger);
   const result: PairResult = { merged: [], conflicts: [], confirmed: [] };
+  const seenMerges = new Set<string>();
   for (const pair of pairsOf(reply.merge, lessons)) {
     if (pair[0] === pair[1]) continue;
     const [keep, drop] = [...pair].sort() as [string, string];
+    const key = `${keep}:${drop}`;
+    if (seenMerges.has(key)) continue;
+    seenMerges.add(key);
     const kept = lessons.get(keep)!;
     const dropped = lessons.get(drop)!;
     const km = kept.meta;
     const dm = dropped.meta;
+    if (dm.status === "superseded" || list(km.merged).includes(drop)) continue;
     const before = km.status;
     km.evidence = [...new Set([...list(km.evidence), ...list(dm.evidence)])].sort();
     km.tags = [...new Set([...list(km.tags), ...list(dm.tags)])].sort();

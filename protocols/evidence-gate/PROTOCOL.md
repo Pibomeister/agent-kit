@@ -80,7 +80,8 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol `phase-oper
      problem, root cause and fix, once case, sentence punctuation, spacing and Unicode are normalized
      (operators and signs such as `!=` and `-1` still count), is a
      repeat: it raises that record's count and `last_seen` and adds its evidence. No second record,
-     no match on a title, nothing overwritten. A new lesson, pattern or guardrail draft lists the
+     no match on a title, nothing overwritten. A retired pattern is not a repeat target; restating
+     it creates a new pattern page. A new lesson, pattern or guardrail draft lists the
      records its content resembles in the run's result, to amend or supersede; advisory. A
      knowledgebase proposal record keeps them beside the draft, never inside it and never as a relation.
    - A lesson supersedes a `hypothesis` whatever its own status, and a `confirmed` lesson only

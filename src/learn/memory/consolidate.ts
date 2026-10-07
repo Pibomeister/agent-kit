@@ -316,7 +316,8 @@ export interface ConsolidateSummary {
  * normalization is a repeat: it is counted on that lesson (`countRepeat`) and
  * its `supersedes` is ignored, since a lesson cannot replace what it restates.
  * Every created lesson is compared with the existing ones and its resembling
- * candidates are listed in `similar`; nothing about them is stored or changed.
+ * candidates are listed in `similar`, without changing their source lessons.
+ * A proposal stores those candidates beside its draft, never inside the draft.
  * `sessionOf` maps older evidence to sessions, beside `obsSession`, so a
  * repeat across sessions confirms.
  */
