@@ -53,11 +53,11 @@ function writeScope(config: LearnConfig, text: string): void {
   writeFileSync(scopeFile(config.runtimeDir), text);
 }
 
-function hook(f: Fixture, verb: string, payload: HookPayload, cwd = String(payload.cwd)) {
+async function hook(f: Fixture, verb: string, payload: HookPayload, cwd = String(payload.cwd)) {
   const out: string[] = [];
   const err: string[] = [];
   const io = { out: (line: string) => out.push(line), err: (line: string) => err.push(line) };
-  const code = runLearn(["hook", verb], { cwd, io, env: f.env, stdin: JSON.stringify(payload) });
+  const code = await runLearn(["hook", verb], { cwd, io, env: f.env, stdin: JSON.stringify(payload) });
   return { code, out: out.join("\n"), err: err.join("\n") };
 }
 
@@ -107,13 +107,13 @@ describe("scope resolution", () => {
     }
   });
 
-  test("a scope file that cannot be read allows nothing, and --clear still removes it", () => {
+  test("a scope file that cannot be read allows nothing, and --clear still removes it", async () => {
     const f = fixture();
     mkdirSync(scopeFile(f.config.runtimeDir), { recursive: true });
     const config = loadConfig(f.env);
     expect([config.reposSource, config.repos]).toEqual(["file", []]);
     const { out, io } = collect();
-    expect(runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io, env: f.env })).toBe(0);
+    expect(await runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io, env: f.env })).toBe(0);
     expect(existsSync(scopeFile(f.config.runtimeDir))).toBe(false);
     expect(out.at(-1)).toBe("scope: unscoped (every repository)");
   });
@@ -143,52 +143,54 @@ describe("scope resolution", () => {
 });
 
 describe("session-start", () => {
-  test("in scope prints the block and writes its span", () => {
+  test("in scope prints the block and writes its span", async () => {
     const f = fixture((inside) => inside);
-    const result = hook(f, "session-start", { cwd: f.inside });
+    const result = await hook(f, "session-start", { cwd: f.inside });
     expect(result.out).toContain("[rp-001] read the diff");
     expect(spansNamed(f.config, "hook.session-start").length).toBe(1);
     expect(Object.values(readRegistry(f.config)).map((entry) => entry.root)).toEqual([f.inside]);
   });
 
-  test("out of scope, or outside any repository, prints nothing and leaves no span, registry or ledger", () => {
+  test("out of scope, or outside any repository, prints nothing and leaves no span, registry or ledger", async () => {
     const f = fixture((inside) => inside);
-    expect(hook(f, "session-start", { cwd: f.outside })).toEqual({ code: 0, out: "", err: "" });
-    expect(hook(f, "session-start", { cwd: scratch() })).toEqual({ code: 0, out: "", err: "" });
+    expect(await hook(f, "session-start", { cwd: f.outside })).toEqual({ code: 0, out: "", err: "" });
+    expect(await hook(f, "session-start", { cwd: scratch() })).toEqual({ code: 0, out: "", err: "" });
     untouched(f, f.outside, "hook.session-start");
   });
 
-  test("a linked worktree of an in-scope repo counts as in", () => {
+  test("a linked worktree of an in-scope repo counts as in", async () => {
     const f = fixture((inside) => inside);
     const wt = join(scratch(), "wt");
     run(["git", "worktree", "add", "-q", "-b", "feature-x", wt], { cwd: f.inside });
-    expect(hook(f, "session-start", { cwd: wt }).out).toContain("[rp-001] read the diff");
+    expect((await hook(f, "session-start", { cwd: wt })).out).toContain("[rp-001] read the diff");
     expect(spansNamed(f.config, "hook.session-start").length).toBe(1);
   });
 });
 
 describe("stop", () => {
-  test("in scope reaches the detach (dry run), a worktree included; out of scope does nothing at all", () => {
+  test("in scope reaches the detach (dry run), a worktree included; out of scope does nothing at all", async () => {
     const f = fixture((inside) => inside);
     f.env.AK_LEARN_DRY_RUN = "1";
-    expect(hook(f, "stop", { cwd: f.inside }).err).toContain(`would detach the review pipeline for ${f.inside}`);
+    expect((await hook(f, "stop", { cwd: f.inside })).err).toContain(
+      `would detach the review pipeline for ${f.inside}`,
+    );
     const wt = join(scratch(), "wt");
     run(["git", "worktree", "add", "-q", "-b", "feature-y", wt], { cwd: f.inside });
-    expect(hook(f, "stop", { cwd: wt }).err).toContain(`would detach the review pipeline for ${f.inside}`);
+    expect((await hook(f, "stop", { cwd: wt })).err).toContain(`would detach the review pipeline for ${f.inside}`);
     expect(spansNamed(f.config, "hook.stop").map((row) => row.status)).toEqual(["dry-run", "dry-run"]);
 
-    expect(hook(f, "stop", { cwd: f.outside })).toEqual({ code: 0, out: "", err: "" });
+    expect(await hook(f, "stop", { cwd: f.outside })).toEqual({ code: 0, out: "", err: "" });
     expect(spansNamed(f.config, "hook.stop").length).toBe(2);
     expect(existsSync(projectLedgerRoot(f.config, f.outside))).toBe(false);
   });
 });
 
 describe("prompt", () => {
-  test("a correction is captured in scope and records nothing out of scope", () => {
+  test("a correction is captured in scope and records nothing out of scope", async () => {
     const f = fixture((inside) => inside);
-    hook(f, "prompt", { cwd: f.outside, prompt: CORRECTION });
+    await hook(f, "prompt", { cwd: f.outside, prompt: CORRECTION });
     untouched(f, f.outside, "hook.prompt");
-    hook(f, "prompt", { cwd: f.inside, prompt: CORRECTION });
+    await hook(f, "prompt", { cwd: f.inside, prompt: CORRECTION });
     expect(loadEvents(reviewLedger(f.config, f.inside)).length).toBe(1);
     expect(spansNamed(f.config, "hook.prompt").length).toBe(1);
   });
@@ -259,75 +261,83 @@ describe("tick", () => {
 });
 
 describe("scope file verbs", () => {
-  test("setup scope --set, show and --clear round-trip the file", () => {
+  test("setup scope --set, show and --clear round-trip the file", async () => {
     const f = fixture();
     const set = collect();
     expect(
-      runLearn(["setup", "scope", "--set", `${f.inside}:${f.outside}`], { cwd: f.inside, io: set.io, env: f.env }),
+      await runLearn(["setup", "scope", "--set", `${f.inside}:${f.outside}`], {
+        cwd: f.inside,
+        io: set.io,
+        env: f.env,
+      }),
     ).toBe(0);
     expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}:${f.outside}\n`);
     const show = collect();
-    expect(runLearn(["setup", "scope"], { cwd: f.inside, io: show.io, env: f.env })).toBe(0);
+    expect(await runLearn(["setup", "scope"], { cwd: f.inside, io: show.io, env: f.env })).toBe(0);
     expect(show.out.join("\n")).toContain(`scope: ${f.inside}:${f.outside} (scope file)`);
-    expect(runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io: collect().io, env: f.env })).toBe(0);
+    expect(await runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io: collect().io, env: f.env })).toBe(0);
     expect(existsSync(scopeFile(f.config.runtimeDir))).toBe(false);
     const after = collect();
-    runLearn(["setup", "scope"], { cwd: f.inside, io: after.io, env: f.env });
+    await runLearn(["setup", "scope"], { cwd: f.inside, io: after.io, env: f.env });
     expect(after.out.join("\n")).toContain("scope: unscoped");
   });
 
-  test("setup scope names what it ignored, says when the variable wins, and refuses a bad flag set", () => {
+  test("setup scope names what it ignored, says when the variable wins, and refuses a bad flag set", async () => {
     const f = fixture();
     const set = collect();
-    runLearn(["setup", "scope", "--set", `${f.inside}:shop:/no/such/dir`], { cwd: f.inside, io: set.io, env: f.env });
+    await runLearn(["setup", "scope", "--set", `${f.inside}:shop:/no/such/dir`], {
+      cwd: f.inside,
+      io: set.io,
+      env: f.env,
+    });
     expect(set.out).toContain("  ignored: shop (not a repository root or a linked worktree)");
     expect(set.out).toContain("  ignored: /no/such/dir (not a repository root or a linked worktree)");
     expect(set.out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
     const env = { ...f.env, AK_LEARN_REPOS: f.outside };
     const show = collect();
-    runLearn(["setup", "scope"], { cwd: f.inside, io: show.io, env });
+    await runLearn(["setup", "scope"], { cwd: f.inside, io: show.io, env });
     expect(show.out).toEqual([
       `scope: ${f.outside} (AK_LEARN_REPOS)`,
       `  (AK_LEARN_REPOS overrides ${scopeFile(f.config.runtimeDir)})`,
     ]);
     const clear = collect();
-    runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io: clear.io, env: f.env });
-    runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io: clear.io, env: f.env });
+    await runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io: clear.io, env: f.env });
+    await runLearn(["setup", "scope", "--clear"], { cwd: f.inside, io: clear.io, env: f.env });
     expect(clear.out).toContain(`${scopeFile(f.config.runtimeDir)}: no scope file`);
     for (const argv of [["--set"], ["--set", f.inside, "--clear"]]) {
       const bad = collect();
-      expect(runLearn(["setup", "scope", ...argv], { cwd: f.inside, io: bad.io, env: f.env })).toBe(2);
+      expect(await runLearn(["setup", "scope", ...argv], { cwd: f.inside, io: bad.io, env: f.env })).toBe(2);
       expect(bad.out).toEqual(["ak learn setup scope: --set takes ROOT[:ROOT], and --set and --clear are exclusive"]);
     }
   });
 });
 
 describe("review round fixes", () => {
-  test("each hook gates on the payload's cwd, not the process's", () => {
+  test("each hook gates on the payload's cwd, not the process's", async () => {
     const f = fixture((inside) => inside);
     f.env.AK_LEARN_DRY_RUN = "1";
     // Run from inside the scope, about a session outside it: nothing.
-    expect(hook(f, "session-start", { cwd: f.outside }, f.inside).out).toBe("");
-    expect(hook(f, "stop", { cwd: f.outside }, f.inside).err).toBe("");
-    hook(f, "prompt", { cwd: f.outside, prompt: CORRECTION }, f.inside);
+    expect((await hook(f, "session-start", { cwd: f.outside }, f.inside)).out).toBe("");
+    expect((await hook(f, "stop", { cwd: f.outside }, f.inside)).err).toBe("");
+    await hook(f, "prompt", { cwd: f.outside, prompt: CORRECTION }, f.inside);
     expect(readJsonl<SpanRow>(join(f.config.runtimeDir, SPAN_FILE))).toEqual([]);
     // Run from outside, about a session inside: each acts.
-    expect(hook(f, "session-start", { cwd: f.inside }, f.outside).out).toContain("[rp-001] read the diff");
-    expect(hook(f, "stop", { cwd: f.inside }, f.outside).err).toContain("would detach");
+    expect((await hook(f, "session-start", { cwd: f.inside }, f.outside)).out).toContain("[rp-001] read the diff");
+    expect((await hook(f, "stop", { cwd: f.inside }, f.outside)).err).toContain("would detach");
     expect(spansNamed(f.config, "hook.stop").length).toBe(1);
   });
 
-  test("setup scope --set works on a machine with no runtime directory yet, and writes no temp file behind", () => {
+  test("setup scope --set works on a machine with no runtime directory yet, and writes no temp file behind", async () => {
     const f = fixture();
     expect(existsSync(f.config.runtimeDir)).toBe(false);
     const { out, io } = collect();
-    expect(runLearn(["setup", "scope", "--set", f.inside], { cwd: f.inside, io, env: f.env })).toBe(0);
+    expect(await runLearn(["setup", "scope", "--set", f.inside], { cwd: f.inside, io, env: f.env })).toBe(0);
     expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
     expect(existsSync(`${scopeFile(f.config.runtimeDir)}.tmp`)).toBe(false);
     expect(out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
   });
 
-  test("setup scope --set stores a linked worktree as its main root and refuses any directory below a root", () => {
+  test("setup scope --set stores a linked worktree as its main root and refuses any directory below a root", async () => {
     const f = fixture();
     const wt = join(scratch(), "wt");
     run(["git", "worktree", "add", "-q", "-b", "feature-z", wt], { cwd: f.inside });
@@ -335,22 +345,22 @@ describe("review round fixes", () => {
     const sub = join(f.inside, "notes");
     mkdirSync(sub);
     const { out, io } = collect();
-    runLearn(["setup", "scope", "--set", `${wt}:${sub}`], { cwd: f.inside, io, env: f.env });
+    await runLearn(["setup", "scope", "--set", `${wt}:${sub}`], { cwd: f.inside, io, env: f.env });
     expect(out).toContain(`  ${wt}: stored as its main repository root ${f.inside}`);
     expect(out).toContain(`  ignored: ${sub} (not a repository root or a linked worktree)`);
     expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
-    expect(hook(f, "session-start", { cwd: wt }).out).toContain("[rp-001] read the diff");
+    expect((await hook(f, "session-start", { cwd: wt })).out).toContain("[rp-001] read the diff");
   });
 
-  test("setup scope --set accepts a root spelled through a symlink, silently, and stores git's root", () => {
+  test("setup scope --set accepts a root spelled through a symlink, silently, and stores git's root", async () => {
     const f = fixture();
     const link = join(scratch(), "link");
     symlinkSync(f.inside, link);
     const { out, io } = collect();
-    runLearn(["setup", "scope", "--set", link], { cwd: f.inside, io, env: f.env });
+    await runLearn(["setup", "scope", "--set", link], { cwd: f.inside, io, env: f.env });
     expect(out.filter((line) => line.startsWith("  "))).toEqual([]);
     expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
-    expect(hook(f, "session-start", { cwd: f.inside }).out).toContain("[rp-001] read the diff");
+    expect((await hook(f, "session-start", { cwd: f.inside })).out).toContain("[rp-001] read the diff");
   });
 
   test("a dangling-symlink scope file allows nothing instead of reading as no scope", () => {

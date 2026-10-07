@@ -405,17 +405,17 @@ describe("staleness and mute", () => {
     expect(block).toContain("3 lessons (2 confirmed)");
   });
 
-  test("mute removes memory and lessons from the block at once, and unmute brings them back", () => {
+  test("mute removes memory and lessons from the block at once, and unmute brings them back", async () => {
     const root = gitRepo(join(scratch(), PROJECT));
     const ctx = testContext({ cwd: root });
     lessons(ctx, root, "2026-09-25");
     const io = { out: (line: string) => ctx.out.push(line), err: (line: string) => ctx.err.push(line) };
-    expect(runLearn(["memory", "mute"], { cwd: root, io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["memory", "mute"], { cwd: root, io, env: ctx.env })).toBe(0);
     const muted = sessionStartBlock(ctx);
     expect(muted).not.toContain("Working memory");
     expect(muted).not.toContain("the api is on v2");
     expect(muted).not.toContain("memory: reflected");
-    expect(runLearn(["memory", "unmute"], { cwd: root, io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["memory", "unmute"], { cwd: root, io, env: ctx.env })).toBe(0);
     expect(sessionStartBlock(ctx)).toContain("the api is on v2 [ls-003]");
   });
 });

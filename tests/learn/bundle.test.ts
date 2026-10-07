@@ -15,18 +15,21 @@ import { run } from "../../src/learn/core/proc.ts";
 import { loadEvents } from "../../src/learn/review/events.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { planBundle } from "../../src/packaging/plan.ts";
-import { gitRepo, projectScratch, removeProjectScratch, scratch } from "./helpers.ts";
+import { gitRepo, projectScratch, removeProjectScratch, removeStartScratch, scratch, startScratch } from "./helpers.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
 /** Each call starts bun on a large bundle, which under a loaded full run takes longer than the default 5s. */
 const TIMEOUT_MS = 60_000;
 
 let bundle = "";
-afterAll(removeProjectScratch);
+afterAll(() => {
+  removeProjectScratch();
+  removeStartScratch();
+});
 beforeAll(() => {
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
-  bundle = scratch("ak-bundle-");
+  bundle = startScratch("ak-bundle-");
   for (const file of planBundle({ root: REPO, catalog }, "claude-code", {}).files.values()) {
     mkdirSync(dirname(join(bundle, file.path)), { recursive: true });
     writeFileSync(join(bundle, file.path), file.contents);
@@ -35,7 +38,7 @@ beforeAll(() => {
 
 /** A machine with nothing on it: scratch HOME and config dir, git and bun on PATH, no claude-mem. */
 function machine(extra: Record<string, string> = {}) {
-  const home = scratch("ak-home-");
+  const home = startScratch("ak-home-");
   const env = {
     HOME: home,
     PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,

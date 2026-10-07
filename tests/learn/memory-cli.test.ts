@@ -11,9 +11,9 @@ import { readJsonl } from "../../src/learn/core/store.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
 import { UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { appendRun, ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
-import { gitRepo, inOutsideRepo, MemFixture, scratch, testContext, type TestContext } from "./helpers.ts";
+import { gitRepo, inOutsideRepoAsync, MemFixture, scratch, testContext, type TestContext } from "./helpers.ts";
 
-function learn(ctx: TestContext, argv: string[], cwd = ctx.cwd): number {
+async function learn(ctx: TestContext, argv: string[], cwd = ctx.cwd): Promise<number> {
   return runLearn(argv, {
     cwd,
     io: { out: (line) => ctx.out.push(line), err: (line) => ctx.err.push(line) },
@@ -35,56 +35,56 @@ function project() {
 }
 
 describe("memory cli", () => {
-  test("run registers the repo and runs only the requested job", () => {
+  test("run registers the repo and runs only the requested job", async () => {
     const { root, ctx } = project();
-    expect(learn(ctx, ["memory", "run", "--job", "weekly"])).toBe(0);
+    expect(await learn(ctx, ["memory", "run", "--job", "weekly"])).toBe(0);
     const jobs = readJsonl<{ job: string }>(join(memoryDir(ctx.config, root), "runs.jsonl")).map((row) => row.job);
     expect(jobs).toEqual(["episodes", "weekly"]);
     ctx.out.length = 0;
-    expect(learn(ctx, ["memory", "projects"])).toBe(0);
+    expect(await learn(ctx, ["memory", "projects"])).toBe(0);
     expect(ctx.out.length).toBe(1);
     expect(ctx.out[0]).toContain(`shop${" ".repeat(20)} ${root}`);
   });
 
-  test("run in a bare repository prints the refusal and exits nonzero", () => {
+  test("run in a bare repository prints the refusal and exits nonzero", async () => {
     const { ctx } = project();
     const bare = join(scratch(), "bare.git");
     mkdirSync(bare);
     run(["git", "init", "-q", "--bare"], { cwd: bare });
-    expect(learn(ctx, ["memory", "run", "--job", "weekly", "--repo", bare])).toBe(1);
+    expect(await learn(ctx, ["memory", "run", "--job", "weekly", "--repo", bare])).toBe(1);
     expect(ctx.err).toEqual([
       `ak learn memory: registry warning: ${bare} is a bare repository and cannot be registered`,
     ]);
     expect(existsSync(memoryDir(ctx.config, bare))).toBe(false);
-    expect(learn(ctx, ["memory", "projects"])).toBe(0);
+    expect(await learn(ctx, ["memory", "projects"])).toBe(0);
     expect(ctx.out.join("\n")).not.toContain(bare);
   });
 
-  test("an unknown job is refused", () => {
+  test("an unknown job is refused", async () => {
     const { ctx } = project();
-    expect(learn(ctx, ["memory", "run", "--job", "hourly"])).toBe(2);
+    expect(await learn(ctx, ["memory", "run", "--job", "hourly"])).toBe(2);
     expect(ctx.err[0]).toContain("--job wants reflect, backfill, nightly, weekly or all");
   });
 
-  test("status and show", () => {
+  test("status and show", async () => {
     const { ctx } = project();
-    learn(ctx, ["memory", "run", "--job", "weekly"]);
+    await learn(ctx, ["memory", "run", "--job", "weekly"]);
     ctx.out.length = 0;
-    expect(learn(ctx, ["memory", "status"])).toBe(0);
+    expect(await learn(ctx, ["memory", "status"])).toBe(0);
     const status = ctx.out.join("\n");
     expect(status).toContain("registry: claude-mem project shop");
     expect(status).toContain('"job":"weekly"');
     expect(status).toContain("shop: episodes +1");
     ctx.out.length = 0;
-    expect(learn(ctx, ["memory", "show"])).toBe(0);
+    expect(await learn(ctx, ["memory", "show"])).toBe(0);
     expect(ctx.out[0]).toBe("(no memory yet)");
     expect(ctx.out.join("\n")).toContain("# Lessons");
   });
 
-  test("outside a repository the foreground verbs fail cleanly", () => {
-    const { ctx, code } = inOutsideRepo((cwd) => {
+  test("outside a repository the foreground verbs fail cleanly", async () => {
+    const { ctx, code } = await inOutsideRepoAsync(async (cwd) => {
       const created = testContext({ cwd });
-      return { ctx: created, code: learn(created, ["memory", "show"]) };
+      return { ctx: created, code: await learn(created, ["memory", "show"]) };
     });
     expect(code).toBe(1);
     expect(ctx.err).toEqual(["ak learn memory: not inside a git repository"]);
@@ -189,12 +189,12 @@ describe("rollback", () => {
     expect(rollbackWiki(ledger)).toBe("nothing to roll back");
   });
 
-  test("the verb runs under the ledger lock", () => {
+  test("the verb runs under the ledger lock", async () => {
     const { root, ctx } = project();
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     writeFileSync(ledger.path("memory.md"), "changed\n");
     ledger.commit("reflect");
-    expect(learn(ctx, ["memory", "rollback"])).toBe(0);
+    expect(await learn(ctx, ["memory", "rollback"])).toBe(0);
     expect(ctx.out.at(-1)).toMatch(/^rolled back 1 file to /);
     expect(readFileSync(ledger.path("memory.md"), "utf8")).toBe("");
   });
