@@ -61,6 +61,17 @@ function context(deps: SetupDeps, extra: Record<string, string> = {}): TestConte
 }
 
 describe("setup doctor", () => {
+  test("reports the session store of every captured worker host", () => {
+    const deps = fakeDeps(["bun", "git", "judge", "gh"]);
+    const store = scratch("ak-droid-store-");
+    mkdirSync(join(store, "sessions"), { recursive: true });
+    const ctx = context(deps, { AK_LEARN_DROID_HOMES: store });
+    expect(doctor(ctx, deps)).toBe(0);
+    const stores = ctx.out.filter((line) => line.includes("session stores"));
+    expect(stores.map((line) => line.trim().split(" ")[0])).toEqual(["codex", "droid", "grok", "kimi"]);
+    expect(stores).toContain(`  droid session stores  1/1 present   ${store}`);
+  });
+
   test("all hard requirements present: exit 0 and nothing changes", () => {
     const deps = fakeDeps(["bun", "git", "judge", "gh"]);
     const ctx = context(deps);

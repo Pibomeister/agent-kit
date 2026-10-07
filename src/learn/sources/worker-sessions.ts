@@ -1,10 +1,11 @@
 /**
  * Offline capture for worker hosts that already persist their own sessions.
- * The parser never calls a host or a model: it reads Codex rollouts, Grok
- * session folders and Kimi wire logs, then condenses their public transcript
- * into one observation per turn, in the observation-source shape used by the
- * memory loop. Captured text is scrubbed of credentials and home directories
- * and cut to short excerpts before it is stored; full tool output never is.
+ * The parser never calls a host or a model: it reads Codex rollouts, Droid
+ * session records, Grok session folders and Kimi wire logs, then condenses
+ * their public transcript into one observation per turn, in the
+ * observation-source shape used by the memory loop. Captured text is scrubbed
+ * of credentials and home directories and cut to short excerpts before it is
+ * stored; full tool output never is.
  */
 import { createHash } from "node:crypto";
 import Ajv from "ajv";
@@ -20,10 +21,11 @@ import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
 
-export type WorkerHost = "codex" | "grok" | "kimi";
+export type WorkerHost = "codex" | "droid" | "grok" | "kimi";
 
 export interface WorkerHomes {
   codex: string[];
+  droid: string[];
   grok: string[];
   kimi: string[];
 }
@@ -45,6 +47,8 @@ export interface CapturedSession {
   completed_at_epoch: number | null;
   /** When the host last wrote the record. */
   modified_at_epoch: number;
+  /** A Droid record's size, set when it was read whole with no end recorded in it. */
+  quiet_bytes?: number;
   prompt_count: number;
   request: string | null;
   completed: string | null;
@@ -56,6 +60,7 @@ export interface CapturedSession {
 interface StoredSession extends SessionRow {
   native_id: string;
   modified_at_epoch: number;
+  quiet_bytes?: number;
   prompt_count: number;
   request: string | null;
   completed: string | null;
@@ -123,6 +128,9 @@ const EXIT_HEADER = /^(?:Process exited with code|Exit code:|exit:) (-?\d+)$/;
 const EXIT_FIELD = /"chunk_id":"[^"]*","wall_time_seconds":[\d.]+,"exit_code":(-?\d+)/g;
 const CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 const WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
+/** The blocks Droid injects into a user message. */
+const DROID_INJECTED = /<(system-reminder|system-notification)>[\s\S]*?<\/\1>/g;
+const DROID_EXIT = /\[Process exited with code (-?\d+)\]\s*$/;
 const jsonValidator = new Ajv({ strict: false });
 const validateJsonValue = jsonValidator.compile<JsonValue>({
   $defs: {
@@ -303,9 +311,13 @@ function toolInput(value: JsonValue | undefined): ParsedToolInput {
   return { text: clipped(JSON.stringify(value ?? {})), parsed: value ?? {} };
 }
 
-/** Collects a session's events into turns. A prompt opens a turn; a tool output joins the oldest call still waiting for one. */
+/**
+ * Collects a session's events into turns. A prompt opens a turn; a tool output joins the call its
+ * host named by id, or else the oldest call still waiting for one.
+ */
 function turnLog() {
   const turns: Turn[] = [];
+  const named = new Map<string, ToolCall>();
   const start = (prompt: string, at: number): Turn => {
     const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
     turns.push(turn);
@@ -324,12 +336,26 @@ function turnLog() {
     reply(text: string, at: number): void {
       current(at).reply = text;
     },
-    call(name: string, input: ParsedToolInput, cwd: string, at: number): void {
+    call(
+      name: string,
+      input: ParsedToolInput,
+      cwd: string,
+      at: number,
+      host: { id?: string | null; writes?: boolean } = {},
+    ): void {
       const turn = current(at);
-      turn.calls.push({ name, input: input.text, output: "", failed: false });
-      if (WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
+      const call: ToolCall = { name, input: input.text, output: "", failed: false };
+      turn.calls.push(call);
+      if (host.id !== undefined && host.id !== null) named.set(host.id, call);
+      if (host.writes === true || WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
     },
-    output(output: ToolOutput, at: number): void {
+    output(output: ToolOutput, at: number, id: string | null = null): void {
+      const answered = id === null ? undefined : named.get(id);
+      if (answered !== undefined) {
+        answered.output = output.text;
+        answered.failed = output.failed;
+        return;
+      }
       if (output.text === "") return;
       const turn = current(at);
       const waiting = turn.calls.find((call) => call.output === "");
@@ -372,14 +398,14 @@ function turnObservation(turn: Turn): CapturedObservation {
 
 /**
  * The session as stored. A last turn still running is left for a later scan, since its outcome is
- * not written yet. Past `MAX_OBSERVATIONS` the first prompt and the newest turns are kept, with a
+ * not written yet. `bytes` is kept as `quiet_bytes` when no turn was left out and no end was read. Past `MAX_OBSERVATIONS` the first prompt and the newest turns are kept, with a
  * marker row counting what was left out between them.
  */
 function session(
   host: WorkerHost,
   nativeId: string,
   cwd: string,
-  times: { started: number; ended: number | null; modified: number; now: number },
+  times: { started: number; ended: number | null; modified: number; now: number; bytes?: number },
   log: readonly Turn[],
 ): CapturedSession | null {
   const settled = times.ended !== null || times.now - times.modified > IDLE_MS;
@@ -403,7 +429,7 @@ function session(
           },
         ]
       : [];
-  return {
+  const captured: CapturedSession = {
     native_id: nativeId,
     memory_session_id: stableSessionId(host, nativeId),
     platform: host,
@@ -418,6 +444,8 @@ function session(
     files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
     observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)],
   };
+  if (times.ended === null && settled && times.bytes !== undefined) captured.quiet_bytes = times.bytes;
+  return captured;
 }
 
 /** A Codex user message without the instruction and environment blocks the host injects. */
@@ -433,6 +461,32 @@ function codexMeta(row: JsonObject | null | undefined): JsonObject | null {
 
 function codexNativeId(payload: JsonObject | null): string | null {
   return string(payload?.id) ?? string(payload?.session_id);
+}
+
+/** A Droid record opens with its `session_start` row, which is all the scan reads to place a session. */
+function droidStart(row: JsonObject | null | undefined): JsonObject | null {
+  return row?.type === "session_start" ? row : null;
+}
+
+/** A Droid message's `text` parts. Its `thinking` parts are private and its tool parts are read apart. */
+function droidText(parts: readonly JsonObject[], injected?: RegExp): string {
+  const texts = parts.flatMap((part) => {
+    const text = part.type === "text" ? string(part.text) : null;
+    const kept = injected === undefined ? text : (text?.replace(injected, "").trim() ?? null);
+    return kept === null || kept === "" ? [] : [kept];
+  });
+  return clipped(texts.join("\n"));
+}
+
+/**
+ * A Droid tool result, failing by the error flag its host recorded on it. A result with no flag
+ * fails by the exit line that closes its output, and by its wording where it has neither.
+ */
+function droidOutput(part: JsonObject): ToolOutput {
+  const output = toolOutput(part.content);
+  if (part.is_error === true || part.is_error === false) return { text: output.text, failed: part.is_error };
+  const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0 };
 }
 
 function grokNativeId(dir: string, summary: JsonObject | null): string {
@@ -490,6 +544,56 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
+}
+
+/**
+ * A message row is public when it carries no `visibility`: Droid marks its hook runs, its notices
+ * and the context it injects with one. Only a public message's role and content are read, never
+ * the provider fields beside them nor the `.settings.json` next to the record. A turn ends where
+ * the record holds its outcome or the session's end, and any later public message reopens it.
+ * `Create` writes a file under a name the shared write-tool pattern does not cover.
+ */
+export function parseDroidSession(path: string, now = Date.now()): CapturedSession | null {
+  const rows = readJsonLines(path);
+  const start = droidStart(rows[0]);
+  const cwd = string(start?.cwd);
+  const nativeId = string(start?.id);
+  if (cwd === null || nativeId === null) return null;
+  const { mtimeMs: modified, size: bytes } = statSync(path);
+  const started = epoch(rows.find((row) => row.timestamp !== undefined)?.timestamp, modified);
+  let ended: number | null = null;
+  let at = started;
+  const log = turnLog();
+  for (const row of rows) {
+    at = epoch(row.timestamp, at);
+    if (row.type === "agent_turn_outcome" || row.type === "session_end") {
+      ended = Math.max(ended ?? 0, at);
+      continue;
+    }
+    const message = row.type === "message" ? object(row.message) : null;
+    if (message === null || message.visibility !== undefined) continue;
+    const parts = (Array.isArray(message.content) ? message.content : []).flatMap((part) => {
+      const item = object(part);
+      return item === null ? [] : [item];
+    });
+    if (message.role === "user") {
+      ended = null;
+      const text = droidText(parts, DROID_INJECTED);
+      if (text !== "") log.prompt(text, at);
+      for (const part of parts)
+        if (part.type === "tool_result") log.output(droidOutput(part), at, string(part.tool_use_id));
+    } else if (message.role === "assistant") {
+      ended = null;
+      const text = droidText(parts);
+      if (text !== "") log.reply(text, at);
+      for (const part of parts) {
+        if (part.type !== "tool_use") continue;
+        const name = string(part.name) ?? "tool";
+        log.call(name, toolInput(part.input), cwd, at, { id: string(part.id), writes: name === "Create" });
+      }
+    }
+  }
+  return session("droid", nativeId, cwd, { started, ended, modified, now, bytes }, log.turns);
 }
 
 function grokCwd(dir: string, summary: JsonObject | null): string | null {
@@ -603,10 +707,14 @@ export function userHome(env: NodeJS.ProcessEnv = process.env): string {
 export function workerHomes(env: NodeJS.ProcessEnv = process.env): WorkerHomes {
   const home = userHome(env);
   const codex = env.CODEX_HOME && env.CODEX_HOME.trim() !== "" ? env.CODEX_HOME : join(home, ".codex");
+  // Droid's override replaces the home directory, not the folder in it.
+  const factory =
+    env.FACTORY_HOME_OVERRIDE && env.FACTORY_HOME_OVERRIDE.trim() !== "" ? env.FACTORY_HOME_OVERRIDE : home;
   const grok = env.GROK_HOME && env.GROK_HOME.trim() !== "" ? env.GROK_HOME : join(home, ".grok");
   const kimi = env.KIMI_HOME && env.KIMI_HOME.trim() !== "" ? env.KIMI_HOME : join(home, ".kimi-code");
   return {
     codex: splitHomes(env.AK_LEARN_CODEX_HOMES, codex),
+    droid: splitHomes(env.AK_LEARN_DROID_HOMES, join(factory, ".factory")),
     grok: splitHomes(env.AK_LEARN_GROK_HOMES, grok),
     kimi: splitHomes(env.AK_LEARN_KIMI_HOMES, kimi),
   };
@@ -692,7 +800,8 @@ export interface WorkerScan {
  * places it, so a session of an unregistered project costs one small read. Every record is placed
  * before any is parsed: `wanted` is asked once per root with the newest time a host wrote under it,
  * and a root it refuses has none of its sessions parsed. A session the root's `stored` rows already
- * hold complete as its record stands is not parsed either. An unreadable record is skipped and
+ * hold complete as its record stands is not parsed either, nor is a Droid session they hold whole
+ * with no end recorded while its record keeps its size and time. An unreadable record is skipped and
  * reported through `warn`.
  */
 export function scanWorkerSessions(
@@ -739,16 +848,18 @@ export function scanWorkerSessions(
         scan.unmatched += 1;
         return;
       }
-      const modified = statSync(record).mtimeMs;
+      const { mtimeMs: modified, size } = statSync(record);
       const place = placed.get(root) ?? { newest: 0, read: [] };
       placed.set(root, place);
       place.newest = Math.max(place.newest, touched, modified);
       place.read.push(() =>
         guarded(path, () => {
+          const stored = nativeId !== null && modified >= sinceMs ? options.stored?.(root) : null;
+          const sid = stableSessionId(host, nativeId ?? "");
           const held =
-            nativeId !== null && modified >= sinceMs
-              ? (options.stored?.(root)?.completedAt(stableSessionId(host, nativeId), modified) ?? null)
-              : null;
+            stored?.completedAt(sid, modified) ??
+            (host === "droid" ? stored?.quietAt(sid, modified, size) : null) ??
+            null;
           if (held !== null) {
             active(root, held);
             return;
@@ -775,6 +886,19 @@ export function scanWorkerSessions(
           return { cwd: string(meta?.cwd), nativeId: codexNativeId(meta) };
         },
         () => parseCodexSession(path),
+      );
+  }
+  for (const home of homes.droid) {
+    for (const path of walk(join(home, "sessions"), (file) => file.endsWith(".jsonl")))
+      collect(
+        "droid",
+        path,
+        path,
+        () => {
+          const start = droidStart(object(parseJson(firstLine(path))));
+          return { cwd: string(start?.cwd), nativeId: string(start?.id) };
+        },
+        () => parseDroidSession(path),
       );
   }
   for (const home of homes.grok) {
@@ -844,7 +968,7 @@ function storedObservation(item: CapturedSession, row: CapturedObservation, id: 
 }
 
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
-  return {
+  const stored: StoredSession = {
     id: 0,
     memory_session_id: item.memory_session_id,
     platform_source: item.platform,
@@ -859,6 +983,8 @@ function storedSession(item: CapturedSession, observationCount: number): StoredS
     next_steps: item.next_steps,
     files_modified: item.files_modified,
   };
+  if (item.quiet_bytes !== undefined) stored.quiet_bytes = item.quiet_bytes;
+  return stored;
 }
 
 export function isCapturedObservation(row: Pick<ObservationRow, "id">): boolean {
@@ -904,7 +1030,8 @@ export class WorkerSessionSource implements MemoryObservationSource {
    * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the files hold the same
    * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
    * A finished session whose record changed without a new row has its session row rewritten, so the
-   * scan can tell the ledger is level with the record. Returns observations appended and session rows
+   * scan can tell the ledger is level with the record, and so has a Droid session read whole with
+   * no end recorded. Returns observations appended and session rows
    * written; a dry run counts them and changes nothing.
    */
   capture(sessions: readonly CapturedSession[], options: { dryRun?: boolean; sinceMs?: number } = {}) {
@@ -931,8 +1058,10 @@ export class WorkerSessionSource implements MemoryObservationSource {
       if (
         appended.length === 0 &&
         (row === undefined ||
-          item.completed_at_epoch === null ||
-          (row.modified_at_epoch === item.modified_at_epoch && row.completed_at_epoch === item.completed_at_epoch))
+          (item.completed_at_epoch === null && item.quiet_bytes === undefined) ||
+          (row.modified_at_epoch === item.modified_at_epoch &&
+            row.completed_at_epoch === item.completed_at_epoch &&
+            row.quiet_bytes === item.quiet_bytes))
       )
         continue;
       fresh.push(...appended);
@@ -964,6 +1093,19 @@ export class WorkerSessionSource implements MemoryObservationSource {
   completedAt(memorySessionId: string, modifiedMs: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
     return row !== undefined && row.modified_at_epoch === modifiedMs ? row.completed_at_epoch : null;
+  }
+
+  /**
+   * When the stored Droid session was last active, if the ledger holds it whole, with no end
+   * recorded, as its host record stood at `modifiedMs` and `bytes`.
+   */
+  quietAt(memorySessionId: string, modifiedMs: number, bytes: number): number | null {
+    const row = this.sessionRows.get(memorySessionId);
+    if (row === undefined || row.modified_at_epoch !== modifiedMs || row.quiet_bytes !== bytes) return null;
+    return this.sessionObservations(memorySessionId).reduce(
+      (latest, item) => Math.max(latest, item.created_at_epoch),
+      row.started_at_epoch,
+    );
   }
 
   close(): void {}

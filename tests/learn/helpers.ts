@@ -108,6 +108,7 @@ export function testContext(
     CLAUDE_CONFIG_DIR: join(base, "config"),
     AK_LEARN_MEM_DB: join(base, "no-claude-mem.db"),
     AK_LEARN_CODEX_HOMES: join(base, "no-codex"),
+    AK_LEARN_DROID_HOMES: join(base, "no-droid"),
     AK_LEARN_GROK_HOMES: join(base, "no-grok"),
     AK_LEARN_KIMI_HOMES: join(base, "no-kimi"),
     AK_LEARN_ROLES_DIR: rolesDir,
