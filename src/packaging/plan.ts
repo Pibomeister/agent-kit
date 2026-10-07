@@ -51,9 +51,11 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
-const maintenanceScripts = new Map<string, string | null>();
+type MaintenanceScript = { script: string; inlined: string[] };
 
-function maintenanceScript(root: string): string | null {
+const maintenanceScripts = new Map<string, MaintenanceScript | null>();
+
+function maintenanceScript(root: string): MaintenanceScript | null {
   const cached = maintenanceScripts.get(root);
   if (cached !== undefined) return cached;
   const script = buildMaintenanceScript(root);
@@ -61,7 +63,7 @@ function maintenanceScript(root: string): string | null {
   return script;
 }
 
-function buildMaintenanceScript(root: string): string | null {
+function buildMaintenanceScript(root: string): MaintenanceScript | null {
   const source = join(root, "src/maintenance/cli.ts");
   if (!existsSync(source)) return null;
   const scratch = join(root, ".work");
@@ -69,13 +71,21 @@ function buildMaintenanceScript(root: string): string | null {
   const dir = mkdtempSync(join(scratch, "ak-maintenance-"));
   try {
     const outfile = join(dir, "ak.mjs");
-    const result = spawnSync(process.execPath, ["build", source, "--target=bun", `--outfile=${outfile}`], {
-      cwd: root,
-      encoding: "utf8",
-    });
+    const metafile = join(dir, "meta.json");
+    const result = spawnSync(
+      process.execPath,
+      ["build", source, "--target=bun", `--outfile=${outfile}`, `--metafile=${metafile}`],
+      { cwd: root, encoding: "utf8" },
+    );
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
     const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
-    return `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`;
+    const meta = parsePackageJson(readFileSync(metafile, "utf8"));
+    const inlined = new Set<string>();
+    for (const input of Object.keys(Object(meta?.inputs))) {
+      const match = /.*node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
+      if (match) inlined.add(match[1]);
+    }
+    return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined: [...inlined].toSorted() };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -784,8 +794,20 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   try {
-    const script = maintenanceScript(root);
-    if (script !== null) files.set("bin/ak", { path: "bin/ak", contents: script });
+    const built = maintenanceScript(root);
+    if (built !== null) {
+      files.set("bin/ak", { path: "bin/ak", contents: built.script });
+      for (const name of built.inlined) {
+        if (LICENCE_FILES.some((licence) => licence.source.startsWith(`node_modules/${name}/`))) continue;
+        issues.push(
+          error(
+            "packaging.licence-file-missing",
+            `node_modules/${name}`,
+            `bin/ak inlines ${name}, and LICENCE_FILES has no row for its licence text, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Add a LICENCE_FILES row for ${name}'s licence file and name it in NOTICE.`,
+          ),
+        );
+      }
+    }
   } catch (cause) {
     issues.push(
       error(

@@ -48,18 +48,18 @@ below, and the generated file does not keep their copyright comments, so each
 licence text is copied into this bundle at the path named here and included
 inside bin/ak.
 
-- ajv 8.20.0 — MIT License — Copyright (c) 2015-2021 Evgeny Poberezkin
+- ajv — MIT License — Copyright (c) 2015-2021 Evgeny Poberezkin
   LICENSES/ajv.LICENSE
-- ajv-formats 3.0.1 — MIT License — Copyright (c) 2020 Evgeny Poberezkin
+- ajv-formats — MIT License — Copyright (c) 2020 Evgeny Poberezkin
   LICENSES/ajv-formats.LICENSE
-- fast-deep-equal 3.1.3 — MIT License — Copyright (c) 2017 Evgeny Poberezkin
+- fast-deep-equal — MIT License — Copyright (c) 2017 Evgeny Poberezkin
   LICENSES/fast-deep-equal.LICENSE
-- fast-uri 3.1.8 — BSD-3-Clause — Copyright (c) 2011-2021 Gary Court and
+- fast-uri — BSD-3-Clause — Copyright (c) 2011-2021 Gary Court and
   Copyright (c) 2021-present The Fastify team
   LICENSES/fast-uri.LICENSE
-- json-schema-traverse 1.0.0 — MIT License — Copyright (c) 2017 Evgeny Poberezkin
+- json-schema-traverse — MIT License — Copyright (c) 2017 Evgeny Poberezkin
   LICENSES/json-schema-traverse.LICENSE
-- yaml 2.9.1 — ISC License — Copyright Eemeli Aro
+- yaml — ISC License — Copyright Eemeli Aro
   LICENSES/yaml.LICENSE
 
 claude-mem's licence text and the NOTICE quoted above are copied into this

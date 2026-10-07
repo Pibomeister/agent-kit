@@ -268,6 +268,24 @@ describe("the licence files the distribution is obliged to carry", () => {
     }
   });
 
+  test("bin/ak inlining a package that has no licence row fails the build", () => {
+    const plan = planBundle(
+      ctxFor({
+        "src/maintenance/cli.ts": 'import pad from "left-pad";\nconsole.log(pad("x"));\n',
+        "node_modules/left-pad/package.json": '{"name":"left-pad","main":"index.js"}\n',
+        "node_modules/left-pad/index.js": "module.exports = (s) => ` ${s}`;\n",
+        "node_modules/left-pad/LICENSE": "WTFPL\n",
+      }),
+      "claude-code",
+      {},
+    );
+    const missing = plan.issues
+      .filter((i) => i.rule === "packaging.licence-file-missing")
+      .map((i) => `${i.file}:${i.severity}`);
+    expect(missing).toEqual(["node_modules/left-pad:error"]);
+    expect(plan.files.has("bin/ak")).toBe(true);
+  }, 30_000);
+
   test("a tree with no LICENSE fails the build rather than shipping a distribution without one", () => {
     const plan = planBundle(ctxFor({}, ["LICENSE"]), "claude-code", {});
     const issue = plan.issues.find((i) => i.rule === "packaging.licence-file-missing" && i.file === "LICENSE");
