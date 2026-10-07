@@ -12,7 +12,26 @@ import { applyConsolidation } from "../../src/learn/memory/consolidate.ts";
 import { applyPairs, compactEvidence, compactReviewLedger, decayLessons, deep } from "../../src/learn/memory/deep.ts";
 import { ensureMemoryLedger, loadLessons, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
+import { type CapturedSession, WorkerSessionSource } from "../../src/learn/sources/worker-sessions.ts";
 import { gitRepo, MemFixture, scratch, testContext } from "./helpers.ts";
+
+function workerSession(nativeId: string, at: number, modified = Date.now()): CapturedSession {
+  return {
+    native_id: nativeId,
+    memory_session_id: nativeId.repeat(32),
+    platform: "codex",
+    cwd: "/fixture/worktree",
+    started_at_epoch: at,
+    completed_at_epoch: at,
+    modified_at_epoch: modified,
+    prompt_count: 0,
+    request: null,
+    completed: null,
+    next_steps: null,
+    files_modified: [],
+    observations: [{ type: "turn", title: "worker turn", text: `${nativeId} step`, at, files_modified: [] }],
+  };
+}
 
 const PAGE = `---
 id: rp-003
@@ -263,5 +282,129 @@ describe("weekly", () => {
     expect([lessons.get("ls-001")!.meta.sessions, lessons.get("ls-001")!.meta.status]).toEqual([3, "confirmed"]);
     expect([lessons.get("ls-003")!.meta.sessions, lessons.get("ls-003")!.meta.status]).toEqual([2, "confirmed"]);
     expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-shop-ls-003.json"]);
+  });
+
+  test("captured worker evidence counts its sessions with no claude-mem database: a merge confirms two hypotheses", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const workers = WorkerSessionSource.open(ledger);
+    workers.capture(["a", "b"].map((nativeId, index) => workerSession(nativeId, 100 + index)));
+    const rows = workers.observationsSince("", 0);
+    const ids = rows.map((row) => `obs:${row.id}`);
+    applyConsolidation(
+      ledger,
+      {
+        lessons: [
+          { statement: "fix the code the rule flags", evidence: [ids[0]], confidence: 0.6 },
+          { statement: "fix what the rule flags, not the token", evidence: [ids[1]], confidence: 0.6 },
+        ],
+      },
+      new Set(ids),
+      new Map(rows.map((row) => [`obs:${row.id}`, row.memory_session_id.slice(0, 8)])),
+    );
+    expect([...loadLessons(ledger).values()].map(({ meta }) => meta.status)).toEqual(["hypothesis", "hypothesis"]);
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: join(scratch(), "missing.db") },
+      replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }],
+    });
+    expect(deep(ctx, ledger, root, null)).toBe(
+      "weekly: 0 review pattern pages compacted, 0 stale, 1 merged, 0 conflicts",
+    );
+    const kept = loadLessons(ledger).get("ls-001")?.meta;
+    expect([kept?.sessions, kept?.status]).toEqual([2, "confirmed"]);
+    expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-shop-ls-001.json"]);
+  });
+
+  test("a merged draft names the store each evidence id came from", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const memDb = join(scratch(), "mem.db");
+    const mem = new MemFixture(memDb);
+    mem.session({ sid: "bbbb2222-1", project: "shop", started: 100, completed: 200 });
+    const native = `obs:${mem.observation({ sid: "bbbb2222-1", project: "shop", type: "bugfix", at: 150 })}`;
+    mem.close();
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const workers = WorkerSessionSource.open(ledger);
+    workers.capture([workerSession("a", 100)]);
+    const row = workers.observationsSince("", 0)[0];
+    const captured = `obs:${row?.id}`;
+    const sid = (row?.memory_session_id ?? "").slice(0, 8);
+    const second = [native, "Sbbbb2222", "obs:999", "Scccc3333"];
+    applyConsolidation(
+      ledger,
+      {
+        lessons: [
+          { statement: "fix the code the rule flags", evidence: [captured], confidence: 0.6 },
+          { statement: "fix what the rule flags, not the token", evidence: second, confidence: 0.6 },
+        ],
+      },
+      new Set([captured, ...second]),
+      new Map([
+        [captured, sid],
+        [native, "bbbb2222"],
+      ]),
+    );
+    const ctx = testContext({
+      cwd: root,
+      env: { AK_LEARN_MEM_DB: memDb },
+      replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }],
+    });
+    deep(ctx, ledger, root, null);
+    const { draft } = readJson<{ draft: { evidence?: Array<{ ref: string }> } }>(
+      ledger.path("proposals", "learn-shop-ls-001.json"),
+      { draft: {} },
+    );
+    expect(draft.evidence?.map(({ ref }) => ref).toSorted((x, y) => x.localeCompare(y))).toEqual([
+      `claude-mem:${native}`,
+      "claude-mem:Sbbbb2222",
+      "unresolved:obs:999",
+      "unresolved:Scccc3333",
+      `worker:${captured}`,
+      `worker:S${sid}`,
+    ]);
+  });
+
+  test("a lesson keeps its worker session after the captured row is dropped, so a recurrence a month later still confirms it", () => {
+    const root = gitRepo(join(scratch(), "shop"));
+    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const day = 86_400_000;
+    const day0 = Date.now() - 36 * day;
+    const nightly = (statement: string) => {
+      const row = WorkerSessionSource.open(ledger).observationsSince("", 0).at(-1);
+      const id = `obs:${row?.id}`;
+      applyConsolidation(
+        ledger,
+        { lessons: [{ statement, evidence: [id], confidence: 0.6 }] },
+        new Set([id]),
+        new Map([[id, (row?.memory_session_id ?? "").slice(0, 8)]]),
+      );
+      return id;
+    };
+    WorkerSessionSource.open(ledger).capture([workerSession("a", day0, day0)]);
+    const early = nightly("fix the code the rule flags");
+    WorkerSessionSource.open(ledger).capture([], { sinceMs: day0 + day });
+    WorkerSessionSource.open(ledger).capture([workerSession("b", day0 + 36 * day)], { sinceMs: day0 + 6 * day });
+    const late = nightly("fix what the rule flags, not the token");
+    const held = WorkerSessionSource.open(ledger).observationsSince("", 0);
+    expect(held.map((row) => `obs:${row.id}`)).toEqual([late]);
+    expect(early).not.toBe(late);
+    expect([...loadLessons(ledger).values()].map(({ meta }) => meta.status)).toEqual(["hypothesis", "hypothesis"]);
+
+    const ctx = testContext({ cwd: root, replies: [{ merge: [["ls-001", "ls-002"]], contradict: [] }] });
+    expect(deep(ctx, ledger, root, null)).toBe(
+      "weekly: 0 review pattern pages compacted, 0 stale, 1 merged, 0 conflicts",
+    );
+    const kept = loadLessons(ledger).get("ls-001")?.meta;
+    expect([kept?.sessions, kept?.status]).toEqual([2, "confirmed"]);
+    const { draft } = readJson<{ draft: { evidence?: Array<{ ref: string }> } }>(
+      ledger.path("proposals", "learn-shop-ls-001.json"),
+      { draft: {} },
+    );
+    expect(draft.evidence?.map(({ ref }) => ref).toSorted((x, y) => x.localeCompare(y))).toEqual([
+      `unresolved:S${"a".repeat(8)}`,
+      `worker:${early}`,
+      `worker:${late}`,
+      `worker:S${"b".repeat(8)}`,
+    ]);
   });
 });

@@ -1,13 +1,15 @@
 /**
  * The memory loop's scheduler. Every tick: take the runtime-wide lock,
- * discover projects from claude-mem, and for each project active in the last
- * seven days record new episodes, then run whichever of reflect, backfill,
- * nightly and weekly are due. Failures are logged, never raised.
+ * discover projects from claude-mem, capture offline worker session stores,
+ * and for each project active in the last seven days record new episodes,
+ * then run whichever jobs are due. Failures are logged, never raised.
  *
- * The scheduled path uses stat only. It never spawns git in a repository and
- * never opens a file inside one: under a macOS scheduler that open blocks on
- * the privacy prompt and ignores every timeout. Git runs only in the ledgers,
- * which live under the config directory.
+ * The scheduled path never spawns git in a repository, and opens one kind of
+ * file inside one: the `.git` pointer of a linked worktree, read to place a
+ * worker session no registered root or recorded worktree contains. Everything
+ * else is stat only, because under a macOS scheduler an open inside a protected
+ * folder blocks on the privacy prompt and ignores every timeout. Git runs only
+ * in the ledgers, which live under the config directory.
  */
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -22,12 +24,21 @@ import { loadEvents } from "../review/events.ts";
 import { deferredObservationIds } from "../review/ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "../review/ledger.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
+import {
+  CAPTURE_WINDOW_MS,
+  type CapturedSession,
+  ProjectMemorySource,
+  scanWorkerSessions,
+  WorkerSessionSource,
+  workerHomes,
+  workerRootResolver,
+} from "../sources/worker-sessions.ts";
 import { consolidate, readyEpisodes } from "./consolidate.ts";
 import { deep } from "./deep.ts";
 import { buildEpisodes, type EpisodeEvent, unconsolidatedEpisodes } from "./episodes.ts";
 import { appendRun, ensureMemoryLedger, logLine, type MemoryState, memoryDir, readState } from "./ledger.ts";
 import { backfill, reflect, unscreenedIds } from "./reflect.ts";
-import { discoverProjects, discoverySince, readRegistry } from "./registry.ts";
+import { discoverProjects, discoverySince, readRegistry, readWorktrees } from "./registry.ts";
 
 export type Job = "reflect" | "backfill" | "nightly" | "weekly";
 export const JOBS: readonly Job[] = ["reflect", "backfill", "nightly", "weekly"];
@@ -242,10 +253,10 @@ function reviewEvents(ctx: LearnContext, root: string): EpisodeEvent[] {
  */
 export function runProject(
   ctx: LearnContext,
-  source: ClaudeMemSource,
+  claude: ClaudeMemSource | null,
   root: string,
   memProject: string,
-  options: { job?: Job | "all"; force?: boolean } = {},
+  options: { job?: Job | "all"; force?: boolean; captured?: readonly CapturedSession[]; capturedSince?: number } = {},
 ): string[] {
   const dryRun = ctx.config.dryRun;
   const ledger = dryRun ? new Ledger(memoryDir(ctx.config, root)) : ensureMemoryLedger(memoryDir(ctx.config, root));
@@ -254,14 +265,34 @@ export function runProject(
   const trigger: SpanTrigger = options.force === true ? "force" : "tick";
   try {
     const out: string[] = [];
+    let captured = 0;
+    let refreshed = 0;
+    const captures = WorkerSessionSource.open(ledger);
+    try {
+      ({ observations: captured, sessions: refreshed } = captures.capture(options.captured ?? [], {
+        dryRun,
+        sinceMs: options.capturedSince,
+      }));
+      if ((options.captured?.length ?? 0) > 0) out.push(`worker observations +${captured}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      out.push(`worker capture failed: ${message}`);
+      if (!dryRun) logLine(ledger, `worker capture failed: ${message}`);
+    }
+    const source = new ProjectMemorySource(claude, captures);
     try {
       out.push(
         jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
           const fresh = buildEpisodes(source, ledger, memProject, reviewEvents(ctx, root), { dryRun });
-          if (fresh.length > 0 && !dryRun) {
-            appendRun(ledger, { job: "episodes", status: "ok", new: fresh.map((episode) => episode.sid) });
-            ledger.commit(`episodes +${fresh.length}`);
-          }
+          if ((fresh.length > 0 || captured > 0) && !dryRun) {
+            appendRun(ledger, {
+              job: "episodes",
+              status: "ok",
+              new: fresh.map((episode) => episode.sid),
+              worker_observations: captured,
+            });
+            ledger.commit(`episodes +${fresh.length}, worker observations +${captured}`);
+          } else if (refreshed > 0 && !dryRun) ledger.commit(`worker sessions refreshed ${refreshed}`);
           return `episodes +${fresh.length}`;
         }),
       );
@@ -272,9 +303,12 @@ export function runProject(
     const state = readState(ledger);
     const lastActivity = source.lastActivityMs(memProject);
     if (!lastActivity)
-      return [...out, `no claude-mem observations under project '${memProject}'; check the folder basename matches`];
+      return [...out, `no observations under project '${memProject}'; check the registry and worker-session homes`];
     const idleS = (nowMs() - lastActivity) / 1000;
-    const { tokens: newTokens, count: newObs } = source.newTokensSince(memProject, state.last_obs_id_reflected ?? 0);
+    const native = source.newTokensSince(memProject, state.last_obs_id_reflected ?? 0);
+    const workers = source.capturedTokensSince(memProject, state.last_worker_obs_id_reflected ?? 0);
+    const newTokens = native.tokens + workers.tokens;
+    const newObs = native.count + workers.count;
     const existingReview = new Ledger(reviewLedgerDir(ctx.config, root));
     const deferred = deferredObservationIds(existingReview);
     const unscreened = unscreenedIds(source, ledger, deferred).length;
@@ -341,17 +375,14 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
   }
   try {
     const source = ClaudeMemSource.open(ctx.config.memDb);
-    if (source === null) {
-      ctx.span?.status("failed", "no-source");
-      tickLog(ctx, `${nowIso()} tick: claude-mem database not found at ${ctx.config.memDb}`);
-      return 0;
-    }
     try {
       tickLog(ctx, `== ${nowIso()} tick${ctx.config.dryRun ? " DRY RUN" : ""}`);
+      if (source === null)
+        tickLog(ctx, `observer: claude-mem database not found at ${ctx.config.memDb}; worker capture continues`);
       // The repo scope gates the scheduled pass; `only` is an explicit `memory run --repo` and is not gated.
       const allowed = (root: string) => options.only !== undefined || repoAllowed(ctx.config, root);
       const registry =
-        options.only === undefined
+        options.only === undefined && source !== null
           ? discoverProjects(
               ctx.config,
               source.toolUseCwds(discoverySince()),
@@ -361,25 +392,60 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
           : readRegistry(ctx.config);
       const cutoff = nowMs() - ACTIVE_DAYS * 86_400_000;
       let projects = 0;
+      const capturedSince = nowMs() - CAPTURE_WINDOW_MS;
+      const memProjects = new Map(Object.values(registry).map((entry) => [entry.root, entry.mem_project]));
+      const claudeActivity = (root: string) => source?.lastActivityMs(memProjects.get(root) ?? "") ?? 0;
+      const stores = new Map<string, WorkerSessionSource | null>();
+      const stored = (root: string) => {
+        if (!stores.has(root)) {
+          try {
+            stores.set(root, WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, root))));
+          } catch {
+            stores.set(root, null);
+          }
+        }
+        return stores.get(root) ?? null;
+      };
+      const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
+        sinceMs: capturedSince,
+        warn: (warning) => tickLog(ctx, warning),
+        wanted: (root, newestMs) =>
+          allowed(root) &&
+          (options.only === undefined ? Math.max(claudeActivity(root), newestMs) >= cutoff : root === options.only),
+        stored,
+      });
+      if (scan.unmatched > 0)
+        tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and worktree`);
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only) continue;
         if (!allowed(entry.root)) continue;
-        if (options.only === undefined && source.lastActivityMs(entry.mem_project) < cutoff) continue;
+        const workerSessions = scan.sessions.get(entry.root) ?? [];
+        if (
+          options.only === undefined &&
+          Math.max(claudeActivity(entry.root), scan.activity.get(entry.root) ?? 0) < cutoff
+        )
+          continue;
         const name = entry.mem_project || basename(entry.root);
         projects += 1;
         let lines: string[];
         try {
-          lines = runProject(ctx, source, entry.root, entry.mem_project, { job: options.job, force: options.force });
+          lines = runProject(ctx, source, entry.root, entry.mem_project, {
+            job: options.job,
+            force: options.force,
+            captured: workerSessions,
+            capturedSince,
+          });
         } catch (error) {
           lines = [`failed: ${(error as Error).message}`];
         }
         for (const line of lines) tickLog(ctx, `${name}: ${line}`);
       }
       ctx.span?.attr("projects", projects);
-      if (ctx.config.dryRun) ctx.span?.status("dry-run");
+      if (source === null && projects === 0) ctx.span?.status("failed", "no-source");
+      else if (ctx.config.dryRun) ctx.span?.status("dry-run");
       else if (projects === 0) ctx.span?.status("nothing");
     } finally {
-      source.close();
+      source?.close();
     }
   } catch (error) {
     ctx.span?.status("failed", "error");

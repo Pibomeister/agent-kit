@@ -1,5 +1,5 @@
 /**
- * Episode memory: ended claude-mem sessions become `episodes.jsonl` rows,
+ * Episode memory: ended observed sessions become `episodes.jsonl` rows,
  * deterministically, each with a priority. Rows are only ever appended; when a
  * resumed session gains observations, its newer row supersedes the older one.
  * Consolidation is recorded beside them in `raw/consolidated.jsonl` as
@@ -15,7 +15,7 @@
 import { scrubSecrets } from "../core/secrets.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl } from "../core/store.ts";
 import type { Ledger } from "../core/ledger.ts";
-import { type ClaudeMemSource, jsonList, type SessionRow } from "../sources/claude-mem.ts";
+import { jsonList, type MemoryObservationSource, type SessionRow } from "../sources/claude-mem.ts";
 import { isFailureObservation } from "./ledger.ts";
 
 export interface Episode {
@@ -75,7 +75,7 @@ function isoToMs(ts: string | undefined): number | null {
 }
 
 export function rawEpisode(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   session: SessionRow,
   events: readonly EpisodeEvent[],
 ): Omit<Episode, "priority"> | null {
@@ -102,7 +102,7 @@ export function rawEpisode(
     platform: session.platform_source,
     started: session.started_at_epoch,
     ended,
-    prompts: source.promptCount(session.id),
+    prompts: source.promptCount(session.id, sid),
     obs: obs.length,
     tokens: obs.reduce((sum, row) => sum + (row.discovery_tokens ?? 0), 0),
     files_modified: [...files].sort(),
@@ -223,7 +223,7 @@ export function markConsolidated(
 
 /** Append new or observation-refreshed episodes, oldest first. Returns the appended rows. */
 export function buildEpisodes(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   memProject: string,
   events: readonly EpisodeEvent[],

@@ -1,0 +1,10 @@
+{
+  "id": "session_00000000-0000-4000-8000-000000000003",
+  "version": 2,
+  "cwd": "/fixture/worktree",
+  "createdAt": 1791118800000,
+  "updatedAt": 1791119100000,
+  "archived": false,
+  "lastPrompt": "Find the regression in the capture loop.",
+  "title": "Capture regression"
+}

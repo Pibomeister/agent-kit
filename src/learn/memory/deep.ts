@@ -16,6 +16,7 @@ import { buildPrompt } from "../core/roles.ts";
 import { nowMs, todayLocal, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
+import { ProjectMemorySource, WorkerSessionSource } from "../sources/worker-sessions.ts";
 import { sessionsOf } from "./consolidate.ts";
 import {
   appendRun,
@@ -151,7 +152,7 @@ export function decayLessons(ledger: Ledger, today = todayLocal()): string[] {
   return stale;
 }
 
-/** `obs:N` to the session it came from, for every observation cited by a lesson, as nightly consolidation maps them. */
+/** `obs:N` to the claude-mem or captured worker session it came from, for every observation cited by a lesson, as nightly consolidation maps them. */
 export function lessonObsSessions(ctx: LearnContext, ledger: Ledger): Map<string, string> {
   const ids = loadLessons(ledger)
     .values()
@@ -159,15 +160,13 @@ export function lessonObsSessions(ctx: LearnContext, ledger: Ledger): Map<string
     .filter((id) => /^obs:\d+$/.test(id))
     .map((id) => Number(id.slice(4)))
     .toArray();
+  if (ids.length === 0) return new Map();
   const mem = ClaudeMemSource.open(ctx.config.memDb);
-  if (mem === null || ids.length === 0) {
-    mem?.close();
-    return new Map();
-  }
   try {
-    return new Map([...mem.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
+    const source = new ProjectMemorySource(mem, WorkerSessionSource.open(ledger));
+    return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
   } finally {
-    mem.close();
+    mem?.close();
   }
 }
 
@@ -276,15 +275,27 @@ export function deep(ctx: LearnContext, ledger: Ledger, root: string, review: Le
     if (reply !== null) pairs = applyPairs(ledger, reply, todayLocal(), lessonObsSessions(ctx, ledger));
   }
   const lessons = loadLessons(ledger);
+  const workers = WorkerSessionSource.open(ledger);
+  const claude = ClaudeMemSource.open(ctx.config.memDb);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];
-  for (const id of pairs.confirmed) {
-    const page = lessons.get(id);
-    if (page === undefined) continue;
-    const trig = list(page.meta.tags).includes("preference") ? "correction" : "failure";
-    const proposal = proposeOrSkip(ctx, ledger, root, page, { runId, createdBy: "learn/lesson-merger", trigger: trig });
-    if ("ref" in proposal) proposals.push(proposal.ref);
-    else skippedProposals.push(proposal.skipped);
+  try {
+    for (const id of pairs.confirmed) {
+      const page = lessons.get(id);
+      if (page === undefined) continue;
+      const trig = list(page.meta.tags).includes("preference") ? "correction" : "failure";
+      const proposal = proposeOrSkip(ctx, ledger, root, page, {
+        runId,
+        createdBy: "learn/lesson-merger",
+        trigger: trig,
+        claude,
+        workers,
+      });
+      if ("ref" in proposal) proposals.push(proposal.ref);
+      else skippedProposals.push(proposal.skipped);
+    }
+  } finally {
+    claude?.close();
   }
   saveState(ledger, { ...readState(ledger), last_weekly: nowMs() });
   const run = {

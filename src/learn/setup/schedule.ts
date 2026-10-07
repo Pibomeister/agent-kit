@@ -60,7 +60,7 @@ export function schedulerLog(ctx: LearnContext): string {
 }
 
 /** Variables passed through to the unit when set: where claude-mem lives, and every `AK_LEARN_*` knob including the judge command. */
-const PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME"];
+const PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME", "GROK_HOME", "KIMI_HOME"];
 /**
  * Never baked: the repo scope lives in the runtime's scope file, which the hooks read too, so a
  * re-run from a shell without the variable cannot widen the tick, nor one with it pin a stale scope.
