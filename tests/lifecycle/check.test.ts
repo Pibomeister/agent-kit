@@ -235,7 +235,7 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "record", "--gate", "verify", "--receipt", claimed).code).toBe(0);
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
-    expect(checked.err).toContain("output_digest is required for a check that ran");
+    expect(checked.err).toContain("receipt must have required property 'output_digest'");
   });
 
   test("a verifier seat that is also the building seat is refused", () => {
@@ -1575,7 +1575,7 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
   type ReceiptOverride = {
     run_id?: string;
     environment?: { id: string; isolated: boolean; secrets_policy: string };
-    invalidation?: { reason: string };
+    invalidation?: { reason: string; at: string };
     schema_version?: number;
     project?: { id: string };
   };
@@ -1601,12 +1601,16 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     ],
     [
       "an invalidated receipt",
-      { receipt: { invalidation: { reason: "superseded" } } },
+      { receipt: { invalidation: { reason: "code-changed", at: "2026-01-01T00:00:00Z" } } },
       "refused: evidence invalidated",
     ],
     ["schema version 2", { receipt: { schema_version: 2 } }, "refused: evidence unsupported-version"],
     ["a reference naming another id", { gateRefId: "verification-other" }, "contains id"],
-    ["a malformed project", { receipt: { project: { id: "Not Kebab" } } }, "project is invalid"],
+    [
+      "a malformed project",
+      { receipt: { project: { id: "Not Kebab" } } },
+      '/project/id must match pattern "^[a-z0-9]+(-[a-z0-9]+)*$"',
+    ],
     ["another ticket id at the right hash", { ticket: "id" }, "refused: evidence wrong-task"],
     ["the right ticket id at another hash", { ticket: "hash" }, "refused: evidence wrong-task"],
   ];

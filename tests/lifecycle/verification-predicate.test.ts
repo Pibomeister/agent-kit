@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
-import { verificationShapeReasons } from "../../src/lifecycle/gate.ts";
+import { verificationShapeReasons as verificationRefusals } from "../../src/lifecycle/gate.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
 import { edited, parseJson, pathsOf, updated, type JsonValue, type Path } from "../helpers/json.ts";
 
@@ -52,7 +52,7 @@ function predicateOnlyRules(doc: JsonValue): string[] {
 }
 
 /** Whether the bundled predicate accepts a receipt: it reports no reasons against it. */
-const accepts = (receipt: JsonValue) => verificationShapeReasons(receipt).length === 0;
+const accepts = (receipt: JsonValue) => verificationRefusals(receipt).length === 0;
 
 describe("the bundled verification predicate", () => {
   test("agrees with ajv across per-member corruptions, unknown members and invalid strings", () => {
@@ -85,7 +85,7 @@ describe("the bundled verification predicate", () => {
         for (const how of ["delete", "null", "retype"] as const)
           compare(edited(doc, member, how), `${how} ${member.join(".")}`);
         // Probe every string, including plain strings whose acceptance must not be narrowed.
-        if (typeof at(doc, member) === "string")
+        if (JSON.stringify(at(doc, member)).startsWith('"'))
           for (const invalid of ["", " ", "../escape", "/absolute", "Jan 1 2026", "invalid", "a".repeat(129)])
             compare(
               updated(doc, member, () => invalid),
@@ -94,7 +94,10 @@ describe("the bundled verification predicate", () => {
       }
       for (const objectPath of [[], ...pathsOf(doc)]) {
         if (!jsonObject(at(doc, objectPath))) continue;
-        compare(updated(doc, [...objectPath, "unknown_member"], () => true), `unknown member ${objectPath.join(".")}`);
+        compare(
+          updated(doc, [...objectPath, "unknown_member"], () => true),
+          `unknown member ${objectPath.join(".")}`,
+        );
       }
       // The sweep must reach the predicate's reasons: most single corruptions are invalid.
       expect(rejected, `${name} sha256:${hash}`).toBeGreaterThan(compared / 2);
@@ -128,7 +131,7 @@ describe("the bundled verification predicate", () => {
     ] as const) {
       expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
       expect(predicateOnlyRules(doc)).toEqual([rule]);
-      expect(verificationShapeReasons(doc)).toEqual([reason]);
+      expect(verificationRefusals(doc)).toEqual([reason]);
     }
   });
 
@@ -137,13 +140,13 @@ describe("the bundled verification predicate", () => {
     receipt.notes = null;
     receipt.status = "green";
     expect(validate(receipt)).toBe(false);
-    const reasons = verificationShapeReasons(receipt);
+    const reasons = verificationRefusals(receipt);
     expect(reasons).toContain("/notes must be string");
     expect(reasons).toContain("/status must be equal to one of the allowed values");
 
     delete receipt.supports;
     receipt.no_criteria = "No criteria were supplied.";
-    const withoutCriteria = verificationShapeReasons(receipt);
+    const withoutCriteria = verificationRefusals(receipt);
     expect(withoutCriteria).toContain("/notes must be string");
     expect(withoutCriteria).toContain("/status must be equal to one of the allowed values");
     expect(withoutCriteria).toContain("supports is invalid");
@@ -191,7 +194,7 @@ describe("the bundled verification predicate", () => {
     ];
 
     for (const receipt of [...fixtures, ...templates, surface, ...malformed]) {
-      expect(accepts(receipt), JSON.stringify(receipt)).toBe(validate(receipt) as boolean);
+      expect(accepts(receipt), JSON.stringify(receipt)).toBe(validate(receipt));
     }
   });
 });
