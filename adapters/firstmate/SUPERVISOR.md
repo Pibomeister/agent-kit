@@ -93,14 +93,14 @@ node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <task-id> --by <who 
 that run is its branch's current run: super-build's `open --ticket` starts a run per ticket, a ship
 after the head moves past a closed run needs another opened the same way, and the same grant starts
 the phases in each. Reissue without asking the captain in two cases. A grant issued for longer than
-12 hours (such as any grant agent-kit 0.1.18 or earlier issued with its 24-hour default) is refused
+12 hours (such as any grant a release before the 12-hour cap issued with its 24-hour default) is refused
 as "issued for longer than 12 hours", and a grant that expired while its task was still running is
 refused as "expired"; Firstmate decided to reissue on expiry, and a worker never issues its own grant. Issue a fresh
 grant with the same command, task and worktree, `--hours 12` included so a bundle of either version
 writes one the check accepts, under a new `--out` (for example `data/<task-id>/bypass-<n>.json`),
 and send the worker the section it prints. That is not a new authorization: the captain's bypass for
 the task already covers it. A second over-long refusal for the same task is a decision. A "first
-used in run" refusal comes from a worker on agent-kit 0.1.18 or earlier: have that worker restart on
+used in run" refusal comes from a worker on a release before this change: have that worker restart on
 the current bundle rather than reissuing. Do not reissue for any other refusal; a wrong task or
 worktree, an edited file or an approval card are still decisions.
 

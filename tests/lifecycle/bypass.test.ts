@@ -524,8 +524,35 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
     expect(r.err).toMatch(/bypass grant \S+ is for \/\S+, not \//);
   });
 
-  test("a grant with a blank task, grantor or reason is never written", () => {
+  test("a grant past 12 hours, or with a blank task, grantor or reason, is never written", () => {
     const s = setup();
+    const issue = (out: string, hours: string) =>
+      ak(
+        s.home,
+        s.ledger,
+        "bypass",
+        "grant",
+        "--task",
+        "T-1",
+        "--by",
+        "captain",
+        "--reason",
+        "r",
+        "--out",
+        out,
+        "--project",
+        s.project,
+        "--worktree",
+        s.worktree,
+        "--hours",
+        hours,
+      );
+    expect(issue(join(s.home, "twelve.json"), "12").code).toBe(0);
+    const thirteen = join(s.home, "thirteen.json");
+    const long = issue(thirteen, "13");
+    expect(long.code).toBe(1);
+    expect(long.err).toContain("--hours must be a whole number from 1 to 12");
+    expect(existsSync(thirteen)).toBe(false);
     for (const blank of ["--task", "--by", "--reason"]) {
       const out = join(s.home, `blank${blank}.json`);
       const values = { "--task": "T-1", "--by": "captain", "--reason": "r", [blank]: " " };
@@ -559,6 +586,39 @@ describe("bypass absent or forged: the refusal is unchanged", () => {
 });
 
 describe("one task: the grant binds to the task it names and that task's worktree, not to a run", () => {
+  test("a branch list git cannot produce refuses the check, and no use record is written", () => {
+    const { worktree, ledger, grantPath } = granted();
+    const realGit = Bun.which("git");
+    if (realGit === null) throw new Error("git is not on PATH");
+    const shim = dir("ak-bypass-shim-");
+    writeFileSync(
+      join(shim, "git"),
+      `#!/bin/sh\nfor a in "$@"; do [ "$a" = for-each-ref ] && exit 1; done\nexec "${realGit}" "$@"\n`,
+    );
+    chmodSync(join(shim, "git"), 0o755);
+    const path = process.env.PATH;
+    process.env.PATH = `${shim}:${path ?? ""}`;
+    try {
+      const r = ak(
+        worktree,
+        ledger,
+        "bypass",
+        "check",
+        "--grant",
+        grantPath,
+        "--task",
+        "T-1",
+        "--phase",
+        "super-align",
+      );
+      expect(r.code).toBe(1);
+      expect(r.err).toContain("cannot list the branches");
+    } finally {
+      process.env.PATH = path;
+    }
+    expect(existsSync(join(defaultEvidenceDir(worktree), "task", "bypass"))).toBe(false);
+  });
+
   test("another task's grant is refused at check, and no use record is written", () => {
     const { worktree, ledger, grantPath } = granted();
     const r = ak(worktree, ledger, "bypass", "check", "--grant", grantPath, "--task", "T-2", "--phase", "super-align");
