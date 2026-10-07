@@ -15,7 +15,8 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import type { LearnContext } from "../../src/learn/core/context.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
@@ -37,7 +38,14 @@ import {
   scanWorkerSessions,
   workerRootResolver,
 } from "../../src/learn/sources/worker-sessions.ts";
-import { projectScratch, reflectorOrEmptyJudge, removeProjectScratch, scratch, testContext } from "./helpers.ts";
+import {
+  projectScratch,
+  reflectorOrEmptyJudge,
+  removeProjectScratch,
+  scratch,
+  testContext,
+  withGitCeiling,
+} from "./helpers.ts";
 
 const FIXTURES = join(import.meta.dir, "fixtures", "worker-sessions");
 
@@ -62,6 +70,11 @@ function linkedRepo() {
   writeFileSync(join(linkedGit, "gitdir"), `${join(linked, ".git")}\n`);
   writeFileSync(join(linkedGit, "HEAD"), readFileSync(join(main, ".git", "HEAD"), "utf8"));
   return { main, linked };
+}
+
+/** Start a session in the fixture's linked worktree; the ceiling keeps the checkout holding the test scratch out of root discovery. */
+function startSessionIn(linked: string, ctx: LearnContext): void {
+  withGitCeiling(dirname(linked), () => sessionStartBlock(ctx));
 }
 
 function captureWorkerSessions(
@@ -591,7 +604,7 @@ describe("memory tick worker capture", () => {
       },
       replies: [reflectorOrEmptyJudge, { lessons: [], review_events: [], log: "fixture batch" }],
     });
-    sessionStartBlock(ctx);
+    startSessionIn(linked, ctx);
     expect(readWorktrees(ctx.config)).toEqual({ [linked]: main });
 
     expect(tick(ctx, { only: main, job: "reflect", force: true })).toBe(0);
@@ -675,7 +688,7 @@ describe("memory tick worker capture", () => {
     const { main, linked } = linkedRepo();
     const codex = scratch("ak-worker-removed-");
     const ctx = testContext({ cwd: linked, env: { AK_LEARN_CODEX_HOMES: codex } });
-    sessionStartBlock(ctx);
+    startSessionIn(linked, ctx);
     rmSync(linked, { recursive: true });
     writeRollout(codex, "after-removal", join(linked, "packages", "web"), [
       codexMessage("user", "finish the cart fix"),
