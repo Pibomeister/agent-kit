@@ -94,6 +94,3 @@ verifier seat is eligible for the requested mode. One generic passing test canno
 screenshot, trace, API response or running-service trial. A recorded failure bound to the current
 revision and diff remains evidence even when malformed; a passing receipt re-recorded under its id
 cannot erase it. Changed code needs fresh evidence.
-
-The gate limits receipts to 1 MiB and 4,096 JSON members before structural validation. Keep bulk
-output in digest-bound artifact files rather than in receipt metadata.
