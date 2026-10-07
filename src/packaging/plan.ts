@@ -175,7 +175,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 };
 
 /**
- * The licence files every bundle carries at its root, copied verbatim.
+ * The licence files every bundle carries at their source-tree paths, copied verbatim.
  *
  * A licensing obligation rather than bundle tidiness: the MIT donors' licence
  * requires the copyright notice and the permission notice accompany every copy,
@@ -185,7 +185,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
  * this package has a name for.
  *
  * Emitted from here, once, for every host rather than per adapter. Both host
- * contracts specify the same two names at the same place
+ * contracts specify the same files at the same places
  * (`adapters/claude-code/CONTRACT.md` §1, `adapters/codex/CONTRACT.md` §2), and
  * two bundles disagreeing about their own licensing is the defect this package
  * has already produced once in a different field.
@@ -757,7 +757,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         error(
           "packaging.licence-file-missing",
           name,
-          `${name} is not in the source tree, so the bundle cannot carry it. MIT requires the copyright notice and the permission notice accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} at the repository root.`,
+          `${name} is not in the source tree, so the bundle cannot carry it. MIT requires the copyright notice and the permission notice accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} in the source tree.`,
         ),
       );
       continue;
