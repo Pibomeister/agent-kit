@@ -15425,7 +15425,7 @@ var init_learn_span_schema = __esm(() => {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://agent-kit.local/schemas/learn-span.schema.json",
     title: "Learn span",
-    description: "One line of the learning runtime's spans.jsonl: one finished unit of work (a review run or stage, a memory tick or job, a skill-learn step, a hook). Rows are shaped like trace spans so a later exporter is a pure mapping. Redaction is by construction: every object is closed and every string is an id, a hash, a timestamp or an enum member, so no field can carry prose, a path or a name. 'project_key' is a salted HMAC of the project root, never the root. 'judge' sums the judge calls made inside the span and its children; 'cost_known' is false when any call reported no cost. The writer validates each row against this schema and drops one that fails.",
+    description: "One line of the learning runtime's spans.jsonl: one finished unit of work (a review run or stage, a memory tick or job, a skill-learn step, a hook). Rows are shaped like trace spans so a later exporter is a pure mapping. Redaction is by construction: every object is closed and every string is an id, a hash, a timestamp or an enum member, so no field can carry prose, a path or a name. 'project_key' is a salted HMAC of the project root, never the root. The 'session' attribute is a salted HMAC of the id the host gives the session, never the id; the episode builder derives the same key to join what a session was shown ('shown') to its episode row. 'judge' sums the judge calls made inside the span and its children; 'cost_known' is false when any call reported no cost. The writer validates each row against this schema and drops one that fails.",
     type: "object",
     additionalProperties: false,
     required: [
@@ -15537,6 +15537,7 @@ var init_learn_span_schema = __esm(() => {
           guardrails: { $ref: "#/$defs/count" },
           lessons: { $ref: "#/$defs/count" },
           shown: { type: "array", items: { type: "string", pattern: "^(rp|ls)-[0-9]{1,6}$" } },
+          session: { type: "string", pattern: "^[0-9a-f]{16}$" },
           spawned: { type: "boolean" },
           detection: { enum: ["explicit", "guardrail", "positive", "auto", "none"] },
           captured: { type: "boolean" }
@@ -15649,6 +15650,14 @@ function projectKey(config, root) {
     real = realpathSync4(root);
   } catch {}
   return createHmac("sha256", salt).update(real).digest("hex").slice(0, 12);
+}
+function sessionKey(config, hostSessionId) {
+  if (hostSessionId === "")
+    return null;
+  const salt = installSalt(config);
+  if (salt === null)
+    return null;
+  return createHmac("sha256", salt).update(`session:${hostSessionId}`).digest("hex").slice(0, 16);
 }
 function rotatedPath(path) {
   const name = basename2(path);
@@ -15790,7 +15799,7 @@ var init_trace = __esm(() => {
     "skills.run": ["pending"],
     "skills.discover": ["sessions", "proposed", "kept"],
     "skills.uses": ["changed", "pending"],
-    "hook.session-start": ["block_tokens", "guardrails", "lessons", "shown"],
+    "hook.session-start": ["block_tokens", "guardrails", "lessons", "shown", "session"],
     "hook.stop": ["spawned"],
     "hook.prompt": ["detection", "captured"]
   };
@@ -16710,7 +16719,8 @@ class ClaudeMemSource {
     return this.db.query("select 1 as found from sdk_sessions where substr(memory_session_id, 1, 8) = ? limit 1").get(evidence.slice(1)) !== null;
   }
   sessions(project, sinceMs, staleBeforeMs) {
-    return this.db.query(`select s.id, s.memory_session_id, s.platform_source, s.started_at_epoch, s.completed_at_epoch,
+    return this.db.query(`select s.id, s.memory_session_id, s.content_session_id as native_id, s.platform_source,
+           s.started_at_epoch, s.completed_at_epoch,
            (select count(*) from observations o where o.memory_session_id = s.memory_session_id) as observation_count
          from sdk_sessions s where (s.project = ? or s.project like ?) and s.memory_session_id is not null
            and s.started_at_epoch >= ? and (s.completed_at_epoch is not null or s.started_at_epoch < ?)
@@ -18689,6 +18699,13 @@ function markConsolidated(ledger, consumed, run2) {
   const ts = nowIso();
   appendJsonl(ledger.path(CONSOLIDATED_FILE), [...consumed].map(([sid, mark]) => ({ sid, run: run2, ...mark, ts })));
 }
+function shownIds(previous, session, lookup) {
+  const native = session.native_id ?? "";
+  const recorded = native === "" ? undefined : lookup?.(native);
+  if (previous?.shown === undefined && recorded === undefined)
+    return null;
+  return [...new Set([...previous?.shown ?? [], ...recorded ?? []])];
+}
 function buildEpisodes(source, ledger, memProject2, events, options = {}) {
   const now = options.now ?? nowMs();
   const existing = loadEpisodes(ledger);
@@ -18701,8 +18718,10 @@ function buildEpisodes(source, ledger, memProject2, events, options = {}) {
     const episode = rawEpisode(source, session, events);
     if (episode === null)
       continue;
-    if (previous === undefined || episode.obs > previous.obs)
-      raw.push(episode);
+    if (previous !== undefined && episode.obs <= previous.obs)
+      continue;
+    const shown = shownIds(previous, session, options.shown);
+    raw.push(shown === null ? episode : { ...episode, shown });
   }
   const refreshed = new Set(raw.map((episode) => episode.sid));
   const fresh = score(raw, existing.filter((episode) => !refreshed.has(episode.sid)), now);
@@ -19167,6 +19186,38 @@ ${rows.join(`
 `)}
 `, confirmed: confirmed.length, total: lessons.length };
 }
+function lessonsWithin(text2, cap) {
+  const [header = "", ...rows] = splitLines(text2.trimEnd());
+  const section2 = () => `${[header, ...rows].join(`
+`)}
+`;
+  while (rows.length > 0 && tokens(section2()) > cap)
+    rows.pop();
+  return rows.length === 0 ? "" : section2();
+}
+function memoryWithLessons(memory, lessons, cap) {
+  const whole = `${`${memory}
+
+${lessons}`.trim()}
+`;
+  const together = trim(whole, cap);
+  if (memory === "" || lessons === "" || tokens(whole) <= cap)
+    return together;
+  const share = Math.max(Math.floor(cap * LESSONS_SHARE), cap - tokens(`${memory}
+
+`));
+  const kept = lessonsWithin(lessons, share);
+  if (lessonRows(together) >= lessonRows(kept))
+    return together;
+  const page = trim(`${memory}
+`, cap - Math.ceil((kept.length + 1) / 4)).trimEnd();
+  return page === "" ? kept : `${page}
+
+${kept}`;
+}
+function lessonRows(text2) {
+  return sections(text2).filter(([header]) => header === "## Lessons").reduce((count, [, lines]) => count + lines.filter((line) => line.startsWith("- ")).length, 0);
+}
 function nextNightly(lastNightly, now = new Date) {
   const today = todayLocal(now);
   if ((lastNightly ?? "") < today)
@@ -19191,10 +19242,7 @@ function blockBody(ctx, root, cap) {
       const memory = readText(memoryPath).trim();
       const lessons = lessonsBlock(ledger);
       const remaining = Math.max(0, cap - (guardrails === "" ? 0 : tokens(guardrails) + 1) - tokens(MEMORY_HEADER) - 1);
-      const merged = memory !== "" || lessons.text !== "" ? trim(`${`${memory}
-
-${lessons.text}`.trim()}
-`, remaining) : "";
+      const merged = memory !== "" || lessons.text !== "" ? memoryWithLessons(memory, lessons.text, remaining) : "";
       if (merged.trim() !== "") {
         parts.push(`${MEMORY_HEADER}
 ${merged.trimEnd()}`);
@@ -19247,7 +19295,7 @@ function sessionStartBlockWithin(ctx, maxChars) {
   return `${body}${body === "" ? "" : `
 `}${kept}${kept === section2 ? "" : ROSTER_SHORTENED}`;
 }
-var MAX_LESSONS = 8, TRIM_ORDER, TRUNCATED = `
+var MAX_LESSONS = 8, LESSONS_SHARE = 0.25, TRIM_ORDER, TRUNCATED = `
 (truncated at the memory token cap)
 `, ROSTER_SHORTENED = `(skill roster shortened to fit this host's context limit)
 `, MEMORY_HEADER = "Working memory for this repo (derived from past sessions; every bullet cites its evidence ids):", joined = (parts) => parts.length > 0 ? `${parts.join(`
@@ -21475,6 +21523,45 @@ var init_deep = __esm(() => {
   PROTECTED_TAGS = new Set(["decision", "security", "blocker"]);
 });
 
+// src/learn/memory/exposure.ts
+function shownBySession(config) {
+  const out = new Map;
+  for (const row of spanRows(config)) {
+    if (!isKeyedStart(row))
+      continue;
+    const { session: session2, shown = [] } = row.attrs;
+    out.set(session2, [...new Set([...out.get(session2) ?? [], ...shown])]);
+  }
+  return out;
+}
+function shownLookup(config) {
+  let bySession = null;
+  return (hostSessionId) => {
+    const key = sessionKey(config, hostSessionId);
+    if (key === null)
+      return;
+    bySession ??= shownBySession(config);
+    return bySession.get(key);
+  };
+}
+var import_ajv5, isKeyedStart;
+var init_exposure = __esm(() => {
+  init_trace();
+  import_ajv5 = __toESM(require_ajv(), 1);
+  isKeyedStart = new import_ajv5.default({ strict: false }).compile({
+    type: "object",
+    required: ["name", "attrs"],
+    properties: {
+      name: { const: "hook.session-start" },
+      attrs: {
+        type: "object",
+        required: ["session"],
+        properties: { session: { type: "string" }, shown: { type: "array", items: { type: "string" } } }
+      }
+    }
+  });
+});
+
 // src/learn/memory/reflect.ts
 import { existsSync as existsSync21 } from "fs";
 function formatObservation(row) {
@@ -21801,7 +21888,7 @@ function decide(input, thresholds) {
   return due;
 }
 function validateRunRow(row) {
-  runRowValidator ??= new import_ajv5.default({ strict: false }).compile(RUN_ROW_SCHEMA);
+  runRowValidator ??= new import_ajv6.default({ strict: false }).compile(RUN_ROW_SCHEMA);
   return runRowValidator(row);
 }
 function runLog(ledger) {
@@ -21902,7 +21989,10 @@ function runProject(ctx, claude, root, memProject2, options = {}) {
     const source = new ProjectMemorySource(claude, captures);
     try {
       out.push(jobSpan(ctx, "memory.episodes", trigger, ledger, root, () => {
-        const fresh = buildEpisodes(source, ledger, memProject2, reviewEvents(ctx, root), { dryRun });
+        const fresh = buildEpisodes(source, ledger, memProject2, reviewEvents(ctx, root), {
+          dryRun,
+          shown: shownLookup(ctx.config)
+        });
         if ((fresh.length > 0 || captured > 0) && !dryRun) {
           appendRun(ledger, {
             job: "episodes",
@@ -22062,7 +22152,7 @@ function tickRun(ctx, options) {
   }
   return 0;
 }
-var import_ajv5, JOBS, ACTIVE_DAYS = 7, REFLECT_MAX_GAP_MS, NIGHTLY_BACKLOG = 25, WEEK_MS, FAILURE_BACKOFF_MIN_MS = 3600000, FAILURE_BACKOFF_MAX_MS, COUNT, IDS, runRowValidator, RUN_ROW_SCHEMA;
+var import_ajv6, JOBS, ACTIVE_DAYS = 7, REFLECT_MAX_GAP_MS, NIGHTLY_BACKLOG = 25, WEEK_MS, FAILURE_BACKOFF_MIN_MS = 3600000, FAILURE_BACKOFF_MAX_MS, COUNT, IDS, runRowValidator, RUN_ROW_SCHEMA;
 var init_tick = __esm(() => {
   init_config();
   init_distill();
@@ -22079,10 +22169,11 @@ var init_tick = __esm(() => {
   init_consolidate();
   init_deep();
   init_episodes();
+  init_exposure();
   init_ledger2();
   init_reflect();
   init_registry();
-  import_ajv5 = __toESM(require_ajv(), 1);
+  import_ajv6 = __toESM(require_ajv(), 1);
   JOBS = ["reflect", "backfill", "nightly", "weekly"];
   REFLECT_MAX_GAP_MS = 6 * 3600 * 1000;
   WEEK_MS = 7 * 86400000;
@@ -23120,10 +23211,10 @@ function assignsHooksKey(text2) {
   }
   return false;
 }
-var import_ajv6, BLOCK_BEGIN = "# >>> agent-kit learn hooks >>>", BLOCK_END = "# <<< agent-kit learn hooks <<<", BLOCK_NOTE = "# Written by `ak learn setup wire`; `ak learn setup uninstall` removes this block.", hooksConfig;
+var import_ajv7, BLOCK_BEGIN = "# >>> agent-kit learn hooks >>>", BLOCK_END = "# <<< agent-kit learn hooks <<<", BLOCK_NOTE = "# Written by `ak learn setup wire`; `ak learn setup uninstall` removes this block.", hooksConfig;
 var init_toml_hooks = __esm(() => {
-  import_ajv6 = __toESM(require_ajv(), 1);
-  hooksConfig = new import_ajv6.default({ strict: false }).compile({
+  import_ajv7 = __toESM(require_ajv(), 1);
+  hooksConfig = new import_ajv7.default({ strict: false }).compile({
     type: "object",
     properties: {
       hooks: {
@@ -23575,16 +23666,16 @@ function wire(ctx, deps, options = {}) {
   }
   return refused2.size > 0 ? 1 : 0;
 }
-var import_ajv7, OUR_HOOK, ajv3, isJsonObject, isEventList, declaresSessionStart, MEM_MODE = "code--review-learning", CONTEXT_OBSERVATIONS = "25", SESSION_MATCHER = "startup|resume|clear|compact", WIRE_HOSTS, HOST_LABEL, GROK_HOOKS_FILE = "agent-kit-learn.json";
+var import_ajv8, OUR_HOOK, ajv3, isJsonObject, isEventList, declaresSessionStart, MEM_MODE = "code--review-learning", CONTEXT_OBSERVATIONS = "25", SESSION_MATCHER = "startup|resume|clear|compact", WIRE_HOSTS, HOST_LABEL, GROK_HOOKS_FILE = "agent-kit-learn.json";
 var init_wire = __esm(() => {
   init_proc();
   init_roles();
   init_store();
   init_toml_hooks();
   init_scope();
-  import_ajv7 = __toESM(require_ajv(), 1);
+  import_ajv8 = __toESM(require_ajv(), 1);
   OUR_HOOK = /(?:^|[\s/"'])(?:ak|cli\.ts)['"]?\s+learn\s+hook\s+(.*)$/;
-  ajv3 = new import_ajv7.default({ strict: false });
+  ajv3 = new import_ajv8.default({ strict: false });
   isJsonObject = ajv3.compile({ type: "object" });
   isEventList = ajv3.compile({
     type: "array",
@@ -24870,7 +24961,10 @@ function reported(label, ctx, body) {
 function guarded(label, ctx, body) {
   return reported(label, ctx, () => span(ctx, `hook.${label}`, "hook", body));
 }
-function recordExposure(ctx, block) {
+function recordExposure(ctx, block, hostSessionId) {
+  const session2 = sessionKey(ctx.config, hostSessionId ?? "");
+  if (session2 !== null)
+    ctx.span?.attr("session", session2);
   const guardrails = [...block.matchAll(/^- \[(rp-\d{1,6})\]/gm)].map((match) => match[1] ?? "");
   const lessons = [...block.matchAll(/\[(ls-\d{1,6})\]$/gm)].map((match) => match[1] ?? "");
   ctx.span?.attr("shown", [...guardrails, ...lessons]);
@@ -24906,7 +25000,7 @@ function carrierHook(ctx, host, payload, arm) {
     const printed = claim2(traced.config, host, sessionId) ? block : "";
     if (printed !== "")
       traced.io.out(carrier.render(printed));
-    recordExposure(traced, printed);
+    recordExposure(traced, printed, sessionId);
   });
 }
 function sessionStartHook(args, ctx) {
@@ -24925,10 +25019,10 @@ function sessionStartHook(args, ctx) {
     const block = sessionStartBlock(traced);
     if (block.trim() !== "")
       traced.io.out(block.trimEnd());
-    recordExposure(traced, block);
+    recordExposure(traced, block, payload.session_id ?? payload.sessionId);
   });
 }
-var import_ajv8, HOOK_ROOT, isSessionPayload, GROK_CONTEXT_CHARS = 1e4, CARRIERS, hookArea;
+var import_ajv9, HOOK_ROOT, isSessionPayload, GROK_CONTEXT_CHARS = 1e4, CARRIERS, hookArea;
 var init_hooks2 = __esm(() => {
   init_config();
   init_context();
@@ -24938,13 +25032,13 @@ var init_hooks2 = __esm(() => {
   init_delivery();
   init_session_context();
   init_hooks();
-  import_ajv8 = __toESM(require_ajv(), 1);
+  import_ajv9 = __toESM(require_ajv(), 1);
   HOOK_ROOT = {
     "session-start": sessionRoot,
     stop: mainRepoRoot,
     prompt: mainRepoRoot
   };
-  isSessionPayload = new import_ajv8.default({ strict: false }).compile({
+  isSessionPayload = new import_ajv9.default({ strict: false }).compile({
     type: "object",
     properties: { cwd: { type: "string" }, session_id: { type: "string" }, sessionId: { type: "string" } }
   });
@@ -24980,7 +25074,7 @@ var init_hooks2 = __esm(() => {
 });
 
 // src/maintenance/cli.ts
-var import_ajv9 = __toESM(require_ajv(), 1);
+var import_ajv10 = __toESM(require_ajv(), 1);
 var import__20208 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync4 } from "child_process";
 import { existsSync as existsSync31, readFileSync as readFileSync23, realpathSync as realpathSync6 } from "fs";
@@ -31509,7 +31603,7 @@ async function dispatch(argv, options) {
 }
 
 // src/maintenance/cli.ts
-var ajv4 = new import_ajv9.default;
+var ajv4 = new import_ajv10.default;
 var pluginSchema = {
   type: "object",
   properties: {
