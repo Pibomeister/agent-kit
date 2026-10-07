@@ -204,7 +204,7 @@ export function applyPairs(
     const dropped = lessons.get(drop)!;
     const km = kept.meta;
     const dm = dropped.meta;
-    if (dm.status === "superseded" || list(km.merged).includes(drop)) continue;
+    if (km.status === "superseded" || dm.status === "superseded" || list(km.merged).includes(drop)) continue;
     const before = km.status;
     km.evidence = [...new Set([...list(km.evidence), ...list(dm.evidence)])].sort();
     km.tags = [...new Set([...list(km.tags), ...list(dm.tags)])].sort();

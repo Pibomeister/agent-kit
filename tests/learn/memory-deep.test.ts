@@ -197,6 +197,33 @@ describe("merge and contradiction", () => {
     expect(loadLessons(ledger).get("ls-001")?.meta.count).toBe(5);
   });
 
+  test("a chained merge never folds a lesson into one already superseded", () => {
+    const ledger = twoLessons();
+    const second = loadLessons(ledger).get("ls-002");
+    if (!second) throw new Error("ls-002 missing");
+    writeLesson(
+      ledger.path("lessons", "ls-003.md"),
+      { ...second.meta, id: "ls-003", statement: "third about extraction grounding", evidence: ["Sc"], count: 3 },
+      second.body,
+    );
+    const result = applyPairs(
+      ledger,
+      {
+        merge: [
+          ["ls-001", "ls-002"],
+          ["ls-002", "ls-003"],
+        ],
+      },
+      "2026-09-18",
+    );
+    expect(result.merged).toEqual([["ls-001", "ls-002"]]);
+    const lessons = loadLessons(ledger);
+    expect([lessons.get("ls-002")?.meta.count, lessons.get("ls-002")?.meta.merged]).toEqual([1, undefined]);
+    expect([lessons.get("ls-003")?.meta.superseded_by, lessons.get("ls-003")?.meta.count]).toEqual([undefined, 3]);
+    expect(applyPairs(ledger, { merge: [["ls-001", "ls-003"]] }, "2026-09-25").merged).toEqual([["ls-001", "ls-003"]]);
+    expect(loadLessons(ledger).get("ls-001")?.meta.count).toBe(5);
+  });
+
   test("a contradiction marks both sides conflict", () => {
     const ledger = twoLessons();
     applyPairs(ledger, { contradict: [["ls-001", "ls-002"]] }, "2026-09-18");
