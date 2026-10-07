@@ -17,7 +17,7 @@ import { nowMs, todayLocal, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { ProjectMemorySource, WorkerSessionSource } from "../sources/worker-sessions.ts";
-import { sessionsOf } from "./consolidate.ts";
+import { citedObsSessions, sessionsOf } from "./consolidate.ts";
 import {
   appendRun,
   list,
@@ -28,7 +28,6 @@ import {
   readState,
   rewriteIndex,
   saveState,
-  sid8,
   str,
   writeLesson,
 } from "./ledger.ts";
@@ -154,17 +153,9 @@ export function decayLessons(ledger: Ledger, today = todayLocal()): string[] {
 
 /** `obs:N` to the claude-mem or captured worker session it came from, for every observation cited by a lesson, as nightly consolidation maps them. */
 export function lessonObsSessions(ctx: LearnContext, ledger: Ledger): Map<string, string> {
-  const ids = loadLessons(ledger)
-    .values()
-    .flatMap(({ meta }) => list(meta.evidence))
-    .filter((id) => /^obs:\d+$/.test(id))
-    .map((id) => Number(id.slice(4)))
-    .toArray();
-  if (ids.length === 0) return new Map();
   const mem = ClaudeMemSource.open(ctx.config.memDb);
   try {
-    const source = new ProjectMemorySource(mem, WorkerSessionSource.open(ledger));
-    return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
+    return citedObsSessions(new ProjectMemorySource(mem, WorkerSessionSource.open(ledger)), ledger);
   } finally {
     mem?.close();
   }
