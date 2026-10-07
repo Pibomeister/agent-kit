@@ -74,7 +74,8 @@ function buildMaintenanceScript(root: string): string | null {
       encoding: "utf8",
     });
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
-    return `#!/usr/bin/env bun\n${readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "")}`;
+    const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
+    return `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -175,22 +176,68 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 };
 
 /**
- * The licence files every bundle carries at its root, copied verbatim.
+ * The licence files every bundle carries, copied verbatim.
  *
- * A licensing obligation rather than bundle tidiness: the MIT donors' licence
- * requires the copyright notice and the permission notice accompany every copy,
- * and `dist/` is the copy that gets distributed. Absence is an `error()` for
- * that reason -- a build that quietly omits them reports success over a
+ * `source` is where the text is read. `path` is where the bundle ships it.
+ * NOTICE and LICENSE stay at the bundle root: both host contracts specify
+ * those two names at that place (`adapters/claude-code/CONTRACT.md` §1,
+ * `adapters/codex/CONTRACT.md` §2). The other rows are the licence texts of
+ * code inlined into `bin/ak`. An installed package keeps its text under
+ * `node_modules/`, and that path cannot be the bundle path: gitignore drops
+ * it, and the packager's file walk skips it, so the distributed copy would
+ * not contain the text.
+ *
+ * A licensing obligation rather than bundle tidiness. The MIT donors' licence
+ * requires the copyright notice and the permission notice accompany every
+ * copy, the inlined packages require the same of their own texts, and `dist/`
+ * is the copy that gets distributed. Absence is an `error()` for that
+ * reason -- a build that quietly omits them reports success over a
  * distribution that may not lawfully be distributed, which is the worst shape
  * this package has a name for.
  *
- * Emitted from here, once, for every host rather than per adapter. Both host
- * contracts specify the same two names at the same place
- * (`adapters/claude-code/CONTRACT.md` §1, `adapters/codex/CONTRACT.md` §2), and
- * two bundles disagreeing about their own licensing is the defect this package
+ * Emitted from here, once, for every host rather than per adapter. Two
+ * bundles disagreeing about their own licensing is the defect this package
  * has already produced once in a different field.
  */
-const LICENCE_FILES = ["NOTICE", "LICENSE"];
+const LICENCE_FILES: ReadonlyArray<{ source: string; path: string }> = [
+  { source: "NOTICE", path: "NOTICE" },
+  { source: "LICENSE", path: "LICENSE" },
+  { source: "node_modules/ajv/LICENSE", path: "LICENSES/ajv.LICENSE" },
+  { source: "node_modules/ajv-formats/LICENSE", path: "LICENSES/ajv-formats.LICENSE" },
+  { source: "node_modules/fast-deep-equal/LICENSE", path: "LICENSES/fast-deep-equal.LICENSE" },
+  { source: "node_modules/fast-uri/LICENSE", path: "LICENSES/fast-uri.LICENSE" },
+  { source: "node_modules/json-schema-traverse/LICENSE", path: "LICENSES/json-schema-traverse.LICENSE" },
+  { source: "node_modules/yaml/LICENSE", path: "LICENSES/yaml.LICENSE" },
+  {
+    source: "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    path: "provenance/licenses/thedotmack_claude-mem.LICENSE",
+  },
+  {
+    source: "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    path: "provenance/licenses/thedotmack_claude-mem.NOTICE",
+  },
+];
+
+/**
+ * Comment block prepended to the built `bin/ak`.
+ *
+ * The plugin bundles ship the same texts as files. The curl install is this
+ * one file and has no neighbour to carry them, and `bun build` drops the
+ * copyright comments from the inlined packages.
+ */
+function licenceBanner(root: string): string {
+  const lines = [
+    "// Licence texts for this file and the third-party code inlined into it.",
+    "// Each block is also copied into the plugin bundles at the path in its heading.",
+  ];
+  for (const licence of LICENCE_FILES) {
+    const text = readTextIfPresent(join(root, licence.source));
+    if (text === null) continue;
+    lines.push(`// --- ${licence.path} ---`);
+    for (const line of text.replace(/\n$/, "").split("\n")) lines.push(line.length === 0 ? "//" : `// ${line}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 const GATE_SOURCE = "src/lifecycle/gate.ts";
 /** The line of gate.ts the bundled copy carries its host vocabulary in: a bundle has no `adapters/` to read. */
@@ -718,19 +765,22 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     }
   }
 
-  for (const name of LICENCE_FILES) {
-    const text = readTextIfPresent(join(ctx.root, name));
+  for (const licence of LICENCE_FILES) {
+    const text = readTextIfPresent(join(ctx.root, licence.source));
     if (text === null) {
+      const remedy = licence.source.startsWith("node_modules/")
+        ? `Install dependencies so ${licence.source} is present.`
+        : `Restore ${licence.source}.`;
       issues.push(
         error(
           "packaging.licence-file-missing",
-          name,
-          `${name} is not in the source tree, so the bundle cannot carry it. MIT requires the copyright notice and the permission notice accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} at the repository root.`,
+          licence.source,
+          `${licence.source} is missing, so the bundle cannot carry it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. ${remedy}`,
         ),
       );
       continue;
     }
-    files.set(name, { path: name, contents: text, source: name });
+    files.set(licence.path, { path: licence.path, contents: text, source: licence.source });
   }
 
   try {

@@ -152,7 +152,35 @@ const BASE: Record<string, string> = {
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
+  // Stubs for the licence texts bin/ak inlines. The real texts are read from
+  // the installed packages; these exist so a fixture can still build.
+  "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
+  "node_modules/ajv-formats/LICENSE": "Copyright (c) 2020 Evgeny Poberezkin\n",
+  "node_modules/fast-deep-equal/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\nfast-deep-equal\n",
+  "node_modules/fast-uri/LICENSE": "Copyright (c) 2011-2021 Gary Court\n",
+  "node_modules/json-schema-traverse/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\njson-schema-traverse\n",
+  "node_modules/yaml/LICENSE": "Copyright Eemeli Aro\n",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
+  "provenance/licenses/thedotmack_claude-mem.NOTICE": "Claude-Mem\nCopyright 2026 Alex Newman\n",
 };
+
+/**
+ * Source path, then the path inside the bundle. npm licences are not shipped
+ * from `node_modules/`: that directory is gitignored and the packager's walk
+ * skips it, so a copy there would not be in the distribution.
+ */
+const REQUIRED_LICENCES: ReadonlyArray<readonly [string, string]> = [
+  ["NOTICE", "NOTICE"],
+  ["LICENSE", "LICENSE"],
+  ["node_modules/ajv/LICENSE", "LICENSES/ajv.LICENSE"],
+  ["node_modules/ajv-formats/LICENSE", "LICENSES/ajv-formats.LICENSE"],
+  ["node_modules/fast-deep-equal/LICENSE", "LICENSES/fast-deep-equal.LICENSE"],
+  ["node_modules/fast-uri/LICENSE", "LICENSES/fast-uri.LICENSE"],
+  ["node_modules/json-schema-traverse/LICENSE", "LICENSES/json-schema-traverse.LICENSE"],
+  ["node_modules/yaml/LICENSE", "LICENSES/yaml.LICENSE"],
+  ["provenance/licenses/thedotmack_claude-mem.LICENSE", "provenance/licenses/thedotmack_claude-mem.LICENSE"],
+  ["provenance/licenses/thedotmack_claude-mem.NOTICE", "provenance/licenses/thedotmack_claude-mem.NOTICE"],
+];
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   const files = Object.fromEntries(Object.entries({ ...BASE, ...overrides }).filter(([key]) => !drop.includes(key)));
@@ -224,9 +252,19 @@ describe("the licence files the distribution is obliged to carry", () => {
     const ctx = ctxFor();
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
-      for (const name of ["NOTICE", "LICENSE"]) {
-        expect(`${host}:${name}=${plan.files.get(name)?.contents}`).toBe(`${host}:${name}=${BASE[name]}`);
+      for (const [source, path] of REQUIRED_LICENCES) {
+        expect(`${host}:${path}=${plan.files.get(path)?.contents}`).toBe(`${host}:${path}=${BASE[source]}`);
       }
+    }
+  });
+
+  test("a bundle missing any inlined component's licence file fails rather than shipping without it", () => {
+    for (const [source, path] of REQUIRED_LICENCES) {
+      if (source === "NOTICE" || source === "LICENSE") continue;
+      const plan = planBundle(ctxFor({}, [source]), "claude-code", {});
+      const issue = plan.issues.find((i) => i.rule === "packaging.licence-file-missing" && i.file === source);
+      expect(`${source}:${issue?.severity}`).toBe(`${source}:error`);
+      expect(plan.files.has(path)).toBe(false);
     }
   });
 
@@ -252,6 +290,23 @@ describe("the licence files the distribution is obliged to carry", () => {
     const plan = planBundle(ctxFor({}, ["LICENSE"]), "claude-code", {});
     expect(plan.files.has("LICENSE")).toBe(false);
     expect(plan.files.has("NOTICE")).toBe(true);
+  });
+
+  test("the built standalone bin/ak contains each required licence and notice text", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repo catalog did not load");
+    const script = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get("bin/ak")?.contents ?? "";
+    expect(script.startsWith("#!/usr/bin/env bun\n")).toBe(true);
+    const missing: string[] = [];
+    for (const [source, path] of REQUIRED_LICENCES) {
+      const text = readFileSync(join(REPO, source), "utf8").replace(/\n$/, "");
+      if (!script.includes(`// --- ${path} ---`)) missing.push(`${path}: heading`);
+      for (const line of text.split("\n")) {
+        const needle = line.length === 0 ? "//" : `// ${line}`;
+        if (!script.includes(needle)) missing.push(`${path}: ${JSON.stringify(line)}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   test("the failure names the file that is missing, not the pair", () => {

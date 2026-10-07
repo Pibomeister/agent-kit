@@ -119,6 +119,14 @@ function capture() {
 const BUILDABLE = {
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n",
+  "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
+  "node_modules/ajv-formats/LICENSE": "Copyright (c) 2020 Evgeny Poberezkin\n",
+  "node_modules/fast-deep-equal/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\n",
+  "node_modules/fast-uri/LICENSE": "Copyright (c) 2011-2021 Gary Court\n",
+  "node_modules/json-schema-traverse/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\n",
+  "node_modules/yaml/LICENSE": "Copyright Eemeli Aro\n",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
+  "provenance/licenses/thedotmack_claude-mem.NOTICE": "Claude-Mem\nCopyright 2026 Alex Newman\n",
   // §5.2's authority for the four identity fields the host manifests carry.
   // The values are the ones CATALOG above produces -- `name` from `package.id`,
   // `description` from `package.name` -- because a tree whose two sides already
