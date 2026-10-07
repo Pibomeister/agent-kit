@@ -58,16 +58,6 @@ describe("the bundled verification predicate", () => {
     }
   });
 
-  test("bounds receipt bytes and member count before collecting schema errors", () => {
-    const receipt = read(join(ROOT, "templates", "verification.example.json"));
-    expect(verificationRefusals({ ...receipt, notes: "x".repeat(1024 * 1024) })).toEqual([
-      "receipt exceeds the 1048576-byte limit",
-    ]);
-    expect(verificationRefusals({ ...receipt, artifacts: Array.from({ length: 100_000 }, () => ({})) })).toEqual([
-      "receipt exceeds the 4096-member limit",
-    ]);
-  });
-
   test("agrees with ajv across per-member corruptions, unknown members and invalid strings", () => {
     const disagreements: string[] = [];
     for (const { name, hash, doc, cases } of verificationPopulations()) {

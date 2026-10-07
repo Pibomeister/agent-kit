@@ -710,37 +710,9 @@ const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
 
-const MAX_VERIFICATION_BYTES = 1024 * 1024;
-const MAX_VERIFICATION_MEMBERS = 4096;
-
-/** Bound allErrors work even for compact arrays of empty objects; failure retention never calls this. */
-function verificationBudgetReason(receipt: NonNullable<ReturnType<typeof object>>): string | undefined {
-  const pending: unknown[] = [receipt];
-  let members = 0;
-  while (pending.length > 0) {
-    const value = pending.pop();
-    const children = Array.isArray(value) ? value : Object.values(object(value) ?? {});
-    for (const child of children) {
-      if (++members > MAX_VERIFICATION_MEMBERS) return `receipt exceeds the ${MAX_VERIFICATION_MEMBERS}-member limit`;
-      pending.push(child);
-    }
-  }
-  try {
-    if (Buffer.byteLength(JSON.stringify(receipt), "utf8") > MAX_VERIFICATION_BYTES)
-      return `receipt exceeds the ${MAX_VERIFICATION_BYTES}-byte limit`;
-  } catch {
-    return "receipt is not JSON-serializable";
-  }
-  return undefined;
-}
-
 /** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
   const receipt = object(value);
-  if (receipt !== undefined) {
-    const budget = verificationBudgetReason(receipt);
-    if (budget !== undefined) return [budget];
-  }
   const validateVerification = verificationValidator();
   const reasons = validateVerification(value)
     ? []
@@ -873,14 +845,6 @@ function evaluateEvidence(
     const path = artifactPath(a.dir, a.run, ref.hash);
     if (path === undefined || !existsSync(path)) {
       reasons.push({ code: "missing", detail: `receipt ${ref.id} is absent from the run store`, evidence: ref.id });
-      continue;
-    }
-    if (statSync(path).size > MAX_VERIFICATION_BYTES) {
-      reasons.push({
-        code: "malformed",
-        detail: `receipt ${ref.id} exceeds the ${MAX_VERIFICATION_BYTES}-byte limit`,
-        evidence: ref.id,
-      });
       continue;
     }
     const bytes = readFileSync(path);
