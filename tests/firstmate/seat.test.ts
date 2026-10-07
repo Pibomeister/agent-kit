@@ -180,6 +180,43 @@ describe("stock Firstmate seat launcher", () => {
     ).toThrow("does not match");
   });
 
+  test("refuses a seat whose spawned worktree is the implementer's", () => {
+    const f = setup();
+    // The fake fm-spawn.sh records worktree=/scratch/<task id>, so this implementer worktree collides.
+    expect(() =>
+      launchSeat({
+        fmHome: f.home,
+        taskId: "seat-c-align-1",
+        projectName: "toy",
+        projectDir: "projects/toy",
+        packetPath: f.packet,
+        evidenceDir: f.evidence,
+        captainIntentFile: f.captain,
+        implementerWorktree: "/scratch/seat-c-align-1",
+      }),
+    ).toThrow("seat reused the implementer worktree");
+  });
+
+  test("refuses a judgment that differs from the one this seat already submitted", () => {
+    const fixture = judgmentFixture();
+    const request = join(dirname(fixture.token), "ak-judge-toy-run-align-1-seat-a.json");
+    const first = {
+      run: "toy-run",
+      card_id: "align-1",
+      seat: "seat-a",
+      actor: "supervisor-seat-a",
+      dispatch: "fm-seat-a-align-1",
+      choice: "hold",
+      rationale: "The first submission held.",
+      input_dispatches: [],
+      lineage: ["supervisor-seat-a"],
+    };
+    writeFileSync(request, JSON.stringify(first), { mode: 0o600 });
+    expect(() => fixture.judge(fixture.token)).toThrow("seat judgment changed after its first submission");
+    expect(existsSync(fixture.submitted)).toBe(false);
+    expect(JSON.parse(readFileSync(request, "utf8"))).toEqual(first);
+  });
+
   test("submits the report's final bounded judgment with the supervisor token", () => {
     const rejected = judgmentFixture();
     expect(() => rejected.judge(rejected.underHome)).toThrow("outside the Firstmate home");

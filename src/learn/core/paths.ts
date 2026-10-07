@@ -6,7 +6,7 @@
  * edit, nothing a `git status` in the project would show.
  */
 import { readFileSync, statSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import type { LearnConfig } from "./config.ts";
 import { run } from "./proc.ts";
 
@@ -82,6 +82,18 @@ function searched(cwd: string): string[] {
  */
 export function rootOf(cwd: string): string | null {
   return searched(cwd).find((dir) => isDirectory(join(dir, ".git"))) ?? null;
+}
+
+/**
+ * Whether `path` is one of the macOS privacy-protected folders under `home` (Documents, Desktop,
+ * Downloads) or sits inside one. Decided from the two paths as text, so asking can never raise the
+ * prompt the answer exists to avoid; names compare without case, as the default macOS volume does.
+ * False on every other platform.
+ */
+export function inProtectedFolder(path: string, home: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== "darwin") return false;
+  const [folder] = relative(resolve(home).toLowerCase(), resolve(path).toLowerCase()).split(sep);
+  return folder === "documents" || folder === "desktop" || folder === "downloads";
 }
 
 /**

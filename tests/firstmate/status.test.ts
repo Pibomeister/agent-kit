@@ -16,6 +16,7 @@ import { join } from "node:path";
 
 import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
+import { auditRun } from "../../src/firstmate/audit.ts";
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { DEFAULT_GATES } from "../../src/firstmate/constants.ts";
 import { grantRecordPath } from "../../src/firstmate/grant.ts";
@@ -59,7 +60,7 @@ function bound() {
       expect(runCli(argv, { cwd: project, io: { out: () => {}, err: () => {} } })).toBe(0);
     }
   };
-  return { project, store, bindingPath, binding, fm, grants, record };
+  return { project, store, ledger, bindingPath, binding, fm, grants, record };
 }
 
 describe("ak firstmate status complete is audited", () => {
@@ -160,6 +161,52 @@ describe("ak firstmate status complete is audited", () => {
     const r = fm("status", bindingPath, "complete", "--evidence", "x");
     expect(r.code).toBe(1);
     expect(r.err).toContain("refused: grant review.full names binding hash sha256:0000");
+  });
+
+  for (const [field, value, refusal] of [
+    ["run_id", "another-run", "refused: grant review.full is for run another-run, not "],
+    [
+      "binding",
+      "/elsewhere/binding.json",
+      "refused: grant review.full names binding /elsewhere/binding.json, not the registered ",
+    ],
+  ] as const) {
+    test(`a grant record whose ${field} alone was tampered is detected`, () => {
+      const { bindingPath, binding, fm, grants, record } = bound();
+      grants(...OPERATIONS);
+      record(...binding.required_gates);
+      expect(fm("status", bindingPath, "complete", "--evidence", "x").code).toBe(0);
+      const path = grantRecordPath(binding, "review.full");
+      writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), [field]: value }));
+      const r = fm("status", bindingPath, "complete", "--evidence", "x");
+      expect(r.code).toBe(1);
+      expect(r.err).toContain(refusal);
+    });
+  }
+
+  test("a ledger entry registered at another binding path is detected", () => {
+    const { bindingPath, binding, ledger, fm, grants, record } = bound();
+    grants(...OPERATIONS);
+    record(...binding.required_gates);
+    const entry = join(ledger, `${binding.run_id}.json`);
+    writeFileSync(
+      entry,
+      JSON.stringify({ ...JSON.parse(readFileSync(entry, "utf8")), binding_path: "/elsewhere/binding.json" }),
+    );
+    const r = fm("status", bindingPath, "--verify");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("is not the /elsewhere/binding.json the ledger registered");
+  });
+
+  test("a binding naming a store other than the mock is refused before anything is read", () => {
+    const { bindingPath, binding, ledger, grants, record } = bound();
+    grants(...OPERATIONS);
+    record(...binding.required_gates);
+    expect(auditRun({ binding, bindingPath, ledgerDir: ledger })).toEqual([]);
+    const knowledgebase = { ...binding, evidence: { ...binding.evidence, store: "kb" as const } };
+    expect(auditRun({ binding: knowledgebase, bindingPath, ledgerDir: ledger })).toEqual([
+      "refused: evidence store kb cannot be read: the knowledgebase fails closed (CONTRACT.md §1)",
+    ]);
   });
 
   test("a binding edited by hand after bind is detected", () => {
