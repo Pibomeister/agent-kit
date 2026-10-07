@@ -107,6 +107,20 @@ describe("source-tree link closure", () => {
     expect(issue?.file).toBe("protocols/tdd/PROTOCOL.md");
   });
 
+  // Literal, not LINKED_DIRS: every directory whose markdown carries links, each with a broken one.
+  test.each(["skills", "packs", "protocols", "roles", "references", "adapters", "templates"])(
+    "a broken link in a %s markdown file is reported",
+    (dir) => {
+      const file = `${dir}/x/NOTES.md`;
+      const ctx = ctxFor({ "skills/alpha/SKILL.md": HEAD, [file]: "See [gone](./missing.md).\n" });
+      expect(
+        checkSourceLinks(ctx)
+          .filter((i) => i.rule === "links.broken-source")
+          .map((i) => i.file),
+      ).toEqual([file]);
+    },
+  );
+
   test("a link to a directory that exists is accepted", () => {
     const ctx = ctxFor({
       "skills/alpha/SKILL.md": `${HEAD}\n[dir](../../protocols/tdd/)\n`,

@@ -116,6 +116,31 @@ fi
       update: spawnSync(process.execPath, [maintenanceCli, "update"], { cwd, env, encoding: "utf8" }),
     };
   });
+  // A published 0.2.0 that the host update reports success for and still leaves 0.1.0 installed.
+  const newer = join(root, "published-newer");
+  for (const host of ["claude-code", "codex"]) {
+    const manifest = join(newer, "dist", host, host === "codex" ? ".codex-plugin" : ".claude-plugin");
+    mkdirSync(manifest, { recursive: true });
+    writeFileSync(join(manifest, "plugin.json"), '{"name":"ak","version":"0.2.0"}');
+  }
+  const staleBin = join(root, "stale-bin");
+  mkdirSync(staleBin);
+  writeFileSync(
+    join(staleBin, "codex"),
+    `#!/bin/sh\necho '{"installed":[{"pluginId":"ak@agent-kit","version":"0.1.0","enabled":true}]}'\n`,
+  );
+  chmodSync(join(staleBin, "codex"), 0o755);
+  const staleCodexHome = join(root, "stale-codex");
+  mkdirSync(staleCodexHome);
+  writeFileSync(
+    join(staleCodexHome, "config.toml"),
+    '[marketplaces.agent-kit]\nsource = "Pibomeister/agent-kit"\nref = "published"\n',
+  );
+  const staleUpdate = spawnSync(process.execPath, [maintenanceCli, "update"], {
+    cwd: linked,
+    env: { ...env, PATH: `${staleBin}:${env.PATH}`, AK_PUBLISHED_ROOT: newer, CODEX_HOME: staleCodexHome },
+    encoding: "utf8",
+  });
   const oldSource = spawnSync(process.execPath, [maintenanceCli, "doctor"], {
     cwd: linked,
     env: { ...env, AK_TEST_MARKET_SOURCE: "directory" },
@@ -148,7 +173,7 @@ fi
     "backend: jira-nope\ntoken_file: .linear-token\ndefaults:\n  team: ENG\n",
   );
   const unknown = spawnSync(process.execPath, [bundle, "doctor"], { cwd: linked, env, encoding: "utf8" });
-  return { added, projectRuns, oldSource, update, built, standalone, blank, missingTeam, unknown };
+  return { added, projectRuns, staleUpdate, oldSource, update, built, standalone, blank, missingTeam, unknown };
 }
 
 // Nine nested Bun invocations took 17s normally and 25s beside another full suite on this host.
@@ -325,6 +350,10 @@ describe("ak doctor checks", () => {
       expect(run.update.status).toBe(0);
       expect(run.update.stdout).toContain("PASS Claude Code project: 0.1.0 -> 0.1.0");
     }
+    // A host that reports success but leaves the old version installed is a failed update on both hosts.
+    expect(linkedWorktreeFixture.staleUpdate.stdout).toContain("FAIL Claude Code project: 0.1.0 -> 0.1.0");
+    expect(linkedWorktreeFixture.staleUpdate.stdout).toContain("FAIL Codex: 0.1.0 -> 0.1.0");
+    expect(linkedWorktreeFixture.staleUpdate.status).toBe(1);
     expect(linkedWorktreeFixture.oldSource.status).toBe(1);
     expect(linkedWorktreeFixture.oldSource.stdout).toContain(
       "FAIL Claude Code marketplace source: configured marketplace is local",

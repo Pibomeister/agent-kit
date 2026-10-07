@@ -77,10 +77,16 @@ describe("knowledgebase bridge", () => {
     expect(() => proposeLesson(testContext(), scratch(), { ...draft(), id: "../escape" })).toThrow();
   });
 
-  test("dry run writes nothing", () => {
-    const ctx = testContext({ env: { AK_LEARN_DRY_RUN: "1" } });
+  test("dry run writes nothing and never runs the knowledgebase command", () => {
+    // A configured command, so the dry-run guard and not the missing command is what keeps it from running.
+    const ran = join(scratch(), "ran");
+    const ctx = testContext({
+      env: { AK_LEARN_DRY_RUN: "1", AK_LEARN_KB_COMMAND: `touch ${ran}; echo '{"ref":"kb:lesson/1"}'` },
+    });
     const ledger = scratch();
-    proposeLesson(ctx, ledger, draft());
+    const result = proposeLesson(ctx, ledger, draft());
+    expect(existsSync(ran)).toBe(false);
+    expect(result.delivered).toBe(false);
     expect(existsSync(join(ledger, "proposals"))).toBe(false);
   });
 });

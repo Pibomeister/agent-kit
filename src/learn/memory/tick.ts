@@ -8,8 +8,11 @@
  * file inside one: the `.git` pointer of a linked worktree, read to place a
  * worker session no registered root or recorded worktree contains. Everything
  * else is stat only, because under a macOS scheduler an open inside a protected
- * folder blocks on the privacy prompt and ignores every timeout. Git runs only
- * in the ledgers, which live under the config directory.
+ * folder blocks on the privacy prompt and ignores every timeout. For the same
+ * reason the pointer is left unread when the session's working directory is in
+ * Documents, Desktop or Downloads on macOS; those directories are counted in
+ * the tick log instead. Git runs only in the ledgers, which live under the
+ * config directory.
  */
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -29,6 +32,7 @@ import {
   type CapturedSession,
   ProjectMemorySource,
   scanWorkerSessions,
+  userHome,
   WorkerSessionSource,
   workerHomes,
   workerRootResolver,
@@ -406,7 +410,8 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
         }
         return stores.get(root) ?? null;
       };
-      const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
+      const rootFor = workerRootResolver(registry, readWorktrees(ctx.config), { home: userHome(ctx.env) });
+      const scan = scanWorkerSessions(workerHomes(ctx.env), rootFor, {
         sinceMs: capturedSince,
         warn: (warning) => tickLog(ctx, warning),
         wanted: (root, newestMs) =>
@@ -416,6 +421,11 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
       });
       if (scan.unmatched > 0)
         tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and worktree`);
+      if (scan.protectedFolders > 0)
+        tickLog(
+          ctx,
+          `worker working directories skipped: ${scan.protectedFolders} in a macOS protected folder, worktree pointer not read`,
+        );
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only) continue;
         if (!allowed(entry.root)) continue;

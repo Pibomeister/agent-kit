@@ -13,6 +13,7 @@ import {
 } from "../src/validation/provenance.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { writeAdaptations } from "../src/packaging/build.ts";
+import { expectError } from "./helpers/issues.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 const CATALOG = `schema_version: 1
@@ -276,7 +277,7 @@ describe("donor provenance", () => {
         "adaptations:\n  - path: skills/adapted/SKILL.md\n    source: nobody@0000000000000000000000000000000000000000:x.md\n",
       "provenance/conversation-map.yaml": CONVERSATION_MAP,
     });
-    expect(checkProvenance(ctx).some((i) => i.rule === "provenance.unknown-donor")).toBe(true);
+    expectError(checkProvenance(ctx), "provenance.unknown-donor", "names donor 'nobody'");
   });
 
   test("a row citing a commit other than the pin is a warning naming both", () => {
@@ -288,6 +289,8 @@ describe("donor provenance", () => {
     });
     const issue = checkProvenance(ctx).find((i) => i.rule === "provenance.commit-not-pinned");
     expect(issue?.severity).toBe("warning");
+    expect(issue?.message).toContain(`donor-one@${"b".repeat(40)}`);
+    expect(issue?.message).toContain(`pins ${"a".repeat(40)}`);
   });
 
   test("absent .donors/ is reported as skipped, never as a failure", () => {
@@ -729,8 +732,7 @@ capabilities:
   });
 
   test("an unknown origin is an error listing the three that exist", () => {
-    const issue = rowIssues("G:L10-12", "invented-by-me").find((i) => i.rule === "provenance.unknown-origin");
-    expect(issue?.message).toContain("donor, conversation, amalgam");
+    expectError(rowIssues("G:L10-12", "invented-by-me"), "provenance.unknown-origin", "donor, conversation, amalgam");
   });
 });
 
