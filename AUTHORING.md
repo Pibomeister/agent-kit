@@ -456,11 +456,12 @@ checked by anything.
 
 **Every donor file a row cites is also committed as a pristine snapshot.** The snapshot goes under
 `provenance/donor-snapshots/<donor>@<sha12>/<path>`, and `research/probes/snapshot-donors.sh`
-writes it from the full-depth clones the lock names. The script also prunes snapshots that no row
+writes it from the full-depth clones the lock names, which `tools/donors/clone.sh` creates. The script also prunes snapshots that no row
 cites, and with `--check` it reports drift without writing. `tests/donor-snapshots.test.ts`
-fails `bun test` on a cited file that has no snapshot. When `.donors/` is present, the same test also
+fails `bun test` on a cited file that has no snapshot. When a cited donor is cloned, the same test also
 fails on a snapshot whose bytes differ from the pin, and on one whose donor clone exists but cannot
-resolve the pin, such as a shallow clone. A new row is therefore not finished until the
+resolve the pin, such as a shallow clone. Without a clone that comparison is skipped, unless
+`AK_REQUIRE_DONORS=1` is set, as CI sets it after cloning; then a missing clone fails. A new row is therefore not finished until the
 script has been run and its output committed with the fragment.
 
 **A row may not point at anything outside the merge.** Keys *beside* `adaptations:` in a fragment are
