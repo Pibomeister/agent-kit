@@ -3,7 +3,7 @@ import { parse as parseYaml } from "yaml";
 
 import { CATALOG_FRAGMENT_DIR, type Catalog } from "../catalog/load.ts";
 import { readTextIfPresent } from "../util/fs.ts";
-import { unknownSelector } from "../util/suggest.ts";
+import { candidatesClause } from "../util/suggest.ts";
 import { error, note, type Issue } from "../validation/types.ts";
 
 export interface ProfileMembership {
@@ -67,7 +67,7 @@ export function resolveProfile(root: string, catalog: Catalog, profileId: string
         error(
           "packaging.unknown-profile",
           "catalog.yaml",
-          `${unknownSelector("profile", selected, profileIds(catalog))}: neither catalog.yaml nor a ${CATALOG_FRAGMENT_DIR}/ fragment declares it.`,
+          `Profile '${selected}' is not declared in catalog.yaml or a ${CATALOG_FRAGMENT_DIR}/ fragment; ${candidatesClause(selected, profileIds(catalog))}`,
         ),
       ],
     };

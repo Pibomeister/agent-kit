@@ -198,11 +198,11 @@ function capture() {
 }
 
 describe("ak learn stats", () => {
-  test("runs with no verb, prints the four tables, and --json prints the same report as one object", () => {
+  test("runs with no verb, prints the four tables, and --json prints the same report as one object", async () => {
     const ctx = testContext();
     fixture(ctx.config);
     const text = capture();
-    expect(runLearn(["stats"], { cwd: scratch(), io: text.io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["stats"], { cwd: scratch(), io: text.io, env: ctx.env })).toBe(0);
     const printed = text.out.join("\n");
     for (const heading of [
       "Cost by loop and role",
@@ -213,7 +213,9 @@ describe("ak learn stats", () => {
     ])
       expect(printed).toContain(heading);
     const json = capture();
-    expect(runLearn(["stats", "--json", "--days", "36500"], { cwd: scratch(), io: json.io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["stats", "--json", "--days", "36500"], { cwd: scratch(), io: json.io, env: ctx.env })).toBe(
+      0,
+    );
     const report = learnStats(ctx.config, { now: Date.now(), days: 36500, projectKey: null });
     const parsed: unknown = JSON.parse(json.out.join("\n"));
     expect(parsed).toMatchObject({
@@ -226,7 +228,7 @@ describe("ak learn stats", () => {
     });
   });
 
-  test("--repo keys the filter from the repository's real root, including a subdirectory", () => {
+  test("--repo keys the filter from the repository's real root, including a subdirectory", async () => {
     const ctx = testContext();
     const root = gitRepo(join(scratch(), "shop"));
     mkdirSync(join(root, "src"));
@@ -241,17 +243,17 @@ describe("ak learn stats", () => {
     );
     const out = capture();
     expect(
-      runLearn(["stats", "--repo", join(root, "src"), "--json"], { cwd: scratch(), io: out.io, env: ctx.env }),
+      await runLearn(["stats", "--repo", join(root, "src"), "--json"], { cwd: scratch(), io: out.io, env: ctx.env }),
     ).toBe(0);
     const parsed: unknown = JSON.parse(out.out.join("\n"));
     expect(parsed).toMatchObject({ status: [{ name: "review.run", status: "ok", count: 1 }] });
   });
 
-  test("the text tables carry the fixture's numbers", () => {
+  test("the text tables carry the fixture's numbers", async () => {
     const ctx = testContext();
     fixture(ctx.config);
     const out = capture();
-    expect(runLearn(["stats", "--days", "36500"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["stats", "--days", "36500"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(0);
     const rows = out.out.map((line) => line.split(/\s+/).join(" "));
     // A 100-year window also takes in the 40-day-old rows: three maintainer calls, one of them $7.
     expect(rows).toContain("review pattern-maintainer 3 7.250000 1");
@@ -261,10 +263,10 @@ describe("ak learn stats", () => {
     expect(rows).toContain("hook.session-start nothing 1");
   });
 
-  test("--help prints the usage; unknown flags, extra words, --json=value and a huge --days are usage errors", () => {
+  test("--help prints the usage; unknown flags, extra words, --json=value and a huge --days are usage errors", async () => {
     const ctx = testContext();
     const help = capture();
-    expect(runLearn(["stats", "--help"], { cwd: scratch(), io: help.io, env: ctx.env })).toBe(0);
+    expect(await runLearn(["stats", "--help"], { cwd: scratch(), io: help.io, env: ctx.env })).toBe(0);
     expect(help.out.join("\n")).toContain("stats [--repo PATH] [--days N] [--json]");
     for (const argv of [
       ["stats", "--dys", "7"],
@@ -273,44 +275,44 @@ describe("ak learn stats", () => {
       ["stats", "--days", "36501"],
     ]) {
       const out = capture();
-      expect(runLearn(argv, { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
+      expect(await runLearn(argv, { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
       expect(out.out).toEqual([]);
     }
   });
 
-  test("--repo outside any repository is an error, not an empty report", () => {
+  test("--repo outside any repository is an error, not an empty report", async () => {
     const ctx = testContext();
     const out = capture();
     expect(
-      runLearn(["stats", "--repo", join(scratch(), "missing")], { cwd: scratch(), io: out.io, env: ctx.env }),
+      await runLearn(["stats", "--repo", join(scratch(), "missing")], { cwd: scratch(), io: out.io, env: ctx.env }),
     ).toBe(1);
     expect(out.err.join("\n")).toContain("is not inside a git repository");
     expect(out.out).toEqual([]);
   });
 
-  test("--repo naming no repository is told the registered roots nearest it", () => {
+  test("--repo naming no repository is told the registered roots nearest it", async () => {
     const ctx = testContext();
     const repo = gitRepo(join(scratch(), "shop"));
     registerRoot(ctx.config, repo);
     const out = capture();
-    expect(runLearn(["stats", "--repo", `${repo}x`], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(1);
+    expect(await runLearn(["stats", "--repo", `${repo}x`], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(1);
     expect(out.err).toEqual([
       `ak learn stats: --repo ${repo}x is not inside a git repository: unknown repository '${repo}x'; did you mean ${repo}?`,
     ]);
   });
 
-  test("a bad or bare --days and a bare --repo are usage errors", () => {
+  test("a bad or bare --days and a bare --repo are usage errors", async () => {
     const ctx = testContext();
     const out = capture();
-    expect(runLearn(["stats", "--days", "zero"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
+    expect(await runLearn(["stats", "--days", "zero"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
     expect(out.err.join("\n")).toContain("--days");
-    expect(runLearn(["stats", "--days"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
-    expect(runLearn(["stats", "--repo"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
+    expect(await runLearn(["stats", "--days"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
+    expect(await runLearn(["stats", "--repo"], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(2);
   });
 
-  test("other areas still need a verb", () => {
+  test("other areas still need a verb", async () => {
     const out = capture();
-    expect(runLearn(["review"], { cwd: scratch(), io: out.io, env: testContext().env })).toBe(2);
+    expect(await runLearn(["review"], { cwd: scratch(), io: out.io, env: testContext().env })).toBe(2);
     expect(out.err.join("\n")).toContain("ak learn review —");
   });
 });

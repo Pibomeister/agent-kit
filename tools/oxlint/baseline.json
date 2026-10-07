@@ -679,7 +679,7 @@
     "anti-slop(require-safety-comment-for-type-assertion)": 2,
     "typescript(no-non-null-assertion)": 1,
     "typescript(no-unsafe-assignment)": 4,
-    "typescript(no-unsafe-member-access)": 7,
+    "typescript(no-unsafe-member-access)": 5,
     "typescript(no-unsafe-return)": 1,
     "typescript(no-unsafe-type-assertion)": 2
   },
@@ -1046,8 +1046,7 @@
     "unicorn(no-array-sort)": 5
   },
   "tests/policies.test.ts": {
-    "typescript(no-non-null-assertion)": 1,
-    "unicorn(consistent-function-scoping)": 1
+    "typescript(no-non-null-assertion)": 1
   },
   "tests/provenance.test.ts": {
     "anti-slop(no-known-value-widening)": 1,

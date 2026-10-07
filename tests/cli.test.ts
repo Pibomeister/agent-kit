@@ -199,7 +199,8 @@ describe("ak validate", () => {
   test("the summary counts errors, warnings and notes", () => {
     const io = capture();
     runCli(["validate"], { cwd: cleanTree(), io: io.io });
-    expect(io.stdout()).toMatch(/0 error/);
+    // Anchored: an unanchored /0 error/ also matches "10 errors".
+    expect(io.stdout()).toMatch(/^ak validate: 0 errors, \d+ warnings?, \d+ notes?, /m);
   });
 
   /**

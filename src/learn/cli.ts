@@ -11,25 +11,28 @@ import { loadConfig } from "./core/config.ts";
 import type { LearnArea, LearnContext, LearnIo } from "./core/context.ts";
 import { parseLearnArgs } from "./core/context.ts";
 import { commandJudge, type JudgeFn } from "./core/judge.ts";
-import { hookArea } from "./hooks.ts";
-import { memoryArea } from "./memory/cli.ts";
-import { reviewArea } from "./review/cli.ts";
-import { setupArea } from "./setup/cli.ts";
-import { skillsArea } from "./skills/cli.ts";
-import { statsArea } from "./stats.ts";
 
-export const LEARN_AREAS: Readonly<Record<string, LearnArea>> = {
-  review: reviewArea,
-  memory: memoryArea,
-  skills: skillsArea,
-  setup: setupArea,
-  hook: hookArea,
-  stats: statsArea,
+/**
+ * Each area is loaded when its command runs, not at startup: the host calls
+ * `ak learn hook …` on every session start, prompt and stop, and that path
+ * must not evaluate the areas it never calls. The load is `import()`, not
+ * `require`: a module Bun first loads through `require` gets its
+ * `with { type: "text" }` imports as file paths, which empties the unit
+ * templates and the role prompts.
+ */
+const LEARN_AREAS: Readonly<Record<string, () => Promise<LearnArea>>> = {
+  review: async () => (await import("./review/cli.ts")).reviewArea,
+  memory: async () => (await import("./memory/cli.ts")).memoryArea,
+  skills: async () => (await import("./skills/cli.ts")).skillsArea,
+  setup: async () => (await import("./setup/cli.ts")).setupArea,
+  hook: async () => (await import("./hooks.ts")).hookArea,
+  stats: async () => (await import("./stats.ts")).statsArea,
 };
 
-export function learnUsage(): string[] {
+export async function learnUsage(): Promise<string[]> {
   const lines = ["ak learn — the opt-in learning runtime (profile `learning`)", ""];
-  for (const [name, area] of Object.entries(LEARN_AREAS)) {
+  for (const [name, load] of Object.entries(LEARN_AREAS)) {
+    const area = await load();
     lines.push(`  ak learn ${name}  ${area.summary}`);
     for (const verb of Object.values(area.verbs)) lines.push(`      ${verb.usage}`);
   }
@@ -63,26 +66,26 @@ export interface RunLearnOptions {
  * reported on stderr and the exit code is 0. A Stop hook exiting 2 would block
  * the session from stopping.
  */
-export function runLearn(argv: readonly string[], options: RunLearnOptions): number {
+export async function runLearn(argv: readonly string[], options: RunLearnOptions): Promise<number> {
   if (argv[0] !== "hook") return dispatch(argv, options);
   try {
-    dispatch(argv, options);
+    await dispatch(argv, options);
   } catch (error) {
     options.io.err(`ak learn hook: ${(error as Error).message}`);
   }
   return 0;
 }
 
-function dispatch(argv: readonly string[], options: RunLearnOptions): number {
+async function dispatch(argv: readonly string[], options: RunLearnOptions): Promise<number> {
   const [areaName, ...afterArea] = argv;
-  const area = areaName === undefined ? undefined : LEARN_AREAS[areaName];
+  const area = areaName === undefined ? undefined : await LEARN_AREAS[areaName]?.();
   const fallback = area?.default;
   const defaulted = fallback !== undefined && (afterArea[0] === undefined || afterArea[0].startsWith("--"));
   const [verbName, ...rest] = defaulted ? [fallback, ...afterArea] : afterArea;
   if (area === undefined) {
     if (areaName !== undefined)
       options.io.err(`ak learn: ${unknownSelector("area", areaName, Object.keys(LEARN_AREAS))}`);
-    for (const line of learnUsage()) options.io.err(line);
+    for (const line of await learnUsage()) options.io.err(line);
     return 2;
   }
   const verb = verbName === undefined ? undefined : area.verbs[verbName];

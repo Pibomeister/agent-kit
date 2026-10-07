@@ -28,11 +28,14 @@ describe("stop hook", () => {
     const repo = gitRepo(join(scratch(), "app"));
     const ctx = testContext();
     const { spawner, calls } = recorder();
-    stopHook(ctx, { cwd: "/x/plugins/cache/y" }, parseLearnArgs([]), spawner);
+    // A real repository inside a plugin cache, so the cache skip and not the non-git exit decides.
+    const cached = gitRepo(join(scratch(), "plugins", "cache", "y"));
+    stopHook(ctx, { cwd: cached }, parseLearnArgs([]), spawner);
     stopHook(ctx, { cwd: repo, stop_hook_active: true }, parseLearnArgs([]), spawner);
     inOutsideRepo((cwd) => stopHook(ctx, { cwd }, parseLearnArgs([]), spawner));
     expect(calls).toHaveLength(0);
     expect(existsSync(reviewLedgerDir(ctx.config, repo))).toBe(false);
+    expect(existsSync(reviewLedgerDir(ctx.config, cached))).toBe(false);
   });
 
   test("detaches once, debounces for ten minutes, then detaches again with the codex source", () => {
@@ -267,13 +270,14 @@ describe("prompt hook", () => {
 
   test("non-corrections, praise, pasted content, tags, the plugin cache, non-git directories and dry runs record nothing", () => {
     const repo = gitRepo(join(scratch(), "app"));
+    const cached = gitRepo(join(scratch(), "plugins", "cache", "y"));
     const ctx = testContext();
     const skipped = [
       { cwd: repo, prompt: "please fix this bug" },
       { cwd: repo, prompt: "love it, keep the tables compact like that in future reports" },
       { cwd: repo, prompt: `no, ${"x".repeat(600)}` },
       { cwd: repo, prompt: "<command-message>no, use the other one</command-message>" },
-      { cwd: "/x/plugins/cache/y", prompt: "no, use the other one" },
+      { cwd: cached, prompt: "no, use the other one" },
       { cwd: repo },
     ];
     for (const payload of skipped) promptHook(ctx, payload, parseLearnArgs([]));
@@ -288,6 +292,7 @@ describe("prompt hook", () => {
       parseLearnArgs([]),
     );
     expect(existsSync(reviewLedgerDir(ctx.config, repo))).toBe(false);
+    expect(existsSync(reviewLedgerDir(ctx.config, cached))).toBe(false);
   });
 
   test("a long `remember:` prompt is still captured", () => {

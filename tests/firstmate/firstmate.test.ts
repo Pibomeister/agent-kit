@@ -17,7 +17,7 @@ import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { install, remove } from "../../src/firstmate/install.ts";
 import { pinBundle, treeHash } from "../../src/firstmate/pin.ts";
 import { preflight } from "../../src/firstmate/preflight.ts";
-import { statusLine } from "../../src/firstmate/status.ts";
+import { statusLine, type StatusArgs } from "../../src/firstmate/status.ts";
 import { validateBinding } from "../../src/firstmate/schema.ts";
 import { FIXED_NOW, gitIn, makeBundle, makeDir, makeHome, makeProject, REPO } from "./fixture.ts";
 
@@ -555,6 +555,18 @@ describe("status", () => {
   test("a publish that reports done without a PR, or without evidence, is refused", () => {
     expect(statusLine(publish, { outcome: "complete", at: 1, evidence: ["r1"] }).ok).toBe(false);
     expect(statusLine(publish, { outcome: "complete", at: 1, pr: "https://x/pr/1", evidence: [] }).ok).toBe(false);
+  });
+
+  test("every non-complete outcome missing the field its line needs is refused, naming that field", () => {
+    const rows: [StatusArgs, string][] = [
+      [{ outcome: "needs-input", at: 1 }, "needs-input needs the decision, named"],
+      [{ outcome: "cap-reached", at: 1, openFindings: ["f1"] }, "cap-reached needs the run id for its key"],
+      [{ outcome: "failed", at: 1 }, "failed needs a reason"],
+      [{ outcome: "cancelled", at: 1 }, "cancelled needs who cancelled it"],
+    ];
+    for (const [args, refusal] of rows) {
+      expect(statusLine(dry, args)).toEqual({ ok: false, line: "", error: refusal });
+    }
   });
 });
 

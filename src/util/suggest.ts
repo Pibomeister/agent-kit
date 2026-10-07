@@ -67,21 +67,27 @@ function orList(items: readonly string[]): string {
 }
 
 /**
- * One line naming the unknown selector and the valid ones nearest to it.
+ * The candidates part of the line alone -- "did you mean core?", "valid: …",
+ * "nearest of 20: …" or "there are none to choose from" -- for a message that
+ * already says in its own words what was not found.
  *
  * Close matches come back as "did you mean"; with none, a small set is listed
  * whole in the caller's order, and a large one by its three nearest members
  * and its size, so the line stays short whatever the set.
  */
-export function unknownSelector(kind: string, input: string, candidates: readonly string[]): string {
-  const head = `unknown ${kind} '${input}'`;
+export function candidatesClause(input: string, candidates: readonly string[]): string {
   const near = closest(input, candidates);
-  if (near.length > 0) return `${head}; did you mean ${orList(near)}?`;
+  if (near.length > 0) return `did you mean ${orList(near)}?`;
   const known = [...new Set(candidates)];
-  if (known.length === 0) return `${head}; there are none to choose from`;
-  if (known.length <= LIST_WHOLE) return `${head}; valid: ${known.join(", ")}`;
+  if (known.length === 0) return "there are none to choose from";
+  if (known.length <= LIST_WHOLE) return `valid: ${known.join(", ")}`;
   const nearest = ranked(input, known)
     .slice(0, 3)
     .map((row) => row.candidate);
-  return `${head}; nearest of ${known.length}: ${nearest.join(", ")}`;
+  return `nearest of ${known.length}: ${nearest.join(", ")}`;
+}
+
+/** One line naming the unknown selector and the valid ones nearest to it. */
+export function unknownSelector(kind: string, input: string, candidates: readonly string[]): string {
+  return `unknown ${kind} '${input}'; ${candidatesClause(input, candidates)}`;
 }

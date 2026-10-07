@@ -134,7 +134,16 @@ const secondHead = execFileSync("git", ["-C", second, "rev-parse", "HEAD"], { en
 rmSync(second, { recursive: true, force: true });
 
 const lane = join(repo, "tools", "security-lane.sh");
-const laneDefault = spawnSync(lane, [], { encoding: "utf8", env: { ...process.env, BUN: process.execPath } });
+// The lane runs tests/isolation.test.ts, which exists only once a ticket state adds it: run it where the
+// defect is present and where it is fixed, so its exit status is the isolation check's and not bun's
+// "no matching test files".
+const runLane = (work: string) =>
+  spawnSync(join(work, "tools", "security-lane.sh"), [], {
+    encoding: "utf8",
+    env: { ...process.env, BUN: process.execPath },
+  });
+const laneDefault = runLane(stateRepos.ticket);
+const laneFixed = runLane(stateRepos.complete);
 const laneUnavailable = spawnSync(lane, [], {
   encoding: "utf8",
   env: { ...process.env, BUN: process.execPath, CHECKPOINT_SECURITY_LANE: "unavailable" },
@@ -343,8 +352,12 @@ describe("the findings point at what they say they point at", () => {
 
 describe("a required lane can be made unavailable", () => {
   test("the lane runs and reports the defect by default", () => {
-    expect(laneDefault.status).not.toBe(0);
-    expect(laneDefault.status).not.toBe(70);
+    expect(outcomes.ticketIsolation.failing.length).toBeGreaterThan(0);
+    expect(laneDefault.status).toBe(1);
+    expect(`${laneDefault.stdout}${laneDefault.stderr}`).toContain(
+      `(fail) ${outcomes.ticketIsolation.failing[0] ?? "(none)"}`,
+    );
+    expect(laneFixed.status).toBe(0);
   });
 
   test("the switch makes it unavailable, distinguishably from finding something", () => {

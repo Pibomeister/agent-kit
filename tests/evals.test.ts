@@ -124,8 +124,11 @@ describe("the floor is three cases with all three kinds", () => {
   });
 
   test("each required kind is named when it is the one missing", () => {
-    for (const missing of REQUIRED_CASE_KINDS) {
-      const kinds = REQUIRED_CASE_KINDS.filter((k) => k !== missing);
+    // Literal, not REQUIRED_CASE_KINDS: dropping a kind from the code must fail here.
+    const required = ["positive", "negative", "adversarial"];
+    expect([...REQUIRED_CASE_KINDS].toSorted()).toEqual([...required].toSorted());
+    for (const missing of required) {
+      const kinds = required.filter((k) => k !== missing);
       const cases = [
         ...kinds.map((k, i) => ({ id: `case-${i}`, kind: k })),
         { id: "case-filler", kind: kinds[0] as string },

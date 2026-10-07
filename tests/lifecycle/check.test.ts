@@ -1582,3 +1582,141 @@ describe("the gate a bundle carries", () => {
     }
   }, 120_000);
 });
+
+/**
+ * One defect per row. Every row starts from a receipt the check allows (the `null` row proves it) and
+ * changes exactly one member, so the named refusal is the only one that can decide the outcome.
+ */
+describe("ak lifecycle check, each evidence refusal alone", () => {
+  /** The receipt members a row overrides; everything else is the valid receipt receipt() writes. */
+  type ReceiptOverride = {
+    run_id?: string;
+    environment?: { id: string; isolated: boolean; secrets_policy: string };
+    invalidation?: { reason: string };
+    schema_version?: number;
+    project?: { id: string };
+  };
+  type Defect = {
+    receipt?: ReceiptOverride;
+    runEnvironment?: string;
+    gateRefId?: string;
+    /** Which half of the ticket reference names another ticket. */
+    ticket?: "id" | "hash";
+  };
+  const rows: [string, Defect, string | null][] = [
+    ["a valid receipt", {}, null],
+    ["another run", { receipt: { run_id: "another-run" } }, "refused: evidence wrong-run: receipt "],
+    [
+      "another environment",
+      { runEnvironment: "ci-env", receipt: { environment: { id: "test", isolated: true, secrets_policy: "none" } } },
+      "environment does not match the run",
+    ],
+    [
+      "the run's own environment",
+      { runEnvironment: "ci-env", receipt: { environment: { id: "ci-env", isolated: true, secrets_policy: "none" } } },
+      null,
+    ],
+    [
+      "an invalidated receipt",
+      { receipt: { invalidation: { reason: "superseded" } } },
+      "refused: evidence invalidated",
+    ],
+    ["schema version 2", { receipt: { schema_version: 2 } }, "refused: evidence unsupported-version"],
+    ["a reference naming another id", { gateRefId: "verification-other" }, "contains id"],
+    ["a malformed project", { receipt: { project: { id: "Not Kebab" } } }, "project is invalid"],
+    ["another ticket id at the right hash", { ticket: "id" }, "refused: evidence wrong-task"],
+    ["the right ticket id at another hash", { ticket: "hash" }, "refused: evidence wrong-task"],
+  ];
+
+  for (const [name, defect, refusal] of rows) {
+    test(`${name} is ${refusal === null ? "allowed" : `refused with "${refusal}"`}`, () => {
+      const dir = repo();
+      const ticketPath = ticket(dir, "one-defect");
+      const run = openedRun(dir, ticketPath);
+      if (defect.runEnvironment !== undefined) {
+        const runFile = join(defaultEvidenceDir(dir), "runs", run, "run.json");
+        const environment = JSON.stringify({ id: defect.runEnvironment });
+        writeFileSync(runFile, readFileSync(runFile, "utf8").replace(/^\{/, `{"environment":${environment},`));
+      }
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const ref = {
+        id: "one-defect",
+        schema: "ticket",
+        hash: artifactHash(JSON.parse(readFileSync(ticketPath, "utf8"))),
+      };
+      const ticketRef =
+        defect.ticket === "id"
+          ? { ...ref, id: "another-task" }
+          : defect.ticket === "hash"
+            ? { ...ref, hash: `sha256:${"f".repeat(64)}` }
+            : ref;
+      const extra = { ...defect.receipt, ticket: ticketRef };
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, extra)).code).toBe(0);
+      if (defect.gateRefId !== undefined) {
+        const gateDir = join(defaultEvidenceDir(dir), run, "verify");
+        for (const path of readdirSync(gateDir).map((file) => join(gateDir, file)))
+          writeFileSync(
+            path,
+            readFileSync(path, "utf8").replace(/("evidence":\s*\[\s*\{\s*"id":\s*")[^"]+/, `$1${defect.gateRefId}`),
+          );
+      }
+      const checked = ak(dir, "check");
+      if (refusal === null) {
+        expect(checked.err).not.toContain("refused");
+        expect(checked.code).toBe(0);
+        return;
+      }
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain(refusal);
+    });
+  }
+
+  test("a ship decision that skipped a required gate is refused by name", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "partial-gates");
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath)).code).toBe(0);
+    expect(ak(dir, "check").code).toBe(0);
+    const partial = ak(dir, "check", "--gates", "build-checks,verify,review-full");
+    expect(partial.code).toBe(1);
+    expect(partial.err).toContain("refused: ship decision did not check required gate review-readiness");
+  });
+
+  test("a delta review covers only the head it was recorded at", () => {
+    const dir = repo();
+    open(dir, "stale-delta");
+    record(dir, "build-checks", "verify", "review-full");
+    git(dir, "commit", "-qam", "build");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 4;\n");
+    record(dir, "review-delta");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 5;\n"); // changed after the delta review
+    record(dir, "verify", "review-readiness");
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: gate review-full has no current evidence (the full review is for");
+    expect(checked.err).toContain("and no review-delta covers");
+  });
+});
+
+describe("readRecords, each stored-record filter alone", () => {
+  const variants = [
+    ["another run", { run_id: "another-run" }],
+    ["another gate", { gate: "verify" }],
+    ["an unknown class", { class: "purple" }],
+    ["an unknown author kind", { implementer: { author_kind: "robot", host: "codex" } }],
+    ["an unknown authority mode", { authority: { mode: "self" } }],
+  ] as const;
+  for (const [name, change] of variants) {
+    test(`a record naming ${name} is not read`, () => {
+      const dir = repo();
+      expect(ak(dir, "record", "--gate", "build-checks").code).toBe(0);
+      const gateDir = join(defaultEvidenceDir(dir), "feature", "build-checks");
+      const [written] = readRecords(defaultEvidenceDir(dir), "feature", "build-checks");
+      expect(written).toBeDefined();
+      for (const path of readdirSync(gateDir).map((file) => join(gateDir, file)))
+        writeFileSync(path, JSON.stringify({ ...written, ...change }));
+      expect(readRecords(defaultEvidenceDir(dir), "feature", "build-checks")).toEqual([]);
+    });
+  }
+});

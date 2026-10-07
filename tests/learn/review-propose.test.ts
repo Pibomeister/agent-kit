@@ -29,6 +29,10 @@ interface PageOptions {
   teamTarget?: string;
   fix?: string;
   lastSeen?: string;
+  sources?: string;
+  prs?: string;
+  reviewers?: string;
+  skillCandidate?: string;
 }
 
 function page(id: string, options: PageOptions): string {
@@ -40,11 +44,17 @@ function page(id: string, options: PageOptions): string {
     teamTarget = "",
     fix = "Do the one thing.",
     lastSeen = "2026-09-10",
+    sources = "claude-mem, github",
+    prs = "1, 2",
+    reviewers = "a, b",
+    skillCandidate,
   } = options;
   return (
     `---\nid: ${id}\ntitle: T ${id}\nstatus: ${status}\ncount: ${count}\nfirst_seen: 2026-09-01\nlast_seen: ${lastSeen}\n` +
-    `sources: [claude-mem, github]\nprs: [1, 2]\nreviewers: [a, b]\n` +
-    `promoted_to: ${promotedTo}\nteam_target: ${teamTarget}\npromoted_count: ${promotedCount}\n---\n\n` +
+    `sources: [${sources}]\nprs: [${prs}]\nreviewers: [${reviewers}]\n` +
+    `promoted_to: ${promotedTo}\nteam_target: ${teamTarget}\npromoted_count: ${promotedCount}\n` +
+    (skillCandidate === undefined ? "" : `skill_candidate: ${skillCandidate}\n`) +
+    `---\n\n` +
     `## Problem\nP ${id}\n\n## Root cause\nR ${id}\n\n## Fix\n${fix}\n\n## Evidence\n` +
     `- https://github.com/acme/app/pull/1#discussion_r9 (a P2 pr 1 2026-09-10)\n- obs:44 (b pr 2 2026-09-10)\n`
   );
@@ -107,6 +117,22 @@ describe("propose", () => {
       ["rp-001", "guardrail bullet did not stop recurrence"],
       ["rp-002", "fix is a multi-step procedure"],
     ]);
+  });
+
+  test("a page marked active that one reviewer on one PR wrote is not trusted, whatever its count", () => {
+    const { ctx, ledger, root, write } = setup();
+    write("rp-001", { count: 9, sources: "github", prs: "1", reviewers: "a" });
+    expect(propose(ctx, ledger, root, 3)).toBe("nothing to promote");
+    write("rp-001", { count: 9 });
+    expect(propose(ctx, ledger, root, 3)).toBe("promoted rp-001 to guardrails");
+  });
+
+  test("a pattern already named as a skill candidate, or retired, is not a skill candidate again", () => {
+    const { ledger, write } = setup();
+    write("rp-001", { count: 5, promotedTo: "guardrails", promotedCount: 3, skillCandidate: "sk-001" });
+    write("rp-002", { count: 5, promotedTo: "guardrails", promotedCount: 3, status: "retired" });
+    write("rp-003", { count: 5, promotedTo: "guardrails", promotedCount: 3 });
+    expect(skillCandidates(loadPatterns(ledger)).map((item) => item.pattern.id)).toEqual(["rp-003"]);
   });
 
   test("a dry run names what it would promote and writes nothing", () => {

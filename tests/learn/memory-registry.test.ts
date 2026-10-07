@@ -56,9 +56,15 @@ describe("registry", () => {
   test("plugin caches, scratch space and linked worktrees are skipped", () => {
     const { dir, worktree, config } = setup();
     const now = Date.now();
+    // Real repository roots, so the skip list and not the missing .git is what keeps them out.
+    const root = projectScratch();
+    const cache = join(root, "plugins", "cache", "thing");
+    const tmp = join(root, "tmp", "scratch");
+    for (const repo of [cache, tmp]) mkdirSync(join(repo, ".git"), { recursive: true });
+    expect([rootOf(cache), rootOf(tmp)]).toEqual([cache, tmp]);
     const found = rows(dir, [
-      { project: "x", cwd: "/Users/x/.claude/plugins/cache/thing", at: now },
-      { project: "y", cwd: "/private/tmp/scratch", at: now },
+      { project: "x", cwd: cache, at: now },
+      { project: "y", cwd: tmp, at: now },
       { project: "z", cwd: worktree, at: now },
     ]);
     expect(discoverProjects(config, found)).toEqual({});

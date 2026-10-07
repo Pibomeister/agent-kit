@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import * as gate from "../src/lifecycle/gate.ts";
-import { closest, unknownSelector } from "../src/util/suggest.ts";
+import { candidatesClause, closest, unknownSelector } from "../src/util/suggest.ts";
 
 const PROFILES = ["core", "learning", "maintainer", "product", "autonomy", "all"];
 const PATTERNS = Array.from({ length: 20 }, (_, i) => `rp-${String(i + 1).padStart(3, "0")}`);
@@ -46,6 +46,13 @@ describe("unknownSelector", () => {
 
   test("with nothing close, a large set gives its three nearest and its size", () => {
     expect(unknownSelector("pattern", "zz", PATTERNS)).toMatch(/^unknown pattern 'zz'; nearest of 20: \S+, \S+, \S+$/);
+  });
+
+  test("the candidates clause alone is what follows the selector in the full line", () => {
+    expect(candidatesClause("cor", PROFILES)).toBe("did you mean core?");
+    expect(unknownSelector("profile", "cor", PROFILES)).toBe(
+      `unknown profile 'cor'; ${candidatesClause("cor", PROFILES)}`,
+    );
   });
 
   test("an empty set says so rather than listing nothing", () => {
