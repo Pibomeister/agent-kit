@@ -93,6 +93,7 @@ const EVAL_DIR = "evals";
 
 /** The npm package manifest, which §5.2 makes a party to two fields of four. */
 const PACKAGE_FILE = "package.json";
+const CLAUDE_MEM_MODE_FILE = "adapters/observation-source/claude-mem/code--review-learning.json";
 
 /** One term for the summary line, whichever way the authority went missing. */
 const PARITY_CHECK = "manifest parity";
@@ -731,6 +732,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       continue;
     }
     files.set(name, { path: name, contents: text, source: name });
+  }
+
+  const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
+  if (memMode !== null) {
+    files.set(CLAUDE_MEM_MODE_FILE, { path: CLAUDE_MEM_MODE_FILE, contents: memMode, source: CLAUDE_MEM_MODE_FILE });
   }
 
   try {

@@ -6,7 +6,7 @@
  * or catalog, or the operator's home.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadCatalog } from "../../src/catalog/load.ts";
 import { loadConfig } from "../../src/learn/core/config.ts";
@@ -22,6 +22,7 @@ const REPO = join(import.meta.dir, "..", "..");
 const TIMEOUT_MS = 60_000;
 
 let bundle = "";
+let codexBundle = "";
 afterAll(() => {
   removeProjectScratch();
   removeStartScratch();
@@ -30,14 +31,20 @@ beforeAll(() => {
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
   bundle = startScratch("ak-bundle-");
-  for (const file of planBundle({ root: REPO, catalog }, "claude-code", {}).files.values()) {
-    mkdirSync(dirname(join(bundle, file.path)), { recursive: true });
-    writeFileSync(join(bundle, file.path), file.contents);
+  codexBundle = startScratch("ak-codex-bundle-");
+  for (const [host, target] of [
+    ["claude-code", bundle],
+    ["codex", codexBundle],
+  ] as const) {
+    for (const file of planBundle({ root: REPO, catalog }, host, {}).files.values()) {
+      mkdirSync(dirname(join(target, file.path)), { recursive: true });
+      writeFileSync(join(target, file.path), file.contents);
+    }
   }
 }, TIMEOUT_MS);
 
 /** A machine with nothing on it: scratch HOME and config dir, git and bun on PATH, no claude-mem. */
-function machine(extra: Record<string, string> = {}) {
+function machine(extra: Record<string, string> = {}, entry = join(bundle, "bin", "ak")) {
   const home = startScratch("ak-home-");
   const env = {
     HOME: home,
@@ -47,8 +54,22 @@ function machine(extra: Record<string, string> = {}) {
     ...extra,
   };
   const ak = (argv: string[], cwd: string, input?: string) =>
-    run([process.execPath, join(bundle, "bin", "ak"), "learn", ...argv], { cwd, env, input, timeoutMs: TIMEOUT_MS });
+    run([process.execPath, entry, "learn", ...argv], { cwd, env, input, timeoutMs: TIMEOUT_MS });
   return { home, env, ak };
+}
+
+function expectMemModeWired(entry: string, source: string): void {
+  const { ak, home, env } = machine({}, entry);
+  writeFileSync(env.AK_LEARN_MEM_DB, "");
+  const result = ak(["setup", "wire", "--host", "claude"], home);
+  expect(result.code).toBe(0);
+  expect(result.stdout).not.toContain("mode file not shipped");
+  expect(JSON.parse(readFileSync(join(home, ".claude-mem", "modes", "code--review-learning.json"), "utf8"))).toEqual(
+    JSON.parse(source),
+  );
+  const settings = readFileSync(join(env.CLAUDE_CONFIG_DIR, "settings.json"), "utf8");
+  expect(settings).toContain(`${entry} learn hook session-start`);
+  expect(ak(["setup", "verify"], home).stdout).toContain("PASS  claude-mem mode file");
 }
 
 describe("ak learn from a bundle outside any checkout", () => {
@@ -105,16 +126,35 @@ describe("ak learn from a bundle outside any checkout", () => {
   );
 
   test(
-    "setup wire names the bundle's bin/ak in each hook; claude-mem's mode stays a checkout operation",
+    "setup wire installs the shipped claude-mem mode from both plugin bundles",
     () => {
-      const { ak, home, env } = machine();
-      const result = ak(["setup", "wire", "--host", "claude"], home);
-      expect(result.code).toBe(0);
-      const settings = readFileSync(join(env.CLAUDE_CONFIG_DIR, "settings.json"), "utf8");
-      expect(settings).toContain(`${join(bundle, "bin", "ak")} learn hook session-start`);
-      // The mode file is adapted from Apache-2.0 claude-mem and is not shipped in any bundle.
-      expect(result.stdout).toContain("mode file not shipped");
-      expect(existsSync(join(home, ".claude-mem", "modes"))).toBe(false);
+      const source = readFileSync(
+        join(REPO, "adapters/observation-source/claude-mem/code--review-learning.json"),
+        "utf8",
+      );
+      for (const root of [bundle, codexBundle]) {
+        expect(
+          readFileSync(join(root, "adapters/observation-source/claude-mem/code--review-learning.json"), "utf8"),
+        ).toBe(source);
+        expectMemModeWired(join(root, "bin", "ak"), source);
+      }
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "setup wire installs the embedded claude-mem mode from a standalone bin/ak",
+    () => {
+      const standalone = startScratch("ak-standalone-");
+      const entry = join(standalone, "bin", "ak");
+      mkdirSync(dirname(entry), { recursive: true });
+      copyFileSync(join(bundle, "bin", "ak"), entry);
+      expect(existsSync(join(standalone, "adapters"))).toBe(false);
+      const source = readFileSync(
+        join(REPO, "adapters/observation-source/claude-mem/code--review-learning.json"),
+        "utf8",
+      );
+      expectMemModeWired(entry, source);
     },
     TIMEOUT_MS,
   );

@@ -17,6 +17,7 @@ import { AK_ENTRY, PACKAGE_ROOT } from "../core/roles.ts";
 import { writeJson } from "../core/store.ts";
 import { assignsHooksKey, hookBlock, tomlHooks, withHookBlock } from "./toml-hooks.ts";
 import { unitScopeDiffers } from "./scope.ts";
+import embeddedMemMode from "../../../adapters/observation-source/claude-mem/code--review-learning.json" with { type: "json" };
 
 /** Everything setup touches outside the config dir, injectable so tests never reach the real machine. */
 export interface SetupDeps {
@@ -554,18 +555,12 @@ export function wireMem(ctx: LearnContext, deps: SetupDeps): boolean {
   const dir = memDir(ctx, deps);
   const source = modeSource(deps);
   const target = join(dir, "modes", `${MEM_MODE}.json`);
-  let modeReady = existsSync(target);
-  if (!existsSync(source)) {
-    ctx.io.out(`mode file not shipped at ${source}; claude-mem keeps its current mode`);
-  } else {
-    const text = readFileSync(source, "utf8");
-    if (!existsSync(target) || readFileSync(target, "utf8") !== text) {
-      if (existsSync(target) && !existsSync(`${target}.bak`)) copyFileSync(target, `${target}.bak`);
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, text);
-      ctx.io.out(`${target}: mode installed`);
-    }
-    modeReady = true;
+  const text = existsSync(source) ? readFileSync(source, "utf8") : `${JSON.stringify(embeddedMemMode, null, 2)}\n`;
+  if (!existsSync(target) || readFileSync(target, "utf8") !== text) {
+    if (existsSync(target) && !existsSync(`${target}.bak`)) copyFileSync(target, `${target}.bak`);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, text);
+    ctx.io.out(`${target}: mode installed`);
   }
   const settingsPath = join(dir, "settings.json");
   const doc = readJsonObject<Record<string, unknown>>(settingsPath, {}) ?? {};
@@ -578,7 +573,7 @@ export function wireMem(ctx: LearnContext, deps: SetupDeps): boolean {
     });
   }
   doc.CLAUDE_MEM_CONTEXT_OBSERVATIONS = CONTEXT_OBSERVATIONS;
-  if (modeReady && doc.CLAUDE_MEM_MODE === undefined) doc.CLAUDE_MEM_MODE = MEM_MODE;
+  if (doc.CLAUDE_MEM_MODE === undefined) doc.CLAUDE_MEM_MODE = MEM_MODE;
   if (JSON.stringify(doc) === before) {
     ctx.io.out(`${settingsPath}: already set`);
     return false;
