@@ -18,6 +18,7 @@ import {
 import { dirname, join } from "node:path";
 import type { LearnContext } from "../../src/learn/core/context.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
+import { inProtectedFolder } from "../../src/learn/core/paths.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
@@ -30,6 +31,7 @@ import { tick } from "../../src/learn/memory/tick.ts";
 import {
   CAPTURE_ID_BASE,
   type CapturedSession,
+  PROTECTED_FOLDER,
   ProjectMemorySource,
   WorkerSessionSource,
   parseCodexSession,
@@ -62,14 +64,19 @@ function linkedRepo() {
   });
 
   const linked = join(projectScratch(), "linked");
-  const linkedGit = join(main, ".git", "worktrees", "fixture");
+  linkWorktree(main, linked, "fixture");
+  return { main, linked };
+}
+
+/** A linked worktree of `main` at `linked`, written as git would leave it. */
+function linkWorktree(main: string, linked: string, name: string): void {
+  const linkedGit = join(main, ".git", "worktrees", name);
   mkdirSync(linkedGit, { recursive: true });
   mkdirSync(linked, { recursive: true });
   writeFileSync(join(linked, ".git"), `gitdir: ${linkedGit}\n`);
   writeFileSync(join(linkedGit, "commondir"), "../..\n");
   writeFileSync(join(linkedGit, "gitdir"), `${join(linked, ".git")}\n`);
   writeFileSync(join(linkedGit, "HEAD"), readFileSync(join(main, ".git", "HEAD"), "utf8"));
-  return { main, linked };
 }
 
 /** Start a session in the fixture's linked worktree; the ceiling keeps the checkout holding the test scratch out of root discovery. */
@@ -707,6 +714,112 @@ describe("memory tick worker capture", () => {
     expect(ctx.out.filter((line) => line.includes("worker sessions skipped"))).toEqual([
       "worker sessions skipped: 2 outside every registered root and worktree",
     ]);
+  });
+});
+
+describe("worker capture in a macOS protected folder", () => {
+  const entry = { mem_project: "registered", last_seen: 1 };
+  const rows = [codexMessage("user", "tidy the cart module"), CODEX_TASK_COMPLETE];
+
+  test("the protected-folder test reads the path alone", () => {
+    const home = "/Users/nobody-ak-fixture";
+    for (const folder of ["Documents", "Desktop", "Downloads"]) {
+      expect(inProtectedFolder(join(home, folder), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, folder, "code", "shop", "src"), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, folder, "..", folder, "shop"), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, folder.toLowerCase(), "shop"), home, "darwin")).toBe(true);
+      expect(inProtectedFolder(join(home, `${folder}-old`, "shop"), home, "darwin")).toBe(false);
+      expect(inProtectedFolder(join(home, folder, "shop"), home, "linux")).toBe(false);
+      expect(inProtectedFolder(join(home, folder, "shop"), home, "win32")).toBe(false);
+    }
+    expect(inProtectedFolder(home, home, "darwin")).toBe(false);
+    expect(inProtectedFolder(join(home, "orca", "workspaces", "shop"), home, "darwin")).toBe(false);
+    expect(inProtectedFolder(join(home, "code", "Documents", "shop"), home, "darwin")).toBe(false);
+    expect(inProtectedFolder("/Users/someone-else/Documents/shop", home, "darwin")).toBe(false);
+  });
+
+  test("a linked worktree in Documents, Desktop or Downloads is skipped without its pointer being read", () => {
+    const { main } = linkedRepo();
+    const home = scratch("ak-fake-home-");
+    const registry = { main: { ...entry, root: main } };
+    const onMac = workerRootResolver(registry, {}, { home, platform: "darwin" });
+    for (const folder of ["Documents", "Desktop", "Downloads"]) {
+      const linked = join(home, folder, "linked");
+      linkWorktree(main, linked, folder);
+      mkdirSync(join(linked, "packages", "web"), { recursive: true });
+      // The pointer names the registered root, so any read of it would place the cwd there.
+      expect(onMac(linked)).toBe(PROTECTED_FOLDER);
+      expect(onMac(join(linked, "packages", "web"))).toBe(PROTECTED_FOLDER);
+      expect(workerRootResolver(registry, {}, { home, platform: "linux" })(join(linked, "packages", "web"))).toBe(main);
+    }
+    expect(onMac(join(home, "Documents", "no-repository"))).toBe(PROTECTED_FOLDER);
+  });
+
+  test("a linked worktree outside the protected folders is still placed by its pointer", () => {
+    const { main } = linkedRepo();
+    const home = scratch("ak-fake-home-");
+    const linked = join(home, "orca", "workspaces", "linked");
+    linkWorktree(main, linked, "elsewhere");
+    const rootFor = workerRootResolver({ main: { ...entry, root: main } }, {}, { home, platform: "darwin" });
+    expect(rootFor(linked)).toBe(main);
+    expect(rootFor(join(home, "orca", "workspaces", "no-repository"))).toBeNull();
+  });
+
+  test("a registered root or recorded worktree in a protected folder still places its sessions by path", () => {
+    const home = "/Users/nobody-ak-fixture";
+    const root = join(home, "Documents", "shop");
+    const recorded = join(home, "Desktop", "shop-fix");
+    const rootFor = workerRootResolver(
+      { shop: { ...entry, root } },
+      { [recorded]: root },
+      { home, platform: "darwin" },
+    );
+    expect(rootFor(join(root, "packages", "web"))).toBe(root);
+    expect(rootFor(join(recorded, "src"))).toBe(root);
+    expect(rootFor(join(home, "Documents", "other"))).toBe(PROTECTED_FOLDER);
+  });
+
+  test("the scan counts each skipped working directory once, apart from the unplaced sessions", () => {
+    const codex = scratch("ak-worker-protected-");
+    writeRollout(codex, "docs-one", "/home/Documents/shop", rows);
+    writeRollout(codex, "docs-two", "/home/Documents/shop", rows);
+    writeRollout(codex, "desktop", "/home/Desktop/blog", rows);
+    writeRollout(codex, "stray", "/unregistered/project", rows);
+    writeRollout(codex, "placed", "/code/shop", rows);
+    const scan = scanWorkerSessions({ codex: [codex], grok: [], kimi: [] }, (cwd) =>
+      cwd.startsWith("/home/") ? PROTECTED_FOLDER : cwd === "/code/shop" ? cwd : null,
+    );
+    expect(scan.protectedFolders).toBe(2);
+    expect(scan.unmatched).toBe(1);
+    expect([...scan.sessions.keys()]).toEqual(["/code/shop"]);
+  });
+
+  test("the tick reports the skipped working directories in one line and still captures the rest", () => {
+    const { main } = linkedRepo();
+    const home = scratch("ak-fake-home-");
+    const codex = scratch("ak-worker-protected-tick-");
+    const ctx = testContext({ cwd: main, env: { HOME: home, AK_LEARN_CODEX_HOMES: codex } });
+    registerRoot(ctx.config, main);
+    const linked = join(home, "Documents", "linked");
+    linkWorktree(main, linked, "protected");
+    for (const id of ["one", "two"]) writeRollout(codex, `documents-${id}`, linked, rows);
+    writeRollout(codex, "downloads", join(home, "Downloads", "unpacked"), rows);
+    writeRollout(codex, "main", main, [
+      codexMessage("user", "finish the cart fix"),
+      codexMessage("assistant", "The cart fix is done."),
+      CODEX_TASK_COMPLETE,
+    ]);
+
+    expect(tick(ctx, { only: main, job: "reflect" })).toBe(0);
+    const skipped = ctx.out.filter((line) => line.includes("skipped"));
+    // Only macOS guards the folders; elsewhere the pointer is read and the Documents sessions are placed.
+    if (process.platform === "darwin")
+      expect(skipped).toEqual([
+        "worker working directories skipped: 2 in a macOS protected folder, worktree pointer not read",
+      ]);
+    else expect(skipped).toEqual(["worker sessions skipped: 1 outside every registered root and worktree"]);
+    const stored = WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, main))).observationsSince("", 0);
+    expect(stored.some((row) => row.facts === "prompt: finish the cart fix\nreply: The cart fix is done.")).toBe(true);
   });
 });
 

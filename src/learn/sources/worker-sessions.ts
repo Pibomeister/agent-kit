@@ -12,7 +12,7 @@ import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, s
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Ledger } from "../core/ledger.ts";
-import { linkedWorktree } from "../core/paths.ts";
+import { inProtectedFolder, linkedWorktree } from "../core/paths.ts";
 import { appendJsonl, readJsonl, writeJsonl } from "../core/store.ts";
 import { sid8 } from "../memory/ledger.ts";
 import { scrubCaptured } from "../memory/redact.ts";
@@ -596,8 +596,12 @@ function splitHomes(value: string | undefined, fallback: string): string[] {
   return homes.length > 0 ? [...new Set(homes.map((entry) => resolve(entry)))] : [fallback];
 }
 
+export function userHome(env: NodeJS.ProcessEnv = process.env): string {
+  return env.HOME && env.HOME.trim() !== "" ? env.HOME : homedir();
+}
+
 export function workerHomes(env: NodeJS.ProcessEnv = process.env): WorkerHomes {
-  const home = env.HOME && env.HOME.trim() !== "" ? env.HOME : homedir();
+  const home = userHome(env);
   const codex = env.CODEX_HOME && env.CODEX_HOME.trim() !== "" ? env.CODEX_HOME : join(home, ".codex");
   const grok = env.GROK_HOME && env.GROK_HOME.trim() !== "" ? env.GROK_HOME : join(home, ".grok");
   const kimi = env.KIMI_HOME && env.KIMI_HOME.trim() !== "" ? env.KIMI_HOME : join(home, ".kimi-code");
@@ -630,21 +634,35 @@ function walk(dir: string, accept: (path: string) => boolean): string[] {
   return out.toSorted();
 }
 
+/** What a resolver answers for a cwd it left unplaced because placing it would open a file in a macOS protected folder. */
+export const PROTECTED_FOLDER = Symbol("protected-folder");
+
+export type WorkerPlace = string | typeof PROTECTED_FOLDER | null;
+
 /**
  * Where a recorded cwd belongs: the deepest registered root, or worktree recorded for one, that
  * contains it, compared as text. A cwd none of them contains is placed by the `.git` pointer of
- * the linked worktree it sits in, when that names a registered root.
+ * the linked worktree it sits in, when that names a registered root. On macOS that pointer is not
+ * read, and nothing above the cwd is touched, when the cwd is inside Documents, Desktop or
+ * Downloads under `home`: the scheduler's read would block on the privacy prompt while the tick
+ * holds the runtime lock. Such a cwd answers `PROTECTED_FOLDER`.
  */
-export function workerRootResolver(registry: Registry, worktrees: Worktrees): (cwd: string) => string | null {
+export function workerRootResolver(
+  registry: Registry,
+  worktrees: Worktrees,
+  guard: { home?: string; platform?: NodeJS.Platform } = {},
+): (cwd: string) => WorkerPlace {
   const roots = new Set(Object.values(registry).map((entry) => entry.root));
   const places = [
     ...[...roots].map((root): [string, string] => [root, root]),
     ...Object.entries(worktrees).filter(([, root]) => roots.has(root)),
   ].toSorted((a, b) => b[0].length - a[0].length);
+  const home = guard.home ?? userHome();
   return (cwd) => {
     const path = resolve(cwd);
     const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1];
     if (placed !== undefined) return placed;
+    if (inProtectedFolder(path, home, guard.platform)) return PROTECTED_FOLDER;
     const root = linkedWorktree(path)?.root;
     return root !== undefined && roots.has(root) ? root : null;
   };
@@ -665,6 +683,8 @@ export interface WorkerScan {
   activity: Map<string, number>;
   /** Recent sessions whose cwd resolved to no registered root; these are never parsed. */
   unmatched: number;
+  /** Working directories of recent sessions that `rootFor` answered `PROTECTED_FOLDER` for; their sessions are never parsed and are not in `unmatched`. */
+  protectedFolders: number;
 }
 
 /**
@@ -677,7 +697,7 @@ export interface WorkerScan {
  */
 export function scanWorkerSessions(
   homes: WorkerHomes,
-  rootFor: (cwd: string) => string | null,
+  rootFor: (cwd: string) => WorkerPlace,
   options: {
     sinceMs?: number;
     warn?: (line: string) => void;
@@ -686,7 +706,8 @@ export function scanWorkerSessions(
   } = {},
 ): WorkerScan {
   const sinceMs = options.sinceMs ?? Date.now() - CAPTURE_WINDOW_MS;
-  const scan: WorkerScan = { sessions: new Map(), activity: new Map(), unmatched: 0 };
+  const scan: WorkerScan = { sessions: new Map(), activity: new Map(), unmatched: 0, protectedFolders: 0 };
+  const protectedCwds = new Set<string>();
   const active = (root: string, at: number) => scan.activity.set(root, Math.max(scan.activity.get(root) ?? 0, at));
   const placed = new Map<string, { newest: number; read: Array<() => void> }>();
   const guarded = (path: string, step: () => void) => {
@@ -709,6 +730,11 @@ export function scanWorkerSessions(
       const { cwd, nativeId } = identify();
       if (cwd === null) return;
       const root = rootFor(cwd);
+      if (root === PROTECTED_FOLDER) {
+        protectedCwds.add(cwd);
+        scan.protectedFolders = protectedCwds.size;
+        return;
+      }
       if (root === null) {
         scan.unmatched += 1;
         return;
