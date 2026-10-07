@@ -5,7 +5,7 @@
  * and never inside a repository: no candidate directory, no `.git/info/exclude`
  * edit, nothing a `git status` in the project would show.
  */
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import type { LearnConfig } from "./config.ts";
 import { run } from "./proc.ts";
@@ -37,6 +37,13 @@ export function mainRepoRoot(cwd: string): string | null {
   return common.endsWith("/.git") || common.endsWith("\\.git") ? dirname(common) : common;
 }
 
+/** The top of the worktree holding `cwd`, linked or main. Spawns git, so foreground only, like `mainRepoRoot`. */
+export function worktreeRoot(cwd: string): string | null {
+  const result = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 10_000 });
+  const top = result.stdout.trim();
+  return result.code !== 0 || top === "" ? null : resolve(top);
+}
+
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory();
@@ -45,32 +52,60 @@ function isDirectory(path: string): boolean {
   }
 }
 
-/**
- * Main repo root found by walking up for a `.git` directory, with stat only.
- *
- * Never opens a file and never spawns git. Under a macOS scheduler, opening a
- * file inside a protected folder blocks uninterruptibly on the privacy prompt
- * and ignores every timeout, so the scheduled path may only stat. A linked
- * worktree (whose `.git` is a file) returns null; its main root registers from
- * its own foreground sessions instead.
- *
- * Stops where git stops: a directory listed in GIT_CEILING_DIRECTORIES is not
- * searched from below, so this walk and `mainRepoRoot` agree on what is outside.
- */
-export function rootOf(cwd: string): string | null {
+/** `cwd` and each directory above it, as far as git would search: a directory listed in GIT_CEILING_DIRECTORIES is not searched from below. */
+function searched(cwd: string): string[] {
   const ceilings = new Set(
     (process.env.GIT_CEILING_DIRECTORIES ?? "")
       .split(delimiter)
       .filter((entry) => entry !== "")
       .map((entry) => resolve(entry)),
   );
-  let dir = resolve(cwd);
+  const dirs = [resolve(cwd)];
   for (;;) {
-    if (isDirectory(join(dir, ".git"))) return dir;
+    const dir = dirs[dirs.length - 1] ?? "";
     const parent = dirname(dir);
-    if (parent === dir || ceilings.has(parent)) return null;
-    dir = parent;
+    if (parent === dir || ceilings.has(parent)) return dirs;
+    dirs.push(parent);
   }
+}
+
+/**
+ * Main repo root found by walking up for a `.git` directory, with stat only.
+ *
+ * Never opens a file and never spawns git. Under a macOS scheduler, opening a
+ * file inside a protected folder blocks uninterruptibly on the privacy prompt
+ * and ignores every timeout, so discovery may only stat. A linked worktree
+ * (whose `.git` is a file) returns null; its main root registers from its own
+ * foreground sessions instead.
+ *
+ * Stops where git stops, so this walk and `mainRepoRoot` agree on what is outside.
+ */
+export function rootOf(cwd: string): string | null {
+  return searched(cwd).find((dir) => isDirectory(join(dir, ".git"))) ?? null;
+}
+
+/**
+ * The linked worktree holding `cwd` and the main root it belongs to, without git: the first `.git`
+ * above `cwd` is a file whose `gitdir: <root>/.git/worktrees/<name>` line names the root. That
+ * pointer is the one file read, and nothing else in the worktree is opened. Null in a main
+ * worktree, outside a repository, and once the worktree is removed.
+ */
+export function linkedWorktree(cwd: string): { worktree: string; root: string } | null {
+  for (const worktree of searched(cwd)) {
+    const pointer = join(worktree, ".git");
+    try {
+      const stat = statSync(pointer, { throwIfNoEntry: false });
+      if (stat === undefined) continue;
+      if (!stat.isFile()) return null;
+      const gitdir = /^gitdir: (.+)$/m.exec(readFileSync(pointer, "utf8"))?.[1];
+      if (gitdir === undefined) return null;
+      const root = /^(.+)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/.exec(resolve(worktree, gitdir.trim()))?.[1];
+      return root === undefined ? null : { worktree, root };
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /** `<configDir>/projects/<folder>/agent-kit`. */
@@ -86,6 +121,11 @@ export function loopDir(config: LearnConfig, repoRoot: string, loop: Loop): stri
 /** The runtime-wide project registry: folder -> { root, mem_project, last_seen }. */
 export function registryPath(config: LearnConfig): string {
   return join(config.runtimeDir, "projects.json");
+}
+
+/** Linked worktree path -> registered root, written by foreground sessions for the scheduled tick to read. */
+export function worktreesPath(config: LearnConfig): string {
+  return join(config.runtimeDir, "worktrees.json");
 }
 
 export function tickLogPath(config: LearnConfig): string {

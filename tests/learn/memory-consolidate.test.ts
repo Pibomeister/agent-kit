@@ -40,6 +40,7 @@ import { lessonsBlock } from "../../src/learn/memory/session-context.ts";
 import { EVENTS_FILE, reviewLedger } from "../../src/learn/review/ledger.ts";
 import type { ReviewEvent } from "../../src/learn/review/events.ts";
 import { ClaudeMemSource, type ObservationRow } from "../../src/learn/sources/claude-mem.ts";
+import { WorkerSessionSource } from "../../src/learn/sources/worker-sessions.ts";
 import { gitRepo, MemFixture, reflectorOrEmptyJudge, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 const REPLY = {
@@ -294,6 +295,8 @@ describe("consolidate apply", () => {
       runId: "nightly-test",
       createdBy: "learn/consolidator",
       trigger: "failure",
+      claude: null,
+      workers: WorkerSessionSource.open(ledger),
     });
     expect(result.ref).toBe("ledger:proposals/learn-repo-ls-001.json");
     expect(readdirSync(ledger.path("proposals"))).toEqual(["learn-repo-ls-001.json"]);

@@ -4,11 +4,13 @@
  * | File | What |
  * |---|---|
  * | `memory.md` | the organized working memory; the only prose injected at session start, with confirmed lessons |
- * | `episodes.jsonl` | append-only episode revisions for ended claude-mem sessions, with latest revision winning |
+ * | `episodes.jsonl` | append-only episode revisions for ended observed sessions, with latest revision winning |
+ * | `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | turns and sessions captured from worker host records (`sources/worker-sessions.ts`) |
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
+ * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the worker files above hold, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *
  * `memory.md` and the lessons are the revertible wiki layer; `episodes.jsonl`
@@ -38,6 +40,8 @@ import {
   writeJson,
 } from "../core/store.ts";
 import { lessonDraft, proposeLesson, type ProposalResult, type TriggerKind } from "../kb.ts";
+import type { ClaudeMemSource } from "../sources/claude-mem.ts";
+import type { WorkerSessionSource } from "../sources/worker-sessions.ts";
 
 /** The six sections a reflected memory must carry, in order. */
 export const SECTIONS = [
@@ -83,6 +87,8 @@ const SEED: Readonly<Record<string, string>> = {
 
 export interface MemoryState {
   last_obs_id_reflected?: number;
+  /** Highest runtime-owned worker observation accepted by reflection. */
+  last_worker_obs_id_reflected?: number;
   last_reflect?: number;
   last_reflect_attempt?: number;
   reflect_failures?: number;
@@ -144,9 +150,12 @@ export function screenedObservationRanges(ledger: Ledger): [number, number][] {
     obs_ids?: number[];
   }>(ledger.path("runs.jsonl"))) {
     if (run.status !== "ok") continue;
+    if ((run.obs_ids?.length ?? 0) > 0) {
+      for (const id of run.obs_ids ?? []) ranges.push([id, id]);
+      continue;
+    }
     if (run.job === "reflect" && run.min_obs_id !== undefined && run.max_obs_id !== undefined)
       ranges.push([run.min_obs_id, run.max_obs_id]);
-    if (run.job === "backfill") for (const id of run.obs_ids ?? []) ranges.push([id, id]);
   }
   return ranges;
 }
@@ -314,6 +323,8 @@ export function proposeConfirmed(
     runId: string;
     createdBy: "learn/consolidator" | "learn/lesson-merger";
     trigger: TriggerKind;
+    claude: ClaudeMemSource | null;
+    workers: WorkerSessionSource;
     similar?: readonly Candidate[];
   },
 ): ProposalResult {
@@ -331,7 +342,10 @@ export function proposeConfirmed(
       statement,
       trigger: options.trigger,
       occurrence: { id: evidence[0] ?? id, content: { statement, evidence } },
-      evidence: evidence.map((ref) => ({ ref: `claude-mem:${ref}`, kind: "transcript" as const })),
+      evidence: evidence.map((ref) => ({
+        ref: `${options.workers.owns(ref) ? "worker" : options.claude?.holds(ref) === true ? "claude-mem" : "unresolved"}:${ref}`,
+        kind: "transcript" as const,
+      })),
       domains,
       createdBy: options.createdBy,
     },

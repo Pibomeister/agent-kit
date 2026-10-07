@@ -32,7 +32,8 @@ import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { appendEvents, makeEvent, type ReviewEvent } from "../review/events.ts";
-import type { ClaudeMemSource, ObservationRow } from "../sources/claude-mem.ts";
+import { ClaudeMemSource, type MemoryObservationSource, type ObservationRow } from "../sources/claude-mem.ts";
+import { isCapturedObservation, WorkerSessionSource } from "../sources/worker-sessions.ts";
 import {
   consumedObsIds,
   type Episode,
@@ -307,7 +308,9 @@ export interface ConsolidateSummary {
 
 /**
  * Create lesson pages, mark superseded ones, and forward review events when a
- * review ledger is given. The runtime sets every id, status and count.
+ * review ledger is given. The runtime sets every id, status and count. A cited
+ * worker observation also puts its session's `S<sid>` on the lesson, since the
+ * captured row is dropped from the ledger long before the lesson is.
  *
  * A judged lesson whose statement and scope match a live lesson's after
  * normalization is a repeat: it is counted on that lesson (`countRepeat`) and
@@ -345,7 +348,16 @@ export function applyConsolidation(
   const lessons = Array.isArray(reply.lessons) ? (reply.lessons as JudgedLesson[]) : [];
   for (const lesson of lessons) {
     if (lesson === null || typeof lesson !== "object") continue;
-    const evidence = strings(lesson.evidence).filter((id) => valid.has(id));
+    const cited = strings(lesson.evidence).filter((id) => valid.has(id));
+    const evidence = [
+      ...new Set([
+        ...cited,
+        ...cited.flatMap((id) => {
+          const sid = isCapturedObservation({ id: Number(id.slice(4)) }) ? obsSession.get(id) : undefined;
+          return sid === undefined ? [] : [`S${sid}`];
+        }),
+      ]),
+    ];
     const statement = oneLine(lesson.statement);
     if (evidence.length === 0 || statement === "") {
       summary.dropped += 1;
@@ -523,7 +535,7 @@ function triggerOf(
 }
 
 /** `obs:N` to the session it came from, for every observation an existing lesson cites. */
-export function citedObsSessions(source: ClaudeMemSource, ledger: Ledger): Map<string, string> {
+export function citedObsSessions(source: MemoryObservationSource, ledger: Ledger): Map<string, string> {
   const ids = loadLessons(ledger)
     .values()
     .flatMap(({ meta }) => list(meta.evidence))
@@ -543,17 +555,25 @@ export interface ReadyEpisode {
 
 /** The pending episodes that have something to show the consolidator and nothing left for the backfill to screen, by session id. */
 export function readyEpisodes(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   pending: readonly Episode[],
 ): Map<string, ReadyEpisode> {
   const ranges = screenedObservationRanges(ledger);
   const consumed = consumedObsIds(ledger);
-  const watermark = readState(ledger).last_obs_id_reflected ?? 0;
+  const state = readState(ledger);
+  const nativeWatermark = state.last_obs_id_reflected ?? 0;
+  const capturedWatermark = state.last_worker_obs_id_reflected ?? 0;
   const ready = new Map<string, ReadyEpisode>();
   for (const episode of pending) {
     const allRows = source.sessionObservations(episode.sid);
-    if (allRows.some((row) => row.id <= watermark && !isScreened(ranges, row.id))) continue;
+    if (
+      allRows.some(
+        (row) =>
+          row.id <= (isCapturedObservation(row) ? capturedWatermark : nativeWatermark) && !isScreened(ranges, row.id),
+      )
+    )
+      continue;
     const after = consumed.get(episode.sid) ?? 0;
     const rows = allRows.filter((row) => row.id > after && isScreened(ranges, row.id));
     const last = rows.at(-1);
@@ -571,7 +591,7 @@ function nothingToConsolidate(ctx: LearnContext, ledger: Ledger, message: string
 
 export function consolidate(
   ctx: LearnContext,
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   root: string,
   review: Ledger | null,
@@ -640,21 +660,28 @@ export function consolidate(
     included.filter((episode) => episode.corrections > 0).map((episode) => sid8(episode.sid).slice(1)),
   );
   const lessons = loadLessons(ledger);
+  const workers = WorkerSessionSource.open(ledger);
+  const claude = ClaudeMemSource.open(ctx.config.memDb);
   const proposals: string[] = [];
   const skippedProposals: string[] = [];
-  for (const id of summary.confirmed) {
-    const page = lessons.get(id);
-    if (page === undefined) continue;
-    const trig = triggerOf(page.meta, obsSession, corrected);
-    const similar = summary.similar.find((entry) => entry.id === id)?.candidates;
-    const proposal = proposeOrSkip(ctx, ledger, root, page, {
-      runId,
-      createdBy: "learn/consolidator",
-      trigger: trig,
-      similar,
-    });
-    if ("ref" in proposal) proposals.push(proposal.ref);
-    else skippedProposals.push(proposal.skipped);
+  try {
+    for (const id of summary.confirmed) {
+      const page = lessons.get(id);
+      if (page === undefined) continue;
+      const trig = triggerOf(page.meta, obsSession, corrected);
+      const proposal = proposeOrSkip(ctx, ledger, root, page, {
+        runId,
+        createdBy: "learn/consolidator",
+        trigger: trig,
+        claude,
+        workers,
+        similar: summary.similar.find((entry) => entry.id === id)?.candidates,
+      });
+      if ("ref" in proposal) proposals.push(proposal.ref);
+      else skippedProposals.push(proposal.skipped);
+    }
+  } finally {
+    claude?.close();
   }
   const state = readState(ledger);
   const { last_nightly_attempt: _attempt, nightly_failures: _failures, ...withoutBackoff } = state;
