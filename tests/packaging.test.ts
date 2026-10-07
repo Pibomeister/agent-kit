@@ -152,6 +152,8 @@ const BASE: Record<string, string> = {
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
+  "provenance/licenses/ajv-validator_ajv.LICENSE": "MIT License\n\nCopyright (c) 2015-2021 Evgeny Poberezkin\n",
+  "provenance/licenses/ajv-validator_ajv-formats.LICENSE": "MIT License\n\nCopyright (c) 2020 Evgeny Poberezkin\n",
 };
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
@@ -224,7 +226,12 @@ describe("the licence files the distribution is obliged to carry", () => {
     const ctx = ctxFor();
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
-      for (const name of ["NOTICE", "LICENSE"]) {
+      for (const name of [
+        "NOTICE",
+        "LICENSE",
+        "provenance/licenses/ajv-validator_ajv.LICENSE",
+        "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+      ]) {
         expect(`${host}:${name}=${plan.files.get(name)?.contents}`).toBe(`${host}:${name}=${BASE[name]}`);
       }
     }

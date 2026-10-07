@@ -1431,6 +1431,20 @@ describe("the gate a bundle carries", () => {
     }
   });
 
+  test(`every bundle carrying ${GATE_FILE} ships the MIT notices of the ajv code it inlines`, () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    for (const host of ["claude-code", "codex"] as const) {
+      const files = planBundle({ root: REPO, catalog }, host, {}).files;
+      expect(files.has(GATE_FILE)).toBe(true);
+      for (const pkg of ["ajv", "ajv-formats"]) {
+        const shipped = files.get(`provenance/licenses/ajv-validator_${pkg}.LICENSE`)?.contents;
+        expect(shipped).toBe(readFileSync(join(REPO, "node_modules", pkg, "LICENSE"), "utf8"));
+        expect(files.get("NOTICE")?.contents).toContain(`provenance/licenses/ajv-validator_${pkg}.LICENSE`);
+      }
+    }
+  });
+
   test("both byte-identical packaged gates enforce the strengthened evidence cases", () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("no catalog");

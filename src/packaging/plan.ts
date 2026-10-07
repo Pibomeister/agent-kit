@@ -190,7 +190,12 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
  * two bundles disagreeing about their own licensing is the defect this package
  * has already produced once in a different field.
  */
-const LICENCE_FILES = ["NOTICE", "LICENSE"];
+const LICENCE_FILES = [
+  "NOTICE",
+  "LICENSE",
+  "provenance/licenses/ajv-validator_ajv.LICENSE",
+  "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+];
 
 const GATE_SOURCE = "src/lifecycle/gate.ts";
 export const GATE_FILE = "bin/ak-gate.mjs";
