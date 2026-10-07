@@ -289,7 +289,7 @@ console.log(projectKey(loadConfig({ CLAUDE_CONFIG_DIR: ${JSON.stringify(config.c
     expect(keys[0]).toMatch(/^[0-9a-f]{12}$/);
     expect(projectKey(config, root)).toBe(keys[0] ?? "");
     expect(statSync(join(config.runtimeDir, ".salt")).mode & 0o777).toBe(0o600);
-  });
+  }, 60_000);
 
   test("a malformed salt yields no key and is left as it was", () => {
     const dir = scratch();

@@ -10,7 +10,7 @@
  * never its prose.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,9 @@ import { makeTree } from "./helpers/tree.ts";
 const ROOT = join(import.meta.dir, "..");
 const PROBE = join(ROOT, "research/probes/catalog-progress.sh");
 const EXPANSIONS = "research/probes/catalog-expansions.yaml";
+
+// Each fixture spawns git and the probe; under a loaded suite that outruns the 5s default.
+setDefaultTimeout(60_000);
 
 const BASELINE: Record<string, number> = {
   skills: 33,
