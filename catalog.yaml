@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.19
+  version: 0.1.20
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not
@@ -897,7 +897,7 @@ references:
       plugin.
 
 # ---------------------------------------------------------------------------
-# Schemas — 33. `common` holds shared $defs and validates no document itself.
+# Schemas — 34. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1078,6 +1078,13 @@ schemas:
       One line of the learning runtime's span log: one finished review, memory, skills or hook unit
       with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
       and hashes only.
+  - id: constitution-article
+    batch: 13
+    status: authored
+    summary: >-
+      One registered constitution article: source span, tier, exceptions, related articles, triggers
+      and the checks that cover it, each naming the exact predicate it verifies. Registries live in an
+      overlay; this package holds only the shape and invented fixtures.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.
