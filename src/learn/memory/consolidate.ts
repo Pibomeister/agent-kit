@@ -16,7 +16,9 @@
  *
  * A lesson is `confirmed` when its evidence spans two or more sessions and
  * `hypothesis` otherwise. A newly confirmed lesson becomes a knowledgebase
- * draft, never a publication.
+ * draft, never a publication. A lesson restating a live one in the same scope
+ * is counted on it rather than written again, and a new lesson lists the
+ * existing ones it resembles (`core/similar.ts`).
  */
 import { createHash } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
@@ -24,7 +26,8 @@ import { basename, join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import type { PageMeta } from "../core/pages.ts";
-import { renderPage } from "../core/pages.ts";
+import { patchBody, renderPage } from "../core/pages.ts";
+import { type Candidate, type Comparable, contentKey, similarLine, similarTo } from "../core/similar.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl, todayLocal, tokens, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
@@ -43,6 +46,8 @@ import {
   appendRun,
   cleanTags,
   isFailureObservation,
+  lessonId,
+  type LessonPage,
   list,
   loadLessons,
   lessonsIndexText,
@@ -215,11 +220,55 @@ export function nextLessonId(ledger: Ledger): string {
   return `ls-${String(numbers.length > 0 ? Math.max(...numbers) + 1 : 1).padStart(3, "0")}`;
 }
 
+export function lessonBody(statement: string, evidence: readonly string[]): string {
+  return `\n## Statement\n${statement}\n\n## Evidence\n${evidence.map((id) => `- ${id}\n`).join("")}`;
+}
+
 export function renderLesson(meta: PageMeta, evidence: readonly string[]): string {
-  return renderPage(
-    meta,
-    `\n## Statement\n${str(meta.statement)}\n\n## Evidence\n${evidence.map((id) => `- ${id}\n`).join("")}`,
-  );
+  return renderPage(meta, lessonBody(str(meta.statement), evidence));
+}
+
+/** Statuses a repeat is counted on. A superseded or conflicting lesson is history; restating it makes a new lesson. */
+const LIVE: ReadonlySet<string> = new Set(["hypothesis", "confirmed", "stale"]);
+
+/** Lessons a new one is compared with: every one not superseded, conflicts included. */
+function comparable(lessons: ReadonlyMap<string, LessonPage>): Comparable[] {
+  return lessons
+    .values()
+    .filter(({ meta }) => meta.status !== "superseded")
+    .map((page) => ({ id: lessonId(page), status: str(page.meta.status), text: str(page.meta.statement) }))
+    .toArray();
+}
+
+/**
+ * Count a repeat on the lesson it repeats: `count` up by one, `last_seen`
+ * today, evidence and tags unioned, the statement and every earlier field
+ * kept. Sessions never go down, so a hypothesis whose evidence now spans two
+ * sessions is confirmed, and a stale lesson seen again is confirmed again.
+ * Returns whether a hypothesis was newly confirmed.
+ */
+export function countRepeat(
+  page: LessonPage,
+  evidence: readonly string[],
+  tags: readonly string[],
+  sessionOf: ReadonlyMap<string, string>,
+  today: string,
+): boolean {
+  const meta: PageMeta = { ...page.meta };
+  const before = str(meta.status);
+  const known = list(meta.evidence);
+  const added = evidence.filter((id) => !known.includes(id));
+  meta.count = (Number(meta.count) || 1) + 1;
+  meta.last_seen = today;
+  meta.evidence = [...known, ...added];
+  meta.tags = [...new Set([...list(meta.tags), ...tags])].toSorted();
+  meta.sessions = Math.max(Number(meta.sessions) || 0, sessionsOf(meta.evidence, sessionOf).size);
+  if (before === "stale" || (before === "hypothesis" && meta.sessions >= 2)) meta.status = "confirmed";
+  const body = page.body.trim() === "" ? lessonBody(str(meta.statement), meta.evidence) : page.body;
+  page.meta = meta;
+  page.body = added.reduce((text, id) => patchBody(text, "append", "", `- ${id}`), body);
+  writeLesson(page.path, page.meta, page.body);
+  return before === "hypothesis" && meta.status === "confirmed";
 }
 
 interface JudgedLesson {
@@ -251,6 +300,10 @@ export interface ConsolidateSummary {
   review_events: number;
   /** Events held in the memory ledger because the review ledger was locked. */
   review_events_parked: number;
+  /** Existing lessons a judged lesson repeated, counted on that lesson instead of written again; once per repeat. */
+  repeated: string[];
+  /** Created lessons resembling an existing one, with the candidates a reviewer may amend or supersede. */
+  similar: Array<{ id: string; candidates: Candidate[] }>;
 }
 
 /**
@@ -258,15 +311,29 @@ export interface ConsolidateSummary {
  * review ledger is given. The runtime sets every id, status and count. A cited
  * worker observation also puts its session's `S<sid>` on the lesson, since the
  * captured row is dropped from the ledger long before the lesson is.
+ *
+ * A judged lesson whose statement and scope match a live lesson's after
+ * normalization is a repeat: it is counted on that lesson (`countRepeat`) and
+ * its `supersedes` is ignored, since a lesson cannot replace what it restates.
+ * Every created lesson is compared with the existing ones and its resembling
+ * candidates are listed in `similar`; nothing about them is stored or changed.
+ * `sessionOf` maps older evidence to sessions, beside `obsSession`, so a
+ * repeat across sessions confirms.
  */
 export function applyConsolidation(
   ledger: Ledger,
   reply: Record<string, unknown>,
   valid: ReadonlySet<string>,
   obsSession: ReadonlyMap<string, string>,
-  options: { review?: { ledger: Ledger; project: string }; runId?: string; today?: string } = {},
+  options: {
+    review?: { ledger: Ledger; project: string };
+    runId?: string;
+    today?: string;
+    sessionOf?: ReadonlyMap<string, string>;
+  } = {},
 ): ConsolidateSummary {
   const today = options.today ?? todayLocal();
+  const sessionOf = new Map([...(options.sessionOf ?? []), ...obsSession]);
   const existing = loadLessons(ledger);
   const summary: ConsolidateSummary = {
     created: [],
@@ -275,6 +342,8 @@ export function applyConsolidation(
     confirmed: [],
     review_events: 0,
     review_events_parked: 0,
+    repeated: [],
+    similar: [],
   };
   const lessons = Array.isArray(reply.lessons) ? (reply.lessons as JudgedLesson[]) : [];
   for (const lesson of lessons) {
@@ -294,18 +363,30 @@ export function applyConsolidation(
       summary.dropped += 1;
       continue;
     }
+    const scope = typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo";
+    const key = contentKey(statement, scope);
+    const repeat = [...existing.values()].find(
+      (page) => LIVE.has(str(page.meta.status)) && contentKey(str(page.meta.statement), str(page.meta.scope)) === key,
+    );
+    if (repeat !== undefined) {
+      if (countRepeat(repeat, evidence, cleanTags(lesson.tags), sessionOf, today))
+        summary.confirmed.push(lessonId(repeat));
+      summary.repeated.push(lessonId(repeat));
+      continue;
+    }
     const id = nextLessonId(ledger);
     const sessions = sessionsOf(evidence, obsSession).size;
     const confidence = Number(lesson.confidence);
     const meta: PageMeta = {
       id,
       statement,
-      scope: typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo",
+      scope,
       status: sessions >= 2 ? "confirmed" : "hypothesis",
       confidence: Math.min(1, Math.max(0, Number.isFinite(confidence) && confidence !== 0 ? confidence : 0.5)).toFixed(
         2,
       ),
       sessions,
+      count: 1,
       tags: cleanTags(lesson.tags),
       evidence,
       supersedes: [],
@@ -330,9 +411,11 @@ export function applyConsolidation(
       writeLesson(page.path, page.meta, page.body);
     }
     meta.supersedes = supersedes;
+    const candidates = similarTo(statement, comparable(existing));
+    if (candidates.length > 0) summary.similar.push({ id, candidates });
     const path = join(ledger.path("lessons"), `${id}.md`);
     writeGated(ledger.dir, path, renderLesson(meta, evidence));
-    existing.set(id, { meta, body: "", path });
+    existing.set(id, { meta, body: lessonBody(statement, evidence), path });
     summary.created.push(id);
     if (meta.status === "confirmed") summary.confirmed.push(id);
   }
@@ -451,6 +534,18 @@ function triggerOf(
   return [...sessions].some((sid) => corrected.has(sid)) ? "correction" : "failure";
 }
 
+/** `obs:N` to the session it came from, for every observation an existing lesson cites. */
+export function citedObsSessions(source: MemoryObservationSource, ledger: Ledger): Map<string, string> {
+  const ids = loadLessons(ledger)
+    .values()
+    .flatMap(({ meta }) => list(meta.evidence))
+    .filter((id) => /^obs:\d+$/.test(id))
+    .map((id) => Number(id.slice(4)))
+    .toArray();
+  if (ids.length === 0) return new Map();
+  return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
+}
+
 /** A pending episode's screened observations no standing run has consumed, and the mark consuming them records. */
 export interface ReadyEpisode {
   rows: ObservationRow[];
@@ -549,6 +644,7 @@ export function consolidate(
   const summary = applyConsolidation(ledger, reply, valid, obsSession, {
     review: review === null ? undefined : { ledger: review, project: basename(root) },
     runId,
+    sessionOf: citedObsSessions(source, ledger),
   });
   markConsolidated(
     ledger,
@@ -579,6 +675,7 @@ export function consolidate(
         trigger: trig,
         claude,
         workers,
+        similar: summary.similar.find((entry) => entry.id === id)?.candidates,
       });
       if ("ref" in proposal) proposals.push(proposal.ref);
       else skippedProposals.push(proposal.skipped);
@@ -606,9 +703,17 @@ export function consolidate(
   appendRun(ledger, { ...recorded, log: log.slice(0, 200) });
   logLine(
     ledger,
-    `nightly ${runId}: ${included.length}/${chosen.length} episodes, +${summary.created.length} lessons, ${summary.dropped} dropped, ` +
-      `${summary.superseded.length} superseded, ${summary.review_events} review events forwarded, ${summary.review_events_parked} parked, ${proposals.length} proposals. ${log}`,
+    `nightly ${runId}: ${included.length}/${chosen.length} episodes, +${summary.created.length} lessons, ${summary.repeated.length} repeats counted, ` +
+      `${summary.dropped} dropped, ${summary.superseded.length} superseded, ${summary.review_events} review events forwarded, ` +
+      `${summary.review_events_parked} parked, ${proposals.length} proposals. ${log}`,
   );
+  for (const { id, candidates } of summary.similar)
+    logLine(ledger, `similar ${similarLine(id, candidates)}: amend or supersede`);
   ledger.commit(`nightly ${runId}: +${summary.created.length} lessons`);
-  return `nightly: ${included.length}/${chosen.length} episodes -> +${summary.created.length} lessons, ${summary.review_events} review events`;
+  const similar = summary.similar.map(({ id, candidates }) => `; similar ${similarLine(id, candidates)}`).join("");
+  const repeats = summary.repeated.length > 0 ? `, ${summary.repeated.length} repeats counted` : "";
+  return (
+    `nightly: ${included.length}/${chosen.length} episodes -> +${summary.created.length} lessons${repeats}, ` +
+    `${summary.review_events} review events${similar}`
+  );
 }

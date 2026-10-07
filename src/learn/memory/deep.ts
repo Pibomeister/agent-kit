@@ -4,9 +4,9 @@
  * call (role `lesson-merger`) over the lessons index for merge and
  * contradiction pairs.
  *
- * A lesson's `last_seen` is set at creation and refreshed only by a merge, so
- * the 90 days run from creation or last merge. Global lessons and lessons
- * tagged decision, security or blocker never go stale.
+ * A lesson's `last_seen` is set at creation and refreshed only by a merge or a
+ * repeat, so the 90 days run from creation or the last of those. Global lessons
+ * and lessons tagged decision, security or blocker never go stale.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
