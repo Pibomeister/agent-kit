@@ -25,7 +25,7 @@ sessions; project discovery and cross-session skill discovery remain unavailable
 | Capability | Required | What it means |
 |---|---|---|
 | read observations after a watermark | yes | Observations with an id greater than the ledger's watermark, oldest first, with id, session, type, title, subtitle, facts and time |
-| read sessions in a window | yes | Sessions started in a time window, with start and end, prompt count, observation count and the observer's own session id |
+| read sessions in a window | yes | Sessions started in a time window, with start and end, prompt count, observation count, the observer's own session id and, where the observer keeps it, the id the host itself gives the session |
 | read session summaries | yes | The latest request, completed and next-steps summary for a set of sessions |
 | read user prompts | yes | A project's recent user prompts by session, for the skill scout |
 | read tool uses | optional | Files a session edited, and the working directories tool calls ran in, for episode building and project discovery |

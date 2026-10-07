@@ -16,12 +16,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import type { LearnContext } from "../../src/learn/core/context.ts";
+import { type LearnContext, parseLearnArgs } from "../../src/learn/core/context.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
 import { inProtectedFolder } from "../../src/learn/core/paths.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
-import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
+import { hookArea } from "../../src/learn/hooks.ts";
+import { ensureMemoryLedger, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { memoryDir, readState } from "../../src/learn/memory/ledger.ts";
 import { loadEpisodes } from "../../src/learn/memory/episodes.ts";
 import { type Registry, readWorktrees, registerRoot } from "../../src/learn/memory/registry.ts";
@@ -887,6 +888,48 @@ describe("memory tick worker capture", () => {
     expect(ctx.prompts).toHaveLength(2);
     expect(WorkerSessionSource.open(ledger).observationsSince("", 0)).toHaveLength(4);
     expect(ctx.out.some((line) => line.includes("worker sessions skipped"))).toBe(false);
+  });
+
+  test("a worker host's episode carries what its carrier hook showed that session", () => {
+    const { main, linked } = linkedRepo();
+    const homes = scratch("ak-worker-homes-");
+    cpSync(FIXTURES, homes, { recursive: true });
+    placeFixtures(homes, linked);
+    const ctx = testContext({
+      cwd: linked,
+      env: {
+        AK_LEARN_CODEX_HOMES: join(homes, "codex"),
+        AK_LEARN_GROK_HOMES: join(homes, "grok"),
+        AK_LEARN_KIMI_HOMES: join(homes, "kimi"),
+      },
+      replies: [reflectorOrEmptyJudge],
+    });
+    writeLesson(
+      ensureMemoryLedger(memoryDir(ctx.config, main)).path("lessons", "ls-001.md"),
+      { id: "ls-001", statement: "never hand-edit dist/", status: "confirmed", confidence: "0.9" },
+      "\n",
+    );
+    const verb = hookArea.verbs["session-start"];
+    if (verb === undefined) throw new Error("no session-start verb");
+    // The ids each fixture session's own record holds: Grok's summary and Kimi's state file.
+    const starts = [
+      [["--host", "grok"], { sessionId: "01a10000-0000-7000-8000-000000000002" }],
+      [["--host", "kimi"], { session_id: "session_00000000-0000-4000-8000-000000000003" }],
+    ] as const;
+    withGitCeiling(dirname(linked), () => {
+      for (const [args, named] of starts)
+        expect(verb.run(parseLearnArgs([...args]), { ...ctx, stdin: JSON.stringify({ cwd: linked, ...named }) })).toBe(
+          0,
+        );
+    });
+
+    expect(tick(ctx, { only: main, job: "reflect", force: true })).toBe(0);
+    const episodes = loadEpisodes(new Ledger(memoryDir(ctx.config, main)));
+    const shown = (platform: string) => episodes.find((episode) => episode.platform === platform)?.shown;
+    expect([shown("grok"), shown("kimi")]).toEqual([["ls-001"], ["ls-001"]]);
+    // No start was recorded for the Codex session, so its row does not claim it was shown nothing.
+    expect(episodes.find((episode) => episode.platform === "codex")).not.toHaveProperty("shown");
+    expect(episodes).toHaveLength(3);
   });
 
   test("a scheduled tick still runs a project whose worker sessions are all captured already", () => {

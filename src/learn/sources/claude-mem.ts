@@ -31,6 +31,8 @@ export interface ObservationRow {
 export interface SessionRow {
   id: number;
   memory_session_id: string;
+  /** The id the host itself gives the session, which is the one its hooks report. Absent when the observer keeps none. */
+  native_id?: string | null;
   platform_source: string;
   started_at_epoch: number;
   completed_at_epoch: number | null;
@@ -199,7 +201,8 @@ export class ClaudeMemSource {
   sessions(project: string, sinceMs: number, staleBeforeMs: number): SessionRow[] {
     return this.db
       .query<SessionRow, [string, string, number, number]>(
-        `select s.id, s.memory_session_id, s.platform_source, s.started_at_epoch, s.completed_at_epoch,
+        `select s.id, s.memory_session_id, s.content_session_id as native_id, s.platform_source,
+           s.started_at_epoch, s.completed_at_epoch,
            (select count(*) from observations o where o.memory_session_id = s.memory_session_id) as observation_count
          from sdk_sessions s where (s.project = ? or s.project like ?) and s.memory_session_id is not null
            and s.started_at_epoch >= ? and (s.completed_at_epoch is not null or s.started_at_epoch < ?)
