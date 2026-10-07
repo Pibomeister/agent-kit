@@ -539,6 +539,20 @@ describe("worker session parsers", () => {
     expect(session.observations.map((row) => row.text)).toEqual(["prompt: Ship the retry fix.\nreply: Shipped."]);
   });
 
+  test("a Droid prompt that names an injected block's opening tag is kept whole", () => {
+    const asked = "why does the hook print <system-reminder> twice?";
+    const path = writeDroid(scratch("ak-droid-tag-"), "tag", "/fixture/worktree", [
+      droidPrompt(asked),
+      droidReply("It runs once per matcher."),
+      DROID_TURN_OUTCOME,
+    ]);
+    const session = requiredSession(parseDroidSession(path));
+    expect(session.request).toBe(asked);
+    expect(session.observations.map((row) => row.text)).toEqual([
+      `prompt: ${asked}\nreply: It runs once per matcher.`,
+    ]);
+  });
+
   test("a Droid sub-agent session takes its request from the brief it was started with", () => {
     const path = writeDroid(scratch("ak-droid-sub-"), "sub", "/fixture/worktree", [
       droidPrompt("# Task Tool Invocation\nSubagent type: worker\n\nAudit the retry helper."),
@@ -706,6 +720,32 @@ describe("worker scan against what the ledger holds", () => {
     const touched = third.sessions.get("/code/shop") ?? [];
     expect(touched).toHaveLength(1);
     expect(stored.capture(touched)).toEqual({ observations: 0, sessions: 1 });
+    expect(scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored }).sessions.size).toBe(0);
+  });
+
+  test("a quiet Droid session with no end recorded is parsed once, and again once its record changes", () => {
+    const droid = scratch("ak-worker-quiet-");
+    const turn = [droidPrompt("tidy the cart module"), droidReply("The cart module is tidy.")];
+    const quiet = new Date(Date.now() - 2 * 3_600_000);
+    const path = writeDroid(droid, "quiet", "/code/shop", turn);
+    utimesSync(path, quiet, quiet);
+    const homes = { codex: [], droid: [droid], grok: [], kimi: [] };
+    const stored = WorkerSessionSource.open(ensureMemoryLedger(scratch("ak-capture-quiet-")));
+    const first = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    const parsed = first.sessions.get("/code/shop") ?? [];
+    expect(parsed.map((item) => item.completed_at_epoch)).toEqual([null]);
+    expect(stored.capture(parsed)).toEqual({ observations: 1, sessions: 1 });
+
+    const second = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    expect(second.sessions.size).toBe(0);
+    expect(second.activity.get("/code/shop")).toBe(first.activity.get("/code/shop") ?? 0);
+
+    writeDroid(droid, "quiet", "/code/shop", [...turn, droidPrompt("now the checkout"), droidReply("Done too.")]);
+    utimesSync(path, quiet, quiet);
+    const third = scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored });
+    const grown = third.sessions.get("/code/shop") ?? [];
+    expect(grown).toHaveLength(1);
+    expect(stored.capture(grown)).toEqual({ observations: 1, sessions: 1 });
     expect(scanWorkerSessions(homes, () => "/code/shop", { stored: () => stored }).sessions.size).toBe(0);
   });
 

@@ -180,8 +180,10 @@ uses isolated homes. The scheduler passes these variables through when they were
 The scan reads only each recent record's cwd and session id first: the Codex `session_meta` line,
 Droid's `session_start` line, Grok's `summary.json`, Kimi's `state.json`. Every record is placed before any is parsed. A record is
 parsed in full only when section 3 places that cwd under a root this tick will run, and the ledger
-does not already hold the session finished as its record now stands. A session left unparsed for
-that last reason still counts as worker activity for its project.
+does not already hold the session finished as its record now stands. A Droid session with no end
+recorded is likewise left unparsed once the ledger holds every turn of it, until its record changes
+in size or time. A session left unparsed for
+either of those reasons still counts as worker activity for its project.
 
 Encrypted content, reasoning/`think` parts, the instruction and environment blocks Codex injects as
 user messages, synthetic Grok context and non-user Kimi injections are not observations. Neither are
