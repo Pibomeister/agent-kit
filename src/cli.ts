@@ -87,6 +87,7 @@ const COMMANDS = [
   "lifecycle",
   "firstmate",
   "tracker",
+  "kb",
   "doctor",
   "update",
   "learn",

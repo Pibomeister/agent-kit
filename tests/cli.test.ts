@@ -155,6 +155,12 @@ describe("ak", () => {
     expect(runCli(["valdiate"], { cwd: cleanTree(), io: io.io })).toBe(2);
     expect(io.err[0]).toBe("ak: unknown command 'valdiate'; did you mean validate?");
   });
+
+  test("an unknown kb command suggests kb", () => {
+    const io = capture();
+    expect(runCli(["kbb"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.err[0]).toBe("ak: unknown command 'kbb'; did you mean kb?");
+  });
 });
 
 describe("ak validate", () => {
