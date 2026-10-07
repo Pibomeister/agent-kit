@@ -14631,7 +14631,7 @@ var import__20208 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync4 } from "child_process";
 import { existsSync as existsSync31, readFileSync as readFileSync22, realpathSync as realpathSync6 } from "fs";
 import { homedir as homedir5 } from "os";
-import { basename as basename16, isAbsolute as isAbsolute9, join as join32, relative as relative6 } from "path";
+import { basename as basename16, isAbsolute as isAbsolute9, join as join32, relative as relative7 } from "path";
 // schemas/common.schema.json
 var common_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -22420,7 +22420,7 @@ var import_ajv2 = __toESM(require_ajv(), 1);
 
 // src/learn/core/paths.ts
 import { readFileSync as readFileSync8, statSync as statSync8 } from "fs";
-import { delimiter, dirname as dirname6, join as join12, resolve as resolve3 } from "path";
+import { delimiter, dirname as dirname6, join as join12, relative as relative5, resolve as resolve3, sep as sep2 } from "path";
 function projectFolderName(path) {
   return resolve3(path).replace(/[^A-Za-z0-9-]/g, "-");
 }
@@ -22461,6 +22461,12 @@ function searched(cwd) {
 }
 function rootOf(cwd) {
   return searched(cwd).find((dir) => isDirectory(join12(dir, ".git"))) ?? null;
+}
+function inProtectedFolder(path, home, platform = process.platform) {
+  if (platform !== "darwin")
+    return false;
+  const [folder] = relative5(resolve3(home).toLowerCase(), resolve3(path).toLowerCase()).split(sep2);
+  return folder === "documents" || folder === "desktop" || folder === "downloads";
 }
 function linkedWorktree(cwd) {
   for (const worktree of searched(cwd)) {
@@ -23937,7 +23943,7 @@ function ageWords(ms, now = nowMs()) {
 
 // src/learn/memory/registry.ts
 import { mkdirSync as mkdirSync11, statSync as statSync12 } from "fs";
-import { basename as basename7, dirname as dirname10, join as join19, resolve as resolve5, sep as sep2 } from "path";
+import { basename as basename7, dirname as dirname10, join as join19, resolve as resolve5, sep as sep3 } from "path";
 var SKIP_CWD = ["/plugins/cache/", "/tmp/", "/private/tmp/"];
 var DISCOVERY_DAYS = 14;
 function readRegistry2(config) {
@@ -23958,7 +23964,7 @@ function recordWorktree(config, cwd, root) {
   writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
 }
 function ineligible(root) {
-  if (`${root}${sep2}`.includes(`${sep2}.no-mistakes${sep2}repos${sep2}`))
+  if (`${root}${sep3}`.includes(`${sep3}.no-mistakes${sep3}repos${sep3}`))
     return "managed by no-mistakes";
   try {
     const bare = statSync12(join19(root, ".git"), { throwIfNoEntry: false }) === undefined && statSync12(join19(root, "HEAD")).isFile() && statSync12(join19(root, "objects")).isDirectory();
@@ -25322,7 +25328,7 @@ var import_ajv3 = __toESM(require_ajv(), 1);
 import { createHash as createHash5 } from "crypto";
 import { closeSync as closeSync2, existsSync as existsSync20, openSync as openSync2, readdirSync as readdirSync6, readFileSync as readFileSync14, readSync, statSync as statSync14 } from "fs";
 import { homedir as homedir3 } from "os";
-import { basename as basename9, delimiter as delimiter2, dirname as dirname11, isAbsolute as isAbsolute6, join as join22, relative as relative5, resolve as resolve6, sep as sep3 } from "path";
+import { basename as basename9, delimiter as delimiter2, dirname as dirname11, isAbsolute as isAbsolute6, join as join22, relative as relative6, resolve as resolve6, sep as sep4 } from "path";
 
 // src/learn/memory/redact.ts
 var SECURITY_KINDS = [
@@ -25693,7 +25699,7 @@ function normalizedFile(path, cwd) {
     return null;
   if (!isAbsolute6(clean2))
     return clean2.replace(/^\.\//, "");
-  const rel = relative5(cwd, clean2);
+  const rel = relative6(cwd, clean2);
   return rel !== "" && !rel.startsWith("..") && !isAbsolute6(rel) ? rel : scrubCaptured(clean2);
 }
 function filesFromValue(value, cwd) {
@@ -26012,8 +26018,11 @@ function splitHomes(value, fallback) {
   const homes = value?.split(delimiter2).map((entry) => entry.trim()).filter((entry) => entry !== "") ?? [];
   return homes.length > 0 ? [...new Set(homes.map((entry) => resolve6(entry)))] : [fallback];
 }
+function userHome(env = process.env) {
+  return env.HOME && env.HOME.trim() !== "" ? env.HOME : homedir3();
+}
 function workerHomes(env = process.env) {
-  const home = env.HOME && env.HOME.trim() !== "" ? env.HOME : homedir3();
+  const home = userHome(env);
   const codex = env.CODEX_HOME && env.CODEX_HOME.trim() !== "" ? env.CODEX_HOME : join22(home, ".codex");
   const grok = env.GROK_HOME && env.GROK_HOME.trim() !== "" ? env.GROK_HOME : join22(home, ".grok");
   const kimi = env.KIMI_HOME && env.KIMI_HOME.trim() !== "" ? env.KIMI_HOME : join22(home, ".kimi-code");
@@ -26048,17 +26057,21 @@ function walk(dir, accept) {
   }
   return out.toSorted();
 }
-function workerRootResolver(registry, worktrees) {
+var PROTECTED_FOLDER = Symbol("protected-folder");
+function workerRootResolver(registry, worktrees, guard = {}) {
   const roots = new Set(Object.values(registry).map((entry) => entry.root));
   const places = [
     ...[...roots].map((root) => [root, root]),
     ...Object.entries(worktrees).filter(([, root]) => roots.has(root))
   ].toSorted((a, b) => b[0].length - a[0].length);
+  const home = guard.home ?? userHome();
   return (cwd) => {
     const path = resolve6(cwd);
-    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep3}`))?.[1];
+    const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep4}`))?.[1];
     if (placed !== undefined)
       return placed;
+    if (inProtectedFolder(path, home, guard.platform))
+      return PROTECTED_FOLDER;
     const root = linkedWorktree(path)?.root;
     return root !== undefined && roots.has(root) ? root : null;
   };
@@ -26072,7 +26085,8 @@ function writtenAt(path) {
 }
 function scanWorkerSessions(homes, rootFor, options = {}) {
   const sinceMs = options.sinceMs ?? Date.now() - CAPTURE_WINDOW_MS;
-  const scan = { sessions: new Map, activity: new Map, unmatched: 0 };
+  const scan = { sessions: new Map, activity: new Map, unmatched: 0, protectedFolders: 0 };
+  const protectedCwds = new Set;
   const active = (root, at) => scan.activity.set(root, Math.max(scan.activity.get(root) ?? 0, at));
   const placed = new Map;
   const guarded2 = (path, step) => {
@@ -26091,6 +26105,11 @@ function scanWorkerSessions(homes, rootFor, options = {}) {
       if (cwd === null)
         return;
       const root = rootFor(cwd);
+      if (root === PROTECTED_FOLDER) {
+        protectedCwds.add(cwd);
+        scan.protectedFolders = protectedCwds.size;
+        return;
+      }
       if (root === null) {
         scan.unmatched += 1;
         return;
@@ -27579,7 +27598,8 @@ function tickRun(ctx, options) {
         }
         return stores.get(root) ?? null;
       };
-      const scan = scanWorkerSessions(workerHomes(ctx.env), workerRootResolver(registry, readWorktrees(ctx.config)), {
+      const rootFor = workerRootResolver(registry, readWorktrees(ctx.config), { home: userHome(ctx.env) });
+      const scan = scanWorkerSessions(workerHomes(ctx.env), rootFor, {
         sinceMs: capturedSince,
         warn: (warning2) => tickLog(ctx, warning2),
         wanted: (root, newestMs) => allowed(root) && (options.only === undefined ? Math.max(claudeActivity(root), newestMs) >= cutoff : root === options.only),
@@ -27587,6 +27607,8 @@ function tickRun(ctx, options) {
       });
       if (scan.unmatched > 0)
         tickLog(ctx, `worker sessions skipped: ${scan.unmatched} outside every registered root and worktree`);
+      if (scan.protectedFolders > 0)
+        tickLog(ctx, `worker working directories skipped: ${scan.protectedFolders} in a macOS protected folder, worktree pointer not read`);
       for (const entry of Object.values(registry)) {
         if (options.only !== undefined && entry.root !== options.only)
           continue;
@@ -30884,7 +30906,7 @@ function checkLinearis(root, backend) {
     if (!existsSync31(binary))
       continue;
     const target = realpathSync6(binary);
-    if ([root, top].every((folder) => relative6(join32(realpathSync6(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative7(join32(realpathSync6(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version = command(binary, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version.ok && version.output === "2026.8.0")
