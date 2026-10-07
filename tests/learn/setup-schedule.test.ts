@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import type { LearnContext } from "../../src/learn/core/context.ts";
 import { projectFolderName } from "../../src/learn/core/paths.ts";
@@ -241,6 +241,20 @@ describe("setup schedule", () => {
       ["launchctl", "bootout", "gui/501/dev.agent-kit.learn"],
       ["launchctl", "bootstrap", "gui/501", plist],
     ]);
+  });
+
+  test("a pre-existing unit readable by others is narrowed to its owner, whether it changed or not", () => {
+    for (const same of [true, false]) {
+      const home = scratch("ak-home-");
+      const d = deps({ platform: "darwin", home });
+      const ctx = context({ CLAUDE_CONFIG_DIR: scratch("ak-cfg-"), PATH: "/bin" });
+      const plist = join(home, "Library", "LaunchAgents", "dev.agent-kit.learn.plist");
+      mkdirSync(dirname(plist), { recursive: true });
+      writeFileSync(plist, same ? launchdPlist(ctx, d, 900) : "an older unit\n", { mode: 0o644 });
+      chmodSync(plist, 0o644);
+      expect(schedule(ctx, d, { intervalS: 900 })).toBe(0);
+      expect(statSync(plist).mode & 0o777).toBe(0o600);
+    }
   });
 
   test("systemd: writes service and timer, enables the timer with --load, reports a failed enable", () => {

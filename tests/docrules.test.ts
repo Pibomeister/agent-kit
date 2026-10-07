@@ -12,6 +12,7 @@ import {
 } from "../src/validation/docrules.ts";
 import { artifactHash } from "../src/util/hash.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
+import { parseJson, updated, type JsonValue, type Path } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 function envelope(schema: string, id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -167,6 +168,137 @@ describe("charter rules", () => {
   });
 });
 
+/** The error messages a run reports, so a row can name the one clause it is about. */
+function messagesOf(issues: Array<{ severity: string; message: string }>): string[] {
+  return issues.flatMap((i) => (i.severity === "error" ? [i.message] : []));
+}
+
+type Doc = ReturnType<typeof envelope>;
+
+/** A copy of a builder's document with one nested member replaced (or deleted, for `undefined`). */
+function changed(doc: Doc, path: Path, value: JsonValue | undefined): Doc {
+  const next = updated(parseJson(JSON.stringify(doc)), path, () => value);
+  return next instanceof Object && !Array.isArray(next) ? next : {};
+}
+
+/** The charter fixture's supervisors block, with one seat changed or a third added. */
+function supervisors(seats: JsonValue[], flags: { may_implement?: boolean } = {}) {
+  return {
+    supervisors: {
+      seats,
+      independence: "declared-independent",
+      tie_breaker_allowed: false,
+      may_implement: flags.may_implement ?? false,
+    },
+  };
+}
+
+const SEAT_A = { id: "seat-a", role: "supervisor", filled_by: "reviewer-a" };
+const SEAT_B = { id: "seat-b", role: "supervisor", filled_by: "reviewer-b" };
+
+/** A fresh immutability block per call: charter() writes the sealed hash into the object it is given. */
+function immutability(change: { worker_writable?: boolean; location?: string }) {
+  return {
+    immutability: {
+      immutable: true,
+      worker_writable: change.worker_writable ?? false,
+      hash: "",
+      location: change.location ?? "kb/charters/c1.json",
+    },
+  };
+}
+
+function forcePush(approval: { by: string; hash: string }) {
+  return {
+    sensitive_grants: [
+      {
+        action: "force-push",
+        scope: "app",
+        approval: { artifact_hash: approval.hash, by: approval.by, authority: "explicit", at: "2026-09-19T00:00:00Z" },
+      },
+    ],
+  };
+}
+
+/** The sealed hash a charter fixture carries. */
+function hashOf(doc: Doc): string {
+  const hash = JSON.stringify(doc["immutability"]).match(/"hash":"([^"]+)"/)?.[1];
+  if (hash === undefined) throw new Error("charter fixture carries no sealed hash");
+  return hash;
+}
+
+describe("charter rules, one sealed defect per row", () => {
+  // Every row is built by charter(), which seals the hash after the change, so no row is decided by the hash clause.
+  const rows: [string, () => [Doc, Doc[]], string][] = [
+    [
+      "a worker-writable charter",
+      () => [charter(immutability({ worker_writable: true })), []],
+      "charter declares worker_writable: true; a charter a worker can edit is not a charter",
+    ],
+    [
+      "a location inside a repo's writable paths",
+      () => [charter(immutability({ location: "src/charters/c1.json" })), []],
+      "charter location src/charters/c1.json falls inside worker-writable scope src/** declared for repo app",
+    ],
+    [
+      "a sensitive grant with no approval",
+      () => [charter({ sensitive_grants: [{ action: "force-push", scope: "app" }] }), []],
+      "sensitive grant force-push carries no approval",
+    ],
+    [
+      "a sensitive grant approved by an agent",
+      () => [charter(forcePush({ by: "agent", hash: `sha256:${"b".repeat(64)}` })), []],
+      "sensitive grant force-push is not approved explicitly by a human",
+    ],
+    [
+      "three supervisor seats",
+      () => [charter(supervisors([SEAT_A, SEAT_B, { id: "seat-c", role: "supervisor", filled_by: "reviewer-c" }])), []],
+      "supervisors.seats has 3 seats; plan 7.3 requires exactly two, with no tie-breaker",
+    ],
+    [
+      "two seats with one id",
+      () => [charter(supervisors([SEAT_A, { ...SEAT_B, id: "seat-a" }])), []],
+      "supervisor seat ids are not unique",
+    ],
+    [
+      "a seat filled by the implementer",
+      () => [charter(supervisors([SEAT_A, { ...SEAT_B, filled_by: "implementer" }])), []],
+      "a supervisor seat is filled by the implementer",
+    ],
+    [
+      "supervisors that may implement",
+      () => [charter(supervisors([SEAT_A, SEAT_B], { may_implement: true })), []],
+      "supervisors declare may_implement or tie_breaker_allowed; plan 7.3 forbids both",
+    ],
+    [
+      "a grant still bound to the superseded hash",
+      () => {
+        const old = charter({ status: "superseded" });
+        const next = charter({
+          id: "charter-2",
+          supersedes: { id: "charter-1", hash: hashOf(old) },
+          ...forcePush({ by: "human", hash: hashOf(old) }),
+        });
+        return [next, [old]];
+      },
+      "sensitive grant force-push is still bound to the superseded charter hash",
+    ],
+    [
+      "a superseded charter left active",
+      () => {
+        const old = charter();
+        return [charter({ id: "charter-2", supersedes: { id: "charter-1", hash: hashOf(old) } }), [old]];
+      },
+      "charter charter-1 is superseded by this one but its own status is active",
+    ],
+  ];
+  test.each(rows)("%s is refused by its own clause", (_name, build, message) => {
+    expect(messagesOf(run(charter()))).toEqual([]);
+    const [doc, others] = build();
+    expect(messagesOf(run(doc, others))).toContainEqual(expect.stringContaining(message));
+  });
+});
+
 // --------------------------------------------------------------- decision ---
 
 function decision(extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -264,6 +396,92 @@ describe("decision rules", () => {
     const doc = decision();
     (doc["authority_check"] as Record<string, unknown>)["result"] = "fail";
     expect(rulesOf(run(doc))).toContain("decision.ruling-requires-a-passed-authority-check-not-mere-agreement");
+  });
+});
+
+const DECISION_SEAT_A = { id: "seat-a", filled_by: "reviewer-a", independent: true, may_implement: false };
+const DECISION_SEAT_B = { id: "seat-b", filled_by: "reviewer-b", independent: true, may_implement: false };
+const JUDGMENT_A = {
+  seat: "seat-a",
+  by: "reviewer-a",
+  choice: "ship",
+  rationale: "ok",
+  unresolved_assumptions: [],
+  escalate: false,
+};
+const AUTHORITY_CHECK = {
+  deterministic: true,
+  charter_permits: true,
+  required_evidence_present: true,
+  seats_independent: true,
+  checkpoint_in_charter: true,
+  both_judgments_returned: true,
+  result: "pass",
+};
+
+describe("decision rules, one defect per row", () => {
+  const rows: [string, () => Doc, string][] = [
+    [
+      "three seats",
+      () =>
+        decision({
+          seats: [
+            DECISION_SEAT_A,
+            DECISION_SEAT_B,
+            { id: "seat-c", filled_by: "reviewer-c", independent: true, may_implement: false },
+          ],
+        }),
+      "decision declares 3 seats; plan 7.3 requires exactly two",
+    ],
+    [
+      "a seat not declared independent",
+      () => decision({ seats: [{ ...DECISION_SEAT_A, independent: false }, DECISION_SEAT_B] }),
+      "seat seat-a is not declared independent",
+    ],
+    [
+      "a seat that may implement",
+      () => decision({ seats: [{ ...DECISION_SEAT_A, may_implement: true }, DECISION_SEAT_B] }),
+      "seat seat-a may implement",
+    ],
+    [
+      "a seat filled by the implementer",
+      () => decision({ seats: [DECISION_SEAT_A, { ...DECISION_SEAT_B, filled_by: "implementer" }] }),
+      "seat seat-b is filled by implementer, which is the implementer of the work under decision",
+    ],
+    [
+      "a judgment naming an undeclared seat",
+      () => changed(decision(), ["judgments", 1, "seat"], "seat-c"),
+      "judgment 1 names seat seat-c, which is not a declared seat",
+    ],
+    [
+      "both judgments claimed with one recorded",
+      () => decision({ judgments: [JUDGMENT_A], agreement: undefined, ruling: undefined }),
+      "both_judgments_returned is true with 1 judgment(s) recorded",
+    ],
+    [
+      "seats claimed dependent against the recorded seating",
+      () => decision({ authority_check: { ...AUTHORITY_CHECK, seats_independent: false, result: "fail" } }),
+      "seats_independent is false but the recorded seating gives true",
+    ],
+    [
+      "a failing result whose components all pass",
+      () => decision({ authority_check: { ...AUTHORITY_CHECK, result: "fail" }, ruling: undefined }),
+      "authority_check.result is fail while its components give pass",
+    ],
+    [
+      "a ruling decided on one judgment",
+      () => decision({ judgments: [JUDGMENT_A], agreement: undefined, authority_check: undefined }),
+      "ruling is decided with 1 judgment(s); a missing judgment is a blocked checkpoint",
+    ],
+    [
+      "grants issued without a decided ruling",
+      () => decision({ ruling: undefined, grants_issued: [{ covers: "spec-approval" }] }),
+      "grants are issued without a decided ruling",
+    ],
+  ];
+  test.each(rows)("%s is refused by its own clause", (_name, build, message) => {
+    expect(messagesOf(run(decision()))).toEqual([]);
+    expect(messagesOf(run(build()))).toContainEqual(expect.stringContaining(message));
   });
 });
 
@@ -497,6 +715,88 @@ describe("finding rules", () => {
       conflicting_evidence: [{ ref: "receipt-2", kind: "receipt" }],
     });
     expect(rulesOf(run(doc))).not.toContain("finding.low-confidence-security-is-adjudicated-not-filtered");
+  });
+});
+
+const FINGERPRINT_INPUTS = {
+  rule: "input-validation",
+  symbol_or_path: "src/handler.ts",
+  evidence_digest: `sha256:${"a".repeat(64)}`,
+};
+
+function synthesis(change: { field: string; from: string; to: string }) {
+  return { of: { id: "finding-0", hash: `sha256:${"a".repeat(64)}` }, changes: [change], rationale: "regraded" };
+}
+
+describe("dossier, event and finding rules, one defect per row", () => {
+  const rows: [string, () => [Doc, Doc[]], () => Doc, string][] = [
+    [
+      "an index claiming fresh with no revision",
+      () => [dossier({ index: { freshness: "fresh" } }), []],
+      dossier,
+      'index claims freshness "fresh" with no index_revision to compare against the dossier\'s source revision',
+    ],
+    [
+      "an event classified as trusted",
+      () => [event({ trust: { classification: "trusted", grants_authority: false } }), []],
+      event,
+      "trust.classification is trusted; every inbound event is an untrusted claim",
+    ],
+    [
+      "a remote effect with no idempotency key",
+      () => [event({ side_effects_performed: [{ effect: "pr-comment", at: "2026-09-19T00:00:00Z" }] }), []],
+      event,
+      "side_effects_performed[0] (pr-comment) is a remote effect with no idempotency key",
+    ],
+    [
+      "a line-bearing fingerprint input",
+      () => [
+        finding({ fingerprint: { value: `sha256:${"f".repeat(64)}`, inputs: { ...FINGERPRINT_INPUTS, line: 12 } } }),
+        [],
+      ],
+      finding,
+      "fingerprint input line is line-bearing",
+    ],
+    [
+      "a fingerprint value shared by different inputs",
+      () => [
+        finding(),
+        [
+          finding({
+            id: "finding-2",
+            fingerprint: {
+              value: `sha256:${"f".repeat(64)}`,
+              inputs: { ...FINGERPRINT_INPUTS, symbol_or_path: "src/other.ts" },
+            },
+          }),
+        ],
+      ],
+      finding,
+      `fingerprint value sha256:${"f".repeat(64)} is shared with templates/other-0.json, which has different identity inputs`,
+    ],
+    [
+      "a presentation label with no severity",
+      () => [finding({ presentation_label: "blocker", severity: undefined }), []],
+      finding,
+      "presentation_label blocker is recorded with no severity",
+    ],
+    [
+      "a synthesis that softens the grade it records",
+      () => [finding({ severity: "P2", synthesis: synthesis({ field: "severity", from: "P0", to: "P2" }) }), []],
+      finding,
+      'synthesis change 0 moves severity from "P0" to "P2", making the finding',
+    ],
+    [
+      "a synthesis whose to-value is not what the finding holds",
+      () => [finding({ synthesis: synthesis({ field: "severity", from: "P2", to: "P0" }) }), []],
+      finding,
+      'synthesis change 0 records severity to "P0" but this finding holds "P1"',
+    ],
+  ];
+  test.each(rows)("%s is refused by its own clause", (_name, build, base, message) => {
+    expect(messagesOf(run(base()))).toEqual([]);
+    const [doc, others] = build();
+    expect(messagesOf(run(doc, others))).toContainEqual(expect.stringContaining(message));
   });
 });
 
@@ -753,6 +1053,43 @@ describe("project rules", () => {
   });
 });
 
+describe("project rules, one defect per row", () => {
+  const rows: [string, () => Doc, string][] = [
+    [
+      "a project-local knowledgebase",
+      () => changed(project(), ["kb", "ownership"], "project"),
+      "kb.ownership is project; central ownership is not configurable (ADR-0001)",
+    ],
+    [
+      "numeric guidance enforced as a gate",
+      () => changed(project(), ["guidance", "pr_size", "enforcement"], "blocking"),
+      "guidance.pr_size.enforcement is blocking; numeric guidance is advisory and never a gate",
+    ],
+    [
+      "a tracker mirrored twice",
+      () =>
+        changed(
+          project(),
+          ["tracker_policy", "mirrors"],
+          [
+            { system: "linear", role: "projection" },
+            { system: "linear", role: "projection" },
+          ],
+        ),
+      "tracker mirror 1 duplicates linear",
+    ],
+    [
+      "a mirror that is not a projection",
+      () => changed(project(), ["tracker_policy", "mirrors"], [{ system: "linear", role: "authoritative" }]),
+      "tracker mirror 0 (linear) is not declared a projection",
+    ],
+  ];
+  test.each(rows)("%s is refused by its own clause", (_name, build, message) => {
+    expect(messagesOf(run(project()))).toEqual([]);
+    expect(messagesOf(run(build()))).toContainEqual(expect.stringContaining(message));
+  });
+});
+
 // ----------------------------------------------------------------- review ---
 
 function review(extra: Record<string, unknown> = {}): Record<string, unknown> {
@@ -860,6 +1197,84 @@ describe("review rules", () => {
       verdict: "changes-requested",
     });
     expect(rulesOf(run(doc))).toContain("review.material-change-establishes-a-new-baseline");
+  });
+});
+
+describe("review rules, one defect per row", () => {
+  const rows: [string, () => Doc, string][] = [
+    [
+      "a seat not independent of the author",
+      () => changed(review(), ["lanes", 0, "seat", "independent_of_author"], false),
+      "lane code-review/correctness declares a seat that is not independent of the author",
+    ],
+    [
+      "a non-security seat filled by the implementer",
+      () => changed(review(), ["lanes", 0, "seat", "filled_by"], "builder"),
+      "lane code-review/correctness is filled by builder, the implementer of the change under review",
+    ],
+    [
+      "the security seat filled by the implementer",
+      () => changed(review(), ["lanes", 1, "seat", "filled_by"], "builder"),
+      "the security seat is filled by builder, the implementer of the change under review",
+    ],
+    [
+      "three fix cycles allowed",
+      () => review({ fix_cycles: { allowed: 3, used: 0 } }),
+      "fix_cycles.allowed is 3; plan 6.3 caps it at two",
+    ],
+    [
+      "more cycles used than allowed",
+      () => review({ fix_cycles: { allowed: 2, used: 3, exhausted_action: "blocked" }, verdict: "blocked" }),
+      "fix_cycles.used 3 exceeds allowed 2; the third cycle stops",
+    ],
+    [
+      "an exhausted budget that still approves",
+      () => review({ fix_cycles: { allowed: 2, used: 2, exhausted_action: "blocked" } }),
+      "the fix cycle budget is exhausted (2/2) and the run still approves",
+    ],
+    [
+      "an exhausted budget with no exhausted_action",
+      () => review({ fix_cycles: { allowed: 2, used: 2 }, verdict: "blocked" }),
+      "the fix cycle budget is exhausted (2/2) with no exhausted_action recorded",
+    ],
+    [
+      "a delta scope bounded by changed lines",
+      () => review({ delta_scope: { boundary: "changed-lines", affected_behavior: ["login"] } }),
+      "delta_scope.boundary is changed-lines; a changed-lines boundary would suppress an issue in an untouched caller",
+    ],
+    [
+      "a baseline reset with no new scope",
+      () => review({ baseline_reset: { reason: "rebased", invalidated_approvals: ["review-0"], new_scope: false } }),
+      "baseline_reset does not declare a new scope",
+    ],
+  ];
+  test.each(rows)("%s is refused by its own clause", (_name, build, message) => {
+    expect(messagesOf(run(review()))).toEqual([]);
+    expect(messagesOf(run(build()))).toContainEqual(expect.stringContaining(message));
+  });
+});
+
+describe("verification rules, one defect per row", () => {
+  const rows: [string, () => Doc, string][] = [
+    [
+      "a passed command with no exit_status",
+      () => verification({ exit_status: undefined }),
+      "a passed command receipt records no exit_status",
+    ],
+    [
+      "a passed command with no output_digest",
+      () => verification({ output_digest: undefined }),
+      "a passed command receipt records no output_digest",
+    ],
+    [
+      "a zero-exit failure with no disagreement",
+      () => verification({ status: "failed", exit_status: 0 }),
+      "receipt status is failed with exit_status 0 but records no exit_disagreement from the output",
+    ],
+  ];
+  test.each(rows)("%s is refused by its own clause", (_name, build, message) => {
+    expect(messagesOf(run(verification()))).toEqual([]);
+    expect(messagesOf(run(build()))).toEqual([expect.stringContaining(message)]);
   });
 });
 

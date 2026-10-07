@@ -6,7 +6,9 @@
  * built from an env without `CLAUDE_CONFIG_DIR` (`loadConfig({})`) still name
  * the operator's real directories, so a test that writes a judge call or a span
  * passes a config built from the environment, never `loadConfig({})`.
+ * It also makes every test that reaches no assertion fail (see the end of this file).
  */
+import { beforeEach, expect } from "bun:test";
 import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,3 +20,11 @@ process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");
 process.env.CODEX_HOME = join(root, "codex");
 // The knowledgebase registry is the operator's, under their home; no test reads or writes the real one.
 process.env.AK_KB_REGISTRY = join(root, "agent-kit-kb", "registry.json");
+
+// Every test must reach at least one assertion. A loop over an empty list, an early return or a swallowed
+// callback otherwise passes having checked nothing, which is how a test once ran green with zero assertions.
+// Limits: an expect() in a beforeEach hook counts for every test under it, and running `bun test` from
+// inside tests/ skips this file, because bunfig.toml is read from the repository root only.
+beforeEach(() => {
+  expect.hasAssertions();
+});

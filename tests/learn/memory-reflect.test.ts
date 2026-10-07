@@ -291,6 +291,49 @@ describe("reflect", () => {
     expect(kept).toEqual(kept.toSorted((a, b) => a - b));
   });
 
+  test("observations past their own share shrink the summaries' share, so the two still fit the input cap", () => {
+    const dir = scratch();
+    const dbPath = join(dir, "mem.db");
+    const mem = new MemFixture(dbPath);
+    const now = Date.now();
+    mem.db.transaction(() => {
+      for (let index = 0; index < 60; index += 1) {
+        const sid = `${index.toString(16).padStart(8, "0")}-0000`;
+        mem.session({ sid, project: "app", started: now - 3_600_000 });
+        for (let n = 0; n < 4; n += 1)
+          mem.observation({
+            sid,
+            project: "app",
+            type: "discovery",
+            title: `fact ${index}.${n}`,
+            facts: ["f".repeat(600)],
+            at: now,
+          });
+        mem.summary({
+          sid,
+          project: "app",
+          request: "r".repeat(600),
+          completed: "c".repeat(600),
+          next: "n".repeat(600),
+        });
+      }
+    })();
+    mem.close();
+    const source = ClaudeMemSource.open(dbPath);
+    if (!source) throw new Error("claude-mem source did not open");
+    // About 50,000 characters of observations: more than their 40,000 share, so only the shared budget keeps the
+    // summaries from taking their full 20,000 on top.
+    const observations = fetchNew(source, "app", 0, 50_000);
+    const summaries = source.summaries([...new Set(observations.map((row) => row.memory_session_id))]);
+    const empty = reflectPrompt(testContext(), "", [], []);
+    const prompt = reflectPrompt(testContext(), "", observations, summaries);
+    source.close();
+    const observed = observations.map(formatObservation).join("").length;
+    expect(observed).toBeGreaterThan(INPUT_CHARS - SUMMARY_CHARS);
+    expect(formatSummaries(summaries, Infinity).length).toBeGreaterThan(SUMMARY_CHARS);
+    expect(prompt.length - empty.length).toBeLessThanOrEqual(INPUT_CHARS);
+  });
+
   test("a cold ledger starts from the newest observations and cites only what it was shown", () => {
     const dir = scratch();
     const dbPath = join(dir, "mem.db");
