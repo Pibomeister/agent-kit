@@ -25569,6 +25569,8 @@ var EXIT_HEADER = /^(?:Process exited with code|Exit code:|exit:) (-?\d+)$/;
 var EXIT_FIELD = /"chunk_id":"[^"]*","wall_time_seconds":[\d.]+,"exit_code":(-?\d+)/g;
 var CODEX_INJECTED = /^\s*(?:# AGENTS\.md instructions\b|<environment_context>|<skill>)/;
 var WRITE_TOOLS = /(?:apply[_-]?patch|write|edit|replace|search_replace|notebookedit)/i;
+var DROID_INJECTED = /<(system-reminder|system-notification)>[\s\S]*?<\/\1>/g;
+var DROID_EXIT = /\[Process exited with code (-?\d+)\]\s*$/;
 var jsonValidator2 = new import_ajv3.default({ strict: false });
 var validateJsonValue = jsonValidator2.compile({
   $defs: {
@@ -25741,6 +25743,7 @@ function toolInput(value) {
 }
 function turnLog() {
   const turns = [];
+  const named = new Map;
   const start = (prompt, at) => {
     const turn = { prompt, reply: "", calls: [], files: [], at };
     turns.push(turn);
@@ -25759,13 +25762,22 @@ function turnLog() {
     reply(text, at) {
       current(at).reply = text;
     },
-    call(name, input, cwd, at) {
+    call(name, input, cwd, at, host = {}) {
       const turn = current(at);
-      turn.calls.push({ name, input: input.text, output: "", failed: false });
-      if (WRITE_TOOLS.test(name))
+      const call = { name, input: input.text, output: "", failed: false };
+      turn.calls.push(call);
+      if (host.id !== undefined && host.id !== null)
+        named.set(host.id, call);
+      if (host.writes === true || WRITE_TOOLS.test(name))
         turn.files.push(...filesFromValue(input.parsed, cwd));
     },
-    output(output, at) {
+    output(output, at, id = null) {
+      const answered = id === null ? undefined : named.get(id);
+      if (answered !== undefined) {
+        answered.output = output.text;
+        answered.failed = output.failed;
+        return;
+      }
       if (output.text === "")
         return;
       const turn = current(at);
@@ -25822,7 +25834,7 @@ function session(host, nativeId, cwd, times, log) {
       files_modified: []
     }
   ] : [];
-  return {
+  const captured = {
     native_id: nativeId,
     memory_session_id: stableSessionId(host, nativeId),
     platform: host,
@@ -25837,6 +25849,9 @@ function session(host, nativeId, cwd, times, log) {
     files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
     observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)]
   };
+  if (times.ended === null && settled && times.bytes !== undefined)
+    captured.quiet_bytes = times.bytes;
+  return captured;
 }
 function codexUserContent(value) {
   if (Array.isArray(value))
@@ -25848,6 +25863,25 @@ function codexMeta(row) {
 }
 function codexNativeId(payload) {
   return string(payload?.id) ?? string(payload?.session_id);
+}
+function droidStart(row) {
+  return row?.type === "session_start" ? row : null;
+}
+function droidText(parts, injected) {
+  const texts = parts.flatMap((part) => {
+    const text = part.type === "text" ? string(part.text) : null;
+    const kept = injected === undefined ? text : text?.replace(injected, "").trim() ?? null;
+    return kept === null || kept === "" ? [] : [kept];
+  });
+  return clipped(texts.join(`
+`));
+}
+function droidOutput(part) {
+  const output = toolOutput(part.content);
+  if (part.is_error === true || part.is_error === false)
+    return { text: output.text, failed: part.is_error };
+  const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0 };
 }
 function grokNativeId(dir, summary) {
   return string(object(summary?.info)?.id) ?? basename9(dir);
@@ -25910,6 +25944,54 @@ function parseCodexSession(path, now = Date.now()) {
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
+}
+function parseDroidSession(path, now = Date.now()) {
+  const rows = readJsonLines(path);
+  const start = droidStart(rows[0]);
+  const cwd = string(start?.cwd);
+  const nativeId = string(start?.id);
+  if (cwd === null || nativeId === null)
+    return null;
+  const { mtimeMs: modified, size: bytes } = statSync14(path);
+  const started = epoch(rows.find((row) => row.timestamp !== undefined)?.timestamp, modified);
+  let ended = null;
+  let at = started;
+  const log = turnLog();
+  for (const row of rows) {
+    at = epoch(row.timestamp, at);
+    if (row.type === "agent_turn_outcome" || row.type === "session_end") {
+      ended = Math.max(ended ?? 0, at);
+      continue;
+    }
+    const message = row.type === "message" ? object(row.message) : null;
+    if (message === null || message.visibility !== undefined)
+      continue;
+    const parts = (Array.isArray(message.content) ? message.content : []).flatMap((part) => {
+      const item = object(part);
+      return item === null ? [] : [item];
+    });
+    if (message.role === "user") {
+      ended = null;
+      const text = droidText(parts, DROID_INJECTED);
+      if (text !== "")
+        log.prompt(text, at);
+      for (const part of parts)
+        if (part.type === "tool_result")
+          log.output(droidOutput(part), at, string(part.tool_use_id));
+    } else if (message.role === "assistant") {
+      ended = null;
+      const text = droidText(parts);
+      if (text !== "")
+        log.reply(text, at);
+      for (const part of parts) {
+        if (part.type !== "tool_use")
+          continue;
+        const name = string(part.name) ?? "tool";
+        log.call(name, toolInput(part.input), cwd, at, { id: string(part.id), writes: name === "Create" });
+      }
+    }
+  }
+  return session("droid", nativeId, cwd, { started, ended, modified, now, bytes }, log.turns);
 }
 function grokCwd(dir, summary) {
   const recorded = string(object(summary?.info)?.cwd);
@@ -26024,10 +26106,12 @@ function userHome(env = process.env) {
 function workerHomes(env = process.env) {
   const home = userHome(env);
   const codex = env.CODEX_HOME && env.CODEX_HOME.trim() !== "" ? env.CODEX_HOME : join22(home, ".codex");
+  const factory = env.FACTORY_HOME_OVERRIDE && env.FACTORY_HOME_OVERRIDE.trim() !== "" ? env.FACTORY_HOME_OVERRIDE : home;
   const grok = env.GROK_HOME && env.GROK_HOME.trim() !== "" ? env.GROK_HOME : join22(home, ".grok");
   const kimi = env.KIMI_HOME && env.KIMI_HOME.trim() !== "" ? env.KIMI_HOME : join22(home, ".kimi-code");
   return {
     codex: splitHomes(env.AK_LEARN_CODEX_HOMES, codex),
+    droid: splitHomes(env.AK_LEARN_DROID_HOMES, join22(factory, ".factory")),
     grok: splitHomes(env.AK_LEARN_GROK_HOMES, grok),
     kimi: splitHomes(env.AK_LEARN_KIMI_HOMES, kimi)
   };
@@ -26114,12 +26198,14 @@ function scanWorkerSessions(homes, rootFor, options = {}) {
         scan.unmatched += 1;
         return;
       }
-      const modified = statSync14(record).mtimeMs;
+      const { mtimeMs: modified, size } = statSync14(record);
       const place = placed.get(root) ?? { newest: 0, read: [] };
       placed.set(root, place);
       place.newest = Math.max(place.newest, touched, modified);
       place.read.push(() => guarded2(path, () => {
-        const held = nativeId !== null && modified >= sinceMs ? options.stored?.(root)?.completedAt(stableSessionId(host, nativeId), modified) ?? null : null;
+        const stored2 = nativeId !== null && modified >= sinceMs ? options.stored?.(root) : null;
+        const sid = stableSessionId(host, nativeId ?? "");
+        const held = stored2?.completedAt(sid, modified) ?? (host === "droid" ? stored2?.quietAt(sid, modified, size) : null) ?? null;
         if (held !== null) {
           active(root, held);
           return;
@@ -26138,6 +26224,13 @@ function scanWorkerSessions(homes, rootFor, options = {}) {
         const meta = codexMeta(object(parseJson(firstLine2(path))));
         return { cwd: string(meta?.cwd), nativeId: codexNativeId(meta) };
       }, () => parseCodexSession(path));
+  }
+  for (const home of homes.droid) {
+    for (const path of walk(join22(home, "sessions"), (file) => file.endsWith(".jsonl")))
+      collect("droid", path, path, () => {
+        const start = droidStart(object(parseJson(firstLine2(path))));
+        return { cwd: string(start?.cwd), nativeId: string(start?.id) };
+      }, () => parseDroidSession(path));
   }
   for (const home of homes.grok) {
     for (const path of walk(join22(home, "sessions"), (file) => basename9(file) === "chat_history.jsonl")) {
@@ -26192,7 +26285,7 @@ function storedObservation(item, row, id) {
   };
 }
 function storedSession(item, observationCount) {
-  return {
+  const stored2 = {
     id: 0,
     memory_session_id: item.memory_session_id,
     platform_source: item.platform,
@@ -26207,6 +26300,9 @@ function storedSession(item, observationCount) {
     next_steps: item.next_steps,
     files_modified: item.files_modified
   };
+  if (item.quiet_bytes !== undefined)
+    stored2.quiet_bytes = item.quiet_bytes;
+  return stored2;
 }
 function isCapturedObservation(row) {
   return row.id >= CAPTURE_ID_BASE;
@@ -26263,7 +26359,7 @@ class WorkerSessionSource {
           appended.push(storedObservation(item, row2, ++nextId2));
       }
       const row = this.sessionRows.get(item.memory_session_id);
-      if (appended.length === 0 && (row === undefined || item.completed_at_epoch === null || row.modified_at_epoch === item.modified_at_epoch && row.completed_at_epoch === item.completed_at_epoch))
+      if (appended.length === 0 && (row === undefined || item.completed_at_epoch === null && item.quiet_bytes === undefined || row.modified_at_epoch === item.modified_at_epoch && row.completed_at_epoch === item.completed_at_epoch && row.quiet_bytes === item.quiet_bytes))
         continue;
       fresh.push(...appended);
       revisions.push(storedSession(item, stored2.length + appended.length));
@@ -26287,6 +26383,12 @@ class WorkerSessionSource {
   completedAt(memorySessionId, modifiedMs) {
     const row = this.sessionRows.get(memorySessionId);
     return row !== undefined && row.modified_at_epoch === modifiedMs ? row.completed_at_epoch : null;
+  }
+  quietAt(memorySessionId, modifiedMs, bytes) {
+    const row = this.sessionRows.get(memorySessionId);
+    if (row === undefined || row.modified_at_epoch !== modifiedMs || row.quiet_bytes !== bytes)
+      return null;
+    return this.sessionObservations(memorySessionId).reduce((latest, item) => Math.max(latest, item.created_at_epoch), row.started_at_epoch);
   }
   close() {}
   lastActivityMs(_project) {
@@ -29216,7 +29318,7 @@ function tickArgv(deps) {
 function schedulerLog(ctx) {
   return join27(ctx.config.runtimeDir, "scheduler.log");
 }
-var PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME", "GROK_HOME", "KIMI_HOME"];
+var PASSTHROUGH = ["CLAUDE_MEM_DATA_DIR", "CODEX_HOME", "FACTORY_HOME_OVERRIDE", "GROK_HOME", "KIMI_HOME"];
 var NOT_BAKED = ["AK_LEARN_REPOS"];
 function unitEnvironment(ctx) {
   const out = [];
@@ -29627,7 +29729,7 @@ function doctor(ctx, deps) {
     ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync27(home) ? "" : "   (absent)"}`);
   }
   const stores = workerHomes(ctx.env);
-  for (const host of ["codex", "grok", "kimi"]) {
+  for (const host of ["codex", "droid", "grok", "kimi"]) {
     const homes = stores[host];
     const present = homes.filter((home) => existsSync27(join28(home, "sessions"))).length;
     ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
