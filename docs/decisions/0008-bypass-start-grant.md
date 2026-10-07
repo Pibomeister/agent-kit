@@ -111,7 +111,7 @@ eng-4176 twice). The captain reversed it on 2026-10-06: delete the run claim, ke
 run and phase, and shorten a grant's life to a 12-hour default and a 12-hour maximum. The 12-hour
 cap now bounds how long one grant is good across runs, in place of the run claim, and the task,
 repository and worktree checks are unchanged. Review of the amendment found that without the claim a
-grant could start a phase in another task's run by naming it with `--run`; the captain chose, on
+grant could start a phase in another task's run by naming it with `--run`; Firstmate chose, on
 2026-10-06, to bind the run to the branch instead of adding new state, which review then narrowed to
 the branch's current run.
 
@@ -129,7 +129,7 @@ after a re-start, and only a fresh grant for the same task re-starts the phase, 
 record with `superseded_grant_id`. The end is per run: a later run is a fresh start, and the same
 grant starts the phase there. Only the branch's current run accepts the grant, and a new current run
 comes only from `open --ticket`, so restarting a phase a typed record ended takes a run opened that
-way; the captain accepted this with the amendment, and the use records of both runs show it. A grant for
+way; Firstmate accepted this with the binding, and the use records of both runs show it. A grant for
 another task or another worktree is refused. The mirror holds too: a gate recorded by hand at a
 snapshot cannot be relabelled by
 re-recording that snapshot with `--bypass`, even after a check starts the phase under a grant.
