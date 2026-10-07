@@ -167,6 +167,14 @@ describe("merge and contradiction", () => {
     expect(readFileSync(ledger.path("lessons", "ls-001.md"), "utf8")).toContain("dropped about extraction grounding");
   });
 
+  test("a merge adds the merged lesson's repeat count to the kept one", () => {
+    const ledger = twoLessons();
+    const dropped = loadLessons(ledger).get("ls-002")!;
+    writeLesson(dropped.path, { ...dropped.meta, count: 4 }, dropped.body);
+    applyPairs(ledger, { merge: [["ls-001", "ls-002"]] }, "2026-09-18");
+    expect(loadLessons(ledger).get("ls-001")!.meta.count).toBe(5);
+  });
+
   test("a contradiction marks both sides conflict", () => {
     const ledger = twoLessons();
     applyPairs(ledger, { contradict: [["ls-001", "ls-002"]] }, "2026-09-18");

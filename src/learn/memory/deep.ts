@@ -205,6 +205,7 @@ export function applyPairs(
     km.tags = [...new Set([...list(km.tags), ...list(dm.tags)])].sort();
     km.last_seen = [str(km.last_seen), str(dm.last_seen)].sort().at(-1)!;
     km.merged = [...new Set([...list(km.merged), drop])].sort();
+    km.count = (Number(km.count) || 1) + (Number(dm.count) || 1);
     km.sessions = Math.max(
       sessionsOf(km.evidence, obsSession).size,
       Number(km.sessions) || 0,

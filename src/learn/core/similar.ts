@@ -2,26 +2,32 @@
  * Repeats and resemblances among what the learning runtime records.
  *
  * A repeat is the same content in the same scope: equal after case, Unicode
- * form, punctuation and spacing are normalized. It is counted on the record it
- * repeats, never written as a second record.
+ * form, sentence punctuation and spacing are normalized. Operators and signs
+ * (`!=`, `==`, `<`, `-1`, `?.`) still count, so a statement and its opposite
+ * are never one repeat. It is counted on the record it repeats, never written
+ * as a second record.
  *
  * A resemblance is advisory. A new lesson, pattern or guardrail draft whose
  * content shares enough terms with an existing one lists it as a candidate, so
- * a reviewer can amend or supersede. Candidates are reported in the result and
- * never stored as a relation, never merge anything, never block a write, and
- * an empty list never claims there is no conflict.
+ * a reviewer can amend or supersede. Candidates are reported in the result, and
+ * a knowledgebase proposal record keeps them beside its draft, never inside the
+ * draft. They are never stored as a relation, never merge anything, never block
+ * a write, and an empty list never claims there is no conflict.
  *
  * Both compare the whole content (a lesson's statement, a pattern's problem,
  * root cause and fix), never a title alone: two records about one subject can
  * share no title word, and two unrelated ones can share one.
  */
 
-/** Lowercase, NFKC, every run of non-letters and non-digits one space, trimmed. */
+/** Lowercase, NFKC, quotes, dashes between words and `.,;:!?` ending a word dropped, spacing collapsed, trimmed. */
 export function normalizeContent(text: string): string {
   return text
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/["'‘’“”]/gu, " ")
+    .replace(/(?<=\p{L})\s*[-‐‑–—]+\s*(?=\p{L})/gu, " ")
+    .replace(/[.,;:!?]+(?=\s|$)/gu, " ")
+    .replace(/\s+/gu, " ")
     .trim();
 }
 
@@ -41,7 +47,7 @@ const STOPWORDS: ReadonlySet<string> = new Set(
 /** The content terms of a text: normalized words of two or more characters, stopwords dropped, a plural `s` trimmed. */
 export function terms(text: string): Set<string> {
   const out = new Set<string>();
-  for (const word of normalizeContent(text).split(" ")) {
+  for (const word of normalizeContent(text).split(/[^\p{L}\p{N}]+/u)) {
     if (word.length < 2 || STOPWORDS.has(word)) continue;
     out.add(word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word);
   }

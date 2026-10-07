@@ -204,7 +204,9 @@ export function applyReply(
       continue;
     }
     const key = contentKey(patternContent(fields), "");
-    const same = [...patterns.values()].find((pattern) => contentKey(patternContent(pattern), "") === key);
+    const same = [...patterns.values()].find(
+      (pattern) => str(pattern.meta, "status") !== "retired" && contentKey(patternContent(pattern), "") === key,
+    );
     if (same !== undefined) {
       // A restated pattern is a repeat: its events count on the existing page and no second page is written.
       if (text(spec.tmp_id) !== "") tmpMap.set(text(spec.tmp_id), same.id);

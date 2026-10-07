@@ -59,6 +59,17 @@ describe("normalized content", () => {
     );
   });
 
+  test("operators and signs still count, so a statement and its opposite are never one repeat", () => {
+    expect(contentKey("exit status != 0 is failure", "repo")).not.toBe(
+      contentKey("exit status == 0 is failure", "repo"),
+    );
+    expect(contentKey("retries -1", "repo")).not.toBe(contentKey("retries 1", "repo"));
+    expect(contentKey("Read `a?.b` first", "repo")).not.toBe(contentKey("Read `a.b` first", "repo"));
+    expect(contentKey("Treat exit status != 0 as failure; never retry -1 times.", "repo")).toBe(
+      contentKey('"Treat exit status != 0 as failure" - never retry -1 times!', "repo"),
+    );
+  });
+
   test("terms drop stopwords and a plural s, so negation and filler words do not hide a shared subject", () => {
     expect(terms(POSTGRES)).toEqual(terms("billing SERVICES database: MySQL; Postgres"));
     expect([...terms("Never run the tests without the fixtures")].toSorted()).toEqual(["fixture", "run", "test"]);
@@ -307,6 +318,31 @@ describe("review patterns and guardrail drafts", () => {
     expect(readFileSync(ledger.path("log.md"), "utf8")).toContain(
       "a create restated rp-001; counted there, no new page",
     );
+  });
+
+  test("a create restating a retired pattern writes a new candidate page; the retired page is left as it is", () => {
+    const { ctx, ledger } = reviewSetup([
+      {
+        create_patterns: [
+          create(
+            "Wrong engine for billing",
+            "The billing service database was moved to MySQL.",
+            "Postgres was the agreed engine for billing.",
+            "Keep the billing service database on Postgres.",
+            "h1",
+          ),
+        ],
+        event_matches: [],
+      },
+    ]);
+    writeFileSync(ledger.path("patterns", "rp-001.md"), EXISTING.replace("status: candidate", "status: retired"));
+    appendEvents(ledger, [event("h1", "billing moved to MySQL again")]);
+    const before = must(loadPatterns(ledger).get("rp-001"), "rp-001");
+    expect(maintain(ctx, ledger, "app")).toContain("1 new patterns");
+    const patterns = loadPatterns(ledger);
+    expect(str(must(patterns.get("rp-003"), "rp-003").meta, "status")).toBe("candidate");
+    const after = must(patterns.get("rp-001"), "rp-001");
+    expect([after.meta, after.body]).toEqual([before.meta, before.body]);
   });
 
   test("a new pattern contradicting an existing one is listed against it, though their titles share no word", () => {
