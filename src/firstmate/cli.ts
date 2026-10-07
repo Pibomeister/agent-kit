@@ -63,7 +63,7 @@ export const FIRSTMATE_USAGE = [
   "Seat launch uses stock Firstmate task commands; no command applies the legacy patches. See adapters/firstmate/CONTRACT.md.",
 ];
 
-const DELIVERY_MODES = ["no-mistakes", "direct-PR", "local-only"];
+const DELIVERY_MODES = ["no-mistakes", "direct-PR", "local-only"] as const;
 
 const BOOL = new Set(["json", "dry-run", "verify", "legacy-patched"]);
 const ALLOWED: Record<string, readonly string[]> = {
@@ -233,10 +233,11 @@ export function runFirstmate(argv: readonly string[], io: Io, ledgerDir: string 
     }
     case "brief": {
       if (!need(a, ["run", "charter", "runner-socket", "worker-token", "delivery"], io, sub)) return 2;
-      const delivery = str(a, "delivery");
-      if (delivery !== "no-mistakes" && delivery !== "direct-PR" && delivery !== "local-only") {
+      const requested = str(a, "delivery");
+      const delivery = DELIVERY_MODES.find((mode) => mode === requested);
+      if (delivery === undefined) {
         io.err(
-          `ak firstmate brief: --delivery must be a stock Firstmate mode: ${unknownSelector("mode", delivery ?? "", DELIVERY_MODES)}`,
+          `ak firstmate brief: --delivery must be a stock Firstmate mode: ${unknownSelector("mode", requested ?? "", DELIVERY_MODES)}`,
         );
         return 2;
       }
