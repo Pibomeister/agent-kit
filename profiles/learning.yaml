@@ -58,10 +58,10 @@ includes:
       the knowledgebase as a candidate draft.
 
 prerequisites:
-  - an observation source for the memory loop; claude-mem is the first binding
+  - an observation source for the memory loop; claude-mem and offline Codex, Grok and Kimi session stores are the shipped bindings
   - a review source for the review loop; the `gh` CLI, authenticated, is the first binding
   - a judge command in `AK_LEARN_JUDGE`, defaulting to the host CLI's non-interactive mode; a judged job whose command fails records the failure and writes nothing
-  - "`ak learn setup wire` run once to register the host hooks and the observer's mode file"
+  - "`ak learn setup wire` run once to register Claude and Codex context/review hooks and the claude-mem mode file; offline worker capture itself needs no host hook"
 
 deliberately_excludes:
   - id: writes-inside-a-project-repository

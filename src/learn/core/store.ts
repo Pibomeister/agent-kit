@@ -56,9 +56,11 @@ export function readJsonl<T>(path: string): T[] {
   return out;
 }
 
-export function writeJsonl(path: string, rows: readonly unknown[]): void {
+/** With `gate`, the rows pass the secret gate first (`gateJsonText`). */
+export function writeJsonl(path: string, rows: readonly unknown[], gate?: string): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, rows.map((row) => `${JSON.stringify(row)}\n`).join(""));
+  const lines = rows.map((row) => `${JSON.stringify(row)}\n`).join("");
+  writeFileSync(path, gate === undefined ? lines : gateJsonText(gate, path, lines));
 }
 
 /** With `gate`, the rows pass the secret gate first (`gateJsonText`). */
