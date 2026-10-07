@@ -152,6 +152,12 @@ registered root, the session belongs to that root. That pointer is the only file
 opens inside a repository; a `.git` directory ends the walk. This is what places a Grok or Kimi
 session, since those hosts run no hooks.
 
+On macOS the walk is skipped when the cwd is `~/Documents`, `~/Desktop` or `~/Downloads` or lies
+inside one, decided from the paths as text: a scheduled read there can block on the privacy prompt
+while the tick holds the runtime lock. Such a cwd is placed only by the registered and recorded
+paths above. Otherwise its sessions are not parsed, and the tick logs one line counting those
+working directories, separately from the unplaced count below.
+
 The worktree record is `<runtimeDir>/worktrees.json`, linked worktree path -> registered root. It is
 written in the foreground, where git may run: the session-start, stop and prompt hooks record the
 worktree their own session runs in. The record outlives the worktree and its pointer, so a session
