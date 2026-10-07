@@ -49,6 +49,85 @@ import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+// ── unknown selectors ────────────────────────────────────────────────────────
+
+// A copy of src/util/suggest.ts, which this file cannot import: it ships into bundles importing only
+// `node:` built-ins. tests/suggest.test.ts holds the two to the same answers.
+
+/** A set this small is listed whole when nothing in it is close. */
+const LIST_WHOLE = 6;
+
+/** Optimal string alignment distance: insertions, deletions, substitutions and adjacent swaps. */
+function distance(a: string, b: string): number {
+  // Three rolling rows: the one before last (for swaps), the last, and this one.
+  let twoBack: number[] = [];
+  let last = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let best = Math.min((last[j] ?? 0) + 1, (row[j - 1] ?? 0) + 1, (last[j - 1] ?? 0) + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        best = Math.min(best, (twoBack[j - 2] ?? 0) + 1);
+      row.push(best);
+    }
+    twoBack = last;
+    last = row;
+  }
+  return last[b.length] ?? 0;
+}
+
+/** Every candidate with its distance from `input`, nearest first, ties in code-point order. */
+function ranked(input: string, candidates: readonly string[]): Array<{ candidate: string; d: number }> {
+  const needle = input.toLowerCase();
+  return [...new Set(candidates)]
+    .map((candidate) => ({ candidate, d: distance(needle, candidate.toLowerCase()) }))
+    .toSorted((x, y) => x.d - y.d || (x.candidate < y.candidate ? -1 : x.candidate > y.candidate ? 1 : 0));
+}
+
+/**
+ * The candidates close enough to `input` to be what was meant, nearest first:
+ * within a third of its length in edits (at least one), or containing it, or
+ * contained in it, ignoring case. Substring matches need three characters, so
+ * a one-letter typo does not match everything with that letter in it.
+ */
+export function closest(input: string, candidates: readonly string[], limit = 3): string[] {
+  const needle = input.toLowerCase();
+  if (needle.length === 0) return [];
+  const allowed = Math.max(1, Math.round(needle.length / 3));
+  return ranked(input, candidates)
+    .filter(({ candidate, d }) => {
+      const hay = candidate.toLowerCase();
+      return d <= allowed || (needle.length >= 3 && hay.length >= 3 && (hay.includes(needle) || needle.includes(hay)));
+    })
+    .slice(0, limit)
+    .map((row) => row.candidate);
+}
+
+function orList(items: readonly string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items.at(-1) ?? ""}`;
+}
+
+/**
+ * One line naming the unknown selector and the valid ones nearest to it.
+ *
+ * Close matches come back as "did you mean"; with none, a small set is listed
+ * whole in the caller's order, and a large one by its three nearest members
+ * and its size, so the line stays short whatever the set.
+ */
+export function unknownSelector(kind: string, input: string, candidates: readonly string[]): string {
+  const head = `unknown ${kind} '${input}'`;
+  const near = closest(input, candidates);
+  if (near.length > 0) return `${head}; did you mean ${orList(near)}?`;
+  const known = [...new Set(candidates)];
+  if (known.length === 0) return `${head}; there are none to choose from`;
+  if (known.length <= LIST_WHOLE) return `${head}; valid: ${known.join(", ")}`;
+  const nearest = ranked(input, known)
+    .slice(0, 3)
+    .map((row) => row.candidate);
+  return `${head}; nearest of ${known.length}: ${nearest.join(", ")}`;
+}
+
 // ── the snapshot ─────────────────────────────────────────────────────────────
 
 /**
@@ -1881,7 +1960,7 @@ export function main(
 ): number {
   const sub = argv[0] === "bypass" && argv[1] !== undefined ? `bypass ${argv[1]}` : argv[0];
   if (sub === undefined || !(sub in FLAGS)) {
-    if (sub !== undefined) io.err(`ak lifecycle: unknown subcommand ${sub}`);
+    if (sub !== undefined) io.err(`ak lifecycle: ${unknownSelector("subcommand", sub, Object.keys(FLAGS))}`);
     for (const line of LIFECYCLE_USAGE) io.err(line);
     return 2;
   }
@@ -2188,7 +2267,25 @@ export function main(
     io.out(JSON.stringify(result.decision ?? { run, dir, gates: names, ...result }, null, 2));
   else if (result.ok) io.out(`ok: run ${run} has current evidence for ${names.join(", ")} at ${short(result.head!)}`);
   else for (const r of result.refusals) io.err(r);
+  // A named run the store has never heard of is more likely a typo than a run with nothing recorded yet.
+  if (!result.ok && explicitRun !== undefined && !knownRuns(dir).includes(safeRunId(run)))
+    io.err(`note: in ${dir}, ${unknownSelector("run", run, knownRuns(dir))}`);
   return result.ok ? 0 : 1;
+}
+
+const subdirectories = (at: string): string[] =>
+  existsSync(at)
+    ? readdirSync(at, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    : [];
+
+/** The runs a store holds: a directory per run with records, and `runs/<run>` per opened run. */
+function knownRuns(dir: string): string[] {
+  const reserved = new Set(["runs", "branches", "grant-runs"]);
+  return [
+    ...new Set([...subdirectories(dir).filter((name) => !reserved.has(name)), ...subdirectories(join(dir, "runs"))]),
+  ].toSorted();
 }
 
 /** Run as a script: `node bin/ak-gate.mjs <subcommand> …` from a bundle, or `bun src/lifecycle/gate.ts …`. */

@@ -9,6 +9,7 @@
  * expects the caller to hold the ledger lock.
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
@@ -213,7 +214,7 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
 export function promoteById(ctx: LearnContext, ledger: Ledger, root: string, id: string): string {
   const patterns = loadPatterns(ledger);
   const pattern = patterns.get(id);
-  if (pattern === undefined) return `unknown pattern ${id}`;
+  if (pattern === undefined) return unknownSelector("pattern", id, [...patterns.keys()]);
   if (pattern.meta.status === "retired") return `${id} is retired`;
   if (str(pattern.meta, "promoted_to") !== "")
     return `${id} is already promoted to ${str(pattern.meta, "promoted_to")}`;
@@ -230,11 +231,15 @@ export function promoteById(ctx: LearnContext, ledger: Ledger, root: string, id:
   return `promoted ${id} to guardrails${team ? `; team proposal ${id}` : ""}`;
 }
 
-/** Remove a pattern's bullet and mark it retired. The page and its evidence stay on record. */
-export function retire(ledger: Ledger, id: string): string {
+/**
+ * Remove a pattern's bullet and mark it retired. The page and its evidence stay on record.
+ * A dry run looks the pattern up and writes nothing, so it refuses an unknown id as the real run would.
+ */
+export function retire(ledger: Ledger, id: string, dryRun = false): string {
   const patterns = loadPatterns(ledger);
   const pattern = patterns.get(id);
-  if (pattern === undefined) return `unknown pattern ${id}`;
+  if (pattern === undefined) return unknownSelector("pattern", id, [...patterns.keys()]);
+  if (dryRun) return `dry run: would retire ${id}`;
   pattern.meta.status = "retired";
   pattern.meta.promoted_to = "";
   savePattern(pattern);
@@ -281,7 +286,7 @@ export function rollback(ledger: Ledger, to?: string): string {
     return `reverted '${subject}'`;
   }
   const sha = ledger.git(["rev-parse", "--verify", "--quiet", `${to}^{commit}`]).stdout.trim();
-  if (sha === "") return `unknown revision ${to}`;
+  if (sha === "") return ledger.unknownRevision(to);
   if (ledger.git(["merge-base", "--is-ancestor", sha, "HEAD"]).code !== 0)
     return `${to} is not an ancestor of the ledger's HEAD`;
   const dirty = ledger

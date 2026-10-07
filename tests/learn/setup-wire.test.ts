@@ -307,6 +307,9 @@ describe("setup wire", () => {
     const ctx = context(deps);
     const area = createSetupArea(() => deps);
     expect(area.verbs.wire!.run(parseLearnArgs(["--host", "vim"]), ctx)).toBe(2);
+    expect(ctx.err.at(-1)).toBe(
+      "ak learn setup wire: --host: unknown host 'vim'; valid: claude, codex, droid, grok, kimi",
+    );
     expect(area.verbs.wire!.run(parseLearnArgs(["--host", "claude", "--no-mem"]), ctx)).toBe(0);
     expect(existsSync(join(deps.home, ".claude-mem", "settings.json"))).toBe(false);
   });

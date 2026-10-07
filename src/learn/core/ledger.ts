@@ -72,6 +72,18 @@ export class Ledger {
     return result.code === 0 ? result.stdout.trim() : null;
   }
 
+  /**
+   * What a `--to` that names no commit is told. A revision has no "nearest"
+   * spelling worth computing, so the candidates are the commits a rollback
+   * most often wants: the latest three, newest first.
+   */
+  unknownRevision(rev: string): string {
+    const recent = this.git(["log", "-3", "--format=%h %s"])
+      .stdout.split("\n")
+      .filter((line) => line.trim() !== "");
+    return `unknown revision ${rev}; ${recent.length === 0 ? "the ledger has no commits" : `latest: ${recent.join("; ")}`}`;
+  }
+
   /** `git revert --no-edit <sha>`. Returns false on conflict, after aborting the revert. */
   revert(sha: string): boolean {
     const result = this.git(["revert", "--no-edit", "--no-gpg-sign", sha]);

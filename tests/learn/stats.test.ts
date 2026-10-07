@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import type { LearnConfig } from "../../src/learn/core/config.ts";
 import { projectKey, type SpanRow } from "../../src/learn/core/trace.ts";
+import { registerRoot } from "../../src/learn/memory/registry.ts";
 import { learnStats, runsLine } from "../../src/learn/stats.ts";
 import { gitRepo, scratch, testContext } from "./helpers.ts";
 
@@ -287,6 +288,17 @@ describe("ak learn stats", () => {
     ).toBe(1);
     expect(out.err.join("\n")).toContain("is not inside a git repository");
     expect(out.out).toEqual([]);
+  });
+
+  test("--repo naming no repository is told the registered roots nearest it", async () => {
+    const ctx = testContext();
+    const repo = gitRepo(join(scratch(), "shop"));
+    registerRoot(ctx.config, repo);
+    const out = capture();
+    expect(await runLearn(["stats", "--repo", `${repo}x`], { cwd: scratch(), io: out.io, env: ctx.env })).toBe(1);
+    expect(out.err).toEqual([
+      `ak learn stats: --repo ${repo}x is not inside a git repository: unknown repository '${repo}x'; did you mean ${repo}?`,
+    ]);
   });
 
   test("a bad or bare --days and a bare --repo are usage errors", async () => {

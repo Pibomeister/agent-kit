@@ -6,6 +6,7 @@
  * skill body depends on them (ruling `learning-runtime-is-host-adapter`).
  */
 import { readFileSync } from "node:fs";
+import { unknownSelector } from "../util/suggest.ts";
 import { loadConfig } from "./core/config.ts";
 import type { LearnArea, LearnContext, LearnIo } from "./core/context.ts";
 import { parseLearnArgs } from "./core/context.ts";
@@ -82,13 +83,15 @@ async function dispatch(argv: readonly string[], options: RunLearnOptions): Prom
   const defaulted = fallback !== undefined && (afterArea[0] === undefined || afterArea[0].startsWith("--"));
   const [verbName, ...rest] = defaulted ? [fallback, ...afterArea] : afterArea;
   if (area === undefined) {
-    if (areaName !== undefined) options.io.err(`ak learn: unknown area ${areaName}`);
+    if (areaName !== undefined)
+      options.io.err(`ak learn: ${unknownSelector("area", areaName, Object.keys(LEARN_AREAS))}`);
     for (const line of await learnUsage()) options.io.err(line);
     return 2;
   }
   const verb = verbName === undefined ? undefined : area.verbs[verbName];
   if (verb === undefined) {
-    if (verbName !== undefined) options.io.err(`ak learn ${areaName}: unknown verb ${verbName}`);
+    if (verbName !== undefined)
+      options.io.err(`ak learn ${areaName}: ${unknownSelector("verb", verbName, Object.keys(area.verbs))}`);
     options.io.err(`ak learn ${areaName} — ${area.summary}`);
     for (const entry of Object.values(area.verbs)) options.io.err(`  ${entry.usage}`);
     return 2;

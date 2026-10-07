@@ -4,6 +4,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import { artifactHash, canonicalJson, sha256Hex } from "../util/hash.ts";
+import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
 import type { ResolvedKb } from "./binding.ts";
 import { git } from "./git.ts";
@@ -175,10 +176,16 @@ function scopeProblem(scope: string): KbRefusal {
   );
 }
 
+/** ` (did you mean …?)` when a kind is close to the one given, else nothing. */
+function nearKind(kind: string): string {
+  const near = closest(kind, KB_KINDS);
+  return near.length === 0 ? "" : ` (did you mean ${near.join(" or ")}?)`;
+}
+
 function kindProblem(kind: string): KbRefusal {
   return refused(
     "kb.kind-unknown",
-    `'${kind}' is not a knowledgebase document kind. The nine are ${KB_KINDS.join(", ")}; there is no tenth (ADR-0001 §2).`,
+    `'${kind}' is not a knowledgebase document kind${nearKind(kind)}. The nine are ${KB_KINDS.join(", ")}; there is no tenth (ADR-0001 §2).`,
   );
 }
 
@@ -282,6 +289,30 @@ function renderDocument(meta: DocumentMeta, body: string): string {
  * scope above it, most specific first. A project with no pages returns an
  * empty list, which is a fact and not an error.
  */
+/**
+ * Every scope the project's committed pages sit at, and every scope above one,
+ * sorted. `project` is left out: it always resolves. The read path names these
+ * when a scope it was given holds nothing, so a typo is not mistaken for a
+ * component with no knowledge.
+ */
+export function committedScopes(kb: ResolvedKb): string[] {
+  if (headCommit(kb.root) === null) return [];
+  const base = ["projects", kb.binding.project, "documents"].join("/");
+  const listed = git(kb.root, ["ls-tree", "-r", "-z", "--name-only", "HEAD", `${base}/`]);
+  if (listed.status !== 0) return [];
+  const scopes = new Set<string>();
+  for (const path of listed.stdout.split("\0")) {
+    if (!path.endsWith(".md")) continue;
+    // <base>/<segment>…/<kind>/<id>.md: the segments between base and kind are the scope.
+    const segments = path
+      .slice(base.length + 1)
+      .split("/")
+      .slice(0, -2);
+    for (let depth = 1; depth <= segments.length; depth += 1) scopes.add(segments.slice(0, depth).join("/"));
+  }
+  return [...scopes].toSorted();
+}
+
 export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: string): ReadOutcome | KbRefusal {
   const unknown = kinds.find((kind) => !KB_KINDS.includes(kind));
   if (unknown !== undefined) return kindProblem(unknown);
