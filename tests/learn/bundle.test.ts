@@ -136,6 +136,9 @@ describe("ak learn from a bundle outside any checkout", () => {
         expect(
           readFileSync(join(root, "adapters/observation-source/claude-mem/code--review-learning.json"), "utf8"),
         ).toBe(source);
+        expect(readFileSync(join(root, "provenance/licenses/thedotmack_claude-mem.LICENSE"), "utf8")).toBe(
+          readFileSync(join(REPO, "provenance/licenses/thedotmack_claude-mem.LICENSE"), "utf8"),
+        );
         expectMemModeWired(join(root, "bin", "ak"), source);
       }
     },
