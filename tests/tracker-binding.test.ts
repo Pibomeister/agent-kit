@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
@@ -32,6 +32,9 @@ import { makeTree } from "./helpers/tree.ts";
  * schemas are this repository's, because they are the thing under test; nothing
  * here runs a tracker CLI or opens a network connection.
  */
+
+// Cases spawn git and the CLI several times, so the 5s default times out on a shared host.
+setDefaultTimeout(60_000);
 
 const REPO = join(import.meta.dir, "..");
 

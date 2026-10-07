@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,6 +34,9 @@ import { checkKnowledgebase } from "../src/maintenance/cli.ts";
  * Every repository here is a fixture in a temporary directory and the registry
  * is a scratch file; nothing reads the operator's own registry or knowledgebase.
  */
+
+// Cases spawn git and the CLI several times, so the 5s default times out on a shared host.
+setDefaultTimeout(60_000);
 
 const REPO = join(import.meta.dir, "..");
 
