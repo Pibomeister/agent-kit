@@ -667,6 +667,7 @@ describe("memory tick worker capture", () => {
     const ctx = testContext({
       cwd: main,
       env: {
+        HOME: scratch("ak-fake-home-"),
         AK_LEARN_CODEX_HOMES: join(homes, "codex"),
         AK_LEARN_GROK_HOMES: join(homes, "grok"),
         AK_LEARN_KIMI_HOMES: join(homes, "kimi"),
@@ -687,8 +688,9 @@ describe("memory tick worker capture", () => {
   test("a worktree pointer naming an unregistered root places nothing", () => {
     const { main, linked } = linkedRepo();
     const entry = { mem_project: "registered", last_seen: 1 };
-    expect(workerRootResolver({ other: { ...entry, root: "/code/other" } }, {})(linked)).toBeNull();
-    expect(workerRootResolver({ main: { ...entry, root: main } }, {})(join(linked, "src"))).toBe(main);
+    const guard = { home: scratch("ak-fake-home-") };
+    expect(workerRootResolver({ other: { ...entry, root: "/code/other" } }, {}, guard)(linked)).toBeNull();
+    expect(workerRootResolver({ main: { ...entry, root: main } }, {}, guard)(join(linked, "src"))).toBe(main);
   });
 
   test("a removed worktree's sessions still reach its project, and unplaced sessions are counted in one line", () => {
