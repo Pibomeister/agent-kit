@@ -126,8 +126,10 @@ The project's own release checks, discovered rather than assumed.
    [verification evidence](../../references/verification-evidence/REFERENCE.md) and re-hash any
    declared surface artifacts. On pass, record `ship-preflight` there, with an empty diff for
    no-mistakes delivery. A binding supplies its evidence directory; a bypass uses `--bypass <path>
-   --task <id>`. Recording closes the run; a changed head needs a new run and fresh gates. Compose
-   any PR payload from the ticket, receipts, verdict, evidence digests, risks and rollback fields.
+   --task <id>`. Recording closes the run; at the no-mistakes handoff a changed head needs a new run
+   and fresh gates. Compose any PR payload from the ticket, receipts and verdict, linking the recipe,
+   acceptance-to-evidence matrix and evidence digests with the delegation class, sensitive factors,
+   risks and rollback fields.
 8. For no-mistakes delivery, stop at this immutable handoff. Do not push, open a PR or pass a skip;
    the task's no-mistakes delivery contract owns the branch from here. Follow
    `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`). A deprecated
