@@ -62,6 +62,15 @@ Reconcile before every remote effect, per `adapters/runner-contract/CONTRACT.md`
 Then push through the transport with the deprecated skips below. `--intent` carries only the
 captain's words, as in the handoff path.
 
+Derive an idempotency key for each remote effect from the run id, the operation id, the target
+identity and the input artifact hash, never from a timestamp, a random value, an attempt counter or
+a session id. Read the target back before the effect and again after it. Emit ship-evidence with
+the payload, the pre-flight record and the ship record. Draft the lesson candidate through the
+knowledgebase adapter's draft operation; publishing it is a separate authority. Hand the open pull
+request to the watch lane, and report the ship as prepared rather than finished until that lane
+owns it. The run is complete when the pull request exists with its read-backs recorded and the
+watch lane holds it.
+
 ### Deprecated skip transport
 
 ```
