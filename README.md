@@ -200,7 +200,8 @@ Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
 
-Attribution: `NOTICE`. Full license texts: `provenance/licenses/`.
+Attribution: `NOTICE`. Full license texts: `provenance/licenses/`. `NOTICE` also lists the packages
+inlined into `bin/ak`, whose texts ship in each bundle and inside `bin/ak` itself.
 
 ## Repository documents
 

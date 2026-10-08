@@ -71,6 +71,8 @@ dist/codex/
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
 ├── skills/<id>/SKILL.md        # same bodies as dist/claude-code, different generated keys
 ├── skills/<id>/references/
+├── LICENSES/                   # licence texts of the packages inlined into bin/ak (NOTICE)
+├── provenance/licenses/        # claude-mem LICENSE and NOTICE (NOTICE)
 └── NOTICE, LICENSE
 ```
 
