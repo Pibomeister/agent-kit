@@ -11,6 +11,7 @@ import type { Ledger } from "../core/ledger.ts";
 import type { PatchOp } from "../core/pages.ts";
 import { patchBody } from "../core/pages.ts";
 import { buildPrompt } from "../core/roles.ts";
+import { type Candidate, contentKey, similarLine, similarTo } from "../core/similar.ts";
 import { readJson, readText, todayUtc, writeJson } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { loadEvents, type ReviewEvent } from "./events.ts";
@@ -112,6 +113,10 @@ export interface ApplyState {
   /** event hash -> pattern ids it was counted against. */
   processed: Record<string, string[]>;
   newIds: Set<string>;
+  /** Existing patterns a create restated, which counted its events instead of a duplicate page; once per create. */
+  repeated: string[];
+  /** Created patterns resembling an existing one, with the candidates a reviewer may amend or supersede. */
+  similar: Array<{ id: string; candidates: Candidate[] }>;
   notes: string[];
   /** Why parts of a reply were discarded. Written to the log. */
   rejected: string[];
@@ -123,6 +128,8 @@ export function emptyState(patterns: Map<string, Pattern>): ApplyState {
     tally: { total: 0, repeat: 0, fresh: 0 },
     processed: {},
     newIds: new Set(),
+    repeated: [],
+    similar: [],
     notes: [],
     rejected: [],
   };
@@ -196,10 +203,27 @@ export function applyReply(
       );
       continue;
     }
+    const key = contentKey(patternContent(fields), "");
+    const same = [...patterns.values()].find(
+      (pattern) => str(pattern.meta, "status") !== "retired" && contentKey(patternContent(pattern), "") === key,
+    );
+    if (same !== undefined) {
+      // A restated pattern is a repeat: its events count on the existing page and no second page is written.
+      if (text(spec.tmp_id) !== "") tmpMap.set(text(spec.tmp_id), same.id);
+      state.repeated.push(same.id);
+      continue;
+    }
+    const pool = [...patterns.values()].map((pattern) => ({
+      id: pattern.id,
+      status: str(pattern.meta, "status"),
+      text: `${str(pattern.meta, "title")}\n${patternContent(pattern)}`,
+    }));
+    const candidates = similarTo(`${fields.title}\n${patternContent(fields)}`, pool);
     const id = nextId(patterns);
     patterns.set(id, newPattern(ledger, id, fields, byHash.get(cited[0]!)!));
     if (text(spec.tmp_id) !== "") tmpMap.set(text(spec.tmp_id), id);
     state.newIds.add(id);
+    if (candidates.length > 0) state.similar.push({ id, candidates });
   }
 
   for (const update of records(reply.update_patterns)) {
@@ -274,6 +298,16 @@ export function applyReply(
   if (note !== "") state.notes.push(note.replace(/\s+/g, " ").slice(0, 300));
 }
 
+/**
+ * What a pattern says, without its title: problem, root cause and fix. A repeat
+ * is matched on this, so a retitled restatement is still one pattern; the
+ * project ledger the pattern lives in is its scope.
+ */
+export function patternContent(pattern: Pattern | PatternSpec): string {
+  if ("body" in pattern) return ["Problem", "Root cause", "Fix"].map((name) => section(pattern.body, name)).join("\n");
+  return [pattern.problem, pattern.root_cause, pattern.fix].join("\n");
+}
+
 /** `12%`: repeats over classified findings, floored. */
 export function repeatRate(tally: Tally): string {
   return `${tally.total > 0 ? Math.floor((100 * tally.repeat) / tally.total) : 0}%`;
@@ -321,6 +355,9 @@ export function maintain(ctx: LearnContext, ledger: Ledger, project: string): st
     applyReply(ctx, ledger, chunk, reply, state);
   }
   for (const reason of state.rejected) logLine(ledger, `maintainer rejected: ${reason}`);
+  for (const id of state.repeated) logLine(ledger, `maintainer: a create restated ${id}; counted there, no new page`);
+  for (const { id, candidates } of state.similar)
+    logLine(ledger, `similar ${similarLine(id, candidates)}: amend or supersede`);
   ctx.span?.attr("unusable", unusable);
   ctx.span?.attr("rejected_parts", state.rejected.length);
   const done = Object.keys(state.processed).length;
@@ -352,5 +389,7 @@ export function maintain(ctx: LearnContext, ledger: Ledger, project: string): st
     `maintain: ${prs === "-" ? "no-pr" : prs} +${done} events, ${state.newIds.size} new patterns, repeat ${rate}`,
   );
   ctx.span?.commit(sha);
-  return `processed ${done} events; ${state.newIds.size} new patterns; repeat rate ${rate}`;
+  const restated = state.repeated.length > 0 ? `; ${state.repeated.length} restated (${state.repeated.join(",")})` : "";
+  const similar = state.similar.map(({ id, candidates }) => `; similar ${similarLine(id, candidates)}`).join("");
+  return `processed ${done} events; ${state.newIds.size} new patterns${restated}; repeat rate ${rate}${similar}`;
 }
