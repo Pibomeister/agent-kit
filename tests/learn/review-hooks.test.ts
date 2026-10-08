@@ -67,6 +67,16 @@ describe("stop hook", () => {
     expect(calls[1]!.argv[5]).toBe("codex");
   });
 
+  test("an unknown --source is reported and read as claude: a hook never fails its session", () => {
+    const repo = gitRepo(join(scratch(), "app"));
+    const ctx = testContext();
+    const { spawner, calls } = recorder();
+    stopHook(ctx, { cwd: repo }, parseLearnArgs(["--source", "codx"]), spawner);
+    expect(ctx.err).toEqual(["ak learn hook: --source: unknown source 'codx'; did you mean codex?; read as claude"]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.argv[5]).toBe("claude");
+  });
+
   test("a root full of shell syntax reaches the pipeline as one literal argument and runs nothing", () => {
     const base = scratch();
     const marks = join(base, "marks");

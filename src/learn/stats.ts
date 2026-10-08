@@ -13,6 +13,7 @@ import { flag } from "./core/context.ts";
 import { judgeRows } from "./core/judge.ts";
 import { mainRepoRoot } from "./core/paths.ts";
 import { projectKey, spanRows, type SpanRow } from "./core/trace.ts";
+import { unknownRepo } from "./memory/registry.ts";
 
 const DAY_MS = 86_400_000;
 const DEFAULT_DAYS = 30;
@@ -255,7 +256,7 @@ function show(args: LearnArgs, ctx: LearnContext): number {
   if (repo !== undefined) {
     const root = mainRepoRoot(repo);
     if (root === null) {
-      ctx.io.err(`ak learn stats: --repo ${repo} is not inside a git repository`);
+      ctx.io.err(`ak learn stats: --repo ${repo} is not inside a git repository: ${unknownRepo(ctx.config, repo)}`);
       return 1;
     }
     key = projectKey(ctx.config, root);

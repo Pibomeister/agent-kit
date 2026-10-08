@@ -290,7 +290,9 @@ resolution as first-class observations, which is what lets the review loop count
 finding across sessions rather than only across pull requests.
 
 `ak learn setup wire` copies it into claude-mem's modes directory and selects it; it never edits
-the file in place and never restarts the observer's worker unless asked. The file is derived from
+the file in place and never restarts the observer's worker unless asked. Both plugin bundles ship
+the file at this path, with claude-mem's licence, and `bin/ak` embeds a copy that wire falls back
+to when no file sits beside the binary, so every install can select the mode. The file is derived from
 claude-mem's `plugin/modes/code.json`, Apache-2.0; `provenance/adaptations.d/learning.yaml`
 records what was changed.
 

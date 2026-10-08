@@ -4,9 +4,9 @@
  * call (role `lesson-merger`) over the lessons index for merge and
  * contradiction pairs.
  *
- * A lesson's `last_seen` is set at creation and refreshed only by a merge, so
- * the 90 days run from creation or last merge. Global lessons and lessons
- * tagged decision, security or blocker never go stale.
+ * A lesson's `last_seen` is set at creation and refreshed only by a merge or a
+ * repeat, so the 90 days run from creation or the last of those. Global lessons
+ * and lessons tagged decision, security or blocker never go stale.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -17,7 +17,7 @@ import { nowMs, todayLocal, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { ProjectMemorySource, WorkerSessionSource } from "../sources/worker-sessions.ts";
-import { sessionsOf } from "./consolidate.ts";
+import { citedObsSessions, sessionsOf } from "./consolidate.ts";
 import {
   appendRun,
   list,
@@ -28,7 +28,6 @@ import {
   readState,
   rewriteIndex,
   saveState,
-  sid8,
   str,
   writeLesson,
 } from "./ledger.ts";
@@ -154,17 +153,9 @@ export function decayLessons(ledger: Ledger, today = todayLocal()): string[] {
 
 /** `obs:N` to the claude-mem or captured worker session it came from, for every observation cited by a lesson, as nightly consolidation maps them. */
 export function lessonObsSessions(ctx: LearnContext, ledger: Ledger): Map<string, string> {
-  const ids = loadLessons(ledger)
-    .values()
-    .flatMap(({ meta }) => list(meta.evidence))
-    .filter((id) => /^obs:\d+$/.test(id))
-    .map((id) => Number(id.slice(4)))
-    .toArray();
-  if (ids.length === 0) return new Map();
   const mem = ClaudeMemSource.open(ctx.config.memDb);
   try {
-    const source = new ProjectMemorySource(mem, WorkerSessionSource.open(ledger));
-    return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
+    return citedObsSessions(new ProjectMemorySource(mem, WorkerSessionSource.open(ledger)), ledger);
   } finally {
     mem?.close();
   }
@@ -202,18 +193,24 @@ export function applyPairs(
 ): PairResult {
   const lessons = loadLessons(ledger);
   const result: PairResult = { merged: [], conflicts: [], confirmed: [] };
+  const seenMerges = new Set<string>();
   for (const pair of pairsOf(reply.merge, lessons)) {
     if (pair[0] === pair[1]) continue;
     const [keep, drop] = [...pair].sort() as [string, string];
+    const key = `${keep}:${drop}`;
+    if (seenMerges.has(key)) continue;
+    seenMerges.add(key);
     const kept = lessons.get(keep)!;
     const dropped = lessons.get(drop)!;
     const km = kept.meta;
     const dm = dropped.meta;
+    if (km.status === "superseded" || dm.status === "superseded" || list(km.merged).includes(drop)) continue;
     const before = km.status;
     km.evidence = [...new Set([...list(km.evidence), ...list(dm.evidence)])].sort();
     km.tags = [...new Set([...list(km.tags), ...list(dm.tags)])].sort();
     km.last_seen = [str(km.last_seen), str(dm.last_seen)].sort().at(-1)!;
     km.merged = [...new Set([...list(km.merged), drop])].sort();
+    km.count = (Number(km.count) || 1) + (Number(dm.count) || 1);
     km.sessions = Math.max(
       sessionsOf(km.evidence, obsSession).size,
       Number(km.sessions) || 0,

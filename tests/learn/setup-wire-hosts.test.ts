@@ -480,7 +480,9 @@ describe("setup wire: every host", () => {
     for (const host of WIRE_HOSTS) expect(run(parseLearnArgs(["--host", host, "--no-mem"]), context(deps))).toBe(0);
     const refused = context(deps);
     expect(run(parseLearnArgs(["--host", "vim"]), refused)).toBe(2);
-    expect(refused.err).toEqual(["ak learn setup wire: --host is one of claude, codex, droid, grok, kimi"]);
+    expect(refused.err).toEqual([
+      "ak learn setup wire: --host: unknown host 'vim'; valid: claude, codex, droid, grok, kimi",
+    ]);
   });
 });
 

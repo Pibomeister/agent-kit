@@ -126,6 +126,7 @@ const EVAL_DIR = "evals";
 
 /** The npm package manifest, which §5.2 makes a party to two fields of four. */
 const PACKAGE_FILE = "package.json";
+const CLAUDE_MEM_MODE_FILE = "adapters/observation-source/claude-mem/code--review-learning.json";
 
 /** One term for the summary line, whichever way the authority went missing. */
 const PARITY_CHECK = "manifest parity";
@@ -217,13 +218,15 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
  * code inlined into `bin/ak`. An installed package keeps its text under
  * `node_modules/`, and that path cannot be the bundle path: gitignore drops
  * it, and the packager's file walk skips it, so the distributed copy would
- * not contain the text.
+ * not contain the text. claude-mem's texts stay at their provenance paths,
+ * the paths they hold in the source tree.
  *
  * A licensing obligation rather than bundle tidiness. The MIT donors' licence
  * requires the copyright notice and the permission notice accompany every
- * copy, the inlined packages require the same of their own texts, and `dist/`
- * is the copy that gets distributed. Absence is an `error()` for that
- * reason -- a build that quietly omits them reports success over a
+ * copy, Apache-2.0 §4(a) requires claude-mem's licence accompany the files
+ * adapted from it, the inlined packages require the same of their own texts,
+ * and `dist/` is the copy that gets distributed. Absence is an `error()` for
+ * that reason -- a build that quietly omits them reports success over a
  * distribution that may not lawfully be distributed, which is the worst shape
  * this package has a name for.
  *
@@ -813,6 +816,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       continue;
     }
     files.set(licence.path, { path: licence.path, contents: text, source: licence.source });
+  }
+
+  const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
+  if (memMode !== null) {
+    files.set(CLAUDE_MEM_MODE_FILE, { path: CLAUDE_MEM_MODE_FILE, contents: memMode, source: CLAUDE_MEM_MODE_FILE });
   }
 
   try {
