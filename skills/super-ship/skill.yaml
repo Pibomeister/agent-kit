@@ -173,7 +173,7 @@ hard_gates:
     permitted, and an explicit human approval bound to that charter's hash, with any expiry or
     single-use bound. An approval whose charter was amended afterwards no longer binds, and this run
     may never enlarge its own authority.
-  - The autonomous form, ship.prepare delegated under a grant, proceeds past workflow step 3 only on
+  - The autonomous form, ship.prepare delegated under a grant, proceeds past workflow step 7 only on
     trusted evidence, which is gate evidence the runner recorded into the run's evidence store outside
     the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
     evidence, and neither a grant nor a host permission makes them so.

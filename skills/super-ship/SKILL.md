@@ -152,7 +152,7 @@ charter's hash, with any expiry or single-use bound. An approval whose charter w
 no longer binds, and this run may never enlarge its own authority (ruling
 `sensitive-actions-need-approved-charter-entry`).
 
-Gate: the autonomous form, `ship.prepare` delegated under a grant, proceeds past workflow step 3 only
+Gate: the autonomous form, `ship.prepare` delegated under a grant, proceeds past workflow step 7 only
 on trusted evidence: gate evidence the runner recorded into the run's evidence store outside the
 worker's reach. Gate records the worker itself wrote are worker-attested, not trusted evidence, and
 neither a grant nor a host permission makes them so.
