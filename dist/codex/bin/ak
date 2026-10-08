@@ -16386,7 +16386,7 @@ function lessonDraft(input, project, runId, at = new Date) {
   };
   return input.guidance && input.guidance.length > 0 ? { ...draft, guidance: input.guidance } : draft;
 }
-function proposeLesson(ctx, ledgerDir, draft) {
+function proposeLesson(ctx, ledgerDir, draft, similar = []) {
   const id = String(draft.id);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) || id.includes(".."))
     throw new Error(`proposal id is not a file name: ${JSON.stringify(id)}`);
@@ -16395,6 +16395,8 @@ function proposeLesson(ctx, ledgerDir, draft) {
   if (previous?.kb_ref)
     return { ref: previous.kb_ref, delivered: true };
   const record = { draft, proposed_at: nowIso() };
+  if (similar.length > 0)
+    record.similar = similar;
   const command = ctx.env.AK_LEARN_KB_COMMAND;
   let result = { ref: `ledger:proposals/${id}.json`, delivered: false };
   if (command !== undefined && command.trim() !== "" && !ctx.config.dryRun) {
@@ -16581,7 +16583,7 @@ function proposeConfirmed(ctx, ledger, root, page, options) {
     domains,
     createdBy: options.createdBy
   }, { root, revision: null }, options.runId);
-  return proposeLesson(ctx, ledger.dir, draft);
+  return proposeLesson(ctx, ledger.dir, draft, options.similar);
 }
 function proposeOrSkip(ctx, ledger, root, page, options) {
   try {
@@ -17703,6 +17705,51 @@ var init_roles = __esm(() => {
   };
 });
 
+// src/learn/core/similar.ts
+function normalizeContent(text) {
+  return text.normalize("NFKC").toLowerCase().replace(/["'\u2018\u2019\u201C\u201D]/gu, " ").replace(/(?<=\p{L})\s*[-\u2010\u2011\u2013\u2014]+\s*(?=\p{L})/gu, " ").replace(/[.,;:!?]+(?=\s|$)/gu, " ").replace(/\s+/gu, " ").trim();
+}
+function contentKey(text, scope) {
+  return `${normalizeContent(scope)}\x00${normalizeContent(text)}`;
+}
+function terms(text) {
+  const out = new Set;
+  for (const word of normalizeContent(text).split(/[^\p{L}\p{N}]+/u)) {
+    if (word.length < 2 || STOPWORDS.has(word))
+      continue;
+    out.add(word.length > 3 && word.endsWith("s") && !word.endsWith("ss") ? word.slice(0, -1) : word);
+  }
+  return out;
+}
+function resemblance(a, b) {
+  let shared = 0;
+  for (const term of a)
+    if (b.has(term))
+      shared += 1;
+  const total = a.size + b.size;
+  return { score: total === 0 ? 0 : 2 * shared / total, shared };
+}
+function similarTo(text, pool, options = {}) {
+  const own = terms(text);
+  const at = options.at ?? SIMILAR_AT;
+  const minShared = options.minShared ?? SIMILAR_MIN_SHARED;
+  const found = [];
+  for (const other of pool) {
+    const { score, shared } = resemblance(own, terms(other.text));
+    if (score >= at && shared >= minShared)
+      found.push({ id: other.id, status: other.status, score: Math.round(score * 100) / 100 });
+  }
+  found.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return found.slice(0, options.max ?? SIMILAR_MAX);
+}
+function similarLine(id, candidates) {
+  return `${id} ~ ${candidates.map((c) => `${c.id} (${c.score} ${c.status})`).join(", ")}`;
+}
+var STOPWORDS, SIMILAR_AT = 0.5, SIMILAR_MIN_SHARED = 2, SIMILAR_MAX = 3;
+var init_similar = __esm(() => {
+  STOPWORDS = new Set(("a an and are as at be been but by can do does for from has have if in into is it its not no of on or " + "over should so than that the their then there these this those to under use used uses using was were " + "when where which while with without instead before after only also always never must").split(" "));
+});
+
 // src/learn/review/patterns.ts
 import { existsSync as existsSync14, mkdirSync as mkdirSync9, readdirSync as readdirSync3, readFileSync as readFileSync12 } from "fs";
 import { dirname as dirname8 } from "path";
@@ -17925,6 +17972,8 @@ function emptyState(patterns) {
     tally: { total: 0, repeat: 0, fresh: 0 },
     processed: {},
     newIds: new Set,
+    repeated: [],
+    similar: [],
     notes: [],
     rejected: []
   };
@@ -17969,11 +18018,29 @@ function applyReply(ctx, ledger, events, reply, state) {
       state.rejected.push(`create ${text(spec.tmp_id) || "?"}: cites ${cited.length === 0 ? "no event" : `hashes not in the input (${foreign.join(", ")})`}`);
       continue;
     }
+    const key = contentKey(patternContent(fields), "");
+    const same = [...patterns.values()].find((pattern) => str2(pattern.meta, "status") !== "retired" && contentKey(patternContent(pattern), "") === key);
+    if (same !== undefined) {
+      if (text(spec.tmp_id) !== "")
+        tmpMap.set(text(spec.tmp_id), same.id);
+      state.repeated.push(same.id);
+      continue;
+    }
+    const pool = [...patterns.values()].map((pattern) => ({
+      id: pattern.id,
+      status: str2(pattern.meta, "status"),
+      text: `${str2(pattern.meta, "title")}
+${patternContent(pattern)}`
+    }));
+    const candidates = similarTo(`${fields.title}
+${patternContent(fields)}`, pool);
     const id = nextId(patterns);
     patterns.set(id, newPattern(ledger, id, fields, byHash.get(cited[0])));
     if (text(spec.tmp_id) !== "")
       tmpMap.set(text(spec.tmp_id), id);
     state.newIds.add(id);
+    if (candidates.length > 0)
+      state.similar.push({ id, candidates });
   }
   for (const update of records(reply.update_patterns)) {
     const raw = text(update.id);
@@ -18045,6 +18112,13 @@ function applyReply(ctx, ledger, events, reply, state) {
   if (note2 !== "")
     state.notes.push(note2.replace(/\s+/g, " ").slice(0, 300));
 }
+function patternContent(pattern) {
+  if ("body" in pattern)
+    return ["Problem", "Root cause", "Fix"].map((name) => section(pattern.body, name)).join(`
+`);
+  return [pattern.problem, pattern.root_cause, pattern.fix].join(`
+`);
+}
 function repeatRate(tally) {
   return `${tally.total > 0 ? Math.floor(100 * tally.repeat / tally.total) : 0}%`;
 }
@@ -18081,6 +18155,10 @@ function maintain(ctx, ledger, project) {
   }
   for (const reason of state.rejected)
     logLine2(ledger, `maintainer rejected: ${reason}`);
+  for (const id of state.repeated)
+    logLine2(ledger, `maintainer: a create restated ${id}; counted there, no new page`);
+  for (const { id, candidates } of state.similar)
+    logLine2(ledger, `similar ${similarLine(id, candidates)}: amend or supersede`);
   ctx.span?.attr("unusable", unusable);
   ctx.span?.attr("rejected_parts", state.rejected.length);
   const done = Object.keys(state.processed).length;
@@ -18106,7 +18184,9 @@ function maintain(ctx, ledger, project) {
   ctx.span?.attr("new_patterns", state.newIds.size);
   const sha = ledger.commit(`maintain: ${prs === "-" ? "no-pr" : prs} +${done} events, ${state.newIds.size} new patterns, repeat ${rate}`);
   ctx.span?.commit(sha);
-  return `processed ${done} events; ${state.newIds.size} new patterns; repeat rate ${rate}`;
+  const restated = state.repeated.length > 0 ? `; ${state.repeated.length} restated (${state.repeated.join(",")})` : "";
+  const similar = state.similar.map(({ id, candidates }) => `; similar ${similarLine(id, candidates)}`).join("");
+  return `processed ${done} events; ${state.newIds.size} new patterns${restated}; repeat rate ${rate}${similar}`;
 }
 var PROCESSED_FILE = "raw/.processed.json", MAINTAINER_CONTRACT = `{"create_patterns": [{"tmp_id": "new-1", "title": "...", "problem": "...", "root_cause": "...", "fix": "...",
                       "team_target": null, "event_hashes": ["<hash of an input event>"]}],
@@ -18123,6 +18203,7 @@ var PROCESSED_FILE = "raw/.processed.json", MAINTAINER_CONTRACT = `{"create_patt
 var init_maintain = __esm(() => {
   init_pages();
   init_roles();
+  init_similar();
   init_store();
   init_trace();
   init_events();
@@ -18186,7 +18267,16 @@ Why: ${firstLine(pattern.body, "Problem")}
 applied: 
 `;
 }
-function promoteOne(ctx, ledger, root, pattern, texts) {
+function similarGuardrails(pattern, patterns) {
+  const pool = patterns.values().filter((p) => p.id !== pattern.id && (p.meta.promoted_to === "guardrails" || p.meta.status === "retired")).map((p) => ({ id: p.id, status: str2(p.meta, "status"), text: guardrailText(p) }));
+  return similarTo(guardrailText(pattern), pool);
+}
+function guardrailText(pattern) {
+  return `${str2(pattern.meta, "title")}
+${patternContent(pattern)}`;
+}
+function promoteOne(ctx, ledger, root, pattern, patterns, texts) {
+  const similar = similarGuardrails(pattern, patterns);
   texts.guard = `${texts.guard.replace(/\n+$/, "")}${texts.guard.trim() === "" ? "" : `
 `}${bullet(pattern)}
 `;
@@ -18199,12 +18289,14 @@ function promoteOne(ctx, ledger, root, pattern, texts) {
     proposed = true;
   }
   try {
-    proposeLesson(ctx, ledger.dir, guardrailDraft(ctx, pattern, root));
+    proposeLesson(ctx, ledger.dir, guardrailDraft(ctx, pattern, root), similar);
   } catch (error2) {
     logLine2(ledger, `skipped knowledgebase draft for ${pattern.id}: ${error2.message}`);
   }
+  if (similar.length > 0)
+    logLine2(ledger, `similar ${similarLine(pattern.id, similar)}: amend or supersede`);
   savePattern(pattern);
-  return proposed;
+  return { team: proposed, similar };
 }
 function propose(ctx, ledger, root, threshold = ctx.config.promoteAt) {
   const patterns = loadPatterns(ledger);
@@ -18214,6 +18306,7 @@ function propose(ctx, ledger, root, threshold = ctx.config.promoteAt) {
   };
   const promoted = [];
   const proposed = [];
+  const similar = [];
   let baselined = false;
   for (const pattern of patterns.values()) {
     if (pattern.meta.promoted_to === "guardrails" && num(pattern.meta, "promoted_count") === 0) {
@@ -18228,8 +18321,11 @@ function propose(ctx, ledger, root, threshold = ctx.config.promoteAt) {
     promoted.push(pattern.id);
     if (ctx.config.dryRun)
       continue;
-    if (promoteOne(ctx, ledger, root, pattern, texts))
+    const result = promoteOne(ctx, ledger, root, pattern, patterns, texts);
+    if (result.team)
       proposed.push(pattern.id);
+    if (result.similar.length > 0)
+      similar.push(`; similar ${similarLine(pattern.id, result.similar)}`);
   }
   if (promoted.length === 0) {
     ctx.span?.status(ctx.config.dryRun ? "dry-run" : "nothing");
@@ -18250,7 +18346,7 @@ function propose(ctx, ledger, root, threshold = ctx.config.promoteAt) {
   const teamNote = proposed.length > 0 ? `; team proposals ${proposed.join(",")}` : "";
   const sha = ledger.commit(`propose: guardrails +${promoted.join(",")}${teamNote}`);
   ctx.span?.commit(sha);
-  return `promoted ${promoted.join(",")} to guardrails${teamNote}`;
+  return `promoted ${promoted.join(",")} to guardrails${teamNote}${similar.join("")}`;
 }
 function promoteById(ctx, ledger, root, id) {
   const patterns = loadPatterns(ledger);
@@ -18267,12 +18363,13 @@ function promoteById(ctx, ledger, root, id) {
     guard: readText(ledger.path("guardrails.md")),
     pending: readText(ledger.path("pending-team-promotions.md"))
   };
-  const team = promoteOne(ctx, ledger, root, pattern, texts);
+  const { team, similar } = promoteOne(ctx, ledger, root, pattern, patterns, texts);
   writeGated(ledger.dir, ledger.path("guardrails.md"), texts.guard);
   writeGated(ledger.dir, ledger.path("pending-team-promotions.md"), texts.pending);
   rebuildIndex(ledger, patterns);
   ledger.commit(`promote: guardrails +${id} (by hand)${team ? `; team proposal ${id}` : ""}`);
-  return `promoted ${id} to guardrails${team ? `; team proposal ${id}` : ""}`;
+  const similarNote = similar.length > 0 ? `; similar ${similarLine(id, similar)}` : "";
+  return `promoted ${id} to guardrails${team ? `; team proposal ${id}` : ""}${similarNote}`;
 }
 function retire(ledger, id) {
   const patterns = loadPatterns(ledger);
@@ -18358,6 +18455,7 @@ var ROLLBACK_PATHS, RAW_FILES;
 var init_propose = __esm(() => {
   init_paths();
   init_proc();
+  init_similar();
   init_store();
   init_trace();
   init_kb();
@@ -19532,7 +19630,7 @@ function distinctiveFragments(tainted, clean2) {
   const cleanVocab = new Set(cleanWords);
   const cleanStream = joined2(cleanWords);
   const cleanRun = cleanWords.join("");
-  const cleanContent = joined2(cleanWords.filter((w) => !STOPWORDS.has(w)));
+  const cleanContent = joined2(cleanWords.filter((w) => !STOPWORDS2.has(w)));
   const marked = new Map;
   for (const token of candidateTokens(tainted)) {
     const seq = normalWords(token);
@@ -19542,7 +19640,7 @@ function distinctiveFragments(tainted, clean2) {
     marked.set(seq.join(" "), seq);
   }
   const words = normalWords(tainted);
-  const content = words.filter((w) => !STOPWORDS.has(w));
+  const content = words.filter((w) => !STOPWORDS2.has(w));
   const phrases = new Map;
   for (let i = 0;i + 3 <= content.length; i++) {
     const seq = content.slice(i, i + 3);
@@ -19561,7 +19659,7 @@ function carriers(claims, f) {
       owner.push(i);
     }
   });
-  const content = words.flatMap((w, i) => STOPWORDS.has(w) ? [] : [i]);
+  const content = words.flatMap((w, i) => STOPWORDS2.has(w) ? [] : [i]);
   const contentWords = content.map((i) => words[i]);
   let run2 = "";
   const runOwner = [];
@@ -19638,7 +19736,7 @@ function redact(lines, inputs) {
   const quarantine = [...inputs.notes, ...[...inferred].map((obs) => ({ obs, kind: "other" }))];
   return { kept, flagged, tokens: drop.size, quarantine, inferred: [...inferred].sort() };
 }
-var SECURITY_KINDS, OBS_ID, ATTACK_WORDING, SEPARATORS, STOPWORDS, SECRETS, joined2 = (seq) => ` ${seq.join(" ")} `, isBullet = (line) => line.trimStart().startsWith("- ");
+var SECURITY_KINDS, OBS_ID, ATTACK_WORDING, SEPARATORS, STOPWORDS2, SECRETS, joined2 = (seq) => ` ${seq.join(" ")} `, isBullet = (line) => line.trimStart().startsWith("- ");
 var init_redact = __esm(() => {
   init_secrets();
   init_ledger2();
@@ -19653,7 +19751,7 @@ var init_redact = __esm(() => {
   OBS_ID = /^obs:\d+$/;
   ATTACK_WORDING = /\b(?:prompt[- ]?injections?|(?:injected|embedded) (?:instructions?|prompts?)|instructions? (?:aimed|addressed|directed) at (?:the )?(?:agent|assistant|ai)|tried to (?:add|insert|plant|inject) (?:an? )?instructions?)\b/i;
   SEPARATORS = /[\s"'`<>()[\]{}|,;!*\\]+/;
-  STOPWORDS = new Set("a an and are as at be been but by can do does for from had has have he her his i if in into is it its me my no not of on or our she so than that the their them then there these they this those to was we were what when which who will with would you your".split(" "));
+  STOPWORDS2 = new Set("a an and are as at be been but by can do does for from had has have he her his i if in into is it its me my no not of on or our she so than that the their them then there these they this those to was we were what when which who will with would you your".split(" "));
   SECRETS = [
     ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
     [
@@ -20957,20 +21055,45 @@ function nextLessonId(ledger) {
   const numbers = loadLessons(ledger).values().map(({ path }) => basename11(path, ".md").slice(3)).filter((digits) => /^\d+$/.test(digits)).map(Number).toArray();
   return `ls-${String(numbers.length > 0 ? Math.max(...numbers) + 1 : 1).padStart(3, "0")}`;
 }
-function renderLesson(meta, evidence) {
-  return renderPage(meta, `
+function lessonBody(statement, evidence) {
+  return `
 ## Statement
-${str(meta.statement)}
+${statement}
 
 ## Evidence
 ${evidence.map((id) => `- ${id}
-`).join("")}`);
+`).join("")}`;
+}
+function renderLesson(meta, evidence) {
+  return renderPage(meta, lessonBody(str(meta.statement), evidence));
+}
+function comparable(lessons) {
+  return lessons.values().filter(({ meta }) => meta.status !== "superseded").map((page) => ({ id: lessonId(page), status: str(page.meta.status), text: str(page.meta.statement) })).toArray();
+}
+function countRepeat(page, evidence, tags, sessionOf, today) {
+  const meta = { ...page.meta };
+  const before = str(meta.status);
+  const known = list(meta.evidence);
+  const added = evidence.filter((id) => !known.includes(id));
+  meta.count = (Number(meta.count) || 1) + 1;
+  meta.last_seen = today;
+  meta.evidence = [...known, ...added];
+  meta.tags = [...new Set([...list(meta.tags), ...tags])].toSorted();
+  meta.sessions = Math.max(Number(meta.sessions) || 0, sessionsOf(meta.evidence, sessionOf).size);
+  if (before === "stale" || before === "hypothesis" && meta.sessions >= 2)
+    meta.status = "confirmed";
+  const body = page.body.trim() === "" ? lessonBody(str(meta.statement), meta.evidence) : page.body;
+  page.meta = meta;
+  page.body = added.reduce((text2, id) => patchBody(text2, "append", "", `- ${id}`), body);
+  writeLesson(page.path, page.meta, page.body);
+  return before === "hypothesis" && meta.status === "confirmed";
 }
 function strings2(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
 }
 function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
   const today = options.today ?? todayLocal();
+  const sessionOf = new Map([...options.sessionOf ?? [], ...obsSession]);
   const existing = loadLessons(ledger);
   const summary = {
     created: [],
@@ -20978,7 +21101,9 @@ function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
     superseded: [],
     confirmed: [],
     review_events: 0,
-    review_events_parked: 0
+    review_events_parked: 0,
+    repeated: [],
+    similar: []
   };
   const lessons = Array.isArray(reply.lessons) ? reply.lessons : [];
   for (const lesson of lessons) {
@@ -20999,16 +21124,26 @@ function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
       summary.dropped += 1;
       continue;
     }
+    const scope = typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo";
+    const key = contentKey(statement, scope);
+    const repeat = [...existing.values()].find((page) => LIVE.has(str(page.meta.status)) && contentKey(str(page.meta.statement), str(page.meta.scope)) === key);
+    if (repeat !== undefined) {
+      if (countRepeat(repeat, evidence, cleanTags(lesson.tags), sessionOf, today))
+        summary.confirmed.push(lessonId(repeat));
+      summary.repeated.push(lessonId(repeat));
+      continue;
+    }
     const id = nextLessonId(ledger);
     const sessions = sessionsOf(evidence, obsSession).size;
     const confidence = Number(lesson.confidence);
     const meta = {
       id,
       statement,
-      scope: typeof lesson.scope === "string" && SCOPES.has(lesson.scope) ? lesson.scope : "repo",
+      scope,
       status: sessions >= 2 ? "confirmed" : "hypothesis",
       confidence: Math.min(1, Math.max(0, Number.isFinite(confidence) && confidence !== 0 ? confidence : 0.5)).toFixed(2),
       sessions,
+      count: 1,
       tags: cleanTags(lesson.tags),
       evidence,
       supersedes: [],
@@ -21035,9 +21170,12 @@ function applyConsolidation(ledger, reply, valid, obsSession, options = {}) {
       writeLesson(page.path, page.meta, page.body);
     }
     meta.supersedes = supersedes;
+    const candidates = similarTo(statement, comparable(existing));
+    if (candidates.length > 0)
+      summary.similar.push({ id, candidates });
     const path = join22(ledger.path("lessons"), `${id}.md`);
     writeGated(ledger.dir, path, renderLesson(meta, evidence));
-    existing.set(id, { meta, body: "", path });
+    existing.set(id, { meta, body: lessonBody(statement, evidence), path });
     summary.created.push(id);
     if (meta.status === "confirmed")
       summary.confirmed.push(id);
@@ -21110,6 +21248,12 @@ function triggerOf2(meta, obsSession, corrected) {
     return "correction";
   const sessions = sessionsOf(list(meta.evidence), obsSession);
   return [...sessions].some((sid) => corrected.has(sid)) ? "correction" : "failure";
+}
+function citedObsSessions(source, ledger) {
+  const ids = loadLessons(ledger).values().flatMap(({ meta }) => list(meta.evidence)).filter((id) => /^obs:\d+$/.test(id)).map((id) => Number(id.slice(4))).toArray();
+  if (ids.length === 0)
+    return new Map;
+  return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
 }
 function readyEpisodes(source, ledger, pending) {
   const ranges = screenedObservationRanges(ledger);
@@ -21185,7 +21329,8 @@ function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
   const valid = new Set([...obsSession.keys(), ...included.map((episode) => sid8(episode.sid))]);
   const summary = applyConsolidation(ledger, reply, valid, obsSession, {
     review: review === null ? undefined : { ledger: review, project: basename11(root) },
-    runId
+    runId,
+    sessionOf: citedObsSessions(source, ledger)
   });
   markConsolidated(ledger, new Map(included.flatMap((episode) => {
     const mark = unseen.get(episode.sid);
@@ -21208,7 +21353,8 @@ function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
         createdBy: "learn/consolidator",
         trigger: trig,
         claude,
-        workers
+        workers,
+        similar: summary.similar.find((entry) => entry.id === id)?.candidates
       });
       if ("ref" in proposal)
         proposals.push(proposal.ref);
@@ -21236,9 +21382,13 @@ function consolidate(ctx, source, ledger, root, review, trigger = "tick") {
   };
   const recorded = skippedProposals.length > 0 ? { ...run2, proposals_skipped: skippedProposals } : run2;
   appendRun(ledger, { ...recorded, log: log.slice(0, 200) });
-  logLine(ledger, `nightly ${runId}: ${included.length}/${chosen.length} episodes, +${summary.created.length} lessons, ${summary.dropped} dropped, ` + `${summary.superseded.length} superseded, ${summary.review_events} review events forwarded, ${summary.review_events_parked} parked, ${proposals.length} proposals. ${log}`);
+  logLine(ledger, `nightly ${runId}: ${included.length}/${chosen.length} episodes, +${summary.created.length} lessons, ${summary.repeated.length} repeats counted, ` + `${summary.dropped} dropped, ${summary.superseded.length} superseded, ${summary.review_events} review events forwarded, ` + `${summary.review_events_parked} parked, ${proposals.length} proposals. ${log}`);
+  for (const { id, candidates } of summary.similar)
+    logLine(ledger, `similar ${similarLine(id, candidates)}: amend or supersede`);
   ledger.commit(`nightly ${runId}: +${summary.created.length} lessons`);
-  return `nightly: ${included.length}/${chosen.length} episodes -> +${summary.created.length} lessons, ${summary.review_events} review events`;
+  const similar = summary.similar.map(({ id, candidates }) => `; similar ${similarLine(id, candidates)}`).join("");
+  const repeats = summary.repeated.length > 0 ? `, ${summary.repeated.length} repeats counted` : "";
+  return `nightly: ${included.length}/${chosen.length} episodes -> +${summary.created.length} lessons${repeats}, ` + `${summary.review_events} review events${similar}`;
 }
 var INPUT_CHARS2 = 80000, OBS_PER_EPISODE = 15, SCOPES, OUTPUT_CONTRACT = `Reply with one object:
 {"lessons": [{"statement": "...", "scope": "repo", "evidence": ["obs:123", "S1a2b3c4d"], "confidence": 0.7, "supersedes": [], "tags": []}],
@@ -21249,9 +21399,10 @@ var INPUT_CHARS2 = 80000, OBS_PER_EPISODE = 15, SCOPES, OUTPUT_CONTRACT = `Reply
 - tags may include: decision, security, blocker, preference, contrastive.
 - supersedes: only ids (ls-NNN) listed under existing lessons.
 - review_events kind: finding | correction. Leave the list empty when there are none.
-- Status, ids, session counts and dates are set by the runtime; any you send are ignored.`, PENDING_REVIEW_FILE = "raw/pending-review-events.jsonl";
+- Status, ids, session counts and dates are set by the runtime; any you send are ignored.`, LIVE, PENDING_REVIEW_FILE = "raw/pending-review-events.jsonl";
 var init_consolidate = __esm(() => {
   init_pages();
+  init_similar();
   init_roles();
   init_store();
   init_trace();
@@ -21261,6 +21412,7 @@ var init_consolidate = __esm(() => {
   init_episodes();
   init_ledger2();
   SCOPES = new Set(["repo", "subtree", "technology", "global"]);
+  LIVE = new Set(["hypothesis", "confirmed", "stale"]);
 });
 
 // src/learn/memory/deep.ts
@@ -21372,13 +21524,9 @@ function decayLessons(ledger, today = todayLocal()) {
   return stale;
 }
 function lessonObsSessions(ctx, ledger) {
-  const ids = loadLessons(ledger).values().flatMap(({ meta }) => list(meta.evidence)).filter((id) => /^obs:\d+$/.test(id)).map((id) => Number(id.slice(4))).toArray();
-  if (ids.length === 0)
-    return new Map;
   const mem = ClaudeMemSource.open(ctx.config.memDb);
   try {
-    const source = new ProjectMemorySource(mem, WorkerSessionSource.open(ledger));
-    return new Map([...source.observationSessions(ids)].map(([id, sid]) => [`obs:${id}`, sid8(sid).slice(1)]));
+    return citedObsSessions(new ProjectMemorySource(mem, WorkerSessionSource.open(ledger)), ledger);
   } finally {
     mem?.close();
   }
@@ -21391,19 +21539,27 @@ function pairsOf(value, known) {
 function applyPairs(ledger, reply, today = todayLocal(), obsSession = new Map) {
   const lessons = loadLessons(ledger);
   const result = { merged: [], conflicts: [], confirmed: [] };
+  const seenMerges = new Set;
   for (const pair of pairsOf(reply.merge, lessons)) {
     if (pair[0] === pair[1])
       continue;
     const [keep, drop] = [...pair].sort();
+    const key = `${keep}:${drop}`;
+    if (seenMerges.has(key))
+      continue;
+    seenMerges.add(key);
     const kept = lessons.get(keep);
     const dropped = lessons.get(drop);
     const km = kept.meta;
     const dm = dropped.meta;
+    if (km.status === "superseded" || dm.status === "superseded" || list(km.merged).includes(drop))
+      continue;
     const before = km.status;
     km.evidence = [...new Set([...list(km.evidence), ...list(dm.evidence)])].sort();
     km.tags = [...new Set([...list(km.tags), ...list(dm.tags)])].sort();
     km.last_seen = [str(km.last_seen), str(dm.last_seen)].sort().at(-1);
     km.merged = [...new Set([...list(km.merged), drop])].sort();
+    km.count = (Number(km.count) || 1) + (Number(dm.count) || 1);
     km.sessions = Math.max(sessionsOf(km.evidence, obsSession).size, Number(km.sessions) || 0, Number(dm.sessions) || 0);
     if (km.status === "hypothesis")
       km.status = km.sessions >= 2 ? "confirmed" : "hypothesis";
