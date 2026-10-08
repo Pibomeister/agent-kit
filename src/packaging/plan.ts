@@ -193,7 +193,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
  * two bundles disagreeing about their own licensing is the defect this package
  * has already produced once in a different field.
  */
-const LICENCE_FILES = [
+export const LICENCE_FILES = [
   "NOTICE",
   "LICENSE",
   "provenance/licenses/thedotmack_claude-mem.LICENSE",
