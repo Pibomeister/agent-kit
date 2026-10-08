@@ -382,13 +382,11 @@ describe("setup wire: Kimi", () => {
 
   test("a config this runtime cannot read as TOML, or whose block lost a marker, is refused, and Kimi alone is skipped", () => {
     const unread =
-      "cannot be read as TOML by this runtime, whose parser also rejects some valid files, date and time values among them; fix the file or quote that value, nothing written";
+      "cannot be parsed as a supported Kimi hooks TOML config by this runtime; fix the file, nothing written";
     const unpaired =
       "cannot take the agent-kit [[hooks]] block between its two marker lines as they stand; restore the pair or remove both lines, nothing written";
     for (const [broken, reason] of [
       ['name = = "x"\n', unread],
-      ["released = 2024-01-01\n", unread],
-      ["at = 07:32:00\n", unread],
       [`a = 1\n${BLOCK_BEGIN}\n`, unpaired],
       [`${BLOCK_END}\n${BLOCK_BEGIN}\n`, unpaired],
     ] as const) {
@@ -404,6 +402,42 @@ describe("setup wire: Kimi", () => {
       expect(hostChecks(ctx, deps)).toContain(`kimi hooks: not wired: ${ctx.err[0]}`);
     }
   });
+
+  for (const [label, configText] of [
+    ["date", "released = 2024-01-01\n"],
+    ["time", "at = 07:32:00\n"],
+  ] as const) {
+    let parses = true;
+    try {
+      Bun.TOML.parse(configText);
+    } catch {
+      parses = false;
+    }
+
+    test(`a config this runtime ${parses ? "reads" : "rejects"} as TOML (${label}) is ${parses ? "wired" : "refused"}`, () => {
+      const deps = fakeDeps();
+      const ctx = context(deps);
+      const config = put(join(deps.home, ".kimi-code", "config.toml"), configText);
+      mkdirSync(join(deps.home, ".grok"));
+      expect(wire(ctx, deps, {})).toBe(parses ? 0 : 1);
+      if (parses) {
+        expect(ctx.err).toEqual([]);
+        expect(text(config).startsWith(`${configText}\n${BLOCK_BEGIN}\n`)).toBe(true);
+        expect(text(`${config}.bak`)).toBe(configText);
+        expect(tomlHooks(text(config))).toHaveLength(3);
+        const kimi = hostChecks(ctx, deps).filter((check) => check.startsWith("kimi "));
+        expect(kimi).toHaveLength(3);
+        expect(kimi.every((check) => check.endsWith(": ok"))).toBe(true);
+      } else {
+        const reason = `${config} cannot be parsed as a supported Kimi hooks TOML config by this runtime; fix the file, nothing written`;
+        expect(ctx.err).toEqual([reason]);
+        expect(text(config)).toBe(configText);
+        expect(readdirSync(join(deps.home, ".kimi-code"))).toEqual(["config.toml"]);
+        expect(hostChecks(ctx, deps)).toContain(`kimi hooks: not wired: ${reason}`);
+      }
+      expect(othersWired(ctx, deps)).toBe(true);
+    });
+  }
 
   test("a config that assigns `hooks` as a key cannot take a [[hooks]] table after it, and is refused", () => {
     for (const closed of [
