@@ -1515,14 +1515,15 @@ describe("ak lifecycle check, standalone", () => {
 });
 
 describe("the gate a bundle carries", () => {
-  test("packaged gates refuse run-id aliases that erase a recorded failure", () => {
-    const { catalog } = loadCatalog(REPO);
-    if (catalog === null) throw new Error("no catalog");
-    for (const host of ["claude-code", "codex"] as const) {
-      const file = planBundle({ root: REPO, catalog }, host, {}).files.get(GATE_FILE);
-      if (file === undefined) throw new Error("planned gate missing");
-      const script = join(makeTree({ "ak-gate.mjs": file.contents }), "ak-gate.mjs");
-      for (const runtime of ["node", process.execPath]) {
+  // One test per host and runtime: each pass spawns the gate a dozen times, so together they outran the timeout.
+  for (const host of ["claude-code", "codex"] as const)
+    for (const [label, runtime] of [["node", "node"], ["bun", process.execPath]] as const)
+      test(`packaged ${host} gate under ${label} refuses run-id aliases that erase a recorded failure`, () => {
+        const { catalog } = loadCatalog(REPO);
+        if (catalog === null) throw new Error("no catalog");
+        const file = planBundle({ root: REPO, catalog }, host, {}).files.get(GATE_FILE);
+        if (file === undefined) throw new Error("planned gate missing");
+        const script = join(makeTree({ "ak-gate.mjs": file.contents }), "ak-gate.mjs");
         const dir = repo();
         expectRunAliasesRefused(dir, (...argv) => {
           const result = Bun.spawnSync([runtime, script, ...argv], { cwd: dir });
@@ -1532,9 +1533,7 @@ describe("the gate a bundle carries", () => {
             err: result.stderr.toString(),
           };
         });
-      }
-    }
-  });
+      });
   test("the shipped Node gate matches the source across the canonical receipt corruption sweep", () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("no catalog");
