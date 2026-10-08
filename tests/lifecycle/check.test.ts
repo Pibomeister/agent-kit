@@ -1517,7 +1517,10 @@ describe("ak lifecycle check, standalone", () => {
 describe("the gate a bundle carries", () => {
   // One test per host and runtime: each pass spawns the gate a dozen times, so together they outran the timeout.
   for (const host of ["claude-code", "codex"] as const)
-    for (const [label, runtime] of [["node", "node"], ["bun", process.execPath]] as const)
+    for (const [label, runtime] of [
+      ["node", "node"],
+      ["bun", process.execPath],
+    ] as const)
       test(`packaged ${host} gate under ${label} refuses run-id aliases that erase a recorded failure`, () => {
         const { catalog } = loadCatalog(REPO);
         if (catalog === null) throw new Error("no catalog");
