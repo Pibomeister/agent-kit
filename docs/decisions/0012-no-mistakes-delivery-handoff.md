@@ -1,6 +1,8 @@
 # ADR-0012 — no-mistakes delivery ends super-ship at handoff
 
-changes the pipeline makes after its own Review step (its test, document, lint and ci fix commits, and CI-monitor rebases including conflict resolutions) have no reviewer, neither the lifecycle's nor the pipeline's; they ship on verify at the pushed head and the pipeline's CI alone, and a CI-monitor rebase after the worker reports done ships without even that verify.
+Accepted risk, as the approved specification states it:
+
+> changes the pipeline makes after its own Review step (its test, document, lint and ci fix commits, and CI-monitor rebases including conflict resolutions) have no reviewer, neither the lifecycle's nor the pipeline's; they ship on verify at the pushed head and the pipeline's CI alone, and a CI-monitor rebase after the worker reports done ships without even that verify.
 
 **Status:** Accepted. Supersedes ADR-0002 §1 and the earlier content of ruling
 `no-mistakes-as-ship-transport`.
