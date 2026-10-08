@@ -15,7 +15,7 @@ import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.t
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { resolveProfile } from "./profiles.ts";
 
-/** Trees that exist only in the source repository and are never installed. */
+/** Trees excluded from dependency copying; LICENCE_FILES explicitly ships selected licence texts. */
 const SOURCE_ONLY_PREFIXES = [
   "research/",
   "provenance/",

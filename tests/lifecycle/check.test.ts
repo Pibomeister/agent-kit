@@ -223,7 +223,45 @@ const pointerPath = (cwd: string, branch: string): string =>
     `${branch.replace(/[^A-Za-z0-9._:-]/g, "-")}-${createHash("sha256").update(branch).digest("hex").slice(0, 12)}.json`,
   );
 
+function expectRunAliasesRefused(dir: string, invoke: (...argv: string[]) => ReturnType<typeof ak>): void {
+  const ticketPath = ticket(dir, "alias-proof");
+  const opened = invoke("open", "--ticket", ticketPath);
+  expect(opened.code).toBe(0);
+  const run = opened.out[0]?.match(/^opened run (.+)$/)?.[1];
+  if (run === undefined) throw new Error("Missing run id");
+  for (const gate of ["build-checks", "review-full", "review-readiness"])
+    expect(invoke("record", "--gate", gate).code).toBe(0);
+  const id = "verification-alias";
+  const failed = receipt(dir, run, ticketPath, { id, status: "failed", exit_status: 1 });
+  expect(invoke("record", "--gate", "verify", "--receipt", failed).code).toBe(0);
+  expect(invoke("check", "--evidence").err).toContain("evidence failed");
+  const gateDir = join(defaultEvidenceDir(dir), run, "verify");
+  const file = readdirSync(gateDir)[0];
+  if (file === undefined) throw new Error("Missing verification record");
+  const path = join(gateDir, file);
+  const before = readFileSync(path, "utf8");
+  const aliases = [run.replace("-", "+")];
+  // Case aliases collide only on a case-insensitive filesystem.
+  if (existsSync(join(defaultEvidenceDir(dir), run.toUpperCase(), "verify"))) aliases.push(run.toUpperCase());
+  for (const alias of aliases) {
+    const attempted = invoke("record", "--gate", "verify", "--run", alias);
+    expect(attempted.code, alias).toBe(1);
+    expect(attempted.err).toContain(`was recorded for run ${run}`);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(invoke("check", "--evidence").err).toContain("evidence failed");
+  }
+  const passed = receipt(dir, run, ticketPath, { id });
+  expect(invoke("record", "--gate", "verify", "--receipt", passed).code).toBe(0);
+  const checked = invoke("check", "--evidence");
+  expect(checked.code).toBe(1);
+  expect(checked.err).toContain("evidence unstable");
+}
+
 describe("ak lifecycle check, standalone", () => {
+  test("run-id aliases cannot erase a recorded failure", () => {
+    const dir = repo();
+    expectRunAliasesRefused(dir, (...argv) => ak(dir, ...argv));
+  });
   test("a described-green claim without execution evidence is refused", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "described-green");
@@ -1477,6 +1515,26 @@ describe("ak lifecycle check, standalone", () => {
 });
 
 describe("the gate a bundle carries", () => {
+  test("packaged gates refuse run-id aliases that erase a recorded failure", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    for (const host of ["claude-code", "codex"] as const) {
+      const file = planBundle({ root: REPO, catalog }, host, {}).files.get(GATE_FILE);
+      if (file === undefined) throw new Error("planned gate missing");
+      const script = join(makeTree({ "ak-gate.mjs": file.contents }), "ak-gate.mjs");
+      for (const runtime of ["node", process.execPath]) {
+        const dir = repo();
+        expectRunAliasesRefused(dir, (...argv) => {
+          const result = Bun.spawnSync([runtime, script, ...argv], { cwd: dir });
+          return {
+            code: result.exitCode,
+            out: result.stdout.toString().trim().split("\n"),
+            err: result.stderr.toString(),
+          };
+        });
+      }
+    }
+  });
   test("the shipped Node gate matches the source across the canonical receipt corruption sweep", () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("no catalog");

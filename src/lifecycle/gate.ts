@@ -521,6 +521,8 @@ export function recordGate(
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
   const path = join(a.dir, safeRunId(a.run), a.gate, name);
   const previous = readObject(path) as Partial<GateRecord> | undefined;
+  if (previous !== undefined && previous.run_id !== a.run)
+    return refuse(`${a.gate} at this snapshot was recorded for run ${String(previous.run_id)}, not ${a.run}`);
   const recordedClass = a.delegationClass ?? DELEGATION_CLASSES.find((known) => known === previous?.class);
   const implementer =
     a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);

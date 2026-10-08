@@ -45,6 +45,12 @@ export const DENYLIST_EXEMPT_PREFIXES: ReadonlyArray<string> = [
   SCANNER_DEFINITION_FILE,
 ];
 
+// These provenance texts are shipped verbatim, so they cannot inherit the source-only exemption.
+const SHIPPED_LICENSE_FILES = [
+  "provenance/licenses/ajv-validator_ajv.LICENSE",
+  "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+];
+
 /**
  * Top-level directories the denylist walks. A tracked directory missing from
  * this list is never scanned at all, which is why `catalog.d/` is here although
@@ -70,7 +76,7 @@ const SCAN_DIRS = [
   "tests",
 ];
 
-const SCAN_FILES = ["catalog.yaml", "AGENTS.md", "AUTHORING.md", "README.md", "NOTICE"];
+const SCAN_FILES = ["catalog.yaml", "AGENTS.md", "AUTHORING.md", "README.md", "NOTICE", ...SHIPPED_LICENSE_FILES];
 
 /** Authored bodies: where a placeholder means "this skill is not finished". */
 const AUTHORED_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references", "templates"];
@@ -85,6 +91,7 @@ export function contentScanRoots(): string[] {
 }
 
 function isExempt(file: string): boolean {
+  if (SHIPPED_LICENSE_FILES.includes(file)) return false;
   return DENYLIST_EXEMPT_PREFIXES.some((prefix) => (prefix.endsWith("/") ? file.startsWith(prefix) : file === prefix));
 }
 
