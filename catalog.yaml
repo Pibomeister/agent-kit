@@ -1179,8 +1179,8 @@ adapters:
     status: authored
     summary: >-
       Firstmate supervises, agent-kit judges inside the worker, no-mistakes delivers. The
-      ownership boundary, the task-local child contract, the upstream patch it needs and the
-      status lines it may write.
+      ownership boundary, the task-local child contract, the deprecated legacy upstream patch and
+      the status lines it may write.
   - id: tracker
     batch: 1
     status: authored
