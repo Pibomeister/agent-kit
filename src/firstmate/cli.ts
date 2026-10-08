@@ -47,7 +47,7 @@ export const FIRSTMATE_USAGE = [
   "                            --captain-intent-file <file> --implementer-worktree <dir> [--harness <host>]",
   "  ak firstmate seat-judge --fm-home <home> --task-id <id> --packet <file>",
   "                           --seat <id> --actor <id> --runner-socket <path> --admin-token-file <file>",
-  "  Legacy patched-home commands (optional): preflight --legacy-patched, bind, install, remove, grant, status",
+  "  Deprecated legacy patched-home commands (optional): preflight --legacy-patched, bind, install, remove, grant, status",
   "  ak firstmate bind --fm-home <dir> --task-id <id> --project <dir> --mode agent-kit",
   "                    --binding-out <file> [--host …] [--evidence … --evidence-location …]",
   "                    [--charter <file>] [--dry-run]",
@@ -192,6 +192,25 @@ function need(a: Args, names: string[], io: Io, sub: string): boolean {
 }
 
 export function runFirstmate(argv: readonly string[], io: Io, ledgerDir: string = defaultLedgerDir()): number {
+  const sub = argv[0];
+  const deprecated =
+    sub === "bind" ||
+    sub === "install" ||
+    sub === "remove" ||
+    sub === "grant" ||
+    sub === "status" ||
+    (sub === "preflight" && argv.some((part) => part === "--legacy-patched" || part.startsWith("--legacy-patched=")));
+  try {
+    return runFirstmateInternal(argv, io, ledgerDir);
+  } finally {
+    if (deprecated)
+      io.err(
+        "deprecated: patched Firstmate binding commands are legacy; use the stock preflight and a supervisor-authorized bypass grant",
+      );
+  }
+}
+
+function runFirstmateInternal(argv: readonly string[], io: Io, ledgerDir: string): number {
   const sub = argv[0];
   if (sub === undefined || !(sub in ALLOWED)) {
     if (sub !== undefined) io.err(`ak firstmate: ${unknownSelector("subcommand", sub, Object.keys(ALLOWED))}`);

@@ -70,7 +70,7 @@
       }
     },
     "effects": {
-      "description": "The ship record: each remote effect performed, the idempotency key it carried and the read-back result before and after. The key derives from the run id, the operation id, the target identity and the input artifact hash, so a resumed run re-derives it and returns the existing branch or pull request rather than creating a second (adapters/runner-contract/CONTRACT.md §5). Through the no-mistakes transport these are still this skill's effects with the same keys (ruling `no-mistakes-as-ship-transport`). No merge is among them.",
+      "description": "The ship record: each remote effect performed, the idempotency key it carried and the read-back result before and after. The key derives from the run id, the operation id, the target identity and the input artifact hash, so a resumed direct publication returns the existing branch or pull request rather than creating a second (adapters/runner-contract/CONTRACT.md §5). Under no-mistakes delivery, super-ship ends at a committed handoff and performs no remote effect (ruling `no-mistakes-as-ship-transport`). No merge is among them.",
       "type": "array",
       "items": {
         "type": "object",

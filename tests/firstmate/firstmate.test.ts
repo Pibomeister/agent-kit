@@ -601,6 +601,69 @@ describe("the ak firstmate command", () => {
     ]);
     expect(r.code).toBe(1);
     expect(r.out.join("\n")).toMatch(/FAIL\s+upstream-commit/);
+    expect(r.err).toEqual([expect.stringMatching(/^deprecated:/)]);
+  });
+
+  test("deprecated bind refuses stock delivery modes without writing a binding", () => {
+    const { home, project } = env();
+    for (const mode of ["no-mistakes", "direct-PR"]) {
+      const binding = join(home, `data/${mode}/binding.json`);
+      const r = run([
+        "firstmate",
+        "bind",
+        "--fm-home",
+        home,
+        "--task-id",
+        mode,
+        "--project",
+        project,
+        "--mode",
+        mode,
+        "--binding-out",
+        binding,
+      ]);
+      expect(r.code).toBe(1);
+      expect(r.out).toEqual([]);
+      expect(existsSync(binding)).toBe(false);
+      expect(r.err.at(-1)).toMatch(/^deprecated:/);
+      expect(r.err.join("\n")).toContain("ak firstmate preflight");
+      expect(r.err.join("\n")).toContain("supervisor");
+      expect(r.err.join("\n")).toContain("bypass check");
+      expect(r.err.join("\n")).not.toMatch(/bypass grant --/);
+    }
+  });
+
+  test("deprecated legacy commands append exactly one final stderr line", () => {
+    const { home, project } = env();
+    for (const args of [
+      [
+        "bind",
+        "--fm-home",
+        home,
+        "--task-id",
+        "T-1",
+        "--project",
+        project,
+        "--mode",
+        "agent-kit",
+        "--binding-out",
+        join(home, "data/T-1/binding.json"),
+        "--bogus",
+      ],
+      ["install", "--fm-home", home, "--bogus"],
+      ["remove", "--fm-home", home, "--bogus"],
+      ["grant", "--binding", join(home, "missing.json"), "--operation", "review.full", "--bogus"],
+      ["status", join(home, "missing.json"), "--verify", "--bogus"],
+      ["preflight", "--legacy-patched", "--fm-home", home, "--project", project, "--bogus"],
+    ]) {
+      const r = run(["firstmate", ...args]);
+      expect(r.code).toBe(2);
+      expect(r.out).toEqual([]);
+      expect(r.err.filter((line) => line.startsWith("deprecated:"))).toHaveLength(1);
+      expect(r.err.at(-1)).toMatch(/^deprecated:/);
+    }
+    const stock = run(["firstmate", "preflight", "--fm-home", home, "--project", project, "--bogus"]);
+    expect(stock.err.some((line) => line.startsWith("deprecated:"))).toBe(false);
   });
 
   test("status reads a binding file and prints one line", () => {

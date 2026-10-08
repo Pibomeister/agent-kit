@@ -68,8 +68,8 @@
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20258,
-      "tokens": 5063
+      "bytes": 20268,
+      "tokens": 5065
     },
     "bundle/claude-code:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -318,13 +318,13 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 21931,
-      "tokens": 5479
+      "bytes": 20043,
+      "tokens": 5007
     },
     "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 3798,
-      "tokens": 949
+      "bytes": 5570,
+      "tokens": 1392
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -473,8 +473,8 @@
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20258,
-      "tokens": 5063
+      "bytes": 20268,
+      "tokens": 5065
     },
     "bundle/codex:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -723,13 +723,13 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 22092,
-      "tokens": 5519
+      "bytes": 20204,
+      "tokens": 5047
     },
     "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 3798,
-      "tokens": 949
+      "bytes": 5570,
+      "tokens": 1392
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -823,8 +823,8 @@
     },
     "firstmate:adapters/firstmate/SUPERVISOR.md": {
       "file": "adapters/firstmate/SUPERVISOR.md",
-      "bytes": 9522,
-      "tokens": 2375
+      "bytes": 9631,
+      "tokens": 2403
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",

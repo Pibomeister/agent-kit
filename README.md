@@ -82,9 +82,9 @@ On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-sc
 service, and add the section printed by `ak firstmate brief` to an ordinary crewmate brief. Use the
 task's existing no-mistakes or direct-PR delivery mode. The runner holds the charter, standing
 start, checkpoint ledger and trusted evidence outside the worker worktree. The older
-`ak firstmate bind` path remains for patched-home installations; it is not required for stock
-Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or CI needs Firstmate
-installed.
+`ak firstmate bind` and the patched-home path are deprecated for existing installations; they are
+not required for stock Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or
+CI needs Firstmate installed.
 
 **Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
 a grant from its own home with `node <bundle>/bin/ak-gate.mjs bypass grant`, and the worker checks it before
