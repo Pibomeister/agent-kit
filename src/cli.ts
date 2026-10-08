@@ -55,7 +55,7 @@ const USAGE = [
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
   "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
-  "  ak firstmate <subcommand> …                bind agent-kit to a patched Firstmate home (optional)",
+  "  ak firstmate <subcommand> …                stock Firstmate tools; patched binding commands deprecated",
   "  ak tracker check [<project-dir>]           check a project folder's tracker binding and secret",
   "  ak kb check|read|publish|register …        reach the project's central knowledgebase (`ak kb help`)",
   "  ak doctor                                  inspect the installed hosts and current project",

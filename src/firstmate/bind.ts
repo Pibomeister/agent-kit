@@ -98,7 +98,9 @@ function render(template: string, values: Record<string, string>): string {
 
 export function bind(args: BindArgs, opts: FirstmateOptions): BindResult {
   if (args.mode !== "agent-kit") {
-    return refused([`mode ${args.mode} is not agent-kit; ak firstmate bind binds only delivery mode agent-kit`]);
+    return refused([
+      `ak firstmate bind is deprecated for mode ${args.mode}; run ak firstmate preflight on the stock home, ask your supervisor for a bypass grant, and run ak-gate.mjs bypass check with the grant path named in your brief`,
+    ]);
   }
   if (isInside(resolve(args.bindingOut), resolve(args.project))) {
     return refused([

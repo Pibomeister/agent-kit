@@ -98,7 +98,7 @@ describe("ak firstmate grant", () => {
     });
     for (const operation of ["review.full", "review.readiness", "ship.prepare"]) {
       const r = grant(ledger, bindingPath, operation, worktree);
-      expect(r.err).toEqual([]);
+      expect(r.err).toEqual([expect.stringMatching(/^deprecated:/)]);
       expect(r.code).toBe(0);
       expect(JSON.parse(r.out.join("\n"))).toEqual({
         operation,

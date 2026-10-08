@@ -1,75 +1,59 @@
-# Transport: no-mistakes
+# Transport: no-mistakes delivery handoff
 
-Loaded by `super-ship publish` when the project ships through no-mistakes. The authority for every
-rule here is ruling `no-mistakes-as-ship-transport` and `adapters/runner-contract/CONTRACT.md` §5;
-this file is the operating form of them. It applies the same way under Firstmate
-(`adapters/firstmate/CONTRACT.md` §2) and in a standalone run.
+Loaded by `super-ship` for no-mistakes delivery. Ruling `no-mistakes-as-ship-transport` and
+ADR-0012 govern this path. no-mistakes owns the branch after handoff, including its Review, checks,
+fixes, rebases, push, pull request and CI.
 
-## What the transport is
+## Handoff
 
-no-mistakes is how the push happens, not who decides it. super-ship has already decided: receipts and
-a verdict bind to the snapshot being shipped. no-mistakes then re-runs the project's deterministic
-checks on that head, pushes it, opens the pull request and watches CI. super-ship stays the single
-creator of the pull request: no other lane in the run opens one, and no-mistakes opens it only
-because super-ship started the push.
+Commit the change before verification and review-readiness. Record both at that committed handoff
+head. Record ship-preflight at the same head with an empty working-tree diff. super-ship ends at
+that record: it does not push or open a pull request and passes no `--skip`. No repository `auto_fix`
+value is a precondition. The task's delivery contract starts no-mistakes after this handoff; the
+pipeline runs unmodified and unskipped. Its Review may challenge a lifecycle-approved decision.
 
-## Every push skips three steps
+`--intent` carries only the captain's words. If those words expressly adopt source material by
+reference, include the adopted substance in the captain's terms. Do not add a separate supervisor
+decision, Firstmate's specification, the lifecycle plan or a worker summary. If no captain words
+are available, stop for the supervisor rather than inventing intent.
+
+## Pipeline gates and adoption
+
+Answer a parked gate inside the pipeline under the task's delivery contract. An `ask-user` finding,
+including one that challenges a lifecycle-approved decision, goes to the supervisor as an ordinary
+needs-decision. The supervisor supplies the answer; the pipeline applies any fix. The worker does
+not edit the branch while a pipeline run is active.
+
+After checks pass, identify the pushed head and attribute every change from the handoff to
+no-mistakes. Adopt its attributable changes and re-run verification at the pushed head without
+repeating review. An `unreviewed` commit, a `missing` handoff commit, an overridden Review step or
+an unattributable change escalates to the supervisor as needs-decision. Use the existing
+`--run <run>` selector when naming a run on a replaced branch. ADR-0012 records the accepted
+review gap for pipeline fixes and CI-monitor rebases.
+
+The pipeline never grants merge authority. The supervisor's delivery contract owns the push, pull
+request, CI result and any later merge decision.
+
+## Deprecated legacy patched-binding path for delivery mode agent-kit
+
+The patched Firstmate binding and its transport remain available for existing delivery mode
+`agent-kit` installations. They are deprecated and are not the no-mistakes delivery default.
+no-mistakes v1.79 refuses to push a run whose Review step was skipped.
+
+### Deprecated skip transport
 
 ```
 --skip review,document,rebase
 ```
 
-| Skipped | Why |
-|---|---|
-| `review` | Review judgment belongs to super-review. A second review pipeline would produce findings no lane owns and a verdict nothing binds to |
-| `document` | It commits on its own. A commit the lifecycle did not review would ship on a verdict that no longer describes the head |
-| `rebase` | The same: it moves the head after the verdict was bound |
+The legacy transport skips Review because lifecycle review claimed the judgment, and skips
+document and rebase because they can move the head after that judgment. A legacy push that cannot
+carry those skips stops instead of silently changing its review contract.
 
-A push that cannot carry the skips does not happen. The run stops with `needs-input` rather than
-pushing through a pipeline that reviews or rewrites the change.
+### Deprecated auto-fix precondition
 
-## Nothing parks as a commit
-
-The repository's trusted no-mistakes config must set `auto_fix.test`, `auto_fix.lint` and
-`auto_fix.ci` to `0`, so a failing gate parks instead of committing a fix. Where those values are
-absent or non-zero, the transport is not configured and the ship stops before the push. Under
-Firstmate, `ak firstmate preflight` checks this before a task is bound, reading the copy on the
-default branch because that is the only one no-mistakes trusts.
-
-## The intent
-
-`--intent` carries the captain's intent: what the person who asked for the change wanted, verbatim
-from the work source. It never carries Firstmate's task spec, the lifecycle's plan or a summary the
-run wrote. Where the work source has no stated intent, the flag is left out rather than filled.
-
-## Before the push: reconcile
-
-Reconcile before every remote effect, per `adapters/runner-contract/CONTRACT.md` §5:
-
-1. Read the branch's open pull request, deterministically. Unknown is not none (workflow step 8).
-2. Read the active no-mistakes run for the branch, if any.
-3. Where the pull request exists and its head is the head being shipped, the push is already done:
-   return it rather than pushing again.
-4. Where a run is active on an older head, the new push supersedes it. That is the intended way to
-   replace a parked run, not a conflict.
-
-## When a gate parks
-
-A parked gate is a finding against the shipped head, and it goes back through the lifecycle:
-
-1. Treat the parked output as a verification failure on that head.
-2. Fix it through super-build, re-verify through super-verify and re-review through
-   `super-review delta`. The fix counts against the fix-cycle cap.
-3. The new head invalidates the receipts and verdict bound to the old one, because the revision or
-   the diff hash changed.
-4. Ship again. The new push supersedes the parked run.
-
-Never answer a parked gate from inside the pipeline (`respond fix` or an equivalent). That creates a
-commit the lifecycle did not review, which is what the skips exist to prevent. At the fix-cycle cap
-the run stops with `cap-reached` instead of pushing again.
-
-## What it never does
-
-It never merges. Merge authority stays with whoever holds it: under Firstmate, the supervisor's
-configured merge authority; standalone, the person. It never rewrites history on the remote and never
-force-pushes.
+The legacy trusted no-mistakes config requires `auto_fix.test`, `auto_fix.lint` and `auto_fix.ci`
+to be `0`. `checkNoMistakesConfig` and patched preflight enforce that legacy precondition; stock
+preflight does not. A parked gate in this legacy path returns to lifecycle fix, verification and
+delta review before another ship attempt. ADR-0002's “One owner per concern” decision describes
+this superseded path.

@@ -38,8 +38,9 @@ implementer to `decide` after both judgments are recorded. Request shapes are in
 `seat-judge` writes its runner request beside that private token, not in the scout's writable
 `data/<task>/` directory.
 
-No-mistakes auto-fix values need not be zero. If the pipeline changes the head, the runner
-invalidates prior verification and review evidence; sync, verify and review again before done.
+No-mistakes auto-fix values need not be zero. After the committed handoff, no-mistakes owns the
+branch and may challenge lifecycle decisions in its Review. Adopt attributable pipeline changes
+and re-verify at the pushed head before done; escalate an unattributable change (ADR-0012).
 
 ## Who owns what
 
@@ -60,7 +61,7 @@ who stopped the run, why and when. It does not undo an already confirmed effect 
 performed effect still awaiting read-back. `adapters/runner-contract/CLI.md` owns
 the full `answer` rules.
 
-## Legacy patched binding
+## Deprecated legacy patched binding
 
 The commands below document existing patched-home installations. Stock Firstmate does not call
 `ak firstmate bind`, `install` or `grant`, and does not add an `agent-kit` delivery mode.

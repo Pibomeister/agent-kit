@@ -2,7 +2,7 @@
 
 Firstmate supervises. agent-kit judges through the runner, inside a normal crewmate task. The
 task's existing no-mistakes or direct-PR mode delivers. This file describes the stock integration
-and retains the older patched binding interface for existing users (ruling
+and retains the deprecated patched binding interface for existing users (ruling
 `firstmate-outer-loop-agent-kit-inner`).
 
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
@@ -27,9 +27,10 @@ normal status and inbox. Firstmate dispatches the two supervisor seats as separa
 crewmates; they are not children of the implementing worker. The runner records their distinct
 dispatches and verdicts before deciding a checkpoint.
 
-If no-mistakes auto-fixes or otherwise changes the head, the runner's snapshot check invalidates
-older verification and review evidence. The worker must sync, verify and review the new head before
-reporting done. Disabling auto-fix is optional project policy, not an installation prerequisite.
+If no-mistakes changes the head after handoff, the worker adopts attributable pipeline changes and
+re-verifies at the pushed head before reporting done. A change it cannot attribute escalates to the
+supervisor. The pipeline's Review may challenge lifecycle-approved decisions. Disabling auto-fix is
+optional project policy, not an installation prerequisite.
 Publishing runner-owned evidence through the knowledgebase adapter remains a separate follow-up; it
 stays in a configurable private store until that is wired.
 
@@ -70,12 +71,13 @@ adapter publishes through one (`adapters/knowledgebase/CONTRACT.md` §1, §7). T
 is a labeled `mock`, which the binding schema forces to `dry-run` so it can never back a publish
 (`schemas/firstmate-binding.schema.json`).
 
-Side effects this adapter adds: none. super-ship's `remote-push` and `pr-open` go through no-mistakes
-but stay super-ship's effects, keyed per `adapters/runner-contract/CONTRACT.md` §5.
+Side effects this adapter adds: none. Under no-mistakes delivery, super-ship stops at the committed
+handoff. The existing Firstmate delivery contract starts the unmodified no-mistakes pipeline,
+which owns push and pull request (ADR-0012).
 
 ---
 
-## 2. Legacy patched-binding ownership
+## 2. Deprecated legacy patched-binding ownership for delivery mode agent-kit
 
 One owner per concern. Where two parties could act, the one named here acts and the other does not.
 
@@ -111,7 +113,7 @@ worker started is not independent of the worker (ruling `missing-supervisor-neve
 
 ---
 
-## 3. Compatibility
+## 3. Deprecated legacy compatibility
 
 | Firstmate | What works |
 |---|---|
@@ -139,7 +141,7 @@ exactly those.
 
 ---
 
-## 4. Legacy binding status lines
+## 4. Deprecated legacy binding status lines
 
 The worker reports to Firstmate the way every Firstmate worker does: by appending one line to its
 status file. agent-kit maps its run outcome onto Firstmate's verbs and writes nothing else. It never
@@ -189,7 +191,7 @@ closed here too: the audit cannot read it, so it refuses.
 
 ---
 
-## 5. Trust boundary
+## 5. Deprecated legacy trust boundary
 
 The stock path's grant, state, evidence and seat records are held by the task-scoped runner,
 outside the worker worktree and Git common directory. Firstmate's normal task brief, status and
@@ -217,7 +219,7 @@ input shape.
 
 ---
 
-## 6. Legacy binding delegated authority
+## 6. Deprecated legacy binding delegated authority
 
 super-review `full` and `readiness` and super-ship are `explicit-or-delegated`: a human starts them,
 or a delegated controller does under a validated grant. Under Firstmate, Firstmate is that controller

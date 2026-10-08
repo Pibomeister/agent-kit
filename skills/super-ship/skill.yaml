@@ -10,8 +10,8 @@ summary: >-
   separate capabilities, never included.
 
 triggers:
-  - Implementation is complete, receipts exist for the head being shipped, a review verdict binds to
-    that head, and the change has to become a commit and a pull request.
+  - A committed change has current verification and review records and needs a handoff under
+    no-mistakes delivery, or a pull request under a direct publication path.
   - A caller wants the pull-request payload generated locally with nothing published.
   - A change is about to become public and the pre-flight checks have not been run against this head.
   - An interrupted ship has to be resumed and the question is whether the remote effect landed.
@@ -106,10 +106,16 @@ inputs:
       timestamp, random value, attempt counter or session id enters the key.
 
 outputs:
+  - id: ship-preflight-gate
+    summary: >-
+      Under no-mistakes delivery, the gate record at the committed handoff head with an empty
+      working-tree diff. It is the completion evidence before the pipeline owns the branch.
   - id: ship-evidence
     schema: ship-evidence
     summary: >-
-      A run artifact with envelope schema ship-evidence holding three parts. The pull-request
+      For direct publication or dry-run, a run artifact with envelope schema ship-evidence holds
+      three parts. This output is not required at the no-mistakes handoff, where the committed head
+      and ship-preflight record are the completion evidence. The pull-request
       payload: title, description, linked ticket, recipe, acceptance-to-evidence matrix, evidence
       artifact digests, the receipts and verdict it rests on, and the branch it would be opened
       from; in dry-run the record holds this payload and the pre-flight
@@ -120,11 +126,11 @@ outputs:
   - id: declined-actions
     schema: decision
     summary: >-
-      Every sensitive action this run did not take, with the charter entry that would have been
-      needed. An empty list is stated rather than omitted.
+      For direct publication or dry-run, every sensitive action this run did not take, with the
+      charter entry that would have been needed. An empty list is stated rather than omitted.
   - id: lesson-candidate
     schema: lesson
-    summary: A draft written through the knowledgebase adapter and left unpublished.
+    summary: For direct publication, a draft written through the knowledgebase adapter and left unpublished; not required at the no-mistakes handoff.
 
 side_effects:
   - local-commit
@@ -173,6 +179,8 @@ hard_gates:
     evidence, and neither a grant nor a host permission makes them so.
   - No ship begins with an uncovered criterion, an implementer-authored receipt where the build gate
     records an implementer seat or a recipe binds the check, a host-unattested verifier where that seat is recorded or the run ever held a bypass or delegated grant, or a missing project-declared surface evidence kind.
+  - Under no-mistakes delivery, an uncommitted head, stale verify or review-readiness record, or a
+    non-empty working-tree diff refuses the handoff before ship-preflight and any remote effect.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
     dry run.
   - Every remote effect carries an idempotency key derived from the run id, the operation id, the
@@ -192,13 +200,17 @@ hard_gates:
     the decision named.
 
 stop_conditions:
+  - complete under no-mistakes delivery when the committed handoff head has current verify and
+    review-readiness records, ship-preflight records that head with an empty working-tree diff, and
+    super-ship has neither pushed nor opened a pull request.
   - complete in dry-run when the payload and the pre-flight record are emitted and no remote call was
     made.
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
     lesson candidate is drafted, and the watch lane holds the pull request.
   - needs-input when the run was started by neither the typed command nor a validated grant,
     receipts or the verdict are missing or bound to another revision, the mode was not named, or a
-    sensitive action is required and no charter entry covers it.
+    sensitive action is required and no charter entry covers it. A no-mistakes handoff with an
+    uncommitted head, non-empty diff or stale verify/readiness record also stops here.
   - needs-input when the autonomous form has no trusted evidence. The message names trusted evidence
     as unavailable and says the manual form remains open.
 
@@ -209,7 +221,8 @@ failure_outcomes:
       review verdict are missing or bound to another revision, the mode was not named, or a
       sensitive action is required and no charter entry covers it. Also when the autonomous form has
       no trusted evidence, in which case the message names trusted evidence as unavailable and says
-      the manual form remains open. No remote effect is performed.
+      the manual form remains open. A no-mistakes handoff also stops when the head is uncommitted,
+      the diff is non-empty or verify/readiness is stale. No remote effect is performed.
     next_permitted_action: >-
       A human types the command, or the run is re-invoked with the missing evidence, with the mode
       named, or with a charter entry approved for the action. Without trusted evidence, invoke the
