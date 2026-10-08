@@ -947,7 +947,7 @@ conflicts:
       and later commits are outside both review snapshots.
     ruling: >-
       Under no-mistakes delivery, agent-kit judges through an immutable committed handoff head:
-      verify and review-readiness bind to that head, and ship-preflight records it with an empty
+      verify, review-readiness and an approved full or delta review bind to that head, and ship-preflight records it with an empty
       working-tree diff. super-ship then stops without pushing, opening a PR or passing skips.
       no-mistakes owns the branch unmodified and unskipped, including Review, fixes, rebases, push,
       PR and CI; no auto_fix value is a precondition. Parked gates are answered inside the pipeline.

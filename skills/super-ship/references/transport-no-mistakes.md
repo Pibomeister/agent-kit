@@ -6,8 +6,8 @@ fixes, rebases, push, pull request and CI.
 
 ## Handoff
 
-Commit the change before verification and review-readiness. Record both at that committed handoff
-head. Record ship-preflight at the same head with an empty working-tree diff. super-ship ends at
+Commit the change before verification, review-readiness and the full or delta review. Record all
+three at that committed handoff head, the review approved and current. Record ship-preflight at the same head with an empty working-tree diff. super-ship ends at
 that record: it does not push or open a pull request and passes no `--skip`. No repository `auto_fix`
 value is a precondition. The task's delivery contract starts no-mistakes after this handoff; the
 pipeline runs unmodified and unskipped. Its Review may challenge a lifecycle-approved decision.

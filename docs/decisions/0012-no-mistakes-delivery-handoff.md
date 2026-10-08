@@ -19,8 +19,9 @@ decision. Disabling that Review, its fixes or its rebase would change the pipeli
 
 ## Decision
 
-agent-kit owns judgment through an immutable handoff head. The worker commits before verify and
-review-readiness, records both at that commit, and records ship-preflight at the same head with an
+agent-kit owns judgment through an immutable handoff head. The worker commits before verify,
+review-readiness and the full or delta review, records all three at that commit with the review
+approved, and records ship-preflight at the same head with an
 empty working-tree diff. Under no-mistakes delivery super-ship stops there: it does not push, open a
 pull request or pass `--skip`. No `auto_fix` value is a precondition. no-mistakes then owns the branch
 unmodified and unskipped. A parked gate is answered inside that pipeline. An ask-user finding,

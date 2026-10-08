@@ -117,8 +117,8 @@ The project's own release checks, discovered rather than assumed.
 4. Run the dependency-audit triage and the project's release checks. Record each outcome against
    the head, including checks that did not run.
 5. For direct publication, stage named owned paths, never the whole tree or a wildcard.
-6. For no-mistakes delivery, require a committed head, verify and readiness recorded after its
-   commit, and an empty diff; otherwise stop. For direct publication, prepare the commit payload
+6. For no-mistakes delivery, require a committed head, verify, readiness and an approved full or
+   delta review recorded after its commit, and an empty diff; otherwise stop. For direct publication, prepare the commit payload
    without moving HEAD before the current gate check.
 7. At that snapshot, run `node <this skill's directory>/../../bin/ak-gate.mjs check` for current
    verify, readiness and approved full or delta review. A refusal is `needs-input`; delegated
@@ -135,8 +135,8 @@ The project's own release checks, discovered rather than assumed.
 9. For a direct publication path, detect an open pull request deterministically. Only an exit-0
    empty result means none; any other outcome is unknown, and unknown is not none.
 10. In `dry-run`, emit the ship evidence record with the payload and check results, then stop.
-11. In direct `publish`, a commit that moves the head needs fresh verification, review-readiness
-    and preflight before a remote effect. Derive each effect's idempotency key from the run id,
+11. In direct `publish`, a fix that moves the head needs a new run: `open` again and re-run every
+    gated phase for it. Derive each effect's idempotency key from the run id,
     operation id, target identity and input artifact hash. Read the target before and after it.
 12. Draft the lesson candidate through the knowledgebase adapter; publication needs separate
     authority.
@@ -245,7 +245,7 @@ drafted, and the watch lane holds the PR.
 `needs-input`: the run was started by neither the typed command nor a validated grant, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive
 action lacks a charter entry. A no-mistakes handoff with an uncommitted head, non-empty diff or stale
-verify/readiness record also stops here. Returns what it would need, which for the first
+verify, readiness or review record also stops here. Returns what it would need, which for the first
 is the command to type, and performs no remote effect. Also when the autonomous form has no trusted
 evidence: the message names trusted evidence as unavailable and says the manual form remains open.
 
