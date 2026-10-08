@@ -162,8 +162,8 @@ Gate: no ship begins with an uncovered criterion, an implementer-authored receip
 verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant, or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
-Gate: under no-mistakes delivery, an uncommitted head, stale verify or review-readiness record, or
-a non-empty working-tree diff refuses the handoff before `ship-preflight` and any remote effect.
+Gate: under no-mistakes delivery, an uncommitted head, a stale verify, review-readiness or approved
+full or delta review record, or a non-empty working-tree diff refuses the handoff before `ship-preflight` and any remote effect.
 
 Gate: `dry-run` makes no remote call. Not a reduced one, not a single harmless one — none. A run that
 pushed a branch to show what the push would look like was not a dry run.
