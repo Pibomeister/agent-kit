@@ -152,6 +152,7 @@ const BASE: Record<string, string> = {
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
 };
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
@@ -224,7 +225,7 @@ describe("the licence files the distribution is obliged to carry", () => {
     const ctx = ctxFor();
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
-      for (const name of ["NOTICE", "LICENSE"]) {
+      for (const name of ["NOTICE", "LICENSE", "provenance/licenses/thedotmack_claude-mem.LICENSE"]) {
         expect(`${host}:${name}=${plan.files.get(name)?.contents}`).toBe(`${host}:${name}=${BASE[name]}`);
       }
     }
