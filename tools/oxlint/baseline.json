@@ -286,9 +286,9 @@
     "anti-slop(no-chained-type-assertions)": 2,
     "anti-slop(no-conditional-empty-object-spread)": 1,
     "anti-slop(no-known-value-widening)": 10,
-    "anti-slop(no-runtime-typeof)": 35,
-    "anti-slop(no-shape-in-symbol-names)": 6,
-    "anti-slop(no-unknown-parameters)": 6,
+    "anti-slop(no-runtime-typeof)": 27,
+    "anti-slop(no-shape-in-symbol-names)": 5,
+    "anti-slop(no-unknown-parameters)": 5,
     "anti-slop(no-unsafe-dictionary-type)": 16,
     "anti-slop(require-safety-comment-for-type-assertion)": 23,
     "typescript(no-non-null-assertion)": 8,
@@ -1022,12 +1022,9 @@
     "unicorn(no-array-sort)": 1
   },
   "tests/lifecycle/verification-predicate.test.ts": {
-    "anti-slop(no-shape-in-symbol-names)": 3,
-    "anti-slop(no-unsafe-dictionary-type)": 1,
-    "anti-slop(require-safety-comment-for-type-assertion)": 1,
+    "anti-slop(no-shape-in-symbol-names)": 1,
     "typescript(no-dynamic-delete)": 1,
     "typescript(no-non-null-assertion)": 2,
-    "typescript(no-unnecessary-type-assertion)": 1,
     "typescript(no-unsafe-return)": 1
   },
   "tests/links.test.ts": {

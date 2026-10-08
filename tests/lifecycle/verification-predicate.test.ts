@@ -2,18 +2,138 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { verificationShapeReasons } from "../../src/lifecycle/gate.ts";
+import { verificationShapeReasons as verificationRefusals } from "../../src/lifecycle/gate.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
-import { edited, parseJson, pathsOf, type JsonValue } from "../helpers/json.ts";
+import { type JsonValue } from "../helpers/json.ts";
+import { verificationPopulations } from "../helpers/verification-cases.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const validate = compileSchemas(ROOT).validatorFor("verification")!;
-const read = (path: string): Record<string, unknown> => JSON.parse(readFileSync(path, "utf8"));
+interface JsonObject {
+  [key: string]: JsonValue;
+}
+const read = (path: string): JsonObject => JSON.parse(readFileSync(path, "utf8"));
+
+function jsonObject(value: JsonValue | undefined): value is JsonObject {
+  return value !== null && value !== undefined && value instanceof Object && !Array.isArray(value);
+}
+
+// These are lifecycle policy, not JSON schema: neither may become a general parity exemption.
+function predicateOnlyRules(doc: JsonValue): string[] {
+  if (!jsonObject(doc)) throw new Error("Expected a receipt object");
+  const rules: string[] = [];
+  if (!("supports" in doc)) rules.push("no_criteria rejection");
+  if (doc.evidence_kind === "api-response") {
+    const response = doc.api_response;
+    const artifacts = doc.artifacts;
+    if (!jsonObject(response) || !Array.isArray(artifacts)) throw new Error("Expected schema-valid response");
+    if (
+      !artifacts.some(
+        (artifact) => jsonObject(artifact) && artifact.kind === "response" && artifact.digest === response.body_digest,
+      )
+    )
+      rules.push("api-response body_digest must match a response artifact");
+  }
+  return rules;
+}
 
 /** Whether the bundled predicate accepts a receipt: it reports no reasons against it. */
-const accepts = (receipt: JsonValue) => verificationShapeReasons(receipt).length === 0;
+const accepts = (receipt: JsonValue) => verificationRefusals(receipt).length === 0;
 
 describe("the bundled verification predicate", () => {
+  test("refuses every unknown own top-level Object.prototype member", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    for (const key of Object.getOwnPropertyNames(Object.prototype)) {
+      const candidate = Object.fromEntries([...Object.entries(receipt), [key, 1]]);
+      expect(verificationRefusals(candidate), key).toContain(`receipt must NOT have unevaluated properties (${key})`);
+    }
+  });
+
+  test("refuses overflow numbers in integer fields", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    receipt.status = "failed";
+    for (const number of [Infinity, -Infinity]) {
+      receipt.exit_status = number;
+      expect(verificationRefusals(receipt)).toContain("/exit_status must be integer");
+    }
+  });
+
+  test("agrees with ajv across per-member corruptions, unknown members and invalid strings", () => {
+    const disagreements: string[] = [];
+    for (const { name, hash, doc, cases } of verificationPopulations()) {
+      expect(validate(doc), `${name}: ${JSON.stringify(validate.errors)}`).toBe(true);
+      let rejected = 0;
+      for (const { label, doc: candidate } of cases) {
+        const schemaAccepted = validate(candidate);
+        const policyReasons = schemaAccepted ? predicateOnlyRules(candidate) : [];
+        if (!schemaAccepted) rejected++;
+        if (accepts(candidate) !== (schemaAccepted && policyReasons.length === 0))
+          disagreements.push(`${name} sha256:${hash} ${label}: ajv=${schemaAccepted} predicate=${accepts(candidate)}`);
+      }
+      expect(rejected, `${name} sha256:${hash}`).toBeGreaterThan(cases.length / 2);
+      console.info(`parity: ${name} sha256:${hash} compared=${cases.length}`);
+    }
+    expect(disagreements).toEqual([]);
+  });
+
+  test("preserves the two lifecycle policy rejections on bounded schema-valid receipts", () => {
+    const noCriteria = read(join(ROOT, "templates", "verification.example.json"));
+    delete noCriteria.supports;
+    noCriteria.no_criteria = "No criteria were supplied.";
+    const mismatch = read(join(ROOT, "tests", "fixtures", "verification-all-members.json"));
+    const schema = read(join(ROOT, "schemas", "verification.schema.json"));
+    const common = read(join(ROOT, "schemas", "common.schema.json"));
+    if (!jsonObject(schema.properties) || !jsonObject(common.$defs) || !jsonObject(common.$defs.envelope))
+      throw new Error("Expected receipt and envelope property definitions");
+    const envelope = common.$defs.envelope;
+    if (!jsonObject(envelope.properties)) throw new Error("Expected envelope properties");
+    const defined = new Set([...Object.keys(schema.properties), ...Object.keys(envelope.properties)]);
+    const covered = new Set([...Object.keys(mismatch), ...Object.keys(noCriteria)]);
+    expect(covered).toEqual(defined);
+    mismatch.api_response = { status: 200, body_digest: `sha256:${"d".repeat(64)}` };
+    for (const [doc, rule, reason] of [
+      [noCriteria, "no_criteria rejection", "supports is invalid"],
+      [
+        mismatch,
+        "api-response body_digest must match a response artifact",
+        "api_response body_digest has no matching response artifact",
+      ],
+    ] as const) {
+      expect(validate(doc), JSON.stringify(validate.errors)).toBe(true);
+      expect(predicateOnlyRules(doc)).toEqual([rule]);
+      expect(verificationRefusals(doc)).toEqual([reason]);
+    }
+  });
+
+  test("reports every schema error together with the predicate-only rules", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    receipt.notes = null;
+    receipt.status = "green";
+    expect(validate(receipt)).toBe(false);
+    const reasons = verificationRefusals(receipt);
+    expect(reasons).toContain("/notes must be string");
+    expect(reasons).toContain("/status must be equal to one of the allowed values");
+
+    delete receipt.supports;
+    receipt.no_criteria = "No criteria were supplied.";
+    const withoutCriteria = verificationRefusals(receipt);
+    expect(withoutCriteria).toContain("/notes must be string");
+    expect(withoutCriteria).toContain("/status must be equal to one of the allowed values");
+    expect(withoutCriteria).toContain("supports is invalid");
+  });
+
+  test("names each unknown member, at the root and nested, beside the other schema errors", () => {
+    const receipt = read(join(ROOT, "templates", "verification.example.json"));
+    receipt.stray = 1;
+    receipt.notes = 5;
+    receipt.project = { id: "example-project", repo: "example-org/example-service", extra: true };
+    expect(verificationRefusals(receipt)).toEqual([
+      "/project must NOT have additional properties (extra)",
+      "/notes must be string",
+      "receipt must NOT have unevaluated properties (stray)",
+    ]);
+  });
+
   test("agrees with ajv over every receipt fixture and representative malformed shapes", () => {
     const fixtureDir = join(ROOT, "tests", "fixtures", "verification-zero-exit");
     const fixtures = readdirSync(fixtureDir)
@@ -56,100 +176,21 @@ describe("the bundled verification predicate", () => {
     ];
 
     for (const receipt of [...fixtures, ...templates, surface, ...malformed]) {
-      expect(accepts(parseJson(JSON.stringify(receipt))), JSON.stringify(receipt)).toBe(validate(receipt) as boolean);
+      expect(accepts(receipt), JSON.stringify(receipt)).toBe(validate(receipt));
     }
   });
+});
 
-  // Known divergences: verificationShapeReasons (src/lifecycle/gate.ts) accepts these single-member
-  // corruptions and ajv rejects them. Each is an optional or nested metadata member the gate's refusals do
-  // not read. This is a known predicate defect, not intended behaviour: a fix in gate.ts makes this test
-  // fail until the fixed entries are removed from this list, and any new divergence fails it too.
-  const KNOWN_DIVERGENCES = [
-    "delete environment.toolchain.0.name",
-    "delete environment.toolchain.0.version",
-    "delete weakened_checks.0.decision",
-    "delete weakened_checks.0.decision.hash",
-    "delete weakened_checks.0.decision.id",
-    "delete weakened_checks.0.what",
-    "null command.cwd",
-    "null command.duration_ms",
-    "null command.started_at",
-    "null created_by.operation",
-    "null created_by.skill",
-    "null environment.config_digest",
-    "null environment.image_digest",
-    "null environment.toolchain",
-    "null environment.toolchain.0",
-    "null environment.toolchain.0.name",
-    "null environment.toolchain.0.version",
-    "null finding.schema",
-    "null notes",
-    "null output_excerpt",
-    "null probe.observed",
-    "null project.repo",
-    "null recipe.schema",
-    "null ticket.schema",
-    "null weakened_checks",
-    "null weakened_checks.0",
-    "null weakened_checks.0.decision",
-    "null weakened_checks.0.decision.hash",
-    "null weakened_checks.0.decision.id",
-    "null weakened_checks.0.decision.schema",
-    "null weakened_checks.0.detail",
-    "null weakened_checks.0.what",
-    "retype command.cwd",
-    "retype command.duration_ms",
-    "retype command.started_at",
-    "retype created_by.operation",
-    "retype created_by.skill",
-    "retype environment.config_digest",
-    "retype environment.image_digest",
-    "retype environment.toolchain",
-    "retype environment.toolchain.0",
-    "retype environment.toolchain.0.name",
-    "retype environment.toolchain.0.version",
-    "retype finding.schema",
-    "retype notes",
-    "retype output_excerpt",
-    "retype probe.observed",
-    "retype project.repo",
-    "retype recipe.schema",
-    "retype ticket.schema",
-    "retype weakened_checks",
-    "retype weakened_checks.0",
-    "retype weakened_checks.0.decision",
-    "retype weakened_checks.0.decision.hash",
-    "retype weakened_checks.0.decision.id",
-    "retype weakened_checks.0.decision.schema",
-    "retype weakened_checks.0.detail",
-    "retype weakened_checks.0.what",
-  ];
-
-  test("agrees with ajv when any one member, top-level or nested, is deleted, nulled or retyped", () => {
-    const base = [
-      "verification.example.json",
-      "verification.surface.example.json",
-      "verification.weakened.example.json",
-      "verification.zero-exit-failure.example.json",
-    ].map((name) => parseJson(readFileSync(join(ROOT, "templates", name), "utf8")));
-    let compared = 0;
-    let rejected = 0;
-    const divergent = new Set<string>();
-    for (const doc of base) {
-      expect(validate(doc)).toBe(true);
-      for (const path of pathsOf(doc)) {
-        for (const how of ["delete", "null", "retype"] as const) {
-          const receipt = edited(doc, path, how);
-          const ajv = validate(receipt);
-          if (accepts(receipt) !== ajv) divergent.add(`${how} ${path.join(".")}`);
-          compared += 1;
-          if (!ajv) rejected += 1;
-        }
-      }
-    }
-    expect([...divergent].toSorted()).toEqual([...KNOWN_DIVERGENCES].toSorted());
-    // The sweep must reach the predicate's reasons: most single corruptions are invalid.
-    expect(compared).toBeGreaterThan(600);
-    expect(rejected).toBeGreaterThan(compared / 2);
+test("the source predicate checks receipts under node, which the eval scaffolds run gate.ts with", () => {
+  const receipt = join(ROOT, "templates/verification.example.json");
+  const script = `
+const { verificationShapeReasons } = await import(process.env.GATE);
+const receipt = JSON.parse((await import("node:fs")).readFileSync(process.env.RECEIPT, "utf8"));
+console.log(JSON.stringify([verificationShapeReasons(receipt), verificationShapeReasons({ ...receipt, notes: 5 })]));
+`;
+  const run = Bun.spawnSync(["node", "--input-type=module", "-e", script], {
+    env: { ...process.env, GATE: join(ROOT, "src/lifecycle/gate.ts"), RECEIPT: receipt },
   });
+  expect(run.exitCode, run.stderr.toString()).toBe(0);
+  expect(JSON.parse(run.stdout.toString())).toEqual([[], ["/notes must be string"]]);
 });

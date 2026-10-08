@@ -42,6 +42,16 @@ substantial portions adapted from each of those eight projects.
 
     If other attributions are required by dependencies or included code, add them here.
 
+Runtime dependencies bundled into bin/ak-gate.mjs, whose license texts ship
+with every bundle under provenance/licenses/:
+
+- ajv 8.20.0 — Copyright (c) 2015-2021 Evgeny Poberezkin — MIT License
+  https://github.com/ajv-validator/ajv
+  provenance/licenses/ajv-validator_ajv.LICENSE
+- ajv-formats 3.0.1 — Copyright (c) 2020 Evgeny Poberezkin — MIT License
+  https://github.com/ajv-validator/ajv-formats
+  provenance/licenses/ajv-validator_ajv-formats.LICENSE
+
 Development tooling, used to lint this repository and not part of any
 package built into dist/:
 

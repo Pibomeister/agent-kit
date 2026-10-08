@@ -20,9 +20,11 @@ import {
   type Gate,
   type GateRecord,
 } from "../../src/lifecycle/gate.ts";
+import * as lifecycle from "../../src/lifecycle/gate.ts";
 import { GATE_FILE, planBundle } from "../../src/packaging/plan.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
+import { verificationPopulations } from "../helpers/verification-cases.ts";
 
 // Every case spawns git and the CLI several times, so the 5s default times out on a shared host.
 setDefaultTimeout(60_000);
@@ -221,7 +223,45 @@ const pointerPath = (cwd: string, branch: string): string =>
     `${branch.replace(/[^A-Za-z0-9._:-]/g, "-")}-${createHash("sha256").update(branch).digest("hex").slice(0, 12)}.json`,
   );
 
+function expectRunAliasesRefused(dir: string, invoke: (...argv: string[]) => ReturnType<typeof ak>): void {
+  const ticketPath = ticket(dir, "alias-proof");
+  const opened = invoke("open", "--ticket", ticketPath);
+  expect(opened.code).toBe(0);
+  const run = opened.out[0]?.match(/^opened run (.+)$/)?.[1];
+  if (run === undefined) throw new Error("Missing run id");
+  for (const gate of ["build-checks", "review-full", "review-readiness"])
+    expect(invoke("record", "--gate", gate).code).toBe(0);
+  const id = "verification-alias";
+  const failed = receipt(dir, run, ticketPath, { id, status: "failed", exit_status: 1 });
+  expect(invoke("record", "--gate", "verify", "--receipt", failed).code).toBe(0);
+  expect(invoke("check", "--evidence").err).toContain("evidence failed");
+  const gateDir = join(defaultEvidenceDir(dir), run, "verify");
+  const file = readdirSync(gateDir)[0];
+  if (file === undefined) throw new Error("Missing verification record");
+  const path = join(gateDir, file);
+  const before = readFileSync(path, "utf8");
+  const aliases = [run.replace("-", "+")];
+  // Case aliases collide only on a case-insensitive filesystem.
+  if (existsSync(join(defaultEvidenceDir(dir), run.toUpperCase(), "verify"))) aliases.push(run.toUpperCase());
+  for (const alias of aliases) {
+    const attempted = invoke("record", "--gate", "verify", "--run", alias);
+    expect(attempted.code, alias).toBe(1);
+    expect(attempted.err).toContain(`was recorded for run ${run}`);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(invoke("check", "--evidence").err).toContain("evidence failed");
+  }
+  const passed = receipt(dir, run, ticketPath, { id });
+  expect(invoke("record", "--gate", "verify", "--receipt", passed).code).toBe(0);
+  const checked = invoke("check", "--evidence");
+  expect(checked.code).toBe(1);
+  expect(checked.err).toContain("evidence unstable");
+}
+
 describe("ak lifecycle check, standalone", () => {
+  test("run-id aliases cannot erase a recorded failure", () => {
+    const dir = repo();
+    expectRunAliasesRefused(dir, (...argv) => ak(dir, ...argv));
+  });
   test("a described-green claim without execution evidence is refused", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "described-green");
@@ -235,7 +275,7 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "record", "--gate", "verify", "--receipt", claimed).code).toBe(0);
     const checked = ak(dir, "check");
     expect(checked.code).toBe(1);
-    expect(checked.err).toContain("output_digest is required for a check that ran");
+    expect(checked.err).toContain("receipt must have required property 'output_digest'");
   });
 
   test("a verifier seat that is also the building seat is refused", () => {
@@ -988,6 +1028,75 @@ describe("ak lifecycle check, standalone", () => {
     expect(checked.err).toContain("refused: evidence unstable: AC-1 has both failed and passed evidence at this head");
   });
 
+  const environment = { id: "test", isolated: true, secrets_policy: "none" };
+  const reference = { id: "reference-1", hash: `sha256:${"a".repeat(64)}`, schema: null };
+  const schemaOnlyFailures: [string, NonNullable<Parameters<typeof receipt>[3]>][] = [
+    ["project.repo", { project: { id: "demo", repo: null } }],
+    ["created_by.skill", { created_by: { role: "runner", skill: null } }],
+    ["created_by.operation", { created_by: { role: "runner", operation: 7 } }],
+    ["command.cwd type", { command: { argv: ["bun", "test"], cwd: null } }],
+    ["absolute command.cwd", { command: { argv: ["bun", "test"], cwd: "/outside" } }],
+    ["command.started_at", { command: { argv: ["bun", "test"], started_at: null } }],
+    ["command.duration_ms", { command: { argv: ["bun", "test"], duration_ms: "1" } }],
+    ["created_at without an offset", { created_at: "2026-09-29T00:00:00" }],
+    ["output_excerpt", { output_excerpt: null }],
+    ["environment.image_digest", { environment: { ...environment, image_digest: null } }],
+    ["environment.toolchain", { environment: { ...environment, toolchain: null } }],
+    ["toolchain entry", { environment: { ...environment, toolchain: [null] } }],
+    ["toolchain name", { environment: { ...environment, toolchain: [{ name: null, version: "1" }] } }],
+    ["toolchain version", { environment: { ...environment, toolchain: [{ name: "bun", version: null }] } }],
+    ["environment.config_digest", { environment: { ...environment, config_digest: 7 } }],
+    ["ticket.schema", { ticket: { ...reference, id: "sticky-malformed" } }],
+    ["finding.schema", { finding: reference }],
+    ["recipe.schema", { recipe: reference }],
+    ["notes", { notes: null }],
+    ["probe.observed", { probe: { name: "health", target: "service", observed: 7 } }],
+    ["weakened_checks", { weakened_checks: null }],
+    ["weakened_checks entry", { weakened_checks: [null] }],
+    ["weakened_checks what", { weakened_checks: [{ what: null, detail: "Changed", decision: reference }] }],
+    ["weakened_checks detail", { weakened_checks: [{ what: "threshold-lowered", detail: null, decision: reference }] }],
+    [
+      "weakened_checks decision",
+      { weakened_checks: [{ what: "threshold-lowered", detail: "Changed", decision: null }] },
+    ],
+    [
+      "weakened_checks decision.schema",
+      { weakened_checks: [{ what: "threshold-lowered", detail: "Changed", decision: reference }] },
+    ],
+    [
+      "weakened_checks decision.id",
+      {
+        weakened_checks: [
+          { what: "threshold-lowered", detail: "Changed", decision: { ...reference, schema: "decision", id: null } },
+        ],
+      },
+    ],
+    [
+      "weakened_checks decision.hash",
+      {
+        weakened_checks: [
+          { what: "threshold-lowered", detail: "Changed", decision: { ...reference, schema: "decision", hash: null } },
+        ],
+      },
+    ],
+  ];
+  for (const [name, extra] of schemaOnlyFailures) {
+    test(`a schema-invalid failed receipt stays sticky after replacement: ${name}`, () => {
+      const dir = repo();
+      const ticketPath = ticket(dir, "sticky-malformed");
+      const run = openedRun(dir, ticketPath);
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const id = "verification-sticky-malformed";
+      const failed = receipt(dir, run, ticketPath, { id, status: "failed", exit_status: 1, ...extra });
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", failed).code).toBe(0);
+      expect(ak(dir, "check", "--evidence").err).toContain("evidence malformed");
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", receipt(dir, run, ticketPath, { id })).code).toBe(0);
+      const checked = ak(dir, "check", "--evidence");
+      expect(checked.code).toBe(1);
+      expect(checked.err).toContain("evidence malformed");
+    });
+  }
+
   test("a later pass never overwrites a failure for the same criterion and head", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "unstable-check");
@@ -1406,6 +1515,55 @@ describe("ak lifecycle check, standalone", () => {
 });
 
 describe("the gate a bundle carries", () => {
+  test("packaged gates refuse run-id aliases that erase a recorded failure", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    for (const host of ["claude-code", "codex"] as const) {
+      const file = planBundle({ root: REPO, catalog }, host, {}).files.get(GATE_FILE);
+      if (file === undefined) throw new Error("planned gate missing");
+      const script = join(makeTree({ "ak-gate.mjs": file.contents }), "ak-gate.mjs");
+      for (const runtime of ["node", process.execPath]) {
+        const dir = repo();
+        expectRunAliasesRefused(dir, (...argv) => {
+          const result = Bun.spawnSync([runtime, script, ...argv], { cwd: dir });
+          return {
+            code: result.exitCode,
+            out: result.stdout.toString().trim().split("\n"),
+            err: result.stderr.toString(),
+          };
+        });
+      }
+    }
+  });
+  test("the shipped Node gate matches the source across the canonical receipt corruption sweep", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    const cases = verificationPopulations().flatMap(({ name, cases: population }) =>
+      population.map(({ label, doc }) => ({ label: `${name}: ${label}`, doc })),
+    );
+    const control = cases[0]?.doc;
+    if (!(control instanceof Object) || Array.isArray(control)) throw new Error("Expected receipt control");
+    for (const key of Object.getOwnPropertyNames(Object.prototype))
+      cases.push({ label: `prototype member ${key}`, doc: Object.fromEntries([...Object.entries(control), [key, 1]]) });
+    const expected = cases.map(({ doc }) => lifecycle.verificationShapeReasons(doc).length === 0);
+    for (const host of ["claude-code", "codex"] as const) {
+      const file = planBundle({ root: REPO, catalog }, host, {}).files.get(GATE_FILE);
+      if (file === undefined) throw new Error("planned gate missing");
+      const root = makeTree({
+        "ak-gate.mjs": file.contents,
+        "cases.json": JSON.stringify(cases),
+        "check-cases.mjs": `import { readFileSync } from "node:fs";
+import { verificationShapeReasons } from "./ak-gate.mjs";
+const cases = JSON.parse(readFileSync(new URL("./cases.json", import.meta.url), "utf8"));
+console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).length === 0)));`,
+      });
+      for (const runtime of ["node", process.execPath]) {
+        const result = Bun.spawnSync([runtime, join(root, "check-cases.mjs")], { cwd: root });
+        expect(result.exitCode, result.stderr.toString()).toBe(0);
+        expect(JSON.parse(result.stdout.toString()), `${host} under ${runtime}`).toEqual(expected);
+      }
+    }
+  });
   test(`every host's bundle ships ${GATE_FILE}, and it runs under node with no checkout`, () => {
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("no catalog");
@@ -1428,6 +1586,20 @@ describe("the gate a bundle carries", () => {
       const refused = node("check", "--run", host);
       expect(refused.exitCode).toBe(1);
       expect(refused.stderr.toString()).toContain("refused: gate build-checks has no current evidence");
+    }
+  });
+
+  test(`every bundle carrying ${GATE_FILE} ships the MIT notices of the ajv code it inlines`, () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("no catalog");
+    for (const host of ["claude-code", "codex"] as const) {
+      const files = planBundle({ root: REPO, catalog }, host, {}).files;
+      expect(files.has(GATE_FILE)).toBe(true);
+      for (const pkg of ["ajv", "ajv-formats"]) {
+        const shipped = files.get(`provenance/licenses/ajv-validator_${pkg}.LICENSE`)?.contents;
+        expect(shipped).toBe(readFileSync(join(REPO, "node_modules", pkg, "LICENSE"), "utf8"));
+        expect(files.get("NOTICE")?.contents).toContain(`provenance/licenses/ajv-validator_${pkg}.LICENSE`);
+      }
     }
   });
 
@@ -1471,6 +1643,47 @@ describe("the gate a bundle carries", () => {
           .exitCode,
       ).toBe(0);
       expect(JSON.parse(allowed.node("check", "--json").stdout.toString()).outcome).toBe("allowed");
+      const malformed = start(`${host}-malformed`);
+      expect(
+        malformed.node(
+          "record",
+          "--gate",
+          "verify",
+          "--receipt",
+          receipt(malformed.dir, malformed.run, malformed.ticketPath, { project: { id: "demo", repo: null } }),
+        ).exitCode,
+      ).toBe(0);
+      const malformedCheck = malformed.node("check", "--evidence");
+      expect(malformedCheck.exitCode).toBe(1);
+      expect(malformedCheck.stderr.toString()).toContain("/project/repo must be string");
+      const erased = start(`${host}-malformed-failure`);
+      const stickyId = "verification-malformed-failure";
+      expect(
+        erased.node(
+          "record",
+          "--gate",
+          "verify",
+          "--receipt",
+          receipt(erased.dir, erased.run, erased.ticketPath, {
+            id: stickyId,
+            status: "failed",
+            exit_status: 1,
+            project: { id: "demo", repo: null },
+          }),
+        ).exitCode,
+      ).toBe(0);
+      expect(
+        erased.node(
+          "record",
+          "--gate",
+          "verify",
+          "--receipt",
+          receipt(erased.dir, erased.run, erased.ticketPath, { id: stickyId }),
+        ).exitCode,
+      ).toBe(0);
+      const stillFailed = erased.node("check", "--evidence");
+      expect(stillFailed.exitCode).toBe(1);
+      expect(stillFailed.stderr.toString()).toContain("/project/repo must be string");
 
       const missing = start(`${host}-missing`);
       expect(missing.node("record", "--gate", "verify").exitCode).toBe(0);
@@ -1575,7 +1788,7 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
   type ReceiptOverride = {
     run_id?: string;
     environment?: { id: string; isolated: boolean; secrets_policy: string };
-    invalidation?: { reason: string };
+    invalidation?: { reason: string; at: string };
     schema_version?: number;
     project?: { id: string };
   };
@@ -1601,12 +1814,16 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     ],
     [
       "an invalidated receipt",
-      { receipt: { invalidation: { reason: "superseded" } } },
+      { receipt: { invalidation: { reason: "code-changed", at: "2026-01-01T00:00:00Z" } } },
       "refused: evidence invalidated",
     ],
     ["schema version 2", { receipt: { schema_version: 2 } }, "refused: evidence unsupported-version"],
     ["a reference naming another id", { gateRefId: "verification-other" }, "contains id"],
-    ["a malformed project", { receipt: { project: { id: "Not Kebab" } } }, "project is invalid"],
+    [
+      "a malformed project",
+      { receipt: { project: { id: "Not Kebab" } } },
+      '/project/id must match pattern "^[a-z0-9]+(-[a-z0-9]+)*$"',
+    ],
     ["another ticket id at the right hash", { ticket: "id" }, "refused: evidence wrong-task"],
     ["the right ticket id at another hash", { ticket: "hash" }, "refused: evidence wrong-task"],
   ];

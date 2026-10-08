@@ -119,6 +119,8 @@ function capture() {
 const BUILDABLE = {
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n",
+  "provenance/licenses/ajv-validator_ajv.LICENSE": "MIT License\n\nCopyright (c) 2015-2021 Evgeny Poberezkin\n",
+  "provenance/licenses/ajv-validator_ajv-formats.LICENSE": "MIT License\n\nCopyright (c) 2020 Evgeny Poberezkin\n",
   // §5.2's authority for the four identity fields the host manifests carry.
   // The values are the ones CATALOG above produces -- `name` from `package.id`,
   // `description` from `package.name` -- because a tree whose two sides already

@@ -24,6 +24,7 @@ dist/claude-code/
 ├── skills/<id>/SKILL.md       # host frontmatter keys generated; body unchanged
 ├── skills/<id>/references/    # transitive dependencies resolved into the bundle
 ├── evals/<id>/<case>/case.yaml
+├── provenance/licenses/       # ajv and ajv-formats MIT notices for bin/ak-gate.mjs
 └── NOTICE, LICENSE
 ```
 

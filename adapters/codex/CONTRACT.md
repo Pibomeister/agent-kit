@@ -71,6 +71,7 @@ dist/codex/
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
 ├── skills/<id>/SKILL.md        # same bodies as dist/claude-code, different generated keys
 ├── skills/<id>/references/
+├── provenance/licenses/       # ajv and ajv-formats MIT notices for bin/ak-gate.mjs
 └── NOTICE, LICENSE
 ```
 

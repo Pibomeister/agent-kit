@@ -22,9 +22,9 @@
  * git common directory, and a Firstmate worker opens its run with `--binding <file> --dir <the binding's
  * evidence store>`, so the run record names the binding and the store its grants are kept in.
  *
- * The file imports only `node:` built-ins, because `ak build` type-strips it into each plugin bundle as
- * `bin/ak-gate.mjs`, where a session without this checkout runs it with `node`. `ak lifecycle` runs the
- * same `main` in place.
+ * `ak build` bundles this file and the schema-derived standalone validator as `bin/ak-gate.mjs`.
+ * A session without this checkout runs that self-contained file with `node`; `ak lifecycle` runs
+ * the same predicate and `main` in place.
  */
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -48,6 +48,7 @@ import {
 import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { verificationValidator } from "./verification-schema.ts";
 
 // ── the snapshot ─────────────────────────────────────────────────────────────
 
@@ -287,15 +288,10 @@ const boundTo = (receipt: Record<string, unknown>, snapshot: Snapshot): boolean 
   return source?.revision === snapshot.revision && source?.diff_hash === snapshot.diff_hash;
 };
 
-/** Whether the store still holds this reference as a well-formed failed receipt at this snapshot, which no re-record replaces. */
+/** A declared failure bound to this snapshot stays recorded even when its receipt is malformed. */
 function storedFailure(dir: string, run: string, ref: ArtifactRef, snapshot: Snapshot): boolean {
   const receipt = storedReceipt(dir, run, ref);
-  return (
-    receipt !== undefined &&
-    receipt.status === "failed" &&
-    boundTo(receipt, snapshot) &&
-    verificationShapeReasons(receipt).length === 0
-  );
+  return receipt !== undefined && receipt.status === "failed" && boundTo(receipt, snapshot);
 }
 
 const runRecordPath = (dir: string, run: string): string => join(dir, "runs", safeRunId(run), "run.json");
@@ -525,6 +521,8 @@ export function recordGate(
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
   const path = join(a.dir, safeRunId(a.run), a.gate, name);
   const previous = readObject(path) as Partial<GateRecord> | undefined;
+  if (previous !== undefined && previous.run_id !== a.run)
+    return refuse(`${a.gate} at this snapshot was recorded for run ${String(previous.run_id)}, not ${a.run}`);
   const recordedClass = a.delegationClass ?? DELEGATION_CLASSES.find((known) => known === previous?.class);
   const implementer =
     a.implementer ?? (implementerWellFormed(previous?.implementer) ? previous?.implementer : undefined);
@@ -705,8 +703,6 @@ function onBranchLine(project: string, r: Snapshot, head: string, fork: { base: 
   return !isAncestor(project, r.revision, fork.base);
 }
 
-const HASH = /^sha256:[0-9a-f]{64}$/;
-const REVISION = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const AC = /^AC-[0-9]+$/;
@@ -716,258 +712,27 @@ const strings = (value: unknown): string[] | undefined =>
   Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
 const nonempty = (value: unknown): value is string => typeof value === "string" && /\S/.test(value);
 
-/** The schema-shape half of the bundled predicate. Cross-checked against ajv in lifecycle tests. */
+/** The schema-shape half of the bundled predicate: ajv against the verification schema, plus the checks it cannot express. */
 export function verificationShapeReasons(value: unknown): string[] {
   const receipt = object(value);
-  if (receipt === undefined) return ["receipt is not an object"];
-  const reasons: string[] = [];
-  const allowed = new Set([
-    "schema",
-    "schema_version",
-    "id",
-    "project",
-    "run_id",
-    "created_by",
-    "inputs",
-    "source_revision",
-    "created_at",
-    "updated_at",
-    "status",
-    "supersedes",
-    "approvals",
-    "tracker",
-    "kind",
-    "check",
-    "recipe",
-    "evidence_kind",
-    "verifier_seat",
-    "api_response",
-    "command",
-    "probe",
-    "manual",
-    "exit_status",
-    "exit_disagreement",
-    "output_digest",
-    "output_excerpt",
-    "artifacts",
-    "environment",
-    "supports",
-    "ticket",
-    "finding",
-    "reason",
-    "invalidation",
-    "notes",
-    "weakened_checks",
-  ]);
-  for (const key of Object.keys(receipt)) if (!allowed.has(key)) reasons.push(`unknown member ${key}`);
-  const required = [
-    "schema",
-    "schema_version",
-    "id",
-    "project",
-    "run_id",
-    "created_by",
-    "inputs",
-    "source_revision",
-    "created_at",
-    "status",
-    "kind",
-    "environment",
-    "supports",
-  ];
-  for (const key of required) if (!(key in receipt)) reasons.push(`missing ${key}`);
-  if (receipt.schema !== "verification") reasons.push("schema is not verification");
-  if (receipt.schema_version !== 1) reasons.push("schema_version is not 1");
-  if (!nonempty(receipt.id) || !ARTIFACT_ID.test(receipt.id)) reasons.push("id is invalid");
-  const project = object(receipt.project);
-  if (project === undefined || !nonempty(project.id) || !KEBAB.test(project.id)) reasons.push("project is invalid");
-  if (receipt.run_id !== null && (!nonempty(receipt.run_id) || !ARTIFACT_ID.test(receipt.run_id)))
-    reasons.push("run_id is invalid");
-  const creator = object(receipt.created_by);
-  if (creator === undefined || !nonempty(creator.role)) reasons.push("created_by is invalid");
-  const artifactRefValid = (candidate: unknown): boolean => {
-    const ref = object(candidate);
-    return (
-      ref !== undefined &&
-      nonempty(ref.id) &&
-      ARTIFACT_ID.test(ref.id) &&
-      typeof ref.hash === "string" &&
-      HASH.test(ref.hash)
-    );
-  };
-  if (!Array.isArray(receipt.inputs) || !receipt.inputs.every(artifactRefValid)) reasons.push("inputs is invalid");
-  const revision = object(receipt.source_revision);
-  if (
-    revision === undefined ||
-    !nonempty(revision.repo) ||
-    typeof revision.revision !== "string" ||
-    !REVISION.test(revision.revision)
-  ) {
-    reasons.push("source_revision is invalid");
-  } else if (
-    revision.diff_hash !== undefined &&
-    (typeof revision.diff_hash !== "string" || !HASH.test(revision.diff_hash))
-  ) {
-    reasons.push("source_revision.diff_hash is invalid");
-  }
-  if (typeof receipt.created_at !== "string" || !Number.isFinite(Date.parse(receipt.created_at)))
-    reasons.push("created_at is invalid");
-  const statuses = ["passed", "failed", "not-run", "not-applicable", "inconclusive"];
-  const kinds = ["command", "probe", "manual"];
-  if (!statuses.includes(String(receipt.status))) reasons.push("status is invalid");
-  if (!kinds.includes(String(receipt.kind))) reasons.push("kind is invalid");
-  const supports = strings(receipt.supports);
-  if (supports === undefined || supports.length === 0 || supports.some((id) => !AC.test(id)))
-    reasons.push("supports is invalid");
-  if (
-    receipt.check !== undefined &&
-    (typeof receipt.check !== "string" || receipt.check.length > 64 || !KEBAB.test(receipt.check))
-  )
-    reasons.push("check is invalid");
-  if (receipt.ticket !== undefined && !artifactRefValid(receipt.ticket)) reasons.push("ticket is invalid");
-  if (receipt.finding !== undefined && !artifactRefValid(receipt.finding)) reasons.push("finding is invalid");
-  const evidenceKinds = [
-    "rendered-screenshot",
-    "user-path-trial",
-    "trace",
-    "log",
-    "api-response",
-    "dry-run",
-    "smoke-test",
-  ];
-  const evidenceKind = nonempty(receipt.evidence_kind) ? receipt.evidence_kind : undefined;
-  if (receipt.evidence_kind !== undefined && (evidenceKind === undefined || !evidenceKinds.includes(evidenceKind)))
-    reasons.push("evidence_kind is invalid");
-  if (receipt.recipe !== undefined && !artifactRefValid(receipt.recipe)) reasons.push("recipe is invalid");
-  if (receipt.evidence_kind !== undefined) {
-    if (creator?.role !== "verifier") reasons.push("surface evidence was not created by verifier");
-    if (receipt.recipe === undefined) reasons.push("surface evidence has no recipe");
-  }
-  if (receipt.evidence_kind !== undefined || receipt.verifier_seat !== undefined) {
-    const seat = object(receipt.verifier_seat);
-    if (
-      seat === undefined ||
-      !nonempty(seat.id) ||
-      !ARTIFACT_ID.test(seat.id) ||
-      !nonempty(seat.implementer_seat) ||
-      !ARTIFACT_ID.test(seat.implementer_seat) ||
-      !["runner-attested", "host-unattested"].includes(String(seat.isolation)) ||
-      (seat.isolation === "runner-attested" && !artifactRefValid(seat.attestation)) ||
-      (seat.isolation === "host-unattested" && seat.attestation !== null)
-    ) {
-      reasons.push("verifier_seat is invalid");
-    }
-  }
+  const validateVerification = verificationValidator();
+  const reasons = validateVerification(value)
+    ? []
+    : (validateVerification.errors ?? []).map((error) => {
+        const params: { additionalProperty?: string; unevaluatedProperty?: string } = error.params;
+        const member = params.additionalProperty ?? params.unevaluatedProperty;
+        return `${error.instancePath || "receipt"} ${error.message ?? "is invalid"}${member === undefined ? "" : ` (${member})`}`;
+      });
+  if (receipt === undefined) return reasons;
+  for (const key of Object.keys(receipt))
+    if (Object.hasOwn(Object.prototype, key)) reasons.push(`receipt must NOT have unevaluated properties (${key})`);
+  if (receipt.supports === undefined) reasons.push("supports is invalid");
   if (receipt.evidence_kind === "api-response") {
     const response = object(receipt.api_response);
-    if (
-      response === undefined ||
-      !Number.isInteger(response.status) ||
-      Number(response.status) < 100 ||
-      Number(response.status) > 599 ||
-      !nonempty(response.body_digest) ||
-      !HASH.test(response.body_digest)
-    ) {
-      reasons.push("api_response is invalid");
-    }
-  }
-  const environment = object(receipt.environment);
-  if (
-    environment === undefined ||
-    typeof environment.id !== "string" ||
-    !KEBAB.test(environment.id) ||
-    typeof environment.isolated !== "boolean" ||
-    !["none", "test-only", "production-approved"].includes(String(environment.secrets_policy))
-  ) {
-    reasons.push("environment is invalid");
-  }
-  const output = receipt.output_digest;
-  if (
-    ["passed", "failed", "inconclusive"].includes(String(receipt.status)) &&
-    (typeof output !== "string" || !HASH.test(output))
-  ) {
-    reasons.push("output_digest is required for a check that ran");
-  }
-  const artifactKinds = ["log", "report", "coverage", "artifact", "screenshot", "trace", "response"];
-  const artifacts = Array.isArray(receipt.artifacts) ? receipt.artifacts.map(object) : [];
-  if (
-    receipt.artifacts !== undefined &&
-    (!Array.isArray(receipt.artifacts) ||
-      artifacts.some(
-        (artifact) =>
-          artifact === undefined ||
-          !nonempty(artifact.path) ||
-          !nonempty(artifact.digest) ||
-          !HASH.test(artifact.digest) ||
-          (artifact.kind !== undefined && (!nonempty(artifact.kind) || !artifactKinds.includes(artifact.kind))),
-      ))
-  ) {
-    reasons.push("artifacts is invalid");
-  }
-  const artifactKind =
-    evidenceKind === "rendered-screenshot"
-      ? "screenshot"
-      : evidenceKind === "trace" || evidenceKind === "log"
-        ? evidenceKind
-        : evidenceKind === "api-response"
-          ? "response"
-          : undefined;
-  if (artifactKind !== undefined && !artifacts.some((artifact) => artifact?.kind === artifactKind))
-    reasons.push(`${evidenceKind} has no ${artifactKind} artifact`);
-  if (receipt.evidence_kind === "api-response") {
-    const response = object(receipt.api_response);
-    if (
-      nonempty(response?.body_digest) &&
-      !artifacts.some((artifact) => artifact?.kind === "response" && artifact.digest === response.body_digest)
-    ) {
+    const artifacts = Array.isArray(receipt.artifacts) ? receipt.artifacts.map(object) : [];
+    if (!artifacts.some((artifact) => artifact?.kind === "response" && artifact.digest === response?.body_digest))
       reasons.push("api_response body_digest has no matching response artifact");
-    }
   }
-  if (receipt.kind === "command") {
-    const command = object(receipt.command);
-    if (
-      command === undefined ||
-      !Array.isArray(command.argv) ||
-      command.argv.length === 0 ||
-      !command.argv.every(nonempty)
-    )
-      reasons.push("command is invalid");
-  }
-  if (receipt.kind === "probe") {
-    const probe = object(receipt.probe);
-    if (probe === undefined || !nonempty(probe.name) || !nonempty(probe.target)) reasons.push("probe is invalid");
-  }
-  if (receipt.kind === "manual") {
-    const manual = object(receipt.manual);
-    if (manual === undefined || manual.performed_by !== "human" || !nonempty(manual.procedure))
-      reasons.push("manual is invalid");
-  }
-  if (receipt.kind === "command" && receipt.status === "passed" && receipt.exit_status !== 0)
-    reasons.push("passing command exit_status is not 0");
-  if (receipt.kind === "command" && receipt.status === "failed") {
-    if (!Number.isInteger(receipt.exit_status)) reasons.push("failed command has no integer exit_status");
-    if (receipt.exit_status === 0) {
-      const disagreement = object(receipt.exit_disagreement);
-      if (
-        disagreement === undefined ||
-        disagreement.verdict_from !== "output" ||
-        !nonempty(disagreement.output_reports)
-      )
-        reasons.push("zero-exit failure has no output disagreement");
-    }
-  }
-  if (
-    receipt.exit_disagreement !== undefined &&
-    !(receipt.kind === "command" && receipt.status === "failed" && receipt.exit_status === 0)
-  ) {
-    reasons.push("exit_disagreement is inconsistent");
-  }
-  if (["not-run", "not-applicable"].includes(String(receipt.status))) {
-    if (!nonempty(receipt.reason)) reasons.push("reason is required when nothing ran");
-    if (receipt.exit_status !== undefined || receipt.output_digest !== undefined)
-      reasons.push("unrun check carries execution evidence");
-  }
-  if (receipt.status === "inconclusive" && !nonempty(receipt.reason)) reasons.push("inconclusive check has no reason");
   return reasons;
 }
 

@@ -91,5 +91,6 @@ not backfilled (ruling `missing-supervisor-never-implementer`).
 A criterion is covered only when current passed receipts carry every kind its ticket check requires,
 all corresponding artifacts are present and digest-valid, the recipe binding matches, and the
 verifier seat is eligible for the requested mode. One generic passing test cannot cover a missing
-screenshot, trace, API response or running-service trial. Non-pass receipts remain durable evidence
-of what ran; they never become coverage by omission.
+screenshot, trace, API response or running-service trial. A recorded failure bound to the current
+revision and diff remains evidence even when malformed; a passing receipt re-recorded under its id
+cannot erase it. Changed code needs fresh evidence.
