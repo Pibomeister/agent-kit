@@ -51,9 +51,11 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
-const maintenanceScripts = new Map<string, string | null>();
+type MaintenanceScript = { script: string; inlined: string[] | null };
 
-function maintenanceScript(root: string): string | null {
+const maintenanceScripts = new Map<string, MaintenanceScript | null>();
+
+function maintenanceScript(root: string): MaintenanceScript | null {
   const cached = maintenanceScripts.get(root);
   if (cached !== undefined) return cached;
   const script = buildMaintenanceScript(root);
@@ -61,7 +63,34 @@ function maintenanceScript(root: string): string | null {
   return script;
 }
 
-function buildMaintenanceScript(root: string): string | null {
+/**
+ * Package names the bundler metafile proves `bin/ak` inlined.
+ *
+ * The argument is the metafile's text. `null` when that text cannot prove the
+ * set: it is not a JSON object, `inputs` is missing or not a plain object,
+ * `inputs` is empty, or no input path names a `node_modules` package. The
+ * build treats `null` as an error. An empty set is what a missing or rewritten
+ * metafile used to look like, and a build that treats that as success ships
+ * `bin/ak` without showing that every inlined package has a licence text.
+ */
+export function inlinedSetFromMetafile(text: string): string[] | null {
+  const meta = parsePackageJson(text);
+  if (meta === null || !Object.prototype.hasOwnProperty.call(meta, "inputs")) return null;
+  // `inputs` is one JSON value inside an already-parsed object. The same parser
+  // accepts only an object, so an array, null, or boxed primitive is `null`
+  // here rather than a set of paths.
+  const inputs = parsePackageJson(JSON.stringify(meta["inputs"]));
+  if (inputs === null) return null;
+  const names = new Set<string>();
+  for (const input of Object.keys(inputs)) {
+    const match = /.*node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
+    if (match?.[1]) names.add(match[1]);
+  }
+  if (names.size === 0) return null;
+  return [...names].toSorted();
+}
+
+function buildMaintenanceScript(root: string): MaintenanceScript | null {
   const source = join(root, "src/maintenance/cli.ts");
   if (!existsSync(source)) return null;
   const scratch = join(root, ".work");
@@ -69,12 +98,16 @@ function buildMaintenanceScript(root: string): string | null {
   const dir = mkdtempSync(join(scratch, "ak-maintenance-"));
   try {
     const outfile = join(dir, "ak.mjs");
-    const result = spawnSync(process.execPath, ["build", source, "--target=bun", `--outfile=${outfile}`], {
-      cwd: root,
-      encoding: "utf8",
-    });
+    const metafile = join(dir, "meta.json");
+    const result = spawnSync(
+      process.execPath,
+      ["build", source, "--target=bun", `--outfile=${outfile}`, `--metafile=${metafile}`],
+      { cwd: root, encoding: "utf8" },
+    );
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
-    return `#!/usr/bin/env bun\n${readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "")}`;
+    const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
+    const inlined = inlinedSetFromMetafile(readFileSync(metafile, "utf8"));
+    return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -176,24 +209,70 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 };
 
 /**
- * The licence files every bundle carries, copied verbatim to the path they hold
- * in the source tree.
+ * The licence files every bundle carries, copied verbatim.
  *
- * A licensing obligation rather than bundle tidiness: the MIT donors' licence
- * requires the copyright notice and the permission notice accompany every copy,
- * Apache-2.0 §4(a) requires claude-mem's licence accompany the files adapted
- * from it, and `dist/` is the copy that gets distributed. Absence is an `error()` for
+ * `source` is where the text is read. `path` is where the bundle ships it.
+ * NOTICE and LICENSE stay at the bundle root: both host contracts specify
+ * those two names at that place (`adapters/claude-code/CONTRACT.md` §1,
+ * `adapters/codex/CONTRACT.md` §2). The other rows are the licence texts of
+ * code inlined into `bin/ak`. An installed package keeps its text under
+ * `node_modules/`, and that path cannot be the bundle path: gitignore drops
+ * it, and the packager's file walk skips it, so the distributed copy would
+ * not contain the text. claude-mem's texts stay at their provenance paths,
+ * the paths they hold in the source tree.
+ *
+ * A licensing obligation rather than bundle tidiness. The MIT donors' licence
+ * requires the copyright notice and the permission notice accompany every
+ * copy, Apache-2.0 §4(a) requires claude-mem's licence accompany the files
+ * adapted from it, the inlined packages require the same of their own texts,
+ * and `dist/` is the copy that gets distributed. Absence is an `error()` for
  * that reason -- a build that quietly omits them reports success over a
  * distribution that may not lawfully be distributed, which is the worst shape
  * this package has a name for.
  *
- * Emitted from here, once, for every host rather than per adapter. Both host
- * contracts specify the same two names at the same place
- * (`adapters/claude-code/CONTRACT.md` §1, `adapters/codex/CONTRACT.md` §2), and
- * two bundles disagreeing about their own licensing is the defect this package
+ * Emitted from here, once, for every host rather than per adapter. Two
+ * bundles disagreeing about their own licensing is the defect this package
  * has already produced once in a different field.
  */
-const LICENCE_FILES = ["NOTICE", "LICENSE", "provenance/licenses/thedotmack_claude-mem.LICENSE"];
+const LICENCE_FILES: ReadonlyArray<{ source: string; path: string }> = [
+  { source: "NOTICE", path: "NOTICE" },
+  { source: "LICENSE", path: "LICENSE" },
+  { source: "node_modules/ajv/LICENSE", path: "LICENSES/ajv.LICENSE" },
+  { source: "node_modules/ajv-formats/LICENSE", path: "LICENSES/ajv-formats.LICENSE" },
+  { source: "node_modules/fast-deep-equal/LICENSE", path: "LICENSES/fast-deep-equal.LICENSE" },
+  { source: "node_modules/fast-uri/LICENSE", path: "LICENSES/fast-uri.LICENSE" },
+  { source: "node_modules/json-schema-traverse/LICENSE", path: "LICENSES/json-schema-traverse.LICENSE" },
+  { source: "node_modules/yaml/LICENSE", path: "LICENSES/yaml.LICENSE" },
+  {
+    source: "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    path: "provenance/licenses/thedotmack_claude-mem.LICENSE",
+  },
+  {
+    source: "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    path: "provenance/licenses/thedotmack_claude-mem.NOTICE",
+  },
+];
+
+/**
+ * Comment block prepended to the built `bin/ak`.
+ *
+ * The plugin bundles ship the same texts as files. The curl install is this
+ * one file and has no neighbour to carry them, and `bun build` drops the
+ * copyright comments from the inlined packages.
+ */
+function licenceBanner(root: string): string {
+  const lines = [
+    "// Licence texts for this file and the third-party code inlined into it.",
+    "// Each block is also copied into the plugin bundles at the path in its heading.",
+  ];
+  for (const licence of LICENCE_FILES) {
+    const text = readTextIfPresent(join(root, licence.source));
+    if (text === null) continue;
+    lines.push(`// --- ${licence.path} ---`);
+    for (const line of text.replace(/\n$/, "").split("\n")) lines.push(line.length === 0 ? "//" : `// ${line}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 const GATE_SOURCE = "src/lifecycle/gate.ts";
 /** The line of gate.ts the bundled copy carries its host vocabulary in: a bundle has no `adapters/` to read. */
@@ -721,19 +800,22 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     }
   }
 
-  for (const name of LICENCE_FILES) {
-    const text = readTextIfPresent(join(ctx.root, name));
+  for (const licence of LICENCE_FILES) {
+    const text = readTextIfPresent(join(ctx.root, licence.source));
     if (text === null) {
+      const remedy = licence.source.startsWith("node_modules/")
+        ? `Install dependencies so ${licence.source} is present.`
+        : `Restore ${licence.source}.`;
       issues.push(
         error(
           "packaging.licence-file-missing",
-          name,
-          `${name} is not in the source tree, so the bundle cannot carry it. Every licence a bundled file is under requires its text accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} in the repository.`,
+          licence.source,
+          `${licence.source} is missing, so the bundle cannot carry it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. ${remedy}`,
         ),
       );
       continue;
     }
-    files.set(name, { path: name, contents: text, source: name });
+    files.set(licence.path, { path: licence.path, contents: text, source: licence.source });
   }
 
   const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
@@ -742,8 +824,30 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   try {
-    const script = maintenanceScript(root);
-    if (script !== null) files.set("bin/ak", { path: "bin/ak", contents: script });
+    const built = maintenanceScript(root);
+    if (built !== null) {
+      files.set("bin/ak", { path: "bin/ak", contents: built.script });
+      if (built.inlined === null) {
+        issues.push(
+          error(
+            "packaging.inlined-set-unproven",
+            "src/maintenance/cli.ts",
+            "bin/ak's bundler metafile does not name any inlined node_modules package. An absent, malformed, or empty inputs object, or inputs that match no package, leaves the build unable to show that every inlined package has a licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. The build refuses.",
+          ),
+        );
+      } else {
+        for (const name of built.inlined) {
+          if (LICENCE_FILES.some((licence) => licence.source.startsWith(`node_modules/${name}/`))) continue;
+          issues.push(
+            error(
+              "packaging.licence-file-missing",
+              `node_modules/${name}`,
+              `bin/ak inlines ${name}, and LICENCE_FILES has no row for its licence text, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Add a LICENCE_FILES row for ${name}'s licence file and name it in NOTICE.`,
+            ),
+          );
+        }
+      }
+    }
   } catch (cause) {
     issues.push(
       error(
