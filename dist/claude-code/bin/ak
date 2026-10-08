@@ -23225,6 +23225,191 @@ var init_toml_hooks = __esm(() => {
   });
 });
 
+// adapters/observation-source/claude-mem/code--review-learning.json
+var code_review_learning_default;
+var init_code_review_learning = __esm(() => {
+  code_review_learning_default = {
+    name: "Code Development (Review Learning)",
+    description: "Code mode plus first-class review findings and resolutions so recurring review classes can be counted",
+    version: "1.0.0",
+    _notice: "Modified from claude-mem (Copyright 2026 Alex Newman, Apache-2.0) plugin/modes/code.json at 02cd0c9c: adds the review-finding and review-resolution observation types, the recurrence concept, and prompt text for recording review findings. See provenance/adaptations.d/learning.yaml.",
+    observation_types: [
+      {
+        id: "bugfix",
+        label: "Bug Fix",
+        description: "Something was broken, now fixed",
+        emoji: "\u25CF",
+        work_emoji: "\u2692"
+      },
+      {
+        id: "feature",
+        label: "Feature",
+        description: "New capability or functionality added",
+        emoji: "\u25C6",
+        work_emoji: "\u2692"
+      },
+      {
+        id: "refactor",
+        label: "Refactor",
+        description: "Code restructured, behavior unchanged",
+        emoji: "\u21BB",
+        work_emoji: "\u2692"
+      },
+      {
+        id: "change",
+        label: "Change",
+        description: "Generic modification (docs, config, misc)",
+        emoji: "\u2713",
+        work_emoji: "\u2692"
+      },
+      {
+        id: "discovery",
+        label: "Discovery",
+        description: "Learning about existing system",
+        emoji: "\u25CB",
+        work_emoji: "\u2315"
+      },
+      {
+        id: "decision",
+        label: "Decision",
+        description: "Architectural/design choice with rationale",
+        emoji: "\u2696",
+        work_emoji: "\u2696"
+      },
+      {
+        id: "security_alert",
+        label: "Security Alert",
+        description: "A security issue that needs attention before continuing.",
+        emoji: "\u26A0",
+        work_emoji: "\u26A0"
+      },
+      {
+        id: "security_note",
+        label: "Security Note",
+        description: "A security-relevant observation worth recording, but not urgent.",
+        emoji: "\u26B7",
+        work_emoji: "\u26B7"
+      },
+      {
+        id: "sensitive",
+        label: "Sensitive Info",
+        description: "Information that isn't quite private, but shouldn't leak into further content development in the wrong context.",
+        emoji: "\u2298",
+        work_emoji: "\u2298"
+      },
+      {
+        id: "review-finding",
+        label: "Review Finding",
+        emoji: "\uD83D\uDD0E",
+        work_emoji: "\uD83D\uDD0E",
+        description: "A reviewer \u2014 human (PR comment), a review bot, or an in-session review skill or persona \u2014 identified a defect or risk in the code under review. Record severity (P0\u2013P3 if given), who raised it, the file, and the claim in one sentence. Select this whenever a review lane or reviewer output names a specific problem."
+      },
+      {
+        id: "review-resolution",
+        label: "Review Resolution",
+        emoji: "\u2705",
+        work_emoji: "\u2705",
+        description: "A previously raised review finding was fixed, declined, downgraded, or justified as pre-existing/out of scope, with the rationale. Record which finding, the outcome, and the evidence (commit, file:line, test)."
+      }
+    ],
+    observation_concepts: [
+      {
+        id: "how-it-works",
+        label: "How It Works",
+        description: "Understanding mechanisms"
+      },
+      {
+        id: "why-it-exists",
+        label: "Why It Exists",
+        description: "Purpose or rationale"
+      },
+      {
+        id: "what-changed",
+        label: "What Changed",
+        description: "Modifications made"
+      },
+      {
+        id: "problem-solution",
+        label: "Problem-Solution",
+        description: "Issues and their fixes"
+      },
+      {
+        id: "gotcha",
+        label: "Gotcha",
+        description: "Traps or edge cases"
+      },
+      {
+        id: "pattern",
+        label: "Pattern",
+        description: "Reusable approach"
+      },
+      {
+        id: "trade-off",
+        label: "Trade-Off",
+        description: "Pros/cons of a decision"
+      },
+      {
+        id: "recurrence",
+        label: "Recurrence",
+        description: "The observer recognises this finding class from earlier sessions or PRs (same kind of defect raised again, not the same bug). Tag it so repeat classes can be counted."
+      }
+    ],
+    prompts: {
+      type_guidance: `**type**: MUST be EXACTLY one of these 11 options (no other values allowed):
+      - bugfix: something was broken, now fixed
+      - feature: new capability or functionality added
+      - refactor: code restructured, behavior unchanged
+      - change: generic modification (docs, config, misc)
+      - discovery: learning about existing system
+      - decision: architectural/design choice with rationale
+      - security_alert: a security issue that needs attention before continuing
+      - security_note: a security-relevant observation worth recording, but not urgent
+      - sensitive: information surfaced that isn't quite private, but that you wouldn't want leaking into further content development in the wrong context (internal URLs, unreleased plans, personal details, business metrics, client or partner names)
+      - review-finding: a reviewer (human, bot, or in-session persona) identified a defect or risk; record severity, author, file, claim
+      - review-resolution: a finding was fixed, declined, or downgraded, with rationale`,
+      concept_guidance: `**concepts**: 2-5 knowledge-type categories. MUST use ONLY these exact keywords:
+      - how-it-works: understanding mechanisms
+      - why-it-exists: purpose or rationale
+      - what-changed: modifications made
+      - problem-solution: issues and their fixes
+      - gotcha: traps or edge cases
+      - pattern: reusable approach
+      - trade-off: pros/cons of a decision
+      - recurrence: the observer recognises this finding class from earlier sessions
+
+    IMPORTANT: Do NOT include the observation type (change/discovery/decision) as a concept.
+    Types and concepts are separate dimensions.
+
+    OUTPUT RULE: Each <concept> element must contain ONLY the bare keyword (e.g. <concept>gotcha</concept>) - never a description, sentence, or colon.`,
+      recording_focus: `WHAT TO RECORD
+--------------
+Focus on durable technical signal:
+- What the system NOW DOES differently (new capabilities)
+- What shipped to users/production (features, fixes, configs, docs)
+- Changes in technical domains (auth, data, UI, infra, DevOps, docs)
+- Concrete debugging or investigative findings from logs, traces, queue state, database rows, and code-path inspection
+
+Use verbs like: implemented, fixed, deployed, configured, migrated, optimized, added, refactored, discovered, confirmed, traced
+
+\u2705 GOOD EXAMPLES (describes what was built or learned):
+- "Authentication now supports OAuth2 with PKCE flow"
+- "Deployment pipeline runs canary releases with auto-rollback"
+- "Database indexes optimized for common query patterns"
+- "Observation queue for claude-mem session timed out waiting for an agent pool slot"
+- "Fallback processing abandoned pending messages after both upstream providers returned 404"
+
+\u274C BAD EXAMPLES (describes observation process - DO NOT DO THIS):
+- "Analyzed authentication implementation and stored findings"
+- "Tracked deployment steps and logged outcomes"
+- "Monitored database performance and recorded metrics"
+
+REVIEW LANES
+------------
+When a reviewer (PR comment, a review bot, or an in-session review skill or persona) raises a specific defect or risk, record ONE review-finding per distinct problem with severity, author, file, and claim. When a finding is fixed, declined, or downgraded, record a review-resolution naming the finding and the evidence. Skip review summaries with no concrete problem.`
+    }
+  };
+});
+
 // src/learn/setup/wire.ts
 import { copyFileSync, existsSync as existsSync24, mkdirSync as mkdirSync16, readdirSync as readdirSync8, readFileSync as readFileSync18, writeFileSync as writeFileSync9 } from "fs";
 import { homedir as homedir4 } from "os";
@@ -23571,19 +23756,14 @@ function wireMem(ctx, deps) {
   const dir = memDir(ctx, deps);
   const source = modeSource(deps);
   const target = join26(dir, "modes", `${MEM_MODE}.json`);
-  let modeReady = existsSync24(target);
-  if (!existsSync24(source)) {
-    ctx.io.out(`mode file not shipped at ${source}; claude-mem keeps its current mode`);
-  } else {
-    const text2 = readFileSync18(source, "utf8");
-    if (!existsSync24(target) || readFileSync18(target, "utf8") !== text2) {
-      if (existsSync24(target) && !existsSync24(`${target}.bak`))
-        copyFileSync(target, `${target}.bak`);
-      mkdirSync16(dirname12(target), { recursive: true });
-      writeFileSync9(target, text2);
-      ctx.io.out(`${target}: mode installed`);
-    }
-    modeReady = true;
+  const text2 = existsSync24(source) ? readFileSync18(source, "utf8") : `${JSON.stringify(code_review_learning_default, null, 2)}
+`;
+  if (!existsSync24(target) || JSON.stringify(readJsonObject(target, {})) !== JSON.stringify(JSON.parse(text2))) {
+    if (existsSync24(target) && !existsSync24(`${target}.bak`))
+      copyFileSync(target, `${target}.bak`);
+    mkdirSync16(dirname12(target), { recursive: true });
+    writeFileSync9(target, text2);
+    ctx.io.out(`${target}: mode installed`);
   }
   const settingsPath = join26(dir, "settings.json");
   const doc = readJsonObject(settingsPath, {}) ?? {};
@@ -23596,7 +23776,7 @@ function wireMem(ctx, deps) {
     });
   }
   doc.CLAUDE_MEM_CONTEXT_OBSERVATIONS = CONTEXT_OBSERVATIONS;
-  if (modeReady && doc.CLAUDE_MEM_MODE === undefined)
+  if (doc.CLAUDE_MEM_MODE === undefined)
     doc.CLAUDE_MEM_MODE = MEM_MODE;
   if (JSON.stringify(doc) === before) {
     ctx.io.out(`${settingsPath}: already set`);
@@ -23673,6 +23853,7 @@ var init_wire = __esm(() => {
   init_store();
   init_toml_hooks();
   init_scope();
+  init_code_review_learning();
   import_ajv8 = __toESM(require_ajv(), 1);
   OUR_HOOK = /(?:^|[\s/"'])(?:ak|cli\.ts)['"]?\s+learn\s+hook\s+(.*)$/;
   ajv3 = new import_ajv8.default({ strict: false });
