@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import type { RunResult } from "../../src/learn/core/proc.ts";
@@ -268,6 +268,24 @@ describe("setup wire", () => {
     expect(readFileSync(join(memDir, "modes", `${MEM_MODE}.json`), "utf8")).toBe('{"name": "review learning"}\n');
     expect(deps.calls).toEqual([]);
     expect(ctx.out.at(-1)).toContain("--restart-worker");
+  });
+
+  test("the shipped and the embedded mode file are one install, so switching between them rewrites nothing", () => {
+    const deps = fakeDeps();
+    const shipped = join(deps.packageRoot, "adapters", "observation-source", "claude-mem", `${MEM_MODE}.json`);
+    writeFileSync(
+      shipped,
+      readFileSync(join(import.meta.dir, "../../adapters/observation-source/claude-mem", `${MEM_MODE}.json`)),
+    );
+    const target = join(deps.home, ".claude-mem", "modes", `${MEM_MODE}.json`);
+    wire(context(deps), deps);
+    const installed = readFileSync(target, "utf8");
+    rmSync(shipped);
+    const ctx = context(deps);
+    wire(ctx, deps);
+    expect(readFileSync(target, "utf8")).toBe(installed);
+    expect(existsSync(`${target}.bak`)).toBe(false);
+    expect(ctx.out.some((line) => line.includes("mode installed"))).toBe(false);
   });
 
   test("an existing mode choice is kept", () => {

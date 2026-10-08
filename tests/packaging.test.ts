@@ -155,6 +155,7 @@ const BASE: Record<string, string> = {
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
   "provenance/licenses/ajv-validator_ajv.LICENSE": "MIT License\n\nCopyright (c) 2015-2021 Evgeny Poberezkin\n",
   "provenance/licenses/ajv-validator_ajv-formats.LICENSE": "MIT License\n\nCopyright (c) 2020 Evgeny Poberezkin\n",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
 };
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
@@ -251,6 +252,7 @@ describe("the licence files the distribution is obliged to carry", () => {
       for (const name of [
         "NOTICE",
         "LICENSE",
+        "provenance/licenses/thedotmack_claude-mem.LICENSE",
         "provenance/licenses/ajv-validator_ajv.LICENSE",
         "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
       ]) {

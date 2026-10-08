@@ -93,6 +93,7 @@ const EVAL_DIR = "evals";
 
 /** The npm package manifest, which §5.2 makes a party to two fields of four. */
 const PACKAGE_FILE = "package.json";
+const CLAUDE_MEM_MODE_FILE = "adapters/observation-source/claude-mem/code--review-learning.json";
 
 /** One term for the summary line, whichever way the authority went missing. */
 const PARITY_CHECK = "manifest parity";
@@ -175,11 +176,13 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 };
 
 /**
- * The licence files every bundle carries at their source-tree paths, copied verbatim.
+ * The licence files every bundle carries, copied verbatim to the path they hold
+ * in the source tree.
  *
  * A licensing obligation rather than bundle tidiness: the MIT donors' licence
  * requires the copyright notice and the permission notice accompany every copy,
- * and `dist/` is the copy that gets distributed. Absence is an `error()` for
+ * Apache-2.0 §4(a) requires claude-mem's licence accompany the files adapted
+ * from it, and `dist/` is the copy that gets distributed. Absence is an `error()` for
  * that reason -- a build that quietly omits them reports success over a
  * distribution that may not lawfully be distributed, which is the worst shape
  * this package has a name for.
@@ -193,6 +196,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 const LICENCE_FILES = [
   "NOTICE",
   "LICENSE",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE",
   "provenance/licenses/ajv-validator_ajv.LICENSE",
   "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
 ];
@@ -757,12 +761,17 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         error(
           "packaging.licence-file-missing",
           name,
-          `${name} is not in the source tree, so the bundle cannot carry it. MIT requires the copyright notice and the permission notice accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} in the source tree.`,
+          `${name} is not in the source tree, so the bundle cannot carry it. Every licence a bundled file is under requires its text accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} in the repository.`,
         ),
       );
       continue;
     }
     files.set(name, { path: name, contents: text, source: name });
+  }
+
+  const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
+  if (memMode !== null) {
+    files.set(CLAUDE_MEM_MODE_FILE, { path: CLAUDE_MEM_MODE_FILE, contents: memMode, source: CLAUDE_MEM_MODE_FILE });
   }
 
   try {
