@@ -295,7 +295,7 @@ export interface ConsolidateSummary {
   created: string[];
   dropped: number;
   superseded: string[];
-  /** Created lessons whose status is `confirmed`. */
+  /** Created or repeated lessons newly `confirmed`. */
   confirmed: string[];
   review_events: number;
   /** Events held in the memory ledger because the review ledger was locked. */
