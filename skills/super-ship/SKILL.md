@@ -130,7 +130,8 @@ The project's own release checks, discovered rather than assumed.
    any PR payload from the ticket, receipts, verdict, evidence digests, risks and rollback fields.
 8. For no-mistakes delivery, stop at this immutable handoff. Do not push, open a PR or pass a skip;
    the task's no-mistakes delivery contract owns the branch from here. Follow
-   `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`).
+   `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`). A deprecated
+   legacy `agent-kit` publish binding follows that reference's legacy publish procedure instead.
 9. For a direct publication path, detect an open pull request deterministically. Only an exit-0
    empty result means none; any other outcome is unknown, and unknown is not none.
 10. In `dry-run`, emit the ship evidence record with the payload and check results, then stop.

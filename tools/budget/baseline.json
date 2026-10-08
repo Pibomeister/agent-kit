@@ -318,13 +318,13 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 19708,
-      "tokens": 4923
+      "bytes": 19818,
+      "tokens": 4951
     },
     "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 3308,
-      "tokens": 826
+      "bytes": 4807,
+      "tokens": 1201
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
@@ -723,13 +723,13 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 19869,
-      "tokens": 4963
+      "bytes": 19979,
+      "tokens": 4991
     },
     "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
-      "bytes": 3308,
-      "tokens": 826
+      "bytes": 4807,
+      "tokens": 1201
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",

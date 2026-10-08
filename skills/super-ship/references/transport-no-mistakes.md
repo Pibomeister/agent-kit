@@ -38,7 +38,29 @@ request, CI result and any later merge decision.
 
 The patched Firstmate binding and its transport remain available for existing delivery mode
 `agent-kit` installations. They are deprecated and are not the no-mistakes delivery default.
-no-mistakes v1.79 refuses to push a run whose Review step was skipped.
+no-mistakes v1.79 refuses to push a run whose Review step was skipped
+(`internal/pipeline/steps/push.go` `assertReviewApprovedPushHead` at no-mistakes v1.79.0, verified
+by reading source, not executed).
+
+### Deprecated legacy publish procedure
+
+Under a legacy `agent-kit` binding with `delivery.action: publish`, super-ship does not stop at the
+handoff. In `publish`, after the steps up to open pull-request detection, the push and the pull
+request go through no-mistakes with review, document and rebase skipped, and a parked gate returns
+to the lifecycle rather than being answered in the pipeline. super-ship stays the single creator of
+the pull request: no-mistakes opens it only because super-ship started the push.
+
+Reconcile before every remote effect, per `adapters/runner-contract/CONTRACT.md` §5:
+
+1. Read the branch's open pull request, deterministically. Unknown is not none (workflow step 9).
+2. Read the active no-mistakes run for the branch, if any.
+3. Where the pull request exists and its head is the head being shipped, the push is already done:
+   return it rather than pushing again.
+4. Where a run is active on an older head, the new push supersedes it. That is the intended way to
+   replace a parked run, not a conflict.
+
+Then push through the transport with the deprecated skips below. `--intent` carries only the
+captain's words, as in the handoff path.
 
 ### Deprecated skip transport
 
@@ -55,5 +77,7 @@ carry those skips stops instead of silently changing its review contract.
 The legacy trusted no-mistakes config requires `auto_fix.test`, `auto_fix.lint` and `auto_fix.ci`
 to be `0`. `checkNoMistakesConfig` and patched preflight enforce that legacy precondition; stock
 preflight does not. A parked gate in this legacy path returns to lifecycle fix, verification and
-delta review before another ship attempt. ADR-0002's “One owner per concern” decision describes
+delta review before another ship attempt, and the new push supersedes the parked run. Never answer
+a parked gate from inside the pipeline on this path; at the fix-cycle cap the run stops with
+`cap-reached` instead of pushing again. ADR-0002's “One owner per concern” decision describes
 this superseded path.
