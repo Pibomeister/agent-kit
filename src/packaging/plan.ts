@@ -51,7 +51,7 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
-type MaintenanceScript = { script: string; inlined: string[] };
+type MaintenanceScript = { script: string; inlined: string[] | null };
 
 const maintenanceScripts = new Map<string, MaintenanceScript | null>();
 
@@ -61,6 +61,33 @@ function maintenanceScript(root: string): MaintenanceScript | null {
   const script = buildMaintenanceScript(root);
   maintenanceScripts.set(root, script);
   return script;
+}
+
+/**
+ * Package names the bundler metafile proves `bin/ak` inlined.
+ *
+ * The argument is the metafile's text. `null` when that text cannot prove the
+ * set: it is not a JSON object, `inputs` is missing or not a plain object,
+ * `inputs` is empty, or no input path names a `node_modules` package. The
+ * build treats `null` as an error. An empty set is what a missing or rewritten
+ * metafile used to look like, and a build that treats that as success ships
+ * `bin/ak` without showing that every inlined package has a licence text.
+ */
+export function inlinedSetFromMetafile(text: string): string[] | null {
+  const meta = parsePackageJson(text);
+  if (meta === null || !Object.prototype.hasOwnProperty.call(meta, "inputs")) return null;
+  // `inputs` is one JSON value inside an already-parsed object. The same parser
+  // accepts only an object, so an array, null, or boxed primitive is `null`
+  // here rather than a set of paths.
+  const inputs = parsePackageJson(JSON.stringify(meta["inputs"]));
+  if (inputs === null) return null;
+  const names = new Set<string>();
+  for (const input of Object.keys(inputs)) {
+    const match = /.*node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
+    if (match?.[1]) names.add(match[1]);
+  }
+  if (names.size === 0) return null;
+  return [...names].toSorted();
 }
 
 function buildMaintenanceScript(root: string): MaintenanceScript | null {
@@ -79,13 +106,8 @@ function buildMaintenanceScript(root: string): MaintenanceScript | null {
     );
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
     const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
-    const meta = parsePackageJson(readFileSync(metafile, "utf8"));
-    const inlined = new Set<string>();
-    for (const input of Object.keys(Object(meta?.inputs))) {
-      const match = /.*node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
-      if (match?.[1]) inlined.add(match[1]);
-    }
-    return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined: [...inlined].toSorted() };
+    const inlined = inlinedSetFromMetafile(readFileSync(metafile, "utf8"));
+    return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -797,15 +819,25 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const built = maintenanceScript(root);
     if (built !== null) {
       files.set("bin/ak", { path: "bin/ak", contents: built.script });
-      for (const name of built.inlined) {
-        if (LICENCE_FILES.some((licence) => licence.source.startsWith(`node_modules/${name}/`))) continue;
+      if (built.inlined === null) {
         issues.push(
           error(
-            "packaging.licence-file-missing",
-            `node_modules/${name}`,
-            `bin/ak inlines ${name}, and LICENCE_FILES has no row for its licence text, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Add a LICENCE_FILES row for ${name}'s licence file and name it in NOTICE.`,
+            "packaging.inlined-set-unproven",
+            "src/maintenance/cli.ts",
+            "bin/ak's bundler metafile does not name any inlined node_modules package. An absent, malformed, or empty inputs object, or inputs that match no package, leaves the build unable to show that every inlined package has a licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. The build refuses.",
           ),
         );
+      } else {
+        for (const name of built.inlined) {
+          if (LICENCE_FILES.some((licence) => licence.source.startsWith(`node_modules/${name}/`))) continue;
+          issues.push(
+            error(
+              "packaging.licence-file-missing",
+              `node_modules/${name}`,
+              `bin/ak inlines ${name}, and LICENCE_FILES has no row for its licence text, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Add a LICENCE_FILES row for ${name}'s licence file and name it in NOTICE.`,
+            ),
+          );
+        }
       }
     }
   } catch (cause) {

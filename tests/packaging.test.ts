@@ -16,7 +16,7 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
-import { planBundle } from "../src/packaging/plan.ts";
+import { inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
 import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
@@ -285,6 +285,34 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(missing).toEqual(["node_modules/left-pad:error"]);
     expect(plan.files.has("bin/ak")).toBe(true);
   }, 30_000);
+
+  test("bin/ak whose metafile names no package fails the build", () => {
+    const plan = planBundle(
+      ctxFor({
+        "src/maintenance/cli.ts": 'console.log("ok");\n',
+      }),
+      "claude-code",
+      {},
+    );
+    const issue = plan.issues.find((i) => i.rule === "packaging.inlined-set-unproven");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.file).toBe("src/maintenance/cli.ts");
+  }, 30_000);
+
+  test("an empty inputs object and inputs that match no package are not a proven inlined set", () => {
+    expect(inlinedSetFromMetafile(JSON.stringify({ inputs: {} }))).toBeNull();
+    expect(
+      inlinedSetFromMetafile(JSON.stringify({ inputs: { "/repo/src/maintenance/cli.ts": { bytes: 12 } } })),
+    ).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify(null))).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify({}))).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify({ inputs: null }))).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify({ inputs: [] }))).toBeNull();
+    expect(inlinedSetFromMetafile("not json")).toBeNull();
+    expect(
+      inlinedSetFromMetafile(JSON.stringify({ inputs: { "/repo/node_modules/left-pad/index.js": { bytes: 20 } } })),
+    ).toEqual(["left-pad"]);
+  });
 
   test("a tree with no LICENSE fails the build rather than shipping a distribution without one", () => {
     const plan = planBundle(ctxFor({}, ["LICENSE"]), "claude-code", {});
