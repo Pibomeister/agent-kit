@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { loadCatalog } from "../src/catalog/load.ts";
 import { runCli } from "../src/cli.ts";
+import { checkBundles } from "../src/packaging/build.ts";
 import { ADAPTATIONS_FILE, ADAPTATIONS_FRAGMENT_DIR } from "../src/validation/provenance.ts";
 import { makeTree, wellFormedSkill, DENY_MARKER, sampleModelTerm } from "./helpers/tree.ts";
 
@@ -147,6 +149,18 @@ describe("ak", () => {
     const io = capture();
     expect(runCli(["frobnicate"], { cwd: cleanTree(), io: io.io })).not.toBe(0);
     expect(io.stderr()).toContain("frobnicate");
+  });
+
+  test("an unknown command names the command it was probably meant to be", () => {
+    const io = capture();
+    expect(runCli(["valdiate"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.err[0]).toBe("ak: unknown command 'valdiate'; did you mean validate?");
+  });
+
+  test("an unknown kb command suggests kb", () => {
+    const io = capture();
+    expect(runCli(["kbb"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.err[0]).toBe("ak: unknown command 'kbb'; did you mean kb?");
   });
 });
 
@@ -398,10 +412,50 @@ describe("ak build", () => {
     expect(manifest.skills).toEqual([]);
   });
 
-  test("an unknown profile is an error", () => {
+  test("an unknown profile is refused before building, with the profiles that exist", () => {
     const io = capture();
-    expect(runCli(["build", "--profile", "ghost"], { cwd: cleanTree(), io: io.io })).not.toBe(0);
-    expect(io.stdout()).toContain("packaging.unknown-profile");
+    const root = cleanTree();
+    expect(runCli(["build", "--profile", "cor"], { cwd: root, io: io.io })).toBe(2);
+    expect(io.stderr()).toBe("ak build: unknown profile 'cor'; did you mean core?");
+    expect(existsSync(join(root, "dist"))).toBe(false);
+  });
+
+  // `ak validate --profile` only reached the links check, which keeps link issues alone, so a
+  // mistyped profile measured nothing and passed.
+  test("ak validate refuses an unknown profile instead of passing over it", () => {
+    const io = capture();
+    expect(runCli(["validate", "--profile", "ghost"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.stderr()).toBe("ak validate: unknown profile 'ghost'; valid: core, all");
+    expect(io.stdout()).toBe("");
+  });
+
+  test("--profile all is known even where the catalog does not declare it", () => {
+    expect(runCli(["validate", "--profile", "all"], { cwd: cleanTree(), io: capture().io })).toBe(0);
+  });
+
+  test("an unknown host is refused with the hosts that exist", () => {
+    for (const command of ["validate", "build"]) {
+      const io = capture();
+      expect(runCli([command, "--host", "codx"], { cwd: cleanTree(), io: io.io })).toBe(2);
+      expect(io.stderr()).toBe(`ak ${command}: unknown host 'codx'; did you mean codex?`);
+    }
+  });
+
+  test("--host builds that host's bundle alone", () => {
+    const root = cleanTree();
+    expect(runCli(["build", "--host", "codex"], { cwd: root, io: capture().io })).toBe(0);
+    expect(existsSync(join(root, "dist", "codex"))).toBe(true);
+    expect(existsSync(join(root, "dist", "claude-code"))).toBe(false);
+  });
+
+  test("the packager's own unknown-profile issue names the nearest profile", () => {
+    const root = cleanTree();
+    const { catalog } = loadCatalog(root);
+    if (catalog === null) throw new Error("fixture catalog did not load");
+    const issue = checkBundles({ root, catalog }, { profile: "cor" }).find(
+      (i) => i.rule === "packaging.unknown-profile",
+    );
+    expect(issue?.message).toContain("did you mean core?");
   });
 
   /**

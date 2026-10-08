@@ -675,6 +675,42 @@ describe("readContext", () => {
     expect(refusal(kb(fx, fx.project, "read", "--kind", "runbook", "--scope", "project")).code).toBe("kb.kind-unknown");
     expect(refusal(kb(fx, fx.project, "read", "--kind", "adr", "--scope", "docs/adr")).code).toBe("kb.scope-is-a-path");
   });
+
+  test("a scope with nothing at or below it is noted on stderr with the nearest scopes; the result is unchanged", () => {
+    const fx = registered();
+    const before = kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports");
+    expect(before.code).toBe(0);
+    expect(before.err).toBe(
+      "ak kb read: note: no committed page sits at scope 'billing/exports' or below it, so the result holds only the scopes above it: unknown scope 'billing/exports'; there are none to choose from",
+    );
+    expect(publishPage(fx, fx.project, page(fx)).code).toBe(0);
+
+    const typo = kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exprots");
+    expect(typo.code).toBe(0);
+    expect(readResult(typo).coverage.scopes).toEqual(["billing/exprots", "billing", "project"]);
+    expect(typo.err).toBe(
+      "ak kb read: note: no committed page sits at scope 'billing/exprots' or below it, so the result holds only the scopes above it: unknown scope 'billing/exprots'; did you mean billing/exports or billing?",
+    );
+    for (const scope of ["billing/exports", "billing", "project"])
+      expect(kb(fx, fx.project, "read", "--kind", "adr", "--scope", scope).err).toBe("");
+  });
+
+  test("a mistyped kind names the kind it was probably meant to be", () => {
+    const fx = registered();
+    const typo = refusal(kb(fx, fx.project, "read", "--kind", "gotcah", "--scope", "project"));
+    expect(typo.code).toBe("kb.kind-unknown");
+    expect(typo.message).toStartWith(
+      "'gotcah' is not a knowledgebase document kind (did you mean gotcha?). The nine are ",
+    );
+  });
+});
+
+describe("ak kb usage", () => {
+  test("an unknown subcommand names the one it was probably meant to be", () => {
+    const run = kb(fixture(), REPO, "raed");
+    expect(run.code).toBe(2);
+    expect(run.err.split("\n")[0]).toBe("ak kb: unknown subcommand 'raed'; did you mean read?");
+  });
 });
 
 describe("publishArtifact, run-artifact placement", () => {

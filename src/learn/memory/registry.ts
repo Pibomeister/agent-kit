@@ -26,6 +26,7 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
 import { projectFolderName, registryPath, rootOf, tickLogPath, worktreeRoot, worktreesPath } from "../core/paths.ts";
 import { appendGated, nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { CwdRow } from "../sources/claude-mem.ts";
 
 export interface RegistryEntry {
@@ -46,6 +47,19 @@ export const DISCOVERY_DAYS = 14;
 
 export function readRegistry(config: LearnConfig): Registry {
   return readJson<Registry>(registryPath(config), {});
+}
+
+/**
+ * What a `--repo` that resolves to no repository is told: the registered roots
+ * nearest the path it named, so a typo is not read as a project with no
+ * history.
+ */
+export function unknownRepo(config: LearnConfig, path: string): string {
+  return unknownSelector(
+    "repository",
+    resolve(path),
+    Object.values(readRegistry(config)).map((entry) => entry.root),
+  );
 }
 
 export function readWorktrees(config: LearnConfig): Worktrees {

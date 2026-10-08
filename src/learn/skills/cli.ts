@@ -1,18 +1,26 @@
 /**
  * `ak learn skills` — the roster and the skill-learn candidate queue.
  */
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { unknownSelector } from "../../util/suggest.ts";
 import { flag, type LearnArea, type LearnArgs, type LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { span, triggerOf } from "../core/trace.ts";
+import { unknownRepo } from "../memory/registry.ts";
 import { discover, loadRegistry, promoteCandidate, rejectCandidate, runSkillLearn, skillsLedger } from "./learn.ts";
 import { rosterSection } from "./roster.ts";
 
-/** `--repo`, else the working directory, resolved to its main repository root. */
+/**
+ * `--repo`, else the working directory, resolved to its main repository root.
+ * A `--repo` outside any repository is taken as named when the directory exists,
+ * and is null when it does not: a path that names nothing is a typo, not a
+ * project with no candidates.
+ */
 export function repoRoot(args: LearnArgs, ctx: LearnContext): string | null {
   const repo = flag(args, "repo");
   const start = repo === undefined ? ctx.cwd : resolve(ctx.cwd, repo);
-  return mainRepoRoot(start) ?? (repo === undefined ? null : start);
+  return mainRepoRoot(start) ?? (repo === undefined || !existsSync(start) ? null : start);
 }
 
 /** `--since 14` (days) or `--since 2026-09-01` (a date); fourteen days when absent. */
@@ -25,8 +33,26 @@ export function sinceDays(value: string | undefined, now = Date.now()): number |
 
 function needRoot(args: LearnArgs, ctx: LearnContext): string | null {
   const root = repoRoot(args, ctx);
-  if (root === null) ctx.io.err("ak learn skills: not inside a git repository; pass --repo");
+  if (root === null) notARepo(args, ctx);
   return root;
+}
+
+function notARepo(args: LearnArgs, ctx: LearnContext): void {
+  const repo = flag(args, "repo");
+  ctx.io.err(
+    repo === undefined
+      ? "ak learn skills: not inside a git repository; pass --repo"
+      : `ak learn skills: --repo names no directory: ${unknownRepo(ctx.config, resolve(ctx.cwd, repo))}`,
+  );
+}
+
+/** The refusal for an id no candidate has, naming the ids that exist. */
+function noCandidate(ctx: LearnContext, verb: string, root: string, id: string): number {
+  const ids = Object.keys(loadRegistry(skillsLedger(ctx, root)).candidates);
+  ctx.io.err(
+    `ak learn skills ${verb}: ${ids.includes(id) ? `candidate ${id} has no draft on file` : unknownSelector("candidate", id, ids)}`,
+  );
+  return 1;
 }
 
 function needId(args: LearnArgs, ctx: LearnContext): string | null {
@@ -41,7 +67,13 @@ export const skillsArea: LearnArea = {
     roster: {
       usage: "skills roster [--repo P]                     print the roster block the session-start hook appends",
       run: (args, ctx) => {
-        const text = rosterSection(ctx, repoRoot(args, ctx));
+        const root = repoRoot(args, ctx);
+        // Without --repo, outside a repository is a roster with no project rows; a named path that is not there is a typo.
+        if (root === null && flag(args, "repo") !== undefined) {
+          notARepo(args, ctx);
+          return 2;
+        }
+        const text = rosterSection(ctx, root);
         if (text !== "") ctx.io.out(text.trimEnd());
         return 0;
       },
@@ -100,10 +132,7 @@ export const skillsArea: LearnArea = {
         const id = needId(args, ctx);
         if (root === null || id === null) return 2;
         const text = promoteCandidate(ctx, root, id);
-        if (text === null) {
-          ctx.io.err(`ak learn skills promote: no candidate ${id}`);
-          return 1;
-        }
+        if (text === null) return noCandidate(ctx, "promote", root, id);
         ctx.io.out(text);
         return 0;
       },
@@ -114,10 +143,7 @@ export const skillsArea: LearnArea = {
         const root = needRoot(args, ctx);
         const id = needId(args, ctx);
         if (root === null || id === null) return 2;
-        if (!rejectCandidate(ctx, root, id)) {
-          ctx.io.err(`ak learn skills reject: no candidate ${id}`);
-          return 1;
-        }
+        if (!rejectCandidate(ctx, root, id)) return noCandidate(ctx, "reject", root, id);
         ctx.io.out(`rejected ${id}`);
         return 0;
       },
