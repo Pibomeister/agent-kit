@@ -287,7 +287,11 @@ describe("rollback, retire and promote by hand", () => {
     );
     write("rp-1234567", { count: 3 });
     write("rp-003", { count: 3 });
-    expect(propose(ctx, ledger, root, 3)).toBe("promoted rp-001,rp-003,rp-1234567 to guardrails");
+    // The fixtures share one fix, so each later promotion lists the guardrails before it as resembling it.
+    expect(propose(ctx, ledger, root, 3)).toBe(
+      "promoted rp-001,rp-003,rp-1234567 to guardrails; similar rp-003 ~ rp-001 (0.75 active); " +
+        "similar rp-1234567 ~ rp-001 (0.75 active), rp-003 (0.75 active)",
+    );
     expect(guardrails(ledger)).toContain("- [rp-1234567] Do the one thing.");
     const drafts = readdirSync(ledger.path("proposals")).sort();
     expect(drafts).toEqual([
@@ -318,7 +322,9 @@ describe("rollback, retire and promote by hand", () => {
     const { ctx, ledger, root, write } = setup();
     write("rp-001", { count: 1, status: "candidate" });
     write("rp-002", { count: 3, status: "retired" });
-    expect(promoteById(ctx, ledger, root, "rp-001")).toBe("promoted rp-001 to guardrails");
+    expect(promoteById(ctx, ledger, root, "rp-001")).toBe(
+      "promoted rp-001 to guardrails; similar rp-001 ~ rp-002 (0.75 retired)",
+    );
     expect(guardrails(ledger)).toBe("- [rp-001] Do the one thing.\n");
     expect(ledger.git(["log", "-1", "--format=%s"]).stdout.trim()).toBe("promote: guardrails +rp-001 (by hand)");
     expect(promoteById(ctx, ledger, root, "rp-001")).toBe("rp-001 is already promoted to guardrails");
