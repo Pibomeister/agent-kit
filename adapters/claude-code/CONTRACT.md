@@ -25,6 +25,7 @@ dist/claude-code/
 ├── skills/<id>/references/    # transitive dependencies resolved into the bundle
 ├── evals/<id>/<case>/case.yaml
 ├── LICENSES/                  # licence texts of the packages inlined into bin/ak (NOTICE)
+├── provenance/licenses/       # claude-mem LICENSE and NOTICE (NOTICE)
 └── NOTICE, LICENSE
 ```
 
