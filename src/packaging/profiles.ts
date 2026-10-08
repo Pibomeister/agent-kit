@@ -3,6 +3,7 @@ import { parse as parseYaml } from "yaml";
 
 import { CATALOG_FRAGMENT_DIR, type Catalog } from "../catalog/load.ts";
 import { readTextIfPresent } from "../util/fs.ts";
+import { candidatesClause } from "../util/suggest.ts";
 import { error, note, type Issue } from "../validation/types.ts";
 
 export interface ProfileMembership {
@@ -15,6 +16,12 @@ export interface ProfileMembership {
   profile: string;
   skills: string[];
   issues: Issue[];
+}
+
+/** What `--profile` accepts: every profile catalog.yaml declares, and `all`. */
+export function profileIds(catalog: Catalog): string[] {
+  const declared = catalog.bySection("profiles").map((e) => e.id);
+  return declared.includes("all") ? declared : [...declared, "all"];
 }
 
 /**
@@ -60,7 +67,7 @@ export function resolveProfile(root: string, catalog: Catalog, profileId: string
         error(
           "packaging.unknown-profile",
           "catalog.yaml",
-          `Profile '${selected}' is not declared in catalog.yaml or a ${CATALOG_FRAGMENT_DIR}/ fragment.`,
+          `Profile '${selected}' is not declared in catalog.yaml or a ${CATALOG_FRAGMENT_DIR}/ fragment; ${candidatesClause(selected, profileIds(catalog))}`,
         ),
       ],
     };
