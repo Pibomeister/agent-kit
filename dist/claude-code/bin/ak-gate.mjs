@@ -21,6 +21,54 @@ import {
 import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+const LIST_WHOLE = 6;
+function distance(a, b) {
+  let twoBack = [];
+  let last = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1;i <= a.length; i += 1) {
+    const row = [i];
+    for (let j = 1;j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let best = Math.min((last[j] ?? 0) + 1, (row[j - 1] ?? 0) + 1, (last[j - 1] ?? 0) + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        best = Math.min(best, (twoBack[j - 2] ?? 0) + 1);
+      row.push(best);
+    }
+    twoBack = last;
+    last = row;
+  }
+  return last[b.length] ?? 0;
+}
+function ranked(input, candidates) {
+  const needle = input.toLowerCase();
+  return [...new Set(candidates)].map((candidate) => ({ candidate, d: distance(needle, candidate.toLowerCase()) })).toSorted((x, y) => x.d - y.d || (x.candidate < y.candidate ? -1 : x.candidate > y.candidate ? 1 : 0));
+}
+export function closest(input, candidates, limit = 3) {
+  const needle = input.toLowerCase();
+  if (needle.length === 0)
+    return [];
+  const allowed = Math.max(1, Math.round(needle.length / 3));
+  return ranked(input, candidates).filter(({ candidate, d }) => {
+    const hay = candidate.toLowerCase();
+    return d <= allowed || needle.length >= 3 && hay.length >= 3 && (hay.includes(needle) || needle.includes(hay));
+  }).slice(0, limit).map((row) => row.candidate);
+}
+function orList(items) {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items.at(-1) ?? ""}`;
+}
+export function unknownSelector(kind, input, candidates) {
+  const head = `unknown ${kind} '${input}'`;
+  const near = closest(input, candidates);
+  if (near.length > 0)
+    return `${head}; did you mean ${orList(near)}?`;
+  const known = [...new Set(candidates)];
+  if (known.length === 0)
+    return `${head}; there are none to choose from`;
+  if (known.length <= LIST_WHOLE)
+    return `${head}; valid: ${known.join(", ")}`;
+  const nearest = ranked(input, known).slice(0, 3).map((row) => row.candidate);
+  return `${head}; nearest of ${known.length}: ${nearest.join(", ")}`;
+}
 export function git(cwd, args, env) {
   const proc = spawnSync("git", [...args], {
     cwd,
@@ -1304,7 +1352,7 @@ export function main(argv, io, cwd = process.cwd(), bypassLedger, now = () => ne
   const sub = argv[0] === "bypass" && argv[1] !== undefined ? `bypass ${argv[1]}` : argv[0];
   if (sub === undefined || !(sub in FLAGS)) {
     if (sub !== undefined)
-      io.err(`ak lifecycle: unknown subcommand ${sub}`);
+      io.err(`ak lifecycle: ${unknownSelector("subcommand", sub, Object.keys(FLAGS))}`);
     for (const line of LIFECYCLE_USAGE)
       io.err(line);
     return 2;
@@ -1599,7 +1647,16 @@ export function main(argv, io, cwd = process.cwd(), bypassLedger, now = () => ne
   else
     for (const r of result.refusals)
       io.err(r);
+  if (!result.ok && explicitRun !== undefined && !knownRuns(dir).includes(safeRunId(run)))
+    io.err(`note: in ${dir}, ${unknownSelector("run", run, knownRuns(dir))}`);
   return result.ok ? 0 : 1;
+}
+const subdirectories = (at) => existsSync(at) ? readdirSync(at, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name) : [];
+function knownRuns(dir) {
+  const reserved = new Set(["runs", "branches", "grant-runs"]);
+  return [
+    ...new Set([...subdirectories(dir).filter((name) => !reserved.has(name)), ...subdirectories(join(dir, "runs"))])
+  ].toSorted();
 }
 function invokedDirectly() {
   const script = process.argv[1];
