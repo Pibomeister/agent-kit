@@ -27,3 +27,15 @@ commands:
 # any `ask-user` finding that remains.
 auto_fix:
   review: 3
+
+# Integrate a moved main with `git merge --no-ff` rather than a rebase. Under
+# the default `rebase`, once one PR merged, every other open PR whose pipeline
+# rebased onto the new main rewrote commits it had already published, and Push
+# refused them ("refusing to reconcile private mirror ref ... at-risk
+# commit(s)"). `merge` keeps the reviewed head as the merge commit's first
+# parent and publishes as a fast-forward. no-mistakes reads this key only from
+# the default branch, so it takes effect on each branch's next run after it
+# lands. A CI merge-conflict repair still rebases and force-pushes under either
+# strategy.
+rebase:
+  strategy: merge
