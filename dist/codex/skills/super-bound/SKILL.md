@@ -1,6 +1,6 @@
 ---
 name: super-bound
-description: "Human-started command: it runs only when the human's message begins with `/ak:super-bound`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. Turns an approved direction into a decision-level specification, a reviewed plan and a dependency graph of zero-context implementation tickets with named verification. Use when the direction is agreed and the work needs bounding. Not for deciding what to build, and not for a reviewed ticket that already carries its acceptance criteria."
+description: "Human-started command: it runs only when the human's message begins with `$ak:super-bound`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. Turns an approved direction into a decision-level specification, a reviewed plan and a dependency graph of zero-context implementation tickets with named verification. Use when the direction is agreed and the work needs bounding. Not for deciding what to build, and not for a reviewed ticket that already carries its acceptance criteria."
 license: MIT
 metadata:
   ak_catalog_id: super-bound
@@ -37,7 +37,7 @@ acceptance criteria and verification commands. A decision ticket is never an imp
 ## Authority
 
 Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
-`bound.run`. A human starts the public entrypoint by typing `/ak:super-bound`. A request in prose
+`bound.run`. A human starts the public entrypoint by typing `$ak:super-bound`. A request in prose
 is not a start, even when it names this skill or the command. A delegated controller starts
 `bound.run` only under a runner-validated grant covering `spec-approval`, and only with a second
 grant covering `ticket-approval` when the operation emits implementation tickets
@@ -76,11 +76,11 @@ approves its own specification or tickets.
 ## Workflow
 
 1. Check how this run was started, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:super-bound`, when a controller started the phase
+   only when the human's message begins with `$ak:super-bound`, when a controller started the phase
    operation `bound.run` under a validated grant, or when the bypass check in Authority exits 0. A
    request in prose is not a start, even when it names this skill or the command, or asks for this
    work without naming either. With neither, stop before reading the repository, checking inputs or
-   answering the task: the only response is to tell the human to type `/ak:super-bound` followed by
+   answering the task: the only response is to tell the human to type `$ak:super-bound` followed by
    their request.
 2. Detect before you ask. Read what the repository already states — its dependency manifest, its
    test runner, its lint configuration, its continuous-integration configuration — report what you

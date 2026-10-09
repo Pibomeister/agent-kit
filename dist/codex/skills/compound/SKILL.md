@@ -1,6 +1,6 @@
 ---
 name: compound
-description: "Human-started command: it runs only when the human's message begins with `/ak:compound`, or when a shipping or autopilot run reaches its lesson operation. On any other request do not load or follow it; tell the human to type that command. Captures one reusable lesson from a real failure, a correction or a surprising review result, as a candidate in the central knowledgebase. Use when verified work produced reasoning that the final code, tests and existing lessons do not already carry. Not for routine runs that simply ended."
+description: "Human-started command: it runs only when the human's message begins with `$ak:compound`, or when a shipping or autopilot run reaches its lesson operation. On any other request do not load or follow it; tell the human to type that command. Captures one reusable lesson from a real failure, a correction or a surprising review result, as a candidate in the central knowledgebase. Use when verified work produced reasoning that the final code, tests and existing lessons do not already carry. Not for routine runs that simply ended."
 license: MIT
 metadata:
   ak_catalog_id: compound
@@ -37,7 +37,7 @@ manufactured lesson just because a run ended.
 
 Authority: `explicit` at the public entrypoint, `model` at the phase operation lesson.capture, and
 `explicit-or-delegated` at `lesson.publish`. A human starts the public entrypoint by typing
-`/ak:compound`. A request in prose is not a start, even when it names this skill or the command.
+`$ak:compound`. A request in prose is not a start, even when it names this skill or the command.
 `super-ship` and `autopilot` reach this skill only through lesson.capture, which drafts a candidate
 from evidence already in the run and never publishes. Publishing runs through
 `lesson.publish`: a human's explicit say-so in the session, or a runner-validated grant covering
@@ -61,11 +61,11 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
 ## Workflow
 
 1. **Check how this run was started**, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:compound`, when a `super-ship` or `autopilot` run
+   only when the human's message begins with `$ak:compound`, when a `super-ship` or `autopilot` run
    reached lesson.capture, or when `lesson.publish` runs under a validated grant. A request in prose
    is not a start, even when it names this skill or the command, or asks for this work without
    naming either. With none of the three, stop before reading the artifacts, checking inputs or
-   answering the task: the only response is to tell the human to type `/ak:compound` followed by
+   answering the task: the only response is to tell the human to type `$ak:compound` followed by
    their request.
 2. **Find the trigger.** Name the failure, correction or surprising review result, and the artifact
    where it happened. No trigger: stop with no lesson and say so.

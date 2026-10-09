@@ -1,6 +1,6 @@
 ---
 name: super-review
-description: "Human-started command: it runs only when the human's message begins with `/ak:super-review`, under a validated grant, when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`, or as a delta inside an open review run. On any other request do not load or follow it; tell the human to type that command. When prose asks for this review work, do not inspect the change or its prerequisites; tell the human to type `/ak:super-review` followed by their request. Reviews a change with a panel of independent specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix (delta), or the two-lane readiness gate (readiness). Use when a change needs judgment against requirements, standards and tests. Reviewers cannot edit source. Not for writing the fix, not for running acceptance checks, and not for repairing a red pipeline."
+description: "Human-started command: it runs only when the human's message begins with `$ak:super-review`, under a validated grant, when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`, or as a delta inside an open review run. On any other request do not load or follow it; tell the human to type that command. When prose asks for this review work, do not inspect the change or its prerequisites; tell the human to type `$ak:super-review` followed by their request. Reviews a change with a panel of independent specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix (delta), or the two-lane readiness gate (readiness). Use when a change needs judgment against requirements, standards and tests. Reviewers cannot edit source. Not for writing the fix, not for running acceptance checks, and not for repairing a red pipeline."
 license: MIT
 metadata:
   ak_catalog_id: super-review
@@ -54,7 +54,7 @@ their own failure modes, and they enter through `doc-review`.
 ## Authority
 
 `full` and `readiness`: authority `explicit-or-delegated`, invocation U. A human starts either by
-typing `/ak:super-review`, or a delegated controller starts the same protocol through the declared
+typing `$ak:super-review`, or a delegated controller starts the same protocol through the declared
 phase operations `review.full` and `review.readiness` under a runner-validated grant covering
 finding-adjudication. A request in prose is not a start, even when it names this skill or the
 command. `delta`: authority `active-review-run`, invocation M, through `review.delta`.
@@ -100,12 +100,12 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 
 1. Check how this run was started, before any other step and before any tool call but the grant
    check. `full` and `readiness` are started only when the human's message begins with
-   `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
+   `$ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
    validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
    Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
    in prose is not a start, even when it names this skill or the command, or asks for this work
    without naming either. With neither, stop before inspecting the change, checking prerequisites
-   or answering the task: the only response is to tell the human to type `/ak:super-review`
+   or answering the task: the only response is to tell the human to type `$ak:super-review`
    followed by their request. For `delta`, confirm a review run is open; if not, stop with
    `needs-input`.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source

@@ -1,6 +1,6 @@
 ---
 name: verify
-description: "Human-started command: it runs only when the human's message begins with `/ak:verify`. On any other request do not load or follow it; tell the human to type that command. Builds, runs and drives the project to verify named acceptance criteria with runtime evidence. Use when a human asks to confirm that an implemented change works. Not for tests or type checks alone, code review, or fixing a failure."
+description: "Human-started command: it runs only when the human's message begins with `$ak:verify`. On any other request do not load or follow it; tell the human to type that command. Builds, runs and drives the project to verify named acceptance criteria with runtime evidence. Use when a human asks to confirm that an implemented change works. Not for tests or type checks alone, code review, or fixing a failure."
 license: MIT
 metadata:
   ak_catalog_id: verify
@@ -25,7 +25,7 @@ metadata:
 
 ## Authority
 
-Authority: `explicit`. A human starts it with `/ak:verify`. No phase operation exposes it
+Authority: `explicit`. A human starts it with `$ak:verify`. No phase operation exposes it
 (`policies/invocation.yaml` lists it among the user-invoked skills that expose none), so no controller
 can start it under a grant. Started any other way, it stops at step 1 and names the command.
 
@@ -45,9 +45,9 @@ can start it under a grant. Started any other way, it stops at step 1 and names 
 ## Workflow
 
 1. **Check how this run was started**, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:verify`; no grant starts it. A request in prose is
+   only when the human's message begins with `$ak:verify`; no grant starts it. A request in prose is
    not a start, even when it names this skill or the command. Otherwise, stop here: make no tool
-   call, say that this command is human-started, and give the human the line to type, `/ak:verify`
+   call, say that this command is human-started, and give the human the line to type, `$ak:verify`
    and their request.
 2. Freeze the claim, criterion ids, revision, recipe, environment, declared evidence kinds and
    permitted commands. Exclude the implementer's narrative, claimed result and review verdict. If

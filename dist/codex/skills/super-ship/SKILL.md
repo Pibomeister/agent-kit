@@ -1,6 +1,6 @@
 ---
 name: super-ship
-description: "Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this publication work on a reviewed change, do not inspect the branch or act; tell the human to type `/ak:super-ship` followed by their request. Prepares a verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become a committed handoff or pull request. Not for merging, not for deploying, and not for deciding whether the change is correct."
+description: "Human-started command: it runs only when the human's message begins with `$ak:super-ship`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this publication work on a reviewed change, do not inspect the branch or act; tell the human to type `$ak:super-ship` followed by their request. Prepares a verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become a committed handoff or pull request. Not for merging, not for deploying, and not for deciding whether the change is correct."
 license: MIT
 metadata:
   ak_catalog_id: super-ship
@@ -52,7 +52,7 @@ same charter requirement as merge.
 
 ## Authority
 
-Authority `explicit-or-delegated`, invocation U. A human starts it by typing `/ak:super-ship`, or a
+Authority `explicit-or-delegated`, invocation U. A human starts it by typing `$ak:super-ship`, or a
 delegated controller starts the same protocol through the declared phase operation `ship.prepare`
 under a runner-validated grant covering `ship-pr`. A request in prose is not a start, even when it
 names this skill or the command.
@@ -101,13 +101,13 @@ The project's own release checks, discovered rather than assumed.
 ## Workflow
 
 1. Check how this run was started, before any other step and before any tool call but the grant
-   check. It is started only when the human's message begins with `/ak:super-ship`, or when a
+   check. It is started only when the human's message begins with `$ak:super-ship`, or when a
    controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
    binding the grant check is the `ak firstmate grant` call in Authority, and under a bypass grant
    it is the bypass check there; a refusal is a stop. A request in prose is not a start, even when
    it names this skill or the command, or asks for this work without naming either. With neither,
    stop before inspecting the branch, checking prerequisites or answering the task: the only
-   response is to tell the human to type `/ak:super-ship` followed by their request.
+   response is to tell the human to type `$ak:super-ship` followed by their request.
 2. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
    `dry-run` stops there.
 3. Run the sensitive-data scan over what would be committed. A candidate secret stops the run;

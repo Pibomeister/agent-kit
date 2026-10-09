@@ -1,6 +1,6 @@
 ---
 name: wayfind
-description: "Human-started command: it runs only when the human's message begins with `/ak:wayfind`, or under a validated grant. On any other request do not load or follow it; tell the human to type that command. Charts work too large for one session as a shared map of decision tickets, then resolves them one at a time until the way to the destination is clear. Use when a loose effort is wrapped in fog. Not for work whose route is already visible, and not for executing an agreed plan."
+description: "Human-started command: it runs only when the human's message begins with `$ak:wayfind`, or under a validated grant. On any other request do not load or follow it; tell the human to type that command. Charts work too large for one session as a shared map of decision tickets, then resolves them one at a time until the way to the destination is clear. Use when a loose effort is wrapped in fog. Not for work whose route is already visible, and not for executing an agreed plan."
 license: MIT
 metadata:
   ak_catalog_id: wayfind
@@ -38,7 +38,7 @@ dispatched to an implementer as though approved.
 ## Authority
 
 Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase operation
-`wayfind.map`. A human starts the public entrypoint by typing `/ak:wayfind`. A request in prose is
+`wayfind.map`. A human starts the public entrypoint by typing `$ak:wayfind`. A request in prose is
 not a start, even when it names this skill or the command. A delegated controller starts
 `wayfind.map` only under a runner-validated grant covering `ticket-approval`
 (`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate that grant, the operation
@@ -72,10 +72,10 @@ back rather than resolved here.
 ## Workflow
 
 1. Check how this run was started, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:wayfind`, or when a controller started the phase
+   only when the human's message begins with `$ak:wayfind`, or when a controller started the phase
    operation `wayfind.map` under a validated grant. A request in prose is not a start, even when it
    names this skill or the command. With neither, stop here: make no tool call, say that this
-   command is human-started, and give the human the line to type, `/ak:wayfind` and their request.
+   command is human-started, and give the human the line to type, `$ak:wayfind` and their request.
 
 **Chart the map.**
 

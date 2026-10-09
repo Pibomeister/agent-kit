@@ -1,6 +1,6 @@
 ---
 name: doubt-driven
-description: "Human-started command: it runs only when the human's message begins with `/ak:doubt-driven`. On any other request do not load or follow it; tell the human to type that command. Names one consequential claim, extracts the artifact and the contract it must satisfy, has an independent reviewer context try to disprove it without seeing the claim, and reconciles every finding against the artifact text in a bounded loop. Use when a non-trivial decision is about to stand: an irreversible migration, production authentication, a claimed invariant such as \"this is safe\" or \"this is idempotent\". Not for mechanical changes, not for a verdict on finished work, and not another generic code review. A recommendation is not authorization."
+description: "Human-started command: it runs only when the human's message begins with `$ak:doubt-driven`. On any other request do not load or follow it; tell the human to type that command. Names one consequential claim, extracts the artifact and the contract it must satisfy, has an independent reviewer context try to disprove it without seeing the claim, and reconciles every finding against the artifact text in a bounded loop. Use when a non-trivial decision is about to stand: an irreversible migration, production authentication, a claimed invariant such as \"this is safe\" or \"this is idempotent\". Not for mechanical changes, not for a verdict on finished work, and not another generic code review. A recommendation is not authorization."
 license: MIT
 metadata:
   ak_catalog_id: doubt-driven
@@ -37,7 +37,7 @@ This is an in-flight posture: the claim is cross-examined while changing course 
 
 ## Authority
 
-Authority: `explicit`. A human starts this skill with `/ak:doubt-driven`; it exposes no phase
+Authority: `explicit`. A human starts this skill with `$ak:doubt-driven`; it exposes no phase
 operation, so no controller or grant can start it. It starts no other skill. Invocation covers
 reading the artifact, dispatching independent reviewer contexts and reconciling their findings.
 It does not cover changing the artifact, and it never runs an external review tool without the
@@ -56,10 +56,10 @@ human authorizing that exact invocation; one authorization does not cover the ne
 ## Workflow
 
 1. Check how this run was started, before any other step and before any tool call. It is started
-   only when the human's message begins with `/ak:doubt-driven`; no grant starts it. A request in
+   only when the human's message begins with `$ak:doubt-driven`; no grant starts it. A request in
    prose is not a start, even when it names this skill or the command. Otherwise, stop here: make no
    tool call, say that this command is human-started, and give the human the line to type,
-   `/ak:doubt-driven` and their request.
+   `$ak:doubt-driven` and their request.
 2. Apply the non-triviality test (see When to use). A mechanical request or a finished-work verdict
    is routed (see Not for) and the run stops. A human's confidence does not make a non-trivial
    claim trivial; at least one cycle runs.

@@ -1,6 +1,6 @@
 ---
 name: visual-edit
-description: "Human-started command: it runs only when the human's message begins with `/ak:visual-edit`. On any other request do not load or follow it; tell the human to type that command. Opens named routes from a running local app as URL-backed frames, then applies pending visual revisions through source. Use when a human asks to compare or visually edit real routes. Not for static mock-ups, unimplemented product alternatives, or behavior changes."
+description: "Human-started command: it runs only when the human's message begins with `$ak:visual-edit`. On any other request do not load or follow it; tell the human to type that command. Opens named routes from a running local app as URL-backed frames, then applies pending visual revisions through source. Use when a human asks to compare or visually edit real routes. Not for static mock-ups, unimplemented product alternatives, or behavior changes."
 license: MIT
 metadata:
   ak_catalog_id: visual-edit
@@ -25,7 +25,7 @@ metadata:
 
 ## Authority
 
-Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or prose request starts it.
+Authority: `explicit`. A human starts it with `$ak:visual-edit`; no grant or prose request starts it.
 
 ## Inputs
 
@@ -47,7 +47,7 @@ Authority: `explicit`. A human starts it with `/ak:visual-edit`; no grant or pro
 ## Workflow
 
 1. Check how the run started before any tool call. If the message does not begin with
-   `/ak:visual-edit`, stop and return that exact command.
+   `$ak:visual-edit`, stop and return that exact command.
 2. Freeze the repository root, dev-server URL, ordered routes and viewports. If the
    request is for a not-yet-built alternative, hand the bounded question to `prototype` and stop.
 3. Check the editor connector, the CLI and the dev server by using them; an address or status

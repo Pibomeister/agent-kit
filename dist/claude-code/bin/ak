@@ -15426,6 +15426,15 @@ var init_load = __esm(() => {
   ADDRESSABLE_SECTIONS = ["skills", "protocols", "roles"];
 });
 
+// src/packaging/hosts.ts
+function explicitStartForHost(host, namespace, skillId) {
+  return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
+}
+var init_hosts = __esm(() => {
+  init_dist();
+  init_fs();
+});
+
 // src/util/suggest.ts
 function distance(a, b) {
   let twoBack = [];
@@ -19703,7 +19712,7 @@ function rosterSection(ctx, root, options = {}) {
       lines.push(`- ${skill.name}: ${clip(skill.description, width)}`);
   }
   if (human.length > 0) {
-    const slash = human.map((skill) => skill.label === "catalog" ? `/ak:${skill.name}` : `/${skill.name}`);
+    const slash = human.map((skill) => skill.label === "catalog" ? explicitStartForHost(options.host ?? "claude-code", "/ak:", skill.name) : `/${skill.name}`);
     lines.push(`Human-only commands (suggest one when it fits; never start it yourself): ${slash.join(", ")}`);
   }
   if (root !== null) {
@@ -19723,6 +19732,7 @@ ${lines.join(`
 var DEFAULT_WIDTH = 80;
 var init_roster = __esm(() => {
   init_load();
+  init_hosts();
   init_paths();
   init_roles();
   init_store();
@@ -19871,9 +19881,9 @@ ${merged.trimEnd()}`);
   }
   return parts;
 }
-function sessionStartBlock(ctx) {
+function sessionStartBlock(ctx, host) {
   const root = sessionRoot(ctx.cwd);
-  const roster = rosterSection(ctx, root);
+  const roster = rosterSection(ctx, root, host === undefined ? {} : { host });
   if (root === null)
     return roster;
   ctx.span?.project(root);
@@ -24137,6 +24147,7 @@ function hookCommands(deps) {
   const base = `${deps.ak.map(shellQuote).join(" ")} learn hook`;
   return {
     sessionStart: `${base} session-start`,
+    codexSessionStart: `${base} session-start --source codex`,
     claudeStop: `${base} stop`,
     codexStop: `${base} stop --source codex`,
     codexPrompt: `${base} prompt`,
@@ -24160,7 +24171,10 @@ function ensureHook(doc, event, command, options = {}) {
   if (hooks.some((hook) => hook.command === command))
     return false;
   const verb = ourHookVerb(command);
-  const ours = hooks.filter((hook) => verb !== null && ourHookVerb(hook.command) === verb);
+  const ours = hooks.filter((hook) => {
+    const found = ourHookVerb(hook.command);
+    return found !== null && (found === verb || found === options.supersedes);
+  });
   const stale = ours[0];
   if (stale !== undefined) {
     stale.command = command;
@@ -24285,7 +24299,7 @@ function hostHooks(commands) {
       { event: "Stop", command: commands.claudeStop, timeout: 120 }
     ],
     codex: [
-      { event: "SessionStart", command: commands.sessionStart },
+      { event: "SessionStart", command: commands.codexSessionStart, supersedes: "session-start" },
       { event: "UserPromptSubmit", command: commands.codexPrompt },
       { event: "Stop", command: commands.codexStop, timeout: 30 }
     ],
@@ -25307,7 +25321,7 @@ function verifyChecks(ctx, deps, repo) {
     const codex = readJson(codexHooks, {});
     hookLines.push(...ourHookCommands(codex));
     for (const [event, verb] of [
-      ["SessionStart", "session-start"],
+      ["SessionStart", "session-start --source codex"],
       ["UserPromptSubmit", "prompt"],
       ["Stop", "stop --source codex"]
     ]) {
@@ -25912,7 +25926,7 @@ function sessionStartHook(args, ctx) {
     return;
   }
   span(session2, "hook.session-start", "hook", (traced) => {
-    const block = sessionStartBlock(traced);
+    const block = sessionStartBlock(traced, flag(args, "source") === "codex" ? "codex" : undefined);
     if (block.trim() !== "")
       traced.io.out(block.trimEnd());
     recordExposure(traced, block, payload.session_id ?? payload.sessionId);
@@ -25954,7 +25968,7 @@ var init_hooks2 = __esm(() => {
     summary: "entry points for host hooks; never blocks a session",
     verbs: {
       "session-start": {
-        usage: "hook session-start [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --host: once per session, --arm: allow it again",
+        usage: "hook session-start [--source codex] [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --source codex: name human-only commands in the Codex form, --host: once per session, --arm: allow it again",
         run: (args, ctx) => reported("session-start", ctx, () => sessionStartHook(args, ctx))
       },
       stop: {
@@ -26631,9 +26645,8 @@ init_fs();
 var BLOCKING = new Set(["not-provided"]);
 var HOST_ALONE = { attached: new Set, suppliers: new Map };
 
-// src/packaging/hosts.ts
-init_dist();
-init_fs();
+// src/packaging/install.ts
+init_hosts();
 
 // src/validation/schemas.ts
 init_fs();
