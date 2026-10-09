@@ -510,7 +510,7 @@ function kimiPlan(ctx: LearnContext, path: string, specs: readonly HookSpec[]): 
   const before = existsSync(path) ? readFileSync(path, "utf8") : "";
   if (tomlHooks(before) === null) {
     return {
-      refuse: `${path} cannot be read as TOML by this runtime, whose parser also rejects some valid files, date and time values among them; fix the file or quote that value, nothing written`,
+      refuse: `${path} cannot be parsed as a supported Kimi hooks TOML config by this runtime; fix the file, nothing written`,
     };
   }
   const block = hookBlock(
