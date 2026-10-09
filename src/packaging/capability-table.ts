@@ -5,7 +5,7 @@ import { error, unavailable, type Issue } from "../validation/types.ts";
 import type { SkillMode } from "./hosts.ts";
 
 /**
- * The one file that states what each host supplies, for both hosts.
+ * The one file that states what each host supplies, for every host.
  *
  * Not `adapters/<host>/CONTRACT.md`. `adapters/codex/CONTRACT.md` §3 says
  * outright that "every `common#/$defs/capability` value carries the status

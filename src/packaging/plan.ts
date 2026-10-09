@@ -49,8 +49,10 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
 };
 
 /**
- * The marketplace entry both host bundles carry. Codex CLI discovers the local
- * marketplace through the same path before resolving `ak@agent-kit`.
+ * The marketplace entry the claude-code, codex and grok bundles carry. Codex CLI
+ * discovers the local marketplace through the same path before resolving
+ * `ak@agent-kit`. Droid's sits at `.factory-plugin/marketplace.json`; kimi's
+ * bundle carries none.
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
@@ -691,8 +693,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      *
      * The premise §3.1 names is that the package "does not emit" the host's
      * suppression key, so the host does not enforce it, and that is what is
-     * tested. Keyed on `host === "codex"` this would be a rule that happens to
-     * be right about the two hosts that exist and goes on firing at codex after
+     * tested. Keyed on `host === "codex"` this would already miss droid, which
+     * does not enforce suppression either, and would go on firing at codex after
      * its bundle starts enforcing suppression. `enforces` rather than
      * `HOST_FRONTMATTER_KEYS` because emitting the key and honoring it are
      * different claims, and the one that protects the skill is the second.
@@ -1199,7 +1201,8 @@ function declared(value: string | undefined): value is string {
  * bundle actually contains -- which matters because the install set is
  * profile-dependent (`adapters/claude-code/CONTRACT.md` §1). codex takes the
  * directory pointer its contract carries from the donor
- * (`adapters/codex/CONTRACT.md` §1).
+ * (`adapters/codex/CONTRACT.md` §1). droid is told nothing: it discovers the
+ * root `skills/` directory itself (`adapters/droid/CONTRACT.md` §1).
  *
  * The forms resolve to the same set only because both bundles are built from
  * one `skills/` tree. That is a property of this function's caller rather than

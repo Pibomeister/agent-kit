@@ -18,7 +18,8 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", 
  *
  * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
  * leading `$`; the namespace already carries that `<plugin>:` stem after its
- * slash (adapters/codex/CONTRACT.md §3.1 records the probe).
+ * slash (adapters/codex/CONTRACT.md §3.1 records the probe). Droid invokes a
+ * skill by its bare `/<id>` (adapters/droid/CONTRACT.md §2).
  */
 export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
   if (host === "grok" || host === "droid") return `/${skillId}`;
