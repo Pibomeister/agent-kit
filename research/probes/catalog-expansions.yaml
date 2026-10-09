@@ -167,7 +167,7 @@ profiles:
 
 adapters:
   baseline: 4
-  catalog: 10
+  catalog: 11
   expansions:
     - ids: [grok]
       reason: >-
@@ -197,3 +197,9 @@ adapters:
         with the host-specific explicit start fixed by ADR-0011.
       commits: [205ce12930d46cd13dec03951e926c2f55f14141]
       docs: [docs/decisions/0011-portable-explicit-start.md, adapters/kimi/CONTRACT.md]
+    - ids: [droid]
+      reason: >-
+        Factory Droid installs the bundle as a native host, so its explicit-start commands, plugin
+        manifest and host limits need their own contract rather than the Claude Code bundle's.
+      commits: [207cf1d9]
+      docs: [adapters/droid/CONTRACT.md]
