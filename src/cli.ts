@@ -54,7 +54,7 @@ const USAGE = [
   "",
   "  ak validate [--profile <id>] [--host <id>] [--json]  check the tree against catalog.yaml",
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
-  "  ak build [--check] [--profile <id>|all] [--host <id>]  emit dist/claude-code, dist/codex and dist/grok, or one",
+  "  ak build [--check] [--profile <id>|all] [--host <id>]  emit dist/<host> for all hosts, or one",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
   "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",

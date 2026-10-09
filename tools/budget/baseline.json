@@ -1216,6 +1216,411 @@
       "bytes": 7483,
       "tokens": 1871
     },
+    "bundle/kimi:references/shared/packs/pack-delete/PACK.md": {
+      "file": "packs/pack-delete/PACK.md",
+      "bytes": 7310,
+      "tokens": 1822
+    },
+    "bundle/kimi:references/shared/policies/authority-defaults.yaml": {
+      "file": "policies/authority-defaults.yaml",
+      "bytes": 17801,
+      "tokens": 4443
+    },
+    "bundle/kimi:references/shared/protocols/consensus-plan-gate/PROTOCOL.md": {
+      "file": "protocols/consensus-plan-gate/PROTOCOL.md",
+      "bytes": 7464,
+      "tokens": 1862
+    },
+    "bundle/kimi:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
+      "file": "references/codebase-design-vocabulary/DEEPENING.md",
+      "bytes": 2789,
+      "tokens": 696
+    },
+    "bundle/kimi:references/shared/references/codebase-design-vocabulary/DESIGN-IT-TWICE.md": {
+      "file": "references/codebase-design-vocabulary/DESIGN-IT-TWICE.md",
+      "bytes": 2743,
+      "tokens": 684
+    },
+    "bundle/kimi:references/shared/references/codebase-design-vocabulary/REFERENCE.md": {
+      "file": "references/codebase-design-vocabulary/REFERENCE.md",
+      "bytes": 6543,
+      "tokens": 1632
+    },
+    "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
+      "file": "references/delegation/REFERENCE.md",
+      "bytes": 11310,
+      "tokens": 2825
+    },
+    "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
+      "file": "references/domain-modeling/REFERENCE.md",
+      "bytes": 8044,
+      "tokens": 2006
+    },
+    "bundle/kimi:references/shared/references/engineering-principles/REFERENCE.md": {
+      "file": "references/engineering-principles/REFERENCE.md",
+      "bytes": 13507,
+      "tokens": 3377
+    },
+    "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
+      "file": "references/knowledgebase-binding/REFERENCE.md",
+      "bytes": 5825,
+      "tokens": 1454
+    },
+    "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
+      "file": "references/prose-quality/REFERENCE.md",
+      "bytes": 13234,
+      "tokens": 3308
+    },
+    "bundle/kimi:references/shared/references/tracker-of-record/REFERENCE.md": {
+      "file": "references/tracker-of-record/REFERENCE.md",
+      "bytes": 9370,
+      "tokens": 2341
+    },
+    "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
+      "file": "references/verification-evidence/REFERENCE.md",
+      "bytes": 6204,
+      "tokens": 1551
+    },
+    "bundle/kimi:skill-listing": {
+      "file": "skills/*/SKILL.md (description)",
+      "bytes": 20367,
+      "tokens": 5090
+    },
+    "bundle/kimi:skills/autopilot/SKILL.md": {
+      "file": "skills/autopilot/SKILL.md",
+      "bytes": 14889,
+      "tokens": 3715
+    },
+    "bundle/kimi:skills/autopilot/references/checkpoints.md": {
+      "file": "skills/autopilot/references/checkpoints.md",
+      "bytes": 3585,
+      "tokens": 896
+    },
+    "bundle/kimi:skills/babysit-pr/SKILL.md": {
+      "file": "skills/babysit-pr/SKILL.md",
+      "bytes": 15592,
+      "tokens": 3893
+    },
+    "bundle/kimi:skills/bakeoff/SKILL.md": {
+      "file": "skills/bakeoff/SKILL.md",
+      "bytes": 10232,
+      "tokens": 2555
+    },
+    "bundle/kimi:skills/bakeoff/references/judging.md": {
+      "file": "skills/bakeoff/references/judging.md",
+      "bytes": 5764,
+      "tokens": 1440
+    },
+    "bundle/kimi:skills/codebase-design/SKILL.md": {
+      "file": "skills/codebase-design/SKILL.md",
+      "bytes": 7858,
+      "tokens": 1963
+    },
+    "bundle/kimi:skills/compound-refresh/SKILL.md": {
+      "file": "skills/compound-refresh/SKILL.md",
+      "bytes": 8296,
+      "tokens": 2070
+    },
+    "bundle/kimi:skills/compound/SKILL.md": {
+      "file": "skills/compound/SKILL.md",
+      "bytes": 9149,
+      "tokens": 2286
+    },
+    "bundle/kimi:skills/deprecate/SKILL.md": {
+      "file": "skills/deprecate/SKILL.md",
+      "bytes": 9903,
+      "tokens": 2472
+    },
+    "bundle/kimi:skills/deprecate/assets/deprecation-notice.md": {
+      "file": "skills/deprecate/assets/deprecation-notice.md",
+      "bytes": 1134,
+      "tokens": 284
+    },
+    "bundle/kimi:skills/deprecate/references/migration-patterns.md": {
+      "file": "skills/deprecate/references/migration-patterns.md",
+      "bytes": 4086,
+      "tokens": 1021
+    },
+    "bundle/kimi:skills/diagnose/SKILL.md": {
+      "file": "skills/diagnose/SKILL.md",
+      "bytes": 17035,
+      "tokens": 4253
+    },
+    "bundle/kimi:skills/diagnose/references/feedback-loops.md": {
+      "file": "skills/diagnose/references/feedback-loops.md",
+      "bytes": 3459,
+      "tokens": 861
+    },
+    "bundle/kimi:skills/doc-review/SKILL.md": {
+      "file": "skills/doc-review/SKILL.md",
+      "bytes": 14361,
+      "tokens": 3583
+    },
+    "bundle/kimi:skills/doubt-driven/SKILL.md": {
+      "file": "skills/doubt-driven/SKILL.md",
+      "bytes": 9519,
+      "tokens": 2378
+    },
+    "bundle/kimi:skills/explain/SKILL.md": {
+      "file": "skills/explain/SKILL.md",
+      "bytes": 7431,
+      "tokens": 1857
+    },
+    "bundle/kimi:skills/handoff/SKILL.md": {
+      "file": "skills/handoff/SKILL.md",
+      "bytes": 9935,
+      "tokens": 2480
+    },
+    "bundle/kimi:skills/ideate/SKILL.md": {
+      "file": "skills/ideate/SKILL.md",
+      "bytes": 9043,
+      "tokens": 2260
+    },
+    "bundle/kimi:skills/ideate/references/frameworks.md": {
+      "file": "skills/ideate/references/frameworks.md",
+      "bytes": 4356,
+      "tokens": 1089
+    },
+    "bundle/kimi:skills/improve-architecture/SKILL.md": {
+      "file": "skills/improve-architecture/SKILL.md",
+      "bytes": 8664,
+      "tokens": 2163
+    },
+    "bundle/kimi:skills/improve-architecture/references/survey.md": {
+      "file": "skills/improve-architecture/references/survey.md",
+      "bytes": 2522,
+      "tokens": 627
+    },
+    "bundle/kimi:skills/pov/SKILL.md": {
+      "file": "skills/pov/SKILL.md",
+      "bytes": 9886,
+      "tokens": 2468
+    },
+    "bundle/kimi:skills/pov/references/independent-peers.md": {
+      "file": "skills/pov/references/independent-peers.md",
+      "bytes": 4105,
+      "tokens": 1027
+    },
+    "bundle/kimi:skills/product-pulse/SKILL.md": {
+      "file": "skills/product-pulse/SKILL.md",
+      "bytes": 8690,
+      "tokens": 2171
+    },
+    "bundle/kimi:skills/product-pulse/assets/report-template.md": {
+      "file": "skills/product-pulse/assets/report-template.md",
+      "bytes": 2294,
+      "tokens": 570
+    },
+    "bundle/kimi:skills/product-pulse/references/run.md": {
+      "file": "skills/product-pulse/references/run.md",
+      "bytes": 3599,
+      "tokens": 900
+    },
+    "bundle/kimi:skills/product-pulse/references/setup.md": {
+      "file": "skills/product-pulse/references/setup.md",
+      "bytes": 2747,
+      "tokens": 687
+    },
+    "bundle/kimi:skills/prototype/SKILL.md": {
+      "file": "skills/prototype/SKILL.md",
+      "bytes": 9796,
+      "tokens": 2447
+    },
+    "bundle/kimi:skills/prototype/references/logic.md": {
+      "file": "skills/prototype/references/logic.md",
+      "bytes": 3926,
+      "tokens": 982
+    },
+    "bundle/kimi:skills/prototype/references/ui.md": {
+      "file": "skills/prototype/references/ui.md",
+      "bytes": 3761,
+      "tokens": 941
+    },
+    "bundle/kimi:skills/receiving-review/SKILL.md": {
+      "file": "skills/receiving-review/SKILL.md",
+      "bytes": 14759,
+      "tokens": 3688
+    },
+    "bundle/kimi:skills/research/SKILL.md": {
+      "file": "skills/research/SKILL.md",
+      "bytes": 8025,
+      "tokens": 2003
+    },
+    "bundle/kimi:skills/simplify/SKILL.md": {
+      "file": "skills/simplify/SKILL.md",
+      "bytes": 8310,
+      "tokens": 2075
+    },
+    "bundle/kimi:skills/simplify/references/personas/code-quality.md": {
+      "file": "skills/simplify/references/personas/code-quality.md",
+      "bytes": 2615,
+      "tokens": 654
+    },
+    "bundle/kimi:skills/simplify/references/personas/code-reuse.md": {
+      "file": "skills/simplify/references/personas/code-reuse.md",
+      "bytes": 1466,
+      "tokens": 367
+    },
+    "bundle/kimi:skills/simplify/references/personas/efficiency.md": {
+      "file": "skills/simplify/references/personas/efficiency.md",
+      "bytes": 1357,
+      "tokens": 340
+    },
+    "bundle/kimi:skills/source-driven/SKILL.md": {
+      "file": "skills/source-driven/SKILL.md",
+      "bytes": 7839,
+      "tokens": 1957
+    },
+    "bundle/kimi:skills/source-driven/references/citation-formats.md": {
+      "file": "skills/source-driven/references/citation-formats.md",
+      "bytes": 4093,
+      "tokens": 1024
+    },
+    "bundle/kimi:skills/strategy/SKILL.md": {
+      "file": "skills/strategy/SKILL.md",
+      "bytes": 8411,
+      "tokens": 2101
+    },
+    "bundle/kimi:skills/strategy/assets/strategy-template.md": {
+      "file": "skills/strategy/assets/strategy-template.md",
+      "bytes": 1906,
+      "tokens": 474
+    },
+    "bundle/kimi:skills/strategy/references/interview.md": {
+      "file": "skills/strategy/references/interview.md",
+      "bytes": 6467,
+      "tokens": 1616
+    },
+    "bundle/kimi:skills/strategy/references/update-run.md": {
+      "file": "skills/strategy/references/update-run.md",
+      "bytes": 3194,
+      "tokens": 799
+    },
+    "bundle/kimi:skills/super-align/SKILL.md": {
+      "file": "skills/super-align/SKILL.md",
+      "bytes": 14581,
+      "tokens": 3638
+    },
+    "bundle/kimi:skills/super-bound/SKILL.md": {
+      "file": "skills/super-bound/SKILL.md",
+      "bytes": 20370,
+      "tokens": 5085
+    },
+    "bundle/kimi:skills/super-build/SKILL.md": {
+      "file": "skills/super-build/SKILL.md",
+      "bytes": 20088,
+      "tokens": 5017
+    },
+    "bundle/kimi:skills/super-review/SKILL.md": {
+      "file": "skills/super-review/SKILL.md",
+      "bytes": 24368,
+      "tokens": 6085
+    },
+    "bundle/kimi:skills/super-review/references/delta.md": {
+      "file": "skills/super-review/references/delta.md",
+      "bytes": 4146,
+      "tokens": 1035
+    },
+    "bundle/kimi:skills/super-review/references/panel.md": {
+      "file": "skills/super-review/references/panel.md",
+      "bytes": 9404,
+      "tokens": 2346
+    },
+    "bundle/kimi:skills/super-scout/SKILL.md": {
+      "file": "skills/super-scout/SKILL.md",
+      "bytes": 12620,
+      "tokens": 3152
+    },
+    "bundle/kimi:skills/super-ship/SKILL.md": {
+      "file": "skills/super-ship/SKILL.md",
+      "bytes": 20219,
+      "tokens": 5051
+    },
+    "bundle/kimi:skills/super-ship/references/transport-no-mistakes.md": {
+      "file": "skills/super-ship/references/transport-no-mistakes.md",
+      "bytes": 5570,
+      "tokens": 1392
+    },
+    "bundle/kimi:skills/super-verify/SKILL.md": {
+      "file": "skills/super-verify/SKILL.md",
+      "bytes": 18512,
+      "tokens": 4623
+    },
+    "bundle/kimi:skills/triage/SKILL.md": {
+      "file": "skills/triage/SKILL.md",
+      "bytes": 10233,
+      "tokens": 2552
+    },
+    "bundle/kimi:skills/triage/assets/agent-brief.md": {
+      "file": "skills/triage/assets/agent-brief.md",
+      "bytes": 1619,
+      "tokens": 405
+    },
+    "bundle/kimi:skills/triage/assets/triage-notes.md": {
+      "file": "skills/triage/assets/triage-notes.md",
+      "bytes": 493,
+      "tokens": 124
+    },
+    "bundle/kimi:skills/triage/references/rejections.md": {
+      "file": "skills/triage/references/rejections.md",
+      "bytes": 2604,
+      "tokens": 649
+    },
+    "bundle/kimi:skills/triage/references/roles.md": {
+      "file": "skills/triage/references/roles.md",
+      "bytes": 2453,
+      "tokens": 610
+    },
+    "bundle/kimi:skills/ultraqa/SKILL.md": {
+      "file": "skills/ultraqa/SKILL.md",
+      "bytes": 14277,
+      "tokens": 3565
+    },
+    "bundle/kimi:skills/ultraqa/references/adversarial-cases.md": {
+      "file": "skills/ultraqa/references/adversarial-cases.md",
+      "bytes": 4099,
+      "tokens": 1024
+    },
+    "bundle/kimi:skills/verify/SKILL.md": {
+      "file": "skills/verify/SKILL.md",
+      "bytes": 10275,
+      "tokens": 2564
+    },
+    "bundle/kimi:skills/visual-edit/SKILL.md": {
+      "file": "skills/visual-edit/SKILL.md",
+      "bytes": 10266,
+      "tokens": 2567
+    },
+    "bundle/kimi:skills/visual-edit/assets/receipt.example.json": {
+      "file": "skills/visual-edit/assets/receipt.example.json",
+      "bytes": 1478,
+      "tokens": 370
+    },
+    "bundle/kimi:skills/visual-edit/references/receipt.md": {
+      "file": "skills/visual-edit/references/receipt.md",
+      "bytes": 3019,
+      "tokens": 755
+    },
+    "bundle/kimi:skills/wait-what/SKILL.md": {
+      "file": "skills/wait-what/SKILL.md",
+      "bytes": 5466,
+      "tokens": 1366
+    },
+    "bundle/kimi:skills/wayfind/SKILL.md": {
+      "file": "skills/wayfind/SKILL.md",
+      "bytes": 13597,
+      "tokens": 3393
+    },
+    "bundle/kimi:skills/writing-skills/SKILL.md": {
+      "file": "skills/writing-skills/SKILL.md",
+      "bytes": 9619,
+      "tokens": 2402
+    },
+    "bundle/kimi:skills/writing-skills/references/authoring-discipline.md": {
+      "file": "skills/writing-skills/references/authoring-discipline.md",
+      "bytes": 7483,
+      "tokens": 1871
+    },
     "distill:tool-calls": {
       "file": "src/learn/sources/tool-distill.ts",
       "bytes": 1058,
@@ -1278,8 +1683,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22544,
-      "tokens": 5622
+      "bytes": 22550,
+      "tokens": 5624
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",

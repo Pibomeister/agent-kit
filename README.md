@@ -21,6 +21,13 @@ codex plugin marketplace add Pibomeister/agent-kit --ref published
 codex plugin add ak@agent-kit
 ```
 
+Kimi Code uses the native bundle in `dist/kimi`: build it with `bun run ak build --host kimi`,
+then run `/plugins install <absolute-path-to-dist/kimi>` inside Kimi. Human-started skills use
+`/skill:<id>`. For one session, use `kimi --skills-dir <absolute-path-to-dist/kimi/skills>`.
+See the [Kimi contract](adapters/kimi/CONTRACT.md) for the model-free installation evidence and
+unverified runtime acceptance cases. The maintenance command below currently updates Claude Code
+and Codex installations only.
+
 Claude Code skills appear under `/ak:` after a restart. Codex lists them as `ak:<id>`, and a
 human-started skill is typed there as `$ak:<id>`, where this README and the canonical skills write
 `/ak:<id>` ([ADR-0011](docs/decisions/0011-portable-explicit-start.md)). Codex's plugin CLI has no

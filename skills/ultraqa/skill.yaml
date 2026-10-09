@@ -222,6 +222,21 @@ packaging:
         - >-
           grant validation is the runner's. Where the host cannot validate a grant, the entrypoint
           stops for explicit invocation rather than running on an unchecked claim.
+    - adapter: kimi
+      mode: manual
+      unsupported:
+        - >-
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than mutating a workspace on an
+          unrequested start.
+        - >-
+          isolated worktrees are not provided by the host. Where the run cannot be isolated, the
+          mutation record and the invalidation notice are the only protection the reviewer has, and
+          both are emitted rather than assumed.
+        - >-
+          grant validation is the runner's. Where the host cannot validate a grant, the entrypoint
+          stops for explicit invocation rather than running on an unchecked claim.
 
 provenance:
   origin: donor

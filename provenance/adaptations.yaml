@@ -11,6 +11,9 @@ adaptations:
   - path: adapters/grok/CONTRACT.md
     source: local:grok-host-packaging-decision@sha256:43a98fce39b02a79d26bf61e6f05cdb958446ad764b4e21af12ab1cd606f5e4d#L4-4
     rationale: The generated host variant, unchanged authored sources and eval selection, native authority rendering, offline probes and deferred expansion acceptance become the Grok contract.
+  - path: adapters/kimi/CONTRACT.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:.kimi-plugin/plugin.json
+    rationale: Native per-host identity manifest over a shared skill tree; Kimi authority follows ADR-0011 and current host probes.
   - path: adapters/observation-source/claude-mem/code--review-learning.json
     source: claude-mem@02cd0c9c47e38a849e764477290c571e84dfa043:plugin/modes/code.json
     rationale: "Changed: two observation types (review-finding, review-resolution) and one concept (recurrence) are added to the code mode, with prompt text telling the observer to record a reviewer's finding and its resolution as first-class observations. Named review products and named review skills in the added text are replaced by generic descriptions. The code mode's existing types and concepts are kept as they are."

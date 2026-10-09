@@ -168,6 +168,8 @@ packaging:
       mode: manual
     - adapter: codex
       mode: manual
+    - adapter: kimi
+      mode: manual
 
 provenance:
   origin: donor

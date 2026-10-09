@@ -44,6 +44,7 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/plugin.json",
   codex: ".codex-plugin/plugin.json",
   grok: ".claude-plugin/plugin.json",
+  kimi: ".kimi-plugin/plugin.json",
 };
 
 /**
@@ -208,6 +209,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/ak.json",
   codex: ".codex-plugin/ak.json",
   grok: ".claude-plugin/ak.json",
+  kimi: ".kimi-plugin/ak.json",
 };
 
 /**
@@ -907,7 +909,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     path: HOST_MANIFEST_FILE[host],
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
-  files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
+  if (host !== "kimi") files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
   files.set(BUILD_RECORD_FILE[host], {
     path: BUILD_RECORD_FILE[host],
     contents: buildRecord(
@@ -1201,7 +1203,7 @@ function declared(value: string | undefined): value is string {
  * two bundles is a build failure, not a host difference.
  */
 function skillRegistration(host: HostId, skills: ReadonlyArray<string>): string | string[] {
-  return host === "codex" ? "./skills/" : skills.map((id) => `./skills/${id}`);
+  return host === "codex" || host === "kimi" ? "./skills/" : skills.map((id) => `./skills/${id}`);
 }
 
 /**
