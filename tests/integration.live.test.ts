@@ -62,7 +62,7 @@ describe("the other two commands survive the live tree", () => {
     expect(catalog).not.toBeNull();
     if (catalog === null) return;
     const plans = planAll({ root: ROOT, catalog }, {});
-    expect(plans.map((p) => p.host).sort()).toEqual([...HOST_IDS].sort());
+    expect(plans.map((p) => p.host).toSorted()).toEqual([...HOST_IDS].toSorted());
     // Each plan is asked for its own host's manifest. Asking both for
     // `.claude-plugin/plugin.json` is what this line used to do, and it passed
     // -- it was the assertion that one bundle was being emitted twice under two

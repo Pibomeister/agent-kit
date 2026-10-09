@@ -212,7 +212,7 @@ profiles:
       "research/sources/notes.md": "# Notes\n",
     });
     const files = new Set(checkBundleLinks(ctx, {}).map((i) => i.file.split("/").slice(0, 2).join("/")));
-    expect([...files].sort()).toEqual(HOST_IDS.map((host) => `dist/${host}`).sort());
+    expect([...files].toSorted()).toEqual(HOST_IDS.map((host) => `dist/${host}`).toSorted());
   });
 });
 
