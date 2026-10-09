@@ -938,8 +938,8 @@
     },
     "bundle/droid:skills/diagnose/SKILL.md": {
       "file": "skills/diagnose/SKILL.md",
-      "bytes": 16346,
-      "tokens": 4081
+      "bytes": 17031,
+      "tokens": 4252
     },
     "bundle/droid:skills/diagnose/references/feedback-loops.md": {
       "file": "skills/diagnose/references/feedback-loops.md",
@@ -963,8 +963,8 @@
     },
     "bundle/droid:skills/handoff/SKILL.md": {
       "file": "skills/handoff/SKILL.md",
-      "bytes": 9469,
-      "tokens": 2364
+      "bytes": 9931,
+      "tokens": 2479
     },
     "bundle/droid:skills/ideate/SKILL.md": {
       "file": "skills/ideate/SKILL.md",
@@ -1018,8 +1018,8 @@
     },
     "bundle/droid:skills/prototype/SKILL.md": {
       "file": "skills/prototype/SKILL.md",
-      "bytes": 9321,
-      "tokens": 2328
+      "bytes": 9792,
+      "tokens": 2446
     },
     "bundle/droid:skills/prototype/references/logic.md": {
       "file": "skills/prototype/references/logic.md",
@@ -1038,13 +1038,13 @@
     },
     "bundle/droid:skills/research/SKILL.md": {
       "file": "skills/research/SKILL.md",
-      "bytes": 7844,
-      "tokens": 1958
+      "bytes": 8021,
+      "tokens": 2002
     },
     "bundle/droid:skills/simplify/SKILL.md": {
       "file": "skills/simplify/SKILL.md",
-      "bytes": 8129,
-      "tokens": 2030
+      "bytes": 8306,
+      "tokens": 2074
     },
     "bundle/droid:skills/simplify/references/personas/code-quality.md": {
       "file": "skills/simplify/references/personas/code-quality.md",
@@ -1063,8 +1063,8 @@
     },
     "bundle/droid:skills/source-driven/SKILL.md": {
       "file": "skills/source-driven/SKILL.md",
-      "bytes": 7658,
-      "tokens": 1912
+      "bytes": 7835,
+      "tokens": 1956
     },
     "bundle/droid:skills/source-driven/references/citation-formats.md": {
       "file": "skills/source-driven/references/citation-formats.md",
@@ -1103,8 +1103,8 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 19329,
-      "tokens": 4827
+      "bytes": 20084,
+      "tokens": 5016
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1123,8 +1123,8 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 12145,
-      "tokens": 3033
+      "bytes": 12616,
+      "tokens": 3151
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -1138,8 +1138,8 @@
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 17681,
-      "tokens": 4415
+      "bytes": 18508,
+      "tokens": 4622
     },
     "bundle/droid:skills/triage/SKILL.md": {
       "file": "skills/triage/SKILL.md",

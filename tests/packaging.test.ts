@@ -1558,6 +1558,29 @@ describe("portable explicit-start authority in the real catalog", () => {
     expect(claude.files.get("skills/product-pulse/references/setup.md")?.contents).toContain("`/ak:product-pulse`");
   });
 
+  test("Droid declares every codex limit of every skill and packages each one manual", () => {
+    const codexLimits = new Map(
+      codex.decisions.map((decision) => [
+        decision.skill,
+        decision.unenforceable.map((limit) =>
+          limit.replace("`adapters/codex/CONTRACT.md` §3.1", "`adapters/droid/CONTRACT.md` §2"),
+        ),
+      ]),
+    );
+    for (const decision of droid.decisions) {
+      const limits = codexLimits.get(decision.skill);
+      if (limits === undefined) continue;
+      const ak = limits.length === 0 ? { mode: "manual" } : { mode: "manual", autonomy_unenforceable: limits };
+      expect({ skill: decision.skill, data: packagedSkill(droid, decision.skill).data }).toMatchObject({
+        skill: decision.skill,
+        data: { metadata: { ak } },
+      });
+    }
+    expect(codexLimits.get("super-verify")).toContain(
+      "independent-context and trusted-evidence are not provided by the host. The attached runner supplies them fail-closed; without it this skill is guided and receipts are host-unattested.",
+    );
+  });
+
   test("M skill trigger descriptions are unchanged, so automatic loading remains available", () => {
     for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "M")) {
       const source = parseFrontmatter(readFileSync(join(REPO, "skills", entry.id, "SKILL.md"), "utf8"));

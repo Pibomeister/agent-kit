@@ -141,6 +141,12 @@ packaging:
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           envelope hash binding is this package's own work.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          artifact-write is storage only: the host does not compute or check the artifact hash, so
+          envelope hash binding is this package's own work.
 
 provenance:
   origin: donor

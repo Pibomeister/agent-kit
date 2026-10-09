@@ -175,6 +175,17 @@ packaging:
           rather than falling back to a repository path when no knowledgebase is configured, which
           is why it does not cap this row while that adapter is attached (ruling
           `fail-closed-adapter-lifts-ceiling`).
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          artifact-write is storage only: the host does not compute or check the artifact hash, so
+          hash binding is this package's own work.
+        - >-
+          kb-write is not provided by the host; the knowledgebase adapter supplies it and refuses
+          rather than falling back to a repository path when no knowledgebase is configured, which
+          is why it does not cap this row while that adapter is attached (ruling
+          `fail-closed-adapter-lifts-ceiling`).
 
 provenance:
   origin: donor

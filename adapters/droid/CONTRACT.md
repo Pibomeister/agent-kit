@@ -41,8 +41,10 @@ human marker, stop: do not infer it from the skill body. End-to-end marker reten
 
 Every skill remains model-loadable. Neither `disable-model-invocation` nor `user-invocable` is
 emitted. U skills retain manual mode and their stop-first gate (ADR-0003); ADR-0005 remains Proposed.
-M descriptions and automatic invocation remain available. Undeclared per-skill Droid modes use the
-packager's conservative manual default; this metadata does not suppress loading or grant autonomy.
+M descriptions and automatic invocation remain available. Every skill that declares a codex row
+declares a Droid row with the same `unsupported` limits; M skills stay `mode: manual` there because
+Droid's autonomy enforcement is unproven. Undeclared skills use the packager's manual default; this
+metadata does not suppress loading or grant autonomy.
 
 The shared capability ceiling is `adapters/claude-code/CONTRACT.md` §3. Droid uses that same
 conservative packaging ceiling: tool-mediated reads, execution and storage do not attest isolation,
@@ -59,7 +61,9 @@ notes:
 
 Only `allowed-tools` is emitted as host-specific frontmatter. It declares intent, not enforcement.
 Process permissions and tool availability remain operator-owned and belong in acceptance evidence.
-The existing Droid learning-session capture integration is independent of this target and unchanged.
+The learning integration's Droid SessionStart hook runs `ak learn hook session-start --source droid`,
+so the session roster names human-only commands in the native `/<id>` form. Existing Droid installs
+pick up that command on their next `ak learn setup wire`. Session capture is unchanged.
 
 ## 3. Model-free probe and isolation
 
