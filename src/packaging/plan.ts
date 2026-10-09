@@ -10,7 +10,7 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, note, unavailable, type Issue } from "../validation/types.ts";
 import { generateHostFrontmatter } from "./frontmatter.ts";
 import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } from "./capability-table.ts";
-import { loadHostCapabilities, type HostId, type SkillMode } from "./hosts.ts";
+import { loadHostCapabilities, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { resolveProfile } from "./profiles.ts";
@@ -548,6 +548,12 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   const ordered = catalog.bySection("skills").filter((e) => included.has(e.id));
+  const userSkillIds = catalog
+    .bySection("skills")
+    .filter((entry) => entry.invocation === "U")
+    .map((entry) => entry.id);
+  const renderExplicitStarts = (text: string) =>
+    rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
 
@@ -711,8 +717,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
     const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, bodyPath);
     issues.push(...rewritten.issues);
+    const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
 
-    files.set(bodyPath, { path: bodyPath, contents: `${generated.text}${rewritten.text}`, source: bodyPath });
+    files.set(bodyPath, { path: bodyPath, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
@@ -725,7 +732,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       if (text === null) continue;
       const assetRewrite = rewriteLinks(asset, asset, text, included, asset);
       issues.push(...assetRewrite.issues);
-      files.set(asset, { path: asset, contents: assetRewrite.text, source: asset });
+      files.set(asset, { path: asset, contents: renderExplicitStarts(assetRewrite.text), source: asset });
       for (const dep of assetRewrite.dependencies) {
         const published = publishedPathFor(dep, included);
         if (published !== null) pending.push({ source: dep, published });
@@ -746,7 +753,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     const rewritten = rewriteLinks(next.source, next.published, text, included, next.source);
     issues.push(...rewritten.issues);
-    files.set(next.published, { path: next.published, contents: rewritten.text, source: next.source });
+    files.set(next.published, {
+      path: next.published,
+      contents: renderExplicitStarts(rewritten.text),
+      source: next.source,
+    });
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
       if (published !== null) pending.push({ source: dep, published });

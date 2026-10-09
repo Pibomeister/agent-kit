@@ -27,9 +27,14 @@ const CLI = join(import.meta.dir, "..", "..", "src", "cli.ts");
 const TIMEOUT_MS = 60_000;
 
 /** `bun test` renders in UTC without setting TZ, so the subprocess is handed this process's zone: "next nightly" is a local date. */
-function hook(ctx: TestContext, cwd: string, stdin: string): { code: number; stdout: string } {
+function hook(
+  ctx: TestContext,
+  cwd: string,
+  stdin: string,
+  flags: readonly string[] = [],
+): { code: number; stdout: string } {
   const env = { ...ctx.env, TZ: Intl.DateTimeFormat().resolvedOptions().timeZone };
-  const result = run([process.execPath, CLI, "learn", "hook", "session-start"], {
+  const result = run([process.execPath, CLI, "learn", "hook", "session-start", ...flags], {
     cwd,
     input: stdin,
     env,
@@ -106,6 +111,19 @@ describe("ak learn hook session-start as a subprocess", () => {
       const out = hook(ctx, scratch(), JSON.stringify({ cwd: join(root, "src") }));
       expect(out.stdout).toBe(`${sessionStartBlock({ ...ctx, cwd: join(root, "src") }).trimEnd()}\n`);
       expect(out.stdout).toContain("Working memory for this repo");
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "with --source codex the roster names human-only commands in the Codex form",
+    () => {
+      const { ctx, root } = seeded();
+      const codex = hook(ctx, root, JSON.stringify({ cwd: root }), ["--source", "codex"]);
+      expect(codex.stdout).toBe(`${sessionStartBlock(ctx, "codex").trimEnd()}\n`);
+      expect(codex.stdout).toContain("$ak:super-align");
+      expect(codex.stdout).not.toContain("/ak:super-align");
+      expect(sessionStartBlock(ctx)).toContain("/ak:super-align");
     },
     TIMEOUT_MS,
   );

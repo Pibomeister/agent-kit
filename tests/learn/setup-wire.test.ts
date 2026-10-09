@@ -140,7 +140,7 @@ describe("hook merge", () => {
   test("every hook command points at the one ak command line", () => {
     // Spread into a literal: an interface has no index signature, so Object.values on it is any[].
     const all = Object.values({ ...hookCommands(fakeDeps()) });
-    expect(all).toHaveLength(8);
+    expect(all).toHaveLength(9);
     expect(all.every((command) => command.startsWith(`${AK} `))).toBe(true);
   });
 });
@@ -236,9 +236,24 @@ describe("setup wire", () => {
 
     wire(ctx, deps, { host: "codex" });
     const doc = readDoc(codex);
-    expect(commands(doc, "SessionStart")).toEqual([`${AK} session-start`]);
+    expect(commands(doc, "SessionStart")).toEqual([`${AK} session-start --source codex`]);
     expect(commands(doc, "UserPromptSubmit")).toEqual([`${AK} prompt`]);
     expect(commands(doc, "Stop")).toEqual([`${AK} stop --source codex`]);
+  });
+
+  test("a Codex SessionStart hook wired before it carried its source is updated in place", () => {
+    const deps = fakeDeps();
+    const ctx = context(deps);
+    const codex = join(deps.home, ".codex", "hooks.json");
+    mkdirSync(join(deps.home, ".codex"), { recursive: true });
+    writeFileSync(
+      codex,
+      JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `${AK} session-start` }] }] } }),
+    );
+    wire(ctx, deps);
+    expect(commands(readDoc(codex), "SessionStart")).toEqual([`${AK} session-start --source codex`]);
+    wire(ctx, deps);
+    expect(commands(readDoc(codex), "SessionStart")).toEqual([`${AK} session-start --source codex`]);
   });
 
   test("CODEX_HOME is honoured", () => {

@@ -173,7 +173,7 @@ function sessionStartHook(args: LearnArgs, ctx: LearnContext): void {
     return;
   }
   span(session, "hook.session-start", "hook", (traced) => {
-    const block = sessionStartBlock(traced);
+    const block = sessionStartBlock(traced, flag(args, "source") === "codex" ? "codex" : undefined);
     if (block.trim() !== "") traced.io.out(block.trimEnd());
     recordExposure(traced, block, payload.session_id ?? payload.sessionId);
   });
@@ -184,7 +184,7 @@ export const hookArea: LearnArea = {
   verbs: {
     "session-start": {
       usage:
-        "hook session-start [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --host: once per session, --arm: allow it again",
+        "hook session-start [--source codex] [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --source codex: name human-only commands in the Codex form, --host: once per session, --arm: allow it again",
       run: (args, ctx) => reported("session-start", ctx, () => sessionStartHook(args, ctx)),
     },
     stop: {

@@ -5,9 +5,12 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
+import { parseFrontmatter } from "../src/util/frontmatter.ts";
+import { splitSections } from "../src/validation/bodies.ts";
+import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { checkCompleteness } from "../src/validation/completeness.ts";
-import { HOST_IDS, RESTRICTIONS, loadHostCapabilities } from "../src/packaging/hosts.ts";
+import { HOST_IDS, RESTRICTIONS, explicitStartPattern, loadHostCapabilities } from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
 import {
   INSTALL_FILE,
@@ -132,7 +135,24 @@ const BASE: Record<string, string> = {
     "skill in guided/manual mode and rejects autonomous mode.",
     "",
   ].join("\n"),
-  "skills/alpha/SKILL.md": `${HEAD("alpha")}\nFollow [tdd](../../protocols/tdd/PROTOCOL.md).\n`,
+  "skills/alpha/SKILL.md": `---
+name: alpha
+description: >-
+  Human-started command: it runs only when the human's message begins with \`/ak:alpha\`. On any
+  other request do not load or follow it; tell the human to type that command.
+---
+
+Follow [tdd](../../protocols/tdd/PROTOCOL.md).
+
+## Authority
+
+A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose is not a start.
+
+## Workflow
+
+1. Check how this run was started. It is started only when the human's message begins with
+   \`/ak:alpha\`. Otherwise stop, name the command and do nothing else.
+`,
   "skills/alpha/skill.yaml":
     "id: alpha\nversion: 0.1.0\ninvocation: U\nargument_hint: <ticket>\nallowed_tools: [Read, Grep]\n",
   "skills/beta/SKILL.md": `${HEAD("beta")}\nPlain body.\n`,
@@ -198,6 +218,16 @@ function recordOf(plan: ReturnType<typeof planBundle>) {
   // been an assertion about an empty object.
   const dir = plan.host === "codex" ? ".codex-plugin" : ".claude-plugin";
   return JSON.parse(plan.files.get(`${dir}/ak.json`)?.contents ?? "{}");
+}
+
+function packagedSkillText(plan: ReturnType<typeof planBundle>, id: string): string {
+  const text = plan.files.get(`skills/${id}/SKILL.md`)?.contents;
+  if (text === undefined) throw new Error(`${plan.host} did not package ${id}`);
+  return text;
+}
+
+function packagedSkill(plan: ReturnType<typeof planBundle>, id: string) {
+  return parseFrontmatter(packagedSkillText(plan, id));
 }
 
 describe("host capability honesty", () => {
@@ -389,7 +419,8 @@ describe("bundle planning", () => {
     const plan = planBundle(ctxFor(), "claude-code", {});
     const alpha = plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
     expect(alpha).toContain("name: alpha");
-    expect(alpha).toContain("description: Use when asked.");
+    expect(alpha).toContain('description: "Human-started command:');
+    expect(alpha).toContain("human's message begins with `/ak:alpha`");
   });
 
   test("plugin.json enumerates skills explicitly in catalog order rather than globbing", () => {
@@ -1364,20 +1395,31 @@ describe("the two host bundles, compared", () => {
     expect(skillIdsIn(claude)).toEqual(["alpha", "beta"]);
   });
 
-  test("the same skill body reaches both bundles; only the generated frontmatter differs", () => {
-    // Contract §5.1, bundle parity. The canonical tree is host-neutral, which is
-    // the whole reason host keys are generated rather than written, so a body
-    // that differs between bundles means something edited content on the way to
-    // one host.
+  test("a U skill's canonical command is rendered in each host's native explicit-start form", () => {
+    // The source carries one authority literal, derived from the catalog's
+    // namespace. Packaging is the adapter boundary: Claude Code keeps that
+    // namespaced command, while Codex receives the leading skill mention its
+    // host recognizes. The refusal sentence is deliberately asserted on both
+    // sides; translating the positive marker must not turn prose into a start.
     const { claude, codex } = bundles();
     const bodyOf = (plan: ReturnType<typeof planBundle>, id: string) =>
       (plan.files.get(`skills/${id}/SKILL.md`)?.contents ?? "").replace(/^---\n[\s\S]*?\n---\n/, "");
-    for (const id of ["alpha", "beta"]) {
-      expect(bodyOf(claude, id)).not.toBe("");
-      expect(`${id}:${bodyOf(codex, id)}`).toBe(`${id}:${bodyOf(claude, id)}`);
-    }
-    // And the frontmatter genuinely is generated per host, so the equality above
-    // is a statement about bodies rather than about two identical files.
+    const alphaInClaude = claude.files.get("skills/alpha/SKILL.md")?.contents ?? "";
+    const alphaInCodex = codex.files.get("skills/alpha/SKILL.md")?.contents ?? "";
+
+    expect(alphaInClaude.match(/`\/ak:alpha`/g)?.length).toBe(3);
+    expect(alphaInClaude).not.toContain("`$ak:alpha`");
+    expect(alphaInCodex.match(/`\$ak:alpha`/g)?.length).toBe(3);
+    expect(alphaInCodex).not.toContain("`/ak:alpha`");
+    expect(bodyOf(claude, "alpha")).toContain("A request in prose is not a start.");
+    expect(bodyOf(codex, "alpha")).toContain("A request in prose is not a start.");
+
+    // M skills have no explicit-start gate for the packager to translate, so
+    // automatic loading keeps the canonical body unchanged.
+    expect(bodyOf(codex, "beta")).toBe(bodyOf(claude, "beta"));
+    expect(bodyOf(codex, "beta")).toContain("Plain body.");
+
+    // Frontmatter remains generated per host independently of body rewriting.
     const claudeAlpha = claude.files.get("skills/alpha/SKILL.md")?.contents ?? "";
     expect(claudeAlpha).toContain("allowed-tools:");
     expect(codex.files.get("skills/alpha/SKILL.md")?.contents ?? "").not.toContain("allowed-tools:");
@@ -1400,6 +1442,32 @@ describe("the two host bundles, compared", () => {
    * does the work on that host is §3.1's description clause, which this package
    * does not generate yet.
    */
+  test("a skill-local reference and a shared dependency name a U command in the same form as the gate", () => {
+    // ADR-0011: the rendering covers a U command wherever it occurs in a
+    // packaged skill. A reference that keeps the canonical spelling recommends
+    // a start the codex gate beside it refuses.
+    const ctx = ctxFor({
+      "skills/alpha/references/setup.md": "Remind the human to run `/ak:alpha`.\n",
+      "protocols/tdd/PROTOCOL.md": "# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n",
+      "skills/alpha/assets/note.md": "Only the exact lowercase command is one: `/AK:Alpha` is prose.\n",
+    });
+    const claude = planBundle(ctx, "claude-code", {});
+    const codex = planBundle(ctx, "codex", {});
+    const shared = "references/shared/protocols/tdd/PROTOCOL.md";
+
+    expect(codex.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Remind the human to run `$ak:alpha`.\n",
+    );
+    expect(codex.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `$ak:alpha`, not `/ak:alpha-next`.\n");
+    expect(claude.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Remind the human to run `/ak:alpha`.\n",
+    );
+    expect(claude.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n");
+    expect(codex.files.get("skills/alpha/assets/note.md")?.contents).toBe(
+      "Only the exact lowercase command is one: `/AK:Alpha` is prose.\n",
+    );
+  });
+
   test("neither host's own frontmatter keys leak into the other host's bundle", () => {
     const { claude, codex } = bundles();
     const alphaIn = (plan: ReturnType<typeof planBundle>) => plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
@@ -1433,6 +1501,62 @@ describe("the two host bundles, compared", () => {
     // contents are two separate claims and only one of them is a filename.
     expect(recordOf(codex).host.id).toBe("codex");
     expect(recordOf(claude).host.id).toBe("claude-code");
+  });
+});
+
+describe("portable explicit-start authority in the real catalog", () => {
+  const loaded = loadCatalog(REPO);
+  if (loaded.catalog === null) throw new Error("repository has no catalog");
+  const catalog = loaded.catalog;
+  const ctx = { root: REPO, catalog };
+  const claude = planBundle(ctx, "claude-code", { profile: "all" });
+  const codex = planBundle(ctx, "codex", { profile: "all" });
+
+  test("every U skill names the native typed start in its description and stop-first workflow step", () => {
+    for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "U")) {
+      const canonical = `${catalog.package.namespace}${entry.id}`;
+      for (const [plan, command] of [
+        [claude, canonical],
+        [codex, `$ak:${entry.id}`],
+      ] as const) {
+        const text = packagedSkillText(plan, entry.id);
+        const parsed = packagedSkill(plan, entry.id);
+        const frontmatter = /^---\n[\s\S]*?\n---\n/.exec(text)?.[0] ?? "";
+        expect(frontmatter).toContain(command);
+        expect(frontmatter).toMatch(/human-started/i);
+        const workflow = splitSections(parsed.body).find((section) => section.heading === "## Workflow");
+        const first = workflow === undefined ? null : firstNumberedItem(workflow.text);
+        expect(
+          `${plan.host}:${entry.id}:first-step:${first !== null && first.text.includes(command) && /\bstop\b/i.test(first.text)}`,
+        ).toBe(`${plan.host}:${entry.id}:first-step:true`);
+      }
+
+      expect(packagedSkill(codex, entry.id).data["description"]).not.toContain(canonical);
+    }
+  });
+
+  test("no file packaged under a codex skill or its shared references names a U skill's canonical command", () => {
+    const userIds = catalog
+      .bySection("skills")
+      .filter((skill) => skill.invocation === "U")
+      .map((skill) => skill.id);
+    const canonicalStart = explicitStartPattern(userIds.map((id) => `${catalog.package.namespace}${id}`));
+    const offenders = [...codex.files.values()].flatMap((file) =>
+      /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1 ? [file.path] : [],
+    );
+    expect(offenders).toEqual([]);
+
+    const setup = codex.files.get("skills/product-pulse/references/setup.md")?.contents ?? "";
+    expect(setup).toContain("`$ak:product-pulse`");
+    expect(claude.files.get("skills/product-pulse/references/setup.md")?.contents).toContain("`/ak:product-pulse`");
+  });
+
+  test("M skill trigger descriptions are unchanged, so automatic loading remains available", () => {
+    for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "M")) {
+      const source = parseFrontmatter(readFileSync(join(REPO, "skills", entry.id, "SKILL.md"), "utf8"));
+      expect(packagedSkill(claude, entry.id).data["description"]).toBe(source.data["description"]);
+      expect(packagedSkill(codex, entry.id).data["description"]).toBe(source.data["description"]);
+    }
   });
 });
 

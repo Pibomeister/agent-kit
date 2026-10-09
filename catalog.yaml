@@ -25,7 +25,9 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.28
+  version: 0.1.29
+  # Canonical explicit-start namespace. Host adapters render this plus a skill
+  # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not

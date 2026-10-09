@@ -76,7 +76,7 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
     const codex = readJson<HookDoc>(codexHooks, {});
     hookLines.push(...ourHookCommands(codex));
     for (const [event, verb] of [
-      ["SessionStart", "session-start"],
+      ["SessionStart", "session-start --source codex"],
       ["UserPromptSubmit", "prompt"],
       ["Stop", "stop --source codex"],
     ] as const) {

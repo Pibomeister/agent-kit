@@ -9,6 +9,57 @@ export type HostId = "claude-code" | "codex";
 export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
 
 /**
+ * Render the explicit human start a packaged skill recognizes on this host.
+ *
+ * The canonical command remains catalog.package.namespace + skill id. Source
+ * validation and the invocation graph read that one spelling. Packaging owns
+ * the host translation so canonical skills never need a list of host syntaxes
+ * and a prose request still matches none of them (ADR-0011).
+ *
+ * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
+ * leading `$`; the namespace already carries that `<plugin>:` stem after its
+ * slash (adapters/codex/CONTRACT.md §3.1 records the probe).
+ */
+export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
+  return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
+}
+
+function escapeForPattern(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Every exact occurrence of one of `commands`, the one definition of where a
+ * command ends. A longer id is not a match: `/ak:compound-refresh` is not the
+ * command `/ak:compound` followed by text.
+ */
+export function explicitStartPattern(commands: ReadonlyArray<string>): RegExp {
+  return new RegExp(`(?:${commands.map(escapeForPattern).join("|")})(?![a-z0-9]|-[a-z0-9])`, "g");
+}
+
+/**
+ * Rewrite exact canonical U-skill command references in host-facing prose.
+ *
+ * M ids are absent from the input, so their automatic-invocation contract is
+ * not converted into an explicit gate by packaging.
+ */
+export function rewriteExplicitStarts(
+  text: string,
+  host: HostId,
+  namespace: string,
+  userSkillIds: ReadonlyArray<string>,
+): string {
+  const native = new Map<string, string>();
+  for (const skillId of userSkillIds) {
+    const canonical = `${namespace}${skillId}`;
+    const rendered = explicitStartForHost(host, namespace, skillId);
+    if (canonical !== rendered) native.set(canonical, rendered);
+  }
+  if (native.size === 0) return text;
+  return text.replace(explicitStartPattern([...native.keys()]), (found) => native.get(found) ?? found);
+}
+
+/**
  * How much of itself a skill is allowed to run on a given host.
  *
  * The vocabulary is `schemas/skill.schema.json`'s `packaging.hosts[].mode`
