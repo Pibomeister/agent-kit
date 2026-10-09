@@ -167,8 +167,14 @@ profiles:
 
 adapters:
   baseline: 4
-  catalog: 8
+  catalog: 9
   expansions:
+    - ids: [grok]
+      reason: >-
+        Grok uses the existing Claude-compatible packager with native explicit-start rendering
+        and its own host capability contract; authored skills remain shared.
+      commits: [c9232c1f]
+      docs: [adapters/grok/CONTRACT.md, docs/decisions/0011-portable-explicit-start.md]
     - ids: [firstmate]
       reason: >-
         Firstmate runs agent crews over the catalog: agent-kit judges and no-mistakes delivers.
