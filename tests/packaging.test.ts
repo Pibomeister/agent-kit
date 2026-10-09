@@ -232,7 +232,7 @@ function packagedSkill(plan: ReturnType<typeof planBundle>, id: string) {
 
 describe("host capability honesty", () => {
   test("supported hosts are declared and the restriction vocabulary is closed", () => {
-    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok"]);
+    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi"]);
     expect([...RESTRICTIONS]).toContain("no-model-invocation");
     expect([...RESTRICTIONS]).toContain("tool-allowlist-enforced");
   });
@@ -2381,12 +2381,12 @@ describe("the adapters an install attaches, and what they lift", () => {
     expect(rules(plan)).not.toContain("packaging.mode-capped");
   });
 
-  test("trusted-evidence is a valid capability whose runner supply lifts the build ceiling on both hosts", () => {
+  test("trusted-evidence is a valid capability whose runner supply lifts the build ceiling on all hosts", () => {
     const files = {
       "adapters/runner-contract/CONTRACT.md": supplyTable([
         "| `trusted-evidence` | `fails-closed` | Refuses autonomous evidence consumption |",
       ]),
-      "skills/beta/skill.yaml": `${requiring(["trusted-evidence"])["skills/beta/skill.yaml"]}    - adapter: codex\n      mode: autonomous\n`,
+      "skills/beta/skill.yaml": `${requiring(["trusted-evidence"])["skills/beta/skill.yaml"]}    - adapter: codex\n      mode: autonomous\n    - adapter: kimi\n      mode: autonomous\n`,
     };
     for (const host of HOST_IDS) {
       const withRunner = planBundle(ctxWith([], undefined, files), host, {});
@@ -2633,5 +2633,77 @@ describe("tracker-access follows the system-of-record chain", () => {
       "ak.install.yaml: attached tracker; tracker: backend some-tracker",
     );
     expect(summaryFor("attached: [knowledgebase]\n")).toBe("ak.install.yaml: attached knowledgebase");
+  });
+});
+
+describe("Kimi native bundle", () => {
+  test("registers the shared skill tree with only native manifest fields", () => {
+    const plan = planBundle(ctxFor(), "kimi", {});
+    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const manifest: unknown = JSON.parse(plan.files.get(".kimi-plugin/plugin.json")?.contents ?? "{}");
+    expect(manifest).toEqual({
+      name: "ak",
+      version: "0.1.0",
+      description: "What the host is told, which is a different sentence again.",
+      author: { name: "agent-kit maintainers" },
+      license: "MIT",
+      skills: "./skills/",
+    });
+    expect(plan.files.has(".kimi-plugin/ak.json")).toBe(true);
+    expect(
+      [...plan.files.keys()].some(
+        (path) => path.startsWith(".claude-plugin/") || path.startsWith(".codex-plugin/") || path.startsWith("evals/"),
+      ),
+    ).toBe(false);
+  });
+
+  test("renders U authority and references as native skill commands without changing M content", () => {
+    const ctx = ctxFor({
+      "skills/alpha/references/start.md":
+        "Type /ak:alpha. Ordinary prose is not a start. /ak:alpha-extra stays intact.\n",
+      "protocols/tdd/PROTOCOL.md": "Type /ak:alpha; keep /ak:beta automatic.\n",
+    });
+    const plan = planBundle(ctx, "kimi", {});
+    const source = plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
+    const fm = parseFrontmatter(source);
+    expect(fm.data["description"]).toContain("begins with `/skill:alpha`");
+    expect(fm.data["description"]).toContain("On any other request do not load or follow it");
+    expect(source).toContain("A request in prose is not a start.");
+    expect(source).toContain("Otherwise stop, name the command and do nothing else.");
+    expect(source).not.toContain("/ak:alpha");
+    expect(fm.data["disable-model-invocation"]).toBeUndefined();
+    expect(fm.data["allowed-tools"]).toBeUndefined();
+    expect(fm.data["argument-hint"]).toBeUndefined();
+    expect(plan.decisions.find((d) => d.skill === "alpha")?.mode).toBe("manual");
+    expect(plan.files.get("skills/alpha/references/start.md")?.contents).toBe(
+      "Type /skill:alpha. Ordinary prose is not a start. /ak:alpha-extra stays intact.\n",
+    );
+    expect(plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents).toBe(
+      "Type /skill:alpha; keep /ak:beta automatic.\n",
+    );
+    expect(plan.files.get("skills/beta/SKILL.md")?.contents).toBe(
+      planBundle(ctx, "codex", {}).files.get("skills/beta/SKILL.md")?.contents,
+    );
+  });
+
+  test("all-profile skill modes and membership match existing capability decisions", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    const ctx = { root: REPO, catalog };
+    const kimi = planBundle(ctx, "kimi", { profile: "all" });
+    const codex = planBundle(ctx, "codex", { profile: "all" });
+    expect(kimi.decisions).toEqual(codex.decisions);
+    const caps = loadHostCapabilities(REPO, "kimi");
+    expect(caps.declared).toBe(true);
+    expect([...caps.enforces]).toEqual([]);
+    for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "U")) {
+      const text = kimi.files.get(`skills/${entry.id}/SKILL.md`)?.contents ?? "";
+      const workflow = splitSections(parseFrontmatter(text).body).find((section) => section.heading === "## Workflow");
+      const first = workflow === undefined ? null : firstNumberedItem(workflow.text);
+      expect(first?.text).toContain(`/skill:${entry.id}`);
+      expect(first?.text).toMatch(/stop/i);
+      expect(text).toContain(`/skill:${entry.id}`);
+      expect(text).not.toContain("disable-model-invocation:");
+    }
   });
 });

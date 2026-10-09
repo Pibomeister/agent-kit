@@ -191,3 +191,8 @@ adapters:
         The learning runtime reads recorded session observations and pull-request review
         threads, both read-only, through adapters rather than binding to one source.
       commits: [8e4a0de]
+    - ids: [kimi]
+      reason: >-
+        The compatibility follow-up adds native Kimi packaging over the shared skill tree,
+        with the host-specific explicit start fixed by ADR-0011.
+      docs: [docs/decisions/0011-portable-explicit-start.md, adapters/kimi/CONTRACT.md]

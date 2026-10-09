@@ -371,7 +371,7 @@ describe("ak validate --skill-style", () => {
 });
 
 describe("ak build", () => {
-  test("writes both host bundles and enumerates skills explicitly", () => {
+  test("writes every host bundle and enumerates skills explicitly", () => {
     const root = cleanTree();
     const io = capture();
     expect(runCli(["build"], { cwd: root, io: io.io })).toBe(0);
@@ -380,6 +380,7 @@ describe("ak build", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { skills: string[] };
     expect(manifest.skills).toEqual(["./skills/triage"]);
     expect(existsSync(join(root, "dist/codex"))).toBe(true);
+    expect(existsSync(join(root, "dist/kimi/.kimi-plugin/plugin.json"))).toBe(true);
   });
 
   test("--check on an unbuilt tree fails and writes nothing", () => {

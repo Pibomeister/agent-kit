@@ -230,6 +230,21 @@ packaging:
           independent-context is not provided by the host: a fresh subagent context exists, but the
           host does not attest that two contexts are independent, so seat independence is recorded by
           this package and checked against the ticket's authorship rather than assumed from the host.
+    - adapter: kimi
+      mode: autonomous
+      unsupported:
+        - >-
+          artifact-write is storage only: the host does not compute or check the artifact hash, so
+          envelope hash binding is this package's own work.
+        - >-
+          kb-write is not provided by the host; the knowledgebase adapter supplies it and refuses
+          rather than falling back to a repository path when no knowledgebase is configured, which
+          is why it does not cap this row while that adapter is attached (ruling
+          `fail-closed-adapter-lifts-ceiling`).
+        - >-
+          independent-context is not provided by the host: a fresh subagent context exists, but the
+          host does not attest that two contexts are independent, so seat independence is recorded by
+          this package and checked against the ticket's authorship rather than assumed from the host.
 
 provenance:
   origin: donor

@@ -90,6 +90,8 @@ packaging:
       mode: autonomous
     - adapter: codex
       mode: autonomous
+    - adapter: kimi
+      mode: autonomous
 
 provenance:
   origin: donor

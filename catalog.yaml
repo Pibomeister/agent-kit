@@ -1162,6 +1162,10 @@ adapters:
     batch: 1
     status: authored
     summary: The parallel host bundle; the multi-host manifest pattern.
+  - id: kimi
+    batch: 1
+    status: authored
+    summary: Native Kimi plugin over shared skills, with portable explicit-start authority.
   - id: runner-contract
     batch: 1
     status: authored
