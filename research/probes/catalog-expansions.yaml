@@ -195,4 +195,5 @@ adapters:
       reason: >-
         The compatibility follow-up adds native Kimi packaging over the shared skill tree,
         with the host-specific explicit start fixed by ADR-0011.
+      commits: [0cb190e6cca2f11fda2a2c03c85339a523b38af9]
       docs: [docs/decisions/0011-portable-explicit-start.md, adapters/kimi/CONTRACT.md]
