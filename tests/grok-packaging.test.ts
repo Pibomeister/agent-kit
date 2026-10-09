@@ -50,7 +50,10 @@ describe("Grok generated bundle contract (offline, not session behavior)", () =>
     expect(grok.decisions.map(({ skill, mode }) => ({ skill, mode }))).toEqual(
       claude.decisions.map(({ skill, mode }) => ({ skill, mode })),
     );
-    expect(grok.files.has(".claude-plugin/plugin.json")).toBe(true);
+    const skillsOf = (plan: ReturnType<typeof planBundle>) =>
+      JSON.parse(plan.files.get(".claude-plugin/plugin.json")?.contents ?? "{}").skills;
+    expect(skillsOf(grok)).toEqual(skillsOf(claude));
+    expect(Array.isArray(skillsOf(grok))).toBe(true);
     expect(grok.files.has(".claude-plugin/ak.json")).toBe(true);
     expect([...grok.files.keys()].some((path) => path.startsWith("evals/"))).toBe(false);
     expect(loadHostCapabilities(root, "grok").declared).toBe(true);

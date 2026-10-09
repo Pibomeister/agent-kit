@@ -1203,7 +1203,7 @@ function declared(value: string | undefined): value is string {
  * two bundles is a build failure, not a host difference.
  */
 function skillRegistration(host: HostId, skills: ReadonlyArray<string>): string | string[] {
-  return host === "claude-code" ? skills.map((id) => `./skills/${id}`) : "./skills/";
+  return host === "codex" || host === "kimi" ? "./skills/" : skills.map((id) => `./skills/${id}`);
 }
 
 /**
