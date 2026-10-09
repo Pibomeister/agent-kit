@@ -137,7 +137,7 @@ export const GATES = [
 ];
 export const DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red"];
 export const AUTHOR_KINDS = ["human", "agent"];
-const BUNDLED_ADAPTER_IDS = ["claude-code", "codex", "firstmate", "knowledgebase", "observation-source", "review-source", "runner-contract", "tracker"];
+const BUNDLED_ADAPTER_IDS = ["claude-code", "codex", "firstmate", "grok", "knowledgebase", "observation-source", "review-source", "runner-contract", "tracker"];
 export function adapterIds() {
   if (BUNDLED_ADAPTER_IDS.length > 0)
     return BUNDLED_ADAPTER_IDS;

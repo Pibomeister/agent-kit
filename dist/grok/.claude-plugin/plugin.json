@@ -30,8 +30,5 @@
     "./skills/handoff",
     "./skills/wait-what",
     "./skills/wayfind"
-  ],
-  "experimental": {
-    "evals": "evals"
-  }
+  ]
 }

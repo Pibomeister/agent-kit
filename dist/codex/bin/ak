@@ -15428,6 +15428,8 @@ var init_load = __esm(() => {
 
 // src/packaging/hosts.ts
 function explicitStartForHost(host, namespace, skillId) {
+  if (host === "grok")
+    return `/${skillId}`;
   return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
 }
 var init_hosts = __esm(() => {
