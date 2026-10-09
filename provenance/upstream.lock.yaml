@@ -313,3 +313,12 @@ local_sources:
     # No adaptations row cites it yet. The tickets ADR-0009 plans attribute each adapted file
     # through an anchored `local:` row when that file lands.
     cited_in_adaptations: false
+  - id: grok-host-packaging-decision
+    description: Firstmate's task-bound decision authorizing a generated Grok variant from shared authored sources.
+    original_path: ~/orca/workspaces/firstmate/agent-kit-mate/state/agent-kit-grok-host.inbox/handled/001.msg
+    working_copy: research/sources/grok-host-packaging-decision.txt
+    sha256: 43a98fce39b02a79d26bf61e6f05cdb958446ad764b4e21af12ab1cd606f5e4d
+    lines: 4
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    cited_in_adaptations: true

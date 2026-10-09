@@ -43,6 +43,7 @@ export const SHARED_ROOT = "references/shared";
 export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/plugin.json",
   codex: ".codex-plugin/plugin.json",
+  grok: ".claude-plugin/plugin.json",
 };
 
 /**
@@ -206,6 +207,7 @@ const PARITY_FIELD_LIST = PARITY_FIELDS.map(([field]) => `'${field}'`).join(" an
 export const BUILD_RECORD_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/ak.json",
   codex: ".codex-plugin/ak.json",
+  grok: ".claude-plugin/ak.json",
 };
 
 /**
@@ -618,7 +620,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * the installed skill sees, emitted into the body's frontmatter below, and
      * it is not an input to this decision.
      */
-    const row = manifest.hosts[host];
+    // Grok shares Claude's declarations and layout, not its permission semantics.
+    // Its own restriction declaration and the shared capability ceiling still apply.
+    const row = manifest.hosts[host] ?? (host === "grok" ? manifest.hosts["claude-code"] : undefined);
     const declaredMode: SkillMode = row?.mode ?? "manual";
     const unenforceable = row?.unsupported ?? [];
 

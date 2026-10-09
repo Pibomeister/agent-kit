@@ -8,6 +8,9 @@ adaptations:
   - path: adapters/codex/CONTRACT.md
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
     rationale: Native child sessions inherit the same host-unattested independence limit as the other shipped host.
+  - path: adapters/grok/CONTRACT.md
+    source: local:grok-host-packaging-decision@sha256:43a98fce39b02a79d26bf61e6f05cdb958446ad764b4e21af12ab1cd606f5e4d#L4-4
+    rationale: The generated host variant, unchanged authored sources and eval selection, native authority rendering, offline probes and deferred expansion acceptance become the Grok contract.
   - path: adapters/observation-source/claude-mem/code--review-learning.json
     source: claude-mem@02cd0c9c47e38a849e764477290c571e84dfa043:plugin/modes/code.json
     rationale: "Changed: two observation types (review-finding, review-resolution) and one concept (recurrence) are added to the code mode, with prompt text telling the observer to record a reviewer's finding and its resolution as first-class observations. Named review products and named review skills in the added text are replaced by generic descriptions. The code mode's existing types and concepts are kept as they are."

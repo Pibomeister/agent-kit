@@ -231,8 +231,8 @@ function packagedSkill(plan: ReturnType<typeof planBundle>, id: string) {
 }
 
 describe("host capability honesty", () => {
-  test("both hosts are declared and the restriction vocabulary is closed", () => {
-    expect([...HOST_IDS]).toEqual(["claude-code", "codex"]);
+  test("supported hosts are declared and the restriction vocabulary is closed", () => {
+    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok"]);
     expect([...RESTRICTIONS]).toContain("no-model-invocation");
     expect([...RESTRICTIONS]).toContain("tool-allowlist-enforced");
   });
