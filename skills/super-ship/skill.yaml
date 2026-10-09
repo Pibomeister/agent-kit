@@ -302,6 +302,16 @@ packaging:
           trusted evidence is not provided by the host: the worker can write every record the gate
           reads. The autonomous form stops with needs-input there, and the manual form remains open.
 
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          model invocation is not suppressed on this host: the native explicit-start marker and
+          first-step authority check govern starts (adapters/droid/CONTRACT.md §2).
+        - >-
+          trusted evidence is not provided by the host: the runner must supply it independently.
+          Without it the autonomous form stops with needs-input; the manual form remains open.
+
 provenance:
   origin: donor
   donor_sources:

@@ -811,6 +811,411 @@
       "bytes": 7483,
       "tokens": 1871
     },
+    "bundle/droid:references/shared/packs/pack-delete/PACK.md": {
+      "file": "packs/pack-delete/PACK.md",
+      "bytes": 7310,
+      "tokens": 1822
+    },
+    "bundle/droid:references/shared/policies/authority-defaults.yaml": {
+      "file": "policies/authority-defaults.yaml",
+      "bytes": 17801,
+      "tokens": 4443
+    },
+    "bundle/droid:references/shared/protocols/consensus-plan-gate/PROTOCOL.md": {
+      "file": "protocols/consensus-plan-gate/PROTOCOL.md",
+      "bytes": 7464,
+      "tokens": 1862
+    },
+    "bundle/droid:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
+      "file": "references/codebase-design-vocabulary/DEEPENING.md",
+      "bytes": 2789,
+      "tokens": 696
+    },
+    "bundle/droid:references/shared/references/codebase-design-vocabulary/DESIGN-IT-TWICE.md": {
+      "file": "references/codebase-design-vocabulary/DESIGN-IT-TWICE.md",
+      "bytes": 2743,
+      "tokens": 684
+    },
+    "bundle/droid:references/shared/references/codebase-design-vocabulary/REFERENCE.md": {
+      "file": "references/codebase-design-vocabulary/REFERENCE.md",
+      "bytes": 6543,
+      "tokens": 1632
+    },
+    "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
+      "file": "references/delegation/REFERENCE.md",
+      "bytes": 11310,
+      "tokens": 2825
+    },
+    "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
+      "file": "references/domain-modeling/REFERENCE.md",
+      "bytes": 8044,
+      "tokens": 2006
+    },
+    "bundle/droid:references/shared/references/engineering-principles/REFERENCE.md": {
+      "file": "references/engineering-principles/REFERENCE.md",
+      "bytes": 13507,
+      "tokens": 3377
+    },
+    "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
+      "file": "references/knowledgebase-binding/REFERENCE.md",
+      "bytes": 5825,
+      "tokens": 1454
+    },
+    "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
+      "file": "references/prose-quality/REFERENCE.md",
+      "bytes": 13234,
+      "tokens": 3308
+    },
+    "bundle/droid:references/shared/references/tracker-of-record/REFERENCE.md": {
+      "file": "references/tracker-of-record/REFERENCE.md",
+      "bytes": 9370,
+      "tokens": 2341
+    },
+    "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
+      "file": "references/verification-evidence/REFERENCE.md",
+      "bytes": 6204,
+      "tokens": 1551
+    },
+    "bundle/droid:skill-listing": {
+      "file": "skills/*/SKILL.md (description)",
+      "bytes": 20169,
+      "tokens": 5041
+    },
+    "bundle/droid:skills/autopilot/SKILL.md": {
+      "file": "skills/autopilot/SKILL.md",
+      "bytes": 14301,
+      "tokens": 3569
+    },
+    "bundle/droid:skills/autopilot/references/checkpoints.md": {
+      "file": "skills/autopilot/references/checkpoints.md",
+      "bytes": 3585,
+      "tokens": 896
+    },
+    "bundle/droid:skills/babysit-pr/SKILL.md": {
+      "file": "skills/babysit-pr/SKILL.md",
+      "bytes": 14719,
+      "tokens": 3675
+    },
+    "bundle/droid:skills/bakeoff/SKILL.md": {
+      "file": "skills/bakeoff/SKILL.md",
+      "bytes": 10090,
+      "tokens": 2520
+    },
+    "bundle/droid:skills/bakeoff/references/judging.md": {
+      "file": "skills/bakeoff/references/judging.md",
+      "bytes": 5764,
+      "tokens": 1440
+    },
+    "bundle/droid:skills/codebase-design/SKILL.md": {
+      "file": "skills/codebase-design/SKILL.md",
+      "bytes": 7854,
+      "tokens": 1962
+    },
+    "bundle/droid:skills/compound-refresh/SKILL.md": {
+      "file": "skills/compound-refresh/SKILL.md",
+      "bytes": 8154,
+      "tokens": 2035
+    },
+    "bundle/droid:skills/compound/SKILL.md": {
+      "file": "skills/compound/SKILL.md",
+      "bytes": 9007,
+      "tokens": 2251
+    },
+    "bundle/droid:skills/deprecate/SKILL.md": {
+      "file": "skills/deprecate/SKILL.md",
+      "bytes": 9749,
+      "tokens": 2434
+    },
+    "bundle/droid:skills/deprecate/assets/deprecation-notice.md": {
+      "file": "skills/deprecate/assets/deprecation-notice.md",
+      "bytes": 1134,
+      "tokens": 284
+    },
+    "bundle/droid:skills/deprecate/references/migration-patterns.md": {
+      "file": "skills/deprecate/references/migration-patterns.md",
+      "bytes": 4086,
+      "tokens": 1021
+    },
+    "bundle/droid:skills/diagnose/SKILL.md": {
+      "file": "skills/diagnose/SKILL.md",
+      "bytes": 16346,
+      "tokens": 4081
+    },
+    "bundle/droid:skills/diagnose/references/feedback-loops.md": {
+      "file": "skills/diagnose/references/feedback-loops.md",
+      "bytes": 3459,
+      "tokens": 861
+    },
+    "bundle/droid:skills/doc-review/SKILL.md": {
+      "file": "skills/doc-review/SKILL.md",
+      "bytes": 14361,
+      "tokens": 3583
+    },
+    "bundle/droid:skills/doubt-driven/SKILL.md": {
+      "file": "skills/doubt-driven/SKILL.md",
+      "bytes": 9377,
+      "tokens": 2342
+    },
+    "bundle/droid:skills/explain/SKILL.md": {
+      "file": "skills/explain/SKILL.md",
+      "bytes": 7283,
+      "tokens": 1820
+    },
+    "bundle/droid:skills/handoff/SKILL.md": {
+      "file": "skills/handoff/SKILL.md",
+      "bytes": 9469,
+      "tokens": 2364
+    },
+    "bundle/droid:skills/ideate/SKILL.md": {
+      "file": "skills/ideate/SKILL.md",
+      "bytes": 8901,
+      "tokens": 2224
+    },
+    "bundle/droid:skills/ideate/references/frameworks.md": {
+      "file": "skills/ideate/references/frameworks.md",
+      "bytes": 4356,
+      "tokens": 1089
+    },
+    "bundle/droid:skills/improve-architecture/SKILL.md": {
+      "file": "skills/improve-architecture/SKILL.md",
+      "bytes": 8510,
+      "tokens": 2125
+    },
+    "bundle/droid:skills/improve-architecture/references/survey.md": {
+      "file": "skills/improve-architecture/references/survey.md",
+      "bytes": 2522,
+      "tokens": 627
+    },
+    "bundle/droid:skills/pov/SKILL.md": {
+      "file": "skills/pov/SKILL.md",
+      "bytes": 9744,
+      "tokens": 2432
+    },
+    "bundle/droid:skills/pov/references/independent-peers.md": {
+      "file": "skills/pov/references/independent-peers.md",
+      "bytes": 4105,
+      "tokens": 1027
+    },
+    "bundle/droid:skills/product-pulse/SKILL.md": {
+      "file": "skills/product-pulse/SKILL.md",
+      "bytes": 8530,
+      "tokens": 2131
+    },
+    "bundle/droid:skills/product-pulse/assets/report-template.md": {
+      "file": "skills/product-pulse/assets/report-template.md",
+      "bytes": 2294,
+      "tokens": 570
+    },
+    "bundle/droid:skills/product-pulse/references/run.md": {
+      "file": "skills/product-pulse/references/run.md",
+      "bytes": 3599,
+      "tokens": 900
+    },
+    "bundle/droid:skills/product-pulse/references/setup.md": {
+      "file": "skills/product-pulse/references/setup.md",
+      "bytes": 2741,
+      "tokens": 686
+    },
+    "bundle/droid:skills/prototype/SKILL.md": {
+      "file": "skills/prototype/SKILL.md",
+      "bytes": 9321,
+      "tokens": 2328
+    },
+    "bundle/droid:skills/prototype/references/logic.md": {
+      "file": "skills/prototype/references/logic.md",
+      "bytes": 3926,
+      "tokens": 982
+    },
+    "bundle/droid:skills/prototype/references/ui.md": {
+      "file": "skills/prototype/references/ui.md",
+      "bytes": 3761,
+      "tokens": 941
+    },
+    "bundle/droid:skills/receiving-review/SKILL.md": {
+      "file": "skills/receiving-review/SKILL.md",
+      "bytes": 13879,
+      "tokens": 3468
+    },
+    "bundle/droid:skills/research/SKILL.md": {
+      "file": "skills/research/SKILL.md",
+      "bytes": 7844,
+      "tokens": 1958
+    },
+    "bundle/droid:skills/simplify/SKILL.md": {
+      "file": "skills/simplify/SKILL.md",
+      "bytes": 8129,
+      "tokens": 2030
+    },
+    "bundle/droid:skills/simplify/references/personas/code-quality.md": {
+      "file": "skills/simplify/references/personas/code-quality.md",
+      "bytes": 2615,
+      "tokens": 654
+    },
+    "bundle/droid:skills/simplify/references/personas/code-reuse.md": {
+      "file": "skills/simplify/references/personas/code-reuse.md",
+      "bytes": 1466,
+      "tokens": 367
+    },
+    "bundle/droid:skills/simplify/references/personas/efficiency.md": {
+      "file": "skills/simplify/references/personas/efficiency.md",
+      "bytes": 1357,
+      "tokens": 340
+    },
+    "bundle/droid:skills/source-driven/SKILL.md": {
+      "file": "skills/source-driven/SKILL.md",
+      "bytes": 7658,
+      "tokens": 1912
+    },
+    "bundle/droid:skills/source-driven/references/citation-formats.md": {
+      "file": "skills/source-driven/references/citation-formats.md",
+      "bytes": 4093,
+      "tokens": 1024
+    },
+    "bundle/droid:skills/strategy/SKILL.md": {
+      "file": "skills/strategy/SKILL.md",
+      "bytes": 8257,
+      "tokens": 2062
+    },
+    "bundle/droid:skills/strategy/assets/strategy-template.md": {
+      "file": "skills/strategy/assets/strategy-template.md",
+      "bytes": 1906,
+      "tokens": 474
+    },
+    "bundle/droid:skills/strategy/references/interview.md": {
+      "file": "skills/strategy/references/interview.md",
+      "bytes": 6467,
+      "tokens": 1616
+    },
+    "bundle/droid:skills/strategy/references/update-run.md": {
+      "file": "skills/strategy/references/update-run.md",
+      "bytes": 3194,
+      "tokens": 799
+    },
+    "bundle/droid:skills/super-align/SKILL.md": {
+      "file": "skills/super-align/SKILL.md",
+      "bytes": 14433,
+      "tokens": 3601
+    },
+    "bundle/droid:skills/super-bound/SKILL.md": {
+      "file": "skills/super-bound/SKILL.md",
+      "bytes": 20228,
+      "tokens": 5050
+    },
+    "bundle/droid:skills/super-build/SKILL.md": {
+      "file": "skills/super-build/SKILL.md",
+      "bytes": 19329,
+      "tokens": 4827
+    },
+    "bundle/droid:skills/super-review/SKILL.md": {
+      "file": "skills/super-review/SKILL.md",
+      "bytes": 23465,
+      "tokens": 5860
+    },
+    "bundle/droid:skills/super-review/references/delta.md": {
+      "file": "skills/super-review/references/delta.md",
+      "bytes": 4146,
+      "tokens": 1035
+    },
+    "bundle/droid:skills/super-review/references/panel.md": {
+      "file": "skills/super-review/references/panel.md",
+      "bytes": 9404,
+      "tokens": 2346
+    },
+    "bundle/droid:skills/super-scout/SKILL.md": {
+      "file": "skills/super-scout/SKILL.md",
+      "bytes": 12145,
+      "tokens": 3033
+    },
+    "bundle/droid:skills/super-ship/SKILL.md": {
+      "file": "skills/super-ship/SKILL.md",
+      "bytes": 19498,
+      "tokens": 4871
+    },
+    "bundle/droid:skills/super-ship/references/transport-no-mistakes.md": {
+      "file": "skills/super-ship/references/transport-no-mistakes.md",
+      "bytes": 5570,
+      "tokens": 1392
+    },
+    "bundle/droid:skills/super-verify/SKILL.md": {
+      "file": "skills/super-verify/SKILL.md",
+      "bytes": 17681,
+      "tokens": 4415
+    },
+    "bundle/droid:skills/triage/SKILL.md": {
+      "file": "skills/triage/SKILL.md",
+      "bytes": 10079,
+      "tokens": 2513
+    },
+    "bundle/droid:skills/triage/assets/agent-brief.md": {
+      "file": "skills/triage/assets/agent-brief.md",
+      "bytes": 1619,
+      "tokens": 405
+    },
+    "bundle/droid:skills/triage/assets/triage-notes.md": {
+      "file": "skills/triage/assets/triage-notes.md",
+      "bytes": 493,
+      "tokens": 124
+    },
+    "bundle/droid:skills/triage/references/rejections.md": {
+      "file": "skills/triage/references/rejections.md",
+      "bytes": 2604,
+      "tokens": 649
+    },
+    "bundle/droid:skills/triage/references/roles.md": {
+      "file": "skills/triage/references/roles.md",
+      "bytes": 2453,
+      "tokens": 610
+    },
+    "bundle/droid:skills/ultraqa/SKILL.md": {
+      "file": "skills/ultraqa/SKILL.md",
+      "bytes": 13514,
+      "tokens": 3374
+    },
+    "bundle/droid:skills/ultraqa/references/adversarial-cases.md": {
+      "file": "skills/ultraqa/references/adversarial-cases.md",
+      "bytes": 4099,
+      "tokens": 1024
+    },
+    "bundle/droid:skills/verify/SKILL.md": {
+      "file": "skills/verify/SKILL.md",
+      "bytes": 9988,
+      "tokens": 2492
+    },
+    "bundle/droid:skills/visual-edit/SKILL.md": {
+      "file": "skills/visual-edit/SKILL.md",
+      "bytes": 9982,
+      "tokens": 2496
+    },
+    "bundle/droid:skills/visual-edit/assets/receipt.example.json": {
+      "file": "skills/visual-edit/assets/receipt.example.json",
+      "bytes": 1478,
+      "tokens": 370
+    },
+    "bundle/droid:skills/visual-edit/references/receipt.md": {
+      "file": "skills/visual-edit/references/receipt.md",
+      "bytes": 3019,
+      "tokens": 755
+    },
+    "bundle/droid:skills/wait-what/SKILL.md": {
+      "file": "skills/wait-what/SKILL.md",
+      "bytes": 5462,
+      "tokens": 1365
+    },
+    "bundle/droid:skills/wayfind/SKILL.md": {
+      "file": "skills/wayfind/SKILL.md",
+      "bytes": 13455,
+      "tokens": 3357
+    },
+    "bundle/droid:skills/writing-skills/SKILL.md": {
+      "file": "skills/writing-skills/SKILL.md",
+      "bytes": 9471,
+      "tokens": 2365
+    },
+    "bundle/droid:skills/writing-skills/references/authoring-discipline.md": {
+      "file": "skills/writing-skills/references/authoring-discipline.md",
+      "bytes": 7483,
+      "tokens": 1871
+    },
     "bundle/grok:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
       "bytes": 7310,

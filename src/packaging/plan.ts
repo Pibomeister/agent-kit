@@ -45,6 +45,7 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   codex: ".codex-plugin/plugin.json",
   grok: ".claude-plugin/plugin.json",
   kimi: ".kimi-plugin/plugin.json",
+  droid: ".factory-plugin/plugin.json",
 };
 
 /**
@@ -210,6 +211,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
   codex: ".codex-plugin/ak.json",
   grok: ".claude-plugin/ak.json",
   kimi: ".kimi-plugin/ak.json",
+  droid: ".factory-plugin/ak.json",
 };
 
 /**
@@ -909,7 +911,10 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     path: HOST_MANIFEST_FILE[host],
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
-  if (host !== "kimi") files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
+  if (host !== "kimi") {
+    const marketplaceFile = host === "droid" ? ".factory-plugin/marketplace.json" : MARKETPLACE_FILE;
+    files.set(marketplaceFile, { path: marketplaceFile, contents: marketplace(ctx) });
+  }
   files.set(BUILD_RECORD_FILE[host], {
     path: BUILD_RECORD_FILE[host],
     contents: buildRecord(
@@ -975,7 +980,8 @@ function manifestObject(
   // makes the omission loud.
   if (declared(pkg.author)) manifest.author = { name: pkg.author };
   if (declared(pkg.license)) manifest.license = pkg.license;
-  manifest.skills = skillRegistration(host, skills);
+  // Droid discovers skills/ directly; its native manifest carries identity only.
+  if (host !== "droid") manifest.skills = skillRegistration(host, skills);
   // Last, as in §1's example, and conditioned on the corpus alone rather than
   // on the corpus and the host. The key is a pointer: emitted with nothing
   // behind it, it is the pointer half of this feature shipping without the

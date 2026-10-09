@@ -19,7 +19,7 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
-import { inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
+import { BUILD_RECORD_FILE, inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
 import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
@@ -216,8 +216,7 @@ function recordOf(plan: ReturnType<typeof planBundle>) {
   // manifest when the two hosts stopped sharing one. Fixed, it would have gone
   // on reading `{}` for every codex plan and every assertion on it would have
   // been an assertion about an empty object.
-  const dir = plan.host === "codex" ? ".codex-plugin" : ".claude-plugin";
-  return JSON.parse(plan.files.get(`${dir}/ak.json`)?.contents ?? "{}");
+  return JSON.parse(plan.files.get(BUILD_RECORD_FILE[plan.host])?.contents ?? "{}");
 }
 
 function packagedSkillText(plan: ReturnType<typeof planBundle>, id: string): string {
@@ -230,9 +229,13 @@ function packagedSkill(plan: ReturnType<typeof planBundle>, id: string) {
   return parseFrontmatter(packagedSkillText(plan, id));
 }
 
+function packagedSkillPaths(plan: ReturnType<typeof planBundle>): string[] {
+  return [...plan.files.keys()].filter((path) => /^skills\/[^/]+\/SKILL.md$/.test(path));
+}
+
 describe("host capability honesty", () => {
   test("supported hosts are declared and the restriction vocabulary is closed", () => {
-    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi"]);
+    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi", "droid"]);
     expect([...RESTRICTIONS]).toContain("no-model-invocation");
     expect([...RESTRICTIONS]).toContain("tool-allowlist-enforced");
   });
@@ -1511,6 +1514,7 @@ describe("portable explicit-start authority in the real catalog", () => {
   const ctx = { root: REPO, catalog };
   const claude = planBundle(ctx, "claude-code", { profile: "all" });
   const codex = planBundle(ctx, "codex", { profile: "all" });
+  const droid = planBundle(ctx, "droid", { profile: "all" });
 
   test("every U skill names the native typed start in its description and stop-first workflow step", () => {
     for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "U")) {
@@ -1518,6 +1522,7 @@ describe("portable explicit-start authority in the real catalog", () => {
       for (const [plan, command] of [
         [claude, canonical],
         [codex, `$ak:${entry.id}`],
+        [droid, `/${entry.id}`],
       ] as const) {
         const text = packagedSkillText(plan, entry.id);
         const parsed = packagedSkill(plan, entry.id);
@@ -1535,16 +1540,18 @@ describe("portable explicit-start authority in the real catalog", () => {
     }
   });
 
-  test("no file packaged under a codex skill or its shared references names a U skill's canonical command", () => {
+  test("translated bundles retain no canonical U command under skills or shared references", () => {
     const userIds = catalog
       .bySection("skills")
       .filter((skill) => skill.invocation === "U")
       .map((skill) => skill.id);
     const canonicalStart = explicitStartPattern(userIds.map((id) => `${catalog.package.namespace}${id}`));
-    const offenders = [...codex.files.values()].flatMap((file) =>
-      /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1 ? [file.path] : [],
-    );
-    expect(offenders).toEqual([]);
+    for (const plan of [codex, droid]) {
+      const offenders = [...plan.files.values()].flatMap((file) =>
+        /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1 ? [file.path] : [],
+      );
+      expect(offenders).toEqual([]);
+    }
 
     const setup = codex.files.get("skills/product-pulse/references/setup.md")?.contents ?? "";
     expect(setup).toContain("`$ak:product-pulse`");
@@ -1556,7 +1563,57 @@ describe("portable explicit-start authority in the real catalog", () => {
       const source = parseFrontmatter(readFileSync(join(REPO, "skills", entry.id, "SKILL.md"), "utf8"));
       expect(packagedSkill(claude, entry.id).data["description"]).toBe(source.data["description"]);
       expect(packagedSkill(codex, entry.id).data["description"]).toBe(source.data["description"]);
+      expect(packagedSkill(droid, entry.id).data["description"]).toBe(source.data["description"]);
     }
+  });
+});
+
+describe("Droid packaging", () => {
+  test("a native bundle preserves profile membership and identifies its own host", () => {
+    const ctx = ctxFor();
+    const plan = planBundle(ctx, "droid", {});
+    expect(HOST_IDS).toContain("droid");
+    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const manifest: unknown = JSON.parse(plan.files.get(".factory-plugin/plugin.json")?.contents ?? "{}");
+    expect(manifest).toMatchObject({ name: "ak", version: "0.1.0", license: "MIT" });
+    expect(manifest).not.toHaveProperty("skills");
+    expect(manifest).not.toHaveProperty("experimental");
+    const marketplace: unknown = JSON.parse(plan.files.get(".factory-plugin/marketplace.json")?.contents ?? "{}");
+    expect(marketplace).toMatchObject({ plugins: [{ name: "ak", source: "./" }] });
+    expect(plan.files.has(".claude-plugin/marketplace.json")).toBe(false);
+    const record: unknown = JSON.parse(plan.files.get(".factory-plugin/ak.json")?.contents ?? "{}");
+    expect(record).toMatchObject({ host: { id: "droid", enforces: [] } });
+    expect(packagedSkillPaths(plan)).toEqual(packagedSkillPaths(planBundle(ctx, "claude-code", {})));
+    expect(packagedSkillPaths(plan)).toEqual(["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]);
+  });
+
+  test("native U markers reach all instructions without broadening starts or suppressing M skills", () => {
+    const ctx = ctxFor({
+      "skills/alpha/references/setup.md": "Type `/ak:alpha`; `/ak:alpha-next` is different.\n",
+      "skills/alpha/assets/note.md": "Type `/ak:alpha`; `/AK:Alpha` is prose.\n",
+      "protocols/tdd/PROTOCOL.md": "# TDD\n\nStarted by `/ak:alpha`, not `/ak:beta`.\n",
+    });
+    const plan = planBundle(ctx, "droid", {});
+    const alpha = packagedSkillText(plan, "alpha");
+    expect(alpha.match(/`\/alpha`/g)?.length).toBe(3);
+    expect(alpha).not.toContain("/ak:alpha");
+    expect(alpha).toContain("A request in prose is not a start.");
+    expect(plan.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Type `/alpha`; `/ak:alpha-next` is different.\n",
+    );
+    expect(plan.files.get("skills/alpha/assets/note.md")?.contents).toBe("Type `/alpha`; `/AK:Alpha` is prose.\n");
+    expect(plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents).toBe(
+      "# TDD\n\nStarted by `/alpha`, not `/ak:beta`.\n",
+    );
+    for (const id of ["alpha", "beta"]) {
+      const data = packagedSkill(plan, id).data;
+      expect(data["disable-model-invocation"]).toBeUndefined();
+      expect(data["user-invocable"]).toBeUndefined();
+      expect(data["argument-hint"]).toBeUndefined();
+    }
+    expect(alpha).toContain("allowed-tools:");
+    expect(packagedSkill(plan, "beta").body).toBe(packagedSkill(planBundle(ctx, "claude-code", {}), "beta").body);
+    expect([...loadHostCapabilities(ctx.root, "droid").enforces]).toEqual([]);
   });
 });
 
@@ -2386,7 +2443,7 @@ describe("the adapters an install attaches, and what they lift", () => {
       "adapters/runner-contract/CONTRACT.md": supplyTable([
         "| `trusted-evidence` | `fails-closed` | Refuses autonomous evidence consumption |",
       ]),
-      "skills/beta/skill.yaml": `${requiring(["trusted-evidence"])["skills/beta/skill.yaml"]}    - adapter: codex\n      mode: autonomous\n    - adapter: kimi\n      mode: autonomous\n`,
+      "skills/beta/skill.yaml": `${requiring(["trusted-evidence"])["skills/beta/skill.yaml"]}    - adapter: codex\n      mode: autonomous\n    - adapter: kimi\n      mode: autonomous\n    - adapter: droid\n      mode: autonomous\n`,
     };
     for (const host of HOST_IDS) {
       const withRunner = planBundle(ctxWith([], undefined, files), host, {});
