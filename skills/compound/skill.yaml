@@ -150,6 +150,10 @@ packaging:
       mode: manual
       unsupported:
         - suppression of model invocation, which this package does not request on this host
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - suppression of model invocation, which this package does not request on this host
 
 provenance:
   origin: donor

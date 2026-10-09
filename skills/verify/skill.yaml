@@ -199,6 +199,13 @@ packaging:
         - >-
           independent-context creates a fresh context but host-only evidence is not a runner
           attestation; receipts mark that seat host-unattested.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - suppression of model invocation, which this package does not request on this host
+        - >-
+          independent-context creates a fresh context but host-only evidence is not a runner
+          attestation; receipts mark that seat host-unattested.
 
 provenance:
   origin: conversation
