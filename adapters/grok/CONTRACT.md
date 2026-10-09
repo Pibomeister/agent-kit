@@ -74,6 +74,8 @@ Inspection proves registration and loaded description, not slash expansion or pr
 turns. Whether Grok delivers the leading marker through a live command expansion remains unproven.
 This contract does not claim that any live session obeyed the authority text or completed a phase.
 
+Grok's Claude-compatibility skill discovery may also load an installed Claude `ak` bundle, whose `/ak:<id>` marker cannot start a Grok turn; that interaction is unverified, so when both are installed disable Claude-compatibility skill discovery (`GROK_CLAUDE_SKILLS_ENABLED=false`, the setting the discovery probe uses).
+
 ## Offline and deferred acceptance
 
 `tests/grok-packaging.test.ts` checks the generated interface: native typed markers and stop-first

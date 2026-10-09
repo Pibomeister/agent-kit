@@ -133,7 +133,7 @@ as authoritative. Every row below is a claim about the tree, checkable against i
 | `packs/`, `protocols/`, `roles/`, `references/` | Attachable constraints, shared phase logic, role prompts, reference packs | yes |
 | `schemas/` | JSON Schemas; `common` holds the shared `$defs` | yes |
 | `policies/`, `profiles/` | Machine-readable rulings and install profiles. Profiles never name models | yes |
-| `adapters/` | Host and evidence-source contracts: claude-code, codex, runner, knowledgebase, firstmate, tracker, review-source, observation-source | yes |
+| `adapters/` | Host and evidence-source contracts: claude-code, codex, grok, runner, knowledgebase, firstmate, tracker, review-source, observation-source | yes |
 | `provenance/` | `upstream.lock.yaml`, `adaptations.yaml`, `conversation-map.yaml`, licenses | yes |
 | `research/` | Design sources and the donor dossiers. **Denylist-exempt** | yes |
 | `src/`, `tests/` | The `ak` CLI and its tests | yes |
