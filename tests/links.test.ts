@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { extractRelativeLinks, resolveFromFile } from "../src/util/links.ts";
 import { checkSourceLinks } from "../src/validation/links.ts";
+import { HOST_IDS } from "../src/packaging/hosts.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { makeTree } from "./helpers/tree.ts";
 
@@ -211,7 +212,7 @@ profiles:
       "research/sources/notes.md": "# Notes\n",
     });
     const files = new Set(checkBundleLinks(ctx, {}).map((i) => i.file.split("/").slice(0, 2).join("/")));
-    expect([...files].sort()).toEqual(["dist/claude-code", "dist/codex"]);
+    expect([...files].sort()).toEqual(HOST_IDS.map((host) => `dist/${host}`).sort());
   });
 });
 

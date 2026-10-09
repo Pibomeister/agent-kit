@@ -19,17 +19,15 @@ if (catalog === null) throw new Error("catalog missing");
 const ctx = { root, catalog };
 
 describe("Grok generated bundle contract (offline, not session behavior)", () => {
-  test("the isolated discovery fixture registers native U and M skill names", () => {
-    expect(discovery.version).toStartWith("grok 1.0.50");
-    expect(discovery.skillCount).toBe(36);
-    expect(discovery.skills.map((skill) => skill.name)).toEqual(["super-align", "super-scout"]);
+  test("the recorded discovery fixture still matches the generated bundle", () => {
+    const grok = planBundle(ctx, "grok", { profile: "all" });
+    const skillFiles = [...grok.files.keys()].filter((path) => /^skills\/[^/]+\/SKILL\.md$/.test(path));
+    expect(discovery.skillCount).toBe(skillFiles.length);
     for (const skill of discovery.skills) {
-      expect(skill.source).toEqual({ type: "plugin", plugin_name: "ak" });
-      expect(skill.userInvocable).toBe(true);
+      const emitted = grok.files.get(`skills/${skill.name}/SKILL.md`)?.contents;
+      if (emitted === undefined) throw new Error(`fixture names ${skill.name}, which the bundle does not emit`);
+      expect(parseFrontmatter(emitted).data["description"]).toBe(skill.description);
     }
-    const align = discovery.skills.find((skill) => skill.name === "super-align");
-    expect(align?.description).toContain("begins with `/super-align`");
-    expect(align?.description).not.toContain("/ak:super-align");
   });
 
   test("Grok renders its native command, independent of the Claude namespace", () => {

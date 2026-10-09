@@ -594,7 +594,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * `manual` when it declares no row for this host, which is the
      * conservative end: neither contract says what an undeclared host gets, and
      * a skill that has not been thought about on a host is not one to expose
-     * more of. An unrecognised `mode` lands here too -- `loadSkillManifest`
+     * more of. Grok is the exception: it inherits the claude-code row by design
+     * (`adapters/grok/CONTRACT.md`). An unrecognised `mode` lands here too -- `loadSkillManifest`
      * only accepts the schema's three, and `ak validate` reports the rest.
      *
      * The cap is `adapters/claude-code/CONTRACT.md` §4 with the input it always
