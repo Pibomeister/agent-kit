@@ -50,6 +50,13 @@ needed. Later bundle changes require a new matching version in `catalog.yaml` an
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
+Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
+`bun run ak build --host grok`, then install that local directory with
+`grok plugin install <absolute-path-to-dist/grok> --trust`. Human-started skills use `/<id>`.
+The [Grok contract](adapters/grok/CONTRACT.md) records isolated installation evidence and the
+unproven live command-expansion boundary. Learning hooks and `ak update` integration are not included.
+Grok's Claude-compatibility skill discovery may also load an installed Claude `ak` bundle, whose `/ak:<id>` marker cannot start a Grok turn; that interaction is unverified, so when both are installed disable Claude-compatibility skill discovery (`GROK_CLAUDE_SKILLS_ENABLED=false`, the setting the discovery probe uses).
+
 `profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
 with progressive disclosure.
 

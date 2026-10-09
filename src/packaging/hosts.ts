@@ -4,9 +4,9 @@ import { parse as parseYaml } from "yaml";
 import { readTextIfPresent } from "../util/fs.ts";
 import { error, type Issue } from "../validation/types.ts";
 
-export type HostId = "claude-code" | "codex";
+export type HostId = "claude-code" | "codex" | "grok";
 
-export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
+export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok"];
 
 /**
  * Render the explicit human start a packaged skill recognizes on this host.
@@ -21,6 +21,7 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
  * slash (adapters/codex/CONTRACT.md §3.1 records the probe).
  */
 export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
+  if (host === "grok") return `/${skillId}`;
   return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
 }
 
@@ -122,6 +123,7 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
 export const HOST_FRONTMATTER_KEYS: Record<HostId, ReadonlyArray<string>> = {
   "claude-code": ["argument-hint", "allowed-tools"],
   codex: ["argument-hint"],
+  grok: ["argument-hint", "allowed-tools"],
 };
 
 export interface HostCapabilities {
@@ -147,6 +149,10 @@ const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
     notes: [
       "No restriction is claimed by default. adapters/codex/CONTRACT.md must declare what the host really enforces.",
     ],
+  },
+  grok: {
+    enforces: [],
+    notes: ["No restriction is claimed. allowed-tools grants and restricts nothing on this host."],
   },
 };
 

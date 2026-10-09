@@ -43,6 +43,7 @@ export const SHARED_ROOT = "references/shared";
 export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/plugin.json",
   codex: ".codex-plugin/plugin.json",
+  grok: ".claude-plugin/plugin.json",
 };
 
 /**
@@ -206,6 +207,7 @@ const PARITY_FIELD_LIST = PARITY_FIELDS.map(([field]) => `'${field}'`).join(" an
 export const BUILD_RECORD_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/ak.json",
   codex: ".codex-plugin/ak.json",
+  grok: ".claude-plugin/ak.json",
 };
 
 /**
@@ -592,7 +594,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * `manual` when it declares no row for this host, which is the
      * conservative end: neither contract says what an undeclared host gets, and
      * a skill that has not been thought about on a host is not one to expose
-     * more of. An unrecognised `mode` lands here too -- `loadSkillManifest`
+     * more of. Grok is the exception: it inherits the claude-code row by design
+     * (`adapters/grok/CONTRACT.md`). An unrecognised `mode` lands here too -- `loadSkillManifest`
      * only accepts the schema's three, and `ak validate` reports the rest.
      *
      * The cap is `adapters/claude-code/CONTRACT.md` §4 with the input it always
@@ -618,7 +621,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * the installed skill sees, emitted into the body's frontmatter below, and
      * it is not an input to this decision.
      */
-    const row = manifest.hosts[host];
+    // Grok shares Claude's declarations and layout, not its permission semantics.
+    // Its own restriction declaration and the shared capability ceiling still apply.
+    const row = manifest.hosts[host] ?? (host === "grok" ? manifest.hosts["claude-code"] : undefined);
     const declaredMode: SkillMode = row?.mode ?? "manual";
     const unenforceable = row?.unsupported ?? [];
 
