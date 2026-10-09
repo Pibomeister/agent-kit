@@ -18,6 +18,13 @@ const { catalog } = loadCatalog(root);
 if (catalog === null) throw new Error("catalog missing");
 const ctx = { root, catalog };
 
+function skillsOf(plan: ReturnType<typeof planBundle>): readonly string[] {
+  const manifest: unknown = JSON.parse(plan.files.get(".claude-plugin/plugin.json")?.contents ?? "{}");
+  const skills = manifest instanceof Object && "skills" in manifest ? manifest.skills : undefined;
+  if (!Array.isArray(skills)) throw new Error("plugin.json does not enumerate its skills");
+  return Array.from(skills, String);
+}
+
 describe("Grok generated bundle contract (offline, not session behavior)", () => {
   test("the recorded discovery fixture still matches the generated bundle", () => {
     const grok = planBundle(ctx, "grok", { profile: "all" });
@@ -50,8 +57,6 @@ describe("Grok generated bundle contract (offline, not session behavior)", () =>
     expect(grok.decisions.map(({ skill, mode }) => ({ skill, mode }))).toEqual(
       claude.decisions.map(({ skill, mode }) => ({ skill, mode })),
     );
-    const skillsOf = (plan: ReturnType<typeof planBundle>) =>
-      JSON.parse(plan.files.get(".claude-plugin/plugin.json")?.contents ?? "{}").skills;
     expect(skillsOf(grok)).toEqual(skillsOf(claude));
     expect(Array.isArray(skillsOf(grok))).toBe(true);
     expect(grok.files.has(".claude-plugin/ak.json")).toBe(true);
