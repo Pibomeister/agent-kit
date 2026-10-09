@@ -15430,6 +15430,8 @@ var init_load = __esm(() => {
 function explicitStartForHost(host, namespace, skillId) {
   if (host === "grok")
     return `/${skillId}`;
+  if (host === "kimi")
+    return `/skill:${skillId}`;
   return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
 }
 var init_hosts = __esm(() => {

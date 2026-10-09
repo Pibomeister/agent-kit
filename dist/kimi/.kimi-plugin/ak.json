@@ -1,0 +1,118 @@
+{
+  "profile": "core",
+  "install": {
+    "file": null,
+    "attached": [
+      "runner-contract",
+      "knowledgebase",
+      "firstmate",
+      "tracker"
+    ],
+    "backends": {}
+  },
+  "excluded": [],
+  "host": {
+    "id": "kimi",
+    "enforces": [],
+    "notes": [
+      "No per-skill confinement is claimed; operator permissions are not runner evidence.",
+      "All skills are model-loadable; U starts are guarded by the description and first workflow step.",
+      "Source: adapters/kimi/CONTRACT.md."
+    ]
+  },
+  "modes": [
+    {
+      "skill": "super-align",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-bound",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-scout",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "super-build",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "super-verify",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "super-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-ship",
+      "mode": "manual"
+    },
+    {
+      "skill": "codebase-design",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "verify",
+      "mode": "manual"
+    },
+    {
+      "skill": "visual-edit",
+      "mode": "manual"
+    },
+    {
+      "skill": "compound",
+      "mode": "manual"
+    },
+    {
+      "skill": "doc-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "receiving-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "diagnose",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "doubt-driven",
+      "mode": "manual"
+    },
+    {
+      "skill": "simplify",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "research",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "source-driven",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "explain",
+      "mode": "manual"
+    },
+    {
+      "skill": "prototype",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "handoff",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "wait-what",
+      "mode": "autonomous"
+    },
+    {
+      "skill": "wayfind",
+      "mode": "manual"
+    }
+  ],
+  "autonomy_rejected": []
+}
