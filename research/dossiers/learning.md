@@ -128,7 +128,8 @@ by a digest of the session id (`src/learn/memory/delivery.ts`). Kimi rejects a `
 carrying any key beyond `event`, `matcher`, `command` and `timeout`, so the tables carry no marker
 of their own: the block is delimited by two comment lines, and `withHookBlock` replaces or removes
 exactly the lines between them. A file whose markers are not one ordered pair is refused. So is one
-this runtime's TOML parser cannot read, which includes a valid file holding a date value, and one
+this runtime's TOML parser cannot read, which on some Bun versions includes a valid file holding a
+date or time value, and one
 whose root table assigns `hooks` as a key, since TOML allows no `[[hooks]]` table after that.
 
 **A refused file stops its own host only.** `wire` checks every file before it writes any, prints
