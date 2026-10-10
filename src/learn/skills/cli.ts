@@ -5,7 +5,8 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { unknownSelector } from "../../util/suggest.ts";
 import { flag, type LearnArea, type LearnArgs, type LearnContext } from "../core/context.ts";
-import { mainRepoRoot } from "../core/paths.ts";
+import { Ledger } from "../core/ledger.ts";
+import { loopDir, mainRepoRoot } from "../core/paths.ts";
 import { span, triggerOf } from "../core/trace.ts";
 import { unknownRepo } from "../memory/registry.ts";
 import { discover, loadRegistry, promoteCandidate, rejectCandidate, runSkillLearn, skillsLedger } from "./learn.ts";
@@ -112,7 +113,7 @@ export const skillsArea: LearnArea = {
       run: (args, ctx) => {
         const root = needRoot(args, ctx);
         if (root === null) return 2;
-        const registry = loadRegistry(skillsLedger(ctx, root));
+        const registry = loadRegistry(new Ledger(loopDir(ctx.config, root, "skills")));
         const rows = Object.entries(registry.candidates).sort((a, b) => a[0].localeCompare(b[0]));
         for (const [id, info] of rows) {
           ctx.io.out(

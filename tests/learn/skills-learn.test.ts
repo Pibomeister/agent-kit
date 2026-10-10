@@ -346,6 +346,15 @@ describe("ak learn skills", () => {
     return skillsArea.verbs[name]!.run(parseLearnArgs(argv), ctx);
   }
 
+  test("list does not create a missing skills ledger", () => {
+    const { ctx, root } = fixture();
+    const dir = loopDir(ctx.config, root, "skills");
+    expect(existsSync(dir)).toBe(false);
+    expect(verb(ctx, "list", ["--repo", root])).toBe(0);
+    expect(ctx.out.at(-1)).toBe("0 candidates, 0 rejected names, 0 sessions seen");
+    expect(existsSync(dir)).toBe(false);
+  });
+
   test("list, promote and reject through the CLI", () => {
     const { ctx, root, packageRoot } = fixture([{ candidates: [CAND] }]);
     discover(ctx, root, { packageRoot });
