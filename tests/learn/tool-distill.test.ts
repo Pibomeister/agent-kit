@@ -512,7 +512,7 @@ describe("the distilled record", () => {
     ]);
   });
 
-  test("a failed distiller keeps every excerpt, is not asked again in the same run and says so", () => {
+  test("failed requests keep their excerpts and later sessions still reach the distiller", () => {
     for (const failure of [() => null, () => ({ calls: "nope" }), failing]) {
       const seam = fakeSeam(failure);
       const stage = toolDistiller(config({ AK_LEARN_DISTILL_CODEX: BINDING }), seam.distill, { project: "shop" });
@@ -522,14 +522,14 @@ describe("the distilled record", () => {
       expect(stage.rewrite(sessionOf("codex", [first], "one"), [first])).toEqual([first]);
       expect(stage.rewrite(sessionOf("codex", [second], "two"), [second])).toEqual([second]);
 
-      expect(seam.requests).toHaveLength(1);
+      expect(seam.requests).toHaveLength(2);
       expect(stage.report()).toEqual([
-        "tool distillation: codex 0 calls distilled in 1 request; 2 calls kept in excerpt form: the distiller failed",
+        "tool distillation: codex 0 calls distilled in 2 requests; 2 calls kept in excerpt form: the distiller failed",
       ]);
     }
   });
 
-  test("a reply with no usable record at all stops the host for the run, as a failure does", () => {
+  test("a reply with no usable record keeps only that request's excerpts", () => {
     const useless: DistillFn[] = [
       () => ({ calls: [] }),
       () => ({ calls: [{ n: 0, input: "counted from zero", output: "ignored" }] }),
@@ -544,11 +544,29 @@ describe("the distilled record", () => {
       expect(stage.rewrite(sessionOf("codex", [first], "one"), [first])).toEqual([first]);
       expect(stage.rewrite(sessionOf("codex", [second], "two"), [second])).toEqual([second]);
 
-      expect(seam.requests).toHaveLength(1);
+      expect(seam.requests).toHaveLength(2);
       expect(stage.report()).toEqual([
-        "tool distillation: codex 0 calls distilled in 1 request; 2 calls kept in excerpt form: the distiller returned no usable record",
+        "tool distillation: codex 0 calls distilled in 2 requests; 2 calls kept in excerpt form: the distiller returned no usable record",
       ]);
     }
+  });
+
+  test("a bad first reply does not block later batches, and still spends the request cap", () => {
+    const seam = fakeSeam((request) => (seam.requests.length === 1 ? null : numbered(request)));
+    const stage = toolDistiller(
+      config({ AK_LEARN_DISTILL_CODEX: BINDING, AK_LEARN_DISTILL_MAX_REQUESTS: "2" }),
+      seam.distill,
+      { project: "shop" },
+    );
+    const rows = longSession();
+    const out = stage.rewrite(sessionOf("codex", rows), rows);
+    expect(seam.requests.map((request) => request.calls)).toEqual([15, 15]);
+    expect(out.slice(0, 15)).toEqual(rows.slice(0, 15));
+    expect(out[15]?.text).toContain("shell did step 1 -> step 1 came back");
+    expect(out.slice(30)).toEqual(rows.slice(30));
+    expect(stage.report()).toEqual([
+      "tool distillation: codex 15 calls distilled in 2 requests; 15 calls kept in excerpt form: the distiller failed; 20 calls kept in excerpt form: the request cap of 2 was reached",
+    ]);
   });
 
   test("a long session goes out in bounded requests, and calls past the request cap keep their excerpts", () => {
