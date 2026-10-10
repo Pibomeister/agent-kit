@@ -1,7 +1,7 @@
 /**
  * Run spans: the span helper, the trace carrier, the project and session keys and the capped append.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -22,7 +22,7 @@ import {
   type SpanRow,
 } from "../../src/learn/core/trace.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
-import { scratch, testContext } from "./helpers.ts";
+import { removeStartScratch, scratch, startScratch, testContext } from "./helpers.ts";
 
 const validate = new Ajv2020({ strict: false }).compile(schema);
 const AMBIENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
@@ -273,12 +273,15 @@ describe("capped append", () => {
 });
 
 describe("project key", () => {
+  afterAll(removeStartScratch);
+
   test("concurrent first use agrees on one salt and one key", async () => {
     const dir = scratch();
     const config = loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") });
     const root = scratch();
     const core = join(import.meta.dir, "..", "..", "src", "learn", "core");
-    const file = join(dir, "key.ts");
+    // Bun scans script ancestors at startup; a crowded macOS TMPDIR delayed each child by 13s.
+    const file = join(startScratch(), "key.ts");
     writeFileSync(
       file,
       `import { projectKey } from ${JSON.stringify(join(core, "trace.ts"))};
