@@ -301,6 +301,26 @@ packaging:
         - >-
           trusted evidence is not provided by the host: the worker can write every record the gate
           reads. The autonomous form stops with needs-input there, and the manual form remains open.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/droid/CONTRACT.md` §2). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than pushing, opening or commenting on
+          an unrequested start.
+        - >-
+          idempotency is not provided by the host. The key is derived and the read-back performed by
+          this package; the host neither stores the key nor refuses a duplicate effect.
+        - >-
+          grant validation is the runner's. Where the host cannot validate a grant, the entrypoint
+          stops for explicit invocation rather than running on an unchecked claim.
+        - >-
+          kb-draft is not provided by the host; the knowledgebase adapter supplies it and refuses
+          rather than falling back to a repository path when no knowledgebase is configured.
+        - >-
+          trusted evidence is not provided by the host: the worker can write every record the gate
+          reads. The autonomous form stops with needs-input there, and the manual form remains open.
 
 provenance:
   origin: donor

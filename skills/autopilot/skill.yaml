@@ -284,6 +284,19 @@ packaging:
         - >-
           seat independence is attested by the runner, not the host. Without that attestation a
           seat is unavailable and the checkpoint escalates.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/droid/CONTRACT.md` §2). The description's non-trigger clause and the
+          authority step are the gate.
+        - >-
+          grant validation is the runner's. Where the host cannot validate a grant, the run stops
+          for explicit invocation rather than deciding a checkpoint on an unchecked claim.
+        - >-
+          seat independence is attested by the runner, not the host. Without that attestation a
+          seat is unavailable and the checkpoint escalates.
 
 provenance:
   origin: donor

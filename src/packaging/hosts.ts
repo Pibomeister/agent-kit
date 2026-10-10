@@ -4,9 +4,9 @@ import { parse as parseYaml } from "yaml";
 import { readTextIfPresent } from "../util/fs.ts";
 import { error, type Issue } from "../validation/types.ts";
 
-export type HostId = "claude-code" | "codex" | "grok" | "kimi";
+export type HostId = "claude-code" | "codex" | "grok" | "kimi" | "droid";
 
-export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", "kimi"];
+export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", "kimi", "droid"];
 
 /**
  * Render the explicit human start a packaged skill recognizes on this host.
@@ -18,10 +18,11 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", 
  *
  * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
  * leading `$`; the namespace already carries that `<plugin>:` stem after its
- * slash (adapters/codex/CONTRACT.md §3.1 records the probe).
+ * slash (adapters/codex/CONTRACT.md §3.1 records the probe). Droid invokes a
+ * skill by its bare `/<id>` (adapters/droid/CONTRACT.md §2).
  */
 export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
-  if (host === "grok") return `/${skillId}`;
+  if (host === "grok" || host === "droid") return `/${skillId}`;
   if (host === "kimi") return `/skill:${skillId}`;
   return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
 }
@@ -123,12 +124,15 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * `argument-hint` is on both existing hosts' lists because neither contract takes it away from
  * codex: §3's table names exactly two differences, and §5's leaked-key test
  * names exactly the same two.
+ * Droid emits only descriptive `allowed-tools`; its native skill metadata and
+ * conservative capability declaration are in adapters/droid/CONTRACT.md §2.
  */
 export const HOST_FRONTMATTER_KEYS: Record<HostId, ReadonlyArray<string>> = {
   "claude-code": ["argument-hint", "allowed-tools"],
   codex: ["argument-hint"],
   grok: ["argument-hint", "allowed-tools"],
   kimi: [],
+  droid: ["allowed-tools"],
 };
 
 export interface HostCapabilities {
@@ -162,6 +166,10 @@ const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
   grok: {
     enforces: [],
     notes: ["No restriction is claimed. allowed-tools grants and restricts nothing on this host."],
+  },
+  droid: {
+    enforces: [],
+    notes: ["No restriction is claimed. allowed-tools is descriptive metadata, not a sandbox."],
   },
 };
 
