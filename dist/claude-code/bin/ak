@@ -21364,17 +21364,12 @@ function toolDistiller(config, distill, options) {
       unbound: 0,
       would: 0,
       wouldChars: 0,
-      kept: { failed: 0, unusable: 0, capped: 0 },
-      stopped: null
+      kept: { failed: 0, unusable: 0, capped: 0 }
     };
     tallies.set(host, tally);
     return tally;
   };
   const send = (host, command, batch, tally) => {
-    if (tally.stopped !== null) {
-      tally.kept[tally.stopped] += batch.length;
-      return;
-    }
     if (spent >= config.distillMaxRequests) {
       tally.kept.capped += batch.length;
       return;
@@ -21395,8 +21390,7 @@ function toolDistiller(config, distill, options) {
     }
     const found = records2(reply, batch.length);
     if (found === null || found.size === 0) {
-      tally.stopped = found === null ? "failed" : "unusable";
-      tally.kept[tally.stopped] += batch.length;
+      tally.kept[found === null ? "failed" : "unusable"] += batch.length;
       return;
     }
     batch.forEach((slot, index) => {
