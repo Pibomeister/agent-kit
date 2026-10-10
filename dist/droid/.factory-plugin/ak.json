@@ -1,0 +1,118 @@
+{
+  "profile": "core",
+  "install": {
+    "file": null,
+    "attached": [
+      "runner-contract",
+      "knowledgebase",
+      "firstmate",
+      "tracker"
+    ],
+    "backends": {}
+  },
+  "excluded": [],
+  "host": {
+    "id": "droid",
+    "enforces": [],
+    "notes": [
+      "allowed-tools is descriptive metadata, not a sandbox.",
+      "No filesystem, network, process or independent-context restriction is claimed by this bundle.",
+      "Source: adapters/droid/CONTRACT.md."
+    ]
+  },
+  "modes": [
+    {
+      "skill": "super-align",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-bound",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-scout",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-build",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-verify",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "super-ship",
+      "mode": "manual"
+    },
+    {
+      "skill": "codebase-design",
+      "mode": "manual"
+    },
+    {
+      "skill": "verify",
+      "mode": "manual"
+    },
+    {
+      "skill": "visual-edit",
+      "mode": "manual"
+    },
+    {
+      "skill": "compound",
+      "mode": "manual"
+    },
+    {
+      "skill": "doc-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "receiving-review",
+      "mode": "manual"
+    },
+    {
+      "skill": "diagnose",
+      "mode": "manual"
+    },
+    {
+      "skill": "doubt-driven",
+      "mode": "manual"
+    },
+    {
+      "skill": "simplify",
+      "mode": "manual"
+    },
+    {
+      "skill": "research",
+      "mode": "manual"
+    },
+    {
+      "skill": "source-driven",
+      "mode": "manual"
+    },
+    {
+      "skill": "explain",
+      "mode": "manual"
+    },
+    {
+      "skill": "prototype",
+      "mode": "manual"
+    },
+    {
+      "skill": "handoff",
+      "mode": "manual"
+    },
+    {
+      "skill": "wait-what",
+      "mode": "manual"
+    },
+    {
+      "skill": "wayfind",
+      "mode": "manual"
+    }
+  ],
+  "autonomy_rejected": []
+}
