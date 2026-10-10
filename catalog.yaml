@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.31
+  version: 0.1.32
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -1166,6 +1166,10 @@ adapters:
     batch: 1
     status: authored
     summary: Native Kimi plugin over shared skills, with portable explicit-start authority.
+  - id: droid
+    batch: 1
+    status: authored
+    summary: Native Factory plugin packaging with explicit human starts and separate acceptance per served binding.
   - id: runner-contract
     batch: 1
     status: authored

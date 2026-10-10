@@ -320,6 +320,23 @@ packaging:
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/droid/CONTRACT.md` §2). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
+          unrequested start.
+        - >-
+          seat isolation is not attested by the host. This package assembles one evidence packet per
+          seat and records what it withheld; it cannot prove the host kept two contexts apart.
+        - >-
+          grant validation is the runner's. Where the host cannot validate a grant, the delegated
+          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+        - >-
+          artifact-write is storage only: the host does not compute or check the artifact hash, so
+          binding a finding to the snapshot hash is this package's own work.
 
 provenance:
   origin: donor

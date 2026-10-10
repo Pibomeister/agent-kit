@@ -233,6 +233,23 @@ packaging:
         - >-
           independent-context and trusted-evidence are not provided by the host. The attached runner
           supplies them fail-closed; without it this skill is guided and receipts are host-unattested.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          artifact-write is storage only: the host does not compute or check the artifact hash, so
+          envelope hash binding is this package's own work.
+        - >-
+          kb-write is not provided by the host; the knowledgebase adapter supplies it and refuses
+          rather than falling back to a repository path when no knowledgebase is configured, which
+          is why it does not cap this row while that adapter is attached (ruling
+          `fail-closed-adapter-lifts-ceiling`).
+        - >-
+          environment identity is not attested by the host. This package records what it observed of
+          the environment and never reports an identity it could not read.
+        - >-
+          independent-context and trusted-evidence are not provided by the host. The attached runner
+          supplies them fail-closed; without it this skill is guided and receipts are host-unattested.
 
 provenance:
   origin: donor

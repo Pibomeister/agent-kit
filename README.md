@@ -67,6 +67,11 @@ Grok's Claude-compatibility skill discovery may also load an installed Claude `a
 `profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
 with progressive disclosure.
 
+Factory Droid has a native bundle at `dist/droid`, built with `bun run ak build --host droid`.
+Its human-started commands use `/<id>`. See the [Droid host contract](adapters/droid/CONTRACT.md)
+for isolated local installation and acceptance limits. Installation is model-free verified;
+live acceptance remains separate for each served binding, and `ak update` does not manage Droid.
+
 ## The spine: seven super skills
 
 The lifecycle is seven skills, not twenty. Each has one job, one required output, and one boundary.

@@ -170,6 +170,8 @@ packaging:
       mode: manual
     - adapter: kimi
       mode: manual
+    - adapter: droid
+      mode: manual
 
 provenance:
   origin: donor

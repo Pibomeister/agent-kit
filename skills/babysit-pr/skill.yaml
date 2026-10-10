@@ -293,6 +293,23 @@ packaging:
         - >-
           grant validation is the runner's. Where the host cannot validate a grant, the entrypoint
           stops for explicit invocation rather than running on an unchecked claim.
+    - adapter: droid
+      mode: manual
+      unsupported:
+        - >-
+          model invocation is not suppressed on this host: this package emits no suppression
+          key (`adapters/droid/CONTRACT.md` §2). The generated description's non-trigger
+          clause and the entrypoint's explicit-authority check are the gate, and the watch stops rather than acting on a pull request on an
+          unrequested start.
+        - >-
+          event delivery is not provided by the host. Where no events arrive, the watch stops with
+          needs-input rather than substituting a polling loop.
+        - >-
+          idempotency is not provided by the host. The key is derived and the read-back performed by
+          this package; the host neither stores the key nor refuses a duplicate effect.
+        - >-
+          grant validation is the runner's. Where the host cannot validate a grant, the entrypoint
+          stops for explicit invocation rather than running on an unchecked claim.
 
 provenance:
   origin: donor

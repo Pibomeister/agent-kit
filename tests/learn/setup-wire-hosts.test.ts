@@ -99,7 +99,7 @@ function ours(command: string, timeout = 10) {
   return { hooks: [{ type: "command", command, timeout }] };
 }
 
-const SESSION_START = ours(`${AK} session-start`);
+const SESSION_START = ours(`${AK} session-start --source droid`);
 
 describe("setup wire: Droid", () => {
   test("merges into the settings file that declares SessionStart, and everything else in it survives", () => {
@@ -175,6 +175,18 @@ describe("setup wire: Droid", () => {
       const wired = readdirSync(home).filter((name) => text(join(home, name)).includes(`${AK} session-start`));
       expect({ name: item.name, wired }).toEqual({ name: item.name, wired: [item.to] });
     }
+  });
+
+  test("a Droid SessionStart hook wired before it carried its source is updated in place", () => {
+    const deps = fakeDeps();
+    const hooks = put(
+      join(deps.home, ".factory", "hooks.json"),
+      JSON.stringify({ SessionStart: [ours(`${AK} session-start`)] }),
+    );
+    expect(wire(context(deps), deps, { host: "droid" })).toBe(0);
+    expect(json(hooks)).toEqual({ SessionStart: [SESSION_START] });
+    expect(wire(context(deps), deps, { host: "droid" })).toBe(0);
+    expect(json(hooks)).toEqual({ SessionStart: [SESSION_START] });
   });
 
   test("the legacy hooks/hooks.json is used while hooks.json is absent", () => {
