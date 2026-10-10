@@ -254,8 +254,8 @@ record of what was attempted and what came back (`src/learn/sources/tool-distill
 
 A call keeps its excerpt, and the tick's output says how many did and why, counting the calls it
 would have sent, when its host has no binding, when the request fails or returns no record for it,
-and when the request cap is spent. A failed request is not retried, and neither it nor a request
-that returned no usable record at all is followed by another to that host in that run. Since a
+and when the request cap is spent. A failed or unusable request is not retried; later requests
+to the same host still run within the cap. Since a
 record is counted at its longest, every record sent is stored whole and shown whole to the
 reflector. The consolidator shows the first 300 characters of a row, which the summary lines mostly
 fill, so it reads the head of a record at most. A row is stored once either way,

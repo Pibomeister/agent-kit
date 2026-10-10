@@ -14,8 +14,8 @@
  *      spent request cap all leave the excerpt line as the parser built it.
  *   3. The reply is data: each record is scrubbed again, flattened to one line
  *      and cut to the record's allowances. A call the reply does not answer in
- *      the right shape keeps its excerpt, and a reply that answers none of its
- *      calls ends that host's requests for the run, as a failure does.
+ *      the right shape keeps its excerpt. A failed or unusable reply affects
+ *      only its own request; later requests still run within the cap.
  *
  * The distiller never decides what is stored, in what order, under which id or
  * as which type; it only words a line. `WorkerSessionSource.capture` hands it
@@ -106,8 +106,6 @@ interface Tally {
   would: number;
   wouldChars: number;
   kept: { failed: number; unusable: number; capped: number };
-  /** Why the host is not asked again in this run: its first request that failed or answered nothing usable. */
-  stopped: "failed" | "unusable" | null;
 }
 
 const KEPT_WHY: ReadonlyArray<readonly [Kept, (config: LearnConfig) => string]> = [
@@ -170,8 +168,8 @@ export interface ToolDistiller {
 }
 
 /**
- * One capture's distillation: it counts requests against the cap and remembers a host whose
- * distiller failed. A dry run sends nothing and counts what a real run would.
+ * One capture's distillation: every attempt counts against the cap, including failures.
+ * A dry run sends nothing and counts what a real run would.
  */
 export function toolDistiller(
   config: LearnConfig,
@@ -188,17 +186,12 @@ export function toolDistiller(
       would: 0,
       wouldChars: 0,
       kept: { failed: 0, unusable: 0, capped: 0 },
-      stopped: null,
     };
     tallies.set(host, tally);
     return tally;
   };
 
   const send = (host: string, command: readonly string[], batch: readonly Slot[], tally: Tally): void => {
-    if (tally.stopped !== null) {
-      tally.kept[tally.stopped] += batch.length;
-      return;
-    }
     if (spent >= config.distillMaxRequests) {
       tally.kept.capped += batch.length;
       return;
@@ -218,10 +211,8 @@ export function toolDistiller(
       reply = null;
     }
     const found = records(reply, batch.length);
-    // A distiller that answers nothing usable would answer the next request the same way, at the same price.
     if (found === null || found.size === 0) {
-      tally.stopped = found === null ? "failed" : "unusable";
-      tally.kept[tally.stopped] += batch.length;
+      tally.kept[found === null ? "failed" : "unusable"] += batch.length;
       return;
     }
     batch.forEach((slot, index) => {
