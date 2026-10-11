@@ -171,9 +171,8 @@ Placement = { class: "kb-document", kind: KBDocumentType, scope: Scope }
           | { class: "run-artifact", run: RunRef, links: KBRecordRef[] }
 ```
 
-- **Carries** any artifact whose `envelope.schema` is in `common#/$defs/schema_id` — `project`,
-  `ticket`, `dossier`, `finding`, `review`, `verification`, `charter`, `decision`, `event`, `lesson`,
-  `handoff-record`, `evaluation`, `map`, `plan-record`, `ship-evidence`, `run-ledger`.
+- **Carries** any artifact whose `envelope.schema` is in
+  `schemas/common.schema.json#/$defs/schema_id`.
 - **Inputs** — the artifact, plus the `placement` that declares its §0 class. A `kb-document`
   placement names one of the nine kinds and a **scope**; the KB resolves the scope to a location
   (ADR-0001 §7) and the caller supplies no path. A `run-artifact` placement names the run and the KB
