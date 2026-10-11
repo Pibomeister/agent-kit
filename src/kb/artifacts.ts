@@ -12,6 +12,7 @@ import findingSchema from "../../schemas/finding.schema.json" with { type: "json
 import handoffRecordSchema from "../../schemas/handoff-record.schema.json" with { type: "json" };
 import lessonSchema from "../../schemas/lesson.schema.json" with { type: "json" };
 import mapSchema from "../../schemas/map.schema.json" with { type: "json" };
+import packSchema from "../../schemas/pack.schema.json" with { type: "json" };
 import planRecordSchema from "../../schemas/plan-record.schema.json" with { type: "json" };
 import projectSchema from "../../schemas/project.schema.json" with { type: "json" };
 import reviewSchema from "../../schemas/review.schema.json" with { type: "json" };
@@ -68,6 +69,7 @@ function instance(): AjvInstance {
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
   addFormats(ajv);
   ajv.addSchema(commonSchema);
+  ajv.addSchema(packSchema);
   for (const schema of Object.values(ARTIFACT_SCHEMAS)) ajv.addSchema(schema);
   compiled = ajv;
   return ajv;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -8,8 +8,9 @@ import Ajv2020 from "ajv/dist/2020.js";
 import commonSchema from "../schemas/common.schema.json" with { type: "json" };
 import charterExample from "../templates/charter.example.json" with { type: "json" };
 import decisionExample from "../templates/decision.example.json" with { type: "json" };
+import reviewExample from "../templates/review.example.json" with { type: "json" };
 import { runCli } from "../src/cli.ts";
-import { ARTIFACT_SCHEMA_IDS } from "../src/kb/artifacts.ts";
+import { ARTIFACT_SCHEMA_IDS, checkRunArtifact } from "../src/kb/artifacts.ts";
 import {
   BACKEND_SCHEMAS_DIR,
   BACKEND_VALIDATORS,
@@ -714,6 +715,78 @@ describe("ak kb usage", () => {
 });
 
 describe("publishArtifact, run-artifact placement", () => {
+  test("the bundled maintenance CLI publishes reviews and refuses malformed attachments before writing", async () => {
+    const fx = fixture();
+    const home = join(fx.scratch, "home");
+    mkdirSync(home);
+    const cli = join(fx.scratch, "ak");
+    const build = await Bun.build({
+      entrypoints: [join(REPO, "src/maintenance/cli.ts")],
+      target: "bun",
+      outdir: fx.scratch,
+      naming: "ak",
+    });
+    expect(build.success).toBe(true);
+    const invoke = (...args: string[]): Run => {
+      const run = spawnSync(process.execPath, [cli, "kb", ...args], {
+        cwd: fx.project,
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          XDG_CONFIG_HOME: home,
+          XDG_CACHE_HOME: home,
+          TMPDIR: fx.scratch,
+          GIT_CONFIG_NOSYSTEM: "1",
+          GIT_CONFIG_GLOBAL: "/dev/null",
+          AK_KB_REGISTRY: fx.registry,
+        },
+      });
+      return { code: run.status ?? 1, out: run.stdout, err: run.stderr };
+    };
+    expect(invoke("register", "fixture-kb", fx.kb).code).toBe(0);
+    const file = join(fx.scratch, "review.json");
+    writeFileSync(file, JSON.stringify(reviewExample));
+    const sent = invoke("publish", "artifact", "--file", file, "--run", "example-run-1");
+    expect(sent.code).toBe(0);
+    const record = published(sent);
+    expect(record.ref).toBe("run:example-run-1/review/example-review-1");
+    const path = "projects/example-project/runs/example-run-1/review/example-review-1.json";
+    const stored: unknown = JSON.parse(git(fx.kb, "show", `HEAD:${path}`));
+    expect(stored).toMatchObject({
+      record: { ref: record.ref, content_hash: record.content_hash },
+      artifact: reviewExample,
+    });
+    const head = git(fx.kb, "rev-parse", "HEAD");
+    const tree = git(fx.kb, "ls-tree", "-r", "HEAD");
+    writeFileSync(
+      file,
+      JSON.stringify({
+        ...reviewExample,
+        id: "malformed-review",
+        packs_attached: reviewExample.packs_attached.map(({ rationale: _rationale, ...attachment }) => attachment),
+      }),
+    );
+    const invalid = invoke("publish", "artifact", "--file", file, "--run", "example-run-1");
+    expect(invalid.code).toBe(1);
+    expect(refusal(invalid).code).toBe("kb.artifact-invalid");
+    expect(git(fx.kb, "rev-parse", "HEAD")).toBe(head);
+    expect(git(fx.kb, "ls-tree", "-r", "HEAD")).toBe(tree);
+    expect(git(fx.kb, "status", "--porcelain")).toBe("");
+  });
+
+  test("review artifacts resolve the supporting pack schema and retain its constraints", () => {
+    expect(checkRunArtifact(JSON.stringify(reviewExample))).toEqual({ artifact: reviewExample, problem: "" });
+    const malformed = {
+      ...reviewExample,
+      packs_attached: reviewExample.packs_attached.map(({ rationale: _rationale, ...attachment }) => attachment),
+    };
+    const checked = checkRunArtifact(JSON.stringify(malformed));
+    expect(checked.artifact).toBeNull();
+    expect(checked.problem).toStartWith("does not match schemas/review.schema.json:");
+    expect(checked.problem).toContain("must have required property 'rationale'");
+  });
+
   test("a schema-valid artifact is stored under its run and linked from a record", () => {
     const fx = registered();
     const doc = published(publishPage(fx, fx.project, page(fx)));
