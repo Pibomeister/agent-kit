@@ -173,7 +173,7 @@ adapters:
       reason: >-
         Grok uses the existing Claude-compatible packager with native explicit-start rendering
         and its own host capability contract; authored skills remain shared.
-      commits: [c9232c1f]
+      commits: [578c464b6ba7179cfeb53c604f0c816dda272e59]
       docs: [adapters/grok/CONTRACT.md, docs/decisions/0011-portable-explicit-start.md]
     - ids: [firstmate]
       reason: >-
@@ -195,11 +195,11 @@ adapters:
       reason: >-
         The compatibility follow-up adds native Kimi packaging over the shared skill tree,
         with the host-specific explicit start fixed by ADR-0011.
-      commits: [205ce12930d46cd13dec03951e926c2f55f14141]
+      commits: [530ab0c07f971e4beb8221bfa6ebb25154979049]
       docs: [docs/decisions/0011-portable-explicit-start.md, adapters/kimi/CONTRACT.md]
     - ids: [droid]
       reason: >-
         Factory Droid installs the bundle as a native host, so its explicit-start commands, plugin
         manifest and host limits need their own contract rather than the Claude Code bundle's.
-      commits: [207cf1d9]
+      commits: [49015def3dc10bf18822bd34d6d90aa6b66f26e0]
       docs: [adapters/droid/CONTRACT.md]
