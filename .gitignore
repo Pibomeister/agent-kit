@@ -4,5 +4,7 @@ node_modules/
 .DS_Store
 *.log
 .omc/
+.omx-state-locks.identity.json
+.omx-state-locks/
 dist/
 /ak.install.yaml
