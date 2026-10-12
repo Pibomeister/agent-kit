@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.34
+  version: 0.1.35
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -35,7 +35,7 @@ package:
   # different texts about different objects, and adapters/codex/CONTRACT.md §5.2
   # is what keeps them from being forced to agree. Stated verbatim by
   # adapters/claude-code/CONTRACT.md §1.
-  description: "One engineering lifecycle, amalgamated from nine donors: eight MIT, one Apache-2.0."
+  description: "One engineering lifecycle, amalgamated from ten donors: nine MIT, one Apache-2.0."
   # Emitted into both host manifests from here, so the two cannot drift apart or
   # drift from the catalog. Both values are specified verbatim by
   # adapters/claude-code/CONTRACT.md §1 and are not chosen here.

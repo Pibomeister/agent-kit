@@ -66,6 +66,18 @@ donors:
     license: MIT
     copyright: "Copyright (c) 2026 Yeachan-Heo"
     license_file: provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE
+  # pstack is one directory of a repository that holds several plugins. Only `pstack/` is a source.
+  # The repository root carries no licence, so `license_file` is a copy of `pstack/LICENSE` at the
+  # pin. research/dossiers/pstack.md records what is taken from it and what is not.
+  - id: pstack
+    repo: cursor/plugins
+    url: https://github.com/cursor/plugins
+    path: .donors/cursor_plugins
+    commit: e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a
+    commit_date: "2026-10-03T17:06:48-07:00"
+    license: MIT
+    copyright: "Copyright (c) 2026 Lauren Tan"
+    license_file: provenance/licenses/cursor_plugins.LICENSE
   # The two learning-stack donors (ruling `learning-runtime-is-host-adapter`). claude-mem is the
   # first donor that is not MIT: Apache-2.0 obliges a copy of the licence, its NOTICE text carried
   # in ours, and a statement that files were changed. `notice_file` holds the NOTICE verbatim;
@@ -322,3 +334,18 @@ local_sources:
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
     cited_in_adaptations: true
+  - id: pstack-to-agent-kit-report
+    description: >-
+      The owner's report "pstack → agent-kit: an in-depth adaptation report", reproduced
+      byte-for-byte. It maps pstack's mechanisms onto agent-kit and recommends what to take. The
+      approved design treats its recommendations as intent and checked its factual claims
+      first-hand. research/dossiers/pstack.md records the result and cites it as R:L<start>-<end>.
+    original_path: ~/orca/projects/firstmate/data/agent-kit-pstack-adapt/report-full.md
+    working_copy: research/sources/pstack-to-agent-kit-report.md
+    sha256: 5b87607ca55bd679b4136c06d5d888accf87b6f89e58a323e00cc1f61de93794
+    lines: 301
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    # No adaptations row cites it yet. The ticket that adds the work-trail protocol cites it
+    # through an anchored `local:` row and sets this to true.
+    cited_in_adaptations: false

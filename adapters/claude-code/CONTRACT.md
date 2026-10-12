@@ -36,7 +36,7 @@ discovery:
 {
   "name": "ak",
   "version": "0.1.0",
-  "description": "One engineering lifecycle, amalgamated from nine donors: eight MIT, one Apache-2.0.",
+  "description": "One engineering lifecycle, amalgamated from ten donors: nine MIT, one Apache-2.0.",
   "author": { "name": "agent-kit maintainers" },
   "license": "MIT",
   "skills": ["./skills/super-align", "./skills/super-bound"],

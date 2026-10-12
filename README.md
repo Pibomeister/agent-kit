@@ -1,6 +1,6 @@
 # agent-kit
 
-One engineering lifecycle, amalgamated from nine donors (eight MIT-licensed, one Apache-2.0) into a single installable
+One engineering lifecycle, amalgamated from ten donors (nine MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
 **36 public skills · 8 domain packs · 8 protocols · 35 role prompts · 9 reference packs · 33 schemas**,
@@ -205,12 +205,15 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 ## Provenance
 
-Nine donors, pinned to exact commits in `provenance/upstream.lock.yaml`. Six MIT donors make up the
-engineering lifecycle (pinned 2026-09-18): `EveryInc/compound-engineering-plugin`, `obra/superpowers`,
-`mattpocock/skills`, `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`,
-`Yeachan-Heo/oh-my-codex`. `BuilderIO/skills` (MIT, pinned at its 2026-09-30 commit) is the source of
-`visual-edit`. Two more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect`
-(MIT) and `thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
+Ten donors, pinned to exact commits in `provenance/upstream.lock.yaml`: nine MIT and one Apache-2.0.
+Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
+`EveryInc/compound-engineering-plugin`, `obra/superpowers`, `mattpocock/skills`,
+`addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`, `Yeachan-Heo/oh-my-codex`.
+`BuilderIO/skills` (MIT, pinned at its 2026-09-30 commit) is the source of `visual-edit`.
+`cursor/plugins` (MIT, pinned at its 2026-10-03 commit) holds pstack, and only its `pstack/`
+directory is used: from it agent-kit takes the shape of the work trail and its audit, nothing else.
+Two more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect` (MIT) and
+`thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
 `provenance/licenses/`, the root `NOTICE` carries its NOTICE, and each file adapted from it records
 what was changed.
 
