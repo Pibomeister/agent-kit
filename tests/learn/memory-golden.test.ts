@@ -326,7 +326,7 @@ describe("trim order at the cap", () => {
     expect(dropped).toBeGreaterThan(16);
   });
 
-  test("through the block: at a small cap Preferences and Environment survive while Completed and Lessons are gone", () => {
+  test("through the block: at a small cap Preferences, Environment and the confirmed lesson survive while Completed is gone", () => {
     const root = gitRepo(join(scratch(), PROJECT));
     const ctx = testContext({ cwd: root, env: { AK_LEARN_MEMORY_TOKENS: "160" } });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
@@ -345,7 +345,8 @@ describe("trim order at the cap", () => {
     expect(head).toContain("- Prefere item 1 [obs:31]");
     expect(head).toContain("- Environ item 1 [obs:41]");
     expect(head).not.toContain("Complet item");
-    expect(head).not.toContain("a confirmed lesson");
+    expect(head).not.toContain("- Current item 3 [obs:3]");
+    expect(head).toEndWith("## Lessons\n- a confirmed lesson [ls-001]\n");
   });
 });
 

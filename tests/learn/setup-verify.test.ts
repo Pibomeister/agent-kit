@@ -122,6 +122,20 @@ describe("setup doctor", () => {
     expect(doctor(context(deps, { AK_LEARN_JUDGE: `${judge}.missing` }), deps)).toBe(1);
   });
 
+  test("names each worker host's tool distiller, or says its calls keep their excerpts", () => {
+    const deps = fakeDeps(["bun", "git", "judge"]);
+    const ctx = context(deps, { AK_LEARN_DISTILL_GROK: "fixture-distiller --quiet" });
+    doctor(ctx, deps);
+    const lines = ctx.out.filter((line) => line.includes("tool distiller"));
+    expect(lines.map((line) => line.trim().replace(/\s+/g, " "))).toEqual([
+      "codex tool distiller unset (AK_LEARN_DISTILL_CODEX); calls keep their excerpts",
+      "droid tool distiller unset (AK_LEARN_DISTILL_DROID); calls keep their excerpts",
+      "grok tool distiller fixture-distiller --quiet",
+      "kimi tool distiller unset (AK_LEARN_DISTILL_KIMI); calls keep their excerpts",
+      "tool distiller (24h) 0 calls, 0 failures, $0.000000 reported cost",
+    ]);
+  });
+
   test("reports judge calls, failures and cost from the last 24 hours across rotation", () => {
     const deps = fakeDeps(["bun", "git", "judge"]);
     const ctx = context(deps);
@@ -249,6 +263,16 @@ describe("setup seed", () => {
     expect(ctx.err[0]).toContain("is not inside a git repository");
   });
 
+  test("a path that names no repository is told the registered roots nearest it", () => {
+    const ctx = testContext();
+    const repo = gitRepo(join(scratch(), "repo"));
+    expect(seed(ctx, repo, { skipGithub: true })).toBe(0);
+    expect(seed(ctx, `${repo}x`, { skipGithub: true })).toBe(1);
+    expect(ctx.err.at(-1)).toBe(
+      `ak learn setup seed: ${repo}x is not inside a git repository: unknown repository '${repo}x'; did you mean ${repo}?`,
+    );
+  });
+
   test("a bare repository is refused before any ledger is created", () => {
     const ctx = testContext();
     const bare = join(scratch(), "bare.git");
@@ -308,6 +332,13 @@ describe("setup verify", () => {
     expect(verify(ctx, deps, repo)).toBe(0);
     expect(ctx.out.at(-1)).toBe("\nall checks passed");
     expect(deps.calls.every((call) => call[0] === "launchctl" && call[1] === "list")).toBe(true);
+
+    const typo = verifyChecks(ctx, deps, `${repo}x`).filter((r) => !r.ok);
+    expect(typo[0]).toEqual({
+      label: "repository",
+      ok: false,
+      detail: `not inside a git repository: unknown repository '${repo}x'; did you mean ${repo}?`,
+    });
   });
 
   // Each row starts from the passing setup above and breaks exactly one thing verify claims to check.
@@ -332,7 +363,7 @@ describe("setup verify", () => {
           join(deps.home, ".codex", "hooks.json"),
           JSON.stringify({
             hooks: {
-              SessionStart: [hook("ak learn hook session-start")],
+              SessionStart: [hook("ak learn hook session-start --source codex")],
               UserPromptSubmit: [hook("ak learn hook prompt")],
               Stop: [stop, stop],
             },

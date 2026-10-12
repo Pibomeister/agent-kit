@@ -1,0 +1,4 @@
+schema=fm-task-inbox.v1
+at=2026-10-09T01:24:37Z
+--
+Decision grok-bundle-rendering: option 1. Build a generated Grok variant at dist/grok from the existing Claude packager and the same authored sources, rendering U markers with the ADR-0011 machinery so Grok's authority text is /<id>. The brief's no-second-copy rule means no duplicated authored catalog or skill sources; generated output for another host is fine. Keep default Claude output and eval bundle selection unchanged, add the Grok host contract and offline U/M fixtures, and re-run the isolated validate/install/inspect probe against dist/grok. Record in the contract that expansion preservation through a live Grok turn stays unproven and goes in the PR as an acceptance case with a cost estimate. Then continue to a no-mistakes run.

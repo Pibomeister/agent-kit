@@ -6,21 +6,27 @@
  * quietly with status 0.
  */
 import { basename } from "node:path";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnArea, LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { readText } from "../core/store.ts";
 import { span, type SpanName, triggerOf } from "../core/trace.ts";
-import { deferredNote, ingest, type IngestOptions } from "./ingest.ts";
+import { unknownRepo } from "../memory/registry.ts";
+import { deferredNote, ingest, REVIEW_SOURCES, type IngestOptions } from "./ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "./ledger.ts";
 import { maintain } from "./maintain.ts";
 import { pendingPromotions, promoteById, propose, retire, rollback } from "./propose.ts";
 
 /** `--repo PATH` is the project root, as in every other area; without it the root of `--cwd`. */
 function rootFor(args: LearnArgs, ctx: LearnContext): string | null {
-  const root = mainRepoRoot(flag(args, "repo") ?? flag(args, "cwd") ?? ctx.cwd);
-  if (root === null) ctx.io.err("ak learn review: not inside a git repository");
+  const named = flag(args, "repo") ?? flag(args, "cwd");
+  const root = mainRepoRoot(named ?? ctx.cwd);
+  if (root === null)
+    ctx.io.err(
+      `ak learn review: not inside a git repository${named === undefined ? "" : `: ${unknownRepo(ctx.config, named)}`}`,
+    );
   return root;
 }
 
@@ -83,12 +89,15 @@ export function prNumbers(value: string | undefined): number[] {
  * `--cwd` is the session's working directory, so a linked worktree's branch picks the PR, not the main checkout's.
  */
 export function ingestOptions(args: LearnArgs, ctx: LearnContext): IngestOptions {
+  const source = flag(args, "source") ?? "claude";
+  if (!REVIEW_SOURCES.some((known) => known === source))
+    throw new Error(`--source: ${unknownSelector("source", source, REVIEW_SOURCES)}`);
   return {
     cwd: flag(args, "cwd") ?? flag(args, "repo") ?? ctx.cwd,
     prs: prNumbers(flag(args, "pr")),
     since: flag(args, "since"),
     repo: flag(args, "gh-repo"),
-    source: flag(args, "source") ?? "claude",
+    source,
     skipGithub: args.flags.has("no-github"),
     skipMem: args.flags.has("no-mem"),
   };
@@ -193,7 +202,7 @@ export const reviewArea: LearnArea = {
           return 2;
         }
         return locked(args, ctx, (ledger) => {
-          const message = ctx.config.dryRun ? `dry run: would retire ${id}` : retire(ledger, id);
+          const message = retire(ledger, id, ctx.config.dryRun);
           ctx.io.out(message);
           return message.startsWith("unknown") ? 1 : 0;
         });

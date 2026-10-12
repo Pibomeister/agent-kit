@@ -1,7 +1,7 @@
 /**
  * Episodes from a claude-mem fixture: fields and priority literals, the stale
- * active session, edits recorded only by tool use, and a second run that
- * appends nothing.
+ * active session, edits recorded only by tool use, a second run that
+ * appends nothing, and the ids a session was shown joined onto its row.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -14,9 +14,12 @@ import {
   markConsolidated,
   unconsolidatedEpisodes,
 } from "../../src/learn/memory/episodes.ts";
+import { readJsonl } from "../../src/learn/core/store.ts";
+import { sessionKey, span } from "../../src/learn/core/trace.ts";
+import { shownLookup } from "../../src/learn/memory/exposure.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
-import { MemFixture, scratch } from "./helpers.ts";
+import { MemFixture, scratch, testContext } from "./helpers.ts";
 
 const NOW = 1_800_000_000_000; // 2027-01-15T08:00:00Z
 const D = 86_400_000;
@@ -226,5 +229,122 @@ describe("episodes", () => {
       source.close();
     }
     expect(readFileSync(ledger.path("episodes.jsonl"), "utf8")).toBe("");
+  });
+});
+
+/** Three ended sessions whose host ids differ from the observer's own. */
+function shownFixture(dbPath: string): MemFixture {
+  const mem = new MemFixture(dbPath);
+  for (const [index, sid] of ["a", "b", "c"].entries()) {
+    mem.session({
+      sid,
+      content: `host-${sid}`,
+      project: "app",
+      started: NOW - D + index * H,
+      completed: NOW - D + (index + 1) * H,
+    });
+    mem.observation({ sid, project: "app", type: "discovery", title: "t", at: NOW - D + index * H });
+  }
+  return mem;
+}
+
+/** The fixture database opened as the runtime opens it. */
+function opened(dbPath: string): ClaudeMemSource {
+  const source = ClaudeMemSource.open(dbPath);
+  if (source === null) throw new Error(`claude-mem source did not open at ${dbPath}`);
+  return source;
+}
+
+describe("what a session was shown", () => {
+  test("a row carries the ids recorded for its host session: some, none, or no record at all", () => {
+    const dir = scratch();
+    const dbPath = join(dir, "mem.db");
+    shownFixture(dbPath).close();
+    const ledger = ensureMemoryLedger(join(dir, "memory"));
+    const source = opened(dbPath);
+    const asked: string[] = [];
+    const recorded = new Map([
+      ["host-a", ["rp-001", "ls-002"]],
+      ["host-b", []],
+    ]);
+    try {
+      buildEpisodes(source, ledger, "app", EVENTS, {
+        now: NOW,
+        shown: (id) => {
+          asked.push(id);
+          return recorded.get(id);
+        },
+      });
+    } finally {
+      source.close();
+    }
+    expect(asked).toEqual(["host-a", "host-b", "host-c"]);
+    const rows = readJsonl<Episode>(ledger.path("episodes.jsonl"));
+    expect(rows.map((row) => [row.sid, row.shown])).toEqual([
+      ["a", ["rp-001", "ls-002"]],
+      ["b", []],
+      ["c", undefined],
+    ]);
+    expect(rows[2]).not.toHaveProperty("shown");
+  });
+
+  test("a refreshed row keeps what its earlier revision recorded and adds what the spans now say", () => {
+    const dir = scratch();
+    const dbPath = join(dir, "mem.db");
+    const mem = shownFixture(dbPath);
+    const ledger = ensureMemoryLedger(join(dir, "memory"));
+    const build = (shown: (id: string) => string[] | undefined) => {
+      const source = opened(dbPath);
+      try {
+        return buildEpisodes(source, ledger, "app", EVENTS, { now: NOW, shown });
+      } finally {
+        source.close();
+      }
+    };
+    try {
+      build((id) => (id === "host-a" ? ["ls-001"] : undefined));
+      // Nothing grew, so nothing is asked and nothing is rewritten.
+      expect(build(() => ["ls-009"])).toEqual([]);
+      mem.observation({ sid: "a", project: "app", type: "discovery", title: "more", at: NOW - D });
+      mem.observation({ sid: "c", project: "app", type: "discovery", title: "more", at: NOW - D + 2 * H });
+      // The span files have rotated past session a's start; session c's has only now been recorded.
+      const refreshed = build((id) => (id === "host-c" ? ["ls-003", "rp-002"] : undefined));
+      expect(refreshed.map((row) => [row.sid, row.obs, row.shown])).toEqual([
+        ["a", 2, ["ls-001"]],
+        ["c", 2, ["ls-003", "rp-002"]],
+      ]);
+      mem.observation({ sid: "a", project: "app", type: "discovery", title: "again", at: NOW - D });
+      expect(build(() => ["ls-004", "ls-001"])[0]?.shown).toEqual(["ls-001", "ls-004"]);
+    } finally {
+      mem.close();
+    }
+    expect(loadEpisodes(ledger).map((row) => [row.sid, row.shown])).toEqual([
+      ["a", ["ls-001", "ls-004"]],
+      ["b", undefined],
+      ["c", ["ls-003", "rp-002"]],
+    ]);
+  });
+
+  test("the lookup gathers every start of one session and answers nothing for a session no start names", () => {
+    const ctx = testContext();
+    const start = (hostSessionId: string | null, shown: string[]) =>
+      span(ctx, "hook.session-start", "hook", (traced) => {
+        if (hostSessionId !== null) traced.span?.attr("session", sessionKey(ctx.config, hostSessionId) ?? "");
+        traced.span?.attr("shown", shown);
+      });
+    start("host-a", ["rp-001", "ls-001"]);
+    start("host-b", []);
+    start(null, ["ls-009"]);
+    start("host-a", ["ls-001", "ls-002"]);
+    span(ctx, "hook.prompt", "hook", (traced) => traced.span?.attr("session", sessionKey(ctx.config, "host-c") ?? ""));
+    const lookup = shownLookup(ctx.config);
+    expect(lookup("host-a")).toEqual(["rp-001", "ls-001", "ls-002"]);
+    expect(lookup("host-b")).toEqual([]);
+    expect(lookup("host-c")).toBeUndefined();
+    expect(lookup("")).toBeUndefined();
+    // One run reads the span files once: a start recorded after the first question belongs to the next run.
+    start("host-c", ["ls-005"]);
+    expect(lookup("host-c")).toBeUndefined();
+    expect(shownLookup(ctx.config)("host-c")).toEqual(["ls-005"]);
   });
 });

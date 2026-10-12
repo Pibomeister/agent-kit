@@ -8,6 +8,7 @@ import { identity, type LearnConfig, loadConfig, parseRepos, sameScope, scopeFil
 import type { LearnContext } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { run } from "../core/proc.ts";
+import { unknownRepo } from "../memory/registry.ts";
 
 /** The effective scope and where it came from, as verify, doctor and this verb print it. */
 export function scopeText(config: LearnConfig): string {
@@ -43,16 +44,29 @@ export function scope(ctx: LearnContext, options: { set?: string; clear?: boolea
     // root. Only a working-tree top level is accepted: git resolves any directory below one, and a plain
     // folder under a repository-tracked home would otherwise widen the scope to that whole home.
     const entries = options.set.split(":").map((part) => part.trim());
+    // An entry that names no repository refuses the whole set: dropped quietly, a typo would leave a
+    // narrower scope than the one asked for, and a set of typos an empty one, with the command passing.
+    const rejected: string[] = [];
+    const notes: string[] = [];
     const roots = entries.flatMap((entry) => {
       const top = parseRepos(entry).length === 0 ? null : workTreeTop(entry);
       const root = top !== null && identity(top) === identity(entry) ? mainRepoRoot(entry) : null;
       if (root === null) {
-        if (entry !== "") ctx.io.out(`  ignored: ${entry} (not a repository root or a linked worktree)`);
+        if (entry !== "") rejected.push(entry);
         return [];
       }
-      if (identity(root) !== identity(entry)) ctx.io.out(`  ${entry}: stored as its main repository root ${root}`);
+      if (identity(root) !== identity(entry)) notes.push(`  ${entry}: stored as its main repository root ${root}`);
       return [root];
     });
+    if (rejected.length > 0) {
+      for (const entry of rejected)
+        ctx.io.err(
+          `ak learn setup scope: --set: ${entry} is not a repository root or a linked worktree: ${unknownRepo(ctx.config, entry)}`,
+        );
+      ctx.io.err("ak learn setup scope: nothing was written");
+      return 2;
+    }
+    for (const line of notes) ctx.io.out(line);
     mkdirSync(ctx.config.runtimeDir, { recursive: true });
     // Hooks and the tick read this file at any moment, so it is replaced whole, never rewritten in place.
     writeFileSync(`${path}.tmp`, `${roots.join(":")}\n`);

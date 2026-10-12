@@ -917,11 +917,12 @@ conflicts:
       or merge path and never writes Firstmate's state; it reports by appending a status line in
       Firstmate's vocabulary. The worker's instructions are pinned: a binding written by the
       supervisor, outside the worktree, names a content-addressed skill bundle, so upgrading the kit
-      never changes a running task. Where the lifecycle would start its own watcher or feedback
+      never changes a running task in the deprecated patched-binding path. The stock Firstmate
+      path starts with `ak firstmate preflight` and uses the task's existing delivery mode; it
+      requires no patched home. Where the lifecycle would start its own watcher or feedback
       loop, it instead handles the event Firstmate delivered, once, and returns. Where autopilot
       needs two independent judgments, Firstmate dispatches them; the worker's own helpers are
-      never those judges. A Firstmate that has not been patched to allow this mode is refused,
-      never worked around.
+      never those judges.
     discharged_in: [not-for, authority]
     binds:
       skills: [babysit-pr, receiving-review]
@@ -942,24 +943,20 @@ conflicts:
 
   - id: no-mistakes-as-ship-transport
     tension: >-
-      Firstmate's supervisor contract gives no-mistakes sole ownership of review, fixes, tests,
-      documentation, push, PR and CI, and runs it without an independent reviewer. This package
-      requires a specialist review panel, receipts bound to the shipped head, and a ship decision
-      made on them. Run both as they are and a change is reviewed twice by two pipelines that can
-      disagree, and the pipeline's own fix, document and rebase steps commit changes the panel
-      never saw, after the receipts that justified shipping were taken.
+      The lifecycle judges a committed head while no-mistakes runs its own Review and may add fix
+      commits or rebase before pushing. Its Review may disagree with a lifecycle-approved decision,
+      and later commits are outside both review snapshots.
     ruling: >-
-      Review judgment is this package's alone. super-ship remains the single creator of the pull
-      request and uses no-mistakes as its transport: every push skips review, document and rebase,
-      so no-mistakes re-checks tests and lint on the shipped head, pushes, opens the PR and watches
-      CI, and creates no commit of its own. A repository opted into this must set auto_fix for
-      test, lint and ci to zero in its trusted config, so a failing gate parks rather than
-      commits; preflight refuses a repository that does not. A parked gate is answered by fixing
-      through the lifecycle, which counts against the fix-cycle cap and invalidates stale
-      receipts, and re-shipping: the new push supersedes the parked run. It is never answered by
-      asking the pipeline to fix. Before any outward effect is repeated, the existing PR and run
-      are reconciled under the runner contract's idempotency key. Merge is never part of this
-      transport.
+      Under no-mistakes delivery, agent-kit judges through an immutable committed handoff head:
+      verify, review-readiness and an approved full or delta review bind to that head, and ship-preflight records it with an empty
+      working-tree diff. super-ship then stops without pushing, opening a PR or passing skips.
+      no-mistakes owns the branch unmodified and unskipped, including Review, fixes, rebases, push,
+      PR and CI; no auto_fix value is a precondition. Parked gates are answered inside the pipeline.
+      An ask-user finding, including a challenge to a lifecycle-approved decision, goes to the
+      supervisor as needs-decision, and --intent contains only the captain's words. After checks
+      pass, the lifecycle adopts attributable pipeline changes and re-verifies at the pushed head
+      without repeating review. An unreviewed commit, a missing handoff commit, an overridden
+      Review step or unattributable change escalates to the supervisor. Merge is outside this path.
     discharged_in: [workflow, side-effects]
     binds:
       skills: [super-ship]
@@ -968,15 +965,14 @@ conflicts:
     scenario: 20
     coverage: indirect
     note: >-
-      `workflow` because super-ship gains a transport step and a parked-gate response, and
-      `side-effects` because its remote-push and pr-open are performed through the transport and
-      still keyed as its own. Rejected `hard-gates`: the auto_fix precondition is preflight's
-      refusal, in the adapter, not a check in the skill body. Rejected `limits`: the fix-cycle
-      cap is two-fix-cycles-then-stop's, and this row only says a parked gate spends from it.
-      Scenario 20 is the neighbouring case: re-shipping after a parked gate is a second attempt at
-      the same remote effects, and reconciliation is what keeps it from being a second PR.
+      `workflow` because ship ends at the handoff and adoption follows pipeline checks;
+      `side-effects` because no-mistakes, not super-ship, performs the push and PR effects.
+      Scenario 20 remains the neighbouring idempotency case: a resumed pipeline reconciles its
+      existing run and PR before repeating an outward effect. The old skipped transport remains
+      only in the deprecated legacy path for delivery mode agent-kit.
     source:
       plan: "§7.4"
+      adr: docs/decisions/0012-no-mistakes-delivery-handoff.md
 
   - id: task-local-child-not-fleet-task
     tension: >-
@@ -1335,16 +1331,16 @@ conflicts:
   - id: direct-push-as-ship-transport
     tension: >-
       Plan §2.1 gives super-ship an authorized commit, push and open-PR action, and ruling
-      no-mistakes-as-ship-transport has no-mistakes perform it: the pipeline re-checks the shipped
-      head, pushes, opens the pull request and creates no commit of its own. A project that does not
-      ship through no-mistakes, published by a person with no supervisor, is then left with no
-      stated way to ship. Read strictly, super-ship cannot publish there. Read loosely, it improvises
+      no-mistakes-as-ship-transport ends super-ship at a committed handoff that the no-mistakes
+      pipeline then owns: it reviews and checks the head, pushes and opens the pull request. A
+      project that does not ship through no-mistakes, published by a person with no supervisor, is
+      then left with no stated way to ship. Read strictly, super-ship cannot publish there. Read loosely, it improvises
       a push that keeps none of what the transport guaranteed, and a project's own commit hooks can
       rewrite staged files as the commit is made, which ships a commit the review never saw.
     ruling: >-
       super-ship may publish directly, with git and the forge's command-line client, and needs no
-      supervisor to do so. The transport is named, never inferred from whichever one works: a
-      Firstmate binding's transport first, then the project's own conventions, then the caller.
+      supervisor to do so. The transport is named, never inferred from whichever one works: the
+      task's delivery contract first, then the project's own conventions, then the caller.
       Where nothing names one, the ship stops for the choice. A chosen gate that is not configured
       stops the ship rather than falling back to the direct push, and the direct push is never a way
       around a gate the project names. With no pipeline to re-check the head, super-ship's own
@@ -1361,15 +1357,16 @@ conflicts:
     coverage: indirect
     note: >-
       `inputs` because the transport is something super-ship consumes and has to name, with the
-      caller's choice ranked below the binding and the project's conventions, and `workflow`
+      caller's choice ranked below the delivery contract and the project's conventions, and `workflow`
       because the commit, push and pull-request steps and the return of a rewritten commit to the
       lifecycle are ordered obligations. Rejected `hard-gates` and `stop-conditions`: a rewritten
       commit adds no refusal and no terminal state. It is a head the existing precondition no
       longer covers, and the run halts under the needs-input condition super-ship already names for
       receipts bound to another revision. Rejected `side-effects`: remote-push and pr-open were
       already declared and already keyed by runner-contract §5, and this transport performs them
-      without adding one. The firstmate adapter is not bound: its binding's transport is always
-      no-mistakes, so it would read the same had this row been decided the other way. Scenario 10
+      without adding one. The firstmate adapter is not bound: its deprecated legacy binding's
+      transport is always no-mistakes, so it would read the same had this row been decided the
+      other way. Scenario 10
       is the neighbouring case: a hook that rewrites a staged file is a code change made after the
       green evidence was taken, and this row is what keeps that evidence from shipping the new head.
     source:

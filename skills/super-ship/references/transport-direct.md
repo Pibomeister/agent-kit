@@ -21,17 +21,19 @@ where it does not, every lookup below is unknown and the run stops.
 
 super-ship has already decided: receipts and a verdict bind to the head being shipped. This transport
 commits, pushes and opens the pull request, and nothing else. No pipeline re-runs the project's checks
-on the head afterwards, so the re-check is super-ship's own: the release checks of workflow step 5,
+on the head afterwards, so the re-check is super-ship's own: the release checks of workflow step 4,
 each recorded against this head, with a check that did not run recorded as not run. super-ship stays
-the single creator of the pull request.
+the single creator of the pull request. Under a bypass grant every remote effect below still waits
+for the supervisor's answer to a `needs-decision`, as the skill's Authority section requires.
 
 ## Choosing it
 
 The transport is named, never inferred from whichever one happens to work. The first of these that
 names one decides:
 
-1. A Firstmate binding: its `delivery.transport`, which is always `no-mistakes`. A bound run never
-   ships direct.
+1. The task's delivery contract: the mode a supervisor's brief gives the task, `no-mistakes` or
+   `direct-PR`, or a deprecated legacy binding's `delivery.transport`, which is always
+   `no-mistakes`. A task whose contract names no-mistakes never ships direct.
 2. The project's own conventions: its instruction files, and the conventions the knowledgebase
    adapter's `readContext` returns. A project that routes its changes through a gate is never pushed
    around it, whoever asks, and a gate this package has no transport for stops the ship with
@@ -41,8 +43,9 @@ names one decides:
 4. None of them: stop with `needs-input` naming the choice. No gate in sight is not a choice of
    direct; a transport nothing names is unknown, and unknown is not direct.
 
-The choice holds for the run. A no-mistakes transport that was chosen but is not configured stops
-the ship before the push, as that transport's own rules require; it never falls back to this one. In
+The choice holds for the run. A chosen no-mistakes transport ends the ship at its handoff
+(workflow step 8); a gate that was chosen but is not configured stops the ship with
+`needs-input`. Neither ever falls back to this one. In
 `dry-run` the choice is made from local reads alone, so the report can name where the payload would
 have gone.
 
@@ -87,7 +90,7 @@ have gone.
    commit is a new head that no receipt or verdict binds to. Stop before the push with
    `needs-input`. The commit stays local and is neither amended nor pushed. `ship-preflight` has
    already closed the run, so the new head needs a new run: `open` again, re-run super-build,
-   super-verify and super-review for it, and it ships again once workflow step 3's gate check passes.
+   super-verify and super-review for it, and it ships again once workflow step 7's gate check passes.
 6. A hook that changes files without staging them leaves the commit as verified and the working tree
    changed. Report those paths and leave them uncommitted.
 
@@ -118,7 +121,7 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 1. Look it up: `gh pr list -R <base-owner>/<repo> --head <branch> --state open --json
    number,url,headRefName,headRefOid,headRepositoryOwner,baseRefName`. Pass the branch name only:
    `--head <owner>:<branch>` is not accepted and returns `[]`, which reads as none.
-2. Only exit 0 with `[]` means none (workflow step 8). Any other exit is unknown: stop.
+2. Only exit 0 with `[]` means none (workflow step 9). Any other exit is unknown: stop.
 3. A row whose head owner or branch is not this head's is another contributor's pull request. More
    than one row matching this head is ambiguous: stop and list them rather than taking the first.
 4. One match: the push updated it. Its `baseRefName` must be the base resolved above, and a different

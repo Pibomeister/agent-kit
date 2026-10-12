@@ -652,6 +652,23 @@ describe("ak lifecycle check, standalone", () => {
     });
   });
 
+  test("an unknown subcommand names the one it was probably meant to be", () => {
+    const r = ak(repo(), "chek");
+    expect(r.code).toBe(2);
+    expect(r.err.split("\n")[0]).toBe("ak lifecycle: unknown subcommand 'chek'; did you mean check?");
+  });
+
+  test("a named run the store has never held is flagged as a likely typo, with the runs it does hold", () => {
+    const dir = repo();
+    expect(ak(dir, "record", "--gate", "build-checks").code).toBe(0);
+    const typo = ak(dir, "check", "--run", "featuer");
+    expect(typo.code).toBe(1);
+    expect(typo.err).toContain(`note: in ${defaultEvidenceDir(dir)}, unknown run 'featuer'; did you mean feature?`);
+    const known = ak(dir, "check", "--run", "feature");
+    expect(known.code).toBe(1);
+    expect(known.err).not.toContain("unknown run");
+  });
+
   test("a --host outside the shipped adapters is refused before it can replace a readable record", () => {
     const dir = repo();
     const identity = ["--class", "green", "--author-kind", "agent"];

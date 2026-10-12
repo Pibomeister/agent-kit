@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import { run } from "../../src/learn/core/proc.ts";
-import { spanRows } from "../../src/learn/core/trace.ts";
+import { sessionKey, spanRows } from "../../src/learn/core/trace.ts";
 import { GROK_CONTEXT_CHARS, hookArea } from "../../src/learn/hooks.ts";
 import { claim, MARK_MAX_AGE_MS, markPath } from "../../src/learn/memory/delivery.ts";
 import { ensureMemoryLedger, memoryDir, SECTIONS, writeLesson } from "../../src/learn/memory/ledger.ts";
@@ -279,6 +279,19 @@ describe("session-start --host grok", () => {
     const { ctx, root } = seeded();
     expect(hook(ctx, GROK, JSON.stringify({ cwd: root }))).toEqual([]);
     expect(marks(ctx, "grok")).toEqual([]);
+  });
+
+  test("each host's span carries the key of the session its payload names, in that host's spelling", () => {
+    const { ctx, root } = seeded();
+    hook(ctx, GROK, payload("grok/post-tool-use.stdin.json", root, { sessionId: "grok-one" }));
+    hook(ctx, ["--host", "kimi"], payload("kimi/user-prompt-submit.stdin.json", root, { session_id: "kimi-one" }));
+    const starts = spanRows(ctx.config).filter((row) => row.name === "hook.session-start");
+    expect(starts.map((row) => row.attrs.session)).toEqual([
+      sessionKey(ctx.config, "grok-one") ?? "",
+      sessionKey(ctx.config, "kimi-one") ?? "",
+    ]);
+    for (const row of starts) expect(row.attrs.shown).toEqual(["rp-001", "ls-001"]);
+    expect(JSON.stringify(starts)).not.toContain("-one");
   });
 
   test("Grok's and Kimi's marks are separate", () => {

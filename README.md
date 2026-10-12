@@ -21,8 +21,17 @@ codex plugin marketplace add Pibomeister/agent-kit --ref published
 codex plugin add ak@agent-kit
 ```
 
-Claude Code skills appear under `/ak:` after a restart. Codex's plugin CLI has no project scope;
-its install is user-level. To let teammates run setup checks and upgrades from any project, install
+Kimi Code uses the native bundle in `dist/kimi`: build it with `bun run ak build --host kimi`,
+then run `/plugins install <absolute-path-to-dist/kimi>` inside Kimi. Human-started skills use
+`/skill:<id>`. For one session, use `kimi --skills-dir <absolute-path-to-dist/kimi/skills>`.
+See the [Kimi contract](adapters/kimi/CONTRACT.md) for the model-free installation evidence and
+unverified runtime acceptance cases. The maintenance command below currently updates Claude Code
+and Codex installations only.
+
+Claude Code skills appear under `/ak:` after a restart. Codex lists them as `ak:<id>`, and a
+human-started skill is typed there as `$ak:<id>`, where this README and the canonical skills write
+`/ak:<id>` ([ADR-0011](docs/decisions/0011-portable-explicit-start.md)). Codex's plugin CLI has no
+project scope; its install is user-level. To let teammates run setup checks and upgrades from any project, install
 the published maintenance command once (Bun must be on `PATH`):
 
 ```bash
@@ -48,8 +57,20 @@ needed. Later bundle changes require a new matching version in `catalog.yaml` an
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
+Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
+`bun run ak build --host grok`, then install that local directory with
+`grok plugin install <absolute-path-to-dist/grok> --trust`. Human-started skills use `/<id>`.
+The [Grok contract](adapters/grok/CONTRACT.md) records isolated installation evidence and the
+unproven live command-expansion boundary. Learning hooks and `ak update` integration are not included.
+Grok's Claude-compatibility skill discovery may also load an installed Claude `ak` bundle, whose `/ak:<id>` marker cannot start a Grok turn; that interaction is unverified, so when both are installed disable Claude-compatibility skill discovery (`GROK_CLAUDE_SKILLS_ENABLED=false`, the setting the discovery probe uses).
+
 `profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
 with progressive disclosure.
+
+Factory Droid has a native bundle at `dist/droid`, built with `bun run ak build --host droid`.
+Its human-started commands use `/<id>`. See the [Droid host contract](adapters/droid/CONTRACT.md)
+for isolated local installation and acceptance limits. Installation is model-free verified;
+live acceptance remains separate for each served binding, and `ak update` does not manage Droid.
 
 ## The spine: seven super skills
 
@@ -82,15 +103,15 @@ On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-sc
 service, and add the section printed by `ak firstmate brief` to an ordinary crewmate brief. Use the
 task's existing no-mistakes or direct-PR delivery mode. The runner holds the charter, standing
 start, checkpoint ledger and trusted evidence outside the worker worktree. The older
-`ak firstmate bind` path remains for patched-home installations; it is not required for stock
-Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or CI needs Firstmate
-installed.
+`ak firstmate bind` and the patched-home path are deprecated for existing installations; they are
+not required for stock Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or
+CI needs Firstmate installed.
 
 **Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
 a grant from its own home with `node <bundle>/bin/ak-gate.mjs bypass grant`, and the worker checks it before
-each human-started phase. A grant is valid only in the lifecycle run it is first used in, so the
-supervisor issues a fresh one when super-build opens the ticket's run. It starts phases only: approvals
-still go to the supervisor, and merge and deploy are never on it (`docs/decisions/0008-bypass-start-grant.md`).
+each human-started phase. A grant holds in each lifecycle run of its task while that run is its
+branch's current run, for at most 12 hours. It starts phases only: approvals still go to the
+supervisor, and merge and deploy are never on it (`docs/decisions/0008-bypass-start-grant.md`).
 
 ## Catalog
 
@@ -200,7 +221,8 @@ Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
 
-Attribution: `NOTICE`. Full license texts: `provenance/licenses/`.
+Attribution: `NOTICE`. Full license texts: `provenance/licenses/`. `NOTICE` also lists the packages
+inlined into `bin/ak`, whose texts ship in each bundle and inside `bin/ak` itself.
 
 ## Repository documents
 
