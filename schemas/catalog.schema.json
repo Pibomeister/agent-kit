@@ -202,6 +202,8 @@
               "plan-record",
               "ship-evidence",
               "run-ledger",
+              "trail",
+              "trail-audit",
               "review-event",
               "review-pattern",
               "episode",

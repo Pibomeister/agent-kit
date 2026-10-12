@@ -1,0 +1,46 @@
+# Provenance fragment for the "work-trail" batch (catalog batch 15): the two record kinds
+# a work trail leaves, trail (one stretch of an implementer's working decisions) and
+# trail-audit (the auditor's comparison of the trail with what the run left behind).
+#
+# One row per (path, source) pair, keyed `path:` with a single `source:`, which is what
+# loadAdaptationFragments reads (src/validation/provenance.ts). A file adapted from
+# several donor files carries one row per donor file, so every upstream work a file
+# derives from is recorded with a machine-checkable donor@commit:path. That is what
+# NOTICE points a downstream consumer at, so an unverifiable row here would turn a
+# provenance record into a provenance claim.
+#
+# One fragment owns each adapted path: a second fragment claiming any path below is a
+# merge hazard and raises provenance.conflicting-adaptation.
+#
+# Donor ids and commits are those pinned in provenance/upstream.lock.yaml. The skill file
+# is cited in research/dossiers/pstack.md, and the template is the header row that skill
+# tells a new log to copy. Both paths were verified to exist at their pin with
+# `git cat-file -e` in the pinned clone before they were written here; neither was
+# re-derived from memory or from a document's description of a donor.
+
+adaptations:
+  - path: schemas/trail.schema.json
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/references/decision-log-template.tsv
+    rationale: >-
+      The template's header row, ts, phase, decision, why, evidence and result, became an
+      entry's written_at, decision, why, pointers and result. The phase column was dropped,
+      because a stretch belongs to one ticket and one seat. The entry id, the alternatives
+      considered and supersedes were added.
+  - path: schemas/trail.schema.json
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: >-
+      The skill's log rules shape the record. Evidence is a pointer and not prose (The
+      format). The log is append-only, and a wrong call gets a later row that supersedes it
+      (Rules). A run's rows from its start row form one stretch (Logging a row, and Audit the
+      log against the transcript), so a stretch became one record with its ticket, the seat
+      that wrote it and its order among the ticket's stretches.
+  - path: schemas/trail-audit.schema.json
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: >-
+      The audit of the log (lines 55-63) and the trail review that ends in an Attention
+      section (lines 65-74) became this record. Rows that must map to what happened, evidence
+      that must resolve, an unlogged fork that counts as a gap (lines 59-61) and verification
+      claimed without proof (line 70) became the four comparisons. Flags that point at
+      specific rows, with "No flags" as a valid value (line 74), became the attention list
+      and the three results. The donor reads the run's transcript; this record reads none, so
+      its transcript member admits only not-supplied.

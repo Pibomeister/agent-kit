@@ -899,7 +899,7 @@ references:
       plugin.
 
 # ---------------------------------------------------------------------------
-# Schemas — 33. `common` holds shared $defs and validates no document itself.
+# Schemas — 35. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
@@ -1018,6 +1018,19 @@ schemas:
     summary: >-
       autopilot's ledger: one entry per checkpoint pointing at its decision record, with the ruling
       or the escalation. At most one escalation is open.
+  - id: trail
+    batch: 15
+    status: authored
+    summary: >-
+      One stretch of an implementer's working decisions on a ticket: entries in the order written,
+      each with what was decided, the alternatives, why, evidence pointers and the result. Empty
+      only with a stated reason.
+  - id: trail-audit
+    batch: 15
+    status: authored
+    summary: >-
+      The auditor's comparison of a ticket's trail with what the run left behind, with no transcript:
+      every stretch by state, the material read, one result and an attention list.
   - id: install
     batch: 5
     status: authored

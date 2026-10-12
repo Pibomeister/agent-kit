@@ -470,6 +470,15 @@ adaptations:
   - path: schemas/ticket.schema.json
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
     rationale: Criteria name their surface and checks bind recipe hashes to required evidence kinds.
+  - path: schemas/trail-audit.schema.json
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: The audit of the log (lines 55-63) and the trail review that ends in an Attention section (lines 65-74) became this record. Rows that must map to what happened, evidence that must resolve, an unlogged fork that counts as a gap (lines 59-61) and verification claimed without proof (line 70) became the four comparisons. Flags that point at specific rows, with "No flags" as a valid value (line 74), became the attention list and the three results. The donor reads the run's transcript; this record reads none, so its transcript member admits only not-supplied.
+  - path: schemas/trail.schema.json
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/references/decision-log-template.tsv
+    rationale: The template's header row, ts, phase, decision, why, evidence and result, became an entry's written_at, decision, why, pointers and result. The phase column was dropped, because a stretch belongs to one ticket and one seat. The entry id, the alternatives considered and supersedes were added.
+  - path: schemas/trail.schema.json
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: The skill's log rules shape the record. Evidence is a pointer and not prose (The format). The log is append-only, and a wrong call gets a later row that supersedes it (Rules). A run's rows from its start row form one stretch (Logging a row, and Audit the log against the transcript), so a stretch became one record with its ticket, the seat that wrote it and its order among the ticket's stretches.
   - path: schemas/verification-recipe.schema.json
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L183-222
     rationale: The successful setup-through-cleanup path becomes a central host-neutral artifact and project declaration shape.

@@ -68,7 +68,9 @@
         "map",
         "plan-record",
         "ship-evidence",
-        "run-ledger"
+        "run-ledger",
+        "trail",
+        "trail-audit"
       ]
     },
     "hash": {

@@ -19,6 +19,8 @@ import reviewSchema from "../../schemas/review.schema.json" with { type: "json" 
 import runLedgerSchema from "../../schemas/run-ledger.schema.json" with { type: "json" };
 import shipEvidenceSchema from "../../schemas/ship-evidence.schema.json" with { type: "json" };
 import ticketSchema from "../../schemas/ticket.schema.json" with { type: "json" };
+import trailAuditSchema from "../../schemas/trail-audit.schema.json" with { type: "json" };
+import trailSchema from "../../schemas/trail.schema.json" with { type: "json" };
 import verificationRecipeSchema from "../../schemas/verification-recipe.schema.json" with { type: "json" };
 import verificationSchema from "../../schemas/verification.schema.json" with { type: "json" };
 
@@ -53,6 +55,8 @@ const ARTIFACT_SCHEMAS = {
   "run-ledger": runLedgerSchema,
   "ship-evidence": shipEvidenceSchema,
   ticket: ticketSchema,
+  trail: trailSchema,
+  "trail-audit": trailAuditSchema,
   verification: verificationSchema,
   "verification-recipe": verificationRecipeSchema,
 };
@@ -63,7 +67,7 @@ type AjvInstance = InstanceType<typeof Ajv2020>;
 
 let compiled: AjvInstance | null = null;
 
-/** Built on first use: seventeen schemas are not worth compiling for a `check`. */
+/** Built on first use: nineteen schemas are not worth compiling for a `check`. */
 function instance(): AjvInstance {
   if (compiled !== null) return compiled;
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });

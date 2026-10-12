@@ -3,7 +3,7 @@
 The contract, plus the documents of the backends that meet it (§7). The code that carries the
 operations is `src/kb/`.
 
-Project-derived material — context, standards, decisions, requirements, plans, ticket artifacts,
+Project-derived material — context, standards, decisions, requirements, plans, ticket artifacts, trail and trail-audit records,
 review ledgers, solutions and lessons — is owned by a **central knowledgebase**, not by the
 application repository and not by this package (plan §1.2, §8; ruling
 `central-kb-owns-project-artifacts`). This file defines the narrow

@@ -1,0 +1,65 @@
+{
+  "schema": "trail-audit",
+  "schema_version": 1,
+  "id": "example-trail-audit-3",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "trail-auditor"
+  },
+  "inputs": [
+    {
+      "id": "example-ticket-1",
+      "schema": "ticket",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "2222222222222222222222222222222222222222"
+  },
+  "created_at": "2026-09-19T11:00:00Z",
+  "status": "complete",
+  "ticket": {
+    "id": "example-ticket-1",
+    "schema": "ticket",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "auditor_seat": {
+    "id": "example-trail-auditor-3",
+    "implementer_seats": ["example-implementer-3"],
+    "isolation": "host-unattested",
+    "attestation": null
+  },
+  "stretches": [
+    {
+      "id": "example-trail-3",
+      "state": "missing"
+    }
+  ],
+  "other_material": [
+    {
+      "ref": "example-ticket-1",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "commit": "2222222222222222222222222222222222222222"
+    }
+  ],
+  "transcript": "not-supplied",
+  "result": "no-material-to-assess",
+  "no_material_reason": "every-stretch-missing",
+  "attention_list": [],
+  "inspected": {
+    "material": ["the ticket example-ticket-1", "the diff of commit 2222222 against 1111111"]
+  },
+  "not_inspected": [
+    {
+      "what": "the stretch example-trail-3",
+      "why": "Its implementer left no record, so there was nothing to read."
+    }
+  ]
+}
