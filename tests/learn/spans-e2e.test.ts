@@ -12,11 +12,11 @@ import { loadConfig } from "../../src/learn/core/config.ts";
 import type { JudgeTraceRow } from "../../src/learn/core/judge.ts";
 import { projectFolderName } from "../../src/learn/core/paths.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
-import { readJsonl } from "../../src/learn/core/store.ts";
-import { SPAN_FILE, type SpanRow } from "../../src/learn/core/trace.ts";
+import { readJsonl, tokens } from "../../src/learn/core/store.ts";
+import { sessionKey, SPAN_FILE, type SpanRow } from "../../src/learn/core/trace.ts";
 import { appendRun, ensureMemoryLedger, memoryDir, saveState, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
-import { UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
+import { type Episode, UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import { gitRepo, MemFixture, projectScratch, removeProjectScratch, scratch, stubRoles } from "./helpers.ts";
 
@@ -34,8 +34,8 @@ interface Project {
   runtimeDir: string;
 }
 
-/** One repository whose review, memory and skills loops each have work for the judge. */
-function project(extraEnv: Record<string, string> = {}): Project {
+/** One repository whose review, memory and skills loops each have work for the judge. `seed` adds its own sessions. */
+function project(extraEnv: Record<string, string> = {}, seed?: (mem: MemFixture, now: number) => void): Project {
   const base = scratch();
   const root = gitRepo(join(projectScratch(), REPO_NAME));
   const configDir = join(base, "config");
@@ -59,6 +59,7 @@ function project(extraEnv: Record<string, string> = {}): Project {
   });
   mem.observation({ sid, project: REPO_NAME, type: "discovery", title: "found another", at: now - 86_400_000 + 600 });
   mem.toolUse({ sid, project: REPO_NAME, tool: "Bash", cwd: root, at: now - 86_400_000 + 500 });
+  seed?.(mem, now);
   mem.close();
   const { TRACEPARENT: _ambient, ...inherited } = process.env;
   const env = {
@@ -245,7 +246,8 @@ function normalize(p: Project, outcome: Outcome): string[] {
       .replaceAll(p.root, "<root>")
       .replaceAll(p.env.CLAUDE_CONFIG_DIR ?? "", "<config>")
       .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z/g, "<time>")
-      .replace(/idle \d+s/g, "idle <n>s"),
+      .replace(/idle \d+s/g, "idle <n>s")
+      .replace(/reflected \S+ ago/g, "reflected <age> ago"),
   );
 }
 
@@ -276,6 +278,67 @@ describe("session-start exposure", () => {
     const row = spans(p).find((r) => r.name === "hook.session-start");
     expect(row?.attrs.shown).toEqual(["rp-007", "ls-001", "ls-002"]);
     expect(row?.attrs).toMatchObject({ guardrails: 1, lessons: 2 });
+    // The payload named no session, so the span has nothing to key one by.
+    expect(row?.attrs).not.toHaveProperty("session");
     expect(row?.project_key).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  test("a memory page over the token cap still leaves the confirmed lessons in the block and on the span", async () => {
+    const p = project();
+    const config = loadConfig(p.env);
+    const bullets = Array.from(
+      { length: 400 },
+      (_, i) => `- the checkout service reads its flags from the config map, note ${i} [obs:${i + 1}]`,
+    );
+    const page = `## Current state\n${bullets.join("\n")}\n`;
+    expect(tokens(page)).toBeGreaterThan(2 * config.memoryTokens);
+    writeFileSync(new Ledger(memoryDir(config, p.root)).path("memory.md"), page);
+    const out = await learn(p, ["hook", "session-start"], JSON.stringify({ cwd: p.root }));
+    const printed = out.out.join("\n");
+    expect(printed).toContain("- never hand-edit dist/ [ls-001]");
+    expect(printed).toContain("- never edit generated files [ls-002]");
+    expect(printed).toContain(`${bullets[0]}\n`);
+    expect(tokens(printed.slice(0, printed.indexOf("\nmemory: reflected")))).toBeLessThanOrEqual(config.memoryTokens);
+    const row = spans(p).find((r) => r.name === "hook.session-start");
+    expect(row?.attrs.lessons).toBe(2);
+    expect(row?.attrs.shown).toEqual(["ls-001", "ls-002"]);
+  });
+
+  test("a session's episode row carries the ids it was shown, beside how it turned out", async () => {
+    // The host's hooks name the session one way and the observer's rows another; the join goes through the first.
+    const hostSession = "0b9d4c1e-7a52-4f6e-9c1d-canaryhostid";
+    const sid = "eeee5555-0000";
+    const p = project({}, (mem, now) => {
+      mem.session({ sid, content: hostSession, project: REPO_NAME, started: now - 60_000, completed: now + 60_000 });
+      mem.observation({ sid, project: REPO_NAME, type: "bugfix", title: "fixed the failing build", at: now - 30_000 });
+      mem.summary({ sid, project: REPO_NAME, request: "fix the build", completed: "the build is green again" });
+    });
+    const config = loadConfig(p.env);
+    writeFileSync(
+      reviewLedger(config, p.root).path("guardrails.md"),
+      "# Guardrails\n\n- [rp-007] check the diff against the PR body\n",
+    );
+    const payload = { cwd: p.root, session_id: hostSession };
+    expect((await learn(p, ["hook", "session-start"], JSON.stringify(payload))).code).toBe(0);
+    expect((await learn(p, ["hook", "prompt"], JSON.stringify({ ...payload, prompt: CORRECTION }))).code).toBe(0);
+    expect((await learn(p, ["memory", "run", "--job", "all", "--repo", p.root])).code).toBe(0);
+
+    const start = spans(p).find((r) => r.name === "hook.session-start");
+    expect(start?.attrs.shown).toEqual(["rp-007", "ls-001", "ls-002"]);
+    expect(start?.attrs.session).toBe(sessionKey(config, hostSession) ?? "");
+    expect(start?.attrs.session).toMatch(/^[0-9a-f]{16}$/);
+    expect(readFileSync(join(p.runtimeDir, SPAN_FILE), "utf8")).not.toContain("canaryhostid");
+
+    const episodes = readJsonl<Episode>(new Ledger(memoryDir(config, p.root)).path("episodes.jsonl"));
+    expect(episodes.find((episode) => episode.sid === sid)).toMatchObject({
+      shown: ["rp-007", "ls-001", "ls-002"],
+      completed: true,
+      failure_signals: 1,
+      corrections: 1,
+    });
+    // The other session ran before any start was recorded for it: its row says nothing about what it was shown.
+    const earlier = episodes.find((episode) => episode.sid === "cccc3333-0000");
+    expect(earlier).toMatchObject({ completed: false, corrections: 0 });
+    expect(earlier).not.toHaveProperty("shown");
   });
 });

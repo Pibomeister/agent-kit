@@ -4,9 +4,63 @@ import { parse as parseYaml } from "yaml";
 import { readTextIfPresent } from "../util/fs.ts";
 import { error, type Issue } from "../validation/types.ts";
 
-export type HostId = "claude-code" | "codex";
+export type HostId = "claude-code" | "codex" | "grok" | "kimi" | "droid";
 
-export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
+export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", "kimi", "droid"];
+
+/**
+ * Render the explicit human start a packaged skill recognizes on this host.
+ *
+ * The canonical command remains catalog.package.namespace + skill id. Source
+ * validation and the invocation graph read that one spelling. Packaging owns
+ * the host translation so canonical skills never need a list of host syntaxes
+ * and a prose request still matches none of them (ADR-0011).
+ *
+ * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
+ * leading `$`; the namespace already carries that `<plugin>:` stem after its
+ * slash (adapters/codex/CONTRACT.md §3.1 records the probe). Droid invokes a
+ * skill by its bare `/<id>` (adapters/droid/CONTRACT.md §2).
+ */
+export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
+  if (host === "grok" || host === "droid") return `/${skillId}`;
+  if (host === "kimi") return `/skill:${skillId}`;
+  return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
+}
+
+function escapeForPattern(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Every exact occurrence of one of `commands`, the one definition of where a
+ * command ends. A longer id is not a match: `/ak:compound-refresh` is not the
+ * command `/ak:compound` followed by text.
+ */
+export function explicitStartPattern(commands: ReadonlyArray<string>): RegExp {
+  return new RegExp(`(?:${commands.map(escapeForPattern).join("|")})(?![a-z0-9]|-[a-z0-9])`, "g");
+}
+
+/**
+ * Rewrite exact canonical U-skill command references in host-facing prose.
+ *
+ * M ids are absent from the input, so their automatic-invocation contract is
+ * not converted into an explicit gate by packaging.
+ */
+export function rewriteExplicitStarts(
+  text: string,
+  host: HostId,
+  namespace: string,
+  userSkillIds: ReadonlyArray<string>,
+): string {
+  const native = new Map<string, string>();
+  for (const skillId of userSkillIds) {
+    const canonical = `${namespace}${skillId}`;
+    const rendered = explicitStartForHost(host, namespace, skillId);
+    if (canonical !== rendered) native.set(canonical, rendered);
+  }
+  if (native.size === 0) return text;
+  return text.replace(explicitStartPattern([...native.keys()]), (found) => native.get(found) ?? found);
+}
 
 /**
  * How much of itself a skill is allowed to run on a given host.
@@ -53,7 +107,7 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * with -- it is pre-approval, per RESTRICTIONS above -- so a host's key set and
  * a host's guarantees are different questions with different answers.
  *
- * Neither host gets `disable-model-invocation`. claude-code honors the key, and
+ * No host gets `disable-model-invocation`. claude-code honors the key, and
  * this package stopped emitting it (docs/decisions/0003-model-invocation.md):
  * every skill is loadable by the model, and a U skill's gate is its own
  * authority step, as it always was on codex.
@@ -64,13 +118,21 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * confinement is an OS-level sandbox the operator owns. §5 makes a key from one host's set
  * appearing in the other's bundle a failure in its own right.
  *
- * `argument-hint` is on both lists because neither contract takes it away from
+ * Kimi gets no host-specific keys: its native skill command is `/skill:<id>`,
+ * and its U gate remains the first workflow step (ADR-0011).
+ *
+ * `argument-hint` is on both existing hosts' lists because neither contract takes it away from
  * codex: §3's table names exactly two differences, and §5's leaked-key test
  * names exactly the same two.
+ * Droid emits only descriptive `allowed-tools`; its native skill metadata and
+ * conservative capability declaration are in adapters/droid/CONTRACT.md §2.
  */
 export const HOST_FRONTMATTER_KEYS: Record<HostId, ReadonlyArray<string>> = {
   "claude-code": ["argument-hint", "allowed-tools"],
   codex: ["argument-hint"],
+  grok: ["argument-hint", "allowed-tools"],
+  kimi: [],
+  droid: ["allowed-tools"],
 };
 
 export interface HostCapabilities {
@@ -83,6 +145,10 @@ export interface HostCapabilities {
 }
 
 const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
+  kimi: {
+    enforces: [],
+    notes: ["No restriction is claimed. U skills rely on their first-step authority check (ADR-0003, ADR-0011)."],
+  },
   "claude-code": {
     enforces: [],
     notes: [
@@ -96,6 +162,14 @@ const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
     notes: [
       "No restriction is claimed by default. adapters/codex/CONTRACT.md must declare what the host really enforces.",
     ],
+  },
+  grok: {
+    enforces: [],
+    notes: ["No restriction is claimed. allowed-tools grants and restricts nothing on this host."],
+  },
+  droid: {
+    enforces: [],
+    notes: ["No restriction is claimed. allowed-tools is descriptive metadata, not a sandbox."],
   },
 };
 

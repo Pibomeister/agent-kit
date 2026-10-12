@@ -2,7 +2,7 @@
 
 Firstmate supervises. agent-kit judges through the runner, inside a normal crewmate task. The
 task's existing no-mistakes or direct-PR mode delivers. This file describes the stock integration
-and retains the older patched binding interface for existing users (ruling
+and retains the deprecated patched binding interface for existing users (ruling
 `firstmate-outer-loop-agent-kit-inner`).
 
 Firstmate is the only outer supervisor. Nothing here makes agent-kit a second one: it adds no
@@ -27,9 +27,10 @@ normal status and inbox. Firstmate dispatches the two supervisor seats as separa
 crewmates; they are not children of the implementing worker. The runner records their distinct
 dispatches and verdicts before deciding a checkpoint.
 
-If no-mistakes auto-fixes or otherwise changes the head, the runner's snapshot check invalidates
-older verification and review evidence. The worker must sync, verify and review the new head before
-reporting done. Disabling auto-fix is optional project policy, not an installation prerequisite.
+If no-mistakes changes the head after handoff, the worker adopts attributable pipeline changes and
+re-verifies at the pushed head before reporting done. A change it cannot attribute escalates to the
+supervisor. The pipeline's Review may challenge lifecycle-approved decisions. Disabling auto-fix is
+optional project policy, not an installation prerequisite.
 Publishing runner-owned evidence through the knowledgebase adapter remains a separate follow-up; it
 stays in a configurable private store until that is wired.
 
@@ -70,12 +71,13 @@ adapter publishes through one (`adapters/knowledgebase/CONTRACT.md` §1, §7). T
 is a labeled `mock`, which the binding schema forces to `dry-run` so it can never back a publish
 (`schemas/firstmate-binding.schema.json`).
 
-Side effects this adapter adds: none. super-ship's `remote-push` and `pr-open` go through no-mistakes
-but stay super-ship's effects, keyed per `adapters/runner-contract/CONTRACT.md` §5.
+Side effects this adapter adds: none. Under no-mistakes delivery, super-ship stops at the committed
+handoff. The existing Firstmate delivery contract starts the unmodified no-mistakes pipeline,
+which owns push and pull request (ADR-0012).
 
 ---
 
-## 2. Legacy patched-binding ownership
+## 2. Deprecated legacy patched-binding ownership for delivery mode agent-kit
 
 One owner per concern. Where two parties could act, the one named here acts and the other does not.
 
@@ -111,7 +113,7 @@ worker started is not independent of the worker (ruling `missing-supervisor-neve
 
 ---
 
-## 3. Compatibility
+## 3. Deprecated legacy compatibility
 
 | Firstmate | What works |
 |---|---|
@@ -139,7 +141,7 @@ exactly those.
 
 ---
 
-## 4. Legacy binding status lines
+## 4. Deprecated legacy binding status lines
 
 The worker reports to Firstmate the way every Firstmate worker does: by appending one line to its
 status file. agent-kit maps its run outcome onto Firstmate's verbs and writes nothing else. It never
@@ -189,7 +191,7 @@ closed here too: the audit cannot read it, so it refuses.
 
 ---
 
-## 5. Trust boundary
+## 5. Deprecated legacy trust boundary
 
 The stock path's grant, state, evidence and seat records are held by the task-scoped runner,
 outside the worker worktree and Git common directory. Firstmate's normal task brief, status and
@@ -217,7 +219,7 @@ input shape.
 
 ---
 
-## 6. Legacy binding delegated authority
+## 6. Deprecated legacy binding delegated authority
 
 super-review `full` and `readiness` and super-ship are `explicit-or-delegated`: a human starts them,
 or a delegated controller does under a validated grant. Under Firstmate, Firstmate is that controller
@@ -249,7 +251,8 @@ refused. The worker then reports `needs-decision` and Firstmate decides or asks 
 A bypass grant is the other route, and it needs neither a binding nor the patches (ADR-0008).
 Firstmate writes it with the bundle's gate script, run by `node` with its home as the working directory:
 `node <agent-kit bundle>/bin/ak-gate.mjs bypass grant --task <id> --by <who> --reason <why> --out
-data/<task-id>/bypass.json --project <repo> --worktree <task worktree>`, and pastes the section it prints
+data/<task-id>/bypass.json --project <repo> --worktree <task worktree> --hours 12`, and pastes the
+section it prints
 into the brief. Never run it through `bun` or from a project directory: `bun` loads the working
 directory's `bunfig.toml` and `.env` first, which a worker can write (SUPERVISOR.md). The worker runs
 `node <agent-kit bundle>/bin/ak-gate.mjs bypass check --grant <path> --task <id> --phase <phase>` before
@@ -257,16 +260,16 @@ super-align, super-bound, super-review `full` or `readiness`, and super-ship; ex
 The grant is start-only: every approval inside those phases still reaches Firstmate as
 `needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
 check must run from inside the task's worktree the grant names (`--project` cannot stand in for it);
-a grant is valid only in the run it is first used in, claimed atomically on first use. When super-build opens the ticket's run, the
-worker's next check is refused as bound to the earlier run; the worker reports `needs-decision`, and
-Firstmate issues a fresh grant for the same task and worktree on its standing authorization, with no
-captain step (SUPERVISOR.md). Gate records made with `--bypass <path> --task <id>` carry
+a grant holds in each run of its task while that run is its branch's current run, the ticket's run
+super-build opens included, until it expires at most 12 hours after it was issued. Gate records made
+with `--bypass <path> --task <id>` carry
 `authority.mode: bypass` and who authorized it. A phase started under a grant that has since expired
 continues under a fresh grant for the same task and worktree in the same run, whose record names the
 one it supersedes, or under the typed command, which records `authority.mode: explicit` with
-`superseded_grant_id` and ends the bypass for that phase in the run. The run binding and the end are
-read from the grant's run claim and the run's use records in the evidence store, which the worker can write, so they guard
-against accidents, not a determined worker; the worker never writes `~/.agent-kit`. A grant for another task or worktree is refused, and a gate recorded
+`superseded_grant_id` and ends the bypass for that phase in the run. The end is read from the run's
+use records in the evidence store, which the worker can write, so it guards against accidents, not a
+determined worker; the worker never writes `~/.agent-kit`. A grant for another task or worktree is
+refused, and a gate recorded
 by hand cannot be relabelled with `--bypass` at the same snapshot.
 
 `grant` refuses to run from inside any worktree of the repository or under the home's `projects/`,

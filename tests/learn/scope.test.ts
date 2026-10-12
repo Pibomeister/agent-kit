@@ -17,7 +17,7 @@ import { runLearn } from "../../src/learn/cli.ts";
 import type { HookPayload } from "../../src/learn/hooks.ts";
 import { memoryArea } from "../../src/learn/memory/cli.ts";
 import { memoryDir } from "../../src/learn/memory/ledger.ts";
-import { readRegistry, registerRoot } from "../../src/learn/memory/registry.ts";
+import { readRegistry, registerRoot, unknownRepo } from "../../src/learn/memory/registry.ts";
 import { tick } from "../../src/learn/memory/tick.ts";
 import { loadEvents } from "../../src/learn/review/events.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
@@ -282,17 +282,27 @@ describe("scope file verbs", () => {
     expect(after.out.join("\n")).toContain("scope: unscoped");
   });
 
-  test("setup scope names what it ignored, says when the variable wins, and refuses a bad flag set", async () => {
+  test("setup scope refuses a set naming a non-repository, says when the variable wins, and refuses a bad flag set", async () => {
     const f = fixture();
     const set = collect();
-    await runLearn(["setup", "scope", "--set", `${f.inside}:shop:/no/such/dir`], {
-      cwd: f.inside,
-      io: set.io,
-      env: f.env,
-    });
-    expect(set.out).toContain("  ignored: shop (not a repository root or a linked worktree)");
-    expect(set.out).toContain("  ignored: /no/such/dir (not a repository root or a linked worktree)");
-    expect(set.out.at(-1)).toBe(`scope: ${f.inside} (scope file)`);
+    expect(
+      await runLearn(["setup", "scope", "--set", `${f.inside}:shop:/no/such/dir`], {
+        cwd: f.inside,
+        io: set.io,
+        env: f.env,
+      }),
+    ).toBe(2);
+    expect(set.out).toContain(
+      `ak learn setup scope: --set: shop is not a repository root or a linked worktree: ${unknownRepo(f.config, "shop")}`,
+    );
+    expect(set.out).toContain(
+      `ak learn setup scope: --set: /no/such/dir is not a repository root or a linked worktree: ${unknownRepo(f.config, "/no/such/dir")}`,
+    );
+    expect(set.out.at(-1)).toBe("ak learn setup scope: nothing was written");
+    expect(existsSync(scopeFile(f.config.runtimeDir))).toBe(false);
+    expect(await runLearn(["setup", "scope", "--set", f.inside], { cwd: f.inside, io: collect().io, env: f.env })).toBe(
+      0,
+    );
     const env = { ...f.env, AK_LEARN_REPOS: f.outside };
     const show = collect();
     await runLearn(["setup", "scope"], { cwd: f.inside, io: show.io, env });
@@ -344,10 +354,17 @@ describe("review round fixes", () => {
     // A plain folder under a repository (a dotfiles-tracked home) must not widen the scope to that repository.
     const sub = join(f.inside, "notes");
     mkdirSync(sub);
+    const refused = collect();
+    expect(
+      await runLearn(["setup", "scope", "--set", `${wt}:${sub}`], { cwd: f.inside, io: refused.io, env: f.env }),
+    ).toBe(2);
+    expect(refused.out[0]).toStartWith(
+      `ak learn setup scope: --set: ${sub} is not a repository root or a linked worktree: `,
+    );
+    expect(existsSync(scopeFile(f.config.runtimeDir))).toBe(false);
     const { out, io } = collect();
-    await runLearn(["setup", "scope", "--set", `${wt}:${sub}`], { cwd: f.inside, io, env: f.env });
+    expect(await runLearn(["setup", "scope", "--set", wt], { cwd: f.inside, io, env: f.env })).toBe(0);
     expect(out).toContain(`  ${wt}: stored as its main repository root ${f.inside}`);
-    expect(out).toContain(`  ignored: ${sub} (not a repository root or a linked worktree)`);
     expect(readFileSync(scopeFile(f.config.runtimeDir), "utf8")).toBe(`${f.inside}\n`);
     expect((await hook(f, "session-start", { cwd: wt })).out).toContain("[rp-001] read the diff");
   });

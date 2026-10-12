@@ -92,7 +92,7 @@ const ATTRS: Readonly<Record<SpanName, readonly string[]>> = {
   "skills.run": ["pending"],
   "skills.discover": ["sessions", "proposed", "kept"],
   "skills.uses": ["changed", "pending"],
-  "hook.session-start": ["block_tokens", "guardrails", "lessons", "shown"],
+  "hook.session-start": ["block_tokens", "guardrails", "lessons", "shown", "session"],
   "hook.stop": ["spawned"],
   "hook.prompt": ["detection", "captured"],
 };
@@ -265,6 +265,19 @@ export function projectKey(config: LearnConfig, root: string): string | null {
     // A root that no longer exists still keys by the path the unit resolved.
   }
   return createHmac("sha256", salt).update(real).digest("hex").slice(0, 12);
+}
+
+/**
+ * A session's key: HMAC-SHA-256 of the id its host gives it, under the install
+ * salt, 16 hex. The session-start span carries it and the episode builder
+ * derives it again from the session's own record, so what a session was shown
+ * joins to how it turned out without the id entering telemetry.
+ */
+export function sessionKey(config: LearnConfig, hostSessionId: string): string | null {
+  if (hostSessionId === "") return null;
+  const salt = installSalt(config);
+  if (salt === null) return null;
+  return createHmac("sha256", salt).update(`session:${hostSessionId}`).digest("hex").slice(0, 16);
 }
 
 /** `spans.jsonl` -> `spans.1.jsonl`, `.pipeline.log` -> `.pipeline.1.log`. */

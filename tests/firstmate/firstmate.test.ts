@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
 import { checkPatchApplied } from "../../src/firstmate/checks.ts";
+import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { install, remove } from "../../src/firstmate/install.ts";
 import { pinBundle, treeHash } from "../../src/firstmate/pin.ts";
 import { preflight } from "../../src/firstmate/preflight.ts";
@@ -600,6 +601,69 @@ describe("the ak firstmate command", () => {
     ]);
     expect(r.code).toBe(1);
     expect(r.out.join("\n")).toMatch(/FAIL\s+upstream-commit/);
+    expect(r.err).toEqual([expect.stringMatching(/^deprecated:/)]);
+  });
+
+  test("deprecated bind refuses stock delivery modes without writing a binding", () => {
+    const { home, project } = env();
+    for (const mode of ["no-mistakes", "direct-PR"]) {
+      const binding = join(home, `data/${mode}/binding.json`);
+      const r = run([
+        "firstmate",
+        "bind",
+        "--fm-home",
+        home,
+        "--task-id",
+        mode,
+        "--project",
+        project,
+        "--mode",
+        mode,
+        "--binding-out",
+        binding,
+      ]);
+      expect(r.code).toBe(1);
+      expect(r.out).toEqual([]);
+      expect(existsSync(binding)).toBe(false);
+      expect(r.err.at(-1)).toMatch(/^deprecated:/);
+      expect(r.err.join("\n")).toContain("ak firstmate preflight");
+      expect(r.err.join("\n")).toContain("supervisor");
+      expect(r.err.join("\n")).toContain("bypass check");
+      expect(r.err.join("\n")).not.toMatch(/bypass grant --/);
+    }
+  });
+
+  test("deprecated legacy commands append exactly one final stderr line", () => {
+    const { home, project } = env();
+    for (const args of [
+      [
+        "bind",
+        "--fm-home",
+        home,
+        "--task-id",
+        "T-1",
+        "--project",
+        project,
+        "--mode",
+        "agent-kit",
+        "--binding-out",
+        join(home, "data/T-1/binding.json"),
+        "--bogus",
+      ],
+      ["install", "--fm-home", home, "--bogus"],
+      ["remove", "--fm-home", home, "--bogus"],
+      ["grant", "--binding", join(home, "missing.json"), "--operation", "review.full", "--bogus"],
+      ["status", join(home, "missing.json"), "--verify", "--bogus"],
+      ["preflight", "--legacy-patched", "--fm-home", home, "--project", project, "--bogus"],
+    ]) {
+      const r = run(["firstmate", ...args]);
+      expect(r.code).toBe(2);
+      expect(r.out).toEqual([]);
+      expect(r.err.filter((line) => line.startsWith("deprecated:"))).toHaveLength(1);
+      expect(r.err.at(-1)).toMatch(/^deprecated:/);
+    }
+    const stock = run(["firstmate", "preflight", "--fm-home", home, "--project", project, "--bogus"]);
+    expect(stock.err.some((line) => line.startsWith("deprecated:"))).toBe(false);
   });
 
   test("status reads a binding file and prints one line", () => {
@@ -626,5 +690,50 @@ describe("the ak firstmate command", () => {
   test("an unknown flag is an error, never ignored", () => {
     const r = run(["firstmate", "status", "x.json", "complete", "--bogus", "1"]);
     expect(r.code).toBe(2);
+  });
+});
+
+function call(argv: string[]) {
+  const err: string[] = [];
+  const code = runFirstmate(argv, { out: () => {}, err: (line) => err.push(line) });
+  return { code, first: err[0] };
+}
+
+describe("ak firstmate refuses an unknown selector with what it accepts", () => {
+  test("subcommand", () => {
+    expect(call(["sttaus"])).toEqual({
+      code: 2,
+      first: "ak firstmate: unknown subcommand 'sttaus'; did you mean status?",
+    });
+  });
+
+  test("host", () => {
+    expect(call(["preflight", "--host", "codx"])).toEqual({
+      code: 2,
+      first: "ak firstmate: --host: unknown host 'codx'; did you mean codex?",
+    });
+  });
+
+  test("evidence store", () => {
+    expect(call(["install", "--fm-home", "/nonexistent", "--evidence", "kbb", "--evidence-location", "x"])).toEqual({
+      code: 2,
+      first: "ak firstmate: --evidence: unknown store 'kbb'; did you mean kb?",
+    });
+  });
+
+  test("delivery mode", () => {
+    const brief = ["brief", "--run", "r", "--charter", "c", "--runner-socket", "s", "--worker-token", "t"];
+    expect(call([...brief, "--delivery", "direct-pr"])).toEqual({
+      code: 2,
+      first:
+        "ak firstmate brief: --delivery must be a stock Firstmate mode: unknown mode 'direct-pr'; did you mean direct-PR?",
+    });
+  });
+
+  test("status outcome", () => {
+    expect(call(["status", "/nonexistent/binding.json", "complet"])).toEqual({
+      code: 2,
+      first: "ak firstmate status: unknown outcome 'complet'; did you mean complete?",
+    });
   });
 });

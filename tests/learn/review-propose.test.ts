@@ -195,7 +195,9 @@ describe("rollback, retire and promote by hand", () => {
     expect(readFileSync(ledger.path("patterns", "rp-001.md")).equals(baseBytes.page)).toBe(true);
     expect(loadEvents(ledger).map((event) => event.text)).toEqual(["late"]);
     expect(ledger.git(["status", "--porcelain"]).stdout.trim()).toBe("");
-    expect(rollback(ledger, "not-a-revision")).toBe("unknown revision not-a-revision");
+    expect(rollback(ledger, "not-a-revision")).toMatch(
+      /^unknown revision not-a-revision; latest: [0-9a-f]{7,} rollback: restore [0-9a-f]+; [0-9a-f]{7,} ingest: \+1 events; /,
+    );
   });
 
   test("rollback --to over three commits that each appended raw events is all or nothing, in one commit", () => {
@@ -285,7 +287,11 @@ describe("rollback, retire and promote by hand", () => {
     );
     write("rp-1234567", { count: 3 });
     write("rp-003", { count: 3 });
-    expect(propose(ctx, ledger, root, 3)).toBe("promoted rp-001,rp-003,rp-1234567 to guardrails");
+    // The fixtures share one fix, so each later promotion lists the guardrails before it as resembling it.
+    expect(propose(ctx, ledger, root, 3)).toBe(
+      "promoted rp-001,rp-003,rp-1234567 to guardrails; similar rp-003 ~ rp-001 (0.75 active); " +
+        "similar rp-1234567 ~ rp-001 (0.75 active), rp-003 (0.75 active)",
+    );
     expect(guardrails(ledger)).toContain("- [rp-1234567] Do the one thing.");
     const drafts = readdirSync(ledger.path("proposals")).sort();
     expect(drafts).toEqual([
@@ -307,19 +313,23 @@ describe("rollback, retire and promote by hand", () => {
     expect(pattern.body).toContain("## Evidence");
     expect(readFileSync(ledger.path("skill-impact.md"), "utf8")).toMatch(/\| retire \| rp-001 \|/);
     expect(propose(ctx, ledger, root, 3)).toBe("nothing to promote");
-    expect(retire(ledger, "rp-404")).toBe("unknown pattern rp-404");
+    expect(retire(ledger, "rp-404")).toBe("unknown pattern 'rp-404'; did you mean rp-001?");
+    expect(retire(ledger, "rp-404", true)).toBe("unknown pattern 'rp-404'; did you mean rp-001?");
+    expect(retire(ledger, "rp-001", true)).toBe("dry run: would retire rp-001");
   });
 
   test("a human promotes one pattern whatever its count; retired and promoted patterns are refused", () => {
     const { ctx, ledger, root, write } = setup();
     write("rp-001", { count: 1, status: "candidate" });
     write("rp-002", { count: 3, status: "retired" });
-    expect(promoteById(ctx, ledger, root, "rp-001")).toBe("promoted rp-001 to guardrails");
+    expect(promoteById(ctx, ledger, root, "rp-001")).toBe(
+      "promoted rp-001 to guardrails; similar rp-001 ~ rp-002 (0.75 retired)",
+    );
     expect(guardrails(ledger)).toBe("- [rp-001] Do the one thing.\n");
     expect(ledger.git(["log", "-1", "--format=%s"]).stdout.trim()).toBe("promote: guardrails +rp-001 (by hand)");
     expect(promoteById(ctx, ledger, root, "rp-001")).toBe("rp-001 is already promoted to guardrails");
     expect(promoteById(ctx, ledger, root, "rp-002")).toBe("rp-002 is retired");
-    expect(promoteById(ctx, ledger, root, "rp-404")).toBe("unknown pattern rp-404");
+    expect(promoteById(ctx, ledger, root, "rp-404")).toBe("unknown pattern 'rp-404'; did you mean rp-001 or rp-002?");
   });
 });
 

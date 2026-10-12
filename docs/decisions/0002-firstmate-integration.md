@@ -1,6 +1,7 @@
 # ADR-0002 — Firstmate integration: agent-kit judges, no-mistakes delivers
 
-**Status:** Accepted.
+**Status:** Accepted, except §1 is superseded by ADR-0012 for no-mistakes delivery; the patched
+binding design below is deprecated legacy guidance for delivery mode `agent-kit`.
 **Date:** 2026-09-24.
 **Authority:** `research/sources/engineering-skills-repo-plan.md` §2.5, §6; rulings
 `firstmate-outer-loop-agent-kit-inner`, `no-mistakes-as-ship-transport`,

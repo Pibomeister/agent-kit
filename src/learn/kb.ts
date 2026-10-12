@@ -16,6 +16,7 @@ import { artifactHash } from "../util/hash.ts";
 import type { LearnContext } from "./core/context.ts";
 import { run } from "./core/proc.ts";
 import { scrubJsonText } from "./core/secrets.ts";
+import type { Candidate } from "./core/similar.ts";
 import { nowIso, readJson, writeJson } from "./core/store.ts";
 
 export type TriggerKind = "failure" | "correction" | "surprising-review-result";
@@ -119,8 +120,17 @@ export interface ProposalResult {
  * The draft leaves the machine here, so what is sent and what is recorded is
  * the draft after the secret gate (`core/secrets.ts`); the ledger record is
  * where the gate records the redaction.
+ *
+ * `similar` lists the ledger records the draft resembles. It is kept beside the
+ * draft in the record, for whoever reviews the proposal to amend or supersede,
+ * and never put in the draft itself.
  */
-export function proposeLesson(ctx: LearnContext, ledgerDir: string, draft: Record<string, unknown>): ProposalResult {
+export function proposeLesson(
+  ctx: LearnContext,
+  ledgerDir: string,
+  draft: Record<string, unknown>,
+  similar: readonly Candidate[] = [],
+): ProposalResult {
   const id = String(draft.id);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) || id.includes(".."))
     throw new Error(`proposal id is not a file name: ${JSON.stringify(id)}`);
@@ -129,6 +139,7 @@ export function proposeLesson(ctx: LearnContext, ledgerDir: string, draft: Recor
   if (previous?.kb_ref) return { ref: previous.kb_ref, delivered: true };
 
   const record: Record<string, unknown> = { draft, proposed_at: nowIso() };
+  if (similar.length > 0) record.similar = similar;
   const command = ctx.env.AK_LEARN_KB_COMMAND;
   let result: ProposalResult = { ref: `ledger:proposals/${id}.json`, delivered: false };
   if (command !== undefined && command.trim() !== "" && !ctx.config.dryRun) {

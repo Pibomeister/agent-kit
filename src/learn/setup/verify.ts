@@ -8,7 +8,7 @@ import { splitCommand } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { type Loop, loopDir, mainRepoRoot } from "../core/paths.ts";
 import { readJson } from "../core/store.ts";
-import { readRegistry } from "../memory/registry.ts";
+import { readRegistry, unknownRepo } from "../memory/registry.ts";
 import { judgeBinary } from "./doctor.ts";
 import { LABEL, schedulerKind, unitArgv, unitPaths } from "./schedule.ts";
 import { fileScope, scopeText, unitScopeDiffers } from "./scope.ts";
@@ -76,7 +76,7 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
     const codex = readJson<HookDoc>(codexHooks, {});
     hookLines.push(...ourHookCommands(codex));
     for (const [event, verb] of [
-      ["SessionStart", "session-start"],
+      ["SessionStart", "session-start --source codex"],
       ["UserPromptSubmit", "prompt"],
       ["Stop", "stop --source codex"],
     ] as const) {
@@ -135,7 +135,9 @@ export function verifyChecks(ctx: LearnContext, deps: SetupDeps, repo?: string):
   const roots: string[] = [];
   if (repo !== undefined) {
     const start = resolve(ctx.cwd, repo);
-    roots.push(mainRepoRoot(start) ?? start);
+    const root = mainRepoRoot(start);
+    if (root === null) check("repository", false, `not inside a git repository: ${unknownRepo(ctx.config, start)}`);
+    roots.push(root ?? start);
   } else {
     roots.push(...Object.values(readRegistry(ctx.config)).map((entry) => entry.root));
   }

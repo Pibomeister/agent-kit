@@ -16,11 +16,12 @@ function stockHome() {
 describe("stock Firstmate adapter", () => {
   test("preflight passes without patches, a pinned Firstmate commit or auto_fix zeros", () => {
     const home = stockHome();
-    const project = makeProject("commands:\n  test: bun test\n");
+    const project = makeProject("commands:\n  test: bun test\nauto_fix:\n  test: 3\n  lint: 3\n  ci: 3\n");
     const bundle = makeBundle();
     const result = preflightStock(home, project, "codex", REPO, bundle);
     expect(result.ok).toBe(true);
     expect(result.mode).toBe("guided");
+    expect(result.checks.some((check) => check.id === "no-mistakes-auto-fix")).toBe(false);
     expect(result.checks.map((check) => check.id)).toEqual([
       "stock-firstmate",
       "project",

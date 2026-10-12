@@ -5,9 +5,12 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { loadCatalog } from "../src/catalog/load.ts";
+import { parseFrontmatter } from "../src/util/frontmatter.ts";
+import { splitSections } from "../src/validation/bodies.ts";
+import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { checkCompleteness } from "../src/validation/completeness.ts";
-import { HOST_IDS, RESTRICTIONS, loadHostCapabilities } from "../src/packaging/hosts.ts";
+import { HOST_IDS, RESTRICTIONS, explicitStartPattern, loadHostCapabilities } from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
 import {
   INSTALL_FILE,
@@ -16,7 +19,7 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
-import { planBundle } from "../src/packaging/plan.ts";
+import { BUILD_RECORD_FILE, inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
 import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
@@ -132,7 +135,24 @@ const BASE: Record<string, string> = {
     "skill in guided/manual mode and rejects autonomous mode.",
     "",
   ].join("\n"),
-  "skills/alpha/SKILL.md": `${HEAD("alpha")}\nFollow [tdd](../../protocols/tdd/PROTOCOL.md).\n`,
+  "skills/alpha/SKILL.md": `---
+name: alpha
+description: >-
+  Human-started command: it runs only when the human's message begins with \`/ak:alpha\`. On any
+  other request do not load or follow it; tell the human to type that command.
+---
+
+Follow [tdd](../../protocols/tdd/PROTOCOL.md).
+
+## Authority
+
+A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose is not a start.
+
+## Workflow
+
+1. Check how this run was started. It is started only when the human's message begins with
+   \`/ak:alpha\`. Otherwise stop, name the command and do nothing else.
+`,
   "skills/alpha/skill.yaml":
     "id: alpha\nversion: 0.1.0\ninvocation: U\nargument_hint: <ticket>\nallowed_tools: [Read, Grep]\n",
   "skills/beta/SKILL.md": `${HEAD("beta")}\nPlain body.\n`,
@@ -152,7 +172,35 @@ const BASE: Record<string, string> = {
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
+  // Stubs for the licence texts bin/ak inlines. The real texts are read from
+  // the installed packages; these exist so a fixture can still build.
+  "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
+  "node_modules/ajv-formats/LICENSE": "Copyright (c) 2020 Evgeny Poberezkin\n",
+  "node_modules/fast-deep-equal/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\nfast-deep-equal\n",
+  "node_modules/fast-uri/LICENSE": "Copyright (c) 2011-2021 Gary Court\n",
+  "node_modules/json-schema-traverse/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\njson-schema-traverse\n",
+  "node_modules/yaml/LICENSE": "Copyright Eemeli Aro\n",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
+  "provenance/licenses/thedotmack_claude-mem.NOTICE": "Claude-Mem\nCopyright 2026 Alex Newman\n",
 };
+
+/**
+ * Source path, then the path inside the bundle. npm licences are not shipped
+ * from `node_modules/`: that directory is gitignored and the packager's walk
+ * skips it, so a copy there would not be in the distribution.
+ */
+const REQUIRED_LICENCES: ReadonlyArray<readonly [string, string]> = [
+  ["NOTICE", "NOTICE"],
+  ["LICENSE", "LICENSE"],
+  ["node_modules/ajv/LICENSE", "LICENSES/ajv.LICENSE"],
+  ["node_modules/ajv-formats/LICENSE", "LICENSES/ajv-formats.LICENSE"],
+  ["node_modules/fast-deep-equal/LICENSE", "LICENSES/fast-deep-equal.LICENSE"],
+  ["node_modules/fast-uri/LICENSE", "LICENSES/fast-uri.LICENSE"],
+  ["node_modules/json-schema-traverse/LICENSE", "LICENSES/json-schema-traverse.LICENSE"],
+  ["node_modules/yaml/LICENSE", "LICENSES/yaml.LICENSE"],
+  ["provenance/licenses/thedotmack_claude-mem.LICENSE", "provenance/licenses/thedotmack_claude-mem.LICENSE"],
+  ["provenance/licenses/thedotmack_claude-mem.NOTICE", "provenance/licenses/thedotmack_claude-mem.NOTICE"],
+];
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   const files = Object.fromEntries(Object.entries({ ...BASE, ...overrides }).filter(([key]) => !drop.includes(key)));
@@ -168,13 +216,26 @@ function recordOf(plan: ReturnType<typeof planBundle>) {
   // manifest when the two hosts stopped sharing one. Fixed, it would have gone
   // on reading `{}` for every codex plan and every assertion on it would have
   // been an assertion about an empty object.
-  const dir = plan.host === "codex" ? ".codex-plugin" : ".claude-plugin";
-  return JSON.parse(plan.files.get(`${dir}/ak.json`)?.contents ?? "{}");
+  return JSON.parse(plan.files.get(BUILD_RECORD_FILE[plan.host])?.contents ?? "{}");
+}
+
+function packagedSkillText(plan: ReturnType<typeof planBundle>, id: string): string {
+  const text = plan.files.get(`skills/${id}/SKILL.md`)?.contents;
+  if (text === undefined) throw new Error(`${plan.host} did not package ${id}`);
+  return text;
+}
+
+function packagedSkill(plan: ReturnType<typeof planBundle>, id: string) {
+  return parseFrontmatter(packagedSkillText(plan, id));
+}
+
+function packagedSkillPaths(plan: ReturnType<typeof planBundle>): string[] {
+  return [...plan.files.keys()].filter((path) => /^skills\/[^/]+\/SKILL.md$/.test(path));
 }
 
 describe("host capability honesty", () => {
-  test("both hosts are declared and the restriction vocabulary is closed", () => {
-    expect([...HOST_IDS]).toEqual(["claude-code", "codex"]);
+  test("supported hosts are declared and the restriction vocabulary is closed", () => {
+    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi", "droid"]);
     expect([...RESTRICTIONS]).toContain("no-model-invocation");
     expect([...RESTRICTIONS]).toContain("tool-allowlist-enforced");
   });
@@ -224,10 +285,66 @@ describe("the licence files the distribution is obliged to carry", () => {
     const ctx = ctxFor();
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
-      for (const name of ["NOTICE", "LICENSE"]) {
-        expect(`${host}:${name}=${plan.files.get(name)?.contents}`).toBe(`${host}:${name}=${BASE[name]}`);
+      for (const [source, path] of REQUIRED_LICENCES) {
+        expect(`${host}:${path}=${plan.files.get(path)?.contents}`).toBe(`${host}:${path}=${BASE[source]}`);
       }
     }
+  });
+
+  test("a bundle missing any inlined component's licence file fails rather than shipping without it", () => {
+    for (const [source, path] of REQUIRED_LICENCES) {
+      if (source === "NOTICE" || source === "LICENSE") continue;
+      const plan = planBundle(ctxFor({}, [source]), "claude-code", {});
+      const issue = plan.issues.find((i) => i.rule === "packaging.licence-file-missing" && i.file === source);
+      expect(`${source}:${issue?.severity}`).toBe(`${source}:error`);
+      expect(plan.files.has(path)).toBe(false);
+    }
+  });
+
+  test("bin/ak inlining a package that has no licence row fails the build", () => {
+    const plan = planBundle(
+      ctxFor({
+        "src/maintenance/cli.ts": 'import pad from "left-pad";\nconsole.log(pad("x"));\n',
+        "node_modules/left-pad/package.json": '{"name":"left-pad","main":"index.js"}\n',
+        "node_modules/left-pad/index.js": "module.exports = (s) => ` ${s}`;\n",
+        "node_modules/left-pad/LICENSE": "WTFPL\n",
+      }),
+      "claude-code",
+      {},
+    );
+    const missing = plan.issues
+      .filter((i) => i.rule === "packaging.licence-file-missing")
+      .map((i) => `${i.file}:${i.severity}`);
+    expect(missing).toEqual(["node_modules/left-pad:error"]);
+    expect(plan.files.has("bin/ak")).toBe(true);
+  }, 30_000);
+
+  test("bin/ak whose metafile names no package fails the build", () => {
+    const plan = planBundle(
+      ctxFor({
+        "src/maintenance/cli.ts": 'console.log("ok");\n',
+      }),
+      "claude-code",
+      {},
+    );
+    const issue = plan.issues.find((i) => i.rule === "packaging.inlined-set-unproven");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.file).toBe("src/maintenance/cli.ts");
+  }, 30_000);
+
+  test("an empty inputs object and inputs that match no package are not a proven inlined set", () => {
+    expect(inlinedSetFromMetafile(JSON.stringify({ inputs: {} }))).toBeNull();
+    expect(
+      inlinedSetFromMetafile(JSON.stringify({ inputs: { "/repo/src/maintenance/cli.ts": { bytes: 12 } } })),
+    ).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify(null))).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify({}))).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify({ inputs: null }))).toBeNull();
+    expect(inlinedSetFromMetafile(JSON.stringify({ inputs: [] }))).toBeNull();
+    expect(inlinedSetFromMetafile("not json")).toBeNull();
+    expect(
+      inlinedSetFromMetafile(JSON.stringify({ inputs: { "/repo/node_modules/left-pad/index.js": { bytes: 20 } } })),
+    ).toEqual(["left-pad"]);
   });
 
   test("a tree with no LICENSE fails the build rather than shipping a distribution without one", () => {
@@ -252,6 +369,23 @@ describe("the licence files the distribution is obliged to carry", () => {
     const plan = planBundle(ctxFor({}, ["LICENSE"]), "claude-code", {});
     expect(plan.files.has("LICENSE")).toBe(false);
     expect(plan.files.has("NOTICE")).toBe(true);
+  });
+
+  test("the built standalone bin/ak contains each required licence and notice text", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repo catalog did not load");
+    const script = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get("bin/ak")?.contents ?? "";
+    expect(script.startsWith("#!/usr/bin/env bun\n")).toBe(true);
+    const missing: string[] = [];
+    for (const [source, path] of REQUIRED_LICENCES) {
+      const text = readFileSync(join(REPO, source), "utf8").replace(/\n$/, "");
+      if (!script.includes(`// --- ${path} ---`)) missing.push(`${path}: heading`);
+      for (const line of text.split("\n")) {
+        const needle = line.length === 0 ? "//" : `// ${line}`;
+        if (!script.includes(needle)) missing.push(`${path}: ${JSON.stringify(line)}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   test("the failure names the file that is missing, not the pair", () => {
@@ -288,7 +422,8 @@ describe("bundle planning", () => {
     const plan = planBundle(ctxFor(), "claude-code", {});
     const alpha = plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
     expect(alpha).toContain("name: alpha");
-    expect(alpha).toContain("description: Use when asked.");
+    expect(alpha).toContain('description: "Human-started command:');
+    expect(alpha).toContain("human's message begins with `/ak:alpha`");
   });
 
   test("plugin.json enumerates skills explicitly in catalog order rather than globbing", () => {
@@ -1263,20 +1398,31 @@ describe("the two host bundles, compared", () => {
     expect(skillIdsIn(claude)).toEqual(["alpha", "beta"]);
   });
 
-  test("the same skill body reaches both bundles; only the generated frontmatter differs", () => {
-    // Contract §5.1, bundle parity. The canonical tree is host-neutral, which is
-    // the whole reason host keys are generated rather than written, so a body
-    // that differs between bundles means something edited content on the way to
-    // one host.
+  test("a U skill's canonical command is rendered in each host's native explicit-start form", () => {
+    // The source carries one authority literal, derived from the catalog's
+    // namespace. Packaging is the adapter boundary: Claude Code keeps that
+    // namespaced command, while Codex receives the leading skill mention its
+    // host recognizes. The refusal sentence is deliberately asserted on both
+    // sides; translating the positive marker must not turn prose into a start.
     const { claude, codex } = bundles();
     const bodyOf = (plan: ReturnType<typeof planBundle>, id: string) =>
       (plan.files.get(`skills/${id}/SKILL.md`)?.contents ?? "").replace(/^---\n[\s\S]*?\n---\n/, "");
-    for (const id of ["alpha", "beta"]) {
-      expect(bodyOf(claude, id)).not.toBe("");
-      expect(`${id}:${bodyOf(codex, id)}`).toBe(`${id}:${bodyOf(claude, id)}`);
-    }
-    // And the frontmatter genuinely is generated per host, so the equality above
-    // is a statement about bodies rather than about two identical files.
+    const alphaInClaude = claude.files.get("skills/alpha/SKILL.md")?.contents ?? "";
+    const alphaInCodex = codex.files.get("skills/alpha/SKILL.md")?.contents ?? "";
+
+    expect(alphaInClaude.match(/`\/ak:alpha`/g)?.length).toBe(3);
+    expect(alphaInClaude).not.toContain("`$ak:alpha`");
+    expect(alphaInCodex.match(/`\$ak:alpha`/g)?.length).toBe(3);
+    expect(alphaInCodex).not.toContain("`/ak:alpha`");
+    expect(bodyOf(claude, "alpha")).toContain("A request in prose is not a start.");
+    expect(bodyOf(codex, "alpha")).toContain("A request in prose is not a start.");
+
+    // M skills have no explicit-start gate for the packager to translate, so
+    // automatic loading keeps the canonical body unchanged.
+    expect(bodyOf(codex, "beta")).toBe(bodyOf(claude, "beta"));
+    expect(bodyOf(codex, "beta")).toContain("Plain body.");
+
+    // Frontmatter remains generated per host independently of body rewriting.
     const claudeAlpha = claude.files.get("skills/alpha/SKILL.md")?.contents ?? "";
     expect(claudeAlpha).toContain("allowed-tools:");
     expect(codex.files.get("skills/alpha/SKILL.md")?.contents ?? "").not.toContain("allowed-tools:");
@@ -1299,6 +1445,32 @@ describe("the two host bundles, compared", () => {
    * does the work on that host is §3.1's description clause, which this package
    * does not generate yet.
    */
+  test("a skill-local reference and a shared dependency name a U command in the same form as the gate", () => {
+    // ADR-0011: the rendering covers a U command wherever it occurs in a
+    // packaged skill. A reference that keeps the canonical spelling recommends
+    // a start the codex gate beside it refuses.
+    const ctx = ctxFor({
+      "skills/alpha/references/setup.md": "Remind the human to run `/ak:alpha`.\n",
+      "protocols/tdd/PROTOCOL.md": "# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n",
+      "skills/alpha/assets/note.md": "Only the exact lowercase command is one: `/AK:Alpha` is prose.\n",
+    });
+    const claude = planBundle(ctx, "claude-code", {});
+    const codex = planBundle(ctx, "codex", {});
+    const shared = "references/shared/protocols/tdd/PROTOCOL.md";
+
+    expect(codex.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Remind the human to run `$ak:alpha`.\n",
+    );
+    expect(codex.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `$ak:alpha`, not `/ak:alpha-next`.\n");
+    expect(claude.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Remind the human to run `/ak:alpha`.\n",
+    );
+    expect(claude.files.get(shared)?.contents).toBe("# TDD\n\nStarted by `/ak:alpha`, not `/ak:alpha-next`.\n");
+    expect(codex.files.get("skills/alpha/assets/note.md")?.contents).toBe(
+      "Only the exact lowercase command is one: `/AK:Alpha` is prose.\n",
+    );
+  });
+
   test("neither host's own frontmatter keys leak into the other host's bundle", () => {
     const { claude, codex } = bundles();
     const alphaIn = (plan: ReturnType<typeof planBundle>) => plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
@@ -1332,6 +1504,139 @@ describe("the two host bundles, compared", () => {
     // contents are two separate claims and only one of them is a filename.
     expect(recordOf(codex).host.id).toBe("codex");
     expect(recordOf(claude).host.id).toBe("claude-code");
+  });
+});
+
+describe("portable explicit-start authority in the real catalog", () => {
+  const loaded = loadCatalog(REPO);
+  if (loaded.catalog === null) throw new Error("repository has no catalog");
+  const catalog = loaded.catalog;
+  const ctx = { root: REPO, catalog };
+  const claude = planBundle(ctx, "claude-code", { profile: "all" });
+  const codex = planBundle(ctx, "codex", { profile: "all" });
+  const droid = planBundle(ctx, "droid", { profile: "all" });
+
+  test("every U skill names the native typed start in its description and stop-first workflow step", () => {
+    for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "U")) {
+      const canonical = `${catalog.package.namespace}${entry.id}`;
+      for (const [plan, command] of [
+        [claude, canonical],
+        [codex, `$ak:${entry.id}`],
+        [droid, `/${entry.id}`],
+      ] as const) {
+        const text = packagedSkillText(plan, entry.id);
+        const parsed = packagedSkill(plan, entry.id);
+        const frontmatter = /^---\n[\s\S]*?\n---\n/.exec(text)?.[0] ?? "";
+        expect(frontmatter).toContain(command);
+        expect(frontmatter).toMatch(/human-started/i);
+        const workflow = splitSections(parsed.body).find((section) => section.heading === "## Workflow");
+        const first = workflow === undefined ? null : firstNumberedItem(workflow.text);
+        expect(
+          `${plan.host}:${entry.id}:first-step:${first !== null && first.text.includes(command) && /\bstop\b/i.test(first.text)}`,
+        ).toBe(`${plan.host}:${entry.id}:first-step:true`);
+      }
+
+      expect(packagedSkill(codex, entry.id).data["description"]).not.toContain(canonical);
+    }
+  });
+
+  test("translated bundles retain no canonical U command under skills or shared references", () => {
+    const userIds = catalog
+      .bySection("skills")
+      .filter((skill) => skill.invocation === "U")
+      .map((skill) => skill.id);
+    const canonicalStart = explicitStartPattern(userIds.map((id) => `${catalog.package.namespace}${id}`));
+    for (const plan of [codex, droid]) {
+      const offenders = [...plan.files.values()].flatMap((file) =>
+        /^(?:skills|references)\//.test(file.path) && file.contents.search(canonicalStart) !== -1 ? [file.path] : [],
+      );
+      expect(offenders).toEqual([]);
+    }
+
+    const setup = codex.files.get("skills/product-pulse/references/setup.md")?.contents ?? "";
+    expect(setup).toContain("`$ak:product-pulse`");
+    expect(claude.files.get("skills/product-pulse/references/setup.md")?.contents).toContain("`/ak:product-pulse`");
+  });
+
+  test("Droid declares every codex limit of every skill and packages each one manual", () => {
+    const codexLimits = new Map(
+      codex.decisions.map((decision) => [
+        decision.skill,
+        decision.unenforceable.map((limit) =>
+          limit.replace("`adapters/codex/CONTRACT.md` §3.1", "`adapters/droid/CONTRACT.md` §2"),
+        ),
+      ]),
+    );
+    for (const decision of droid.decisions) {
+      const limits = codexLimits.get(decision.skill);
+      if (limits === undefined) continue;
+      const ak = limits.length === 0 ? { mode: "manual" } : { mode: "manual", autonomy_unenforceable: limits };
+      expect({ skill: decision.skill, data: packagedSkill(droid, decision.skill).data }).toMatchObject({
+        skill: decision.skill,
+        data: { metadata: { ak } },
+      });
+    }
+    expect(codexLimits.get("super-verify")).toContain(
+      "independent-context and trusted-evidence are not provided by the host. The attached runner supplies them fail-closed; without it this skill is guided and receipts are host-unattested.",
+    );
+  });
+
+  test("M skill trigger descriptions are unchanged, so automatic loading remains available", () => {
+    for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "M")) {
+      const source = parseFrontmatter(readFileSync(join(REPO, "skills", entry.id, "SKILL.md"), "utf8"));
+      expect(packagedSkill(claude, entry.id).data["description"]).toBe(source.data["description"]);
+      expect(packagedSkill(codex, entry.id).data["description"]).toBe(source.data["description"]);
+      expect(packagedSkill(droid, entry.id).data["description"]).toBe(source.data["description"]);
+    }
+  });
+});
+
+describe("Droid packaging", () => {
+  test("a native bundle preserves profile membership and identifies its own host", () => {
+    const ctx = ctxFor();
+    const plan = planBundle(ctx, "droid", {});
+    expect(HOST_IDS).toContain("droid");
+    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const manifest: unknown = JSON.parse(plan.files.get(".factory-plugin/plugin.json")?.contents ?? "{}");
+    expect(manifest).toMatchObject({ name: "ak", version: "0.1.0", license: "MIT" });
+    expect(manifest).not.toHaveProperty("skills");
+    expect(manifest).not.toHaveProperty("experimental");
+    const marketplace: unknown = JSON.parse(plan.files.get(".factory-plugin/marketplace.json")?.contents ?? "{}");
+    expect(marketplace).toMatchObject({ plugins: [{ name: "ak", source: "./" }] });
+    expect(plan.files.has(".claude-plugin/marketplace.json")).toBe(false);
+    const record: unknown = JSON.parse(plan.files.get(".factory-plugin/ak.json")?.contents ?? "{}");
+    expect(record).toMatchObject({ host: { id: "droid", enforces: [] } });
+    expect(packagedSkillPaths(plan)).toEqual(packagedSkillPaths(planBundle(ctx, "claude-code", {})));
+    expect(packagedSkillPaths(plan)).toEqual(["skills/alpha/SKILL.md", "skills/beta/SKILL.md"]);
+  });
+
+  test("native U markers reach all instructions without broadening starts or suppressing M skills", () => {
+    const ctx = ctxFor({
+      "skills/alpha/references/setup.md": "Type `/ak:alpha`; `/ak:alpha-next` is different.\n",
+      "skills/alpha/assets/note.md": "Type `/ak:alpha`; `/AK:Alpha` is prose.\n",
+      "protocols/tdd/PROTOCOL.md": "# TDD\n\nStarted by `/ak:alpha`, not `/ak:beta`.\n",
+    });
+    const plan = planBundle(ctx, "droid", {});
+    const alpha = packagedSkillText(plan, "alpha");
+    expect(alpha.match(/`\/alpha`/g)?.length).toBe(3);
+    expect(alpha).not.toContain("/ak:alpha");
+    expect(alpha).toContain("A request in prose is not a start.");
+    expect(plan.files.get("skills/alpha/references/setup.md")?.contents).toBe(
+      "Type `/alpha`; `/ak:alpha-next` is different.\n",
+    );
+    expect(plan.files.get("skills/alpha/assets/note.md")?.contents).toBe("Type `/alpha`; `/AK:Alpha` is prose.\n");
+    expect(plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents).toBe(
+      "# TDD\n\nStarted by `/alpha`, not `/ak:beta`.\n",
+    );
+    for (const id of ["alpha", "beta"]) {
+      const data = packagedSkill(plan, id).data;
+      expect(data["disable-model-invocation"]).toBeUndefined();
+      expect(data["user-invocable"]).toBeUndefined();
+      expect(data["argument-hint"]).toBeUndefined();
+    }
+    expect(alpha).toContain("allowed-tools:");
+    expect(packagedSkill(plan, "beta").body).toBe(packagedSkill(planBundle(ctx, "claude-code", {}), "beta").body);
+    expect([...loadHostCapabilities(ctx.root, "droid").enforces]).toEqual([]);
   });
 });
 
@@ -2156,12 +2461,12 @@ describe("the adapters an install attaches, and what they lift", () => {
     expect(rules(plan)).not.toContain("packaging.mode-capped");
   });
 
-  test("trusted-evidence is a valid capability whose runner supply lifts the build ceiling on both hosts", () => {
+  test("trusted-evidence is a valid capability whose runner supply lifts the build ceiling on all hosts", () => {
     const files = {
       "adapters/runner-contract/CONTRACT.md": supplyTable([
         "| `trusted-evidence` | `fails-closed` | Refuses autonomous evidence consumption |",
       ]),
-      "skills/beta/skill.yaml": `${requiring(["trusted-evidence"])["skills/beta/skill.yaml"]}    - adapter: codex\n      mode: autonomous\n`,
+      "skills/beta/skill.yaml": `${requiring(["trusted-evidence"])["skills/beta/skill.yaml"]}    - adapter: codex\n      mode: autonomous\n    - adapter: kimi\n      mode: autonomous\n    - adapter: droid\n      mode: autonomous\n`,
     };
     for (const host of HOST_IDS) {
       const withRunner = planBundle(ctxWith([], undefined, files), host, {});
@@ -2408,5 +2713,77 @@ describe("tracker-access follows the system-of-record chain", () => {
       "ak.install.yaml: attached tracker; tracker: backend some-tracker",
     );
     expect(summaryFor("attached: [knowledgebase]\n")).toBe("ak.install.yaml: attached knowledgebase");
+  });
+});
+
+describe("Kimi native bundle", () => {
+  test("registers the shared skill tree with only native manifest fields", () => {
+    const plan = planBundle(ctxFor(), "kimi", {});
+    expect(plan.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const manifest: unknown = JSON.parse(plan.files.get(".kimi-plugin/plugin.json")?.contents ?? "{}");
+    expect(manifest).toEqual({
+      name: "ak",
+      version: "0.1.0",
+      description: "What the host is told, which is a different sentence again.",
+      author: { name: "agent-kit maintainers" },
+      license: "MIT",
+      skills: "./skills/",
+    });
+    expect(plan.files.has(".kimi-plugin/ak.json")).toBe(true);
+    expect(
+      [...plan.files.keys()].some(
+        (path) => path.startsWith(".claude-plugin/") || path.startsWith(".codex-plugin/") || path.startsWith("evals/"),
+      ),
+    ).toBe(false);
+  });
+
+  test("renders U authority and references as native skill commands without changing M content", () => {
+    const ctx = ctxFor({
+      "skills/alpha/references/start.md":
+        "Type /ak:alpha. Ordinary prose is not a start. /ak:alpha-extra stays intact.\n",
+      "protocols/tdd/PROTOCOL.md": "Type /ak:alpha; keep /ak:beta automatic.\n",
+    });
+    const plan = planBundle(ctx, "kimi", {});
+    const source = plan.files.get("skills/alpha/SKILL.md")?.contents ?? "";
+    const fm = parseFrontmatter(source);
+    expect(fm.data["description"]).toContain("begins with `/skill:alpha`");
+    expect(fm.data["description"]).toContain("On any other request do not load or follow it");
+    expect(source).toContain("A request in prose is not a start.");
+    expect(source).toContain("Otherwise stop, name the command and do nothing else.");
+    expect(source).not.toContain("/ak:alpha");
+    expect(fm.data["disable-model-invocation"]).toBeUndefined();
+    expect(fm.data["allowed-tools"]).toBeUndefined();
+    expect(fm.data["argument-hint"]).toBeUndefined();
+    expect(plan.decisions.find((d) => d.skill === "alpha")?.mode).toBe("manual");
+    expect(plan.files.get("skills/alpha/references/start.md")?.contents).toBe(
+      "Type /skill:alpha. Ordinary prose is not a start. /ak:alpha-extra stays intact.\n",
+    );
+    expect(plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents).toBe(
+      "Type /skill:alpha; keep /ak:beta automatic.\n",
+    );
+    expect(plan.files.get("skills/beta/SKILL.md")?.contents).toBe(
+      planBundle(ctx, "codex", {}).files.get("skills/beta/SKILL.md")?.contents,
+    );
+  });
+
+  test("all-profile skill modes and membership match existing capability decisions", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    const ctx = { root: REPO, catalog };
+    const kimi = planBundle(ctx, "kimi", { profile: "all" });
+    const codex = planBundle(ctx, "codex", { profile: "all" });
+    expect(kimi.decisions).toEqual(codex.decisions);
+    const caps = loadHostCapabilities(REPO, "kimi");
+    expect(caps.declared).toBe(true);
+    expect([...caps.enforces]).toEqual([]);
+    for (const entry of catalog.bySection("skills").filter((skill) => skill.invocation === "U")) {
+      const text = kimi.files.get(`skills/${entry.id}/SKILL.md`)?.contents ?? "";
+      const workflow = splitSections(parseFrontmatter(text).body).find((section) => section.heading === "## Workflow");
+      const first = workflow === undefined ? null : firstNumberedItem(workflow.text);
+      expect(first?.text).toContain(`/skill:${entry.id}`);
+      expect(first?.text).toMatch(/stop/i);
+      expect(text).toContain(`/skill:${entry.id}`);
+      expect(text).not.toContain("disable-model-invocation:");
+    }
   });
 });

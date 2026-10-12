@@ -12,7 +12,7 @@ import { repoAllowed } from "./core/config.ts";
 import { flag, type LearnArea, type LearnArgs, type LearnContext } from "./core/context.ts";
 import { mainRepoRoot } from "./core/paths.ts";
 import { tokens } from "./core/store.ts";
-import { span } from "./core/trace.ts";
+import { sessionKey, span } from "./core/trace.ts";
 import { type CarrierHost, claim, delivered, isCarrierHost, rearm } from "./memory/delivery.ts";
 import { sessionRoot, sessionStartBlock, sessionStartBlockWithin } from "./memory/session-context.ts";
 import { payloadCwd, promptHook, stopHook } from "./review/hooks.ts";
@@ -69,9 +69,13 @@ function guarded(label: HookLabel, ctx: LearnContext, body: (ctx: LearnContext) 
 
 /**
  * What the session was shown, read back from the printed block: guardrail
- * bullets open with `- [rp-N]`, lesson rows end with `[ls-N]`.
+ * bullets open with `- [rp-N]`, lesson rows end with `[ls-N]`. The span also
+ * carries the session's key when the host named the session, which is what
+ * the episode builder joins on (`memory/exposure.ts`).
  */
-function recordExposure(ctx: LearnContext, block: string): void {
+function recordExposure(ctx: LearnContext, block: string, hostSessionId: string | undefined): void {
+  const session = sessionKey(ctx.config, hostSessionId ?? "");
+  if (session !== null) ctx.span?.attr("session", session);
   const guardrails = [...block.matchAll(/^- \[(rp-\d{1,6})\]/gm)].map((match) => match[1] ?? "");
   const lessons = [...block.matchAll(/\[(ls-\d{1,6})\]$/gm)].map((match) => match[1] ?? "");
   ctx.span?.attr("shown", [...guardrails, ...lessons]);
@@ -152,7 +156,7 @@ function carrierHook(ctx: LearnContext, host: CarrierHost, payload: SessionPaylo
     const block = carrier.block(traced).trimEnd();
     const printed = claim(traced.config, host, sessionId) ? block : "";
     if (printed !== "") traced.io.out(carrier.render(printed));
-    recordExposure(traced, printed);
+    recordExposure(traced, printed, sessionId);
   });
 }
 
@@ -169,9 +173,10 @@ function sessionStartHook(args: LearnArgs, ctx: LearnContext): void {
     return;
   }
   span(session, "hook.session-start", "hook", (traced) => {
-    const block = sessionStartBlock(traced);
+    const source = flag(args, "source");
+    const block = sessionStartBlock(traced, source === "codex" || source === "droid" ? source : undefined);
     if (block.trim() !== "") traced.io.out(block.trimEnd());
-    recordExposure(traced, block);
+    recordExposure(traced, block, payload.session_id ?? payload.sessionId);
   });
 }
 
@@ -180,7 +185,7 @@ export const hookArea: LearnArea = {
   verbs: {
     "session-start": {
       usage:
-        "hook session-start [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --host: once per session, --arm: allow it again",
+        "hook session-start [--source codex|droid] [--host grok|kimi [--arm]]  print the merged context block (guardrails, memory, lessons, roster); --source codex|droid: name human-only commands in that host's form, --host: once per session, --arm: allow it again",
       run: (args, ctx) => reported("session-start", ctx, () => sessionStartHook(args, ctx)),
     },
     stop: {

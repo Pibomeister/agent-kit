@@ -5,7 +5,9 @@
  * their public transcript into one observation per turn, in the
  * observation-source shape used by the memory loop. Captured text is scrubbed
  * of credentials and home directories and cut to short excerpts before it is
- * stored; full tool output never is.
+ * stored; full tool output never is. Each turn also carries its scrubbed calls
+ * in memory, for the distillation stage (`tool-distill.ts`) to rewrite the rows
+ * the ledger does not hold yet.
  */
 import { createHash } from "node:crypto";
 import Ajv from "ajv";
@@ -30,12 +32,33 @@ export interface WorkerHomes {
   kimi: string[];
 }
 
+/** One tool call as captured: its arguments and output already scrubbed and cut to the stored length. */
+export interface CapturedCall {
+  name: string;
+  input: string;
+  output: string;
+  failed: boolean;
+}
+
+/**
+ * What the distillation stage rewrites a turn row from: its summary lines, the leading calls whose
+ * records land whole inside what the reflector shows of the row, then the excerpt lines of the calls
+ * after them, as far as the stored text reaches.
+ */
+export interface TurnDetail {
+  lead: readonly string[];
+  calls: readonly CapturedCall[];
+  rest: readonly string[];
+}
+
 export interface CapturedObservation {
   type: string;
   title: string;
   text: string;
   at: number;
   files_modified: string[];
+  /** In memory only, never stored: what the distillation stage rewrites the row from. */
+  detail?: TurnDetail;
 }
 
 export interface CapturedSession {
@@ -69,7 +92,10 @@ interface StoredSession extends SessionRow {
 }
 
 interface StoredObservation extends ObservationRow {
-  /** Digest of the row's title and text, which is how a later scan recognizes it. */
+  /**
+   * Digest of the row's title and its excerpt-form text, which is how a later scan recognizes it.
+   * A distilled row keeps the digest of the excerpt form it replaced, since that is what a scan rebuilds.
+   */
   key: string;
 }
 
@@ -84,13 +110,6 @@ interface ParsedToolInput {
   parsed: JsonValue;
 }
 
-interface ToolCall {
-  name: string;
-  input: string;
-  output: string;
-  failed: boolean;
-}
-
 interface ToolOutput {
   text: string;
   failed: boolean;
@@ -100,7 +119,7 @@ interface ToolOutput {
 interface Turn {
   prompt: string;
   reply: string;
-  calls: ToolCall[];
+  calls: CapturedCall[];
   files: string[];
   at: number;
 }
@@ -115,6 +134,16 @@ export const MAX_OBSERVATIONS = 999;
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
 const MAX_TEXT = 2_000;
+/**
+ * How much of an observation's facts the reflector shows (`formatObservation`), and so how far into
+ * a turn row a distilled record may end. A record past it would be paid for and never read.
+ */
+export const FACTS_SHOWN = 600;
+/** The most a distilled record's two statements run: the prompt asks for these, and the stage cuts to them. */
+export const RECORD_INPUT_CHARS = 100;
+export const RECORD_OUTPUT_CHARS = 200;
+/** A tool's name as it heads a call in the distiller's prompt and in a distilled line. */
+const NAME_CHARS = 80;
 const PROMPT_CHARS = 110;
 const REPLY_CHARS = 110;
 const FAILED_CHARS = 50;
@@ -231,6 +260,58 @@ function excerpt(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
+/** One call's line in a turn row: the tool, then its arguments and its output, each one line cut to its limit. */
+export function callLine(name: string, input: string, output: string): string {
+  return `${name} ${excerpt(input, INPUT_CHARS)} -> ${excerpt(output, OUTPUT_CHARS)}`;
+}
+
+/** A tool's name as the distillation stage uses it: scrubbed, made one line and cut. */
+export function callName(name: string): string {
+  return scrubCaptured(name).replace(/\s+/g, " ").trim().slice(0, NAME_CHARS);
+}
+
+/** A distilled call's line in a turn row, in the excerpt's shape and within the record's allowances. */
+export function recordLine(name: string, input: string, output: string): string {
+  return `${name} ${excerpt(input, RECORD_INPUT_CHARS)} -> ${excerpt(output, RECORD_OUTPUT_CHARS)}`;
+}
+
+/** The longest line a call's record can make: its name, and both statements at their allowance. */
+function recordMax(call: CapturedCall): number {
+  return recordLine(callName(call.name), "", "").length + RECORD_INPUT_CHARS + RECORD_OUTPUT_CHARS;
+}
+
+/** A turn row's text: the summary lines, then one line per call, cut to the stored length. */
+export function turnText(lead: readonly string[], callLines: readonly string[]): string {
+  return [...lead, ...callLines].join("\n").slice(0, MAX_TEXT);
+}
+
+/**
+ * A turn's detail: the leading calls whose records, each counted at its longest, end inside
+ * `FACTS_SHOWN`, and the excerpt lines that can follow them inside the stored text however short
+ * those records come back.
+ */
+export function turnDetail(lead: readonly string[], calls: readonly CapturedCall[]): TurnDetail {
+  const head = lead.length > 0 ? lead.join("\n").length + 1 : 0;
+  const leading: CapturedCall[] = [];
+  let used = head;
+  for (const call of calls) {
+    const end = used + recordMax(call);
+    if (end > FACTS_SHOWN) break;
+    leading.push(call);
+    used = end + 1;
+  }
+  // A record may come back far shorter than its longest, so the excerpt lines are kept as if it took no room.
+  const rest: string[] = [];
+  used = head;
+  for (const call of calls.slice(leading.length)) {
+    if (used >= MAX_TEXT) break;
+    const line = callLine(call.name, call.input, call.output);
+    rest.push(line);
+    used += line.length + 1;
+  }
+  return { lead, calls: leading, rest };
+}
+
 /** Public text parts only. Encrypted content and Kimi `think` parts are deliberately excluded. */
 function publicText(value: JsonValue | undefined): string {
   return clipped(rawPublicText(value));
@@ -317,7 +398,7 @@ function toolInput(value: JsonValue | undefined): ParsedToolInput {
  */
 function turnLog() {
   const turns: Turn[] = [];
-  const named = new Map<string, ToolCall>();
+  const named = new Map<string, CapturedCall>();
   const start = (prompt: string, at: number): Turn => {
     const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
     turns.push(turn);
@@ -344,7 +425,7 @@ function turnLog() {
       host: { id?: string | null; writes?: boolean } = {},
     ): void {
       const turn = current(at);
-      const call: ToolCall = { name, input: input.text, output: "", failed: false };
+      const call: CapturedCall = { name, input: input.text, output: "", failed: false };
       turn.calls.push(call);
       if (host.id !== undefined && host.id !== null) named.set(host.id, call);
       if (host.writes === true || WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
@@ -379,21 +460,26 @@ function turnObservation(turn: Turn): CapturedObservation {
   const failing = turn.calls.filter((call) => call.failed);
   const counts = new Map<string, number>();
   for (const call of turn.calls) counts.set(call.name, (counts.get(call.name) ?? 0) + 1);
-  const lines: string[] = [];
-  if (turn.prompt !== "") lines.push(`prompt: ${excerpt(turn.prompt, PROMPT_CHARS)}`);
-  if (turn.reply !== "") lines.push(`reply: ${excerpt(turn.reply, REPLY_CHARS)}`);
+  const lead: string[] = [];
+  if (turn.prompt !== "") lead.push(`prompt: ${excerpt(turn.prompt, PROMPT_CHARS)}`);
+  if (turn.reply !== "") lead.push(`reply: ${excerpt(turn.reply, REPLY_CHARS)}`);
   if (failing.length > 0)
-    lines.push(`failed: ${excerpt([...new Set(failing.map((call) => call.name))].join(", "), FAILED_CHARS)}`);
-  if (counts.size > 0) lines.push(`tools: ${[...counts].map(([name, count]) => `${name} x${count}`).join(", ")}`);
-  for (const call of [...failing, ...turn.calls.filter((item) => !failing.includes(item))])
-    lines.push(`${call.name} ${excerpt(call.input, INPUT_CHARS)} -> ${excerpt(call.output, OUTPUT_CHARS)}`);
-  return {
+    lead.push(`failed: ${excerpt([...new Set(failing.map((call) => call.name))].join(", "), FAILED_CHARS)}`);
+  if (counts.size > 0) lead.push(`tools: ${[...counts].map(([name, count]) => `${name} x${count}`).join(", ")}`);
+  const calls = [...failing, ...turn.calls.filter((item) => !failing.includes(item))];
+  const row: CapturedObservation = {
     type: failing.length > 0 ? "error" : "turn",
     title: "worker turn",
-    text: lines.join("\n").slice(0, MAX_TEXT),
+    text: turnText(
+      lead,
+      calls.map((call) => callLine(call.name, call.input, call.output)),
+    ),
     at: turn.at,
     files_modified: [...new Set(turn.files)].toSorted(),
   };
+  const detail = turnDetail(lead, calls);
+  if (detail.calls.length > 0) row.detail = detail;
+  return row;
 }
 
 /**
@@ -946,10 +1032,20 @@ function rowKey(row: CapturedObservation): string {
   return createHash("sha256").update(`${row.title}\n${row.text}`).digest("hex").slice(0, 16);
 }
 
-function storedObservation(item: CapturedSession, row: CapturedObservation, id: number): StoredObservation {
+/** The parser's row in a rewrite's wording. Its type, title, time and files stay the parser's. */
+function reworded(row: CapturedObservation, rewrite: CapturedObservation | undefined): CapturedObservation {
+  return rewrite === undefined ? row : { ...row, text: rewrite.text.slice(0, MAX_TEXT) };
+}
+
+function storedObservation(
+  item: CapturedSession,
+  row: CapturedObservation,
+  id: number,
+  key: string,
+): StoredObservation {
   return {
     id,
-    key: rowKey(row),
+    key,
     memory_session_id: item.memory_session_id,
     project: "",
     type: row.type,
@@ -1033,8 +1129,21 @@ export class WorkerSessionSource implements MemoryObservationSource {
    * scan can tell the ledger is level with the record, and so has a Droid session read whole with
    * no end recorded. Returns observations appended and session rows
    * written; a dry run counts them and changes nothing.
+   *
+   * `rewrite` is handed the rows of one session the ledger does not hold yet, and only those, and
+   * returns them in the same order. Only a row's text, cut to the stored length, is taken from what
+   * it returns. A row is matched by the digest of the text the
+   * parser built, before any rewrite, so a rewritten row is recognized by every later scan and is
+   * rewritten once. It is called on a dry run too, and writes nothing there itself.
    */
-  capture(sessions: readonly CapturedSession[], options: { dryRun?: boolean; sinceMs?: number } = {}) {
+  capture(
+    sessions: readonly CapturedSession[],
+    options: {
+      dryRun?: boolean;
+      sinceMs?: number;
+      rewrite?: (item: CapturedSession, rows: readonly CapturedObservation[]) => readonly CapturedObservation[];
+    } = {},
+  ) {
     const held = this.observations;
     const scanned = new Set(sessions.map((item) => item.memory_session_id));
     const expired = (sid: string) =>
@@ -1047,13 +1156,18 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const stored = this.bySession.get(item.memory_session_id) ?? [];
       const unseen = new Map<string, number>();
       for (const row of stored) unseen.set(row.key, (unseen.get(row.key) ?? 0) + 1);
-      const appended: StoredObservation[] = [];
+      const pending: Array<{ row: CapturedObservation; key: string }> = [];
       for (const row of item.observations) {
         const key = rowKey(row);
         const count = unseen.get(key) ?? 0;
         if (count > 0) unseen.set(key, count - 1);
-        else appended.push(storedObservation(item, row, ++nextId));
+        else pending.push({ row, key });
       }
+      const rows = pending.map((entry) => entry.row);
+      const rewritten = pending.length > 0 && options.rewrite !== undefined ? options.rewrite(item, rows) : rows;
+      const appended = pending.map((entry, index) =>
+        storedObservation(item, reworded(entry.row, rewritten[index]), ++nextId, entry.key),
+      );
       const row = this.sessionRows.get(item.memory_session_id);
       if (
         appended.length === 0 &&
