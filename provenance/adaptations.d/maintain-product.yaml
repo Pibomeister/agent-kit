@@ -145,6 +145,39 @@ adaptations:
       The self-contained page in the temporary directory, its legend and its no-introduction
       opening. The CDN styling and diagram libraries are dropped.
 
+  - path: skills/improve-architecture/SKILL.md
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: >-
+      Task-derived additions from research/reports/agent-friendly-architecture.md: proportional
+      feature locality and scoped source discovery, naming/complexity/test-oracle evidence,
+      candidate-relevant optional tooling consent with a no-write downstream handoff, and
+      independently bound fixture/effect verification. Existing Pocock process/vocabulary
+      attribution remains separate; these additions are not claimed as donor instructions.
+  - path: skills/improve-architecture/skill.yaml
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: >-
+      Task-derived additions from research/reports/agent-friendly-architecture.md: proportional
+      feature locality and scoped source discovery, naming/complexity/test-oracle evidence,
+      candidate-relevant optional tooling consent with a no-write downstream handoff, and
+      independently bound fixture/effect verification. Existing Pocock process/vocabulary
+      attribution remains separate; these additions are not claimed as donor instructions.
+  - path: skills/improve-architecture/references/survey.md
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: >-
+      Task-derived additions from research/reports/agent-friendly-architecture.md: proportional
+      feature locality and scoped source discovery, naming/complexity/test-oracle evidence,
+      candidate-relevant optional tooling consent with a no-write downstream handoff, and
+      independently bound fixture/effect verification. Existing Pocock process/vocabulary
+      attribution remains separate; these additions are not claimed as donor instructions.
+  - path: skills/improve-architecture/references/linting.md
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: >-
+      Task-derived additions from research/reports/agent-friendly-architecture.md: proportional
+      feature locality and scoped source discovery, naming/complexity/test-oracle evidence,
+      candidate-relevant optional tooling consent with a no-write downstream handoff, and
+      independently bound fixture/effect verification. Existing Pocock process/vocabulary
+      attribution remains separate; these additions are not claimed as donor instructions.
+
   # --- deprecate -------------------------------------------------------------------
 
   - path: skills/deprecate/SKILL.md

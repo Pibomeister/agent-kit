@@ -737,6 +737,12 @@ adaptations:
   - path: skills/ideate/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-ideate/SKILL.md
     rationale: The manifest's triggers, hard gates, limits and declared tests condense the same adaptation the body makes of this file. Ground before ideating, generate many and critique all, and send action to alignment rather than planning. The docs_root artifact root, output-format resolution, HTML rendering and issue-tracker mode are dropped.
+  - path: skills/improve-architecture/references/linting.md
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: "Task-derived additions from research/reports/agent-friendly-architecture.md: proportional feature locality and scoped source discovery, naming/complexity/test-oracle evidence, candidate-relevant optional tooling consent with a no-write downstream handoff, and independently bound fixture/effect verification. Existing Pocock process/vocabulary attribution remains separate; these additions are not claimed as donor instructions."
+  - path: skills/improve-architecture/references/survey.md
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: "Task-derived additions from research/reports/agent-friendly-architecture.md: proportional feature locality and scoped source discovery, naming/complexity/test-oracle evidence, candidate-relevant optional tooling consent with a no-write downstream handoff, and independently bound fixture/effect verification. Existing Pocock process/vocabulary attribution remains separate; these additions are not claimed as donor instructions."
   - path: skills/improve-architecture/references/survey.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/improve-codebase-architecture/HTML-REPORT.md
     rationale: The self-contained page in the temporary directory, its legend and its no-introduction opening. The CDN styling and diagram libraries are dropped.
@@ -744,8 +750,14 @@ adaptations:
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/improve-codebase-architecture/SKILL.md
     rationale: The exploration questions, the deletion test and the card fields with their strength scale.
   - path: skills/improve-architecture/SKILL.md
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: "Task-derived additions from research/reports/agent-friendly-architecture.md: proportional feature locality and scoped source discovery, naming/complexity/test-oracle evidence, candidate-relevant optional tooling consent with a no-write downstream handoff, and independently bound fixture/effect verification. Existing Pocock process/vocabulary attribution remains separate; these additions are not claimed as donor instructions."
+  - path: skills/improve-architecture/SKILL.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/improve-codebase-architecture/SKILL.md
     rationale: The body adapts scoping from the commit history, the deletion test, the candidate card, the decision-conflict rule, asking which one before proposing interfaces, grilling one candidate, and recording only a load-bearing rejection. Repository-local decision and glossary files become a proposed adr published through the knowledgebase (ruling central-kb- owns-project-artifacts).
+  - path: skills/improve-architecture/skill.yaml
+    source: local:agent-friendly-architecture@sha256:85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099#L1-86
+    rationale: "Task-derived additions from research/reports/agent-friendly-architecture.md: proportional feature locality and scoped source discovery, naming/complexity/test-oracle evidence, candidate-relevant optional tooling consent with a no-write downstream handoff, and independently bound fixture/effect verification. Existing Pocock process/vocabulary attribution remains separate; these additions are not claimed as donor instructions."
   - path: skills/improve-architecture/skill.yaml
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/improve-codebase-architecture/SKILL.md
     rationale: The manifest adapts scoping from the commit history, the deletion test, the candidate card, the decision-conflict rule, asking which one before proposing interfaces, grilling one candidate, and recording only a load-bearing rejection. Repository-local decision and glossary files become a proposed adr published through the knowledgebase (ruling central-kb- owns-project-artifacts).

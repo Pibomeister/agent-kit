@@ -157,6 +157,14 @@ donors:
 # renumbering would silently repoint this.
 # ---------------------------------------------------------------------------
 local_sources:
+  - id: agent-friendly-architecture
+    description: Original task-derived survey navigation, proportional organization, candidate-relevant lint consent and behavioral evidence guidance.
+    working_copy: research/reports/agent-friendly-architecture.md
+    sha256: 85238433165fd8fd2948983f154f967d1448b398a57c0a972dc45d3bb6fd2099
+    lines: 86
+    license: MIT
+    copyright: "Copyright (c) 2026 Eduardo Picazo"
+    cited_in_adaptations: true
   - id: pocock-two-axis-backup
     description: Original Pocock Standards/Spec two-axis code-review SKILL.md, preserved before OMX overwrote the local copy.
     original_path: ~/.omx/backups/setup/2026-07-15T23-45-31.075Z/.codex/skills/code-review/SKILL.md

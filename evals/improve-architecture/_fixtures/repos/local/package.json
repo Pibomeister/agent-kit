@@ -1,0 +1,14 @@
+{
+  "name": "order-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "lint": "oxlint src",
+    "fmt:check": "oxfmt --check src"
+  },
+  "devDependencies": {
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0"
+  }
+}

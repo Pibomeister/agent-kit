@@ -1,0 +1,1 @@
+{"name":"order-fixture","private":true,"type":"module","scripts":{"test":"python3 -m unittest discover -s test -p test_*.py","lint":"oxlint web/src","fmt:check":"oxfmt --check web/src"},"devDependencies":{"oxlint":"1.86.0","oxfmt":"0.71.0"}}

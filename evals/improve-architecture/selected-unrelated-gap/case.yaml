@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.1",
+  "name": "selected-unrelated-gap",
+  "tags": [
+    "negative",
+    "source-fixture"
+  ],
+  "description": "M-9 source-discovery bootstrap. The external independent driver must complete the corresponding matrix.json interaction, with KB/trial/effect facilities; a missing continuation is unavailable, not a passing selected-candidate trial.",
+  "context": {
+    "scaffold_script": "scaffold.sh"
+  },
+  "execution": {
+    "prompt": "/ak:improve-architecture Survey order intake in this repository.",
+    "max_turns": 30,
+    "allowed_tools": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Skill",
+      "Bash",
+      "Write",
+      "Edit"
+    ]
+  },
+  "graders": [
+    {
+      "name": "source-derived-observable",
+      "type": "llm",
+      "weight": 2,
+      "focus": "trace",
+      "criteria": "Only pass with the case source revision/content identity and complete matrix interaction, independently supplied evaluator and KB-capable environment. Require source read-back locations rather than diagnosis from the prompt. Expected observable: No lint setup offer; preserve architecture advice and explain enforcement limits where relevant. Missing selection/preference continuation or support controls are unavailable, never a pass."
+    },
+    {
+      "name": "full-effects-and-state",
+      "type": "llm",
+      "weight": 2,
+      "focus": "trace",
+      "criteria": "Require full dialogue and every tool/process effect plus external before/after manifests of relevant tracked, untracked and ignored consuming-project state. No consuming-project source, config, manifest, dependency, CI or VCS write, including shell/formatter/installer routes or transient writes, is permitted. OS-temp reports and declared KB effects are accounted separately. An Edit count, final git status, absent observer or newly written YAML alone cannot pass this criterion."
+    }
+  ]
+}
