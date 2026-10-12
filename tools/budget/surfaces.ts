@@ -30,6 +30,7 @@ import { reviewLedgerDir } from "../../src/learn/review/ledger.ts";
 import { MAINTAINER_CONTRACT } from "../../src/learn/review/maintain.ts";
 import { SKILL_SCOUT_CONTRACT } from "../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../src/learn/skills/roster.ts";
+import { distillPrompt } from "../../src/learn/sources/tool-distill.ts";
 import { HOST_IDS } from "../../src/packaging/hosts.ts";
 import { INSTALL_FILE } from "../../src/packaging/install.ts";
 import { planBundle } from "../../src/packaging/plan.ts";
@@ -185,6 +186,13 @@ function judgeSurfaces(root: string): Surface[] {
   }));
 }
 
+/** The tool-call distiller's prompt before its calls: the fixed text every request to a bound host starts with. */
+const DISTILL_SURFACE: Surface = {
+  id: "distill:tool-calls",
+  file: "src/learn/sources/tool-distill.ts",
+  text: distillPrompt([]),
+};
+
 function firstmateSurfaces(root: string): Surface[] {
   return [
     ...FIRSTMATE_TEXTS.map((file) => ({ id: `firstmate:${file}`, file, text: read(root, file) })),
@@ -211,6 +219,7 @@ export function collectSurfaces(root: string): Surface[] {
     ...roleSurfaces(root, catalog),
     ...hookSurfaces(root),
     ...judgeSurfaces(root),
+    DISTILL_SURFACE,
     ...firstmateSurfaces(root),
   ];
 }

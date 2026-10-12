@@ -321,16 +321,15 @@ describe("resolveLink", () => {
 describe("ak guard hook", () => {
   const payload = readFileSync(join(CASES, "deny-bash-rm-recursive-force.stdin"), "utf8");
 
-  test("runCli dispatches to it with the stdin payload", () => {
+  test("ak's usage lists it; the entrypoint dispatches it, as the hook process tests below show", () => {
     const captured = captureIo();
-    const code = runCli(["guard", ...HOOK], { cwd: ROOT, io: captured.io, stdin: payload });
-    expect(code).toBe(0);
-    expect(captured.out[0]).toContain("destructive.rm-recursive-force");
+    expect(runCli([], { cwd: ROOT, io: captured.io })).toBe(2);
+    expect(captured.err.join("\n")).toContain("ak guard hook <event>");
   });
 
   test("without a verb it prints its usage and exits 2", () => {
     const captured = captureIo();
-    expect(runCli(["guard"], { cwd: ROOT, io: captured.io })).toBe(2);
+    expect(runGuard([], { cwd: ROOT, io: captured.io })).toBe(2);
     expect(captured.err.join("\n")).toContain("ak guard hook pre-tool-use");
   });
 

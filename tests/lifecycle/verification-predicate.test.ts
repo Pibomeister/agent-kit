@@ -4,10 +4,14 @@ import { join } from "node:path";
 
 import { verificationShapeReasons } from "../../src/lifecycle/gate.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
+import { edited, parseJson, pathsOf, type JsonValue } from "../helpers/json.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const validate = compileSchemas(ROOT).validatorFor("verification")!;
 const read = (path: string): Record<string, unknown> => JSON.parse(readFileSync(path, "utf8"));
+
+/** Whether the bundled predicate accepts a receipt: it reports no reasons against it. */
+const accepts = (receipt: JsonValue) => verificationShapeReasons(receipt).length === 0;
 
 describe("the bundled verification predicate", () => {
   test("agrees with ajv over every receipt fixture and representative malformed shapes", () => {
@@ -52,9 +56,100 @@ describe("the bundled verification predicate", () => {
     ];
 
     for (const receipt of [...fixtures, ...templates, surface, ...malformed]) {
-      expect(verificationShapeReasons(receipt).length === 0, JSON.stringify(receipt)).toBe(
-        validate(receipt) as boolean,
-      );
+      expect(accepts(parseJson(JSON.stringify(receipt))), JSON.stringify(receipt)).toBe(validate(receipt) as boolean);
     }
+  });
+
+  // Known divergences: verificationShapeReasons (src/lifecycle/gate.ts) accepts these single-member
+  // corruptions and ajv rejects them. Each is an optional or nested metadata member the gate's refusals do
+  // not read. This is a known predicate defect, not intended behaviour: a fix in gate.ts makes this test
+  // fail until the fixed entries are removed from this list, and any new divergence fails it too.
+  const KNOWN_DIVERGENCES = [
+    "delete environment.toolchain.0.name",
+    "delete environment.toolchain.0.version",
+    "delete weakened_checks.0.decision",
+    "delete weakened_checks.0.decision.hash",
+    "delete weakened_checks.0.decision.id",
+    "delete weakened_checks.0.what",
+    "null command.cwd",
+    "null command.duration_ms",
+    "null command.started_at",
+    "null created_by.operation",
+    "null created_by.skill",
+    "null environment.config_digest",
+    "null environment.image_digest",
+    "null environment.toolchain",
+    "null environment.toolchain.0",
+    "null environment.toolchain.0.name",
+    "null environment.toolchain.0.version",
+    "null finding.schema",
+    "null notes",
+    "null output_excerpt",
+    "null probe.observed",
+    "null project.repo",
+    "null recipe.schema",
+    "null ticket.schema",
+    "null weakened_checks",
+    "null weakened_checks.0",
+    "null weakened_checks.0.decision",
+    "null weakened_checks.0.decision.hash",
+    "null weakened_checks.0.decision.id",
+    "null weakened_checks.0.decision.schema",
+    "null weakened_checks.0.detail",
+    "null weakened_checks.0.what",
+    "retype command.cwd",
+    "retype command.duration_ms",
+    "retype command.started_at",
+    "retype created_by.operation",
+    "retype created_by.skill",
+    "retype environment.config_digest",
+    "retype environment.image_digest",
+    "retype environment.toolchain",
+    "retype environment.toolchain.0",
+    "retype environment.toolchain.0.name",
+    "retype environment.toolchain.0.version",
+    "retype finding.schema",
+    "retype notes",
+    "retype output_excerpt",
+    "retype probe.observed",
+    "retype project.repo",
+    "retype recipe.schema",
+    "retype ticket.schema",
+    "retype weakened_checks",
+    "retype weakened_checks.0",
+    "retype weakened_checks.0.decision",
+    "retype weakened_checks.0.decision.hash",
+    "retype weakened_checks.0.decision.id",
+    "retype weakened_checks.0.decision.schema",
+    "retype weakened_checks.0.detail",
+    "retype weakened_checks.0.what",
+  ];
+
+  test("agrees with ajv when any one member, top-level or nested, is deleted, nulled or retyped", () => {
+    const base = [
+      "verification.example.json",
+      "verification.surface.example.json",
+      "verification.weakened.example.json",
+      "verification.zero-exit-failure.example.json",
+    ].map((name) => parseJson(readFileSync(join(ROOT, "templates", name), "utf8")));
+    let compared = 0;
+    let rejected = 0;
+    const divergent = new Set<string>();
+    for (const doc of base) {
+      expect(validate(doc)).toBe(true);
+      for (const path of pathsOf(doc)) {
+        for (const how of ["delete", "null", "retype"] as const) {
+          const receipt = edited(doc, path, how);
+          const ajv = validate(receipt);
+          if (accepts(receipt) !== ajv) divergent.add(`${how} ${path.join(".")}`);
+          compared += 1;
+          if (!ajv) rejected += 1;
+        }
+      }
+    }
+    expect([...divergent].toSorted()).toEqual([...KNOWN_DIVERGENCES].toSorted());
+    // The sweep must reach the predicate's reasons: most single corruptions are invalid.
+    expect(compared).toBeGreaterThan(600);
+    expect(rejected).toBeGreaterThan(compared / 2);
   });
 });

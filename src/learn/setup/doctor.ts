@@ -1,19 +1,21 @@
 /**
  * `ak learn setup doctor` — report prerequisites, registry hygiene, the
- * scheduled judge's login, the resolved environment and the last 24 hours of
- * judge calls and spans.
+ * scheduled judge's login, the resolved environment with each worker host's
+ * tool distiller, and the last 24 hours of judge calls, distiller calls and spans.
  * Reads only; changes nothing.
  */
 import { existsSync } from "node:fs";
-import { isAbsolute } from "node:path";
-import { DEFAULT_JUDGE } from "../core/config.ts";
+import { isAbsolute, join } from "node:path";
+import { DEFAULT_JUDGE, distillVariable } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
+import { distillTraceSummary } from "../core/distill.ts";
 import { judgeTraceSummary } from "../core/judge.ts";
 import { readRegistry, registryHygiene } from "../memory/registry.ts";
 import { schedulerKind, unitEnvironment } from "./schedule.ts";
 import { scopeText } from "./scope.ts";
-import { codexHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
+import { codexHome, hostHome, memDir, memWorkerScript, type SetupDeps } from "./wire.ts";
 import { runsLine } from "../stats.ts";
+import { workerHomes } from "../sources/worker-sessions.ts";
 
 export interface Check {
   name: string;
@@ -126,11 +128,31 @@ export function doctor(ctx: LearnContext, deps: SetupDeps): number {
   ctx.io.out(`  judge command       ${ctx.config.judgeCommand.join(" ")}`);
   ctx.io.out(`  claude-mem dir      ${memDir(ctx, deps)}   (db ${ctx.config.memDb})`);
   ctx.io.out(`  codex home          ${codexHome(ctx, deps)}${existsSync(codexHome(ctx, deps)) ? "" : "   (absent)"}`);
+  for (const host of ["droid", "grok", "kimi"] as const) {
+    const home = hostHome(ctx, deps, host);
+    ctx.io.out(`  ${`${host} home`.padEnd(19)} ${home}${existsSync(home) ? "" : "   (absent)"}`);
+  }
+  const stores = workerHomes(ctx.env);
+  for (const host of ["codex", "droid", "grok", "kimi"] as const) {
+    const homes = stores[host];
+    const present = homes.filter((home) => existsSync(join(home, "sessions"))).length;
+    ctx.io.out(`  ${host} session stores  ${present}/${homes.length} present   ${homes.join(", ")}`);
+  }
+  for (const host of ["codex", "droid", "grok", "kimi"] as const) {
+    const command = ctx.config.distillCommands[host];
+    ctx.io.out(
+      `  ${`${host} tool distiller`.padEnd(19)} ${command === undefined ? `unset (${distillVariable(host)}); calls keep their excerpts` : command.join(" ")}`,
+    );
+  }
   ctx.io.out(`  scheduler           ${schedulerKind(deps)}`);
   ctx.io.out(`  repo scope          ${scopeText(ctx.config)}`);
   const trace = judgeTraceSummary(ctx.config);
   ctx.io.out(
     `  judge calls (24h)  ${trace.calls} ${trace.calls === 1 ? "call" : "calls"}, ${trace.failures} ${trace.failures === 1 ? "failure" : "failures"}, $${trace.totalCostUsd.toFixed(6)} total cost`,
+  );
+  const distilled = distillTraceSummary(ctx.config);
+  ctx.io.out(
+    `  tool distiller (24h)  ${distilled.calls} ${distilled.calls === 1 ? "call" : "calls"}, ${distilled.failures} ${distilled.failures === 1 ? "failure" : "failures"}, $${distilled.totalCostUsd.toFixed(6)} reported cost`,
   );
   ctx.io.out(runsLine(ctx.config));
   const blocked = checks.filter((check) => check.hard && !check.ok).map((check) => check.name);

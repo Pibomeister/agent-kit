@@ -27,21 +27,30 @@ describe("donor snapshots", () => {
   // The byte comparison needs the clones, which are gitignored. Without them the
   // existence check above still holds the set to the fragments; only the
   // content half goes unverified, the same scope `provenance.donors-unavailable`
-  // reports for the validator's own path check.
-  const donorsPresent = existsSync(join(ROOT, ".donors"));
-  test.if(donorsPresent)("every snapshot is byte-identical to its pin", () => {
+  // reports for the validator's own path check. CI clones them
+  // (tools/donors/clone.sh) and sets AK_REQUIRE_DONORS=1, where a missing clone
+  // is a failure rather than a skip: a skip there is the content check never running.
+  const donorsRequired = process.env.AK_REQUIRE_DONORS === "1";
+  // Present means at least one cited donor is cloned: an empty or unrelated .donors/ compares nothing.
+  const donorsPresent = expected.some((snap) => snap.clone !== null && existsSync(join(ROOT, snap.clone)));
+  test.if(donorsPresent || donorsRequired)("every snapshot is byte-identical to its pin", () => {
+    expect(donorsPresent ? [] : ["no cited donor is cloned under .donors/; run tools/donors/clone.sh"]).toEqual([]);
+    let compared = 0;
     const drifted: string[] = [];
     const unresolved: string[] = [];
     for (const snap of expected) {
       const pinned = pinnedBytes(ROOT, snap);
       if (pinned === null) {
-        if (snap.clone !== null && existsSync(join(ROOT, snap.clone))) unresolved.push(snap.file);
+        const cloned = snap.clone !== null && existsSync(join(ROOT, snap.clone));
+        if (cloned || donorsRequired) unresolved.push(snap.file);
         continue;
       }
       const path = join(ROOT, snap.file);
+      compared += 1;
       if (existsSync(path) && !readFileSync(path).equals(pinned)) drifted.push(snap.file);
     }
     expect(drifted).toEqual([]);
     expect(unresolved).toEqual([]);
+    expect(compared).toBeGreaterThan(0);
   });
 });

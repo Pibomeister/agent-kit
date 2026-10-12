@@ -4,24 +4,44 @@
  * | File | What |
  * |---|---|
  * | `memory.md` | the organized working memory; the only prose injected at session start, with confirmed lessons |
- * | `episodes.jsonl` | append-only episode revisions for ended claude-mem sessions, with latest revision winning |
+ * | `episodes.jsonl` | append-only episode revisions for ended observed sessions, with latest revision winning |
+ * | `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | turns and sessions captured from worker host records (`sources/worker-sessions.ts`) |
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
+ * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
+ * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the worker files above hold, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *
  * `memory.md` and the lessons are the revertible wiki layer; `episodes.jsonl`
  * and `runs.jsonl` are raw and are never rolled back.
+ *
+ * Every recorded text is written through the secret gate (`core/store.ts`
+ * `writeGated`, `appendGated`, or a `gate` argument): credentials and home
+ * paths are replaced before they reach the ledger.
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { parsePage, renderPage, type PageMeta } from "../core/pages.ts";
 import { loopDir } from "../core/paths.ts";
-import { appendJsonl, nowIso, nowMs, readJson, readJsonl, readText, writeJson } from "../core/store.ts";
+import type { Candidate } from "../core/similar.ts";
+import {
+  appendGated,
+  appendJsonl,
+  nowIso,
+  nowMs,
+  readJson,
+  readJsonl,
+  readText,
+  writeGated,
+  writeJson,
+} from "../core/store.ts";
 import { lessonDraft, proposeLesson, type ProposalResult, type TriggerKind } from "../kb.ts";
+import type { ClaudeMemSource } from "../sources/claude-mem.ts";
+import type { WorkerSessionSource } from "../sources/worker-sessions.ts";
 
 /** The six sections a reflected memory must carry, in order. */
 export const SECTIONS = [
@@ -67,6 +87,8 @@ const SEED: Readonly<Record<string, string>> = {
 
 export interface MemoryState {
   last_obs_id_reflected?: number;
+  /** Highest runtime-owned worker observation accepted by reflection. */
+  last_worker_obs_id_reflected?: number;
   last_reflect?: number;
   last_reflect_attempt?: number;
   reflect_failures?: number;
@@ -99,7 +121,7 @@ export function saveState(ledger: Ledger, state: MemoryState): void {
 }
 
 export function appendRun(ledger: Ledger, run: Record<string, unknown>): void {
-  appendJsonl(ledger.path("runs.jsonl"), [{ ts: nowIso(), ...run }]);
+  appendJsonl(ledger.path("runs.jsonl"), [{ ts: nowIso(), ...run }], ledger.dir);
 }
 
 /** Every observation id any reflector run quarantined. Run rows are the persistent raw security ledger. */
@@ -128,9 +150,12 @@ export function screenedObservationRanges(ledger: Ledger): [number, number][] {
     obs_ids?: number[];
   }>(ledger.path("runs.jsonl"))) {
     if (run.status !== "ok") continue;
+    if ((run.obs_ids?.length ?? 0) > 0) {
+      for (const id of run.obs_ids ?? []) ranges.push([id, id]);
+      continue;
+    }
     if (run.job === "reflect" && run.min_obs_id !== undefined && run.max_obs_id !== undefined)
       ranges.push([run.min_obs_id, run.max_obs_id]);
-    if (run.job === "backfill") for (const id of run.obs_ids ?? []) ranges.push([id, id]);
   }
   return ranges;
 }
@@ -141,7 +166,7 @@ export function isScreened(ranges: readonly (readonly [number, number])[], id: n
 }
 
 export function logLine(ledger: Ledger, message: string): void {
-  appendFileSync(ledger.path("log.md"), `- ${nowIso()} ${message}\n`);
+  appendGated(ledger.dir, ledger.path("log.md"), `- ${nowIso()} ${message}\n`);
 }
 
 /** Session id as cited in memory: `S` plus its first eight characters. */
@@ -249,8 +274,9 @@ export function cleanTags(value: unknown): string[] {
   return [...new Set(tags.filter((tag) => TAG.test(tag)))].slice(0, 12);
 }
 
+/** A lesson page, `<ledger>/lessons/ls-NNN.md`, behind the secret gate of the ledger it sits in. */
 export function writeLesson(path: string, meta: PageMeta, body: string): void {
-  writeFileSync(path, renderPage(meta, body));
+  writeGated(dirname(dirname(path)), path, renderPage(meta, body));
 }
 
 export function list(value: PageMeta[string] | undefined): string[] {
@@ -273,7 +299,11 @@ export function rewriteIndex(ledger: Ledger): void {
     const cells = [meta.id, meta.status, meta.scope, meta.confidence, meta.last_seen].map(str);
     return `| ${cells.join(" | ")} | ${str(meta.statement).replaceAll("|", "/")} |`;
   });
-  writeFileSync(ledger.path("lessons.md"), LESSONS_INDEX_HEAD + rows.join("\n") + (rows.length > 0 ? "\n" : ""));
+  writeGated(
+    ledger.dir,
+    ledger.path("lessons.md"),
+    LESSONS_INDEX_HEAD + rows.join("\n") + (rows.length > 0 ? "\n" : ""),
+  );
 }
 
 // --- knowledgebase -----------------------------------------------------------
@@ -289,7 +319,14 @@ export function proposeConfirmed(
   ledger: Ledger,
   root: string,
   page: LessonPage,
-  options: { runId: string; createdBy: "learn/consolidator" | "learn/lesson-merger"; trigger: TriggerKind },
+  options: {
+    runId: string;
+    createdBy: "learn/consolidator" | "learn/lesson-merger";
+    trigger: TriggerKind;
+    claude: ClaudeMemSource | null;
+    workers: WorkerSessionSource;
+    similar?: readonly Candidate[];
+  },
 ): ProposalResult {
   const { meta } = page;
   const id = lessonId(page);
@@ -305,14 +342,17 @@ export function proposeConfirmed(
       statement,
       trigger: options.trigger,
       occurrence: { id: evidence[0] ?? id, content: { statement, evidence } },
-      evidence: evidence.map((ref) => ({ ref: `claude-mem:${ref}`, kind: "transcript" as const })),
+      evidence: evidence.map((ref) => ({
+        ref: `${options.workers.owns(ref) ? "worker" : options.claude?.holds(ref) === true ? "claude-mem" : "unresolved"}:${ref}`,
+        kind: "transcript" as const,
+      })),
       domains,
       createdBy: options.createdBy,
     },
     { root, revision: null },
     options.runId,
   );
-  return proposeLesson(ctx, ledger.dir, draft);
+  return proposeLesson(ctx, ledger.dir, draft, options.similar);
 }
 
 /**

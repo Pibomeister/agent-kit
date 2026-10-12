@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { parse } from "yaml";
 
 import { compileSchemas } from "../src/validation/schemas.ts";
+import { edited, parseJson, updated, type JsonValue, type Path } from "./helpers/json.ts";
 
 /**
  * The run records that ADR-0001 §3 assigned without a schema: the handoff
@@ -386,4 +387,116 @@ describe("every list of artifact schema ids names the same ids", () => {
       expect(admitted.has(id)).toBe(true);
     }
   });
+});
+
+/** A shipped example, typed. */
+function template(name: string): JsonValue {
+  return parseJson(readFileSync(join(REPO, "templates", name), "utf8"));
+}
+
+/** The last validation's errors for `id`, one line each: keyword, instance path and parameters. */
+function errorsOf(id: string): string[] {
+  return (validatorFor(id).errors ?? []).map((e) => `${e.keyword} ${e.instancePath} ${JSON.stringify(e.params)}`);
+}
+
+/**
+ * One member at a time, from a valid shipped example, with the keyword that must refuse it. The member
+ * lists are literal rather than read off the schema: a test that took them from the schema would shrink
+ * with it, and dropping a member from `required` or `minItems` is the defect this exists to catch.
+ */
+describe("each required member and non-empty list is enforced on its own", () => {
+  const ruled = updated(template("run-ledger.example.json"), ["entries", 0, "ruling"], () => ({
+    what: "Approve.",
+    why: "Both seats agreed.",
+    cost_if_wrong: "One revert.",
+  }));
+  const required: [string, string, JsonValue, Path][] = [
+    ...["destination", "notes", "decisions_so_far", "not_yet_specified", "out_of_scope", "tickets"].map(
+      (member): [string, string, JsonValue, Path] => ["map", "", template("map.example.json"), [member]],
+    ),
+    ...["intent", "anchor", "objective", "pieces"].map((member): [string, string, JsonValue, Path] => [
+      "handoff-record",
+      "",
+      template("handoff-record.example.json"),
+      [member],
+    ]),
+    ...["specification", "specification_hash", "slices", "dependency_graph"].map(
+      (member): [string, string, JsonValue, Path] => [
+        "plan-record",
+        "",
+        template("plan-record.example.json"),
+        [member],
+      ],
+    ),
+    ...[
+      "problem",
+      "solution",
+      "non_goals",
+      "acceptance_criteria",
+      "test_seams",
+      "verification_commands",
+      "out_of_scope",
+    ].map((member): [string, string, JsonValue, Path] => [
+      "plan-record",
+      "/specification",
+      template("plan-record.example.json"),
+      ["specification", member],
+    ]),
+    ["ship-evidence", "", template("ship-evidence.example.json"), ["mode"]],
+    ["run-ledger", "", template("run-ledger.example.json"), ["entries"]],
+    ...["checkpoint", "decision", "outcome"].map((member): [string, string, JsonValue, Path] => [
+      "run-ledger",
+      "/entries/0",
+      template("run-ledger.example.json"),
+      ["entries", 0, member],
+    ]),
+    ...["what", "why", "cost_if_wrong"].map((member): [string, string, JsonValue, Path] => [
+      "run-ledger",
+      "/entries/0/ruling",
+      ruled,
+      ["entries", 0, "ruling", member],
+    ]),
+  ];
+  test.each(required.map(([id, at, doc, path]) => [`${id} ${path.join(".")}`, id, at, doc, path] as const))(
+    "%s is required",
+    (_name, id, at, doc, path) => {
+      const validate = validatorFor(id);
+      expect(validate(doc)).toBe(true);
+      expect(validate(edited(doc, path, "delete"))).toBe(false);
+      expect(errorsOf(id)).toContain(`required ${at} ${JSON.stringify({ missingProperty: path.at(-1) })}`);
+    },
+  );
+
+  const nonEmpty: [string, JsonValue, Path][] = [
+    ...[
+      "decisions",
+      "references",
+      "evidence",
+      "pieces",
+      "outstanding",
+      "failed_approaches",
+      "next_steps",
+      "skills",
+      "directives",
+      "redactions",
+    ].map((member): [string, JsonValue, Path] => ["handoff-record", template("handoff-record.example.json"), [member]]),
+    ...["capability_map", "slices"].map((member): [string, JsonValue, Path] => [
+      "plan-record",
+      template("plan-record.example.json"),
+      [member],
+    ]),
+    ...["acceptance_criteria", "test_seams", "verification_commands"].map((member): [string, JsonValue, Path] => [
+      "plan-record",
+      template("plan-record.example.json"),
+      ["specification", member],
+    ]),
+  ];
+  test.each(nonEmpty.map(([id, doc, path]) => [`${id} ${path.join(".")}`, id, doc, path] as const))(
+    "%s may not be an empty list",
+    (_name, id, doc, path) => {
+      const validate = validatorFor(id);
+      expect(validate(edited(doc, path, "empty"))).toBe(false);
+      expect(errorsOf(id)).toContain(`minItems /${path.join("/")} ${JSON.stringify({ limit: 1 })}`);
+    },
+  );
 });

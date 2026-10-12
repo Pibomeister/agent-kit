@@ -21,9 +21,11 @@ dist/claude-code/
 ├── .claude-plugin/
 │   ├── plugin.json            # enumerates skills[] explicitly
 │   └── marketplace.json       # one entry, source "./"
-├── skills/<id>/SKILL.md       # host frontmatter keys generated; body unchanged
+├── skills/<id>/SKILL.md       # host frontmatter generated; canonical /ak:<id> start retained
 ├── skills/<id>/references/    # transitive dependencies resolved into the bundle
 ├── evals/<id>/<case>/case.yaml
+├── LICENSES/                  # licence texts of the packages inlined into bin/ak (NOTICE)
+├── provenance/licenses/       # claude-mem LICENSE and NOTICE (NOTICE)
 └── NOTICE, LICENSE
 ```
 
@@ -81,6 +83,11 @@ does not list, fails the build (ruling `fail-closed-adapter-lifts-ceiling`).
 all pass `claude plugin validate --strict` in a skill's frontmatter. That acceptance is exactly why
 hand-writing them into the canonical tree cannot be caught downstream, and why `ak validate` rejects
 them at the source (`AUTHORING.md` §4).
+
+The canonical explicit start is `catalog.package.namespace + skill id`, and this host's renderer
+keeps it unchanged as `/ak:<id>` (ADR-0011). The renderer still runs at the packaging boundary so
+the same source contract can produce another host's native form without listing host syntaxes in
+every U skill.
 
 ---
 
@@ -207,7 +214,8 @@ claude plugin eval dist/claude-code --threshold 1.0 --no-publish
 `--strict` treats warnings as errors and is the form CI runs; it fails on unrecognized fields and
 missing metadata that the runtime would otherwise tolerate.
 
-Tests this adapter owns, in `tests/adapters/`:
+Tests this adapter owns. Item 8 is in `tests/packaging.test.ts`. Items 6 and 7 need the host CLI
+and a live model, so `bun test` does not run them:
 
 1. **Manifest completeness** — every profile-selected skill appears in `skills[]`, every entry
    resolves to a directory containing a `SKILL.md`, and no directory is unnamed.
@@ -223,6 +231,9 @@ Tests this adapter owns, in `tests/adapters/`:
 7. **Non-trigger behavior** — each U skill's non-trigger eval case does not carry out the skill's
    workflow: its decisive `llm` grader and the no-side-effect graders beside it (AUTHORING.md §9)
    hold, whether or not the skill loaded.
+8. **Explicit-start rendering** — a U skill's description and first workflow step retain
+   `/ak:<id>`, ordinary prose remains a stop, and an M skill's automatic path receives no U gate
+   (ADR-0011).
 
 ---
 
@@ -253,6 +264,10 @@ scope lives in one runtime-owned file that `wire` and `schedule` never widen. `A
 overrides it for one shell but reaches neither the hook commands nor the scheduler unit, so `wire`
 and `schedule` refuse a scope held only there and `setup verify` fails on the mismatch. With no
 scope file and no variable, every repository is in scope.
+
+`wire` reaches every host whose home directory it finds, and the event that carries the
+session-start block differs per host; `research/dossiers/learning.md` §6 records each one with its
+evidence.
 
 The default judge model follows the operator's current host selection. An operator who needs a fixed
 judge model pins the complete command through `AK_LEARN_JUDGE` in their own environment; scheduler

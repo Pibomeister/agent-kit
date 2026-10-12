@@ -85,6 +85,24 @@ describe("the capability table §3 states once for both hosts", () => {
     expect(table.status.size).toBe(4);
   });
 
+  test("a capability that only a later section mentions is not read at all", () => {
+    // kb-write above also has a §3 row, so first-row-wins would hide a parser that swept the whole file.
+    // telepathy has no §3 row, so only the §3 scoping can keep it out.
+    const root = makeTree({
+      [CAPABILITY_TABLE_FILE]: `${HEADER}${ROWS}\n\n## 4. Later\n\n| \`telepathy\` | \`satisfied\` | A row in a different section |\n`,
+    });
+    const table = loadCapabilityTable(root);
+    expect(table.status.has("telepathy")).toBe(false);
+    expect(table.status.size).toBe(4);
+  });
+
+  test("a capability stated twice inside §3 is decided by its first row", () => {
+    const table = loadCapabilityTable(
+      makeTree(contractWith(`${ROWS}\n| \`kb-write\` | \`satisfied\` | A later restatement |`)),
+    );
+    expect(table.status.get("kb-write")).toBe("not-provided");
+  });
+
   test("a status outside the controlled vocabulary is an error, not a silent skip", () => {
     const root = makeTree(contractWith("| `kb-write` | `mostly` | A compound status |"));
     const table = loadCapabilityTable(root);
@@ -328,6 +346,13 @@ describe("a not-provided capability an attached adapter supplies", () => {
       );
       expect(hostHasKb.status.get("kb-write")).toBe("satisfied");
       expect(ceilingFor(["tracker-access"], hostHasKb, borrowing(["tracker"])).mode).toBe("autonomous");
+    });
+
+    test("borrowing a capability §3 has no row for lifts nothing", () => {
+      const unknown = new Map([["tracker-access", new Map([["tracker", "telepathy"]])]]);
+      expect(trackerTable.status.has("telepathy")).toBe(false);
+      const ceiling = ceilingFor(["tracker-access"], trackerTable, borrowing(["tracker", "knowledgebase"], unknown));
+      expect(ceiling.mode).toBe("guided");
     });
 
     test("a cycle of borrowing lifts nothing", () => {

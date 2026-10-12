@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectFolderName, registryPath, rootOf, tickLogPath } from "../../src/learn/core/paths.ts";
+import { scrubSecrets } from "../../src/learn/core/secrets.ts";
 import { memoryDir } from "../../src/learn/memory/ledger.ts";
 import { discoverProjects, discoverySince, readRegistry, registerRoot } from "../../src/learn/memory/registry.ts";
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
@@ -55,9 +56,15 @@ describe("registry", () => {
   test("plugin caches, scratch space and linked worktrees are skipped", () => {
     const { dir, worktree, config } = setup();
     const now = Date.now();
+    // Real repository roots, so the skip list and not the missing .git is what keeps them out.
+    const root = projectScratch();
+    const cache = join(root, "plugins", "cache", "thing");
+    const tmp = join(root, "tmp", "scratch");
+    for (const repo of [cache, tmp]) mkdirSync(join(repo, ".git"), { recursive: true });
+    expect([rootOf(cache), rootOf(tmp)]).toEqual([cache, tmp]);
     const found = rows(dir, [
-      { project: "x", cwd: "/Users/x/.claude/plugins/cache/thing", at: now },
-      { project: "y", cwd: "/private/tmp/scratch", at: now },
+      { project: "x", cwd: cache, at: now },
+      { project: "y", cwd: tmp, at: now },
       { project: "z", cwd: worktree, at: now },
     ]);
     expect(discoverProjects(config, found)).toEqual({});
@@ -217,8 +224,11 @@ describe("registry", () => {
     const block = sessionStartBlock(ctx);
     expect(block).not.toContain("registry warning");
     expect(ctx.out.join("\n")).not.toContain("registry warning");
+    // The tick log is written through the secret gate, which takes the home prefix off a scratch path under one.
     expect(readFileSync(tickLogPath(ctx.config), "utf8")).toContain(
-      `registry warning: claude-mem project 'api' is already registered at ${established}; refusing ${stray}\n`,
+      scrubSecrets(
+        `registry warning: claude-mem project 'api' is already registered at ${established}; refusing ${stray}\n`,
+      ).text,
     );
     expect(Object.values(readRegistry(ctx.config)).map((entry) => entry.root)).toEqual([established]);
   });

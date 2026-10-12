@@ -76,7 +76,7 @@ export interface AdapterSupply {
  * tables of the same shape further down -- §3's seat exclusions and §7's
  * restart record among them.
  *
- * The two hosts are skipped. What a host supplies is §3 of its own contract,
+ * The hosts are skipped. What a host supplies is §3 of its own contract,
  * already read by `loadCapabilityTable`, and a host is not something an install
  * attaches: it is what the bundle is built for.
  */

@@ -1,0 +1,54 @@
+{
+  "enableHooks": true,
+  "diffMode": "github",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "if [ -f ./.claude/hooks/ts_lint.py ]; then uv run ./.claude/hooks/ts_lint.py; fi",
+            "type": "command"
+          }
+        ],
+        "matcher": "^(Write|Edit|MultiEdit)$"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bash '/home/operator/.factory/hooks/agent-state.sh' session",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/home/operator/.mux/agent-hooks/droid-hook.sh' ]; then /bin/sh '/home/operator/.mux/agent-hooks/droid-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "claudeHooksImported": true,
+    "importedClaudeHooks": [
+      "uv run \"$FACTORY_PROJECT_DIR/.claude/hooks/use_pnpm.py\"",
+      "uv run \"$FACTORY_PROJECT_DIR/.claude/hooks/play_audio.py\" ready"
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/home/operator/.mux/agent-hooks/droid-hook.sh' ]; then /bin/sh '/home/operator/.mux/agent-hooks/droid-hook.sh'; else cat >/dev/null 2>&1 || :; fi",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "todoDisplayMode": "pinned"
+}

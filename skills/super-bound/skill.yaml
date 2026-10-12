@@ -118,6 +118,7 @@ references:
   - domain-modeling
   - delegation
   - verification-evidence
+  - knowledgebase-binding
 
 hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context
@@ -211,6 +212,14 @@ packaging:
     - adapter: claude-code
       mode: manual
     - adapter: codex
+      mode: manual
+      unsupported:
+        - suppression of model invocation, which this package does not request on this host
+    - adapter: kimi
+      mode: manual
+      unsupported:
+        - suppression of model invocation, which this package does not request on this host
+    - adapter: droid
       mode: manual
       unsupported:
         - suppression of model invocation, which this package does not request on this host

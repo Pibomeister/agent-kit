@@ -6,7 +6,7 @@
  * that covers a linked worktree, whose `.git` is a file), the tick discovers
  * repos from claude-mem's tool-use working directories, and `ak learn memory
  * run` registers the repo it was pointed at. Discovery resolves a root with
- * `rootOf`, which only stats: a scheduled process may not open a file inside a
+ * `rootOf`, which only stats: discovery may not open a file inside a
  * repository or spawn git there.
  *
  * One root owns each claude-mem project. The owner keeps it while its
@@ -21,11 +21,12 @@
  * repositories with the same basename share one claude-mem project. Only one
  * of them can be registered; the other is refused with the same warning.
  */
-import { appendFileSync, mkdirSync, statSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
-import { projectFolderName, registryPath, rootOf, tickLogPath } from "../core/paths.ts";
-import { nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
+import { projectFolderName, registryPath, rootOf, tickLogPath, worktreeRoot, worktreesPath } from "../core/paths.ts";
+import { appendGated, nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { CwdRow } from "../sources/claude-mem.ts";
 
 export interface RegistryEntry {
@@ -36,6 +37,9 @@ export interface RegistryEntry {
 
 export type Registry = Record<string, RegistryEntry>;
 
+/** Linked worktree path -> the registered root it belongs to, as its own sessions recorded it. */
+export type Worktrees = Record<string, string>;
+
 /** Working directories never worth a ledger: plugin caches and scratch space. */
 const SKIP_CWD = ["/plugins/cache/", "/tmp/", "/private/tmp/"];
 
@@ -43,6 +47,37 @@ export const DISCOVERY_DAYS = 14;
 
 export function readRegistry(config: LearnConfig): Registry {
   return readJson<Registry>(registryPath(config), {});
+}
+
+/**
+ * What a `--repo` that resolves to no repository is told: the registered roots
+ * nearest the path it named, so a typo is not read as a project with no
+ * history.
+ */
+export function unknownRepo(config: LearnConfig, path: string): string {
+  return unknownSelector(
+    "repository",
+    resolve(path),
+    Object.values(readRegistry(config)).map((entry) => entry.root),
+  );
+}
+
+export function readWorktrees(config: LearnConfig): Worktrees {
+  return readJson<Worktrees>(worktreesPath(config), {});
+}
+
+/**
+ * Record the linked worktree a foreground session runs in against its main root, so the scheduled
+ * tick can place a worker's cwd there once the worktree is removed and its `.git` pointer with it.
+ * A cwd inside the main worktree needs no record.
+ */
+export function recordWorktree(config: LearnConfig, cwd: string, root: string): void {
+  if (config.dryRun || rootOf(cwd) !== null) return;
+  const worktree = worktreeRoot(cwd);
+  if (worktree === null || worktree === root) return;
+  const worktrees = readWorktrees(config);
+  if (worktrees[worktree] === root) return;
+  writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
 }
 
 /** Why a root may never hold a ledger, or null. Stat only, and a root that cannot be read is not judged. */
@@ -176,7 +211,7 @@ export function logRegistryWarnings(config: LearnConfig, warnings: readonly stri
   if (config.dryRun || warnings.length === 0) return;
   const path = tickLogPath(config);
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, warnings.map((warning) => `${nowIso()} ${warning}\n`).join(""));
+  appendGated(config.runtimeDir, path, warnings.map((warning) => `${nowIso()} ${warning}\n`).join(""));
 }
 
 /**

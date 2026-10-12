@@ -1,0 +1,4 @@
+backend: local-git
+project: agent-kit
+locator:
+  knowledgebase: central

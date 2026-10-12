@@ -118,8 +118,8 @@ export function checkNoMistakesConfig(project: string): Check {
 }
 
 /**
- * Where evidence goes. The knowledgebase fails closed: none exists, and this
- * adapter does not supply kb-write (CONTRACT.md §1). A mock store must be a
+ * Where evidence goes. The knowledgebase fails closed: this adapter publishes
+ * to none and does not supply kb-write (CONTRACT.md §1). A mock store must be a
  * writable directory.
  */
 export function checkEvidence(evidence: Evidence | undefined): Check {
@@ -127,7 +127,7 @@ export function checkEvidence(evidence: Evidence | undefined): Check {
   if (evidence === undefined || evidence.store === "kb") {
     return fail(
       id,
-      "the knowledgebase evidence store fails closed: no knowledgebase is configured (adapters/knowledgebase/CONTRACT.md §1). A demonstration may name a labeled mock store, which forces dry-run",
+      "the knowledgebase evidence store fails closed: this adapter does not publish to a knowledgebase (adapters/firstmate/CONTRACT.md §1). A demonstration may name a labeled mock store, which forces dry-run",
     );
   }
   try {

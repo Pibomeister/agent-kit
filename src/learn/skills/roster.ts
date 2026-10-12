@@ -9,11 +9,13 @@
  * Read-only by construction. The roster reads `catalog.yaml`, the installed
  * skill directories and the skills ledger, and never moves, renames or writes a
  * skill. It also respects the invocation law: a user-invoked skill is listed as
- * a slash command a human may type, never as something to start.
+ * the command a human may type, in the host's form for a catalog skill
+ * (ADR-0011), never as something to start.
  */
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { loadCatalog } from "../../catalog/load.ts";
+import { explicitStartForHost, type HostId } from "../../packaging/hosts.ts";
 import type { LearnContext } from "../core/context.ts";
 import { loopDir } from "../core/paths.ts";
 import { PACKAGE_ROOT } from "../core/roles.ts";
@@ -178,6 +180,8 @@ function clip(text: string, width: number): string {
 
 export interface RosterOptions {
   packageRoot?: string;
+  /** The host whose bundle gates the catalog's human-only commands; they are named in its form. Default claude-code. */
+  host?: HostId;
   /** Characters of description per line. `AK_LEARN_ROSTER_WIDTH`, default 80. */
   width?: number;
 }
@@ -213,7 +217,11 @@ export function rosterSection(ctx: LearnContext, root: string | null, options: R
     for (const skill of model) lines.push(`- ${skill.name}: ${clip(skill.description, width)}`);
   }
   if (human.length > 0) {
-    const slash = human.map((skill) => (skill.label === "catalog" ? `/ak:${skill.name}` : `/${skill.name}`));
+    const slash = human.map((skill) =>
+      skill.label === "catalog"
+        ? explicitStartForHost(options.host ?? "claude-code", "/ak:", skill.name)
+        : `/${skill.name}`,
+    );
     lines.push(`Human-only commands (suggest one when it fits; never start it yourself): ${slash.join(", ")}`);
   }
   if (root !== null) {

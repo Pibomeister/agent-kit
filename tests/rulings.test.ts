@@ -122,6 +122,12 @@ describe("the policy file is the authority for ids", () => {
     expect(errors(checkRulings(ctx)).filter((i) => i.rule === "rulings.row-count-mismatch")).toEqual([]);
   });
 
+  test("an id that is not kebab-case is an error naming its position", () => {
+    const ctx = ctxFor({ [RULINGS_FILE]: rulings(ROW("good-row") + ROW("Not_Kebab")) });
+    const issue = errors(checkRulings(ctx)).find((i) => i.rule === "rulings.malformed-id");
+    expect(issue?.message).toBe("conflicts[1] has id Not_Kebab, which is not a kebab-case id");
+  });
+
   test("a repeated id is an error: the ids are what every body cites", () => {
     const ctx = ctxFor({ [RULINGS_FILE]: rulings(ROW("same-id") + ROW("same-id")) });
     expect(errors(checkRulings(ctx)).some((i) => i.rule === "rulings.duplicate-id")).toBe(true);
@@ -145,7 +151,11 @@ describe("the policy file is the authority for ids", () => {
     const ctx = ctxFor({ [RULINGS_FILE]: rulings(ROW("reconciled-row")) });
     const { rows } = loadRulings(ctx.root);
     expect(rows.map((r) => r.id)).toEqual(["reconciled-row"]);
-    expect(checkRulings(ctx).filter((i) => i.message.toLowerCase().includes("override"))).toEqual([]);
+    // Nothing in checkRulings mentions overrides, so "no override complaint" alone could not fail.
+    // The claim is that the row is complete: the checker passes it, and the same row with one defect does not.
+    expect(errors(checkRulings(ctx))).toEqual([]);
+    const defective = ctxFor({ [RULINGS_FILE]: rulings(ROW("reconciled-row", "", 99)) });
+    expect(errors(checkRulings(defective)).map((i) => i.rule)).toEqual(["rulings.unknown-scenario"]);
   });
 });
 
@@ -265,6 +275,25 @@ describe("binds is the machine-checkable inverse", () => {
       "skills/alpha/SKILL.md": SKILL_BODY("settled (ruling `binding-ruling`)."),
     });
     expect(errors(checkRulings(ctx))).toEqual([]);
+  });
+
+  test("citing another ruling that shares a prefix is not citing this one", () => {
+    const ctx = ctxFor({
+      "catalog.yaml": DECLARES_ALPHA,
+      [RULINGS_FILE]: rulings(ROW("binding-ruling", BINDS)),
+      "skills/alpha/SKILL.md": SKILL_BODY("settled (ruling `binding-rules`)."),
+    });
+    const issue = errors(checkRulings(ctx)).find((i) => i.rule === "rulings.binding-not-cited");
+    expect(issue?.file).toBe("skills/alpha/SKILL.md");
+  });
+
+  test("a binds group naming a kind that is not a catalog section is an error", () => {
+    const ctx = ctxFor({
+      "catalog.yaml": DECLARES_ALPHA,
+      [RULINGS_FILE]: rulings(ROW("binding-ruling", "    binds:\n      gadgets: [alpha]\n")),
+    });
+    const issue = errors(checkRulings(ctx)).find((i) => i.rule === "rulings.unknown-binds-kind");
+    expect(issue?.message).toBe("binding-ruling binds a kind 'gadgets', which is not a catalog section");
   });
 
   test("an entry that is not authored yet is not owed a citation", () => {

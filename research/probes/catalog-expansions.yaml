@@ -69,7 +69,7 @@ roles:
 
 references:
   baseline: 4
-  catalog: 8
+  catalog: 9
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -87,10 +87,17 @@ references:
         Surface evidence kinds, recipe semantics and verifier-seat lineage need one host-neutral
         vocabulary shared by the lifecycle phases that produce or consume them.
       commits: [1c509b9]
+    - ids: [knowledgebase-binding]
+      reason: >-
+        A lifecycle run in a task copy could reach no knowledgebase, and the contract that says how
+        to bind one does not ship with the plugin; the skills that read or publish need the check,
+        the commands and what unconfigured means inside the bundle.
+      commits: [c4d1f9cd]
+      docs: [docs/decisions/0010-file-backed-knowledgebase.md]
 
 schemas:
   baseline: 14
-  catalog: 33
+  catalog: 34
   expansions:
     - ids: [case]
       reason: >-
@@ -125,7 +132,7 @@ schemas:
       reason: >-
         The learning runtime's run spans record each unit's ids, duration, status and judge
         totals; a closed shape is what keeps prose, paths and names out of them.
-      commits: [238fb34]
+      commits: [b109153]
     - ids: [guard-policy]
       reason: >-
         The opt-in guard runtime judges tool calls against a policy data file, which needs a
@@ -148,6 +155,12 @@ schemas:
         A successful host-neutral setup-through-cleanup path needs a content-addressed artifact
         shape that projects can declare and later verifier seats can replay.
       commits: [1c509b9]
+    - ids: [kb-binding]
+      reason: >-
+        The committed knowledgebase locator, ak.kb.yaml, needed a shape that refuses a machine
+        path and a secret, so that every checkout of a project binds the same knowledgebase.
+      commits: [c4d1f9cd]
+      docs: [docs/decisions/0010-file-backed-knowledgebase.md]
 
 profiles:
   baseline: 4
@@ -160,8 +173,14 @@ profiles:
 
 adapters:
   baseline: 4
-  catalog: 8
+  catalog: 11
   expansions:
+    - ids: [grok]
+      reason: >-
+        Grok uses the existing Claude-compatible packager with native explicit-start rendering
+        and its own host capability contract; authored skills remain shared.
+      commits: [578c464b6ba7179cfeb53c604f0c816dda272e59]
+      docs: [adapters/grok/CONTRACT.md, docs/decisions/0011-portable-explicit-start.md]
     - ids: [firstmate]
       reason: >-
         Firstmate runs agent crews over the catalog: agent-kit judges and no-mistakes delivers.
@@ -178,3 +197,15 @@ adapters:
         The learning runtime reads recorded session observations and pull-request review
         threads, both read-only, through adapters rather than binding to one source.
       commits: [8e4a0de]
+    - ids: [kimi]
+      reason: >-
+        The compatibility follow-up adds native Kimi packaging over the shared skill tree,
+        with the host-specific explicit start fixed by ADR-0011.
+      commits: [530ab0c07f971e4beb8221bfa6ebb25154979049]
+      docs: [docs/decisions/0011-portable-explicit-start.md, adapters/kimi/CONTRACT.md]
+    - ids: [droid]
+      reason: >-
+        Factory Droid installs the bundle as a native host, so its explicit-start commands, plugin
+        manifest and host limits need their own contract rather than the Claude Code bundle's.
+      commits: [49015def3dc10bf18822bd34d6d90aa6b66f26e0]
+      docs: [adapters/droid/CONTRACT.md]

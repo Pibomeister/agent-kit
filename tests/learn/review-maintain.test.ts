@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { parsePage, patchBody, renderPage } from "../../src/learn/core/pages.ts";
 import type { Ledger } from "../../src/learn/core/ledger.ts";
-import { appendEvents, makeEvent, type ReviewEvent } from "../../src/learn/review/events.ts";
+import { appendEvents, loadEvents, makeEvent, type ReviewEvent } from "../../src/learn/review/events.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import {
   applyReply,
@@ -560,6 +560,26 @@ describe("maintain", () => {
     expect(maintain(ctx, ledger, "shop")).toBe("judge reply unusable");
     const retry = testContext({ replies: [{ event_matches: [{ hash: "h1", pattern_ids: ["rp-001"] }] }] });
     expect(maintain(retry, ledger, "shop")).toBe("processed 1 events; 0 new patterns; repeat rate 100%");
+  });
+
+  test("a second run keeps the events the first one processed, so they are never recounted", () => {
+    const { ledger } = seeded();
+    appendEvents(ledger, [E1]);
+    const first = testContext({ replies: [{ event_matches: [{ hash: "h1", pattern_ids: ["rp-001"] }] }] });
+    expect(maintain(first, ledger, "shop")).toBe("processed 1 events; 0 new patterns; repeat rate 100%");
+    appendEvents(ledger, [E2]);
+    const second = testContext({ replies: [{ event_matches: [{ hash: "h2", pattern_ids: [] }] }] });
+    expect(maintain(second, ledger, "shop")).toBe("processed 1 events; 0 new patterns; repeat rate 0%");
+    expect(second.prompts[0]).not.toContain("hash=h1");
+    expect(Object.keys(JSON.parse(readFileSync(ledger.path(PROCESSED_FILE), "utf8"))).toSorted()).toEqual(["h1", "h2"]);
+    expect(maintain(testContext(), ledger, "shop")).toBe("no new events");
+  });
+
+  test("an event repeated inside one batch is appended once", () => {
+    const { ledger } = seeded();
+    expect(appendEvents(ledger, [E1, E1])).toBe(1);
+    expect(appendEvents(ledger, [E1, E2, E2])).toBe(1);
+    expect(loadEvents(ledger).map((event) => event.hash)).toEqual(["h1", "h2"]);
   });
 
   test("batches follow config.batch", () => {

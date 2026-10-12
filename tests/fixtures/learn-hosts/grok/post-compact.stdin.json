@@ -1,0 +1,10 @@
+{
+  "hookEventName": "post_compact",
+  "hook_event_name": "PostCompact",
+  "sessionId": "grok-fixture-123",
+  "cwd": "/home/operator/shop",
+  "workspaceRoot": "/home/operator/shop",
+  "permissionMode": "default",
+  "trigger": "auto",
+  "timestamp": "2026-10-05T12:00:00Z"
+}

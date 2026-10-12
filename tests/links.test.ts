@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { extractRelativeLinks, resolveFromFile } from "../src/util/links.ts";
 import { checkSourceLinks } from "../src/validation/links.ts";
+import { HOST_IDS } from "../src/packaging/hosts.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { makeTree } from "./helpers/tree.ts";
 
@@ -107,6 +108,20 @@ describe("source-tree link closure", () => {
     expect(issue?.file).toBe("protocols/tdd/PROTOCOL.md");
   });
 
+  // Literal, not LINKED_DIRS: every directory whose markdown carries links, each with a broken one.
+  test.each(["skills", "packs", "protocols", "roles", "references", "adapters", "templates"])(
+    "a broken link in a %s markdown file is reported",
+    (dir) => {
+      const file = `${dir}/x/NOTES.md`;
+      const ctx = ctxFor({ "skills/alpha/SKILL.md": HEAD, [file]: "See [gone](./missing.md).\n" });
+      expect(
+        checkSourceLinks(ctx)
+          .filter((i) => i.rule === "links.broken-source")
+          .map((i) => i.file),
+      ).toEqual([file]);
+    },
+  );
+
   test("a link to a directory that exists is accepted", () => {
     const ctx = ctxFor({
       "skills/alpha/SKILL.md": `${HEAD}\n[dir](../../protocols/tdd/)\n`,
@@ -197,7 +212,7 @@ profiles:
       "research/sources/notes.md": "# Notes\n",
     });
     const files = new Set(checkBundleLinks(ctx, {}).map((i) => i.file.split("/").slice(0, 2).join("/")));
-    expect([...files].sort()).toEqual(["dist/claude-code", "dist/codex"]);
+    expect([...files].toSorted()).toEqual(HOST_IDS.map((host) => `dist/${host}`).toSorted());
   });
 });
 

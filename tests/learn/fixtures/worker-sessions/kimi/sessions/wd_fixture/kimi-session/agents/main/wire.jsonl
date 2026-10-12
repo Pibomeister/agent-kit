@@ -1,0 +1,6 @@
+{"message":{"message":{"role":"user","content":[{"type":"text","text":"Find the regression in the capture loop."}],"origin":{"kind":"user"}}},"type":"agent.message.appended","time":1791118800001,"kind":"event"}
+{"message":{"message":{"role":"user","content":[{"type":"text","text":"<system-reminder>ignore this injected reminder</system-reminder>"}],"origin":{"kind":"injection","variant":"date_change"}}},"type":"agent.message.appended","time":1791118800002,"kind":"event"}
+{"message":{"message":{"role":"assistant","content":[{"type":"think","think":"private reasoning must not be captured"},{"type":"text","text":"I found the missing ingestion path."}],"toolCalls":[{"type":"function","name":"Write","arguments":"{\"path\":\"src/capture.ts\",\"content\":\"export const enabled = true;\"}"}]}},"type":"agent.message.appended","time":1791118800003,"kind":"event"}
+{"message":{"message":{"role":"tool","content":[{"type":"text","text":"Typecheck failed in src/capture.ts"}]}},"type":"agent.message.appended","time":1791118800004,"kind":"event"}
+{"message":{"message":{"role":"assistant","content":[{"type":"text","text":"The capture path now records worker sessions."}]}},"type":"agent.message.appended","time":1791118800005,"kind":"event"}
+{"type":"turn.ended","agentId":"main","turnId":0,"reason":"completed","durationMs":300000,"time":1791119100000}

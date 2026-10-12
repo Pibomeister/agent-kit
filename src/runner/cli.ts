@@ -3,6 +3,7 @@ import { chmodSync, existsSync, readFileSync, realpathSync, unlinkSync } from "n
 import { createConnection, createServer } from "node:net";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
+import { unknownSelector } from "../util/suggest.ts";
 import { Runner } from "./core.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
@@ -451,6 +452,11 @@ async function call(argv: readonly string[], io: Io): Promise<number> {
   const verb = argv[0];
   if (!socket || !token || !verb || verb.startsWith("--"))
     throw new Error("call needs a verb, --socket or AK_RUNNER_SOCKET, and AK_RUNNER_TOKEN");
+  // Refused before connecting: the service answers an unknown verb only as one this token may not use.
+  if (!WORKER.has(verb) && !ADMIN.has(verb)) {
+    io.err(`ak runner: ${unknownSelector("verb", verb, [...WORKER, ...ADMIN])}`);
+    return 2;
+  }
   const source = flag(argv, "json");
   if (source === undefined) throw new Error("call needs --json <request-file>");
   const argsValue: unknown = await Bun.file(source).json();
@@ -491,6 +497,7 @@ export async function runRunner(argv: readonly string[], io: Io): Promise<number
   try {
     if (argv[0] === "serve") return await serve(argv.slice(1), io);
     if (argv[0] === "call") return call(argv.slice(1), io);
+    if (argv[0] !== undefined) io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
     io.err(
       "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--socket-mode 600|660]",
     );

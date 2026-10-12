@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "SessionStart",
+  "session_id": "session_kimi_fixture",
+  "session_title": "Fix the refund flow",
+  "client_type": "kimi_code_cli",
+  "cwd": "/home/operator/shop",
+  "source": "resume",
+  "profile": "default"
+}

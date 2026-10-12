@@ -1,5 +1,5 @@
 /**
- * Episode memory: ended claude-mem sessions become `episodes.jsonl` rows,
+ * Episode memory: ended observed sessions become `episodes.jsonl` rows,
  * deterministically, each with a priority. Rows are only ever appended; when a
  * resumed session gains observations, its newer row supersedes the older one.
  * Consolidation is recorded beside them in `raw/consolidated.jsonl` as
@@ -12,9 +12,10 @@
  * T tokens over the most tokens of any episode in the 30-day window, N the
  * share of modified files no earlier episode touched, A exp(-age_days / 14).
  */
+import { scrubSecrets } from "../core/secrets.ts";
 import { appendJsonl, nowIso, nowMs, readJsonl } from "../core/store.ts";
 import type { Ledger } from "../core/ledger.ts";
-import { type ClaudeMemSource, jsonList, type SessionRow } from "../sources/claude-mem.ts";
+import { jsonList, type MemoryObservationSource, type SessionRow } from "../sources/claude-mem.ts";
 import { isFailureObservation } from "./ledger.ts";
 
 export interface Episode {
@@ -32,6 +33,12 @@ export interface Episode {
   corrections: number;
   review_events: number;
   priority: number;
+  /**
+   * The guardrail and lesson ids the session-start block showed this session,
+   * joined from its start spans. Empty when a start was recorded and showed
+   * none; absent when no start was recorded for the session.
+   */
+  shown?: string[];
   /** Written by ledgers from before `raw/consolidated.jsonl`; read, never written. */
   consolidated_run?: string;
 }
@@ -56,6 +63,12 @@ export interface EpisodeEvent {
   obs_id?: number | null;
 }
 
+/**
+ * What a session was shown at its starts, by the id its host gives it, in the
+ * order first shown. Undefined when no start was recorded for that id.
+ */
+export type ShownLookup = (hostSessionId: string) => readonly string[] | undefined;
+
 /** The review-event source for a user correction captured by the prompt hook. */
 export const CORRECTION_SOURCE = "correction";
 
@@ -74,7 +87,7 @@ function isoToMs(ts: string | undefined): number | null {
 }
 
 export function rawEpisode(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   session: SessionRow,
   events: readonly EpisodeEvent[],
 ): Omit<Episode, "priority"> | null {
@@ -101,7 +114,7 @@ export function rawEpisode(
     platform: session.platform_source,
     started: session.started_at_epoch,
     ended,
-    prompts: source.promptCount(session.id),
+    prompts: source.promptCount(session.id, sid),
     obs: obs.length,
     tokens: obs.reduce((sum, row) => sum + (row.discovery_tokens ?? 0), 0),
     files_modified: [...files].sort(),
@@ -121,6 +134,11 @@ function round4(value: number): number {
   return Math.round(value * 10_000) / 10_000;
 }
 
+/** Stored episodes passed the secret gate, so a fresh path is compared in the form it will be stored in. */
+function stored(path: string): string {
+  return scrubSecrets(path).text;
+}
+
 /** Fill `priority`. T is relative to the most tokens in the 30-day window; N is against earlier episodes' files. */
 export function score(
   fresh: ReadonlyArray<Omit<Episode, "priority">>,
@@ -130,10 +148,10 @@ export function score(
   const inWindow = [...existing.filter((episode) => now - episode.ended <= WINDOW_MS), ...fresh];
   const maxTokens = Math.max(...inWindow.map((episode) => episode.tokens), 0) || 1;
   const seen = new Set<string>();
-  for (const episode of existing) for (const path of episode.files_modified) seen.add(path);
+  for (const episode of existing) for (const path of episode.files_modified) seen.add(stored(path));
   const scored = new Map<string, number>();
   for (const episode of [...fresh].sort((a, b) => a.started - b.started)) {
-    const files = episode.files_modified;
+    const files = episode.files_modified.map(stored);
     const novel = files.filter((path) => !seen.has(path)).length;
     const n = files.length > 0 ? novel / files.length : 0;
     for (const path of files) seen.add(path);
@@ -215,13 +233,30 @@ export function markConsolidated(
   );
 }
 
-/** Append new or observation-refreshed episodes, oldest first. Returns the appended rows. */
+/** What the earlier revision recorded as shown, then anything the start spans add; null when neither says anything. */
+function shownIds(
+  previous: Episode | undefined,
+  session: SessionRow,
+  lookup: ShownLookup | undefined,
+): string[] | null {
+  const native = session.native_id ?? "";
+  const recorded = native === "" ? undefined : lookup?.(native);
+  if (previous?.shown === undefined && recorded === undefined) return null;
+  return [...new Set([...(previous?.shown ?? []), ...(recorded ?? [])])];
+}
+
+/**
+ * Append new or observation-refreshed episodes, oldest first. Returns the
+ * appended rows. `shown` is asked only for the sessions a row is written for,
+ * and a refreshed row keeps what its earlier revision recorded, because the
+ * span files that answer it are rotated and the ledger is not.
+ */
 export function buildEpisodes(
-  source: ClaudeMemSource,
+  source: MemoryObservationSource,
   ledger: Ledger,
   memProject: string,
   events: readonly EpisodeEvent[],
-  options: { now?: number; days?: number; dryRun?: boolean } = {},
+  options: { now?: number; days?: number; dryRun?: boolean; shown?: ShownLookup } = {},
 ): Episode[] {
   const now = options.now ?? nowMs();
   const existing = loadEpisodes(ledger);
@@ -232,7 +267,9 @@ export function buildEpisodes(
     if (previous !== undefined && session.observation_count <= previous.obs) continue;
     const episode = rawEpisode(source, session, events);
     if (episode === null) continue;
-    if (previous === undefined || episode.obs > previous.obs) raw.push(episode);
+    if (previous !== undefined && episode.obs <= previous.obs) continue;
+    const shown = shownIds(previous, session, options.shown);
+    raw.push(shown === null ? episode : { ...episode, shown });
   }
   const refreshed = new Set(raw.map((episode) => episode.sid));
   const fresh = score(
@@ -244,6 +281,7 @@ export function buildEpisodes(
     appendJsonl(
       ledger.path("episodes.jsonl"),
       [...fresh].sort((a, b) => a.started - b.started),
+      ledger.dir,
     );
   }
   return fresh;

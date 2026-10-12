@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { loadCatalog } from "../src/catalog/load.ts";
 import { runCli } from "../src/cli.ts";
+import { checkBundles } from "../src/packaging/build.ts";
 import { ADAPTATIONS_FILE, ADAPTATIONS_FRAGMENT_DIR } from "../src/validation/provenance.ts";
 import { makeTree, wellFormedSkill, DENY_MARKER, sampleModelTerm } from "./helpers/tree.ts";
 
@@ -119,6 +121,14 @@ function capture() {
 const BUILDABLE = {
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n",
+  "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
+  "node_modules/ajv-formats/LICENSE": "Copyright (c) 2020 Evgeny Poberezkin\n",
+  "node_modules/fast-deep-equal/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\n",
+  "node_modules/fast-uri/LICENSE": "Copyright (c) 2011-2021 Gary Court\n",
+  "node_modules/json-schema-traverse/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\n",
+  "node_modules/yaml/LICENSE": "Copyright Eemeli Aro\n",
+  "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
+  "provenance/licenses/thedotmack_claude-mem.NOTICE": "Claude-Mem\nCopyright 2026 Alex Newman\n",
   // §5.2's authority for the four identity fields the host manifests carry.
   // The values are the ones CATALOG above produces -- `name` from `package.id`,
   // `description` from `package.name` -- because a tree whose two sides already
@@ -146,6 +156,18 @@ describe("ak", () => {
     const io = capture();
     expect(runCli(["frobnicate"], { cwd: cleanTree(), io: io.io })).not.toBe(0);
     expect(io.stderr()).toContain("frobnicate");
+  });
+
+  test("an unknown command names the command it was probably meant to be", () => {
+    const io = capture();
+    expect(runCli(["valdiate"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.err[0]).toBe("ak: unknown command 'valdiate'; did you mean validate?");
+  });
+
+  test("an unknown kb command suggests kb", () => {
+    const io = capture();
+    expect(runCli(["kbb"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.err[0]).toBe("ak: unknown command 'kbb'; did you mean kb?");
   });
 });
 
@@ -191,7 +213,8 @@ describe("ak validate", () => {
   test("the summary counts errors, warnings and notes", () => {
     const io = capture();
     runCli(["validate"], { cwd: cleanTree(), io: io.io });
-    expect(io.stdout()).toMatch(/0 error/);
+    // Anchored: an unanchored /0 error/ also matches "10 errors".
+    expect(io.stdout()).toMatch(/^ak validate: 0 errors, \d+ warnings?, \d+ notes?, /m);
   });
 
   /**
@@ -348,7 +371,7 @@ describe("ak validate --skill-style", () => {
 });
 
 describe("ak build", () => {
-  test("writes both host bundles and enumerates skills explicitly", () => {
+  test("writes every host bundle and enumerates skills explicitly", () => {
     const root = cleanTree();
     const io = capture();
     expect(runCli(["build"], { cwd: root, io: io.io })).toBe(0);
@@ -357,6 +380,7 @@ describe("ak build", () => {
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { skills: string[] };
     expect(manifest.skills).toEqual(["./skills/triage"]);
     expect(existsSync(join(root, "dist/codex"))).toBe(true);
+    expect(existsSync(join(root, "dist/kimi/.kimi-plugin/plugin.json"))).toBe(true);
   });
 
   test("--check on an unbuilt tree fails and writes nothing", () => {
@@ -396,10 +420,50 @@ describe("ak build", () => {
     expect(manifest.skills).toEqual([]);
   });
 
-  test("an unknown profile is an error", () => {
+  test("an unknown profile is refused before building, with the profiles that exist", () => {
     const io = capture();
-    expect(runCli(["build", "--profile", "ghost"], { cwd: cleanTree(), io: io.io })).not.toBe(0);
-    expect(io.stdout()).toContain("packaging.unknown-profile");
+    const root = cleanTree();
+    expect(runCli(["build", "--profile", "cor"], { cwd: root, io: io.io })).toBe(2);
+    expect(io.stderr()).toBe("ak build: unknown profile 'cor'; did you mean core?");
+    expect(existsSync(join(root, "dist"))).toBe(false);
+  });
+
+  // `ak validate --profile` only reached the links check, which keeps link issues alone, so a
+  // mistyped profile measured nothing and passed.
+  test("ak validate refuses an unknown profile instead of passing over it", () => {
+    const io = capture();
+    expect(runCli(["validate", "--profile", "ghost"], { cwd: cleanTree(), io: io.io })).toBe(2);
+    expect(io.stderr()).toBe("ak validate: unknown profile 'ghost'; valid: core, all");
+    expect(io.stdout()).toBe("");
+  });
+
+  test("--profile all is known even where the catalog does not declare it", () => {
+    expect(runCli(["validate", "--profile", "all"], { cwd: cleanTree(), io: capture().io })).toBe(0);
+  });
+
+  test("an unknown host is refused with the hosts that exist", () => {
+    for (const command of ["validate", "build"]) {
+      const io = capture();
+      expect(runCli([command, "--host", "codx"], { cwd: cleanTree(), io: io.io })).toBe(2);
+      expect(io.stderr()).toBe(`ak ${command}: unknown host 'codx'; did you mean codex?`);
+    }
+  });
+
+  test("--host builds that host's bundle alone", () => {
+    const root = cleanTree();
+    expect(runCli(["build", "--host", "codex"], { cwd: root, io: capture().io })).toBe(0);
+    expect(existsSync(join(root, "dist", "codex"))).toBe(true);
+    expect(existsSync(join(root, "dist", "claude-code"))).toBe(false);
+  });
+
+  test("the packager's own unknown-profile issue names the nearest profile", () => {
+    const root = cleanTree();
+    const { catalog } = loadCatalog(root);
+    if (catalog === null) throw new Error("fixture catalog did not load");
+    const issue = checkBundles({ root, catalog }, { profile: "cor" }).find(
+      (i) => i.rule === "packaging.unknown-profile",
+    );
+    expect(issue?.message).toContain("did you mean core?");
   });
 
   /**

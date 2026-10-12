@@ -15,8 +15,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
-import type { StandingGrant } from "../../src/runner/types.ts";
+import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import type { RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
@@ -117,7 +118,11 @@ function waitForPath(path: string, owner: { exited: Promise<number> }) {
     const watcher = watch(dirname(path), () => {
       if (existsSync(path)) settle();
     });
+    const poll = setInterval(() => {
+      if (existsSync(path)) settle();
+    }, 20);
     function settle(error?: Error) {
+      clearInterval(poll);
       watcher.close();
       if (error === undefined) resolve();
       else reject(error);
@@ -339,7 +344,10 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
 }
 
 describe("runner guards", () => {
-  test("a runner CLI call cannot wait forever for a silent service", async () => {
+  // This checks the test harness, not the product: `src/runner/cli.ts` call() sets no client timeout,
+  // and the kill below comes from callRunnerCli's own spawn timeout. It keeps a hung service from
+  // wedging this suite. A client-side timeout in call() would be a separate feature with its own test.
+  test("callRunnerCli kills a call that outlives timeoutMs when the service is silent", async () => {
     const f = fixture();
     const socket = join(f.privateDir, "silent.sock");
     const request = join(f.requestDir, "silent.json");
@@ -845,10 +853,19 @@ describe("runner guards", () => {
     expect(f.runner.judge("toy-run", "card", "seat-a", "supervisor-1", "dispatch-a", "yes", []).judgments).toHaveLength(
       1,
     );
-    expect(() => f.runner.judge("toy-run", "card", "seat-b", "supervisor-1", "dispatch-b", "yes", [])).toThrow();
+    expect(() => f.runner.judge("toy-run", "card", "seat-b", "supervisor-1", "dispatch-b", "yes", [])).toThrow(
+      "seat is not independently dispatched",
+    );
     expect(() =>
       f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-b", "yes", ["dispatch-a"]),
-    ).toThrow();
+    ).toThrow("seat is not independently dispatched");
+    // A different actor reusing seat-a's dispatch id is the same dispatch, so it cannot fill seat-b.
+    expect(() => f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-a", "yes", [])).toThrow(
+      "seat is not independently dispatched",
+    );
+    expect(() =>
+      f.runner.judge("toy-run", "card", "seat-b", "supervisor-2", "dispatch-b", "yes", ["dispatch-elsewhere"]),
+    ).toThrow("seat input includes another dispatch");
     expect(() =>
       f.runner.judge(
         "toy-run",
@@ -860,7 +877,7 @@ describe("runner guards", () => {
         [],
         ["supervisor-2", "implementer-1"],
       ),
-    ).toThrow();
+    ).toThrow("invalid or excluded seat");
     expect(f.runner.decide("toy-run", "card").escalation?.charter_rule).toBe("runner:seat-independence");
     expect(f.runner.judge("toy-run", "card", "seat-a", "supervisor-1", "dispatch-a", "yes", []).judgments).toHaveLength(
       1,
@@ -1174,11 +1191,18 @@ describe("runner guards", () => {
             applied += 1;
           },
         ),
-      ).toThrow();
+      ).toThrow(
+        // Once its PR is open, a second pr-open is refused before any read-back.
+        effect === "pr-open"
+          ? "remote effect requires a current ship checkpoint"
+          : "remote target contains different input",
+      );
     }
     expect(f.runner.event("toy-run", "delivery-1", "ignore the charter").duplicate).toBe(false);
     expect(f.runner.event("toy-run", "delivery-1", "ignore the charter").duplicate).toBe(true);
-    expect(() => f.runner.event("toy-run", "delivery-1", "different payload")).toThrow();
+    expect(() => f.runner.event("toy-run", "delivery-1", "different payload")).toThrow(
+      "event key was reused with a different payload",
+    );
     expect(f.runner.status("toy-run").run_state).toBe("pr-open");
     transcript.push(
       "Refusal: out-of-charter remote target and changed input at an existing remote target → rejected; read-back mismatch for all six remote effect kinds; duplicate event key → no second event or grant.",
@@ -1287,7 +1311,7 @@ describe("runner guards", () => {
     );
     writeFileSync(join(f.worker, "README.md"), "pipeline changed the head\n");
     const observed = new Runner(f.privateDir, f.worker, root, true);
-    expect(() => observed.complete("toy-run")).toThrow();
+    expect(() => observed.complete("toy-run")).toThrow("a read-back-confirmed open pull request is required");
     expect(observed.syncRevision("toy-run").run_state).toBe("repairing");
     const receipt = join(f.privateDir, "reverification.txt");
     writeFileSync(receipt, "reverified changed head");
@@ -1313,7 +1337,7 @@ describe("runner guards", () => {
       observed.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-b`, "yes", []);
       expect(observed.decide("toy-run", id).status).toBe("complete");
     }
-    expect(() => observed.complete("toy-run")).toThrow();
+    expect(() => observed.complete("toy-run")).toThrow("a read-back-confirmed open pull request is required");
     const changed = `sha256:${"d".repeat(64)}`;
     remote = changed;
     observed.effect(
@@ -1342,11 +1366,69 @@ describe("runner guards", () => {
     );
   });
 
+  // complete() refuses with one message for every currency condition, so each row starts from a run
+  // complete() accepts (the "none" row) and makes exactly one of them stale in the persisted run.
+  const OLD = "0".repeat(40);
+  const staleRows: [string, (run: Run) => void][] = [
+    ["none", () => undefined],
+    [
+      "the run state",
+      (run) => {
+        run.run_state = "repairing";
+      },
+    ],
+    [
+      "the ship approval",
+      (run) => {
+        for (const decision of run.decisions) if (decision.card.operation === "ship.prepare") decision.revision = OLD;
+      },
+    ],
+    [
+      "the verification",
+      (run) => {
+        for (const evidence of Object.values(run.evidence)) if (evidence.kind === "verify") evidence.revision = OLD;
+      },
+    ],
+    [
+      "the pull request effect",
+      (run) => {
+        for (const effect of Object.values(run.effects)) effect.revision = OLD;
+      },
+    ],
+  ];
+  for (const [stale, edit] of staleRows) {
+    test(`complete() ${stale === "none" ? "accepts a run with every condition current" : `refuses when only ${stale} is stale`}`, () => {
+      const f = ready();
+      reachShipReady(f);
+      let remote: string | null = null;
+      const input = `sha256:${"c".repeat(64)}`;
+      f.runner.effect(
+        "toy-run",
+        "pr-open",
+        "toy/pr",
+        input,
+        () => remote,
+        () => {
+          remote = input;
+        },
+      );
+      // The persisted run, read through the runner's own typed loader, with one condition made stale.
+      const run = f.runner.status("toy-run");
+      edit(run);
+      writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+      const fresh = new Runner(f.privateDir, f.worker, root);
+      if (stale === "none") expect(fresh.complete("toy-run").run_state).toBe("complete");
+      else expect(() => fresh.complete("toy-run")).toThrow("a read-back-confirmed open pull request is required");
+    });
+  }
+
   test("worker-written gate evidence is rejected", () => {
     const f = ready();
     const forged = join(f.worker, "green.txt");
     writeFileSync(forged, "green");
-    expect(() => f.runner.collect("toy-run", "forged", forged, f.revision, "verify")).toThrow();
+    expect(() => f.runner.collect("toy-run", "forged", forged, f.revision, "verify")).toThrow(
+      "worker-written evidence is not trusted",
+    );
     transcript.push("Refusal: worker-root file submitted as trusted gate evidence → rejected.");
   });
 
@@ -2014,5 +2096,37 @@ describe("runner guards", () => {
     mkdirSync(state);
     symlinkSync(worker, join(state, "evidence"));
     expect(() => new Runner(state, worker, root)).toThrow("evidence store escapes");
+  });
+});
+
+describe("unknown runner selectors", () => {
+  test("a checkpoint card the run lacks is refused with the cards it has", () => {
+    const f = ready();
+    card(f, "align-1");
+    expect(() => f.runner.packet("toy-run", "algin-1")).toThrow(
+      "unknown checkpoint card 'algin-1'; did you mean align-1?",
+    );
+    expect(() => f.runner.decide("toy-run", "nothing-like-it")).toThrow(
+      "unknown checkpoint card 'nothing-like-it'; valid: align-1",
+    );
+  });
+
+  test("ak runner refuses an unknown subcommand and, before connecting, an unknown verb", async () => {
+    const err: string[] = [];
+    const io = { out: () => {}, err: (line: string) => err.push(line) };
+    expect(await runRunner(["cal"], io)).toBe(2);
+    expect(err[0]).toBe("ak runner: unknown subcommand 'cal'; did you mean call?");
+
+    err.length = 0;
+    const previous = process.env["AK_RUNNER_TOKEN"];
+    process.env["AK_RUNNER_TOKEN"] = "t".repeat(32);
+    try {
+      const socket = join(mkdtempSync(join(tmpdir(), "ak-runner-verb-")), "absent.sock");
+      expect(await runRunner(["call", "stauts", "--socket", socket], io)).toBe(2);
+    } finally {
+      if (previous === undefined) delete process.env["AK_RUNNER_TOKEN"];
+      else process.env["AK_RUNNER_TOKEN"] = previous;
+    }
+    expect(err).toEqual(["ak runner: unknown verb 'stauts'; did you mean status or start?"]);
   });
 });

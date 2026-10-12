@@ -13,13 +13,13 @@
  * Promotion is a human act: `promote` prints the draft as input to the
  * `writing-skills` skill and installs nothing.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { loopDir, projectFolderName, reflectFolderName } from "../core/paths.ts";
 import { buildPrompt, PACKAGE_ROOT } from "../core/roles.ts";
-import { appendJsonl, nowIso, readJson, todayUtc, writeJson } from "../core/store.ts";
+import { appendJsonl, nowIso, readJson, todayUtc, writeGated, writeJson } from "../core/store.ts";
 import { runOf, span, triggerOf } from "../core/trace.ts";
 import { memProject } from "../review/ingest.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
@@ -108,7 +108,7 @@ export function loadRegistry(ledger: Ledger): SkillRegistry {
 }
 
 function saveRegistry(ledger: Ledger, registry: SkillRegistry): void {
-  writeJson(ledger.path("registry.json"), registry);
+  writeJson(ledger.path("registry.json"), registry, ledger.dir);
 }
 
 /**
@@ -449,7 +449,7 @@ export function discover(ctx: LearnContext, root: string, options: DiscoverOptio
       registry.next += 1;
       taken.add(candidate.name);
       mkdirSync(ledger.path("candidates"), { recursive: true });
-      writeFileSync(ledger.path("candidates", `${id}.md`), renderDraft(candidate, id, created));
+      writeGated(ledger.dir, ledger.path("candidates", `${id}.md`), renderDraft(candidate, id, created));
       registry.candidates[id] = {
         name: candidate.name,
         description: candidate.description,
@@ -464,9 +464,11 @@ export function discover(ctx: LearnContext, root: string, options: DiscoverOptio
     }
     registry.last_discover = nowIso();
     saveRegistry(ledger, registry);
-    appendJsonl(ledger.path("raw", "discover.jsonl"), [
-      { at: registry.last_discover, sessions: sessions.length, proposed: proposed.length, kept: made },
-    ]);
+    appendJsonl(
+      ledger.path("raw", "discover.jsonl"),
+      [{ at: registry.last_discover, sessions: sessions.length, proposed: proposed.length, kept: made }],
+      ledger.dir,
+    );
     ctx.span?.attr("kept", made.length);
     const sha = ledger.commit(`discover: ${made.length} candidates from ${sessions.length} sessions`);
     ctx.span?.commit(sha);

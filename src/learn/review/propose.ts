@@ -9,16 +9,18 @@
  * expects the caller to hold the ledger lock.
  */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnContext } from "../core/context.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { run } from "../core/proc.ts";
-import { readText, todayUtc } from "../core/store.ts";
+import { type Candidate, similarLine, similarTo } from "../core/similar.ts";
+import { readText, SECRET_REDACTIONS_FILE, todayUtc, writeGated } from "../core/store.ts";
 import { runOf } from "../core/trace.ts";
 import { lessonDraft, proposeLesson } from "../kb.ts";
 import { rawSnapshot } from "./events.ts";
 import { EVENTS_FILE } from "./ledger.ts";
-import { PROCESSED_FILE } from "./maintain.ts";
+import { patternContent, PROCESSED_FILE } from "./maintain.ts";
 import {
   firstLine,
   impactRow,
@@ -98,16 +100,45 @@ function teamProposal(pattern: Pattern): string {
 }
 
 /**
+ * Guardrails a new draft resembles: every other pattern already promoted or
+ * retired, compared on title, problem, root cause and fix. A retired one is
+ * listed too, because a guardrail that was tried and withdrawn is what a
+ * reviewer most needs to see beside its near-copy.
+ */
+export function similarGuardrails(pattern: Pattern, patterns: ReadonlyMap<string, Pattern>): Candidate[] {
+  const pool = patterns
+    .values()
+    .filter((p) => p.id !== pattern.id && (p.meta.promoted_to === "guardrails" || p.meta.status === "retired"))
+    .map((p) => ({ id: p.id, status: str(p.meta, "status"), text: guardrailText(p) }));
+  return similarTo(guardrailText(pattern), pool);
+}
+
+function guardrailText(pattern: Pattern): string {
+  return `${str(pattern.meta, "title")}\n${patternContent(pattern)}`;
+}
+
+interface Promotion {
+  /** A team proposal was added. */
+  team: boolean;
+  /** Guardrails the draft resembles. */
+  similar: Candidate[];
+}
+
+/**
  * Promote one pattern in memory: guardrail bullet, bookkeeping, impact row,
- * team proposal and knowledgebase draft. Returns whether a team proposal was added.
+ * team proposal and knowledgebase draft, with the guardrails it resembles
+ * beside the draft. Returns whether a team proposal was added and those
+ * resembling guardrails.
  */
 function promoteOne(
   ctx: LearnContext,
   ledger: Ledger,
   root: string,
   pattern: Pattern,
+  patterns: ReadonlyMap<string, Pattern>,
   texts: { guard: string; pending: string },
-): boolean {
+): Promotion {
+  const similar = similarGuardrails(pattern, patterns);
   texts.guard = `${texts.guard.replace(/\n+$/, "")}${texts.guard.trim() === "" ? "" : "\n"}${bullet(pattern)}\n`;
   pattern.meta.promoted_to = "guardrails";
   pattern.meta.promoted_count = num(pattern.meta, "count");
@@ -118,13 +149,14 @@ function promoteOne(
     proposed = true;
   }
   try {
-    proposeLesson(ctx, ledger.dir, guardrailDraft(ctx, pattern, root));
+    proposeLesson(ctx, ledger.dir, guardrailDraft(ctx, pattern, root), similar);
   } catch (error) {
     // One unusable draft skips its own knowledgebase proposal; the guardrail and every other promotion stand.
     logLine(ledger, `skipped knowledgebase draft for ${pattern.id}: ${(error as Error).message}`);
   }
+  if (similar.length > 0) logLine(ledger, `similar ${similarLine(pattern.id, similar)}: amend or supersede`);
   savePattern(pattern);
-  return proposed;
+  return { team: proposed, similar };
 }
 
 export interface SkillCandidate {
@@ -167,6 +199,7 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
   };
   const promoted: string[] = [];
   const proposed: string[] = [];
+  const similar: string[] = [];
   let baselined = false;
   for (const pattern of patterns.values()) {
     // A promotion recorded before `promoted_count` existed: today's count becomes its baseline.
@@ -185,7 +218,9 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
       continue;
     promoted.push(pattern.id);
     if (ctx.config.dryRun) continue;
-    if (promoteOne(ctx, ledger, root, pattern, texts)) proposed.push(pattern.id);
+    const result = promoteOne(ctx, ledger, root, pattern, patterns, texts);
+    if (result.team) proposed.push(pattern.id);
+    if (result.similar.length > 0) similar.push(`; similar ${similarLine(pattern.id, result.similar)}`);
   }
   if (promoted.length === 0) {
     ctx.span?.status(ctx.config.dryRun ? "dry-run" : "nothing");
@@ -200,20 +235,20 @@ export function propose(ctx: LearnContext, ledger: Ledger, root: string, thresho
     ctx.span?.status("dry-run");
     return `dry run: would promote ${promoted.join(",")}`;
   }
-  writeFileSync(ledger.path("guardrails.md"), texts.guard);
-  writeFileSync(ledger.path("pending-team-promotions.md"), texts.pending);
+  writeGated(ledger.dir, ledger.path("guardrails.md"), texts.guard);
+  writeGated(ledger.dir, ledger.path("pending-team-promotions.md"), texts.pending);
   rebuildIndex(ledger, patterns);
   const teamNote = proposed.length > 0 ? `; team proposals ${proposed.join(",")}` : "";
   const sha = ledger.commit(`propose: guardrails +${promoted.join(",")}${teamNote}`);
   ctx.span?.commit(sha);
-  return `promoted ${promoted.join(",")} to guardrails${teamNote}`;
+  return `promoted ${promoted.join(",")} to guardrails${teamNote}${similar.join("")}`;
 }
 
 /** A human's promotion of one pattern, whatever its count. A retired or already promoted pattern is refused. */
 export function promoteById(ctx: LearnContext, ledger: Ledger, root: string, id: string): string {
   const patterns = loadPatterns(ledger);
   const pattern = patterns.get(id);
-  if (pattern === undefined) return `unknown pattern ${id}`;
+  if (pattern === undefined) return unknownSelector("pattern", id, [...patterns.keys()]);
   if (pattern.meta.status === "retired") return `${id} is retired`;
   if (str(pattern.meta, "promoted_to") !== "")
     return `${id} is already promoted to ${str(pattern.meta, "promoted_to")}`;
@@ -222,25 +257,30 @@ export function promoteById(ctx: LearnContext, ledger: Ledger, root: string, id:
     guard: readText(ledger.path("guardrails.md")),
     pending: readText(ledger.path("pending-team-promotions.md")),
   };
-  const team = promoteOne(ctx, ledger, root, pattern, texts);
-  writeFileSync(ledger.path("guardrails.md"), texts.guard);
-  writeFileSync(ledger.path("pending-team-promotions.md"), texts.pending);
+  const { team, similar } = promoteOne(ctx, ledger, root, pattern, patterns, texts);
+  writeGated(ledger.dir, ledger.path("guardrails.md"), texts.guard);
+  writeGated(ledger.dir, ledger.path("pending-team-promotions.md"), texts.pending);
   rebuildIndex(ledger, patterns);
   ledger.commit(`promote: guardrails +${id} (by hand)${team ? `; team proposal ${id}` : ""}`);
-  return `promoted ${id} to guardrails${team ? `; team proposal ${id}` : ""}`;
+  const similarNote = similar.length > 0 ? `; similar ${similarLine(id, similar)}` : "";
+  return `promoted ${id} to guardrails${team ? `; team proposal ${id}` : ""}${similarNote}`;
 }
 
-/** Remove a pattern's bullet and mark it retired. The page and its evidence stay on record. */
-export function retire(ledger: Ledger, id: string): string {
+/**
+ * Remove a pattern's bullet and mark it retired. The page and its evidence stay on record.
+ * A dry run looks the pattern up and writes nothing, so it refuses an unknown id as the real run would.
+ */
+export function retire(ledger: Ledger, id: string, dryRun = false): string {
   const patterns = loadPatterns(ledger);
   const pattern = patterns.get(id);
-  if (pattern === undefined) return `unknown pattern ${id}`;
+  if (pattern === undefined) return unknownSelector("pattern", id, [...patterns.keys()]);
+  if (dryRun) return `dry run: would retire ${id}`;
   pattern.meta.status = "retired";
   pattern.meta.promoted_to = "";
   savePattern(pattern);
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const guard = ledger.path("guardrails.md");
-  writeFileSync(guard, readText(guard).replace(new RegExp(`^- \\[${escaped}\\].*\\n?`, "gm"), ""));
+  writeGated(ledger.dir, guard, readText(guard).replace(new RegExp(`^- \\[${escaped}\\].*\\n?`, "gm"), ""));
   impactRow(ledger, "retire", id, "bullet removed, page kept");
   rebuildIndex(ledger, patterns);
   ledger.commit(`retire: ${id}`);
@@ -249,8 +289,9 @@ export function retire(ledger: Ledger, id: string): string {
 
 /**
  * The paths a rollback restores: judgement and policy, plus the processed map, so the events
- * whose classification is undone are classified again on the next maintain. The raw events and
- * the maintainer log are records of what happened and are never rolled back.
+ * whose classification is undone are classified again on the next maintain. The raw events, the
+ * secret gate's redaction record and the maintainer log are records of what happened and are
+ * never rolled back.
  */
 export const ROLLBACK_PATHS: readonly string[] = [
   "patterns",
@@ -274,13 +315,13 @@ export function rollback(ledger: Ledger, to?: string): string {
     const head = ledger.head();
     if (head === null) return "nothing to roll back";
     const subject = ledger.git(["log", "-1", "--format=%s", head]).stdout.trim();
-    const raw = rawSnapshot(ledger);
+    const raw = RAW_FILES.map((file) => [file, rawSnapshot(ledger, file)] as const);
     if (!ledger.revert(head)) return `revert of '${subject}' failed; nothing was changed`;
     keepRaw(ledger, raw);
     return `reverted '${subject}'`;
   }
   const sha = ledger.git(["rev-parse", "--verify", "--quiet", `${to}^{commit}`]).stdout.trim();
-  if (sha === "") return `unknown revision ${to}`;
+  if (sha === "") return ledger.unknownRevision(to);
   if (ledger.git(["merge-base", "--is-ancestor", sha, "HEAD"]).code !== 0)
     return `${to} is not an ancestor of the ledger's HEAD`;
   const dirty = ledger
@@ -321,12 +362,19 @@ function restorePaths(ledger: Ledger, rev: string, paths: readonly string[]): st
   return null;
 }
 
-/** After a revert, put back any raw events it removed, in a commit of its own. */
-function keepRaw(ledger: Ledger, raw: Buffer | null): void {
-  if (raw === null || raw.equals(rawSnapshot(ledger) ?? Buffer.alloc(0))) return;
-  mkdirSync(ledger.path("raw"), { recursive: true });
-  writeFileSync(ledger.path(EVENTS_FILE), raw);
-  ledger.commit(`rollback: keep ${EVENTS_FILE} append-only`);
+/** The append-only files a revert of the latest commit must leave as they were. */
+const RAW_FILES = [EVENTS_FILE, SECRET_REDACTIONS_FILE] as const;
+
+/** After a revert, put back any raw rows it removed, in a commit of its own. */
+function keepRaw(ledger: Ledger, raw: ReadonlyArray<readonly [string, Buffer | null]>): void {
+  const restored: string[] = [];
+  for (const [file, bytes] of raw) {
+    if (bytes === null || bytes.equals(rawSnapshot(ledger, file) ?? Buffer.alloc(0))) continue;
+    mkdirSync(ledger.path("raw"), { recursive: true });
+    writeFileSync(ledger.path(file), bytes);
+    restored.push(file);
+  }
+  if (restored.length > 0) ledger.commit(`rollback: keep ${restored.join(", ")} append-only`);
 }
 
 export function pendingPromotions(ledger: Ledger): string {

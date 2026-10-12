@@ -34,7 +34,7 @@
       "minimum": 0
     },
     "obs_ids": {
-      "description": "The observation ids shown to this backfill run. On an accepted run these exact ids, and no id between them, are screened for downstream learning.",
+      "description": "The exact observation ids shown to a reflect or backfill run. On an accepted run these ids, and no id between them, are screened for downstream learning.",
       "type": "array",
       "items": { "type": "integer", "minimum": 0 }
     },
@@ -42,6 +42,7 @@
     "selected": { "type": "integer", "minimum": 0 },
     "compacted_pages": { "type": "integer", "minimum": 0 },
     "stale_lessons": { "type": "integer", "minimum": 0 },
-    "new": { "type": "integer", "minimum": 0 }
+    "new": { "type": "integer", "minimum": 0 },
+    "worker_observations": { "type": "integer", "minimum": 0 }
   }
 }

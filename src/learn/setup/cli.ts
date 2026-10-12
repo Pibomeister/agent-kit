@@ -2,6 +2,7 @@
  * `ak learn setup` — install, check and remove the learning runtime's host wiring.
  * Every verb prints what it changed and is safe to re-run.
  */
+import { unknownSelector } from "../../util/suggest.ts";
 import { flag, type LearnArea, type LearnContext } from "../core/context.ts";
 import { doctor } from "./doctor.ts";
 import { parseInterval, schedule } from "./schedule.ts";
@@ -9,7 +10,7 @@ import { scope } from "./scope.ts";
 import { type SeedOptions, seed } from "./seed.ts";
 import { uninstall } from "./uninstall.ts";
 import { verify } from "./verify.ts";
-import { defaultDeps, type SetupDeps, wire } from "./wire.ts";
+import { defaultDeps, isWireHost, type SetupDeps, WIRE_HOSTS, wire } from "./wire.ts";
 
 /** The setup area bound to a dependency factory; tests pass one that never reaches the real machine. */
 export function createSetupArea(depsFor: (ctx: LearnContext) => SetupDeps = defaultDeps): LearnArea {
@@ -21,12 +22,11 @@ export function createSetupArea(depsFor: (ctx: LearnContext) => SetupDeps = defa
         run: (_args, ctx) => doctor(ctx, depsFor(ctx)),
       },
       wire: {
-        usage:
-          "setup wire [--host claude|codex] [--no-mem] [--restart-worker]  merge hook entries and claude-mem settings",
+        usage: `setup wire [--host ${WIRE_HOSTS.join("|")}] [--no-mem] [--restart-worker]  merge hook entries and claude-mem settings`,
         run: (args, ctx) => {
           const host = flag(args, "host");
-          if (host !== undefined && host !== "claude" && host !== "codex") {
-            ctx.io.err("ak learn setup wire: --host is claude or codex");
+          if (host !== undefined && !isWireHost(host)) {
+            ctx.io.err(`ak learn setup wire: --host: ${unknownSelector("host", host, WIRE_HOSTS)}`);
             return 2;
           }
           return wire(ctx, depsFor(ctx), {

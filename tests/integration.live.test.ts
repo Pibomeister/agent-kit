@@ -7,6 +7,8 @@ import { runValidation } from "../src/validation/run.ts";
 import { parseGLocator, parseLocatorField } from "../src/validation/provenance.ts";
 import { readTextIfPresent } from "../src/util/fs.ts";
 import { planAll } from "../src/packaging/build.ts";
+import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { HOST_MANIFEST_FILE } from "../src/packaging/plan.ts";
 
 /**
  * The one test that runs against the real repository rather than a fixture.
@@ -43,33 +45,32 @@ describe("ak validate against the live tree", () => {
   });
 
   test("today's failures are about the tree being authored, not about the validator", () => {
-    // Not an assertion that the tree is clean -- it is not, and should not be
-    // today. Every error must carry a rule id an author can look up.
-    for (const issue of run.issues.filter((i) => i.severity === "error")) {
-      expect(issue.rule).toMatch(/^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$/);
-    }
+    // Not an assertion that the tree is clean. Every issue, at every severity, must carry a rule id an
+    // author can look up. Errors alone would leave this vacuous on a tree with none, as it was.
+    // The population is never empty: the validator always reports its own coverage notes.
+    expect(run.issues.map((i) => i.rule)).toContain("schemas.validator-rule-coverage");
+    const malformed = run.issues
+      .filter((i) => !/^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$/.test(i.rule))
+      .map((i) => `${i.severity} ${i.rule} ${i.file}`);
+    expect(malformed).toEqual([]);
   });
 });
 
 describe("the other two commands survive the live tree", () => {
-  test("ak build plans both hosts without throwing", () => {
+  test("ak build plans every host without throwing", () => {
     const { catalog } = loadCatalog(ROOT);
     expect(catalog).not.toBeNull();
     if (catalog === null) return;
     const plans = planAll({ root: ROOT, catalog }, {});
-    expect(plans.map((p) => p.host).sort()).toEqual(["claude-code", "codex"]);
+    expect(plans.map((p) => p.host).toSorted()).toEqual([...HOST_IDS].toSorted());
     // Each plan is asked for its own host's manifest. Asking both for
     // `.claude-plugin/plugin.json` is what this line used to do, and it passed
     // -- it was the assertion that one bundle was being emitted twice under two
     // names, written as if that were the requirement. The comparison that owns
     // this properly is in tests/packaging.test.ts; here it only has to be the
     // right question against the real tree.
-    const expected: Record<string, string> = {
-      "claude-code": ".claude-plugin/plugin.json",
-      codex: ".codex-plugin/plugin.json",
-    };
     for (const plan of plans) {
-      expect(`${plan.host}: ${[...plan.files.keys()].includes(expected[plan.host] ?? "")}`).toBe(`${plan.host}: true`);
+      expect(`${plan.host}: ${plan.files.has(HOST_MANIFEST_FILE[plan.host])}`).toBe(`${plan.host}: true`);
     }
   });
 

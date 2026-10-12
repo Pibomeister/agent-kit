@@ -40,6 +40,7 @@
  * A bullet carrying any part of a match is dropped whole, since a bullet
  * redacted in place still carries the wording around the hole.
  */
+import { scrubSecrets } from "../core/secrets.ts";
 import type { ObservationRow, SummaryRow } from "../sources/claude-mem.ts";
 import { citedIds, SECTIONS } from "./ledger.ts";
 
@@ -169,6 +170,20 @@ export function normalWords(text: string): string[] {
     .replace(/\p{M}/gu, "")
     .split(/[^\p{L}\p{N}]+/u)
     .filter((w) => w !== "");
+}
+
+/** What the shared secret gate (`core/secrets.ts`) has no rule for, each replaced by `[redacted:<kind>]`. */
+const SECRETS: ReadonlyArray<readonly [kind: string, pattern: RegExp]> = [
+  ["api-key", /\bsk-[A-Za-z0-9_-]{20,}/g],
+  [
+    "env-secret",
+    /(?<=\b[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*["']?)[^\s"']{8,}/g,
+  ],
+];
+
+/** Text captured from a host record, scrubbed: the rules above first, then the shared secret gate's. */
+export function scrubCaptured(text: string): string {
+  return scrubSecrets(SECRETS.reduce((out, [kind, pattern]) => out.replace(pattern, `[redacted:${kind}]`), text)).text;
 }
 
 function observationText(row: ObservationRow): string {

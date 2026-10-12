@@ -26,6 +26,7 @@ import { effectiveMaxTurns, loadMatrix, MATRIX_FILE, type Matrix, type Subject }
 import { buildPanel, grade, hostJudge, renderTranscript, type Judge, type Panel } from "./panel.ts";
 import { matrixPrices, usageReceipt } from "./pricing.ts";
 import { cleanEnv, evalInstrument } from "./session.ts";
+import { startsFor } from "./explicit-start.ts";
 import { adapterFor, BUNDLE_FOR, runSubject, withoutParentSession } from "./subjects/index.ts";
 import { runCodexAppServer } from "./subjects/codex.ts";
 import { grokToolList } from "./subjects/grok.ts";
@@ -166,8 +167,8 @@ function focusSurface(
   filesCreated: string[],
 ): string | null {
   const focus = grader.focus;
-  if (focus === undefined || focus === "last_message") return session.reply;
-  if (focus === "trace") return renderTranscript(session);
+  if (focus === undefined || focus === "last_message") return startsFor(session.host).canonical(session.reply);
+  if (focus === "trace") return startsFor(session.host).canonical(renderTranscript(session));
   if (focus === "files") return filesCreated.join("\n");
   if (focus === "mock_calls") return null;
   return safeFile(cwd, focus.path);
@@ -178,7 +179,7 @@ function deterministicTranscript(session: SessionResult, filesCreated: string[])
     toolCalls: session.events
       .filter((event): event is ToolEvent => event.kind === "tool")
       .map(({ name, input }) => ({ name, input })),
-    lastMessage: session.reply,
+    lastMessage: startsFor(session.host).canonical(session.reply),
     filesCreated,
   };
 }
@@ -442,7 +443,7 @@ function requestFor(evalCase: EvalCase, subject: Subject, cwd: string, bundleDir
   const adapter = adapterFor(subject.host);
   const cap = effectiveMaxTurns(subject, evalCase.execution.max_turns);
   const request: SessionRequest = {
-    prompt: evalCase.execution.prompt,
+    prompt: startsFor(subject.host).typed(evalCase.execution.prompt),
     cwd,
     env: { ...cleanEnv(adapter.env), ...evalCase.execution.env },
     timeoutMs: Math.max(evalCase.execution.timeout_seconds ?? 0, 600, evalCase.execution.max_turns * 60) * 1000,

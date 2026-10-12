@@ -2,11 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/learn-state.schema.json",
   "title": "Learning ledger state",
-  "description": "The memory ledger's .state.json: the watermark of the last observation reflected, the schedule marks of each job, and the mute switch. A watermark advances only when a reflection is accepted, so a rejected rewrite is retried on the same evidence rather than skipping it (protocol evidence-gate). The file lives in the runtime's ledger directory, never inside a project repository (ruling learning-runtime-is-host-adapter).",
+  "description": "The memory ledger's .state.json: the watermarks of the last observations reflected, the schedule marks of each job, and the mute switch. A watermark advances only when a reflection is accepted, so a rejected rewrite is retried on the same evidence rather than skipping it (protocol evidence-gate). The file lives in the runtime's ledger directory, never inside a project repository (ruling learning-runtime-is-host-adapter).",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "last_obs_id_reflected": { "type": "integer", "minimum": 0 },
+    "last_worker_obs_id_reflected": {
+      "description": "Highest runtime-owned offline worker observation accepted by reflection.",
+      "type": "integer",
+      "minimum": 0
+    },
     "last_reflect": { "description": "Epoch milliseconds.", "type": "integer", "minimum": 0 },
     "last_reflect_attempt": {
       "description": "Epoch milliseconds of the latest failed or rejected reflection.",

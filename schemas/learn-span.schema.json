@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-kit.local/schemas/learn-span.schema.json",
   "title": "Learn span",
-  "description": "One line of the learning runtime's spans.jsonl: one finished unit of work (a review run or stage, a memory tick or job, a skill-learn step, a hook). Rows are shaped like trace spans so a later exporter is a pure mapping. Redaction is by construction: every object is closed and every string is an id, a hash, a timestamp or an enum member, so no field can carry prose, a path or a name. 'project_key' is a salted HMAC of the project root, never the root. 'judge' sums the judge calls made inside the span and its children; 'cost_known' is false when any call reported no cost. The writer validates each row against this schema and drops one that fails.",
+  "description": "One line of the learning runtime's spans.jsonl: one finished unit of work (a review run or stage, a memory tick or job, a skill-learn step, a hook). Rows are shaped like trace spans so a later exporter is a pure mapping. Redaction is by construction: every object is closed and every string is an id, a hash, a timestamp or an enum member, so no field can carry prose, a path or a name. 'project_key' is a salted HMAC of the project root, never the root. The 'session' attribute is a salted HMAC of the id the host gives the session, never the id; the episode builder derives the same key to join what a session was shown ('shown') to its episode row. 'judge' sums the judge calls made inside the span and its children; 'cost_known' is false when any call reported no cost. The writer validates each row against this schema and drops one that fails.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -114,6 +114,7 @@
         "guardrails": { "$ref": "#/$defs/count" },
         "lessons": { "$ref": "#/$defs/count" },
         "shown": { "type": "array", "items": { "type": "string", "pattern": "^(rp|ls)-[0-9]{1,6}$" } },
+        "session": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
         "spawned": { "type": "boolean" },
         "detection": { "enum": ["explicit", "guardrail", "positive", "auto", "none"] },
         "captured": { "type": "boolean" }

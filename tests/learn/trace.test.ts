@@ -1,7 +1,7 @@
 /**
- * Run spans: the span helper, the trace carrier, the project key and the capped append.
+ * Run spans: the span helper, the trace carrier, the project and session keys and the capped append.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -15,13 +15,14 @@ import {
   projectKey,
   recordJudgeAttempt,
   runOf,
+  sessionKey,
   span,
   SPAN_FILE,
   spanRows,
   type SpanRow,
 } from "../../src/learn/core/trace.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
-import { scratch, testContext } from "./helpers.ts";
+import { removeStartScratch, scratch, startScratch, testContext } from "./helpers.ts";
 
 const validate = new Ajv2020({ strict: false }).compile(schema);
 const AMBIENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
@@ -153,6 +154,7 @@ describe("closed schema", () => {
     ["judge", (row: SpanRow) => ({ ...row, judge: { ...row.judge, model: "x" } })],
     ["attrs", (row: SpanRow) => ({ ...row, attrs: { prompt: "free text" } })],
     ["a string attr", (row: SpanRow) => ({ ...row, attrs: { shown: ["/Users/bob/app"] } })],
+    ["a session attr", (row: SpanRow) => ({ ...row, attrs: { session: "0b9d4c1e-7a52-4f6e-9c1d-2f1e6a7b8c9d" } })],
   ])("an extra or prose field at the %s is invalid", (_label, mutate) => {
     const ctx = testContext();
     span(ctx, "hook.session-start", "hook", () => undefined);
@@ -271,12 +273,15 @@ describe("capped append", () => {
 });
 
 describe("project key", () => {
+  afterAll(removeStartScratch);
+
   test("concurrent first use agrees on one salt and one key", async () => {
     const dir = scratch();
     const config = loadConfig({ CLAUDE_CONFIG_DIR: join(dir, "config") });
     const root = scratch();
     const core = join(import.meta.dir, "..", "..", "src", "learn", "core");
-    const file = join(dir, "key.ts");
+    // Bun scans script ancestors at startup; a crowded macOS TMPDIR delayed each child by 13s.
+    const file = join(startScratch(), "key.ts");
     writeFileSync(
       file,
       `import { projectKey } from ${JSON.stringify(join(core, "trace.ts"))};
@@ -315,5 +320,39 @@ console.log(projectKey(loadConfig({ CLAUDE_CONFIG_DIR: ${JSON.stringify(config.c
     const a = loadConfig({ CLAUDE_CONFIG_DIR: join(scratch(), "config") });
     const b = loadConfig({ CLAUDE_CONFIG_DIR: join(scratch(), "config") });
     expect(projectKey(a, root)).not.toBe(projectKey(b, root));
+  });
+});
+
+describe("session key", () => {
+  test("one id gives one 16-hex key per install, carried by the session-start span and by no other", () => {
+    const ctx = testContext();
+    const id = "0b9d4c1e-7a52-4f6e-9c1d-2f1e6a7b8c9d";
+    const key = sessionKey(ctx.config, id);
+    expect(key).toMatch(/^[0-9a-f]{16}$/);
+    expect(sessionKey(ctx.config, id)).toBe(key);
+    expect(sessionKey(ctx.config, `${id}0`)).not.toBe(key);
+    expect(sessionKey(loadConfig({ CLAUDE_CONFIG_DIR: join(scratch(), "config") }), id)).not.toBe(key);
+    span(ctx, "hook.session-start", "hook", (traced) => traced.span?.attr("session", key ?? ""));
+    span(ctx, "hook.prompt", "hook", (traced) => traced.span?.attr("session", key ?? ""));
+    const [start, prompt] = spans(ctx);
+    expect(start?.attrs).toEqual({ session: key ?? "" });
+    expect(prompt?.attrs).toEqual({});
+    expect(validate(start)).toBe(true);
+  });
+
+  test("a path that is also a session's id does not share the project's key", () => {
+    const ctx = testContext();
+    const root = scratch();
+    expect(projectKey(ctx.config, root)).not.toBeNull();
+    expect(sessionKey(ctx.config, root)?.slice(0, 12)).not.toBe(projectKey(ctx.config, root));
+  });
+
+  test("no id or a malformed salt yields no key", () => {
+    const ctx = testContext();
+    expect(sessionKey(ctx.config, "")).toBeNull();
+    const config = loadConfig({ CLAUDE_CONFIG_DIR: join(scratch(), "config") });
+    mkdirSync(config.runtimeDir, { recursive: true });
+    writeFileSync(join(config.runtimeDir, ".salt"), "abc");
+    expect(sessionKey(config, "a-session")).toBeNull();
   });
 });

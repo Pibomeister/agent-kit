@@ -1,0 +1,14 @@
+{
+  "hookEventName": "post_tool_use",
+  "hook_event_name": "PostToolUse",
+  "sessionId": "grok-fixture-123",
+  "cwd": "/home/operator/shop",
+  "workspaceRoot": "/home/operator/shop",
+  "permissionMode": "default",
+  "promptId": "prompt-1",
+  "toolName": "run_terminal_command",
+  "toolInput": { "command": "bun test" },
+  "toolUseId": "call-1",
+  "toolInputTruncated": false,
+  "timestamp": "2026-10-05T12:00:00Z"
+}

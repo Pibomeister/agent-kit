@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 import { bind } from "../../src/firstmate/bind.ts";
 import { MOCK_LABEL } from "../../src/firstmate/constants.ts";
-import { takeSnapshot } from "../../src/lifecycle/gate.ts";
+import { checkGates, recordGate, takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { statusLine } from "../../src/firstmate/status.ts";
 import { compileSchemas } from "../../src/validation/schemas.ts";
 import { FIXED_NOW, makeBundle, makeDir, makeHome, makeProject, REPO } from "./fixture.ts";
@@ -35,7 +35,6 @@ const template = (name: string) => JSON.parse(readFileSync(join(REPO, "templates
 const sha = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 
 type Snap = { repo: string; revision: string; diff_hash: string };
-const stale = (bound: Snap, now: Snap) => bound.revision !== now.revision || bound.diff_hash !== now.diff_hash;
 
 /** Store a document in the mock evidence store and return its ref. */
 function store(dir: string, name: string, body: string): { id: string; hash: string } {
@@ -93,6 +92,9 @@ describe("fixture demo (mock evidence, dry-run): ticket to dry-run ship", () => 
     delete receipt.ticket;
     delete receipt.finding;
     expect(valid("verification", receipt)).toEqual([]);
+    const gateDir = makeDir();
+    expect(recordGate({ dir: gateDir, run: binding.run_id, gate: "verify", project }).ok).toBe(true);
+    expect(checkGates({ dir: gateDir, run: binding.run_id, gates: ["verify"], project }).ok).toBe(true);
 
     // Review: the correctness seat finds the empty path accepted. Its raw output
     // goes to the evidence store before synthesis.
@@ -128,11 +130,16 @@ describe("fixture demo (mock evidence, dry-run): ticket to dry-run ship", () => 
     );
     const fixed = takeSnapshot(project) as Snap;
     expect(fixed.revision).toBe(built.revision);
-    expect(stale(receipt.source_revision, fixed)).toBe(true);
+    // The gate, not a helper here, decides staleness: the verify record taken at `built` no longer counts.
+    const verifyRun = { dir: gateDir, run: binding.run_id, gates: ["verify" as const], project };
+    expect(checkGates(verifyRun).refusals).toEqual([
+      expect.stringContaining("refused: gate verify has no current evidence (the latest record is for"),
+    ]);
 
     const receipt2 = { ...receipt, id: "demo-verification-2", source_revision: fixed };
     expect(valid("verification", receipt2)).toEqual([]);
-    expect(stale(receipt2.source_revision, fixed)).toBe(false);
+    expect(recordGate({ dir: gateDir, run: binding.run_id, gate: "verify", project }).ok).toBe(true);
+    expect(checkGates(verifyRun)).toMatchObject({ ok: true, refusals: [] });
 
     // Delta review closes the finding against the fixed snapshot.
     const rawDelta = store(evidenceDir, "raw-correctness-2.txt", "empty path now throws; no new findings\n");

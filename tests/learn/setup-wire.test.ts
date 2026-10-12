@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import type { RunResult } from "../../src/learn/core/proc.ts";
@@ -140,7 +140,7 @@ describe("hook merge", () => {
   test("every hook command points at the one ak command line", () => {
     // Spread into a literal: an interface has no index signature, so Object.values on it is any[].
     const all = Object.values({ ...hookCommands(fakeDeps()) });
-    expect(all).toHaveLength(4);
+    expect(all).toHaveLength(10);
     expect(all.every((command) => command.startsWith(`${AK} `))).toBe(true);
   });
 });
@@ -236,9 +236,24 @@ describe("setup wire", () => {
 
     wire(ctx, deps, { host: "codex" });
     const doc = readDoc(codex);
-    expect(commands(doc, "SessionStart")).toEqual([`${AK} session-start`]);
+    expect(commands(doc, "SessionStart")).toEqual([`${AK} session-start --source codex`]);
     expect(commands(doc, "UserPromptSubmit")).toEqual([`${AK} prompt`]);
     expect(commands(doc, "Stop")).toEqual([`${AK} stop --source codex`]);
+  });
+
+  test("a Codex SessionStart hook wired before it carried its source is updated in place", () => {
+    const deps = fakeDeps();
+    const ctx = context(deps);
+    const codex = join(deps.home, ".codex", "hooks.json");
+    mkdirSync(join(deps.home, ".codex"), { recursive: true });
+    writeFileSync(
+      codex,
+      JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: `${AK} session-start` }] }] } }),
+    );
+    wire(ctx, deps);
+    expect(commands(readDoc(codex), "SessionStart")).toEqual([`${AK} session-start --source codex`]);
+    wire(ctx, deps);
+    expect(commands(readDoc(codex), "SessionStart")).toEqual([`${AK} session-start --source codex`]);
   });
 
   test("CODEX_HOME is honoured", () => {
@@ -268,6 +283,24 @@ describe("setup wire", () => {
     expect(readFileSync(join(memDir, "modes", `${MEM_MODE}.json`), "utf8")).toBe('{"name": "review learning"}\n');
     expect(deps.calls).toEqual([]);
     expect(ctx.out.at(-1)).toContain("--restart-worker");
+  });
+
+  test("the shipped and the embedded mode file are one install, so switching between them rewrites nothing", () => {
+    const deps = fakeDeps();
+    const shipped = join(deps.packageRoot, "adapters", "observation-source", "claude-mem", `${MEM_MODE}.json`);
+    writeFileSync(
+      shipped,
+      readFileSync(join(import.meta.dir, "../../adapters/observation-source/claude-mem", `${MEM_MODE}.json`)),
+    );
+    const target = join(deps.home, ".claude-mem", "modes", `${MEM_MODE}.json`);
+    wire(context(deps), deps);
+    const installed = readFileSync(target, "utf8");
+    rmSync(shipped);
+    const ctx = context(deps);
+    wire(ctx, deps);
+    expect(readFileSync(target, "utf8")).toBe(installed);
+    expect(existsSync(`${target}.bak`)).toBe(false);
+    expect(ctx.out.some((line) => line.includes("mode installed"))).toBe(false);
   });
 
   test("an existing mode choice is kept", () => {
@@ -307,6 +340,9 @@ describe("setup wire", () => {
     const ctx = context(deps);
     const area = createSetupArea(() => deps);
     expect(area.verbs.wire!.run(parseLearnArgs(["--host", "vim"]), ctx)).toBe(2);
+    expect(ctx.err.at(-1)).toBe(
+      "ak learn setup wire: --host: unknown host 'vim'; valid: claude, codex, droid, grok, kimi",
+    );
     expect(area.verbs.wire!.run(parseLearnArgs(["--host", "claude", "--no-mem"]), ctx)).toBe(0);
     expect(existsSync(join(deps.home, ".claude-mem", "settings.json"))).toBe(false);
   });
@@ -415,6 +451,24 @@ describe("claude-mem settings round trip", () => {
     writeFileSync(settings, "{ nope");
     expect(uninstall(ctx, deps)).toBe(0);
     expect(readFileSync(settings, "utf8")).toBe("{ nope");
+    expect(ctx.err).toEqual([]);
+    expect(ctx.out).toContain(`${settings}: cannot be read and names no agent-kit hook; left as it is`);
+
+    const wired = `{ "hooks": { "Stop": [{ "hooks": [{ "command": "/opt/bun /pkg/src/cli.ts learn hook stop" }] }] }, }`;
+    writeFileSync(settings, wired);
+    expect(uninstall(ctx, deps)).toBe(0);
+    expect(readFileSync(settings, "utf8")).toBe(wired);
     expect(ctx.err).toEqual([`${settings} is not valid JSON; fix it or remove it, nothing written`]);
+  });
+
+  test("uninstall carries on past a hooks file it cannot read at all", () => {
+    const deps = fakeDeps();
+    const ctx = testContext({ env: { CLAUDE_MEM_DATA_DIR: join(deps.home, ".claude-mem"), CODEX_HOME: "" } });
+    const settings = join(ctx.config.configDir, "settings.json");
+    mkdirSync(settings, { recursive: true });
+    expect(uninstall(ctx, deps)).toBe(0);
+    expect(ctx.err).toEqual([]);
+    expect(ctx.out).toContain(`${settings}: cannot be read and names no agent-kit hook; left as it is`);
+    expect(ctx.out.at(-1)).toContain("ledgers under");
   });
 });

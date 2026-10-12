@@ -17,6 +17,7 @@ import {
   ARMS,
   type Arm,
   blockProblem,
+  buildBlock,
   capForArm,
   type CaseRecord,
   commitsSince,
@@ -59,7 +60,7 @@ import {
   SHAM_FACT,
 } from "./evals/influence/scenarios.ts";
 import type { SessionEvent } from "./evals/subjects/types.ts";
-import { scratch, testContext } from "./helpers.ts";
+import { gitRepo, scratch, testContext } from "./helpers.ts";
 
 const ROOT = "/work/repo";
 const bash = (command: string): SessionEvent => ({ kind: "tool", name: "Bash", raw: "Bash", input: { command } });
@@ -932,6 +933,45 @@ describe("the seeded block", () => {
       return seedLedger(testContext({ cwd: root }).config, root, scenario, "crowded");
     });
     expect(hashes[0]).toBe(hashes[1]);
+    // The counterpart a constant would also pass: a different arm or scenario hashes differently.
+    const other = (id: string, arm: "correct" | "crowded") => {
+      const root = join(scratch(), id);
+      scaffold(root, byId(id), arm, "claude");
+      return seedLedger(testContext({ cwd: root }).config, root, byId(id), arm);
+    };
+    expect(other("lint-strict", "correct")).not.toBe(hashes[0]);
+    expect(other("commit-skip-changelog", "crowded")).not.toBe(hashes[0]);
+  });
+
+  test("blockProblem names each way a seeded block can be wrong", () => {
+    const scenario = byId("lint-strict");
+    const blockFor = (arm: "none" | "correct" | "sham" | "crowded") => {
+      const root = join(scratch(), `${scenario.id}-${arm}`);
+      scaffold(root, scenario, arm, "claude");
+      const ctx = testContext({ cwd: root });
+      seedLedger(ctx.config, root, scenario, arm);
+      return { block: sessionStartBlock(ctx), cap: ctx.config.memoryTokens };
+    };
+    const none = blockFor("none");
+    expect(blockProblem(none.block, scenario, "none", none.cap)).toBeNull();
+    expect(blockProblem(`${none.block}\nWorking memory for this repo\n`, scenario, "none", none.cap)).toBe(
+      "the none arm's block carries working memory",
+    );
+    const correct = blockFor("correct");
+    expect(blockProblem(correct.block, scenario, "correct", correct.cap)).toBeNull();
+    expect(blockProblem(correct.block.replace(scenario.fact, "something else"), scenario, "correct", correct.cap)).toBe(
+      "the fact bullet is not in the block",
+    );
+    const sham = blockFor("sham");
+    expect(blockProblem(sham.block, scenario, "sham", sham.cap)).toBeNull();
+    expect(blockProblem(sham.block.replace(SHAM_FACT, "something else"), scenario, "sham", sham.cap)).toBe(
+      "the sham bullet is not in the block",
+    );
+    const crowded = blockFor("crowded");
+    expect(blockProblem(crowded.block, scenario, "crowded", crowded.cap)).toBeNull();
+    expect(blockProblem(crowded.block, scenario, "crowded", crowded.cap * 4)).toMatch(
+      /^crowded memory is \d+ tokens, under 0\.9 of the \d+ cap$/,
+    );
   });
 
   test("the scaffold stages pending files, makes scripts executable, and keeps .claude out of git and snapshots", () => {
@@ -949,4 +989,18 @@ describe("the seeded block", () => {
     expect(run([join(docs, "scripts", "docs.sh"), "build"], { cwd: docs }).stdout.trim()).toBe("built 2 pages");
     expect([...snapshot(docs).keys()]).not.toContain(".claude/settings.local.json");
   });
+});
+
+describe("buildBlock", () => {
+  test("a codex subject gets the block its wired hook prints, naming human-only commands as $ak:<id>", () => {
+    const root = gitRepo(join(scratch(), "repo"));
+    const humanOnly = (host: string) =>
+      buildBlock(join(scratch(), "config"), root, host)
+        .split("\n")
+        .find((line) => line.startsWith("Human-only commands"));
+    expect(humanOnly("codex")).toContain("$ak:super-align");
+    expect(humanOnly("codex")).not.toContain("/ak:super-align");
+    expect(humanOnly("claude")).toContain("/ak:super-align");
+    expect(humanOnly("claude")).not.toContain("$ak:super-align");
+  }, 240_000);
 });

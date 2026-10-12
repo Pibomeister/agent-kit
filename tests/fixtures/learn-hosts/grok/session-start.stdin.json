@@ -1,0 +1,10 @@
+{
+  "hookEventName": "session_start",
+  "hook_event_name": "SessionStart",
+  "sessionId": "grok-fixture-123",
+  "cwd": "/home/operator/shop",
+  "workspaceRoot": "/home/operator/shop",
+  "permissionMode": "default",
+  "source": "resume",
+  "timestamp": "2026-10-05T12:00:00Z"
+}

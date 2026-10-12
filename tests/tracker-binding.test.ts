@@ -408,8 +408,18 @@ describe("the secret stays in the folder and out of git", () => {
   });
 
   test("no message from any case above prints the token", () => {
-    const dir = project({ [BINDING_FILE]: BINDING, ".linear-token": TOKEN });
-    expect(JSON.stringify(checkTrackerBinding(dir, REPO))).not.toContain(TOKEN);
+    // One fixture per message path that reads or resolves the token file: untracked, mode, outside.
+    const untracked = project({ [BINDING_FILE]: BINDING, ".linear-token": TOKEN });
+    const loose = project({ [BINDING_FILE]: BINDING, ".gitignore": ".linear-token\n", ".linear-token": TOKEN });
+    chmodSync(join(loose, ".linear-token"), 0o644);
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "ak-global-")));
+    writeToken(join(outside, "token"));
+    const linked = project({ [BINDING_FILE]: BINDING, ".gitignore": ".linear-token\n" });
+    symlinkSync(join(outside, "token"), join(linked, ".linear-token"));
+    expect(rules(loose)).toEqual(["error tracker.secret-mode"]);
+    expect(rules(linked)).toEqual(["error tracker.secret-outside-project"]);
+    for (const dir of [untracked, loose, linked])
+      expect(JSON.stringify(checkTrackerBinding(dir, REPO))).not.toContain(TOKEN);
   });
 });
 

@@ -33,7 +33,12 @@ jobs:
       # The baseline may only shrink relative to main; fetch-depth 0 above is what gives it a merge base.
       - run: bun run lint:growth
       - run: bun run fmt:check
+      # The donor snapshot byte comparison needs the clones, which are gitignored; without
+      # this step it was skipped on every CI run. AK_REQUIRE_DONORS turns that skip into a failure.
+      - run: tools/donors/clone.sh
       - run: bun test
+        env:
+          AK_REQUIRE_DONORS: "1"
       - run: bun run validate
       - run: bun run build
       # The publish job refuses the same thing after merge; this refuses it while the PR can still change.
