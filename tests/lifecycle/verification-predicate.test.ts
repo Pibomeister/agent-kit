@@ -173,6 +173,7 @@ describe("the bundled verification predicate", () => {
       { ...structuredClone(valid), status: "not-run", reason: "not available" },
       { ...structuredClone(valid), environment: { id: "Not Kebab", isolated: true, secrets_policy: "none" } },
       { ...structuredClone(valid), ticket: { id: "ticket-1", hash: "not-a-hash" } },
+      { ...structuredClone(valid), supersedes: { id: "verification-old", hash: "not-a-hash" } },
     ];
 
     for (const receipt of [...fixtures, ...templates, surface, ...malformed]) {
