@@ -17,6 +17,7 @@
  * scheduled tick cannot follow, is resolved here with git.
  */
 import { existsSync } from "node:fs";
+import type { HostId } from "../../packaging/hosts.ts";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot, rootOf } from "../core/paths.ts";
@@ -208,9 +209,9 @@ function blockBody(ctx: LearnContext, root: string, cap: number): string[] {
   return parts;
 }
 
-export function sessionStartBlock(ctx: LearnContext): string {
+export function sessionStartBlock(ctx: LearnContext, host?: HostId): string {
   const root = sessionRoot(ctx.cwd);
-  const roster = rosterSection(ctx, root);
+  const roster = rosterSection(ctx, root, host === undefined ? {} : { host });
   if (root === null) return roster;
   // The hook's span keys the root this block was built for, linked worktrees included.
   ctx.span?.project(root);

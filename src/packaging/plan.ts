@@ -10,7 +10,7 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, note, unavailable, type Issue } from "../validation/types.ts";
 import { generateHostFrontmatter } from "./frontmatter.ts";
 import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } from "./capability-table.ts";
-import { loadHostCapabilities, type HostId, type SkillMode } from "./hosts.ts";
+import { loadHostCapabilities, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { resolveProfile } from "./profiles.ts";
@@ -43,11 +43,16 @@ export const SHARED_ROOT = "references/shared";
 export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/plugin.json",
   codex: ".codex-plugin/plugin.json",
+  grok: ".claude-plugin/plugin.json",
+  kimi: ".kimi-plugin/plugin.json",
+  droid: ".factory-plugin/plugin.json",
 };
 
 /**
- * The marketplace entry both host bundles carry. Codex CLI discovers the local
- * marketplace through the same path before resolving `ak@agent-kit`.
+ * The marketplace entry the claude-code, codex and grok bundles carry. Codex CLI
+ * discovers the local marketplace through the same path before resolving
+ * `ak@agent-kit`. Droid's sits at `.factory-plugin/marketplace.json`; kimi's
+ * bundle carries none.
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
@@ -206,6 +211,9 @@ const PARITY_FIELD_LIST = PARITY_FIELDS.map(([field]) => `'${field}'`).join(" an
 export const BUILD_RECORD_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/ak.json",
   codex: ".codex-plugin/ak.json",
+  grok: ".claude-plugin/ak.json",
+  kimi: ".kimi-plugin/ak.json",
+  droid: ".factory-plugin/ak.json",
 };
 
 /**
@@ -548,6 +556,12 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   const ordered = catalog.bySection("skills").filter((e) => included.has(e.id));
+  const userSkillIds = catalog
+    .bySection("skills")
+    .filter((entry) => entry.invocation === "U")
+    .map((entry) => entry.id);
+  const renderExplicitStarts = (text: string) =>
+    rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
 
@@ -586,7 +600,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * `manual` when it declares no row for this host, which is the
      * conservative end: neither contract says what an undeclared host gets, and
      * a skill that has not been thought about on a host is not one to expose
-     * more of. An unrecognised `mode` lands here too -- `loadSkillManifest`
+     * more of. Grok is the exception: it inherits the claude-code row by design
+     * (`adapters/grok/CONTRACT.md`). An unrecognised `mode` lands here too -- `loadSkillManifest`
      * only accepts the schema's three, and `ak validate` reports the rest.
      *
      * The cap is `adapters/claude-code/CONTRACT.md` §4 with the input it always
@@ -612,7 +627,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * the installed skill sees, emitted into the body's frontmatter below, and
      * it is not an input to this decision.
      */
-    const row = manifest.hosts[host];
+    // Grok shares Claude's declarations and layout, not its permission semantics.
+    // Its own restriction declaration and the shared capability ceiling still apply.
+    const row = manifest.hosts[host] ?? (host === "grok" ? manifest.hosts["claude-code"] : undefined);
     const declaredMode: SkillMode = row?.mode ?? "manual";
     const unenforceable = row?.unsupported ?? [];
 
@@ -676,8 +693,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      *
      * The premise §3.1 names is that the package "does not emit" the host's
      * suppression key, so the host does not enforce it, and that is what is
-     * tested. Keyed on `host === "codex"` this would be a rule that happens to
-     * be right about the two hosts that exist and goes on firing at codex after
+     * tested. Keyed on `host === "codex"` this would already miss droid, which
+     * does not enforce suppression either, and would go on firing at codex after
      * its bundle starts enforcing suppression. `enforces` rather than
      * `HOST_FRONTMATTER_KEYS` because emitting the key and honoring it are
      * different claims, and the one that protects the skill is the second.
@@ -711,8 +728,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
     const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, bodyPath);
     issues.push(...rewritten.issues);
+    const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
 
-    files.set(bodyPath, { path: bodyPath, contents: `${generated.text}${rewritten.text}`, source: bodyPath });
+    files.set(bodyPath, { path: bodyPath, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
@@ -725,7 +743,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       if (text === null) continue;
       const assetRewrite = rewriteLinks(asset, asset, text, included, asset);
       issues.push(...assetRewrite.issues);
-      files.set(asset, { path: asset, contents: assetRewrite.text, source: asset });
+      files.set(asset, { path: asset, contents: renderExplicitStarts(assetRewrite.text), source: asset });
       for (const dep of assetRewrite.dependencies) {
         const published = publishedPathFor(dep, included);
         if (published !== null) pending.push({ source: dep, published });
@@ -746,7 +764,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     const rewritten = rewriteLinks(next.source, next.published, text, included, next.source);
     issues.push(...rewritten.issues);
-    files.set(next.published, { path: next.published, contents: rewritten.text, source: next.source });
+    files.set(next.published, {
+      path: next.published,
+      contents: renderExplicitStarts(rewritten.text),
+      source: next.source,
+    });
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
       if (published !== null) pending.push({ source: dep, published });
@@ -891,7 +913,10 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     path: HOST_MANIFEST_FILE[host],
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
-  files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
+  if (host !== "kimi") {
+    const marketplaceFile = host === "droid" ? ".factory-plugin/marketplace.json" : MARKETPLACE_FILE;
+    files.set(marketplaceFile, { path: marketplaceFile, contents: marketplace(ctx) });
+  }
   files.set(BUILD_RECORD_FILE[host], {
     path: BUILD_RECORD_FILE[host],
     contents: buildRecord(
@@ -957,7 +982,8 @@ function manifestObject(
   // makes the omission loud.
   if (declared(pkg.author)) manifest.author = { name: pkg.author };
   if (declared(pkg.license)) manifest.license = pkg.license;
-  manifest.skills = skillRegistration(host, skills);
+  // Droid discovers skills/ directly; its native manifest carries identity only.
+  if (host !== "droid") manifest.skills = skillRegistration(host, skills);
   // Last, as in §1's example, and conditioned on the corpus alone rather than
   // on the corpus and the host. The key is a pointer: emitted with nothing
   // behind it, it is the pointer half of this feature shipping without the
@@ -1175,7 +1201,8 @@ function declared(value: string | undefined): value is string {
  * bundle actually contains -- which matters because the install set is
  * profile-dependent (`adapters/claude-code/CONTRACT.md` §1). codex takes the
  * directory pointer its contract carries from the donor
- * (`adapters/codex/CONTRACT.md` §1).
+ * (`adapters/codex/CONTRACT.md` §1). droid is told nothing: it discovers the
+ * root `skills/` directory itself (`adapters/droid/CONTRACT.md` §1).
  *
  * The forms resolve to the same set only because both bundles are built from
  * one `skills/` tree. That is a property of this function's caller rather than
@@ -1185,7 +1212,7 @@ function declared(value: string | undefined): value is string {
  * two bundles is a build failure, not a host difference.
  */
 function skillRegistration(host: HostId, skills: ReadonlyArray<string>): string | string[] {
-  return host === "codex" ? "./skills/" : skills.map((id) => `./skills/${id}`);
+  return host === "codex" || host === "kimi" ? "./skills/" : skills.map((id) => `./skills/${id}`);
 }
 
 /**

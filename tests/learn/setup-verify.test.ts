@@ -363,7 +363,7 @@ describe("setup verify", () => {
           join(deps.home, ".codex", "hooks.json"),
           JSON.stringify({
             hooks: {
-              SessionStart: [hook("ak learn hook session-start")],
+              SessionStart: [hook("ak learn hook session-start --source codex")],
               UserPromptSubmit: [hook("ak learn hook prompt")],
               Stop: [stop, stop],
             },

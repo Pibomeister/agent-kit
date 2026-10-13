@@ -712,10 +712,6 @@
   "tests/human-start.test.ts": {
     "unicorn(no-array-sort)": 1
   },
-  "tests/integration.live.test.ts": {
-    "anti-slop(no-known-value-widening)": 1,
-    "unicorn(no-array-sort)": 1
-  },
   "tests/invalid-fixtures.test.ts": {
     "typescript(no-unsafe-member-access)": 1,
     "typescript(no-unsafe-return)": 1,
@@ -1028,9 +1024,6 @@
     "typescript(no-non-null-assertion)": 2,
     "typescript(no-unnecessary-type-assertion)": 1,
     "typescript(no-unsafe-return)": 1
-  },
-  "tests/links.test.ts": {
-    "unicorn(no-array-sort)": 1
   },
   "tests/packaging.test.ts": {
     "anti-slop(no-known-value-widening)": 4,

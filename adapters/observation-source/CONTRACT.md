@@ -248,14 +248,14 @@ record of what was attempted and what came back (`src/learn/sources/tool-distill
 | Step | What happens |
 |---|---|
 | Scrub | The stage scrubs every call again, itself, before a prompt exists. Only scrubbed text reaches the distiller: at most 2,000 characters each of a call's arguments and output, under the tool's name made one line of at most 80 |
-| Bind | `AK_LEARN_DISTILL_<HOST>`, the host's name in capitals, holds that host's command: the prompt on stdin, one JSON object on stdout. It is read from the operator's environment and nothing is bound by default; no file in this package names what answers. The scheduled tick sees a binding only after `ak learn setup schedule` is run again, because the unit keeps the `AK_LEARN_*` environment it was written with |
+| Bind | `AK_LEARN_DISTILL_<HOST>`, the host's name in capitals, holds that host's command: the prompt on stdin, one JSON object on stdout. It is read from the operator's environment and nothing is bound by default. The package ships a tool-less command (`tools/learn/README.md`) and commits no model name; the operator chooses the endpoint and model outside the checkout. The scheduled tick sees a binding only after `ak learn setup schedule` is run again, because the unit keeps the `AK_LEARN_*` environment it was written with |
 | Send | Only the rows the ledger does not hold yet, and of each row only the leading calls whose records end inside the 600 characters of a row the reflector shows, counting each record at its longest: the tool's name and both statements at their allowance, 100 and 200 characters. That leaves room for one record in a row at most, and none when the row's summary lines and the tool's name leave less than 305 of those 600 characters. A call past that point keeps its excerpt and is never sent. Requests carry at most 20 calls. `AK_LEARN_DISTILL_MAX_REQUESTS` caps one project's requests in a run (20), `AK_LEARN_DISTILL_TIMEOUT_S` one request's time (120) |
 | Gate | Each record is scrubbed again, flattened to one line and cut to its allowances. The distiller words a line and nothing else: capture takes a rewritten row's text and nothing more, and the row's type, title, time, files, order, id, digest and its list of failed tools stay the parser's |
 
 A call keeps its excerpt, and the tick's output says how many did and why, counting the calls it
 would have sent, when its host has no binding, when the request fails or returns no record for it,
-and when the request cap is spent. A failed request is not retried, and neither it nor a request
-that returned no usable record at all is followed by another to that host in that run. Since a
+and when the request cap is spent. A failed or unusable request is not retried; later requests
+to the same host still run within the cap. Since a
 record is counted at its longest, every record sent is stored whole and shown whole to the
 reflector. The consolidator shows the first 300 characters of a row, which the summary lines mostly
 fill, so it reads the head of a record at most. A row is stored once either way,
@@ -266,8 +266,9 @@ cap would leave as excerpts.
 
 The distiller is not one of the learning roles: it rewrites text and decides nothing, so it carries no
 role prompt and its reply passes no judgement gate (ruling `learning-judge-is-runner-bound` binds
-the judgements). Bind a command that can use no tools, as the default judge cannot: a call's output
-is text anyone could have steered. Every request leaves one row of metadata, never the prompt or the
+the judgements). Bind a command that can use no tools, as `tools/learn/chat-distiller.ts` does and
+the default judge cannot: a call's output is text anyone could have steered. A reply that is not one
+JSON object fails that request only. Every request leaves one row of metadata, never the prompt or the
 reply, in `distill-calls.jsonl` under the runtime directory: sizes, the outcome, the scrubbed tail of
 what the command wrote to stderr, and the cost its command reported when it reports one.
 `ak learn setup doctor` prints each host's binding and the last day's requests.

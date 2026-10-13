@@ -69,15 +69,16 @@ marketplace install confirmed `add` (§4). Check the target CLI again when its v
 dist/codex/
 ├── .claude-plugin/marketplace.json # local marketplace registration for Codex CLI
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
-├── skills/<id>/SKILL.md        # same bodies as dist/claude-code, different generated keys
-├── skills/<id>/references/
+├── skills/<id>/SKILL.md        # generated keys plus Codex-native U explicit-start markers
+├── skills/<id>/references/     # U explicit-start markers rendered here and in references/shared/
 ├── LICENSES/                   # licence texts of the packages inlined into bin/ak (NOTICE)
 ├── provenance/licenses/        # claude-mem LICENSE and NOTICE (NOTICE)
 └── NOTICE, LICENSE
 ```
 
-Same canonical bodies, different generated frontmatter. The canonical tree is host-neutral; that is
-the whole reason host keys are generated rather than written (`AUTHORING.md` §4).
+One canonical source tree, with host differences generated at the packaging boundary. Frontmatter
+keys follow §3, and exact canonical U-command references are rendered as `$ak:<id>` for this host
+(ADR-0011). Ordinary prose is unchanged.
 
 ---
 
@@ -117,20 +118,37 @@ the model rather than refusing it, and a malformed `agents/openai.yaml` drops it
 
 For every U skill in the codex bundle:
 
-1. The `description`, copied verbatim from the canonical `SKILL.md`, opens by naming the skill's
+1. The `description`, rendered from the canonical `SKILL.md`, opens by naming the skill's
    typed command and its class — `Human-started command: it runs only when the human's message
-   begins with /ak:<id>`, followed where the skill has phase operations by the other authority that
+   begins with $ak:<id>`, followed where the skill has phase operations by the other authority that
    may start it — and says what to do on any other request: do not load or follow it, tell the human
    to type that command. Because the package intentionally emits no host suppression key, the
    description is the first layer between a U skill and an unrequested start, so it is written to
    be read that way. `ak validate`'s `human-start` check fails a U skill whose description omits the command
    (`invocation.description-omits-command`) or the class (`invocation.description-omits-class`).
 2. The skill's own `## Authority` section names the command and states that a prose request is
-   not a start, and its first workflow step is the stop: it names `/ak:<id>`, and started without
+   not a start, and its first workflow step is the stop: it names `$ak:<id>`, and started without
    the human's message beginning with it — or, where the skill has phase operations, without a
    runner-validated grant covering the phase — the skill stops, names the command and does nothing
    else. `human-start` fails a U skill whose first workflow step does not name the command or does
    not say to stop (`invocation.first-step-not-stop`).
+   Selecting the skill through `/skills` is explicit only when the resulting human turn delivered
+   to the skill begins with that `$ak:<id>` mention (ADR-0011). Selection state without the marker, a
+   later mention in prose, or the model choosing the skill from its description is not a start.
+
+   The form is `$ak:<id>` because that is the name this host gives a plugin's skill. Probe, with no
+   model turn, on `codex-cli 0.159.2`: `codex plugin marketplace add <dist/codex>` and `codex plugin
+   add ak@agent-kit` in a scratch `CODEX_HOME`, then `codex debug prompt-input '$ak:super-align …'`.
+   The rendered skill list names every skill `ak:<id>` and the user turn is delivered verbatim. The
+   probe does not show mention resolution, so a bare `$<id>` resolving to a plugin skill is neither
+   confirmed nor relied on: the packaged gate does not accept it.
+
+   The eval harness's Codex cell does not observe this form as a mention. It launches the host with
+   plugins disabled and installs the bundle's skills standalone, so a skill is listed there under
+   its bare id and a typed `$ak:<id>` resolves to nothing: a typed case passes on the packaged
+   prose matching the prefix. That is an accepted limit (ADR-0011); the plugin form rests on the
+   probe above. Codex sessions recorded before this bundle gated on `$ak:<id>` are not rescorable
+   under the new spelling.
 3. The non-trigger eval case for that skill is a **required** gate for this bundle rather than an
    advisory one, because it is the only observation of the property in a live session: the checks
    above hold the text, not the behavior.
@@ -189,11 +207,12 @@ agent-kit` followed by `codex plugin add ak@agent-kit`.
 
 ## 5. Testing
 
-Tests this adapter owns, in `tests/adapters/`:
+Tests this adapter owns. Item 6 is in `tests/packaging.test.ts`. Item 5 needs the host CLI and
+the published branch, so `bun test` does not run it:
 
 1. **Bundle parity** — the skill id set in `dist/codex` equals the skill id set in
-   `dist/claude-code` for the same profile, and the `SKILL.md` bodies are byte-identical below the
-   frontmatter.
+   `dist/claude-code` for the same profile. Canonical content is equivalent after reversing the
+   ADR-0011 U-command rendering; byte identity is required only where no host rendering applies.
 2. **Manifest parity** — `version` and `license` agree across `package.json`,
    `dist/claude-code/.claude-plugin/plugin.json` and `dist/codex/.codex-plugin/plugin.json`.
    `name` and `description` agree between the two manifests and with `catalog.yaml`'s
@@ -224,6 +243,9 @@ Tests this adapter owns, in `tests/adapters/`:
    an isolated `CODEX_HOME` after the publication workflow has populated the branch.
    The local form, `codex plugin marketplace add <dist/codex>`, relies on the marketplace manifest
    the bundle carries.
+6. **Explicit-start rendering** — a packaged U description and first workflow step accept a leading
+   `$ak:<id>`, retain the ordinary-prose refusal, and contain no canonical `/ak:<id>` for that U skill.
+   An M skill remains automatically discoverable and receives no U authority gate.
 
 **Reported honestly, not worked around:** with no verified host-native eval runner for this host, the
 behavioral corpus is executed against the claude-code bundle and, when a runner is attached, through
@@ -236,7 +258,8 @@ claude-code run.
 ## 6. The learning runtime's hooks
 
 `ak learn setup wire` registers three hooks in `$CODEX_HOME` when it exists, and skips this host
-with a message when it does not: `ak learn hook session-start` on `SessionStart`,
+with a message when it does not: `ak learn hook session-start --source codex` on `SessionStart`,
+whose roster names human-only commands as `$ak:<id>` (ADR-0011),
 `ak learn hook prompt` on `UserPromptSubmit`, which captures user corrections, and
 `ak learn hook stop --source codex` on `Stop`. As on claude-code
 (`adapters/claude-code/CONTRACT.md` §7), no skill requires a hook, the bundle ships none, and the

@@ -1,0 +1,4 @@
+adaptations:
+  - path: adapters/grok/CONTRACT.md
+    source: local:grok-host-packaging-decision@sha256:43a98fce39b02a79d26bf61e6f05cdb958446ad764b4e21af12ab1cd606f5e4d#L4-4
+    rationale: The generated host variant, unchanged authored sources and eval selection, native authority rendering, offline probes and deferred expansion acceptance become the Grok contract.

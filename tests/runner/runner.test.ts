@@ -118,7 +118,11 @@ function waitForPath(path: string, owner: { exited: Promise<number> }) {
     const watcher = watch(dirname(path), () => {
       if (existsSync(path)) settle();
     });
+    const poll = setInterval(() => {
+      if (existsSync(path)) settle();
+    }, 20);
     function settle(error?: Error) {
+      clearInterval(poll);
       watcher.close();
       if (error === undefined) resolve();
       else reject(error);

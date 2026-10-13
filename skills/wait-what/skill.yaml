@@ -90,6 +90,10 @@ packaging:
       mode: autonomous
     - adapter: codex
       mode: autonomous
+    - adapter: kimi
+      mode: autonomous
+    - adapter: droid
+      mode: manual
 
 provenance:
   origin: donor

@@ -122,6 +122,7 @@ import { renderDraft, type SkillRegistry, skillsLedger } from "../../../src/lear
 import { rosterSection } from "../../../src/learn/skills/roster.ts";
 import { effectiveMaxTurns, loadMatrix, turnCapReceipt } from "./matrix.ts";
 import { matrixPrices, usageReceipt } from "./pricing.ts";
+import { startsFor } from "./explicit-start.ts";
 import { adapterFor, BUNDLE_FOR, runSubject } from "./subjects/index.ts";
 import { cleanEnv, evalInstrument, option, scratchRepo } from "./session.ts";
 import { wilson } from "./stats.ts";
@@ -135,7 +136,7 @@ import {
   unwrap,
   words,
 } from "./subjects/shell.ts";
-import type { SessionEvent, SessionRequest, SessionResult, ToolEvent } from "./subjects/types.ts";
+import type { HostKind, SessionEvent, SessionRequest, SessionResult, ToolEvent } from "./subjects/types.ts";
 
 export type Arm = "natural" | "nudged";
 export type Polarity = "positive" | "negative";
@@ -1333,8 +1334,12 @@ export function bundleEvidence(
 // Running.
 // ---------------------------------------------------------------------------
 
-/** Seed every candidate draft into a scratch ledger; return the roster a session would see. */
-function scratchRoster(cases: readonly Case[]): { roster: string; cwd: string; drafts: Map<string, string> } {
+/** Seed every candidate draft into a scratch ledger; return the roster a session on each host would see. */
+function scratchRoster(cases: readonly Case[]): {
+  rosterOn: (host: HostKind) => string;
+  cwd: string;
+  drafts: Map<string, string>;
+} {
   const repo = scratchRepo();
   const env = { CLAUDE_CONFIG_DIR: join(repo, "..", "config"), PATH: process.env.PATH ?? "" };
   const ctx: LearnContext = {
@@ -1376,7 +1381,7 @@ function scratchRoster(cases: readonly Case[]): { roster: string; cwd: string; d
     drafts.set(ledger.path("candidates", `${id}.md`), c.draft.name);
   }
   writeFileSync(ledger.path("registry.json"), JSON.stringify(registry, null, 1));
-  return { roster: rosterSection(ctx, repo), cwd: repo, drafts };
+  return { rosterOn: (host) => rosterSection(ctx, repo, { host: BUNDLE_FOR[host] }), cwd: repo, drafts };
 }
 
 function userInvokedSkills(): { userInvoked: Set<string>; known: Set<string>; fingerprints: Map<string, string> } {
@@ -1509,8 +1514,7 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   const cases = selected.cases;
-  const { roster, cwd, drafts } = scratchRoster(promptSet.cases);
-  const injected = rosterOn ? roster : "";
+  const { rosterOn: rosterFor, cwd, drafts } = scratchRoster(promptSet.cases);
   const { userInvoked, known, fingerprints } = userInvokedSkills();
   for (const name of drafts.values()) known.add(name);
   const scoring: ScoreOptions = { arm, userInvoked, known, drafts, fingerprints };
@@ -1537,6 +1541,8 @@ async function main(argv: string[]): Promise<number> {
   for (const subject of subjects) {
     const adapter = adapterFor(subject.host);
     const maxTurns = effectiveMaxTurns(subject);
+    const starts = startsFor(subject.host);
+    const injected = rosterOn ? rosterFor(subject.host) : "";
     // The package's skills reach the host only through its packaged bundle; `ak build` writes it.
     const bundleDir = bundleOn ? join(PACKAGE_ROOT, "dist", BUNDLE_FOR[subject.host]) : undefined;
     if (bundleDir !== undefined && !existsSync(bundleDir) && !dryRun) {
@@ -1554,7 +1560,12 @@ async function main(argv: string[]): Promise<number> {
       return 2;
     }
     const request = (c: Case): SessionRequest => {
-      const req: SessionRequest = { prompt: promptFor(c, arm), cwd, env: cleanEnv(adapter.env), timeoutMs: 300_000 };
+      const req: SessionRequest = {
+        prompt: starts.typed(promptFor(c, arm)),
+        cwd,
+        env: cleanEnv(adapter.env),
+        timeoutMs: 300_000,
+      };
       if (maxTurns !== undefined) req.maxTurns = maxTurns;
       if (injected !== "") req.appendSystemPrompt = injected;
       if (bundleDir !== undefined) req.bundleDir = bundleDir;
@@ -1581,7 +1592,13 @@ async function main(argv: string[]): Promise<number> {
     const evaluated = sessions.map((session, index) => {
       const evalCase = cases[index];
       if (evalCase === undefined) throw new Error(`completed session has no case at index ${index}`);
-      const scored = scoreCase(evalCase, session.events, session.reply, scoring, session.slashCommands);
+      const scored = scoreCase(
+        evalCase,
+        session.events,
+        starts.canonical(session.reply),
+        scoring,
+        session.slashCommands,
+      );
       const invalid = invalidSession(session, maxTurns);
       return { case: evalCase, session, result: invalid === null ? scored : { ...scored, invalid } };
     });
@@ -1671,7 +1688,7 @@ async function main(argv: string[]): Promise<number> {
     roster: rosterOn ? "on" : "off",
     bundle: bundleOn ? "on" : "off",
     ...bundleEvidence(bundleOn, promptSet.cases, new Set(drafts.values())),
-    roster_tokens: Math.floor(injected.length / 4),
+    roster_tokens: rosterOn ? Math.floor(rosterFor("claude").length / 4) : 0,
     noop_baseline: noopBaseline(cases, scoring),
     ...usageReceipt(ranSessions),
     price_table,
