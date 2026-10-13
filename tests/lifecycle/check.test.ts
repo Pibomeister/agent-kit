@@ -1614,10 +1614,14 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
     for (const host of ["claude-code", "codex"] as const) {
       const files = planBundle({ root: REPO, catalog }, host, {}).files;
       expect(files.has(GATE_FILE)).toBe(true);
+      expect([...files.keys()].filter((path) => /(?:ajv|ajv-formats)\.LICENSE$/.test(path)).sort()).toEqual([
+        "LICENSES/ajv-formats.LICENSE",
+        "LICENSES/ajv.LICENSE",
+      ]);
       for (const pkg of ["ajv", "ajv-formats"]) {
-        const shipped = files.get(`provenance/licenses/ajv-validator_${pkg}.LICENSE`)?.contents;
+        const shipped = files.get(`LICENSES/${pkg}.LICENSE`)?.contents;
         expect(shipped).toBe(readFileSync(join(REPO, "node_modules", pkg, "LICENSE"), "utf8"));
-        expect(files.get("NOTICE")?.contents).toContain(`provenance/licenses/ajv-validator_${pkg}.LICENSE`);
+        expect(files.get("NOTICE")?.contents).toContain(`LICENSES/${pkg}.LICENSE`);
       }
     }
   });

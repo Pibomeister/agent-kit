@@ -71,8 +71,8 @@ dist/codex/
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
 ├── skills/<id>/SKILL.md        # generated keys plus Codex-native U explicit-start markers
 ├── skills/<id>/references/     # U explicit-start markers rendered here and in references/shared/
-├── LICENSES/                   # licence texts of the packages inlined into bin/ak (NOTICE)
-├── provenance/licenses/        # claude-mem and gate dependency notices (NOTICE)
+├── LICENSES/                   # licence texts of packages in bin/ak and bin/ak-gate.mjs (NOTICE)
+├── provenance/licenses/        # claude-mem licence and NOTICE
 └── NOTICE, LICENSE
 ```
 

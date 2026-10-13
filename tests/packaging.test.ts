@@ -173,8 +173,6 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
-  "provenance/licenses/ajv-validator_ajv.LICENSE": "MIT License\n\nCopyright (c) 2015-2021 Evgeny Poberezkin\n",
-  "provenance/licenses/ajv-validator_ajv-formats.LICENSE": "MIT License\n\nCopyright (c) 2020 Evgeny Poberezkin\n",
   // Stubs for the licence texts bin/ak inlines. The real texts are read from
   // the installed packages; these exist so a fixture can still build.
   "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
@@ -195,8 +193,6 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
 const REQUIRED_LICENCES: ReadonlyArray<readonly [string, string]> = [
   ["NOTICE", "NOTICE"],
   ["LICENSE", "LICENSE"],
-  ["provenance/licenses/ajv-validator_ajv.LICENSE", "provenance/licenses/ajv-validator_ajv.LICENSE"],
-  ["provenance/licenses/ajv-validator_ajv-formats.LICENSE", "provenance/licenses/ajv-validator_ajv-formats.LICENSE"],
   ["node_modules/ajv/LICENSE", "LICENSES/ajv.LICENSE"],
   ["node_modules/ajv-formats/LICENSE", "LICENSES/ajv-formats.LICENSE"],
   ["node_modules/fast-deep-equal/LICENSE", "LICENSES/fast-deep-equal.LICENSE"],
@@ -298,7 +294,7 @@ describe("host capability honesty", () => {
  * them is defective however clean the rest of the build reports.
  *
  * Both host contracts specify `NOTICE, LICENSE` at the bundle root and the
- * ajv notices under `provenance/licenses/` (`adapters/claude-code/CONTRACT.md`
+ * ajv notices under `LICENSES/` (`adapters/claude-code/CONTRACT.md`
  * §1 and `adapters/codex/CONTRACT.md` §2),
  * so the filenames and the placement are taken from the contract rather than
  * chosen here.
@@ -410,6 +406,10 @@ describe("the licence files the distribution is obliged to carry", () => {
         const needle = line.length === 0 ? "//" : `// ${line}`;
         if (!script.includes(needle)) missing.push(`${path}: ${JSON.stringify(line)}`);
       }
+    }
+    for (const pkg of ["ajv", "ajv-formats"]) {
+      expect(script.split(`// --- LICENSES/${pkg}.LICENSE ---`).length - 1).toBe(1);
+      expect(script).not.toContain(`// --- provenance/licenses/ajv-validator_${pkg}.LICENSE ---`);
     }
     expect(missing).toEqual([]);
   });

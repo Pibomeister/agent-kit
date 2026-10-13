@@ -24,8 +24,8 @@ dist/claude-code/
 ├── skills/<id>/SKILL.md       # host frontmatter generated; canonical /ak:<id> start retained
 ├── skills/<id>/references/    # transitive dependencies resolved into the bundle
 ├── evals/<id>/<case>/case.yaml
-├── LICENSES/                  # licence texts of the packages inlined into bin/ak (NOTICE)
-├── provenance/licenses/       # claude-mem and gate dependency notices (NOTICE)
+├── LICENSES/                  # licence texts of packages in bin/ak and bin/ak-gate.mjs (NOTICE)
+├── provenance/licenses/       # claude-mem licence and NOTICE
 └── NOTICE, LICENSE
 ```
 

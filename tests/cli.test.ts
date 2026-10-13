@@ -121,8 +121,6 @@ function capture() {
 const BUILDABLE = {
   NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n",
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n",
-  "provenance/licenses/ajv-validator_ajv.LICENSE": "MIT License\n\nCopyright (c) 2015-2021 Evgeny Poberezkin\n",
-  "provenance/licenses/ajv-validator_ajv-formats.LICENSE": "MIT License\n\nCopyright (c) 2020 Evgeny Poberezkin\n",
   "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
   "node_modules/ajv-formats/LICENSE": "Copyright (c) 2020 Evgeny Poberezkin\n",
   "node_modules/fast-deep-equal/LICENSE": "Copyright (c) 2017 Evgeny Poberezkin\n",

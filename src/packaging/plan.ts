@@ -245,11 +245,6 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
 export const LICENCE_FILES: ReadonlyArray<{ source: string; path: string }> = [
   { source: "NOTICE", path: "NOTICE" },
   { source: "LICENSE", path: "LICENSE" },
-  { source: "provenance/licenses/ajv-validator_ajv.LICENSE", path: "provenance/licenses/ajv-validator_ajv.LICENSE" },
-  {
-    source: "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
-    path: "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
-  },
   { source: "node_modules/ajv/LICENSE", path: "LICENSES/ajv.LICENSE" },
   { source: "node_modules/ajv-formats/LICENSE", path: "LICENSES/ajv-formats.LICENSE" },
   { source: "node_modules/fast-deep-equal/LICENSE", path: "LICENSES/fast-deep-equal.LICENSE" },

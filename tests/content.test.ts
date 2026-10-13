@@ -51,8 +51,8 @@ describe("model and pricing denylist", () => {
     "LICENSE",
     "NOTICE",
     "provenance/licenses/thedotmack_claude-mem.LICENSE",
-    "provenance/licenses/ajv-validator_ajv.LICENSE",
-    "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+    "node_modules/ajv/LICENSE",
+    "node_modules/ajv-formats/LICENSE",
   ])("a shipped license rejects a denylisted term: %s", (file) => {
     const text = "Copyright notice\nPricing: $3/1M output\n";
     const ctx = ctxFor({ [file]: text, "provenance/licenses/donor.LICENSE": text });
