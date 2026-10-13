@@ -6,6 +6,7 @@ import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
 
 import { artifactHash, sha256Hex } from "../util/hash.ts";
+import { unknownSelector } from "../util/suggest.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
@@ -129,6 +130,11 @@ function optionsFor(card: Card) {
   if (!card.options.includes(HUMAN_REFUSAL))
     options.push({ id: HUMAN_REFUSAL, summary: `${HUMAN_REFUSAL} (refuses ${card.operation})` });
   return options;
+}
+
+/** The refusal for a card id the run does not have, naming the cards it does. */
+function unknownCard(run: Run, cardId: string): string {
+  return unknownSelector("checkpoint card", cardId, Object.keys(run.cards));
 }
 
 function charterDigest(charter: Charter): string {
@@ -469,7 +475,7 @@ export class Runner {
   packet(id: string, cardId: string) {
     const run = this.load(id);
     const card = run.cards[cardId];
-    if (card === undefined) throw new Error("unknown checkpoint card");
+    if (card === undefined) throw new Error(unknownCard(run, cardId));
     return {
       run: run.id,
       charter_hash: run.charter_hash,
@@ -694,7 +700,7 @@ export class Runner {
   ): Card {
     const run = this.load(id);
     const card = run.cards[cardId];
-    if (card === undefined) throw new Error("unknown checkpoint card");
+    if (card === undefined) throw new Error(unknownCard(run, cardId));
     const prior = card.judgments.find((judgment) => judgment.seat === seat);
     if (prior !== undefined) {
       if (
@@ -767,7 +773,7 @@ export class Runner {
     const prior = run.decisions.find((d) => d.card.id === cardId);
     if (prior !== undefined) return prior.result;
     const card = run.cards[cardId];
-    if (card === undefined) throw new Error("unknown checkpoint card");
+    if (card === undefined) throw new Error(unknownCard(run, cardId));
     if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new checkpoint can be decided");
     const step = STAGE.get(card.operation);
     if (step === undefined || !step.from.includes(run.run_state) || run.next_permitted_action !== card.operation)
@@ -882,7 +888,7 @@ export class Runner {
     if (early !== null) return early;
     const run = this.load(id);
     const card = run.cards[cardId];
-    if (card === undefined) throw new Error("unknown checkpoint card");
+    if (card === undefined) throw new Error(unknownCard(run, cardId));
     const step = STAGE.get(card.operation);
     if (step === undefined) throw new Error("phase is not declared");
     if (seatFailures.length > 0)

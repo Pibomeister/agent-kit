@@ -72,7 +72,13 @@ const SCAN_DIRS = [
 ];
 
 // Shipped licence texts are distributed verbatim, so they cannot inherit the source-only exemption.
-const SCAN_FILES = ["catalog.yaml", "AGENTS.md", "AUTHORING.md", "README.md", ...LICENCE_FILES];
+const SCAN_FILES = [
+  "catalog.yaml",
+  "AGENTS.md",
+  "AUTHORING.md",
+  "README.md",
+  ...LICENCE_FILES.map((licence) => licence.source),
+];
 
 /** Authored bodies: where a placeholder means "this skill is not finished". */
 const AUTHORED_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references", "templates"];
@@ -87,7 +93,7 @@ export function contentScanRoots(): string[] {
 }
 
 function isExempt(file: string): boolean {
-  if (LICENCE_FILES.includes(file)) return false;
+  if (LICENCE_FILES.some((licence) => licence.source === file)) return false;
   return DENYLIST_EXEMPT_PREFIXES.some((prefix) => (prefix.endsWith("/") ? file.startsWith(prefix) : file === prefix));
 }
 

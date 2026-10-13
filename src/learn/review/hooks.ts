@@ -12,6 +12,7 @@
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, openSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
+import { unknownSelector } from "../../util/suggest.ts";
 import type { LearnArgs, LearnContext } from "../core/context.ts";
 import { flag } from "../core/context.ts";
 import { mainRepoRoot } from "../core/paths.ts";
@@ -21,7 +22,7 @@ import { nowIso } from "../core/store.ts";
 import { appendCapped, carrierOf } from "../core/trace.ts";
 import type { HookPayload } from "../hooks.ts";
 import { appendEvents } from "./events.ts";
-import { correctionEvent, memProject } from "./ingest.ts";
+import { correctionEvent, memProject, REVIEW_SOURCES } from "./ingest.ts";
 import { reviewLedger, reviewLedgerDir } from "./ledger.ts";
 
 /** The session's working directory: the payload's when it names one, else the process's. */
@@ -42,6 +43,18 @@ export const detachSpawner: Spawner = (argv, options) => {
   const child = spawn(bin, rest, { cwd: options.cwd, detached: true, stdio: "ignore", env: options.env });
   child.unref();
 };
+
+/**
+ * The session's host from `--source`. A hook never fails its session, so an
+ * unknown name is reported on stderr and read as claude, the default, rather
+ * than refused.
+ */
+function hookSource(args: LearnArgs, ctx: LearnContext): "claude" | "codex" {
+  const source = flag(args, "source");
+  if (source === undefined || source === "claude" || source === "codex") return source ?? "claude";
+  ctx.io.err(`ak learn hook: --source: ${unknownSelector("source", source, REVIEW_SOURCES)}; read as claude`);
+  return "claude";
+}
 
 /**
  * The detached pipeline's environment: this hook's own, with the hook span as
@@ -114,7 +127,7 @@ export function stopHook(
   }
   const ledger = reviewLedger(ctx.config, root);
   touch(mark);
-  const source = flag(args, "source") === "codex" ? "codex" : "claude";
+  const source = hookSource(args, ctx);
   const log = ledger.path(PIPELINE_LOG);
   // The detached shell appends to the log, so the cap is applied here, before it starts.
   appendCapped(log, "", ctx.config.traceMaxBytes);
@@ -336,7 +349,7 @@ export function promptHook(ctx: LearnContext, payload: HookPayload, args: LearnA
   }
   recordWorktree(ctx.config, cwd, root);
   const ledger = reviewLedger(ctx.config, root);
-  const platform = flag(args, "source") === "codex" ? "codex" : "claude";
+  const platform = hookSource(args, ctx);
   appendEvents(ledger, [
     correctionEvent(prompt, nowIso(), memProject(ctx, root), platform, {
       patterns: detection.patterns,

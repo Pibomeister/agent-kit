@@ -5,6 +5,7 @@ import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import type { Ledger } from "../../src/learn/core/ledger.ts";
 import { appendEvents, makeEvent } from "../../src/learn/review/events.ts";
 import { DEFAULT_SHOWN, guardrailsSection, topRecent } from "../../src/learn/review/guardrails.ts";
+import { registerRoot } from "../../src/learn/memory/registry.ts";
 import { ingestOptions, reviewArea } from "../../src/learn/review/cli.ts";
 import { reviewLedger, reviewLedgerDir } from "../../src/learn/review/ledger.ts";
 import { rebuildIndex, loadPatterns } from "../../src/learn/review/patterns.ts";
@@ -163,9 +164,13 @@ describe("ak learn review", () => {
   test("dry runs report and write nothing; a bad --pr and a non-git directory fail", () => {
     const repo = gitRepo(join(scratch(), "app"));
     const ctx = testContext({ cwd: repo, env: { AK_LEARN_DRY_RUN: "1" } });
-    expect(run("retire", ["--id", "rp-001"], ctx)).toBe(0);
+    // A dry run looks the pattern up like the real run does, so an id the ledger lacks is refused, not "would retire".
+    expect(run("retire", ["--id", "rp-001"], ctx)).toBe(1);
     expect(run("rollback", ["--to", "abc"], ctx)).toBe(0);
-    expect(ctx.out).toEqual(["dry run: would retire rp-001", "dry run: would revert every commit after abc"]);
+    expect(ctx.out).toEqual([
+      "unknown pattern 'rp-001'; there are none to choose from",
+      "dry run: would revert every commit after abc",
+    ]);
     expect(existsSync(reviewLedgerDir(ctx.config, repo))).toBe(false);
 
     const live = testContext({ cwd: repo });
@@ -177,5 +182,20 @@ describe("ak learn review", () => {
     });
     expect(code).toBe(1);
     expect(elsewhere.err).toEqual(["ak learn review: not inside a git repository"]);
+  });
+
+  test("an unknown --source and a --repo that names no repository are refused with what exists", () => {
+    const repo = gitRepo(join(scratch(), "app"));
+    const ctx = testContext({ cwd: repo });
+    expect(run("ingest", ["--source", "codx", "--no-github", "--no-mem"], ctx)).toBe(1);
+    expect(ctx.err).toEqual(["ak learn review: --source: unknown source 'codx'; did you mean codex?"]);
+    ctx.err.length = 0;
+    expect(run("ingest", ["--source", "codex", "--no-github", "--no-mem"], ctx)).toBe(0);
+
+    registerRoot(ctx.config, repo);
+    expect(run("report", ["--repo", `${repo}-old`], ctx)).toBe(1);
+    expect(ctx.err).toEqual([
+      `ak learn review: not inside a git repository: unknown repository '${repo}-old'; did you mean ${repo}?`,
+    ]);
   });
 });

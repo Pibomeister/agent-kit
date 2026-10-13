@@ -10,7 +10,7 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, note, unavailable, type Issue } from "../validation/types.ts";
 import { generateHostFrontmatter } from "./frontmatter.ts";
 import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } from "./capability-table.ts";
-import { loadHostCapabilities, type HostId, type SkillMode } from "./hosts.ts";
+import { loadHostCapabilities, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { resolveProfile } from "./profiles.ts";
@@ -43,17 +43,24 @@ export const SHARED_ROOT = "references/shared";
 export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/plugin.json",
   codex: ".codex-plugin/plugin.json",
+  grok: ".claude-plugin/plugin.json",
+  kimi: ".kimi-plugin/plugin.json",
+  droid: ".factory-plugin/plugin.json",
 };
 
 /**
- * The marketplace entry both host bundles carry. Codex CLI discovers the local
- * marketplace through the same path before resolving `ak@agent-kit`.
+ * The marketplace entry the claude-code, codex and grok bundles carry. Codex CLI
+ * discovers the local marketplace through the same path before resolving
+ * `ak@agent-kit`. Droid's sits at `.factory-plugin/marketplace.json`; kimi's
+ * bundle carries none.
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
-const maintenanceScripts = new Map<string, string | null>();
+type MaintenanceScript = { script: string; inlined: string[] | null };
 
-function maintenanceScript(root: string): string | null {
+const maintenanceScripts = new Map<string, MaintenanceScript | null>();
+
+function maintenanceScript(root: string): MaintenanceScript | null {
   const cached = maintenanceScripts.get(root);
   if (cached !== undefined) return cached;
   const script = buildMaintenanceScript(root);
@@ -61,7 +68,34 @@ function maintenanceScript(root: string): string | null {
   return script;
 }
 
-function buildMaintenanceScript(root: string): string | null {
+/**
+ * Package names the bundler metafile proves `bin/ak` inlined.
+ *
+ * The argument is the metafile's text. `null` when that text cannot prove the
+ * set: it is not a JSON object, `inputs` is missing or not a plain object,
+ * `inputs` is empty, or no input path names a `node_modules` package. The
+ * build treats `null` as an error. An empty set is what a missing or rewritten
+ * metafile used to look like, and a build that treats that as success ships
+ * `bin/ak` without showing that every inlined package has a licence text.
+ */
+export function inlinedSetFromMetafile(text: string): string[] | null {
+  const meta = parsePackageJson(text);
+  if (meta === null || !Object.prototype.hasOwnProperty.call(meta, "inputs")) return null;
+  // `inputs` is one JSON value inside an already-parsed object. The same parser
+  // accepts only an object, so an array, null, or boxed primitive is `null`
+  // here rather than a set of paths.
+  const inputs = parsePackageJson(JSON.stringify(meta["inputs"]));
+  if (inputs === null) return null;
+  const names = new Set<string>();
+  for (const input of Object.keys(inputs)) {
+    const match = /.*node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(input);
+    if (match?.[1]) names.add(match[1]);
+  }
+  if (names.size === 0) return null;
+  return [...names].toSorted();
+}
+
+function buildMaintenanceScript(root: string): MaintenanceScript | null {
   const source = join(root, "src/maintenance/cli.ts");
   if (!existsSync(source)) return null;
   const scratch = join(root, ".work");
@@ -69,12 +103,16 @@ function buildMaintenanceScript(root: string): string | null {
   const dir = mkdtempSync(join(scratch, "ak-maintenance-"));
   try {
     const outfile = join(dir, "ak.mjs");
-    const result = spawnSync(process.execPath, ["build", source, "--target=bun", `--outfile=${outfile}`], {
-      cwd: root,
-      encoding: "utf8",
-    });
+    const metafile = join(dir, "meta.json");
+    const result = spawnSync(
+      process.execPath,
+      ["build", source, "--target=bun", `--outfile=${outfile}`, `--metafile=${metafile}`],
+      { cwd: root, encoding: "utf8" },
+    );
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
-    return `#!/usr/bin/env bun\n${readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "")}`;
+    const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
+    const inlined = inlinedSetFromMetafile(readFileSync(metafile, "utf8"));
+    return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -173,33 +211,81 @@ const PARITY_FIELD_LIST = PARITY_FIELDS.map(([field]) => `'${field}'`).join(" an
 export const BUILD_RECORD_FILE: Record<HostId, string> = {
   "claude-code": ".claude-plugin/ak.json",
   codex: ".codex-plugin/ak.json",
+  grok: ".claude-plugin/ak.json",
+  kimi: ".kimi-plugin/ak.json",
+  droid: ".factory-plugin/ak.json",
 };
 
 /**
- * The licence files every bundle carries, copied verbatim to the path they hold
- * in the source tree.
+ * The licence files every bundle carries, copied verbatim.
  *
- * A licensing obligation rather than bundle tidiness: the MIT donors' licence
- * requires the copyright notice and the permission notice accompany every copy,
- * Apache-2.0 §4(a) requires claude-mem's licence accompany the files adapted
- * from it, and `dist/` is the copy that gets distributed. Absence is an `error()` for
+ * `source` is where the text is read. `path` is where the bundle ships it.
+ * NOTICE and LICENSE stay at the bundle root: both host contracts specify
+ * those two names at that place (`adapters/claude-code/CONTRACT.md` §1,
+ * `adapters/codex/CONTRACT.md` §2). The other rows are the licence texts of
+ * code inlined into `bin/ak`. An installed package keeps its text under
+ * `node_modules/`, and that path cannot be the bundle path: gitignore drops
+ * it, and the packager's file walk skips it, so the distributed copy would
+ * not contain the text. claude-mem's texts stay at their provenance paths,
+ * the paths they hold in the source tree.
+ *
+ * A licensing obligation rather than bundle tidiness. The MIT donors' licence
+ * requires the copyright notice and the permission notice accompany every
+ * copy, Apache-2.0 §4(a) requires claude-mem's licence accompany the files
+ * adapted from it, the inlined packages require the same of their own texts,
+ * and `dist/` is the copy that gets distributed. Absence is an `error()` for
  * that reason -- a build that quietly omits them reports success over a
  * distribution that may not lawfully be distributed, which is the worst shape
  * this package has a name for.
  *
- * Emitted from here, once, for every host rather than per adapter. Both host
- * contracts specify the same files at the same places
- * (`adapters/claude-code/CONTRACT.md` §1, `adapters/codex/CONTRACT.md` §2), and
- * two bundles disagreeing about their own licensing is the defect this package
+ * Emitted from here, once, for every host rather than per adapter. Two
+ * bundles disagreeing about their own licensing is the defect this package
  * has already produced once in a different field.
  */
-export const LICENCE_FILES = [
-  "NOTICE",
-  "LICENSE",
-  "provenance/licenses/thedotmack_claude-mem.LICENSE",
-  "provenance/licenses/ajv-validator_ajv.LICENSE",
-  "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+export const LICENCE_FILES: ReadonlyArray<{ source: string; path: string }> = [
+  { source: "NOTICE", path: "NOTICE" },
+  { source: "LICENSE", path: "LICENSE" },
+  { source: "provenance/licenses/ajv-validator_ajv.LICENSE", path: "provenance/licenses/ajv-validator_ajv.LICENSE" },
+  {
+    source: "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+    path: "provenance/licenses/ajv-validator_ajv-formats.LICENSE",
+  },
+  { source: "node_modules/ajv/LICENSE", path: "LICENSES/ajv.LICENSE" },
+  { source: "node_modules/ajv-formats/LICENSE", path: "LICENSES/ajv-formats.LICENSE" },
+  { source: "node_modules/fast-deep-equal/LICENSE", path: "LICENSES/fast-deep-equal.LICENSE" },
+  { source: "node_modules/fast-uri/LICENSE", path: "LICENSES/fast-uri.LICENSE" },
+  { source: "node_modules/json-schema-traverse/LICENSE", path: "LICENSES/json-schema-traverse.LICENSE" },
+  { source: "node_modules/yaml/LICENSE", path: "LICENSES/yaml.LICENSE" },
+  {
+    source: "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    path: "provenance/licenses/thedotmack_claude-mem.LICENSE",
+  },
+  {
+    source: "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    path: "provenance/licenses/thedotmack_claude-mem.NOTICE",
+  },
 ];
+
+/**
+ * Comment block prepended to the built `bin/ak`.
+ *
+ * The plugin bundles ship the same texts as files. The curl install is this
+ * one file and has no neighbour to carry them, and `bun build` drops the
+ * copyright comments from the inlined packages.
+ */
+function licenceBanner(root: string): string {
+  const lines = [
+    "// Licence texts for this file and the third-party code inlined into it.",
+    "// Each block is also copied into the plugin bundles at the path in its heading.",
+  ];
+  for (const licence of LICENCE_FILES) {
+    const text = readTextIfPresent(join(root, licence.source));
+    if (text === null) continue;
+    lines.push(`// --- ${licence.path} ---`);
+    for (const line of text.replace(/\n$/, "").split("\n")) lines.push(line.length === 0 ? "//" : `// ${line}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 const GATE_SOURCE = "src/lifecycle/gate.ts";
 export const GATE_FILE = "bin/ak-gate.mjs";
@@ -502,6 +588,12 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   const ordered = catalog.bySection("skills").filter((e) => included.has(e.id));
+  const userSkillIds = catalog
+    .bySection("skills")
+    .filter((entry) => entry.invocation === "U")
+    .map((entry) => entry.id);
+  const renderExplicitStarts = (text: string) =>
+    rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
 
@@ -540,7 +632,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * `manual` when it declares no row for this host, which is the
      * conservative end: neither contract says what an undeclared host gets, and
      * a skill that has not been thought about on a host is not one to expose
-     * more of. An unrecognised `mode` lands here too -- `loadSkillManifest`
+     * more of. Grok is the exception: it inherits the claude-code row by design
+     * (`adapters/grok/CONTRACT.md`). An unrecognised `mode` lands here too -- `loadSkillManifest`
      * only accepts the schema's three, and `ak validate` reports the rest.
      *
      * The cap is `adapters/claude-code/CONTRACT.md` §4 with the input it always
@@ -566,7 +659,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * the installed skill sees, emitted into the body's frontmatter below, and
      * it is not an input to this decision.
      */
-    const row = manifest.hosts[host];
+    // Grok shares Claude's declarations and layout, not its permission semantics.
+    // Its own restriction declaration and the shared capability ceiling still apply.
+    const row = manifest.hosts[host] ?? (host === "grok" ? manifest.hosts["claude-code"] : undefined);
     const declaredMode: SkillMode = row?.mode ?? "manual";
     const unenforceable = row?.unsupported ?? [];
 
@@ -630,8 +725,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      *
      * The premise §3.1 names is that the package "does not emit" the host's
      * suppression key, so the host does not enforce it, and that is what is
-     * tested. Keyed on `host === "codex"` this would be a rule that happens to
-     * be right about the two hosts that exist and goes on firing at codex after
+     * tested. Keyed on `host === "codex"` this would already miss droid, which
+     * does not enforce suppression either, and would go on firing at codex after
      * its bundle starts enforcing suppression. `enforces` rather than
      * `HOST_FRONTMATTER_KEYS` because emitting the key and honoring it are
      * different claims, and the one that protects the skill is the second.
@@ -665,8 +760,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
     const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, bodyPath);
     issues.push(...rewritten.issues);
+    const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
 
-    files.set(bodyPath, { path: bodyPath, contents: `${generated.text}${rewritten.text}`, source: bodyPath });
+    files.set(bodyPath, { path: bodyPath, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
@@ -679,7 +775,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       if (text === null) continue;
       const assetRewrite = rewriteLinks(asset, asset, text, included, asset);
       issues.push(...assetRewrite.issues);
-      files.set(asset, { path: asset, contents: assetRewrite.text, source: asset });
+      files.set(asset, { path: asset, contents: renderExplicitStarts(assetRewrite.text), source: asset });
       for (const dep of assetRewrite.dependencies) {
         const published = publishedPathFor(dep, included);
         if (published !== null) pending.push({ source: dep, published });
@@ -700,7 +796,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     const rewritten = rewriteLinks(next.source, next.published, text, included, next.source);
     issues.push(...rewritten.issues);
-    files.set(next.published, { path: next.published, contents: rewritten.text, source: next.source });
+    files.set(next.published, {
+      path: next.published,
+      contents: renderExplicitStarts(rewritten.text),
+      source: next.source,
+    });
     for (const dep of rewritten.dependencies) {
       const published = publishedPathFor(dep, included);
       if (published !== null) pending.push({ source: dep, published });
@@ -754,19 +854,22 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     }
   }
 
-  for (const name of LICENCE_FILES) {
-    const text = readTextIfPresent(join(ctx.root, name));
+  for (const licence of LICENCE_FILES) {
+    const text = readTextIfPresent(join(ctx.root, licence.source));
     if (text === null) {
+      const remedy = licence.source.startsWith("node_modules/")
+        ? `Install dependencies so ${licence.source} is present.`
+        : `Restore ${licence.source}.`;
       issues.push(
         error(
           "packaging.licence-file-missing",
-          name,
-          `${name} is not in the source tree, so the bundle cannot carry it. Every licence a bundled file is under requires its text accompany every copy of the software, and dist/ is a copy that gets distributed. Write ${name} in the repository.`,
+          licence.source,
+          `${licence.source} is missing, so the bundle cannot carry it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. ${remedy}`,
         ),
       );
       continue;
     }
-    files.set(name, { path: name, contents: text, source: name });
+    files.set(licence.path, { path: licence.path, contents: text, source: licence.source });
   }
 
   const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
@@ -775,8 +878,30 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   try {
-    const script = maintenanceScript(root);
-    if (script !== null) files.set("bin/ak", { path: "bin/ak", contents: script });
+    const built = maintenanceScript(root);
+    if (built !== null) {
+      files.set("bin/ak", { path: "bin/ak", contents: built.script });
+      if (built.inlined === null) {
+        issues.push(
+          error(
+            "packaging.inlined-set-unproven",
+            "src/maintenance/cli.ts",
+            "bin/ak's bundler metafile does not name any inlined node_modules package. An absent, malformed, or empty inputs object, or inputs that match no package, leaves the build unable to show that every inlined package has a licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. The build refuses.",
+          ),
+        );
+      } else {
+        for (const name of built.inlined) {
+          if (LICENCE_FILES.some((licence) => licence.source.startsWith(`node_modules/${name}/`))) continue;
+          issues.push(
+            error(
+              "packaging.licence-file-missing",
+              `node_modules/${name}`,
+              `bin/ak inlines ${name}, and LICENCE_FILES has no row for its licence text, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Add a LICENCE_FILES row for ${name}'s licence file and name it in NOTICE.`,
+            ),
+          );
+        }
+      }
+    }
   } catch (cause) {
     issues.push(
       error(
@@ -826,7 +951,10 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     path: HOST_MANIFEST_FILE[host],
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
-  files.set(MARKETPLACE_FILE, { path: MARKETPLACE_FILE, contents: marketplace(ctx) });
+  if (host !== "kimi") {
+    const marketplaceFile = host === "droid" ? ".factory-plugin/marketplace.json" : MARKETPLACE_FILE;
+    files.set(marketplaceFile, { path: marketplaceFile, contents: marketplace(ctx) });
+  }
   files.set(BUILD_RECORD_FILE[host], {
     path: BUILD_RECORD_FILE[host],
     contents: buildRecord(
@@ -892,7 +1020,8 @@ function manifestObject(
   // makes the omission loud.
   if (declared(pkg.author)) manifest.author = { name: pkg.author };
   if (declared(pkg.license)) manifest.license = pkg.license;
-  manifest.skills = skillRegistration(host, skills);
+  // Droid discovers skills/ directly; its native manifest carries identity only.
+  if (host !== "droid") manifest.skills = skillRegistration(host, skills);
   // Last, as in §1's example, and conditioned on the corpus alone rather than
   // on the corpus and the host. The key is a pointer: emitted with nothing
   // behind it, it is the pointer half of this feature shipping without the
@@ -1110,7 +1239,8 @@ function declared(value: string | undefined): value is string {
  * bundle actually contains -- which matters because the install set is
  * profile-dependent (`adapters/claude-code/CONTRACT.md` §1). codex takes the
  * directory pointer its contract carries from the donor
- * (`adapters/codex/CONTRACT.md` §1).
+ * (`adapters/codex/CONTRACT.md` §1). droid is told nothing: it discovers the
+ * root `skills/` directory itself (`adapters/droid/CONTRACT.md` §1).
  *
  * The forms resolve to the same set only because both bundles are built from
  * one `skills/` tree. That is a property of this function's caller rather than
@@ -1120,7 +1250,7 @@ function declared(value: string | undefined): value is string {
  * two bundles is a build failure, not a host difference.
  */
 function skillRegistration(host: HostId, skills: ReadonlyArray<string>): string | string[] {
-  return host === "codex" ? "./skills/" : skills.map((id) => `./skills/${id}`);
+  return host === "codex" || host === "kimi" ? "./skills/" : skills.map((id) => `./skills/${id}`);
 }
 
 /**

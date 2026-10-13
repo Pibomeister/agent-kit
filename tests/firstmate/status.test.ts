@@ -75,7 +75,7 @@ describe("ak firstmate status complete is audited", () => {
     grants(...OPERATIONS);
     record(...binding.required_gates);
     const done = fm("status", bindingPath, "complete", "--evidence", "v1,r1", "--at", "7");
-    expect(done.err).toBe("");
+    expect(done.err).toMatch(/^deprecated:[^\n]*$/);
     expect(done.out).toEqual(["done [at=7]: dry-run ship prepared, nothing published evidence=v1,r1"]);
     const verified = fm("status", bindingPath, "--verify");
     expect(verified.code).toBe(0);
@@ -138,7 +138,7 @@ describe("ak firstmate status complete is audited", () => {
     gitIn(project, "merge", "-q", "--no-ff", "-m", "merge", "fm/T-S");
     gitIn(project, "checkout", "-q", "fm/T-S");
     const r = fm("status", bindingPath, "--verify");
-    expect(r.err).toBe("");
+    expect(r.err).toMatch(/^deprecated:[^\n]*$/);
     expect(r.code).toBe(0);
   });
 

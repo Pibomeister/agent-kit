@@ -25,7 +25,9 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.29
+  version: 0.1.34
+  # Canonical explicit-start namespace. Host adapters render this plus a skill
+  # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
   default_profile: core
   # The host-facing description, emitted into both manifests. Deliberately not
@@ -1078,6 +1080,13 @@ schemas:
       One line of the learning runtime's span log: one finished review, memory, skills or hook unit
       with its trace ids, duration, status and judge totals. Closed, so it holds ids, enums, numbers
       and hashes only.
+  - id: guard-policy
+    batch: 13
+    status: authored
+    summary: >-
+      The guard runtime's policy data: protected paths, destructive command patterns, secret path
+      patterns, a path-to-tier map and the governed paths with their article ids. Hand-written until
+      the constitution compiler generates it.
 
 # ---------------------------------------------------------------------------
 # Policies — 5. Machine-referenceable rulings.
@@ -1160,12 +1169,26 @@ adapters:
     batch: 1
     status: authored
     summary: The parallel host bundle; the multi-host manifest pattern.
+  - id: kimi
+    batch: 1
+    status: authored
+    summary: Native Kimi plugin over shared skills, with portable explicit-start authority.
+  - id: droid
+    batch: 1
+    status: authored
+    summary: Native Factory plugin packaging with explicit human starts and separate acceptance per served binding.
   - id: runner-contract
     batch: 1
     status: authored
     summary: >-
       Grant validation, trusted evidence outside worker-writable scope, seat independence, budgets,
       idempotency keys, event delivery and tracker credentials. Skills never issue their own grants.
+  - id: grok
+    batch: 1
+    status: authored
+    summary: >-
+      Claude-compatible generated bundle with native explicit-start markers and independently
+      declared host restrictions. Installation evidence does not establish lifecycle parity.
   - id: knowledgebase
     batch: 1
     status: authored
@@ -1179,8 +1202,8 @@ adapters:
     status: authored
     summary: >-
       Firstmate supervises, agent-kit judges inside the worker, no-mistakes delivers. The
-      ownership boundary, the task-local child contract, the upstream patch it needs and the
-      status lines it may write.
+      ownership boundary, the task-local child contract, the deprecated legacy upstream patch and
+      the status lines it may write.
   - id: tracker
     batch: 1
     status: authored

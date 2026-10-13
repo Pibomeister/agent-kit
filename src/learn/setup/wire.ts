@@ -51,6 +51,8 @@ export function shellQuote(arg: string): string {
 
 export interface HookCommands {
   sessionStart: string;
+  codexSessionStart: string;
+  droidSessionStart: string;
   claudeStop: string;
   codexStop: string;
   codexPrompt: string;
@@ -66,6 +68,8 @@ export function hookCommands(deps: SetupDeps): HookCommands {
   const base = `${deps.ak.map(shellQuote).join(" ")} learn hook`;
   return {
     sessionStart: `${base} session-start`,
+    codexSessionStart: `${base} session-start --source codex`,
+    droidSessionStart: `${base} session-start --source droid`,
     claudeStop: `${base} stop`,
     codexStop: `${base} stop --source codex`,
     codexPrompt: `${base} prompt`,
@@ -122,14 +126,14 @@ const declaresSessionStart = ajv.compile<{ hooks: { SessionStart: Json } }>({
 
 /**
  * Add one hook entry unless it is already there. An entry of ours for the same
- * verb whose command line differs (the package moved) is updated in place.
- * Returns true when the document changed.
+ * verb whose command line differs (the package moved), or for the verb this
+ * one supersedes, is updated in place. Returns true when the document changed.
  */
 export function ensureHook(
   doc: HookDoc,
   event: string,
   command: string,
-  options: { matcher?: string; timeout?: number } = {},
+  options: { matcher?: string; timeout?: number; supersedes?: string } = {},
 ): boolean {
   const timeout = options.timeout ?? 10;
   doc.hooks ??= {};
@@ -137,7 +141,10 @@ export function ensureHook(
   const hooks = entries.flatMap((entry) => entry.hooks ?? []);
   if (hooks.some((hook) => hook.command === command)) return false;
   const verb = ourHookVerb(command);
-  const ours = hooks.filter((hook) => verb !== null && ourHookVerb(hook.command) === verb);
+  const ours = hooks.filter((hook) => {
+    const found = ourHookVerb(hook.command);
+    return found !== null && (found === verb || found === options.supersedes);
+  });
   const stale = ours[0];
   if (stale !== undefined) {
     stale.command = command;
@@ -306,6 +313,8 @@ export interface HookSpec {
   command: string;
   matcher?: string;
   timeout?: number;
+  /** The verb an earlier wire wrote for this hook: an entry carrying it is updated in place, not joined by a second. */
+  supersedes?: string;
 }
 
 /**
@@ -322,11 +331,11 @@ export function hostHooks(commands: HookCommands): Record<WireHost, HookSpec[]> 
       { event: "Stop", command: commands.claudeStop, timeout: 120 },
     ],
     codex: [
-      { event: "SessionStart", command: commands.sessionStart },
+      { event: "SessionStart", command: commands.codexSessionStart, supersedes: "session-start" },
       { event: "UserPromptSubmit", command: commands.codexPrompt },
       { event: "Stop", command: commands.codexStop, timeout: 30 },
     ],
-    droid: [{ event: "SessionStart", command: commands.sessionStart }],
+    droid: [{ event: "SessionStart", command: commands.droidSessionStart, supersedes: "session-start" }],
     grok: [
       { event: "PostToolUse", command: commands.grokContext },
       { event: "SessionStart", command: commands.grokArm },

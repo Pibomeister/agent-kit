@@ -27,6 +27,7 @@ import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { parsePage, renderPage, type PageMeta } from "../core/pages.ts";
 import { loopDir } from "../core/paths.ts";
+import type { Candidate } from "../core/similar.ts";
 import {
   appendGated,
   appendJsonl,
@@ -324,6 +325,7 @@ export function proposeConfirmed(
     trigger: TriggerKind;
     claude: ClaudeMemSource | null;
     workers: WorkerSessionSource;
+    similar?: readonly Candidate[];
   },
 ): ProposalResult {
   const { meta } = page;
@@ -350,7 +352,7 @@ export function proposeConfirmed(
     { root, revision: null },
     options.runId,
   );
-  return proposeLesson(ctx, ledger.dir, draft);
+  return proposeLesson(ctx, ledger.dir, draft, options.similar);
 }
 
 /**

@@ -76,7 +76,7 @@ Exit 0 prints a grant record; cite it on the review or the ship record. A refusa
 
 The binding grant alone does not carry autonomous ship through. If Firstmate supplied a live runner
 socket and worker token, use its current ledger and runner-collected verification evidence. Otherwise
-step 3 of `super-ship` stops with `needs-input` naming trusted evidence as unavailable; report that
+step 7 of `super-ship` stops with `needs-input` naming trusted evidence as unavailable; report that
 stop rather than shipping.
 
 ## How you ship
