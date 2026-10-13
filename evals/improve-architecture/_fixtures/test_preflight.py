@@ -28,6 +28,16 @@ class ReconstructionTests(unittest.TestCase):
             self.assertEqual(len(receipt["receipts"]), 16)
             self.assertTrue(receipt["passed"])
 
+    def test_isolated_eval_directory_reproduces_all_sixteen_pins(self):
+        with tempfile.TemporaryDirectory(prefix="architecture-preflight-") as temporary:
+            root = Path(temporary)
+            replica = root / "evals/improve-architecture"
+            shutil.copytree(FIXTURES.parent, replica)
+            result, receipt = self.run_preflight(root / "evidence", replica / "_fixtures/preflight.py")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(len(receipt["receipts"]), 16)
+            self.assertTrue(receipt["passed"])
+
     def test_inherited_repository_pointers_do_not_redirect_identity_reads(self):
         with tempfile.TemporaryDirectory(prefix="architecture-preflight-") as temporary:
             root = Path(temporary)
@@ -86,9 +96,6 @@ class ReconstructionTests(unittest.TestCase):
             root = Path(temporary)
             replica = root / "source/evals/improve-architecture"
             shutil.copytree(FIXTURES.parent, replica)
-            helper = root / "source/evals/super-build/_fixtures"
-            helper.mkdir(parents=True)
-            shutil.copy2(FIXTURES.parents[1] / "super-build/_fixtures/scaffold-lib.sh", helper)
             source = replica / "_fixtures/repos/local/README.md"
             source.write_text(source.read_text() + "\nRegression control mutation.\n")
             result, receipt = self.run_preflight(root / "evidence", replica / "_fixtures/preflight.py")

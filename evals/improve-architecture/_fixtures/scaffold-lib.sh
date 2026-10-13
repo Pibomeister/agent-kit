@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Source from the case-local scaffold; prepare only the evaluator's disposable workspace.
 ARCHITECTURE_FIXTURES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$ARCHITECTURE_FIXTURES/../../super-build/_fixtures/scaffold-lib.sh"
+
+scaffold_die() {
+  echo "scaffold: $*" >&2
+  exit 1
+}
 
 architecture_scaffold() {
   local overlay
@@ -15,7 +19,10 @@ architecture_scaffold() {
   export GIT_CONFIG_COUNT=0 GIT_TEMPLATE_DIR=
   export GIT_AUTHOR_NAME="agent-kit eval fixture" GIT_AUTHOR_EMAIL="eval-fixture@agent-kit.local"
   export GIT_COMMITTER_NAME="$GIT_AUTHOR_NAME" GIT_COMMITTER_EMAIL="$GIT_AUTHOR_EMAIL"
-  repo_init
+  git init -q -b main .
+  git config user.email "$GIT_AUTHOR_EMAIL"
+  git config user.name "$GIT_AUTHOR_NAME"
+  git config commit.gpgsign false
   git config core.hooksPath /dev/null
   cp -R "$ARCHITECTURE_FIXTURES/repos/local/." .
   for overlay in "$@"; do
@@ -25,9 +32,11 @@ architecture_scaffold() {
     fi
     cp -R "$ARCHITECTURE_FIXTURES/overlays/$overlay/." .
   done
-  commit_all "Keep the order fixture reconstructible for architecture trials
+  git add -A
+  GIT_AUTHOR_DATE="2026-10-12T06:00:00+00:00" GIT_COMMITTER_DATE="2026-10-12T06:00:00+00:00" \
+    git commit -q --no-verify -m "Keep the order fixture reconstructible for architecture trials
 
 Constraint: The evaluator supplies tooling and knowledgebase facilities separately
-Tested: Source fixture preparation only; no survey trial is asserted" "2026-10-12T06:00:00+00:00"
-  echo "scaffold source_revision=$(head_sha) tree=$(git rev-parse HEAD^{tree})"
+Tested: Source fixture preparation only; no survey trial is asserted"
+  echo "scaffold source_revision=$(git rev-parse HEAD) tree=$(git rev-parse HEAD^{tree})"
 }
