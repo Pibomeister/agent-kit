@@ -43,7 +43,7 @@ skills:
 
 protocols:
   baseline: 7
-  catalog: 8
+  catalog: 9
   expansions:
     - ids: [evidence-gate]
       reason: >-
@@ -51,6 +51,12 @@ protocols:
         must be in the input and thresholds are counted by the runtime, never by the judge. The
         learn roles share that rule, so it is a protocol.
       commits: [8e4a0de]
+    - ids: [work-trail]
+      reason: >-
+        super-build needs one protocol for the implementer's account of its working decisions on
+        each ticket: a stretch per implementer seat and an independent audit after the commit,
+        both carried by reference and never evidence.
+      commits: [e0ea1af1e554d47c16990ddbd2acab9920c8ad23]
 
 roles:
   baseline: 29

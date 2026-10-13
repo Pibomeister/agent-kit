@@ -1,7 +1,8 @@
 # Provenance fragment for the "work-trail" batch (catalog batch 15): the two record kinds
 # a work trail leaves, trail (one stretch of an implementer's working decisions) and
-# trail-audit (the auditor's comparison of the trail with what the run left behind), and
-# the protocol super-build follows for a work trail, protocols/work-trail/PROTOCOL.md.
+# trail-audit (the auditor's comparison of the trail with what the run left behind), the
+# protocol super-build follows for a work trail, protocols/work-trail/PROTOCOL.md, and the
+# seat that audits a trail, roles/trail-auditor/ROLE.md.
 #
 # One row per (path, source) pair, keyed `path:` with a single `source:`, which is what
 # loadAdaptationFragments reads (src/validation/provenance.ts). A file adapted from
@@ -74,3 +75,16 @@ adaptations:
       by reference and never a file in the project's tree, an independent seat audits it against
       what the run left behind and not against the transcript, and wayfind and autopilot do not
       invoke it.
+  - path: roles/trail-auditor/ROLE.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: >-
+      The semantics came over and no text did. The trail review that flags what to pay attention
+      to, a scan and not a redo of the work (line 67), became a seat that compares the trail with
+      what the run left behind and never judges the change. Flags that point at specific rows, with
+      "No flags" a valid value (line 74), became the attention list, whose items name the stretch
+      and the entry, and the nothing-to-flag result. Rows that must map to what happened (line 59)
+      became the comparison of the trail with the implementer's report. Evidence that must resolve
+      (line 60) and verification claimed without proof (line 70) became two more comparisons, and
+      an unlogged fork counted as a gap (line 61) the fourth. Left behind: the choice of reviewer
+      and the line that names it (lines 67 and 74), the reading of the transcript (lines 55-63 and
+      67), and the judgment of choices that look risky in hindsight (line 71).

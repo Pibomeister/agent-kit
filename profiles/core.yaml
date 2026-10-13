@@ -45,8 +45,8 @@ includes:
       skill stops rather than reaching through a side door must hold in a core-only install.
 
   roles:
-    count: 28
-    core: [implementer, reviewer-spec, reviewer-standards]
+    count: 29
+    core: [implementer, reviewer-spec, reviewer-standards, trail-auditor]
     plan_review: [plan-review/planner, plan-review/architect, plan-review/critic]
     code_review:
       - code-review/correctness

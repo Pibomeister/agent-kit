@@ -446,6 +446,9 @@ adaptations:
   - path: roles/reviewer-standards/ROLE.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/subagent-driven-development/task-reviewer-prompt.md
     rationale: Code-quality half of the same reviewer template.
+  - path: roles/trail-auditor/ROLE.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: "The semantics came over and no text did. The trail review that flags what to pay attention to, a scan and not a redo of the work (line 67), became a seat that compares the trail with what the run left behind and never judges the change. Flags that point at specific rows, with \"No flags\" a valid value (line 74), became the attention list, whose items name the stretch and the entry, and the nothing-to-flag result. Rows that must map to what happened (line 59) became the comparison of the trail with the implementer's report. Evidence that must resolve (line 60) and verification claimed without proof (line 70) became two more comparisons, and an unlogged fork counted as a gap (line 61) the fourth. Left behind: the choice of reviewer and the line that names it (lines 67 and 74), the reading of the transcript (lines 55-63 and 67), and the judgment of choices that look risky in hindsight (line 71)."
   - path: roles/verifier/ROLE.md
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L95-182
     rationale: The independent runtime evidence question, frozen packet, excluded lineage and artifact-only return become one non-entrypoint seat.

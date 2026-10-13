@@ -593,10 +593,10 @@ protocols:
       shown to a seat that judges the change.
 
 # ---------------------------------------------------------------------------
-# Roles — 35. Role prompts, not skills. Never individually invocable.
+# Roles — 36. Role prompts, not skills. Never individually invocable.
 # ---------------------------------------------------------------------------
 roles:
-  # Core (5)
+  # Core (6)
   - id: supervisor
     batch: 1
     provenance_origin: conversation
@@ -628,6 +628,13 @@ roles:
     summary: >-
       Checks fixes against the project's own designated rules, cited rule by rule. Absent
       standards return empty; they never become invented preferences.
+  - id: trail-auditor
+    batch: 15
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Compares an implementer's trail with what the run left behind and returns a trail audit with
+      an attention list. Never evidence, never a verdict, and never the implementer or its lineage.
 
   # Plan review (3)
   - id: plan-review/planner

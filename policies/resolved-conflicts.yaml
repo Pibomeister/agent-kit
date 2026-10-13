@@ -323,7 +323,7 @@ conflicts:
     binds:
       skills: [super-verify, super-review, diagnose, super-build, ultraqa]
       protocols: [apply-findings, review-delta, tdd]
-      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
+      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, trail-auditor, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
       schemas: [finding, verification, review]
       policies: [review, authority-defaults]
       doctrine: [AUTHORING.md]
@@ -660,7 +660,7 @@ conflicts:
     discharged_in: [hard-gates, outputs]
     binds:
       skills: [super-review, receiving-review]
-      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
+      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, trail-auditor, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
       protocols: [review-delta]
       schemas: [review]
       policies: [review, authority-defaults]
@@ -1352,6 +1352,7 @@ conflicts:
     discharged_in: [workflow, hard-gates, outputs]
     binds:
       protocols: [work-trail]
+      roles: [trail-auditor]
     scenario: 17
     coverage: indirect
     note: >-

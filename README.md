@@ -3,7 +3,7 @@
 One engineering lifecycle, amalgamated from ten donors (nine MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**36 public skills · 8 domain packs · 9 protocols · 35 role prompts · 9 reference packs · 35 schemas**,
+**36 public skills · 8 domain packs · 9 protocols · 36 role prompts · 9 reference packs · 35 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -147,9 +147,9 @@ Shared phase logic, invoked by skills rather than by humans:
 `phase-operations` · `consensus-plan-gate` · `tdd` · `apply-findings` · `review-delta` ·
 `worktree-ownership` · `attach-pack` · `evidence-gate` · `work-trail`
 
-### Roles (35)
+### Roles (36)
 
-5 core (`supervisor`, `implementer`, `verifier`, `reviewer-spec`, `reviewer-standards`) · 15 code-review ·
+6 core (`supervisor`, `implementer`, `verifier`, `reviewer-spec`, `reviewer-standards`, `trail-auditor`) · 15 code-review ·
 7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 5 learn (`learn/pattern-maintainer`,
 `learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`).
 

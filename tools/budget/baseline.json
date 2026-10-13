@@ -2266,6 +2266,11 @@
       "bytes": 7481,
       "tokens": 1870
     },
+    "role:trail-auditor": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 9713,
+      "tokens": 2429
+    },
     "role:verifier": {
       "file": "roles/verifier/ROLE.md",
       "bytes": 5456,
