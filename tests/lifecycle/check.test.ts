@@ -1634,171 +1634,171 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
     );
     expect(contents[0]).toBe(contents[1]);
 
-    for (const [index, host] of (["claude-code", "codex"] as const).entries()) {
-      const script = join(mkdtempSync(join(tmpdir(), `ak-bin-${host}-`)), "ak-gate.mjs");
-      writeFileSync(script, contents[index]!);
-      const node = (cwd: string, ...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd });
-      const start = (id: string) => {
-        const dir = repo();
-        const ticketPath = ticket(dir, id);
-        const opened = node(dir, "open", "--ticket", ticketPath);
-        expect(opened.exitCode).toBe(0);
-        const run = opened.stdout
-          .toString()
-          .trim()
-          .replace(/^opened run /, "");
-        for (const gate of ["build-checks", "review-full", "review-readiness"])
-          expect(node(dir, "record", "--gate", gate).exitCode).toBe(0);
-        return { dir, ticketPath, run, node: (...argv: string[]) => node(dir, ...argv) };
-      };
-
-      const legacy = repo();
-      for (const gate of PRE_SHIP_GATES)
-        expect(node(legacy, "record", "--gate", gate, "--run", "legacy").exitCode).toBe(0);
-      expect(node(legacy, "check", "--run", "legacy").exitCode).toBe(0);
-      expect(node(legacy, "check", "--run", "legacy", "--evidence").stderr.toString()).toContain(
-        "evidence unavailable",
-      );
-
-      const allowed = start(`${host}-allowed`);
-      expect(
-        allowed.node("record", "--gate", "verify", "--receipt", receipt(allowed.dir, allowed.run, allowed.ticketPath))
-          .exitCode,
-      ).toBe(0);
-      expect(JSON.parse(allowed.node("check", "--json").stdout.toString()).outcome).toBe("allowed");
-      const malformed = start(`${host}-malformed`);
-      expect(
-        malformed.node(
-          "record",
-          "--gate",
-          "verify",
-          "--receipt",
-          receipt(malformed.dir, malformed.run, malformed.ticketPath, { project: { id: "demo", repo: null } }),
-        ).exitCode,
-      ).toBe(0);
-      const malformedCheck = malformed.node("check", "--evidence");
-      expect(malformedCheck.exitCode).toBe(1);
-      expect(malformedCheck.stderr.toString()).toContain("/project/repo must be string");
-      const erased = start(`${host}-malformed-failure`);
-      const stickyId = "verification-malformed-failure";
-      expect(
-        erased.node(
-          "record",
-          "--gate",
-          "verify",
-          "--receipt",
-          receipt(erased.dir, erased.run, erased.ticketPath, {
-            id: stickyId,
-            status: "failed",
-            exit_status: 1,
-            project: { id: "demo", repo: null },
-          }),
-        ).exitCode,
-      ).toBe(0);
-      expect(
-        erased.node(
-          "record",
-          "--gate",
-          "verify",
-          "--receipt",
-          receipt(erased.dir, erased.run, erased.ticketPath, { id: stickyId }),
-        ).exitCode,
-      ).toBe(0);
-      const stillFailed = erased.node("check", "--evidence");
-      expect(stillFailed.exitCode).toBe(1);
-      expect(stillFailed.stderr.toString()).toContain("/project/repo must be string");
-
-      const missing = start(`${host}-missing`);
-      expect(missing.node("record", "--gate", "verify").exitCode).toBe(0);
-      expect(missing.node("check").stderr.toString()).toContain("evidence missing");
-
-      const task = start(`${host}-wrong-task`);
-      const otherTask = { ticket: { id: "other", schema: "ticket", hash: `sha256:${"e".repeat(64)}` } };
-      expect(
-        task.node("record", "--gate", "verify", "--receipt", receipt(task.dir, task.run, task.ticketPath, otherTask))
-          .exitCode,
-      ).toBe(0);
-      expect(task.node("check").stderr.toString()).toContain("evidence wrong-task");
-
-      const revision = start(`${host}-wrong-revision`);
-      const snapshot = takeSnapshot(revision.dir) as Exclude<ReturnType<typeof takeSnapshot>, string>;
-      const stale = receipt(revision.dir, revision.run, revision.ticketPath, {
-        source_revision: { ...snapshot, revision: "e".repeat(40) },
-      });
-      const skipped = revision.node("record", "--gate", "verify", "--receipt", stale);
-      expect(skipped.exitCode).toBe(0);
-      expect(skipped.stderr.toString()).toContain("e".repeat(40));
-      expect(revision.node("check").stderr.toString()).toContain("evidence missing");
-      plant(revision.dir, revision.run, stale);
-      expect(revision.node("check").stderr.toString()).toContain("evidence wrong-revision");
-
-      const zero = start(`${host}-zero-exit`);
-      const zeroReceipt = receipt(zero.dir, zero.run, zero.ticketPath, {
-        status: "failed",
-        exit_status: 0,
-        exit_disagreement: { verdict_from: "output", output_reports: "2 fail" },
-      });
-      expect(zero.node("record", "--gate", "verify", "--receipt", zeroReceipt).exitCode).toBe(0);
-      expect(zero.node("check").stderr.toString()).toContain("evidence failed: AC-1");
-
-      for (const target of ["receipt", "output"] as const) {
-        const scenario = start(`${host}-tamper-${target}`);
-        const receiptPath = receipt(scenario.dir, scenario.run, scenario.ticketPath);
-        const receiptDoc = JSON.parse(readFileSync(receiptPath, "utf8"));
-        expect(scenario.node("record", "--gate", "verify", "--receipt", receiptPath).exitCode).toBe(0);
-        const gateDir = join(defaultEvidenceDir(scenario.dir), scenario.run, "verify");
-        const gate = JSON.parse(readFileSync(join(gateDir, readdirSync(gateDir)[0]!), "utf8"));
-        const hash = target === "receipt" ? gate.evidence[0].hash : receiptDoc.output_digest;
-        const stored = join(defaultEvidenceDir(scenario.dir), scenario.run, "artifacts", hash.replace(/^sha256:/, ""));
-        writeFileSync(stored, Buffer.concat([readFileSync(stored), Buffer.from("x")]));
-        expect(scenario.node("check").stderr.toString()).toContain(
-          target === "receipt" ? "digest-mismatch" : "output-missing",
-        );
-      }
-
-      const unstable = start(`${host}-unstable`);
-      expect(
-        unstable.node(
-          "record",
-          "--gate",
-          "verify",
-          "--receipt",
-          receipt(unstable.dir, unstable.run, unstable.ticketPath, { status: "failed", exit_status: 1 }),
-        ).exitCode,
-      ).toBe(0);
-      expect(
-        unstable.node(
-          "record",
-          "--gate",
-          "verify",
-          "--receipt",
-          receipt(unstable.dir, unstable.run, unstable.ticketPath),
-        ).exitCode,
-      ).toBe(0);
-      expect(unstable.node("check").stderr.toString()).toContain("evidence unstable: AC-1");
-
-      const deltaDir = repo();
-      const deltaTicket = ticket(deltaDir, `${host}-delta`);
-      const deltaRun = node(deltaDir, "open", "--ticket", deltaTicket)
-        .stdout.toString()
+    // Byte equality above makes this one executable contract shared by both host bundles.
+    const host = "claude-code";
+    const script = join(mkdtempSync(join(tmpdir(), `ak-bin-${host}-`)), "ak-gate.mjs");
+    writeFileSync(script, contents[0]!);
+    const node = (cwd: string, ...argv: string[]) => Bun.spawnSync(["node", script, ...argv], { cwd });
+    const start = (id: string) => {
+      const dir = repo();
+      const ticketPath = ticket(dir, id);
+      const opened = node(dir, "open", "--ticket", ticketPath);
+      expect(opened.exitCode).toBe(0);
+      const run = opened.stdout
+        .toString()
         .trim()
         .replace(/^opened run /, "");
-      expect(node(deltaDir, "record", "--gate", "build-checks").exitCode).toBe(0);
-      expect(
-        node(deltaDir, "record", "--gate", "verify", "--receipt", receipt(deltaDir, deltaRun, deltaTicket)).exitCode,
-      ).toBe(0);
-      expect(node(deltaDir, "record", "--gate", "review-full").exitCode).toBe(0);
-      git(deltaDir, "add", `${host}-delta.json`);
-      git(deltaDir, "commit", "-qam", "first head");
-      writeFileSync(join(deltaDir, "src/a.js"), "export const a = 12;\n");
-      expect(
-        node(deltaDir, "record", "--gate", "verify", "--receipt", receipt(deltaDir, deltaRun, deltaTicket)).exitCode,
-      ).toBe(0);
-      expect(node(deltaDir, "record", "--gate", "review-delta").exitCode).toBe(0);
-      expect(node(deltaDir, "record", "--gate", "review-readiness").exitCode).toBe(0);
-      expect(node(deltaDir, "check").exitCode).toBe(0);
-      expect(readdirSync(join(defaultEvidenceDir(deltaDir), deltaRun, "review-full"))).toHaveLength(1);
+      for (const gate of ["build-checks", "review-full", "review-readiness"])
+        expect(node(dir, "record", "--gate", gate).exitCode).toBe(0);
+      return { dir, ticketPath, run, node: (...argv: string[]) => node(dir, ...argv) };
+    };
+
+    const legacy = repo();
+    for (const gate of PRE_SHIP_GATES)
+      expect(node(legacy, "record", "--gate", gate, "--run", "legacy").exitCode).toBe(0);
+    expect(node(legacy, "check", "--run", "legacy").exitCode).toBe(0);
+    expect(node(legacy, "check", "--run", "legacy", "--evidence").stderr.toString()).toContain(
+      "evidence unavailable",
+    );
+
+    const allowed = start(`${host}-allowed`);
+    expect(
+      allowed.node("record", "--gate", "verify", "--receipt", receipt(allowed.dir, allowed.run, allowed.ticketPath))
+        .exitCode,
+    ).toBe(0);
+    expect(JSON.parse(allowed.node("check", "--json").stdout.toString()).outcome).toBe("allowed");
+    const malformed = start(`${host}-malformed`);
+    expect(
+      malformed.node(
+        "record",
+        "--gate",
+        "verify",
+        "--receipt",
+        receipt(malformed.dir, malformed.run, malformed.ticketPath, { project: { id: "demo", repo: null } }),
+      ).exitCode,
+    ).toBe(0);
+    const malformedCheck = malformed.node("check", "--evidence");
+    expect(malformedCheck.exitCode).toBe(1);
+    expect(malformedCheck.stderr.toString()).toContain("/project/repo must be string");
+    const erased = start(`${host}-malformed-failure`);
+    const stickyId = "verification-malformed-failure";
+    expect(
+      erased.node(
+        "record",
+        "--gate",
+        "verify",
+        "--receipt",
+        receipt(erased.dir, erased.run, erased.ticketPath, {
+          id: stickyId,
+          status: "failed",
+          exit_status: 1,
+          project: { id: "demo", repo: null },
+        }),
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      erased.node(
+        "record",
+        "--gate",
+        "verify",
+        "--receipt",
+        receipt(erased.dir, erased.run, erased.ticketPath, { id: stickyId }),
+      ).exitCode,
+    ).toBe(0);
+    const stillFailed = erased.node("check", "--evidence");
+    expect(stillFailed.exitCode).toBe(1);
+    expect(stillFailed.stderr.toString()).toContain("/project/repo must be string");
+
+    const missing = start(`${host}-missing`);
+    expect(missing.node("record", "--gate", "verify").exitCode).toBe(0);
+    expect(missing.node("check").stderr.toString()).toContain("evidence missing");
+
+    const task = start(`${host}-wrong-task`);
+    const otherTask = { ticket: { id: "other", schema: "ticket", hash: `sha256:${"e".repeat(64)}` } };
+    expect(
+      task.node("record", "--gate", "verify", "--receipt", receipt(task.dir, task.run, task.ticketPath, otherTask))
+        .exitCode,
+    ).toBe(0);
+    expect(task.node("check").stderr.toString()).toContain("evidence wrong-task");
+
+    const revision = start(`${host}-wrong-revision`);
+    const snapshot = takeSnapshot(revision.dir) as Exclude<ReturnType<typeof takeSnapshot>, string>;
+    const stale = receipt(revision.dir, revision.run, revision.ticketPath, {
+      source_revision: { ...snapshot, revision: "e".repeat(40) },
+    });
+    const skipped = revision.node("record", "--gate", "verify", "--receipt", stale);
+    expect(skipped.exitCode).toBe(0);
+    expect(skipped.stderr.toString()).toContain("e".repeat(40));
+    expect(revision.node("check").stderr.toString()).toContain("evidence missing");
+    plant(revision.dir, revision.run, stale);
+    expect(revision.node("check").stderr.toString()).toContain("evidence wrong-revision");
+
+    const zero = start(`${host}-zero-exit`);
+    const zeroReceipt = receipt(zero.dir, zero.run, zero.ticketPath, {
+      status: "failed",
+      exit_status: 0,
+      exit_disagreement: { verdict_from: "output", output_reports: "2 fail" },
+    });
+    expect(zero.node("record", "--gate", "verify", "--receipt", zeroReceipt).exitCode).toBe(0);
+    expect(zero.node("check").stderr.toString()).toContain("evidence failed: AC-1");
+
+    for (const target of ["receipt", "output"] as const) {
+      const scenario = start(`${host}-tamper-${target}`);
+      const receiptPath = receipt(scenario.dir, scenario.run, scenario.ticketPath);
+      const receiptDoc = JSON.parse(readFileSync(receiptPath, "utf8"));
+      expect(scenario.node("record", "--gate", "verify", "--receipt", receiptPath).exitCode).toBe(0);
+      const gateDir = join(defaultEvidenceDir(scenario.dir), scenario.run, "verify");
+      const gate = JSON.parse(readFileSync(join(gateDir, readdirSync(gateDir)[0]!), "utf8"));
+      const hash = target === "receipt" ? gate.evidence[0].hash : receiptDoc.output_digest;
+      const stored = join(defaultEvidenceDir(scenario.dir), scenario.run, "artifacts", hash.replace(/^sha256:/, ""));
+      writeFileSync(stored, Buffer.concat([readFileSync(stored), Buffer.from("x")]));
+      expect(scenario.node("check").stderr.toString()).toContain(
+        target === "receipt" ? "digest-mismatch" : "output-missing",
+      );
     }
+
+    const unstable = start(`${host}-unstable`);
+    expect(
+      unstable.node(
+        "record",
+        "--gate",
+        "verify",
+        "--receipt",
+        receipt(unstable.dir, unstable.run, unstable.ticketPath, { status: "failed", exit_status: 1 }),
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      unstable.node(
+        "record",
+        "--gate",
+        "verify",
+        "--receipt",
+        receipt(unstable.dir, unstable.run, unstable.ticketPath),
+      ).exitCode,
+    ).toBe(0);
+    expect(unstable.node("check").stderr.toString()).toContain("evidence unstable: AC-1");
+
+    const deltaDir = repo();
+    const deltaTicket = ticket(deltaDir, `${host}-delta`);
+    const deltaRun = node(deltaDir, "open", "--ticket", deltaTicket)
+      .stdout.toString()
+      .trim()
+      .replace(/^opened run /, "");
+    expect(node(deltaDir, "record", "--gate", "build-checks").exitCode).toBe(0);
+    expect(
+      node(deltaDir, "record", "--gate", "verify", "--receipt", receipt(deltaDir, deltaRun, deltaTicket)).exitCode,
+    ).toBe(0);
+    expect(node(deltaDir, "record", "--gate", "review-full").exitCode).toBe(0);
+    git(deltaDir, "add", `${host}-delta.json`);
+    git(deltaDir, "commit", "-qam", "first head");
+    writeFileSync(join(deltaDir, "src/a.js"), "export const a = 12;\n");
+    expect(
+      node(deltaDir, "record", "--gate", "verify", "--receipt", receipt(deltaDir, deltaRun, deltaTicket)).exitCode,
+    ).toBe(0);
+    expect(node(deltaDir, "record", "--gate", "review-delta").exitCode).toBe(0);
+    expect(node(deltaDir, "record", "--gate", "review-readiness").exitCode).toBe(0);
+    expect(node(deltaDir, "check").exitCode).toBe(0);
+    expect(readdirSync(join(defaultEvidenceDir(deltaDir), deltaRun, "review-full"))).toHaveLength(1);
   }, 120_000);
 });
 
