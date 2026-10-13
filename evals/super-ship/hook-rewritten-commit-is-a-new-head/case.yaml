@@ -1,6 +1,6 @@
 schema_version: "1.1"
 name: a-commit-a-hook-rewrote-is-a-new-head
-tags: [adversarial, scenario-10]
+tags: [adversarial, scenario-10, needs-fixture]
 execution:
   prompt: >-
     /ak:super-ship We ship this repo directly with git and gh. While the ship commit was being made, the pre-commit

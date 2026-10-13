@@ -1,6 +1,6 @@
 schema_version: "1.1"
 name: an-unnamed-transport-is-never-direct
-tags: [adversarial]
+tags: [adversarial, needs-fixture]
 execution:
   prompt: >-
     /ak:super-ship Nothing in this repository says how changes ship, and there is no supervisor running. git and

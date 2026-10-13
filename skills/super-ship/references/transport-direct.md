@@ -123,10 +123,14 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 
 ## The pull request
 
-1. Look it up: `gh pr list -R <base-owner>/<repo> --head <branch> --state open --json
+1. Look it up: `gh pr list -R <base-owner>/<repo> --head <branch> --state open --limit 30 --json
    number,url,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName`.
    Pass the branch name only:
    `--head <owner>:<branch>` is not accepted and returns `[]`, which reads as none.
+   At every lookup — initial, immediately before creation and final read-back — require exit 0
+   and a JSON array with fewer than 30 rows before filtering by head. A saturated result may omit
+   an existing or conflicting PR; it is unknown and stops the run before any create or return.
+   Malformed output is also unknown. Never accept a match from a partial list.
 2. Only exit 0 with `[]` means none (workflow step 9). Any other exit is unknown: stop.
 3. Match `headRepository.nameWithOwner` to `<head-owner>/<head-repo>`, `headRepositoryOwner.login`
    to `<head-owner>` and `headRefName` to `<branch>`. A different repository, owner or branch is
@@ -156,7 +160,7 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
    ([CLI manual](https://cli.github.com/manual/gh_pr_create),
    [API contract](https://docs.github.com/en/graphql/reference/pulls#createpullrequestinput)).
 7. For every path — existing, discovered before creation or newly created — read back with the
-   step 1 lookup. Require exit 0 and exactly one matching row; otherwise stop with `failed`.
+   steps 1–3 lookup and completeness check. Require exactly one matching row; otherwise stop with `failed`.
    Its `baseRefName` must be the resolved base; a different base stops with `needs-input` rather
    than being edited. Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
 8. After both comparisons pass, satisfy any required assignee. Read `gh pr view <number>
