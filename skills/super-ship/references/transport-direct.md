@@ -55,22 +55,25 @@ have gone.
    with `git remote get-url --push --all <remote>`, including Git's URL rewrites. Require exit 0 and
    exactly one URL, `<push-url>`; otherwise stop with `needs-input`. Resolve that URL's repository,
    `<head-owner>/<head-repo>`, from conventions and in `publish` confirm it with `gh repo view
-   <head-owner>/<head-repo> --json nameWithOwner,isFork,parent`. Require a successful lookup that
-   confirms the identity; unresolved or unavailable metadata stops the run.
+   <head-owner>/<head-repo> --json id,nameWithOwner,isFork,parent`. Record its node ID as `<head-id>`.
+   Require a successful lookup that confirms the identity and a non-empty ID; otherwise stop.
    The fetch URL never decides the head repository or owner. The base repository is the pull
    request's target, `<base-owner>/<repo>`: named by conventions, else the push repository's fork
-   parent from that metadata, else the push repository itself. Every PR call passes `-R
-   <base-owner>/<repo>`; a local base-branch lookup uses only a remote that fetches that repository.
+   parent from that metadata, else the push repository itself. Every PR lookup and edit passes
+   `-R <base-owner>/<repo>`; creation uses the resolved repository IDs. A local base-branch lookup
+   uses only a remote that fetches that repository.
 3. The base: the branch the conventions name for this one, which may depend on its prefix. Where
    they name none, the base repository's default branch — `git symbolic-ref --short
    refs/remotes/<base-remote>/HEAD` locally, for the remote that fetches the base repository, with
    its `<base-remote>/` prefix stripped so the base is the bare branch name, and `gh repo view
    <base-owner>/<repo> --json defaultBranchRef` in `publish`. A fork's own default branch is never
    the base. With neither, stop with `needs-input`; a base is never guessed. The ship record says
-   which source gave it.
+   which source gave it. In `publish`, also resolve `<base-id>` with `gh repo view
+   <base-owner>/<repo> --json id,nameWithOwner`, regardless of the branch's source. Require a
+   successful lookup confirming that repository and a non-empty node ID before any push.
 4. The assignee and the body shape: a required assignee, and the template the body must follow — the
    repository's own pull-request template, or the shape the conventions give. Where the conventions
-   require no assignee, the flag is left out rather than filled. Nothing here is a package default.
+   require no assignee, nothing is assigned. Nothing here is a package default.
 
 ## The commit
 
@@ -131,19 +134,40 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 4. One match: skip creation and continue to step 7; never open a second.
 5. None: repeat the lookup immediately before creation. A pull request that appeared since step 1
    takes the one-match path. Apply steps 2–3 again before any create.
-6. Still none: write the body to a temporary file outside the repository and create the pull request with
-   `gh pr create -R <base-owner>/<repo> --base <base> --head <head> --title <title> --body-file
-   <file>`, where `<head>` is `<head-owner>:<branch>` when the push repository differs from the base
-   repository and `<branch>` otherwise, adding `--assignee <who>` where the conventions require one.
-   Never pass the body on standard input: `gh`
-   can open a pull request with an empty body and still exit 0.
+6. Still none: write the body to a temporary file and use the same repository-ID mutation for a
+   head in the base repository, a user-owned fork or an organization-owned fork:
+
+   ```sh
+   gh api graphql \
+     -f query='mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { number url } } }' \
+     -f 'input[repositoryId]=<base-id>' \
+     -f 'input[headRepositoryId]=<head-id>' \
+     -f 'input[baseRefName]=<base>' \
+     -f 'input[headRefName]=<branch>' \
+     -f 'input[title]=<title>' \
+     -F 'input[body]=@<body-file>'
+   ```
+
+   Substitute the resolved values as literal arguments. The explicit `headRepositoryId` selects
+   the head repository, so `headRefName` is the bare branch, never `owner:branch`.
+   `-F` reads the body file; never use standard input. Require exit 0, no GraphQL errors and a
+   non-null `data.createPullRequest.pullRequest`; otherwise stop with `failed` and reconcile on
+   resume before another create. This avoids `gh pr create --head`'s organization-owner limit
+   ([CLI manual](https://cli.github.com/manual/gh_pr_create),
+   [API contract](https://docs.github.com/en/graphql/reference/pulls#createpullrequestinput)).
 7. For every path — existing, discovered before creation or newly created — read back with the
    step 1 lookup. Require exit 0 and exactly one matching row; otherwise stop with `failed`.
    Its `baseRefName` must be the resolved base; a different base stops with `needs-input` rather
    than being edited. Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
-   Return the pull request only after both comparisons pass.
+8. After both comparisons pass, satisfy any required assignee. Read `gh pr view <number>
+   -R <base-owner>/<repo> --json assignees`; unknown stops the run. If the required login is absent,
+   add it with `gh pr edit <number> -R <base-owner>/<repo> --add-assignee <who>`, then read back with
+   the same view command and require that login. This effect carries its own idempotency key and
+   follows the same authority rule as creation. A failed assignment or missing read-back is
+   `failed`; a resumed run uses this same step for the existing PR and does not create another.
+   With no required assignee, skip assignment. Return only after these checks pass.
 
-The ship record carries each effect's idempotency key and both read-backs. The push target identity
+The ship record carries each effect's idempotency key and its read-backs. The push target identity
 is the resolved head repository and branch; the PR target includes that head and the base repository
 and branch. A resumed run re-derives the same keys. A head that already carries the commit is past
 the commit, and the push and pull-request reconciles return an effect already made rather than repeating it.
