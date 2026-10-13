@@ -519,7 +519,7 @@ packs:
     summary: Dependency scope, compatibility, supply-chain evidence, explicit authorization.
 
 # ---------------------------------------------------------------------------
-# Protocols — 8. Shared phase logic, invoked by skills, never by humans.
+# Protocols — 9. Shared phase logic, invoked by skills, never by humans.
 # ---------------------------------------------------------------------------
 protocols:
   - id: phase-operations
@@ -582,6 +582,15 @@ protocols:
       is active and promoted only at counted thresholds from distinct sources, a lesson is
       confirmed only across sessions, and a degenerate rewrite is rejected whole. The runtime
       counts; the judge never does.
+  - id: work-trail
+    batch: 15
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      The implementer's account of its working decisions on a ticket, one stretch per seat written
+      as each decision is made with evidence as pointers, and an independent audit of the trail at
+      the committed revision, both published by reference. Never evidence, never a gate, and never
+      shown to a seat that judges the change.
 
 # ---------------------------------------------------------------------------
 # Roles — 35. Role prompts, not skills. Never individually invocable.

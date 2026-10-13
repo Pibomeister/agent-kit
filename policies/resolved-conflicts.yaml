@@ -11,6 +11,7 @@
 # output takes. Rows 28-32 govern delegation class, sensitive floors, independent acceptance
 # oracles, project-declared checks and host-conditional advisor consultation. Row 33 is the first
 # raised by a reproduced failure: a lifecycle run in a task copy that could reach no knowledgebase.
+# Row 34 keeps the implementer's work trail, an account, from every seat that judges the change.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -192,7 +193,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 33
+rows: 34
 
 conflicts:
 
@@ -1326,3 +1327,41 @@ conflicts:
       file-backed backend in this package is `docs/decisions/0010-file-backed-knowledgebase.md`.
     source:
       plan: "§1.2, §8"
+
+  - id: work-trail-is-account-not-evidence
+    tension: >-
+      An implementer's own record of why it chose what it chose is the closest thing a run has to
+      its reasoning, and a seat judging the change would weigh it as support; yet nothing checks
+      that an entry was written when it says, or that it is true.
+    ruling: >-
+      A work trail is the implementer's account and never evidence. It lifts no ceiling, closes no
+      finding, replaces no receipt and is attached to no checkpoint card, and neither is its audit.
+      It is not a gate: a missing trail is reported as missing and nothing is refused for it. No
+      seat whose output is a finding, a receipt, a verdict or a signoff input is shown the trail,
+      the trail audit or the attention list. That covers the check seats, the verifier, the review
+      panel, the challenger that QA signoff plans, and any seat added later. A context that has
+      seen a trail, a trail audit or an attention list sits in no such seat for the same change.
+      The context that seats them holds the wall and is not one of them, and it carries nothing it
+      saw of a trail, a trail audit or an attention list into a ruling it writes, a synthesis or
+      verdict it sets, or a packet it hands a seat the wall covers, for the same change. The trail
+      auditor is never the implementer nor anyone in its lineage; when the seat cannot be filled
+      independently the audit is unavailable, is reported so, is never backfilled and blocks
+      nothing. The attention list adds reasons to look and never removes one, and an empty list is
+      evidence of nothing. An implementer that replaces another is handed no earlier stretch. A
+      trail is never a file in the project's tree.
+    discharged_in: [workflow, hard-gates, outputs]
+    binds:
+      protocols: [work-trail]
+    scenario: 17
+    coverage: indirect
+    note: >-
+      Scenario 17 tests that a missing supervisor is never replaced by the implementer; this row
+      exercises the same structure on the trail auditor's seat, which is unavailable, never
+      backfilled and blocks nothing when it cannot be filled independently. `workflow` holds the
+      order of the trail steps and what each seat is handed, `hard-gates` holds the wall and the
+      auditor's seat, and `outputs` holds the records carried by reference and never as evidence.
+      `authority` was rejected because the row grants and widens no authority, and
+      `stop-conditions` because nothing stops for a trail. No schema is bound: a record shape says
+      what a trail or an audit holds, while this row governs what may be done with one.
+    source:
+      plan: "§5.6, §6.2, §7.3, §8"

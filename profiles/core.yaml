@@ -37,8 +37,8 @@ includes:
       lens, which is the failure the pack mechanism exists to prevent.
 
   protocols:
-    count: 7
-    entries: [phase-operations, consensus-plan-gate, tdd, apply-findings, review-delta, worktree-ownership, attach-pack]
+    count: 8
+    entries: [phase-operations, consensus-plan-gate, tdd, apply-findings, review-delta, worktree-ownership, attach-pack, work-trail]
     rationale: >-
       Every core skill depends on at least one. `phase-operations` is installed even though core
       has no supervisor: `review.delta` and `lesson.capture` are core paths, and the rule that a

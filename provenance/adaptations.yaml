@@ -230,6 +230,15 @@ adaptations:
   - path: protocols/tdd/PROTOCOL.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/test-driven-development/SKILL.md
     rationale: The iron law, the red-green-refactor cycle, the mandatory Verify-RED and Verify-GREEN steps, and the rationalization table this protocol's Hard gates rows are drawn from.
+  - path: protocols/work-trail/PROTOCOL.md
+    source: local:pstack-to-agent-kit-report@sha256:5b87607ca55bd679b4136c06d5d888accf87b6f89e58a323e00cc1f61de93794#L224-227
+    rationale: "The report recommends a protocol drawn from show-me-your-work and invoked by super-build for each ticket, and that is kept. The approved design departs from it where it decided otherwise: the trail is an account and not worker-attested evidence, it is a record carried by reference and never a file in the project's tree, an independent seat audits it against what the run left behind and not against the transcript, and wayfind and autopilot do not invoke it."
+  - path: protocols/work-trail/PROTOCOL.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/references/decision-log-template.tsv
+    rationale: "The template's header row, less its phase column, became what an entry holds: when it was written, the decision, why, the pointers to its evidence and the result. The entry id, the alternatives considered and the entry it supersedes were added, as in the trail record."
+  - path: protocols/work-trail/PROTOCOL.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: "The semantics came over and no text or code did. Decision points, not every action (line 40), became what an entry is for. Evidence as a pointer and never prose (lines 13 and 21) became the pointer rule, narrowed to the ticket's commit, its branch and the run's receipts. Append-only, with a wrong call superseded by a new row (line 52), became the supersede rule. The trail review whose flags end the reply, with no flags a valid result (lines 65-74), became the independent audit after the commit and its attention list. Left behind: the switch that turns model invocation off (line 4), the logging script (line 38), the log files and where they live (lines 44-48), the author's audit of the log against the transcript (lines 55-63), and the choice of reviewer with the line that names it (lines 67 and 74). The audit here reads no transcript."
   - path: protocols/worktree-ownership/PROTOCOL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-worktree/SKILL.md
     rationale: The same detect/native/fallback mechanics in a second donor's words, plus the new-work versus isolate-existing-ref split and the one-branch-one-worktree rule.

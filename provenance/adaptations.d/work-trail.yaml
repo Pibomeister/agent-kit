@@ -1,6 +1,7 @@
 # Provenance fragment for the "work-trail" batch (catalog batch 15): the two record kinds
 # a work trail leaves, trail (one stretch of an implementer's working decisions) and
-# trail-audit (the auditor's comparison of the trail with what the run left behind).
+# trail-audit (the auditor's comparison of the trail with what the run left behind), and
+# the protocol super-build follows for a work trail, protocols/work-trail/PROTOCOL.md.
 #
 # One row per (path, source) pair, keyed `path:` with a single `source:`, which is what
 # loadAdaptationFragments reads (src/validation/provenance.ts). A file adapted from
@@ -16,7 +17,8 @@
 # is cited in research/dossiers/pstack.md, and the template is the header row that skill
 # tells a new log to copy. Both paths were verified to exist at their pin with
 # `git cat-file -e` in the pinned clone before they were written here; neither was
-# re-derived from memory or from a document's description of a donor.
+# re-derived from memory or from a document's description of a donor. The owner's report
+# is a local source in the same file, cited through an anchored `local:` row.
 
 adaptations:
   - path: schemas/trail.schema.json
@@ -44,3 +46,31 @@ adaptations:
       specific rows, with "No flags" as a valid value (line 74), became the attention list
       and the three results. The donor reads the run's transcript; this record reads none, so
       its transcript member admits only not-supplied.
+  - path: protocols/work-trail/PROTOCOL.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: >-
+      The semantics came over and no text or code did. Decision points, not every action (line
+      40), became what an entry is for. Evidence as a pointer and never prose (lines 13 and 21)
+      became the pointer rule, narrowed to the ticket's commit, its branch and the run's
+      receipts. Append-only, with a wrong call superseded by a new row (line 52), became the
+      supersede rule. The trail review whose flags end the reply, with no flags a valid result
+      (lines 65-74), became the independent audit after the commit and its attention list. Left
+      behind: the switch that turns model invocation off (line 4), the logging script (line 38),
+      the log files and where they live (lines 44-48), the author's audit of the log against the
+      transcript (lines 55-63), and the choice of reviewer with the line that names it (lines 67
+      and 74). The audit here reads no transcript.
+  - path: protocols/work-trail/PROTOCOL.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/references/decision-log-template.tsv
+    rationale: >-
+      The template's header row, less its phase column, became what an entry holds: when it was
+      written, the decision, why, the pointers to its evidence and the result. The entry id, the
+      alternatives considered and the entry it supersedes were added, as in the trail record.
+  - path: protocols/work-trail/PROTOCOL.md
+    source: local:pstack-to-agent-kit-report@sha256:5b87607ca55bd679b4136c06d5d888accf87b6f89e58a323e00cc1f61de93794#L224-227
+    rationale: >-
+      The report recommends a protocol drawn from show-me-your-work and invoked by super-build
+      for each ticket, and that is kept. The approved design departs from it where it decided
+      otherwise: the trail is an account and not worker-attested evidence, it is a record carried
+      by reference and never a file in the project's tree, an independent seat audits it against
+      what the run left behind and not against the transcript, and wayfind and autopilot do not
+      invoke it.

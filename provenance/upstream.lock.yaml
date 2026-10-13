@@ -346,6 +346,6 @@ local_sources:
     lines: 301
     license: MIT
     copyright: "Copyright (c) 2026 Eduardo Picazo"
-    # No adaptations row cites it yet. The ticket that adds the work-trail protocol cites it
-    # through an anchored `local:` row and sets this to true.
-    cited_in_adaptations: false
+    # protocols/work-trail/PROTOCOL.md cites its decision trail section (lines 224-227) through
+    # an anchored `local:` row.
+    cited_in_adaptations: true
