@@ -128,18 +128,20 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 3. Match `headRepository.nameWithOwner` to `<head-owner>/<head-repo>`, `headRepositoryOwner.login`
    to `<head-owner>` and `headRefName` to `<branch>`. A different repository, owner or branch is
    another head. More than one matching row is ambiguous: stop and list them rather than taking the first.
-4. One match: the push updated it. Its `baseRefName` must be the base resolved above, and a different
-   base stops with `needs-input` rather than being edited. Return it; never open a second.
-5. None: write the body to a temporary file outside the repository and create the pull request with
+4. One match: skip creation and continue to step 7; never open a second.
+5. None: repeat the lookup immediately before creation. A pull request that appeared since step 1
+   takes the one-match path. Apply steps 2–3 again before any create.
+6. Still none: write the body to a temporary file outside the repository and create the pull request with
    `gh pr create -R <base-owner>/<repo> --base <base> --head <head> --title <title> --body-file
    <file>`, where `<head>` is `<head-owner>:<branch>` when the push repository differs from the base
    repository and `<branch>` otherwise, adding `--assignee <who>` where the conventions require one.
    Never pass the body on standard input: `gh`
    can open a pull request with an empty body and still exit 0.
-6. Repeat the lookup immediately before the create. A pull request that appeared since step 1 takes
-   the one-match path.
-7. Read back with the step 1 lookup: exactly one matching row, whose `headRefOid` is the shipped
-   commit. Anything else is `failed`.
+7. For every path — existing, discovered before creation or newly created — read back with the
+   step 1 lookup. Require exit 0 and exactly one matching row; otherwise stop with `failed`.
+   Its `baseRefName` must be the resolved base; a different base stops with `needs-input` rather
+   than being edited. Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
+   Return the pull request only after both comparisons pass.
 
 The ship record carries each effect's idempotency key and both read-backs. The push target identity
 is the resolved head repository and branch; the PR target includes that head and the base repository
