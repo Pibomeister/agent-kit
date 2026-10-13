@@ -13,8 +13,8 @@
  * The hook is not wired by anything yet: `ak guard setup` and the `guard`
  * profile are a later ticket, and no core bundle carries it.
  */
-import { readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
+import { lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 
 import type { GuardContext } from "./action.ts";
 import { evaluate, UNJUDGEABLE, type GuardVerdict } from "./evaluate.ts";
@@ -127,7 +127,9 @@ function cannotJudge(why: string): GuardVerdict {
 
 function judge(args: HookArgs, options: RunGuardOptions): GuardVerdict {
   if (args.bad.length > 0) return cannotJudge(`the hook is wired with bad arguments (${args.bad.join("; ")})`);
-  const decoded = decodeClaudeCode(options.stdin ?? "", { resolve: options.resolve ?? resolveLink });
+  if (args.root !== undefined && !isAbsolute(args.root)) return cannotJudge("--root must be an absolute path");
+  const resolve = options.resolve ?? resolveLink;
+  const decoded = decodeClaudeCode(options.stdin ?? "", { resolve });
   if (decoded.kind === "pass") return { decision: "allow" };
   if (decoded.kind === "deny") return decoded.verdict;
   if (args.policy === undefined) return cannotJudge("the hook is wired without --policy");
@@ -143,12 +145,22 @@ function judge(args: HookArgs, options: RunGuardOptions): GuardVerdict {
   const context: GuardContext = { root: rootOf(args, env, decoded.cwd), cwd: decoded.cwd };
   const home = env.HOME;
   if (home !== undefined && isAbsolute(home)) context.home = home;
-  return evaluate(loaded.policy, decoded.action, context);
+  const reported = evaluate(loaded.policy, decoded.action, context);
+  if (reported.decision === "deny") return reported;
+  const canonical: GuardContext = {
+    root: resolve(context.root) ?? context.root,
+    cwd: resolve(decoded.cwd) ?? decoded.cwd,
+  };
+  if (context.home !== undefined) canonical.home = resolve(context.home) ?? context.home;
+  if (canonical.root === context.root && canonical.cwd === context.cwd && canonical.home === context.home) {
+    return reported;
+  }
+  return evaluate(loaded.policy, decoded.action, canonical);
 }
 
 /** `--root`, else the project directory Claude Code names for its hooks, else the call's own directory. */
 function rootOf(args: HookArgs, env: NodeJS.ProcessEnv, cwd: string): string {
-  if (args.root !== undefined && isAbsolute(args.root)) return args.root;
+  if (args.root !== undefined) return args.root;
   const project = env.CLAUDE_PROJECT_DIR;
   return project !== undefined && isAbsolute(project) ? project : cwd;
 }
@@ -159,18 +171,24 @@ function rootOf(args: HookArgs, env: NodeJS.ProcessEnv, cwd: string): string {
  * linked directory resolves too. Null when nothing is linked.
  */
 export function resolveLink(absolute: string): string | null {
-  let existing = absolute;
-  let rest = "";
-  for (;;) {
-    try {
-      const real = realpathSync(existing);
-      const target = rest === "" ? real : join(real, rest);
-      return target === absolute ? null : target;
-    } catch {
-      const parent = dirname(existing);
-      if (parent === existing) return null;
-      rest = rest === "" ? basename(existing) : join(basename(existing), rest);
-      existing = parent;
+  const pending = absolute.split("/");
+  let target = "/";
+  let hops = 0;
+  while (pending.length > 0) {
+    const part = pending.shift() ?? "";
+    if (part === "" || part === ".") continue;
+    if (part === "..") {
+      target = dirname(target);
+      continue;
     }
+    const next = join(target, part);
+    if (lstatSync(next, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      hops += 1;
+      if (hops > 40) throw new Error("too many symlink hops");
+      const link = readlinkSync(next);
+      if (isAbsolute(link)) target = "/";
+      pending.unshift(...link.split("/"));
+    } else target = next;
   }
+  return target === absolute ? null : target;
 }

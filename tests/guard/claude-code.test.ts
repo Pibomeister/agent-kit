@@ -10,14 +10,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, test } from "bun:test";
+import { stringify } from "yaml";
 
 import { runCli } from "../../src/cli.ts";
 import { resolveLink, runGuard } from "../../src/guard/cli.ts";
 import { UNJUDGEABLE } from "../../src/guard/evaluate.ts";
 import { decodeClaudeCode, encodeClaudeCode, type LinkResolver } from "../../src/guard/hosts/claude-code.ts";
+import { loadGuardPolicy } from "../../src/guard/policy.ts";
 
 /**
  * CS-11's acceptance criteria (research/briefs/constitution-support-plan.md):
@@ -316,6 +318,102 @@ describe("resolveLink", () => {
       rmSync(work, { recursive: true, force: true });
     }
   });
+
+  test("follows dangling relative, absolute, chained and directory links before resolving dot segments", () => {
+    const work = mkdtempSync(join(ROOT, ".guard-link-"));
+    try {
+      mkdirSync(join(work, "src"));
+      mkdirSync(join(work, "tests"));
+      symlinkSync("../tests/new.json", join(work, "src", "relative.json"));
+      symlinkSync(join(work, "tests", "new.json"), join(work, "src", "absolute.json"));
+      symlinkSync("relative.json", join(work, "src", "chain.json"));
+      symlinkSync("../tests/new-dir", join(work, "src", "directory"));
+      symlinkSync("../tests", join(work, "src", "linked"));
+      for (const name of ["relative.json", "absolute.json", "chain.json"]) {
+        expect(resolveLink(join(work, "src", name))).toBe(join(work, "tests", "new.json"));
+      }
+      expect(resolveLink(join(work, "src", "directory", "new.json"))).toBe(join(work, "tests", "new-dir", "new.json"));
+      expect(resolveLink(`${work}/src/linked/../new.json`)).toBe(join(work, "new.json"));
+      symlinkSync("cycle.json", join(work, "src", "cycle.json"));
+      expect(() => resolveLink(join(work, "src", "cycle.json"))).toThrow("too many symlink hops");
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+});
+
+const FILE_TOOLS = [
+  { tool: "Write", field: "file_path", rule: "protected.tests", directory: "tests" },
+  { tool: "Edit", field: "file_path", rule: "protected.tests", directory: "tests" },
+  { tool: "MultiEdit", field: "file_path", rule: "protected.tests", directory: "tests" },
+  { tool: "NotebookEdit", field: "notebook_path", rule: "protected.tests", directory: "tests" },
+  { tool: "Read", field: "file_path", rule: "secret.anchored", directory: "secrets" },
+  { tool: "Grep", field: "path", rule: "secret.anchored", directory: "secrets" },
+];
+
+describe("file tool path boundaries", () => {
+  for (const { tool, field, rule, directory } of FILE_TOOLS) {
+    test(`${tool} protects reported and resolved paths with every root source`, () => {
+      const work = mkdtempSync(join(ROOT, ".guard-path-"));
+      try {
+        const root = join(work, "repo");
+        const alias = join(work, "alias");
+        for (const dir of ["src", "tests", "secrets", "packages/a"]) {
+          mkdirSync(join(root, dir), { recursive: true });
+        }
+        symlinkSync(root, alias);
+        writeFileSync(join(root, "src", "plain.json"), "{}");
+        writeFileSync(join(root, directory, "existing.json"), "{}");
+        symlinkSync(`../${directory}/existing.json`, join(root, "src", "existing-link.json"));
+        symlinkSync(`../${directory}/missing.json`, join(root, "src", "missing-link.json"));
+        symlinkSync(`../${directory}/missing-dir`, join(root, "src", "directory-link"));
+        symlinkSync("missing-link.json", join(root, "src", "chain.json"));
+        symlinkSync("../src/plain.json", join(root, directory, "reported.json"));
+        symlinkSync("cycle.json", join(root, "src", "cycle.json"));
+        const loaded = loadGuardPolicy(join(ROOT, POLICY), ROOT);
+        if (loaded.policy === null) throw new Error("test policy did not load");
+        loaded.policy.secret_paths.push({ id: "secret.anchored", globs: ["secrets/**"], reason: "Secret files" });
+        const policy = join(work, "policy.yaml");
+        writeFileSync(policy, stringify(loaded.policy));
+        for (const source of ["flag", "environment", "payload"]) {
+          const cwd = source === "payload" ? alias : join(alias, "packages", "a");
+          const argv = ["hook", "pre-tool-use", "--policy", policy];
+          if (source === "flag") argv.push("--root", alias);
+          const env = source === "environment" ? { CLAUDE_PROJECT_DIR: alias } : {};
+          for (const representation of ["relative", "alias", "canonical"]) {
+            const run = (path: string): Run => {
+              const captured = captureIo();
+              const file =
+                representation === "relative"
+                  ? relative(cwd, join(alias, path))
+                  : join(representation === "alias" ? alias : root, path);
+              const code = runGuard(argv, {
+                cwd: ROOT,
+                io: captured.io,
+                env,
+                stdin: JSON.stringify({ ...BASE, cwd, tool_name: tool, tool_input: { [field]: file } }),
+              });
+              return { code, out: captured.out, err: captured.err };
+            };
+            for (const path of [
+              "src/existing-link.json",
+              "src/missing-link.json",
+              "src/directory-link/new.json",
+              "src/chain.json",
+              `${directory}/reported.json`,
+            ]) {
+              expectDecision(run(path), "deny", rule);
+            }
+            expectDecision(run("src/plain.json"), "allow", undefined);
+            expectDecision(run("src/new.json"), "allow", undefined);
+            expectDecision(run("src/cycle.json"), "deny", UNJUDGEABLE);
+          }
+        }
+      } finally {
+        rmSync(work, { recursive: true, force: true });
+      }
+    }, 30_000);
+  }
 });
 
 describe("ak guard hook", () => {
@@ -360,6 +458,26 @@ describe("ak guard hook", () => {
   test("--root overrides the project directory the policy's globs are relative to", () => {
     const write = readFileSync(join(CASES, "deny-write-vendor.stdin"), "utf8");
     expectDecision(replay(write, undefined, [...HOOK, "--root", "/work"]), "allow", undefined);
+  });
+
+  test("a relative explicit root denies instead of falling back to a nested payload cwd", () => {
+    for (const root of [".", "packages/a"]) {
+      for (const tool of ["Write", "WebFetch"]) {
+        const captured = captureIo();
+        const code = runGuard([...HOOK, "--root", root], {
+          cwd: ROOT,
+          io: captured.io,
+          env: {},
+          stdin: JSON.stringify({
+            ...BASE,
+            cwd: join(ROOT, "packages", "a"),
+            tool_name: tool,
+            tool_input: { file_path: join(ROOT, "tests", "data.json") },
+          }),
+        });
+        expectDecision({ code, out: captured.out, err: captured.err }, "deny", UNJUDGEABLE);
+      }
+    }
   });
 });
 
