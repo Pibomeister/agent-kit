@@ -51,12 +51,16 @@ have gone.
 1. The branch: `git branch --show-current`. Empty output is a detached head, and the base branch is
    not a branch to ship from; either stops with `needs-input` naming the branch to create. The lookup
    below with an empty branch drops its filter and lists unrelated pull requests.
-2. The remote, `<remote>`: `origin`, unless the conventions name another. The base repository is the
-   one the pull request targets, `<base-owner>/<repo>`: the remote's own repository, or on a fork
-   checkout the repository it was forked from — named by the conventions, a remote that fetches it,
-   or in `publish` the fork's `parent` from `gh repo view <fork-owner>/<repo> --json isFork,parent`.
-   The head owner is the remote's owner, `<fork-owner>` on a fork. Every `gh` call below passes `-R
-   <base-owner>/<repo>`, so none of them falls to `gh`'s own choice of default repository.
+2. The remote, `<remote>`: `origin`, unless the conventions name another. Resolve its destination
+   with `git remote get-url --push --all <remote>`, including Git's URL rewrites. Require exit 0 and
+   exactly one URL, `<push-url>`; otherwise stop with `needs-input`. Resolve that URL's repository,
+   `<head-owner>/<head-repo>`, from conventions and in `publish` confirm it with `gh repo view
+   <head-owner>/<head-repo> --json nameWithOwner,isFork,parent`. Require a successful lookup that
+   confirms the identity; unresolved or unavailable metadata stops the run.
+   The fetch URL never decides the head repository or owner. The base repository is the pull
+   request's target, `<base-owner>/<repo>`: named by conventions, else the push repository's fork
+   parent from that metadata, else the push repository itself. Every PR call passes `-R
+   <base-owner>/<repo>`; a local base-branch lookup uses only a remote that fetches that repository.
 3. The base: the branch the conventions name for this one, which may depend on its prefix. Where
    they name none, the base repository's default branch — `git symbolic-ref --short
    refs/remotes/<base-remote>/HEAD` locally, for the remote that fetches the base repository, with
@@ -98,12 +102,13 @@ so the hook has nothing left to rewrite.
 
 Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 
-1. Re-read `git branch --show-current`. It must be the branch resolved above.
-2. Read the remote branch: `git ls-remote --exit-code <remote> refs/heads/<branch>`. Exit 0 prints its
-   commit, exit 2 means it does not exist there, and any other exit is unknown: stop.
+1. Re-read `git branch --show-current` and `git remote get-url --push --all <remote>`. They must
+   still be the resolved branch and sole `<push-url>`; a changed target stops with `needs-input`.
+2. Read the destination branch: `git ls-remote --exit-code <push-url> refs/heads/<branch>`.
+   Exit 0 prints its commit, exit 2 means it does not exist there, and any other exit is unknown: stop.
 3. The remote branch already at the shipped commit: the push is done. Record it and do not push again.
-4. The remote branch at another commit: fetch it (`git fetch <remote> refs/heads/<branch>`) where it is
-   not local, then `git merge-base --is-ancestor <remote-commit> HEAD`. Exit 0 is a fast-forward.
+4. The remote branch at another commit: fetch it (`git fetch <push-url> refs/heads/<branch>`)
+   where it is not local, then `git merge-base --is-ancestor <remote-commit> HEAD`. Exit 0 is a fast-forward.
    Exit 1 is a diverged branch, and any other exit is unknown; both stop with `needs-input`. A
    diverged branch is never forced into line: force-push is a sensitive action (ruling
    `sensitive-actions-need-approved-charter-entry`).
@@ -116,26 +121,30 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 ## The pull request
 
 1. Look it up: `gh pr list -R <base-owner>/<repo> --head <branch> --state open --json
-   number,url,headRefName,headRefOid,headRepositoryOwner,baseRefName`. Pass the branch name only:
+   number,url,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName`.
+   Pass the branch name only:
    `--head <owner>:<branch>` is not accepted and returns `[]`, which reads as none.
-2. Only exit 0 with `[]` means none (workflow step 8). Any other exit is unknown: stop.
-3. A row whose head owner or branch is not this head's is another contributor's pull request. More
-   than one row matching this head is ambiguous: stop and list them rather than taking the first.
+2. Only exit 0 with `[]` means none (workflow step 9). Any other exit is unknown: stop.
+3. Match `headRepository.nameWithOwner` to `<head-owner>/<head-repo>`, `headRepositoryOwner.login`
+   to `<head-owner>` and `headRefName` to `<branch>`. A different repository, owner or branch is
+   another head. More than one matching row is ambiguous: stop and list them rather than taking the first.
 4. One match: the push updated it. Its `baseRefName` must be the base resolved above, and a different
    base stops with `needs-input` rather than being edited. Return it; never open a second.
 5. None: write the body to a temporary file outside the repository and create the pull request with
    `gh pr create -R <base-owner>/<repo> --base <base> --head <head> --title <title> --body-file
-   <file>`, where `<head>` is `<fork-owner>:<branch>` on a fork and `<branch>` otherwise, adding
-   `--assignee <who>` where the conventions require one. Never pass the body on standard input: `gh`
+   <file>`, where `<head>` is `<head-owner>:<branch>` when the push repository differs from the base
+   repository and `<branch>` otherwise, adding `--assignee <who>` where the conventions require one.
+   Never pass the body on standard input: `gh`
    can open a pull request with an empty body and still exit 0.
 6. Repeat the lookup immediately before the create. A pull request that appeared since step 1 takes
    the one-match path.
 7. Read back with the step 1 lookup: exactly one matching row, whose `headRefOid` is the shipped
    commit. Anything else is `failed`.
 
-The ship record carries each effect's idempotency key and both read-backs. A resumed run re-derives
-the same keys. A head that already carries the commit is past the commit, and the push and
-pull-request reconciles return an effect already made rather than repeating it.
+The ship record carries each effect's idempotency key and both read-backs. The push target identity
+is the resolved head repository and branch; the PR target includes that head and the base repository
+and branch. A resumed run re-derives the same keys. A head that already carries the commit is past
+the commit, and the push and pull-request reconciles return an effect already made rather than repeating it.
 
 ## What it never does
 

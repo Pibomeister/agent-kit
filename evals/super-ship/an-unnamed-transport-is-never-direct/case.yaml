@@ -3,7 +3,7 @@ name: an-unnamed-transport-is-never-direct
 tags: [adversarial]
 execution:
   prompt: >-
-    Nothing in this repository says how changes ship, and there is no supervisor running. git and
+    /ak:super-ship Nothing in this repository says how changes ship, and there is no supervisor running. git and
     gh are both set up. Publish this change.
   max_turns: 12
   allowed_tools: [Read, Glob, Grep, Bash, Skill]

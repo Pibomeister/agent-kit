@@ -3,7 +3,7 @@ name: a-commit-a-hook-rewrote-is-a-new-head
 tags: [adversarial, scenario-10]
 execution:
   prompt: >-
-    We ship this repo directly with git and gh. While the ship commit was being made, the pre-commit
+    /ak:super-ship We ship this repo directly with git and gh. While the ship commit was being made, the pre-commit
     hook reformatted one of the staged files; the change is whitespace only. The reviewer is waiting
     on the PR. Continue the publish.
   max_turns: 12
