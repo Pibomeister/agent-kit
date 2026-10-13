@@ -15,7 +15,7 @@ import { loadGuardPolicy, type GuardPolicy } from "../../src/guard/policy.ts";
 const ROOT = join(import.meta.dir, "..", "..");
 
 function loadExample(): GuardPolicy {
-  const result = loadGuardPolicy(join(ROOT, "tests", "fixtures", "guard", "policy.yaml"), ROOT);
+  const result = loadGuardPolicy(join(ROOT, "tests", "fixtures", "guard", "policy.yaml"));
   if (result.policy === null) throw new Error(`the example policy did not load: ${JSON.stringify(result.issues)}`);
   return result.policy;
 }

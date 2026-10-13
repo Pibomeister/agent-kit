@@ -11,7 +11,7 @@
  * exits 1, which both hosts treat as a non-blocking error.
  *
  * The hook is not wired by anything yet: `ak guard setup` and the `guard`
- * profile are a later ticket, and no core bundle carries it.
+ * profile are a later ticket.
  */
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
@@ -35,8 +35,6 @@ export interface RunGuardOptions {
   /** How a file tool's path is followed through symlinks; the filesystem when absent. */
   resolve?: LinkResolver;
 }
-
-const PACKAGE_ROOT = join(import.meta.dir, "..", "..");
 
 const USAGE = [
   "ak guard — the opt-in guard runtime (ADR-0009)",
@@ -128,19 +126,19 @@ function cannotJudge(why: string): GuardVerdict {
 function judge(args: HookArgs, options: RunGuardOptions): GuardVerdict {
   if (args.bad.length > 0) return cannotJudge(`the hook is wired with bad arguments (${args.bad.join("; ")})`);
   if (args.root !== undefined && !isAbsolute(args.root)) return cannotJudge("--root must be an absolute path");
-  const resolve = options.resolve ?? resolveLink;
-  const decoded = decodeClaudeCode(options.stdin ?? "", { resolve });
-  if (decoded.kind === "pass") return { decision: "allow" };
-  if (decoded.kind === "deny") return decoded.verdict;
   if (args.policy === undefined) return cannotJudge("the hook is wired without --policy");
   const policyFile = resolvePath(options.cwd, args.policy);
-  const loaded = loadGuardPolicy(policyFile, PACKAGE_ROOT);
+  const loaded = loadGuardPolicy(policyFile);
   if (loaded.policy === null) {
     const first = loaded.issues[0];
     return cannotJudge(
       `the policy at ${policyFile} did not load (${first?.rule ?? "no detail"}: ${first?.message ?? ""})`,
     );
   }
+  const resolve = options.resolve ?? resolveLink;
+  const decoded = decodeClaudeCode(options.stdin ?? "", { resolve });
+  if (decoded.kind === "deny") return decoded.verdict;
+  if (decoded.kind === "pass") return { decision: "allow" };
   const env = options.env ?? process.env;
   const context: GuardContext = { root: rootOf(args, env, decoded.cwd), cwd: decoded.cwd };
   const home = env.HOME;

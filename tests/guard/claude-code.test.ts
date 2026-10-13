@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -10,16 +10,19 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, test } from "bun:test";
 import { stringify } from "yaml";
 
 import { runCli } from "../../src/cli.ts";
+import { loadCatalog } from "../../src/catalog/load.ts";
 import { resolveLink, runGuard } from "../../src/guard/cli.ts";
 import { UNJUDGEABLE } from "../../src/guard/evaluate.ts";
 import { decodeClaudeCode, encodeClaudeCode, type LinkResolver } from "../../src/guard/hosts/claude-code.ts";
 import { loadGuardPolicy } from "../../src/guard/policy.ts";
+import { planBundle } from "../../src/packaging/plan.ts";
+import { HOST_IDS } from "../../src/packaging/hosts.ts";
 
 /**
  * CS-11's acceptance criteria (research/briefs/constitution-support-plan.md):
@@ -258,11 +261,11 @@ function captureIo() {
 
 describe("the decoder", () => {
   test("maps each judged tool to its normalized action", () => {
-    expect(decode("Bash", { command: "ls" })).toMatchObject({
+    expect(decode("Bash", { command: "ls" })).toEqual({
       kind: "judge",
+      tool: "Bash",
       action: { kind: "shell", argv: ["bash", "-c", "ls"] },
       cwd: "/work/repo",
-      sessionId: "s-1",
     });
     expect(decode("Read", { file_path: "/a" })).toMatchObject({ action: { kind: "read", paths: ["/a"] } });
     expect(decode("Grep", { pattern: "x", path: "/a" })).toMatchObject({ action: { kind: "read", paths: ["/a"] } });
@@ -370,7 +373,7 @@ describe("file tool path boundaries", () => {
         symlinkSync("missing-link.json", join(root, "src", "chain.json"));
         symlinkSync("../src/plain.json", join(root, directory, "reported.json"));
         symlinkSync("cycle.json", join(root, "src", "cycle.json"));
-        const loaded = loadGuardPolicy(join(ROOT, POLICY), ROOT);
+        const loaded = loadGuardPolicy(join(ROOT, POLICY));
         if (loaded.policy === null) throw new Error("test policy did not load");
         loaded.policy.secret_paths.push({ id: "secret.anchored", globs: ["secrets/**"], reason: "Secret files" });
         const policy = join(work, "policy.yaml");
@@ -419,16 +422,15 @@ describe("file tool path boundaries", () => {
 describe("ak guard hook", () => {
   const payload = readFileSync(join(CASES, "deny-bash-rm-recursive-force.stdin"), "utf8");
 
-  test("runCli dispatches to it with the stdin payload", () => {
+  test("ak's usage lists it; the entrypoint dispatches it, as the hook process tests below show", () => {
     const captured = captureIo();
-    const code = runCli(["guard", ...HOOK], { cwd: ROOT, io: captured.io, stdin: payload });
-    expect(code).toBe(0);
-    expect(captured.out[0]).toContain("destructive.rm-recursive-force");
+    expect(runCli([], { cwd: ROOT, io: captured.io })).toBe(2);
+    expect(captured.err.join("\n")).toContain("ak guard hook <event>");
   });
 
   test("without a verb it prints its usage and exits 2", () => {
     const captured = captureIo();
-    expect(runCli(["guard"], { cwd: ROOT, io: captured.io })).toBe(2);
+    expect(runGuard([], { cwd: ROOT, io: captured.io })).toBe(2);
     expect(captured.err.join("\n")).toContain("ak guard hook pre-tool-use");
   });
 
@@ -450,9 +452,52 @@ describe("ak guard hook", () => {
     expectDecision(replay(payload, undefined, [...HOOK, "--root"]), "deny", UNJUDGEABLE);
   });
 
-  test("a call it does not judge passes even without a policy", () => {
-    const webfetch = readFileSync(join(CASES, "allow-webfetch-not-judged.stdin"), "utf8");
-    expectDecision(replay(webfetch, undefined, ["hook", "pre-tool-use"]), "allow", undefined);
+  test("every unjudged call needs a loadable policy and valid arguments before it passes", () => {
+    const work = mkdtempSync(join(ROOT, ".guard-policy-"));
+    try {
+      const invalid = join(work, "invalid.yaml");
+      writeFileSync(invalid, "version: not-a-policy\n");
+      for (const tool of ["WebFetch", "mcp__files__write", "Grep"]) {
+        const stdin = rawCall(tool, {});
+        for (const argv of [
+          ["hook", "pre-tool-use"],
+          ["hook", "pre-tool-use", "--policy", join(work, "absent.yaml")],
+          ["hook", "pre-tool-use", "--policy", invalid],
+          [...HOOK, "--unknown"],
+          [...HOOK, "--policy"],
+        ]) {
+          expectDecision(replay(stdin, undefined, argv), "deny", UNJUDGEABLE);
+        }
+        expectDecision(replay(stdin), "allow", undefined);
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  test("every tool needs an absolute cwd before it can pass or be judged", () => {
+    for (const tool of [
+      "WebFetch",
+      "mcp__files__write",
+      "Grep",
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+    ]) {
+      for (const cwd of [undefined, "", "relative/path"]) {
+        const stdin = JSON.stringify({
+          ...BASE,
+          cwd,
+          tool_name: tool,
+          tool_input: { command: "ls", file_path: "src/plain.json", notebook_path: "src/plain.ipynb" },
+        });
+        expect(decodeClaudeCode(stdin)).toMatchObject({ kind: "deny", verdict: { rule: UNJUDGEABLE } });
+        expectDecision(replay(stdin), "deny", UNJUDGEABLE);
+      }
+    }
   });
 
   test("--root overrides the project directory the policy's globs are relative to", () => {
@@ -527,3 +572,75 @@ describe("the hook process", () => {
     expect(stdout()).toBe("");
   }, 30_000);
 });
+
+test("source and packaged entrypoints enforce the guard from an isolated install", () => {
+  const work = mkdtempSync(join(ROOT, ".guard-bundle-"));
+  try {
+    const { catalog } = loadCatalog(ROOT);
+    if (catalog === null) throw new Error("test catalog did not load");
+    const entries = [join(ROOT, "src", "cli.ts"), join(ROOT, "src", "maintenance", "cli.ts")];
+    for (const host of HOST_IDS) {
+      const plan = planBundle({ root: ROOT, catalog }, host, {});
+      const script = plan.files.get("bin/ak");
+      if (script === undefined) throw new Error(`no bin/ak for ${host}: ${JSON.stringify(plan.issues)}`);
+      const entry = join(work, host, "bin", "ak");
+      mkdirSync(dirname(entry), { recursive: true });
+      writeFileSync(entry, script.contents);
+      entries.push(entry);
+    }
+    const project = join(work, "project");
+    mkdirSync(project);
+    writeFileSync(join(project, "policy.yaml"), readFileSync(join(ROOT, POLICY)));
+    writeFileSync(join(project, "invalid.yaml"), "version: not-a-policy\n");
+    const hook = ["hook", "pre-tool-use", "--policy", "policy.yaml"];
+    const payload = (tool: string, toolInput: ToolInput, cwd = project): string =>
+      JSON.stringify({ ...BASE, cwd, tool_name: tool, tool_input: toolInput });
+    for (const entry of entries) {
+      const invoke = (stdin: string, argv: string[] = hook): Run => {
+        const result = spawnSync(process.execPath, [entry, "guard", ...argv], {
+          cwd: project,
+          env: { HOME: work, PATH: process.env.PATH, CLAUDE_PROJECT_DIR: project },
+          input: stdin,
+          encoding: "utf8",
+          timeout: 30_000,
+        });
+        return {
+          code: result.status ?? -1,
+          out: result.stdout.trim() === "" ? [] : [result.stdout.trim()],
+          err: result.stderr.trim() === "" ? [] : [result.stderr.trim()],
+        };
+      };
+      expectDecision(invoke(payload("Write", { file_path: "tests/data.json" })), "deny", "protected.tests");
+      expectDecision(invoke(payload("Read", { file_path: ".env" })), "deny", "secret.dotenv");
+      expectDecision(
+        invoke(payload("Bash", { command: "git -C . push --force" })),
+        "deny",
+        "destructive.git-push-force",
+      );
+      expectDecision(invoke(payload("Write", { file_path: "src/plain.json" })), "allow", undefined);
+      expectDecision(invoke(payload("Bash", { command: "git status" })), "allow", undefined);
+      expectDecision(invoke("not JSON"), "deny", UNJUDGEABLE);
+      for (const tool of ["WebFetch", "mcp__files__write", "Grep"]) {
+        expectDecision(invoke(payload(tool, {})), "allow", undefined);
+        for (const argv of [
+          ["hook", "pre-tool-use"],
+          ["hook", "pre-tool-use", "--policy", "missing.yaml"],
+          ["hook", "pre-tool-use", "--policy", "invalid.yaml"],
+          [...hook, "--unknown"],
+        ]) {
+          expectDecision(invoke(payload(tool, {}), argv), "deny", UNJUDGEABLE);
+        }
+        expectDecision(invoke(payload(tool, {}, "relative/path")), "deny", UNJUDGEABLE);
+        expectDecision(
+          invoke(JSON.stringify({ ...BASE, cwd: undefined, tool_name: tool, tool_input: {} })),
+          "deny",
+          UNJUDGEABLE,
+        );
+      }
+      expect(invoke(payload("Bash", { command: "ls" }), [...hook, "--host", "unknown"]).code).toBe(1);
+      expect(invoke(payload("Bash", { command: "ls" }), ["hook", "post-tool-use"]).code).toBe(1);
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}, 120_000);

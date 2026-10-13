@@ -40,7 +40,7 @@ import { UNJUDGEABLE, type GuardVerdict } from "../evaluate.ts";
 
 /** A payload the evaluator should judge, a call the guard does not judge, or a deny the decoder settles itself. */
 export type ClaudeCodeDecoded =
-  | { kind: "judge"; tool: string; action: GuardAction; cwd: string; sessionId: string | null }
+  | { kind: "judge"; tool: string; action: GuardAction; cwd: string }
   | { kind: "pass"; tool: string }
   | { kind: "deny"; verdict: GuardVerdict & { decision: "deny" } };
 
@@ -64,7 +64,6 @@ interface Envelope {
   tool_name: string;
   hook_event_name?: string;
   cwd?: string;
-  session_id?: string;
   tool_input?: object;
 }
 
@@ -79,7 +78,6 @@ const envelope = ajv.compile<Envelope>({
     tool_name: { type: "string", minLength: 1 },
     hook_event_name: { type: "string" },
     cwd: { type: "string" },
-    session_id: { type: "string" },
     tool_input: { type: "object" },
   },
 });
@@ -127,14 +125,13 @@ export function decodeClaudeCode(stdin: string, options: DecodeOptions = {}): Cl
   if (event !== undefined && event !== CLAUDE_CODE_EVENT) {
     return unjudgeable(`the hook input is a ${event} event, not ${CLAUDE_CODE_EVENT}`);
   }
+  const cwd = value.cwd;
+  if (cwd === undefined || !cwd.startsWith("/")) return unjudgeable(`the ${tool} call carries no absolute cwd`);
   const mapped = actionOf(value);
   if (mapped.kind === "pass") return { kind: "pass", tool };
   if (mapped.kind === "bad") return unjudgeable(`the ${tool} call ${mapped.why}`);
-  const cwd = value.cwd;
-  if (cwd === undefined || !cwd.startsWith("/")) return unjudgeable(`the ${tool} call carries no absolute cwd`);
   const action = options.resolve === undefined ? mapped.action : withLinkTargets(mapped.action, cwd, options.resolve);
-  const sessionId = value.session_id === undefined || value.session_id === "" ? null : value.session_id;
-  return { kind: "judge", tool, action, cwd, sessionId };
+  return { kind: "judge", tool, action, cwd };
 }
 
 /** The action a tool call amounts to, a pass for a tool the guard does not judge, or why its input cannot be read. */
