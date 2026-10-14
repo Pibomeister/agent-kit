@@ -118,17 +118,18 @@ The project's own release checks, discovered rather than assumed.
    where one was already committed, report it for rotation.
 4. Run the dependency-audit triage and the project's release checks. Record each outcome against
    the head, including checks that did not run.
-5. For direct publication, stage named owned paths using literal pathspecs, never the whole tree or a wildcard.
-6. For no-mistakes delivery, require a committed head, verify, readiness and an approved full or
-   delta review recorded after its commit, and an empty diff; otherwise stop. For direct publication, prepare the commit payload
-   without moving HEAD before the current gate check.
+5. Require build or repair to have committed the named owned paths before verification and review.
+   Direct publication uses `./references/transport-direct.md`'s commit preparation there; it never
+   creates a commit after the ship checkpoint. A missing commit returns to build or repair.
+6. For either transport, require a committed head, verify, readiness and an approved full or
+   delta review recorded after its commit, and an empty diff; otherwise stop.
 7. At that snapshot, run `node <this skill's directory>/../../bin/ak-gate.mjs check` for current
    verify, readiness and approved full or delta review. A refusal is `needs-input`; delegated
    authority also requires runner-recorded trusted evidence. Load
    [verification evidence](../../references/verification-evidence/REFERENCE.md) and re-hash any
    declared surface artifacts. On pass, record `ship-preflight` there, with an empty diff for
-   no-mistakes delivery. A binding supplies its evidence directory; a bypass uses `--bypass <path>
-   --task <id>`. Recording closes the run; at the no-mistakes handoff a changed head needs a new run
+   either transport. A binding supplies its evidence directory; a bypass uses `--bypass <path>
+   --task <id>`. Recording closes the run; a changed head needs a new run
    and fresh gates. Compose any PR payload from the ticket, receipts and verdict, linking the recipe,
    acceptance-to-evidence matrix and evidence digests with the delegation class, sensitive factors,
    risks and rollback fields.
@@ -143,6 +144,9 @@ The project's own release checks, discovered rather than assumed.
 11. In direct `publish`, a fix that moves the head needs a new run: `open` again and re-run every
     gated phase for it. Derive each effect's idempotency key from the run id,
     operation id, target identity and input artifact hash. Read the target before and after it.
+    The direct transport pushes the checkpointed commit and opens the pull request with `git` and
+    `gh`; commit preparation precedes the gates (ruling `direct-push-as-ship-transport`):
+    `./references/transport-direct.md`.
 12. Draft the lesson candidate through the knowledgebase adapter; publication needs separate
     authority.
 13. Hand a directly opened pull request to the watch lane and report the ship as prepared until

@@ -1344,7 +1344,9 @@ conflicts:
       Where nothing names one, the ship stops for the choice. A chosen gate that is not configured
       stops the ship rather than falling back to the direct push, and the direct push is never a way
       around a gate the project names. With no pipeline to re-check the head, super-ship's own
-      release checks, recorded against the head, are the re-check. The commit must hold exactly what
+      release checks, recorded against the head, are the re-check. Build or repair commits before
+      verification, review and ship approval; direct publish uses that one checkpointed revision
+      with an empty diff and never creates a post-checkpoint commit. The commit must hold exactly what
       was staged: a hook that rewrites staged files makes a new head, which needs a new run that
       re-runs every gated phase before any push. Hooks are never skipped and the push never forces.
       Base, assignee and body shape come from the project's conventions, never from this package.

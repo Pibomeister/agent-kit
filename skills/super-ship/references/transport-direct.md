@@ -20,8 +20,9 @@ where it does not, every lookup below is unknown and the run stops.
 ## What the transport is
 
 super-ship has already decided: receipts and a verdict bind to the head being shipped. This transport
-commits, pushes and opens the pull request, and nothing else. No pipeline re-runs the project's checks
-on the head afterwards, so the re-check is super-ship's own: the release checks of workflow step 5,
+pushes the checkpointed commit and opens the pull request. Commit preparation below belongs to build
+or repair, before verification, review and ship approval. No pipeline re-runs the project's checks
+on the head afterwards, so the re-check is super-ship's own: the release checks of workflow step 4,
 each recorded against this head, with a check that did not run recorded as not run. super-ship stays
 the single creator of the pull request.
 
@@ -90,7 +91,14 @@ have gone.
 
 ## The commit
 
-Named paths are literal filenames. When staging at workflow step 5, use
+Prepare the commit during build or repair, before collecting verification, review, readiness and
+ship approval for it. Under the runner this is the existing `local-commit` operation, permitted only
+in build or repair. Sync the committed revision before collecting evidence. At direct publish,
+require that same committed revision, current gates and an empty diff. Never commit after
+`ship-preflight`, even when the committed blobs would be unchanged: a new commit changes the
+revision and invalidates the checkpoint. Missing or stale evidence stops publication.
+
+Named paths are literal filenames. When staging during build or repair, use
 `git add -- ':(literal)<path>'...`. Pass each path as a separate literal argument with this prefix,
 including names containing brackets, wildcards or pathspec magic. Keep the prefix on every
 path-taking inspection and commit below; do not change the pathspec environment inherited by hooks.
@@ -108,14 +116,14 @@ path-taking inspection and commit below; do not change the pathspec environment 
 5. Compare what the commit holds. `git ls-tree -r HEAD -- ':(literal)<path>'...` must list the modes and blobs
    step 1 recorded, and `git diff --name-only HEAD^ HEAD` must name no path outside the named ones,
    compared as literal filenames rather than patterns.
-   Equal: the commit is what was verified. Different: the commit no longer holds what was staged — a
+   Equal: collect verification and review against this committed head. Different: the commit no longer holds what was staged — a
    hook that reformats and restages files is the usual cause, though not the only one — and the
-   commit is a new head that no receipt or verdict binds to. Stop before the push with
-   `needs-input`. The commit stays local and is neither amended nor pushed. `ship-preflight` has
-   already closed the run, so the new head needs a new run: `open` again, re-run super-build,
-   super-verify and super-review for it, and it ships again once workflow step 3's gate check passes.
-6. A hook that changes files without staging them leaves the commit as verified and the working tree
-   changed. Report those paths and leave them uncommitted.
+   commit is a new head that no prior receipt or verdict binds to. Stop publication with
+   `needs-input`. The commit stays local and is neither amended nor pushed. Re-run super-build,
+   super-verify and super-review for it before a fresh ship checkpoint; if the prior run was closed,
+   `open` a new run first. A hook rewrite never inherits the previous head's evidence.
+6. A hook that changes files without staging them leaves the working tree changed. Report those
+   paths and leave them uncommitted; publication waits for an empty diff and current gates.
 
 A project whose hooks format on commit ships cleanly when those formatters run before super-verify,
 so the hook has nothing left to rewrite.
