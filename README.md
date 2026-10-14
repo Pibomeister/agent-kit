@@ -175,13 +175,21 @@ bun run ak tracker check <project-dir>  # a project's tracker binding, and that 
 bun run ak kb check <project-dir>       # a project's knowledgebase binding, and whether this machine can reach it
 ```
 
-`bun run test` runs every test file once. It finishes the ordinary lane before starting
+`bun run test` runs every test file once. The ordinary lane uses four parallel workers
+by default; set `AK_TEST_PARALLEL` to change the worker count (for example,
+`AK_TEST_PARALLEL=1 bun run test`). It finishes before starting
 the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
 Bun process with concurrency limited to one. This separates the learning role calls,
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
 suite and from each other. Test and hook timeouts, assertions and role calls stay
 unchanged. There are no retries. Both lanes finish even if an earlier file fails;
 the command then returns failure. CI and the configured gate use `bun run test`.
+
+The runner gives both lanes a private `TMPDIR` and removes it at exit. Before Bun
+starts, it clears inherited Git overrides from `GIT_CONFIG_PARAMETERS` and
+`GIT_CONFIG_COUNT`, and disables automatic Git maintenance. On macOS, when Git resolves to `/usr/bin/git`,
+it bypasses that launcher with a link to the selected developer tool only if the link
+preserves Git's executable search path.
 
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a

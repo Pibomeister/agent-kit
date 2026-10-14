@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { checkSchemas } from "../src/validation/schemas.ts";
+import { checkSchemas, compileSchemas } from "../src/validation/schemas.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { makeTree } from "./helpers/tree.ts";
 
@@ -38,6 +38,7 @@ import { makeTree } from "./helpers/tree.ts";
  */
 
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
+const SCHEMAS = compileSchemas(join(import.meta.dir, ".."));
 
 function shippedSchemas(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -126,7 +127,7 @@ function charterErrors(overrides: Record<string, unknown>): string[] {
   });
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error("fixture has no catalog");
-  return checkSchemas({ root, catalog })
+  return checkSchemas({ root, catalog }, SCHEMAS)
     .filter((i) => i.file === "templates/charter.json" && i.severity === "error")
     .map((i) => i.message ?? "");
 }

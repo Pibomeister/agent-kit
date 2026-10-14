@@ -24,7 +24,7 @@ if (process.platform === "darwin" && Bun.which("git") === "/usr/bin/git") {
   if (selected.exitCode === 0 && executable !== "/usr/bin/git" && executable.startsWith("/")) {
     const bin = join(root, "bin");
     mkdirSync(bin);
-    // A symlink changes Git's runtime prefix and loses its templates and helpers.
+    // A symlink inside bin changes Git's runtime prefix and loses its templates and helpers.
     const quoted = `'${executable.replaceAll("'", "'\\''")}'`;
     writeFileSync(join(bin, "git"), `#!/bin/sh\nexec ${quoted} "$@"\n`, { mode: 0o755 });
     process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
