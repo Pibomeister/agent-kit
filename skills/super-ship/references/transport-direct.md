@@ -144,9 +144,10 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
    `sensitive-actions-need-approved-charter-entry`).
 5. Immediately before the push, run the pull-request section's shared lookup and checks in
    steps 1–3. Unknown, incomplete, ambiguous or differing-base PR state stops before the effect.
-   Push: `git push -u --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`.
+   Push: `git push -u --no-follow-tags --no-recurse-submodules <remote> refs/heads/<branch>:refs/heads/<branch>`.
    The explicit refspec updates only the branch reconciled above, regardless of configured push
-   mappings; `--no-follow-tags` prevents configured tag publication. Never `--force`,
+   mappings; `--no-follow-tags` prevents configured tag publication, and `--no-recurse-submodules`
+   prevents inherited settings from pushing child repositories. Never `--force`,
    `--force-with-lease` or `--no-verify`. A
    rejected push, including a pre-push hook that fails, is `failed` with the reason, and the run stays
    resumable.
@@ -156,9 +157,11 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 ## The pull request
 
 Under the runner, execute this entire section inside its existing keyed `pr-open` operation.
-The desired payload includes the resolved base, shipped head, body and required assignee. The
-operation's reconciliation callback returns its input hash only when one matching PR has that
-base, head and required assignee. Unknown, ambiguous or incompatible state refuses. A missing PR
+The desired payload includes the resolved base, shipped head, title, body and required assignee.
+Prepare the literal title and body file before reconciliation; use these same values for creation
+and comparison on every path. The operation's reconciliation callback returns its input hash only
+when one matching PR has that base, head, title, body and required assignee. Unknown, ambiguous or
+incompatible state refuses. A title or body mismatch refuses without editing either. A missing PR
 or missing required assignee is incomplete, so the callback returns no confirmed hash and the
 operation's action reconciles again, creates only if absent, and assigns only if needed. Final
 read-back confirms the complete payload before the runner records `pr-open`. A create that
@@ -167,7 +170,7 @@ that PR and finish assignment. Never issue a second effect or key for assignment
 confirm `pr-open` before assignment. No effect vocabulary or runner state transition changes.
 
 1. Look it up: `gh pr list -R <forge-host>/<base-owner>/<repo> --head <branch> --state open --limit 30 --json
-   number,url,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName`.
+   number,url,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName,title,body`.
    Pass the branch name only:
    `--head <owner>:<branch>` is not accepted and returns `[]`, which reads as none.
    At every lookup — initial, before push, before creation and final read-back — require exit 0
@@ -184,7 +187,7 @@ confirm `pr-open` before assignment. No effect vocabulary or runner state transi
 4. One match: skip creation and continue to step 7; never open a second.
 5. None: repeat the lookup immediately before creation. A pull request that appeared since step 1
    takes the one-match path. Apply steps 2–3 again before any create.
-6. Still none: write the body to a temporary file and use the same repository-ID mutation for a
+6. Still none: use the prepared body file and the same repository-ID mutation for a
    head in the base repository, a user-owned fork or an organization-owned fork:
 
    ```sh
@@ -208,20 +211,23 @@ confirm `pr-open` before assignment. No effect vocabulary or runner state transi
 7. For every path — existing, discovered before creation or newly created — read back with the
    steps 1–3 lookup and completeness check. Require exactly one matching row; otherwise stop with `failed`.
    Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
-8. Within the same `pr-open` action, after the base and head comparisons pass, satisfy any required assignee. Read `gh pr view <number>
+   Its JSON-decoded `title` and `body` must exactly equal the prepared title and body file's text,
+   including whitespace and trailing newlines. Missing fields or mismatches stop with `failed`;
+   never edit the title or body to make them match, and never return the payload hash on mismatch.
+8. Within the same `pr-open` action, after step 7 passes, satisfy any required assignee. Read `gh pr view <number>
    -R <forge-host>/<base-owner>/<repo> --json assignees`; unknown stops the run. If the required login is absent,
    add it with `gh pr edit <number> -R <forge-host>/<base-owner>/<repo> --add-assignee <who>`, then read back with
    the same view command and require that login. Assignment is part of the existing PR publication
    operation and its authority, reconciliation and key, not a separate effect. A failed assignment
    or missing read-back is `failed`; a resumed operation uses this step for the existing PR and
-   does not create another. Re-read steps 1–3 and the assignees after assignment, and confirm only
-   when base, shipped head and required login all match. With no required assignee, omit the edit.
+   does not create another. Repeat step 7 and the assignee read-back after assignment, and confirm only
+   when base, shipped head, title, body and required login all match. With no required assignee, omit the edit.
    Return only after the operation's final read-back confirms the payload.
 
 The ship record carries each effect's idempotency key and its read-backs. The push target identity
 is the resolved forge host, head repository and branch; the PR target includes that host, head and
-the base repository and branch. The PR input hash covers any required login together with the
-publication payload. A resumed run re-derives the same keys. A head that already carries the commit is past
+the base repository and branch. The PR input hash covers the base, shipped head, title, body and any required login.
+A resumed run re-derives the same keys. A head that already carries the commit is past
 the commit, and the push and pull-request reconciles return an effect already made rather than repeating it.
 
 ## What it never does
