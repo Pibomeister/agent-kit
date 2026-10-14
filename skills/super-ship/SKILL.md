@@ -89,7 +89,10 @@ The head being shipped, named. Verification receipts that bind to that head
 `needs-input` naming which.
 
 The mode: `dry-run` or `publish`. `dry-run` is a supported mode of this skill, not a flag an operator
-has to remember; it is the mode in which nothing leaves the machine.
+has to remember; it is the mode in which nothing leaves the machine. The transport, `direct` or
+`no-mistakes`: the task's delivery contract's, else the project conventions', else the caller's;
+named by none, the run stops with `needs-input` naming the choice (ruling
+`direct-push-as-ship-transport`).
 
 The charter, where one exists (`schemas/charter.schema.json`), with the actions it names and the
 approval bound to its hash. Absent, the run has no sensitive-action authority and does not acquire
@@ -140,6 +143,9 @@ The project's own release checks, discovered rather than assumed.
 11. In direct `publish`, a fix that moves the head needs a new run: `open` again and re-run every
     gated phase for it. Derive each effect's idempotency key from the run id,
     operation id, target identity and input artifact hash. Read the target before and after it.
+    The direct transport commits, pushes and opens the pull request itself with `git` and `gh`, and
+    a commit a hook rewrote is a new head (ruling `direct-push-as-ship-transport`):
+    `./references/transport-direct.md`.
 12. Draft the lesson candidate through the knowledgebase adapter; publication needs separate
     authority.
 13. Hand a directly opened pull request to the watch lane and report the ship as prepared until
