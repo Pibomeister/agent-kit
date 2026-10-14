@@ -15,6 +15,7 @@ function compileValidator(): ValidateFunction {
 }
 
 const VALIDATE = compileValidator();
+const EXAMPLE = loadGuardPolicy(FIXTURE, ROOT);
 
 function validator(): ValidateFunction {
   return VALIDATE;
@@ -34,13 +35,13 @@ function rules(result: { issues: ReadonlyArray<{ rule: string }> }): string[] {
 
 describe("guard policy loader", () => {
   test("the hand-written example policy loads with no issues", () => {
-    const result = loadGuardPolicy(FIXTURE, ROOT);
+    const result = EXAMPLE;
     expect(result.issues).toEqual([]);
     expect(result.policy?.version).toBe("0.1.0");
   });
 
   test("the example declares every protected category the plan names", () => {
-    const policy = loadGuardPolicy(FIXTURE, ROOT).policy;
+    const policy = EXAMPLE.policy;
     const categories = new Set<string>(policy?.protected_paths.map((p) => p.category));
     for (const category of [
       "tests",
@@ -57,7 +58,7 @@ describe("guard policy loader", () => {
   });
 
   test("JSON is accepted as well as YAML, so a generated policy round-trips", () => {
-    const policy = loadGuardPolicy(FIXTURE, ROOT).policy;
+    const policy = EXAMPLE.policy;
     const again = parseGuardPolicy(JSON.stringify(policy), validator(), "policy.json");
     expect(again.issues).toEqual([]);
     expect(again.policy).toEqual(policy);
@@ -159,7 +160,7 @@ describe("guard policy loader", () => {
   });
 
   test("every section the loader's type carries is one the schema requires", () => {
-    const policy = loadGuardPolicy(FIXTURE, ROOT).policy;
+    const policy = EXAMPLE.policy;
     if (policy === null) throw new Error("the example policy did not load");
     const sections = Object.keys(policy);
     expect(sections.length).toBe(6);
