@@ -19,7 +19,8 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
-import { BUILD_RECORD_FILE, inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
+import { BUILD_RECORD_FILE, GATE_FILE, inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
+import { checkBundleLinks } from "../src/validation/links.ts";
 import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
@@ -210,6 +211,26 @@ function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   return { root, catalog };
 }
 
+const gateFixture = (
+  schema: string,
+  source = "const BUNDLED_ADAPTER_IDS: readonly string[] = [];\nconsole.log('gate');\n",
+) =>
+  ctxFor(
+    {
+      "catalog.yaml": CATALOG.replaceAll("alpha", "super-build"),
+      "profiles/core.yaml": "id: core\nskills: [super-build, beta]\n",
+      "skills/super-build/SKILL.md": `${HEAD("super-build")}\nFollow [tdd](../../protocols/tdd/PROTOCOL.md).\n`,
+      "skills/super-build/skill.yaml": "id: super-build\nversion: 0.1.0\ninvocation: U\n",
+      "evals/super-build/does-not-start-unasked/case.yaml":
+        'schema_version: "1.1"\nname: does-not-start-unasked\ntags: [negative]\n',
+      "src/lifecycle/gate.ts": source,
+      "src/lifecycle/verification-schema.ts": "export const verificationValidator = () => () => false;\n",
+      "schemas/common.schema.json": readFileSync(join(REPO, "schemas/common.schema.json"), "utf8"),
+      "schemas/verification.schema.json": schema,
+    },
+    ["skills/alpha/SKILL.md", "skills/alpha/skill.yaml", "evals/alpha/does-not-start-unasked/case.yaml"],
+  );
+
 /** What this build decided, in the file beside that host's own manifest. */
 function recordOf(plan: ReturnType<typeof planBundle>) {
   // Derived from the plan rather than fixed, because the record moved with the
@@ -272,8 +293,9 @@ describe("host capability honesty", () => {
  * these are a licensing obligation, not bundle tidiness, and a bundle without
  * them is defective however clean the rest of the build reports.
  *
- * Both host contracts specify them at the bundle root (`NOTICE, LICENSE` in
- * `adapters/claude-code/CONTRACT.md` §1 and `adapters/codex/CONTRACT.md` §2),
+ * Both host contracts specify `NOTICE, LICENSE` at the bundle root and the
+ * ajv notices under `LICENSES/` (`adapters/claude-code/CONTRACT.md`
+ * §1 and `adapters/codex/CONTRACT.md` §2),
  * so the filenames and the placement are taken from the contract rather than
  * chosen here.
  */
@@ -384,6 +406,10 @@ describe("the licence files the distribution is obliged to carry", () => {
         const needle = line.length === 0 ? "//" : `// ${line}`;
         if (!script.includes(needle)) missing.push(`${path}: ${JSON.stringify(line)}`);
       }
+    }
+    for (const pkg of ["ajv", "ajv-formats"]) {
+      expect(script.split(`// --- LICENSES/${pkg}.LICENSE ---`).length - 1).toBe(1);
+      expect(script).not.toContain(`// --- provenance/licenses/ajv-validator_${pkg}.LICENSE ---`);
     }
     expect(missing).toEqual([]);
   });
@@ -2280,6 +2306,47 @@ describe("a U skill on a host that does not suppress model invocation", () => {
 });
 
 describe("ak build and --check", () => {
+  test("a gate-build failure is reported and leaves every existing host bundle untouched", () => {
+    const ctx = gateFixture("{ invalid JSON");
+    for (const host of HOST_IDS) {
+      mkdirSync(join(ctx.root, "dist", host), { recursive: true });
+      writeFileSync(join(ctx.root, "dist", host, "installed-gate.txt"), host);
+    }
+    const plan = planBundle(ctx, "claude-code", {});
+    expectError(plan.issues, "packaging.gate-build-failed", "JSON");
+    expect(plan.files.has(GATE_FILE)).toBe(false);
+    const built = writeBundles(ctx, {});
+    expectError(built.issues, "packaging.gate-build-failed", "JSON");
+    for (const host of HOST_IDS)
+      expect(readFileSync(join(ctx.root, "dist", host, "installed-gate.txt"), "utf8")).toBe(host);
+  }, 60_000);
+
+  test("validate includes a gate-build failure even when its schemas are valid", () => {
+    const ctx = gateFixture(
+      readFileSync(join(REPO, "schemas/verification.schema.json"), "utf8"),
+      "export const broken = ;\n",
+    );
+    expectError(checkBundleLinks(ctx, {}), "packaging.gate-build-failed", "bundled adapter declaration missing");
+    const lines: string[] = [];
+    expect(
+      runCli(["validate"], { cwd: ctx.root, io: { out: (line) => lines.push(line), err: (line) => lines.push(line) } }),
+    ).toBe(1);
+    expect(lines.join("\n")).toContain("packaging.gate-build-failed");
+    expect(lines.some((line) => line.startsWith("ak validate: 0 errors"))).toBe(false);
+  }, 60_000);
+
+  test("a later host's planning error prevents writes to the earlier host", () => {
+    const ctx = ctxFor();
+    expect(writeBundles(ctx, {}).issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const installed = join(ctx.root, "dist/claude-code/installed-gate.txt");
+    writeFileSync(installed, "keep the installed bundle");
+    mkdirSync(join(ctx.root, "adapters/codex"), { recursive: true });
+    writeFileSync(join(ctx.root, "adapters/codex/CONTRACT.md"), "```yaml\nenforces: [teleportation]\n```\n");
+    const built = writeBundles(ctx, {});
+    expectError(built.issues, "packaging.unknown-restriction", "teleportation");
+    expect(readFileSync(installed, "utf8")).toBe("keep the installed bundle");
+  });
+
   test("writes both host bundles under dist/", () => {
     const ctx = ctxFor();
     const built = writeBundles(ctx, {});

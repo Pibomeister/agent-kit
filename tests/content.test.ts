@@ -47,6 +47,20 @@ describe("model and pricing denylist", () => {
     expect(checkContent(ctx).filter((i) => i.rule === "content.denylist")).toEqual([]);
   });
 
+  test.each([
+    "LICENSE",
+    "NOTICE",
+    "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    "node_modules/ajv/LICENSE",
+    "node_modules/ajv-formats/LICENSE",
+  ])("a shipped license rejects a denylisted term: %s", (file) => {
+    const text = "Copyright notice\nPricing: $3/1M output\n";
+    const ctx = ctxFor({ [file]: text, "provenance/licenses/donor.LICENSE": text });
+    expect(checkContent(ctx).filter((issue) => issue.rule === "content.denylist")).toEqual([
+      expect.objectContaining({ file, line: 2, severity: "error" }),
+    ]);
+  });
+
   test("the exempt prefixes are exactly provenance/, research/ and the scanner's own definition", () => {
     expect([...DENYLIST_EXEMPT_PREFIXES].sort()).toEqual(
       ["provenance/", "research/", SCANNER_DEFINITION_FILE, "tests/"].sort(),

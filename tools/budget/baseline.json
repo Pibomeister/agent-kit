@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -468,8 +468,8 @@
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -873,8 +873,8 @@
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/droid:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1278,8 +1278,8 @@
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/grok:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1683,8 +1683,8 @@
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/kimi:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -2088,8 +2088,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22550,
-      "tokens": 5624
+      "bytes": 22683,
+      "tokens": 5657
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",

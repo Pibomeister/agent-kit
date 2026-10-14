@@ -112,7 +112,8 @@ requires `trusted-evidence`, supplied fail-closed by the runner contract; host p
 evidence provenance and never imply that capability.
 
 `ak validate` fails on any denylist hit outside `provenance/` and `research/sources/`, which quote the
-sources verbatim by design. The non-routing concepts arch § tells us to keep — per-finding solution
+sources verbatim by design. License texts that ship into `dist/` from `provenance/licenses/` are still
+scanned, because nothing packaged into `dist/` is exempt. The non-routing concepts arch § tells us to keep — per-finding solution
 specificity, difficulty, evidence classification, independent roles, iteration limits — all survive,
 expressed without any classifier.
 

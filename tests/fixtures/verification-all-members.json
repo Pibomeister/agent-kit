@@ -1,0 +1,184 @@
+{
+  "schema": "verification",
+  "schema_version": 1,
+  "id": "example-verification-1",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "verifier",
+    "skill": "super-verify",
+    "operation": "verify.run",
+    "entrypoint": "super-verify"
+  },
+  "inputs": [
+    {
+      "id": "evidence-1",
+      "schema": "verification",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "revision": "1111111111111111111111111111111111111111"
+    }
+  ],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "1111111111111111111111111111111111111111",
+    "diff_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "created_at": "2026-09-19T09:00:00Z",
+  "status": "failed",
+  "kind": "command",
+  "check": "loader-suite",
+  "command": {
+    "argv": [
+      "bun",
+      "test",
+      "tests/loader"
+    ],
+    "cwd": "src/loader",
+    "started_at": "2026-09-19T09:00:00Z",
+    "duration_ms": 4120
+  },
+  "exit_status": 0,
+  "output_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "output_excerpt": "14 pass, 0 fail",
+  "artifacts": [
+    {
+      "path": "example-artifacts/loader-suite.log",
+      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "kind": "response"
+    }
+  ],
+  "environment": {
+    "id": "example-ci",
+    "isolated": true,
+    "secrets_policy": "test-only",
+    "image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "toolchain": [
+      {
+        "name": "bun",
+        "version": "1.3.14"
+      }
+    ],
+    "config_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "approval": {
+      "artifact_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "by": "human",
+      "authority": "explicit",
+      "at": "2026-09-19T09:00:00Z",
+      "note": "Approved."
+    }
+  },
+  "supports": [
+    "AC-1",
+    "AC-2"
+  ],
+  "ticket": {
+    "id": "example-ticket-1",
+    "schema": "ticket",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": "1111111111111111111111111111111111111111"
+  },
+  "finding": {
+    "id": "example-finding-1",
+    "schema": "finding",
+    "hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "revision": "1111111111111111111111111111111111111111"
+  },
+  "notes": "The exit status and the output digest are the receipt. This line is not, and no rule reads it.",
+  "updated_at": "2026-09-19T09:00:00Z",
+  "supersedes": {
+    "id": "evidence-1",
+    "schema": "verification",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": "1111111111111111111111111111111111111111"
+  },
+  "approvals": [
+    {
+      "artifact_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "by": "human",
+      "authority": "delegated-grant",
+      "grant": {
+        "charter_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "covers": "spec-approval",
+        "decision": "decision-1"
+      },
+      "at": "2026-09-19T09:00:00Z",
+      "note": "Reviewed."
+    }
+  ],
+  "tracker": {
+    "system": "tracker",
+    "id": "123",
+    "url": "https://example.com/123"
+  },
+  "recipe": {
+    "id": "evidence-1",
+    "schema": "verification",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": "1111111111111111111111111111111111111111"
+  },
+  "evidence_kind": "api-response",
+  "verifier_seat": {
+    "id": "verify-1",
+    "implementer_seat": "build-1",
+    "isolation": "runner-attested",
+    "attestation": {
+      "id": "evidence-1",
+      "schema": "verification",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "revision": "1111111111111111111111111111111111111111"
+    }
+  },
+  "api_response": {
+    "status": 200,
+    "body_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "probe": {
+    "name": "health",
+    "target": "service",
+    "parameters": {
+      "path": "health"
+    },
+    "observed": "healthy"
+  },
+  "manual": {
+    "performed_by": "human",
+    "procedure": "Inspect response",
+    "observed": "Healthy",
+    "at": "2026-09-19T09:00:00Z"
+  },
+  "reason": "The command output reports a failed assertion.",
+  "exit_disagreement": {
+    "verdict_from": "output",
+    "output_reports": "1 assertion failed"
+  },
+  "invalidation": {
+    "reason": "code-changed",
+    "at": "2026-09-19T09:00:00Z",
+    "superseding_revision": {
+      "repo": "example-org/example-service",
+      "revision": "1111111111111111111111111111111111111111",
+      "diff_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "evidence": {
+      "kind": "receipt",
+      "ref": "verification-1",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "note": "Observed change"
+    }
+  },
+  "weakened_checks": [
+    {
+      "what": "threshold-lowered",
+      "detail": "The suite's coverage floor was lowered for this run so the loader's new branch could land without its test. The decision that authorized it is named here; nothing about that makes the run a pass.",
+      "decision": {
+        "id": "example-decision-3",
+        "schema": "decision",
+        "hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "revision": "1111111111111111111111111111111111111111"
+      }
+    }
+  ]
+}
