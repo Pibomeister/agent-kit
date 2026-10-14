@@ -444,7 +444,7 @@ describe("the secret stays in the folder and out of git", () => {
     expect(rules(loose)).toEqual(["error tracker.secret-mode"]);
     expect(rules(linked)).toEqual(["error tracker.secret-outside-project"]);
     for (const dir of [untracked, loose, linked])
-      expect(JSON.stringify(checkTrackerBinding(dir, REPO))).not.toContain(TOKEN);
+      expect(JSON.stringify(checkTrackerBinding(dir, REPO, validators))).not.toContain(TOKEN);
   });
 });
 

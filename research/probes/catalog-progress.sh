@@ -89,7 +89,7 @@ else
 fi
 
 SUBJECT="$SUBJECT" BASELINE_REV="${CATALOG_BASELINE:-a185bd1}" python3 - "$SRC" "$EXP" <<'PY'
-import os, subprocess, sys, yaml, collections
+import os, subprocess, sys, yaml, collections, functools
 
 BASELINE = {
     "skills": 33, "packs": 8, "protocols": 7, "roles": 29, "references": 4,
@@ -109,12 +109,19 @@ def git(*args):
     r = subprocess.run(["git", *args], capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else None
 
-def ids_at(rev, section):
-    """The ids in one catalog section at a revision, or None when it cannot be read."""
+@functools.lru_cache(maxsize=None)
+def catalog_at(rev):
+    """Read and parse each revision's catalog once per probe run."""
     text = git("show", f"{rev}:catalog.yaml")
     if text is None:
         return None
-    doc = yaml.safe_load(text) or {}
+    return yaml.safe_load(text) or {}
+
+def ids_at(rev, section):
+    """The ids in one catalog section at a revision, or None when it cannot be read."""
+    doc = catalog_at(rev)
+    if doc is None:
+        return None
     return {e.get("id") for e in doc.get(section) or [] if isinstance(e, dict)}
 
 def resolve(rev):
