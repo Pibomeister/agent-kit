@@ -118,7 +118,7 @@ The project's own release checks, discovered rather than assumed.
    where one was already committed, report it for rotation.
 4. Run the dependency-audit triage and the project's release checks. Record each outcome against
    the head, including checks that did not run.
-5. For direct publication, stage named owned paths, never the whole tree or a wildcard.
+5. For direct publication, stage named owned paths using literal pathspecs, never the whole tree or a wildcard.
 6. For no-mistakes delivery, require a committed head, verify, readiness and an approved full or
    delta review recorded after its commit, and an empty diff; otherwise stop. For direct publication, prepare the commit payload
    without moving HEAD before the current gate check.

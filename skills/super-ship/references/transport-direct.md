@@ -77,18 +77,24 @@ have gone.
 
 ## The commit
 
-1. Record what is staged for the named paths: `git ls-files --stage -- <path>...` gives each one's
+Named paths are literal filenames. When staging at workflow step 5, use
+`git add -- ':(literal)<path>'...`. Pass each path as a separate literal argument with this prefix,
+including names containing brackets, wildcards or pathspec magic. Keep the prefix on every
+path-taking inspection and commit below; do not change the pathspec environment inherited by hooks.
+
+1. Record what is staged for the named paths: `git ls-files --stage -- ':(literal)<path>'...` gives each one's
    mode and blob.
-2. Require the working tree to match the index for those paths: `git diff --quiet -- <path>...`.
+2. Require the working tree to match the index for those paths: `git diff --quiet -- ':(literal)<path>'...`.
    Exit 0 is a match. Exit 1 is a path partially staged or edited after staging, and stops with
-   `needs-input` naming the paths `git diff --name-only -- <path>...` lists; any other exit is
+   `needs-input` naming the paths `git diff --name-only -- ':(literal)<path>'...` lists; any other exit is
    unknown: stop. The commit below takes the working-tree content of the paths it names, so a
    difference here would replace what was staged.
-3. Commit only those paths: `git commit -F <message-file> -- <path>...`. The trailing path list keeps
+3. Commit only those paths: `git commit -F <message-file> -- ':(literal)<path>'...`. The trailing path list keeps
    anything else already in the index out of the commit.
 4. The project's hooks run. Never pass `--no-verify`: a hook is one of the project's own checks.
-5. Compare what the commit holds. `git ls-tree -r HEAD -- <path>...` must list the modes and blobs
-   step 1 recorded, and `git diff --name-only HEAD^ HEAD` must name no path outside the named ones.
+5. Compare what the commit holds. `git ls-tree -r HEAD -- ':(literal)<path>'...` must list the modes and blobs
+   step 1 recorded, and `git diff --name-only HEAD^ HEAD` must name no path outside the named ones,
+   compared as literal filenames rather than patterns.
    Equal: the commit is what was verified. Different: the commit no longer holds what was staged — a
    hook that reformats and restages files is the usual cause, though not the only one — and the
    commit is a new head that no receipt or verdict binds to. Stop before the push with
@@ -115,7 +121,10 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
    Exit 1 is a diverged branch, and any other exit is unknown; both stop with `needs-input`. A
    diverged branch is never forced into line: force-push is a sensitive action (ruling
    `sensitive-actions-need-approved-charter-entry`).
-5. Push: `git push -u <remote> <branch>`. Never `--force`, `--force-with-lease` or `--no-verify`. A
+5. Push: `git push -u --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`.
+   The explicit refspec updates only the branch reconciled above, regardless of configured push
+   mappings; `--no-follow-tags` prevents configured tag publication. Never `--force`,
+   `--force-with-lease` or `--no-verify`. A
    rejected push, including a pre-push hook that fails, is `failed` with the reason, and the run stays
    resumable.
 6. Read back with the step 2 command. It must print the shipped commit; anything else is `failed`,
