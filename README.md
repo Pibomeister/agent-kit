@@ -174,9 +174,8 @@ bun run ak kb check <project-dir>       # a project's knowledgebase binding, and
 
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a
-content denylist (model names, pricing, effort ladders, placeholders). The trees it exempts are
-`DENYLIST_EXEMPT_PREFIXES` (`src/validation/content.ts`), and the invariant that decides that list
-is that nothing packaged into `dist/` is ever exempt.
+content denylist (model names, pricing, effort ladders, placeholders). Its scan scope and exemptions
+are defined in `src/validation/content.ts`.
 
 ## Contracts worth knowing before you read a skill
 
@@ -221,8 +220,7 @@ Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
 
-Attribution: `NOTICE`. Full license texts: `provenance/licenses/`. `NOTICE` also lists the packages
-inlined into `bin/ak`, whose texts ship in each bundle and inside `bin/ak` itself.
+Attribution and full license text locations: [`NOTICE`](NOTICE).
 
 ## Repository documents
 
