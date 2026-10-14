@@ -75,7 +75,6 @@ function only(records: GateRecord[]): GateRecord {
   return record;
 }
 
-/** A project, the worker's linked worktree on branch `task`, a supervisor home and a ledger. */
 function projectTemplate() {
   const project = makeTree({ "src/a.js": "export const a = 1;\n" });
   git(project, "init", "-q", "-b", "main");
@@ -86,6 +85,7 @@ function projectTemplate() {
 
 const PROJECT_TEMPLATE = projectTemplate();
 
+/** A project, the worker's linked worktree on branch `task`, a supervisor home and a ledger. */
 function setup() {
   const project = dir("ak-bypass-project-");
   cpSync(PROJECT_TEMPLATE, project, { recursive: true });

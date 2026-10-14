@@ -189,7 +189,7 @@ supplies wrongly if it is left out. Real constraints are set per project, and ex
 ## Before you commit
 
 ```bash
-bun test                 # validator, selector and packager units, incl. invalid-case fixtures
+bun run test             # full suite; lane contract: README.md
 bun run ak validate      # catalog complete, schemas valid, links closed, no denylist hits
 bun run ak build         # the packager runs on this tree and writes dist/ for every host
 bun run lint             # oxlint through the ratchet: no violation beyond tools/oxlint/baseline.json

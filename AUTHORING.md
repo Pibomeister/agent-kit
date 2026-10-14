@@ -2040,7 +2040,7 @@ made on the kind-1 count or not at all.
 ## 11. Before handing a skill back
 
 ```bash
-bun test                 # units, plus the invalid-case fixtures that must fail
+bun run test             # full suite; lane contract: README.md
 bun run ak validate      # catalog, schemas, frontmatter, links, provenance, denylist
 bun run ak build         # validates, then writes dist/ for every host
 ```

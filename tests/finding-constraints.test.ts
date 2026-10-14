@@ -44,7 +44,7 @@ const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
 // passes its own artifact through checkSchemas, including its reporting path.
 const SCHEMAS = compileSchemas(join(import.meta.dir, ".."));
 
-/** Every shipped schema, written into a throwaway root so checkSchemas sees the real text. */
+/** Preserve fixture package layout; SCHEMAS owns validation, not these per-case copies. */
 function shippedSchemas(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const name of readdirSync(SCHEMAS_DIR)) {
