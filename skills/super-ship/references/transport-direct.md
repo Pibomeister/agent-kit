@@ -49,8 +49,8 @@ have gone.
 
 ## Before any remote call
 
-1. The branch: `git branch --show-current`. Empty output is a detached head, and the base branch is
-   not a branch to ship from; either stops with `needs-input` naming the branch to create. The lookup
+1. The branch: `git branch --show-current`. Empty output is a detached head and stops with
+   `needs-input` naming the branch to create. The lookup
    below with an empty branch drops its filter and lists unrelated pull requests.
 2. The remote, `<remote>`: `origin`, unless the conventions name another. Resolve its destination
    with `git remote get-url --push --all <remote>`, including Git's URL rewrites. Require exit 0 and
@@ -85,6 +85,9 @@ have gone.
    which source gave it. In `publish`, also resolve `<base-id>` with `gh repo view
    <forge-host>/<base-owner>/<repo> --json id,nameWithOwner`, regardless of the branch's source. Require a
    successful lookup confirming that repository and a non-empty node ID before any push.
+   After resolving both repositories and the base, stop with `needs-input` if the head repository
+   is the base repository and `<branch>` equals `<base>`; in `publish`, compare `<head-id>` and
+   `<base-id>` for repository identity. Equal branch names in different repositories are allowed.
 4. The assignee and the body shape: a required assignee, and the template the body must follow — the
    repository's own pull-request template, or the shape the conventions give. Where the conventions
    require no assignee, nothing is assigned. Nothing here is a package default.
@@ -119,9 +122,10 @@ path-taking inspection and commit below; do not change the pathspec environment 
    Equal: collect verification and review against this committed head. Different: the commit no longer holds what was staged — a
    hook that reformats and restages files is the usual cause, though not the only one — and the
    commit is a new head that no prior receipt or verdict binds to. Stop publication with
-   `needs-input`. The commit stays local and is neither amended nor pushed. Re-run super-build,
-   super-verify and super-review for it before a fresh ship checkpoint; if the prior run was closed,
-   `open` a new run first. A hook rewrite never inherits the previous head's evidence.
+   `needs-input`. The commit stays local and is neither amended nor pushed. `open` a new lifecycle
+   run for this head, even if the prior run is still active. Re-run super-build, super-verify and
+   super-review and obtain every gated phase's approval before a fresh ship checkpoint. Never
+   continue the prior run for a rewritten commit or inherit the previous head's evidence.
 6. A hook that changes files without staging them leaves the working tree changed. Report those
    paths and leave them uncommitted; publication waits for an empty diff and current gates.
 
@@ -233,5 +237,5 @@ the commit, and the push and pull-request reconciles return an effect already ma
 ## What it never does
 
 It never merges, never deploys, never force-pushes, never rewrites history on the remote and never
-pushes the base branch. It never skips a hook and never falls back from a gate that was chosen. Merge
+pushes the base branch in the base repository. It never skips a hook and never falls back from a gate that was chosen. Merge
 authority stays with whoever holds it: standalone, the person.

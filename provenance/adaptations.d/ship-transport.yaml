@@ -25,8 +25,9 @@ adaptations:
     rationale: >-
       The commit names its paths after `--` so anything else already in the index stays out, and the
       branch is re-read immediately before the push. The donor's automatic branch creation and its
-      grouping into several commits are not carried: a detached head or the base branch stops the run
-      with needs-input.
+      grouping into several commits are not carried: a detached head or a head matching both the
+      base repository and base branch stops the run with needs-input. Matching branch names in
+      different repositories are allowed.
   - path: skills/super-ship/references/transport-direct.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-commit-push-pr/references/apply-and-handoff.md
     rationale: >-
