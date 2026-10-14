@@ -24,15 +24,17 @@ pushes the checkpointed commit and opens the pull request. Commit preparation be
 or repair, before verification, review and ship approval. No pipeline re-runs the project's checks
 on the head afterwards, so the re-check is super-ship's own: the release checks of workflow step 4,
 each recorded against this head, with a check that did not run recorded as not run. super-ship stays
-the single creator of the pull request.
+the single creator of the pull request. Under a bypass grant every remote effect below still waits
+for the supervisor's answer to a `needs-decision`, as the skill's Authority section requires.
 
 ## Choosing it
 
 The transport is named, never inferred from whichever one happens to work. The first of these that
 names one decides:
 
-1. A Firstmate binding: its `delivery.transport`, which is always `no-mistakes`. A bound run never
-   ships direct.
+1. The task's delivery contract: the mode a supervisor's brief gives the task, `no-mistakes` or
+   `direct-PR`, or a deprecated legacy binding's `delivery.transport`, which is always
+   `no-mistakes`. A task whose contract names no-mistakes never ships direct.
 2. The project's own conventions: its instruction files, and the conventions the knowledgebase
    adapter's `readContext` returns. A project that routes its changes through a gate is never pushed
    around it, whoever asks, and a gate this package has no transport for stops the ship with
@@ -42,8 +44,9 @@ names one decides:
 4. None of them: stop with `needs-input` naming the choice. No gate in sight is not a choice of
    direct; a transport nothing names is unknown, and unknown is not direct.
 
-The choice holds for the run. A no-mistakes transport that was chosen but is not configured stops
-the ship before the push, as that transport's own rules require; it never falls back to this one. In
+The choice holds for the run. A chosen no-mistakes transport ends the ship at its handoff
+(workflow step 8); a gate that was chosen but is not configured stops the ship with
+`needs-input`. Neither ever falls back to this one. In
 `dry-run` the choice is made from local reads alone, so the report can name where the payload would
 have gone.
 
