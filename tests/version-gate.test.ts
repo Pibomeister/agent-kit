@@ -29,7 +29,7 @@ function git(cwd: string, ...args: string[]) {
   if (run.status !== 0) throw new Error(run.stderr);
 }
 
-function bundle(dir: string, version: string, skill: string) {
+function bundle(dir: string, version: unknown, skill: string) {
   mkdirSync(join(dir, "claude-code/.claude-plugin"), { recursive: true });
   writeFileSync(join(dir, "claude-code/.claude-plugin/plugin.json"), JSON.stringify({ name: "ak", version }));
   writeFileSync(join(dir, "claude-code/SKILL.md"), skill);
@@ -54,7 +54,7 @@ function seedPublishedRemote(published: [string, string], omitPublishedManifest 
 
 function gate(
   published: [string, string] | null,
-  built: [string, string],
+  built: [unknown, string],
   packageVersion = built[0],
   origin = "",
   omitPublishedManifest = false,
@@ -76,7 +76,7 @@ async function gateAsync(published: [string, string], built: [string, string]) {
 
 function gateWork(
   published: [string, string] | null,
-  built: [string, string],
+  built: [unknown, string],
   packageVersion = built[0],
   origin = "",
   omitPublishedManifest = false,
@@ -148,5 +148,12 @@ describe("bundle version gate", () => {
     const run = gate(["0.1.0", "old"], ["0.2.0", "new"], "0.1.0");
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("package.json version 0.1.0 differ");
+  });
+
+  test("refuses a non-string catalog version package.json does not match", () => {
+    const run = gate(null, [{ unexpected: "manifest" }, "new"], { unexpected: "package" });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain("catalog.yaml version { unexpected: 'manifest' }");
+    expect(run.stderr).toContain("package.json version { unexpected: 'package' } differ");
   });
 });

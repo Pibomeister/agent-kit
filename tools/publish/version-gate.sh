@@ -38,14 +38,18 @@ JS
 }
 current_version="$(node - "$current/$manifest" package.json <<'JS'
 const fs = require("fs");
+const { inspect } = require("util");
 const read = path => JSON.parse(fs.readFileSync(path, "utf8")).version;
+const printed = value => typeof value === "string" ? value : inspect(value);
 const current = read(process.argv[2]);
 const packaged = read(process.argv[3]);
-if (String(current) !== String(packaged)) {
-  console.error(`catalog.yaml version ${current} and package.json version ${packaged} differ`);
+const currentVersion = printed(current);
+const packagedVersion = printed(packaged);
+if (currentVersion !== packagedVersion) {
+  console.error(`catalog.yaml version ${currentVersion} and package.json version ${packagedVersion} differ`);
   process.exit(1);
 }
-console.log(current);
+console.log(currentVersion);
 JS
 )"
 found=0
