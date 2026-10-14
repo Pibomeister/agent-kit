@@ -1,0 +1,41 @@
+schema_version: "1.1"
+name: super-build-seats-the-round-four-implementer-without-an-earlier-stretch
+tags: [positive, needs-fixture]
+execution:
+  prompt: >-
+    Ticket AK-733 finished its third fix round, and the spec axis still has one finding open: an
+    empty batch writes a partial row instead of none. Carry the ticket into round four.
+  max_turns: 20
+  allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
+# Each llm grader below assumes the seat dispatch the fixture's runner will grant: nothing in
+# allowed_tools dispatches the implementer or the trail auditor (AUTHORING.md §9).
+graders:
+  - name: round-four-implementer-gets-no-earlier-stretch
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The implementer seated for round four is handed the ticket, the open finding, and the
+      work-trail protocol with the location of its own new stretch. It is handed no earlier
+      stretch, no pointer to one, and no text taken from one.
+  - name: starts-a-stretch-of-its-own
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The round-four implementer writes its entries in a stretch of its own, at the location it
+      was handed. It does not continue, copy or rewrite the stretch of the implementer that worked
+      the earlier rounds.
+  - name: auditor-gets-every-stretch
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      When the trail auditor is seated, it is handed every stretch of the ticket, the earlier
+      implementer's and the round-four implementer's, each by reference with its state.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-build"'
+    arm: with-only
+    weight: 1
