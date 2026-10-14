@@ -52,6 +52,7 @@ export function shellQuote(arg: string): string {
 export interface HookCommands {
   sessionStart: string;
   codexSessionStart: string;
+  droidSessionStart: string;
   claudeStop: string;
   codexStop: string;
   codexPrompt: string;
@@ -68,6 +69,7 @@ export function hookCommands(deps: SetupDeps): HookCommands {
   return {
     sessionStart: `${base} session-start`,
     codexSessionStart: `${base} session-start --source codex`,
+    droidSessionStart: `${base} session-start --source droid`,
     claudeStop: `${base} stop`,
     codexStop: `${base} stop --source codex`,
     codexPrompt: `${base} prompt`,
@@ -333,7 +335,7 @@ export function hostHooks(commands: HookCommands): Record<WireHost, HookSpec[]> 
       { event: "UserPromptSubmit", command: commands.codexPrompt },
       { event: "Stop", command: commands.codexStop, timeout: 30 },
     ],
-    droid: [{ event: "SessionStart", command: commands.sessionStart }],
+    droid: [{ event: "SessionStart", command: commands.droidSessionStart, supersedes: "session-start" }],
     grok: [
       { event: "PostToolUse", command: commands.grokContext },
       { event: "SessionStart", command: commands.grokArm },

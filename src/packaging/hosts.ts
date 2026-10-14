@@ -4,9 +4,9 @@ import { parse as parseYaml } from "yaml";
 import { readTextIfPresent } from "../util/fs.ts";
 import { error, type Issue } from "../validation/types.ts";
 
-export type HostId = "claude-code" | "codex";
+export type HostId = "claude-code" | "codex" | "grok" | "kimi" | "droid";
 
-export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
+export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", "kimi", "droid"];
 
 /**
  * Render the explicit human start a packaged skill recognizes on this host.
@@ -18,9 +18,12 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex"];
  *
  * Codex lists a plugin's skill as `<plugin>:<id>` and mentions it with a
  * leading `$`; the namespace already carries that `<plugin>:` stem after its
- * slash (adapters/codex/CONTRACT.md §3.1 records the probe).
+ * slash (adapters/codex/CONTRACT.md §3.1 records the probe). Droid invokes a
+ * skill by its bare `/<id>` (adapters/droid/CONTRACT.md §2).
  */
 export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
+  if (host === "grok" || host === "droid") return `/${skillId}`;
+  if (host === "kimi") return `/skill:${skillId}`;
   return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
 }
 
@@ -104,7 +107,7 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * with -- it is pre-approval, per RESTRICTIONS above -- so a host's key set and
  * a host's guarantees are different questions with different answers.
  *
- * Neither host gets `disable-model-invocation`. claude-code honors the key, and
+ * No host gets `disable-model-invocation`. claude-code honors the key, and
  * this package stopped emitting it (docs/decisions/0003-model-invocation.md):
  * every skill is loadable by the model, and a U skill's gate is its own
  * authority step, as it always was on codex.
@@ -115,13 +118,21 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * confinement is an OS-level sandbox the operator owns. §5 makes a key from one host's set
  * appearing in the other's bundle a failure in its own right.
  *
- * `argument-hint` is on both lists because neither contract takes it away from
+ * Kimi gets no host-specific keys: its native skill command is `/skill:<id>`,
+ * and its U gate remains the first workflow step (ADR-0011).
+ *
+ * `argument-hint` is on both existing hosts' lists because neither contract takes it away from
  * codex: §3's table names exactly two differences, and §5's leaked-key test
  * names exactly the same two.
+ * Droid emits only descriptive `allowed-tools`; its native skill metadata and
+ * conservative capability declaration are in adapters/droid/CONTRACT.md §2.
  */
 export const HOST_FRONTMATTER_KEYS: Record<HostId, ReadonlyArray<string>> = {
   "claude-code": ["argument-hint", "allowed-tools"],
   codex: ["argument-hint"],
+  grok: ["argument-hint", "allowed-tools"],
+  kimi: [],
+  droid: ["allowed-tools"],
 };
 
 export interface HostCapabilities {
@@ -134,6 +145,10 @@ export interface HostCapabilities {
 }
 
 const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
+  kimi: {
+    enforces: [],
+    notes: ["No restriction is claimed. U skills rely on their first-step authority check (ADR-0003, ADR-0011)."],
+  },
   "claude-code": {
     enforces: [],
     notes: [
@@ -147,6 +162,14 @@ const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
     notes: [
       "No restriction is claimed by default. adapters/codex/CONTRACT.md must declare what the host really enforces.",
     ],
+  },
+  grok: {
+    enforces: [],
+    notes: ["No restriction is claimed. allowed-tools grants and restricts nothing on this host."],
+  },
+  droid: {
+    enforces: [],
+    notes: ["No restriction is claimed. allowed-tools is descriptive metadata, not a sandbox."],
   },
 };
 

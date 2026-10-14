@@ -1,0 +1,12 @@
+tests/learn/spans-e2e.test.ts
+tests/learn/memory-evals-reflect.test.ts
+tests/learn/bundle.test.ts
+tests/version-gate.test.ts
+tests/catalog-progress.test.ts
+tests/kb-adapter.test.ts
+tests/firstmate/firstmate.test.ts
+tests/firstmate/grant.test.ts
+tests/firstmate/status.test.ts
+tests/lifecycle/bypass.test.ts
+tests/lifecycle/check.test.ts
+tests/runner/runner.test.ts

@@ -9,12 +9,27 @@
  * It also makes every test that reaches no assertion fail (see the end of this file).
  */
 import { beforeEach, expect } from "bun:test";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 for (const key of Object.keys(process.env)) if (key.startsWith("AK_LEARN_")) Reflect.deleteProperty(process.env, key);
 const root = realpathSync(mkdtempSync(join(tmpdir(), "ak-test-env-")));
+// /usr/bin/git on macOS launches the selected developer tool on every call. Resolve
+// that same tool once; thousands of fixture calls otherwise pay for the launcher.
+// A private PATH entry changes only git, and tests can still prepend their stubs.
+if (process.platform === "darwin" && Bun.which("git") === "/usr/bin/git") {
+  const selected = Bun.spawnSync(["/usr/bin/xcrun", "--find", "git"]);
+  const executable = selected.stdout.toString().trim();
+  if (selected.exitCode === 0 && executable !== "/usr/bin/git" && executable.startsWith("/")) {
+    const bin = join(root, "bin");
+    mkdirSync(bin);
+    // A symlink changes Git's runtime prefix and loses its templates and helpers.
+    const quoted = `'${executable.replaceAll("'", "'\\''")}'`;
+    writeFileSync(join(bin, "git"), `#!/bin/sh\nexec ${quoted} "$@"\n`, { mode: 0o755 });
+    process.env.PATH = `${bin}:${process.env.PATH ?? ""}`;
+  }
+}
 process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 process.env.CLAUDE_MEM_DATA_DIR = join(root, "claude-mem");
 process.env.CODEX_HOME = join(root, "codex");

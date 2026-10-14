@@ -129,6 +129,18 @@ describe("ak learn hook session-start as a subprocess", () => {
   );
 
   test(
+    "with --source droid the roster names human-only commands in the native Droid form",
+    () => {
+      const { ctx, root } = seeded();
+      const droid = hook(ctx, root, JSON.stringify({ cwd: root }), ["--source", "droid"]);
+      expect(droid.stdout).toBe(`${sessionStartBlock(ctx, "droid").trimEnd()}\n`);
+      expect(droid.stdout).toContain("/super-align");
+      expect(droid.stdout).not.toContain("/ak:super-align");
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
     "a malformed payload falls back to the process cwd and still exits 0",
     () => {
       const { ctx, root } = seeded();

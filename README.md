@@ -21,6 +21,13 @@ codex plugin marketplace add Pibomeister/agent-kit --ref published
 codex plugin add ak@agent-kit
 ```
 
+Kimi Code uses the native bundle in `dist/kimi`: build it with `bun run ak build --host kimi`,
+then run `/plugins install <absolute-path-to-dist/kimi>` inside Kimi. Human-started skills use
+`/skill:<id>`. For one session, use `kimi --skills-dir <absolute-path-to-dist/kimi/skills>`.
+See the [Kimi contract](adapters/kimi/CONTRACT.md) for the model-free installation evidence and
+unverified runtime acceptance cases. The maintenance command below currently updates Claude Code
+and Codex installations only.
+
 Claude Code skills appear under `/ak:` after a restart. Codex lists them as `ak:<id>`, and a
 human-started skill is typed there as `$ak:<id>`, where this README and the canonical skills write
 `/ak:<id>` ([ADR-0011](docs/decisions/0011-portable-explicit-start.md)). Codex's plugin CLI has no
@@ -50,8 +57,23 @@ needed. Later bundle changes require a new matching version in `catalog.yaml` an
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
+Use `ak learn skills list [--repo P]` to inspect skill candidates, their status, use counts and
+evidence. If the skills ledger is absent, the command reports zero counts without creating it.
+
+Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
+`bun run ak build --host grok`, then install that local directory with
+`grok plugin install <absolute-path-to-dist/grok> --trust`. Human-started skills use `/<id>`.
+The [Grok contract](adapters/grok/CONTRACT.md) records isolated installation evidence and the
+unproven live command-expansion boundary. Learning hooks and `ak update` integration are not included.
+Grok's Claude-compatibility skill discovery may also load an installed Claude `ak` bundle, whose `/ak:<id>` marker cannot start a Grok turn; that interaction is unverified, so when both are installed disable Claude-compatibility skill discovery (`GROK_CLAUDE_SKILLS_ENABLED=false`, the setting the discovery probe uses).
+
 `profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
 with progressive disclosure.
+
+Factory Droid has a native bundle at `dist/droid`, built with `bun run ak build --host droid`.
+Its human-started commands use `/<id>`. See the [Droid host contract](adapters/droid/CONTRACT.md)
+for isolated local installation and acceptance limits. Installation is model-free verified;
+live acceptance remains separate for each served binding, and `ak update` does not manage Droid.
 
 ## The spine: seven super skills
 
@@ -145,7 +167,7 @@ not authored yet.
 ## What makes it self-checking
 
 ```bash
-bun test                  # tests/ only: units + invalid-case fixtures; eval scaffolds and dist/ excluded
+bun run test              # tests/ only: ordinary lane, then isolated integration files
 bun run ak validate       # the gate every batch passes
 bun run ak build          # validates, then writes dist/ for every host
 bun run ak attach <path>  # show which packs attach, and why
@@ -153,11 +175,18 @@ bun run ak tracker check <project-dir>  # a project's tracker binding, and that 
 bun run ak kb check <project-dir>       # a project's knowledgebase binding, and whether this machine can reach it
 ```
 
+`bun run test` runs every test file once. It finishes the ordinary lane before starting
+the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
+Bun process with concurrency limited to one. This separates the learning role calls,
+bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
+suite and from each other. Test and hook timeouts, assertions and role calls stay
+unchanged. There are no retries. Both lanes finish even if an earlier file fails;
+the command then returns failure. CI and the configured gate use `bun run test`.
+
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a
-content denylist (model names, pricing, effort ladders, placeholders). The trees it exempts are
-`DENYLIST_EXEMPT_PREFIXES` (`src/validation/content.ts`), and the invariant that decides that list
-is that nothing packaged into `dist/` is ever exempt.
+content denylist (model names, pricing, effort ladders, placeholders). Its scan scope and exemptions
+are defined in `src/validation/content.ts`.
 
 ## Contracts worth knowing before you read a skill
 
@@ -202,8 +231,7 @@ Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
 
-Attribution: `NOTICE`. Full license texts: `provenance/licenses/`. `NOTICE` also lists the packages
-inlined into `bin/ak`, whose texts ship in each bundle and inside `bin/ak` itself.
+Attribution and full license text locations: [`NOTICE`](NOTICE).
 
 ## Repository documents
 

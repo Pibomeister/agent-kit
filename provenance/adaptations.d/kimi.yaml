@@ -1,0 +1,4 @@
+adaptations:
+  - path: adapters/kimi/CONTRACT.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:.kimi-plugin/plugin.json
+    rationale: Native per-host identity manifest over a shared skill tree; Kimi authority follows ADR-0011 and current host probes.
