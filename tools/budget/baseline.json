@@ -418,8 +418,8 @@
     },
     "bundle/claude-code:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9486,
-      "tokens": 2368
+      "bytes": 9494,
+      "tokens": 2370
     },
     "bundle/claude-code:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -843,8 +843,8 @@
     },
     "bundle/codex:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9604,
-      "tokens": 2398
+      "bytes": 9612,
+      "tokens": 2400
     },
     "bundle/codex:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -1268,8 +1268,8 @@
     },
     "bundle/droid:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9589,
-      "tokens": 2394
+      "bytes": 9597,
+      "tokens": 2396
     },
     "bundle/droid:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -1693,8 +1693,8 @@
     },
     "bundle/grok:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9471,
-      "tokens": 2365
+      "bytes": 9479,
+      "tokens": 2367
     },
     "bundle/grok:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -2118,8 +2118,8 @@
     },
     "bundle/kimi:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9619,
-      "tokens": 2402
+      "bytes": 9627,
+      "tokens": 2404
     },
     "bundle/kimi:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -2188,8 +2188,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22681,
-      "tokens": 5656
+      "bytes": 22650,
+      "tokens": 5649
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",

@@ -57,7 +57,8 @@ function duplicateKeyIssue(file: string, text: string): Issue | null {
   }
 }
 
-export function compileSchemas(root: string): SchemaSet {
+/** When selecting schemas, include their shared dependencies; omitted selections compile the whole tree. */
+export function compileSchemas(root: string, ids?: readonly string[]): SchemaSet {
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
   addFormats(ajv);
 
@@ -66,6 +67,7 @@ export function compileSchemas(root: string): SchemaSet {
 
   for (const name of listFiles(join(root, "schemas"))) {
     if (!name.endsWith(".schema.json")) continue;
+    if (ids !== undefined && !ids.includes(schemaIdFromFile(name))) continue;
     const file = `schemas/${name}`;
     const text = readTextIfPresent(join(root, file));
     if (text === null) continue;

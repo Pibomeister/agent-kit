@@ -62,6 +62,22 @@ function ctxFor(files: Record<string, string>) {
 }
 
 describe("schema compilation", () => {
+  test("selected schemas resolve shared refs without compiling unrelated documents", () => {
+    const root = makeTree({
+      "schemas/common.schema.json": COMMON,
+      "schemas/ticket.schema.json": TICKET,
+      "schemas/unrelated.schema.json": "{ not json",
+    });
+    const set = compileSchemas(root, ["common", "ticket"]);
+    expect(set.issues).toEqual([]);
+    expect(set.ids()).toEqual(["common", "ticket"]);
+    const validate = set.validatorFor("ticket");
+    expect(validate?.({ schema: "ticket", created_at: "2026-09-19T10:00:00Z", goal: "ship" })).toBe(true);
+    expect(validate?.({ schema: "ticket", created_at: "not-a-timestamp", goal: "ship" })).toBe(false);
+    expect(validate?.({ schema: "ticket", created_at: "2026-09-19T10:00:00Z" })).toBe(false);
+    expect(compileSchemas(root, ["ticket"]).issues.some((i) => i.rule === "schemas.uncompilable")).toBe(true);
+  });
+
   test("compiles every schema and resolves cross-file $defs refs", () => {
     const root = makeTree({ "schemas/common.schema.json": COMMON, "schemas/ticket.schema.json": TICKET });
     const set = compileSchemas(root);

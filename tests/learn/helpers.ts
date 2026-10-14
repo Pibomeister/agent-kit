@@ -4,14 +4,14 @@
  * fixture database carrying only the columns the runtime reads.
  */
 import { Database } from "bun:sqlite";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import type { LearnContext } from "../../src/learn/core/context.ts";
 import type { JudgeCallContext, JudgeFn } from "../../src/learn/core/judge.ts";
 import { run } from "../../src/learn/core/proc.ts";
-import { SECTIONS } from "../../src/learn/memory/ledger.ts";
+import { ensureMemoryLedger, SECTIONS } from "../../src/learn/memory/ledger.ts";
 import type { ReflectReply } from "../../src/learn/memory/reflect.ts";
 
 /** A fresh directory with one canonical spelling (macOS `/var` is a symlink). */
@@ -103,14 +103,32 @@ export function stubRoles(dir: string): string {
   return dir;
 }
 
-/** A git repository with one commit, usable as a project root. */
-export function gitRepo(dir: string): string {
+function projectTemplate(): string {
+  const dir = scratch("ak-learn-template-");
   mkdirSync(dir, { recursive: true });
   run(["git", "init", "-q"], { cwd: dir });
   writeFileSync(join(dir, "README.md"), "fixture\n");
   run(["git", "add", "-A"], { cwd: dir });
   run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init", "--no-gpg-sign"], { cwd: dir });
   return dir;
+}
+
+const PROJECT_TEMPLATE = projectTemplate();
+
+/** A private copy of a one-commit project, including its own index and objects. */
+export function gitRepo(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  cpSync(PROJECT_TEMPLATE, dir, { recursive: true });
+  return dir;
+}
+
+const MEMORY_TEMPLATE = ensureMemoryLedger(join(scratch("ak-memory-template-"), "memory"));
+
+/** A fresh seeded ledger without repeating initialization and the seed commit. */
+export function memoryFixture(dir: string) {
+  mkdirSync(dir, { recursive: true });
+  cpSync(MEMORY_TEMPLATE.dir, dir, { recursive: true });
+  return ensureMemoryLedger(dir);
 }
 
 export interface TestContext extends LearnContext {

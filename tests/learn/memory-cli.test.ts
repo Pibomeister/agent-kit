@@ -3,7 +3,7 @@
  * rollback that restores the wiki layer while the raw layer stays.
  */
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { run } from "../../src/learn/core/proc.ts";
@@ -11,7 +11,15 @@ import { readJsonl } from "../../src/learn/core/store.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
 import { UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { appendRun, ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
-import { gitRepo, inOutsideRepoAsync, MemFixture, scratch, testContext, type TestContext } from "./helpers.ts";
+import {
+  gitRepo,
+  inOutsideRepoAsync,
+  MemFixture,
+  memoryFixture,
+  scratch,
+  testContext,
+  type TestContext,
+} from "./helpers.ts";
 
 async function learn(ctx: TestContext, argv: string[], cwd = ctx.cwd): Promise<number> {
   return runLearn(argv, {
@@ -110,8 +118,8 @@ describe("memory cli", () => {
 });
 
 describe("rollback", () => {
-  function ledgerWithHistory() {
-    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+  function historyTemplate() {
+    const ledger = memoryFixture(join(scratch(), "memory"));
     writeFileSync(ledger.path("memory.md"), "first\n");
     ledger.commit("reflect one");
     const first = ledger.head()!;
@@ -120,6 +128,14 @@ describe("rollback", () => {
     appendRun(ledger, { job: "reflect", status: "ok" });
     ledger.commit("reflect two");
     return { ledger, first };
+  }
+
+  const history = historyTemplate();
+
+  function ledgerWithHistory() {
+    const dir = join(scratch(), "memory");
+    cpSync(history.ledger.dir, dir, { recursive: true });
+    return { ledger: ensureMemoryLedger(dir), first: history.first };
   }
 
   test("the default restores the wiki to before its last change and keeps the raw layer", () => {
@@ -162,7 +178,7 @@ describe("rollback", () => {
   });
 
   test("a path that fails partway puts every path back to HEAD and commits nothing", () => {
-    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const ledger = memoryFixture(join(scratch(), "memory"));
     writeFileSync(ledger.path("lessons.md"), "index one\n");
     writeFileSync(ledger.path("lessons", "ls-001.md"), "lesson one\n");
     ledger.commit("nightly nightly-2026-09-20-1: +1 lessons");
@@ -186,7 +202,7 @@ describe("rollback", () => {
   });
 
   test("a successful rollback is one commit carrying the undone runs", () => {
-    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const ledger = memoryFixture(join(scratch(), "memory"));
     const first = ledger.head()!;
     writeFileSync(ledger.path("lessons.md"), "index two\n");
     ledger.commit("nightly nightly-2026-09-21-2: +0 lessons");
@@ -203,7 +219,7 @@ describe("rollback", () => {
   });
 
   test("a fresh ledger has nothing to roll back", () => {
-    const ledger = ensureMemoryLedger(join(scratch(), "memory"));
+    const ledger = memoryFixture(join(scratch(), "memory"));
     expect(rollbackWiki(ledger)).toBe("nothing to roll back");
   });
 

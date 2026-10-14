@@ -110,11 +110,17 @@ function buildProject(noMistakes?: string): string {
 }
 
 const PROJECT_TEMPLATE = buildProject();
+const PROJECT_TEMPLATES = new Map<string, string>();
 
 export function makeProject(noMistakes?: string): string {
-  if (noMistakes !== undefined) return buildProject(noMistakes);
+  let template = PROJECT_TEMPLATE;
+  if (noMistakes !== undefined) {
+    const cached = PROJECT_TEMPLATES.get(noMistakes);
+    template = cached ?? buildProject(noMistakes);
+    PROJECT_TEMPLATES.set(noMistakes, template);
+  }
   const project = realpathSync(mkdtempSync(join(tmpdir(), "ak-fm-project-")));
-  cpSync(PROJECT_TEMPLATE, project, { recursive: true });
+  cpSync(template, project, { recursive: true });
   return project;
 }
 

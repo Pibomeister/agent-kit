@@ -13,7 +13,7 @@
     "validate": "bun run src/cli.ts validate",
     "build": "bun run src/cli.ts build",
     "attach": "bun run src/cli.ts attach",
-    "test": "bun test",
+    "test": "sh tools/test/run.sh",
     "lint": "bun tools/oxlint/ratchet.ts src tests tools",
     "lint:baseline": "bun tools/oxlint/ratchet.ts --update src tests tools",
     "lint:growth": "bun tools/oxlint/growth.ts origin/main",

@@ -77,14 +77,14 @@ command.
    authoring-discipline reference: a no-guidance control, five or more samples per variant, every
    match read by hand. Micro-tests check wording; they never replace step 7.
 7. **Verify.** Run the same cases with the change, in a fresh context. Then run
-   `bun run ak validate` and `bun test`. Record each result with the revision it measured.
+   `bun run ak validate` and `bun run test`. Record each result with the revision it measured.
 8. **REFACTOR: close loopholes.** A new rationalization in step 7 gets an explicit counter and a
    re-run. Repeat until the cases hold.
 9. **Publish the change record and stop.** Publish the record through `publishArtifact`, then read
    it back. Return the change as a candidate for a separate review. Do not promote it.
 
 Rolling back replaces steps 3–8: revert the target's source to its last verified revision, run
-`bun run ak validate` and `bun test`, then publish a change record that notes the rollback (step 9).
+`bun run ak validate` and `bun run test`, then publish a change record that notes the rollback (step 9).
 Lessons and earlier change records are left as they are.
 
 ## Hard gates

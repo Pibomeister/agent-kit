@@ -74,7 +74,8 @@ export function loadTrackerBinding(
     const first = (cause instanceof Error ? cause.message : String(cause)).split("\n")[0];
     return { binding: null, issues: [error("tracker.binding-unparseable", BINDING_FILE, `Not valid YAML: ${first}`)] };
   }
-  const validate = embedded?.binding ?? compileSchemas(schemaRoot).validatorFor("tracker-binding");
+  const validate =
+    embedded?.binding ?? compileSchemas(schemaRoot, ["common", "tracker-binding"]).validatorFor("tracker-binding");
   if (validate === undefined) {
     return {
       binding: null,
