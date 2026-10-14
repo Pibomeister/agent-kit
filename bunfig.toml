@@ -1,3 +1,4 @@
 [test]
+# `bun run test` partitions this root; heavy files run serially in fresh processes.
 root = "tests"
 preload = ["./tests/preload.ts"]

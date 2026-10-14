@@ -112,7 +112,8 @@ requires `trusted-evidence`, supplied fail-closed by the runner contract; host p
 evidence provenance and never imply that capability.
 
 `ak validate` fails on any denylist hit outside `provenance/` and `research/sources/`, which quote the
-sources verbatim by design. The non-routing concepts arch § tells us to keep — per-finding solution
+sources verbatim by design. License texts that ship into `dist/` from `provenance/licenses/` are still
+scanned, because nothing packaged into `dist/` is exempt. The non-routing concepts arch § tells us to keep — per-finding solution
 specificity, difficulty, evidence classification, independent roles, iteration limits — all survive,
 expressed without any classifier.
 
@@ -188,7 +189,7 @@ supplies wrongly if it is left out. Real constraints are set per project, and ex
 ## Before you commit
 
 ```bash
-bun test                 # validator, selector and packager units, incl. invalid-case fixtures
+bun run test             # full suite; lane contract: README.md
 bun run ak validate      # catalog complete, schemas valid, links closed, no denylist hits
 bun run ak build         # the packager runs on this tree and writes dist/ for every host
 bun run lint             # oxlint through the ratchet: no violation beyond tools/oxlint/baseline.json

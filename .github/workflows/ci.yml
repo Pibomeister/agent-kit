@@ -36,7 +36,7 @@ jobs:
       # The donor snapshot byte comparison needs the clones, which are gitignored; without
       # this step it was skipped on every CI run. AK_REQUIRE_DONORS turns that skip into a failure.
       - run: tools/donors/clone.sh
-      - run: bun test
+      - run: bun run test
         env:
           AK_REQUIRE_DONORS: "1"
       - run: bun run validate

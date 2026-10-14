@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 24
       - run: bun install --frozen-lockfile
-      - run: bun test
+      - run: bun run test
       - run: bun run ak validate
       - run: bun run ak build
       - run: bun run ak build --check

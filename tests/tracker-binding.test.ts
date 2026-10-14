@@ -2,17 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
 
+import trackerSchema from "../schemas/tracker-binding.schema.json" with { type: "json" };
 import { runCli } from "../src/cli.ts";
 import {
   BINDING_FILE,
@@ -20,6 +24,8 @@ import {
   checkTrackerSecret,
   findProjectRoot,
   loadTrackerBinding,
+  type BindingValidators,
+  type TrackerBinding,
 } from "../src/tracker/binding.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { makeTree } from "./helpers/tree.ts";
@@ -34,6 +40,20 @@ import { makeTree } from "./helpers/tree.ts";
  */
 
 const REPO = join(import.meta.dir, "..");
+const SCHEMAS = compileSchemas(REPO);
+const bindingValidator = SCHEMAS.ajv.getSchema<TrackerBinding>(trackerSchema.$id);
+if (bindingValidator === undefined) throw new Error("tracker binding schema did not compile");
+const backends: BindingValidators["backends"] = new Map(
+  readdirSync(join(REPO, "schemas/tracker-backends"))
+    .filter((file) => file.endsWith(".schema.json"))
+    .map((file) => [
+      file.replace(".schema.json", ""),
+      new Ajv2020({ strict: false, allErrors: true }).compile<TrackerBinding>(
+        JSON.parse(readFileSync(join(REPO, "schemas/tracker-backends", file), "utf8")),
+      ),
+    ]),
+);
+const validators: BindingValidators = { binding: bindingValidator, backends };
 
 /** A value no message may ever contain: finding it in output means a secret was printed. */
 const TOKEN = "lin_api_fixture_secret_4b1d";
@@ -74,21 +94,26 @@ function writeToken(path: string, text = TOKEN): void {
   chmodSync(path, 0o600);
 }
 
+const REPO_TEMPLATE = makeTree({});
+git(REPO_TEMPLATE, "init", "-q");
+
 function project(files: Record<string, string>, repo = true): string {
   const dir = realpathSync(makeTree(files));
   for (const name of Object.keys(files)) if (name.endsWith(".linear-token")) chmodSync(join(dir, name), 0o600);
   if (repo) {
-    git(dir, "init", "-q");
+    cpSync(REPO_TEMPLATE, dir, { recursive: true });
     git(dir, "add", "-A");
     git(dir, "commit", "-q", "--allow-empty", "-m", "fixture");
   }
   return dir;
 }
 
-const rules = (dir: string) => checkTrackerBinding(dir, REPO).map((i) => `${i.severity} ${i.rule}`);
+// Secret checks reuse the shipped validators. Loading/schema cases below still
+// exercise the filesystem path, as does the real CLI.
+const rules = (dir: string) => checkTrackerBinding(dir, REPO, validators).map((i) => `${i.severity} ${i.rule}`);
 
 describe("the binding schema", () => {
-  const validate = compileSchemas(REPO).validatorFor("tracker-binding")!;
+  const validate = bindingValidator;
 
   test("is registered and compiles", () => {
     expect(validate).toBeDefined();
@@ -419,7 +444,7 @@ describe("the secret stays in the folder and out of git", () => {
     expect(rules(loose)).toEqual(["error tracker.secret-mode"]);
     expect(rules(linked)).toEqual(["error tracker.secret-outside-project"]);
     for (const dir of [untracked, loose, linked])
-      expect(JSON.stringify(checkTrackerBinding(dir, REPO))).not.toContain(TOKEN);
+      expect(JSON.stringify(checkTrackerBinding(dir, REPO, validators))).not.toContain(TOKEN);
   });
 });
 

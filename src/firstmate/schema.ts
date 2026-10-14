@@ -26,7 +26,7 @@ const cache = new Map<string, SchemaSet>();
 export function validateBinding(akRoot: string, binding: unknown): string[] {
   let set = cache.get(akRoot);
   if (set === undefined) {
-    set = compileSchemas(akRoot);
+    set = compileSchemas(akRoot, ["common", "firstmate-binding"]);
     cache.set(akRoot, set);
   }
   const validate = set.validatorFor("firstmate-binding");

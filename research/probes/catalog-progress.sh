@@ -89,15 +89,18 @@ else
 fi
 
 SUBJECT="$SUBJECT" BASELINE_REV="${CATALOG_BASELINE:-a185bd1}" python3 - "$SRC" "$EXP" <<'PY'
-import os, subprocess, sys, yaml, collections
+import os, subprocess, sys, yaml, collections, functools
 
 BASELINE = {
     "skills": 33, "packs": 8, "protocols": 7, "roles": 29, "references": 4,
     "schemas": 14, "policies": 5, "profiles": 4, "adapters": 4,
 }
 
-catalog = yaml.safe_load(open(sys.argv[1]))
-expansions = yaml.safe_load(open(sys.argv[2])) or {}
+# Both loaders use the safe YAML constructors; use libyaml when available to
+# avoid interpreting each historical catalog token in Python under CPU load.
+SafeLoader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+catalog = yaml.load(open(sys.argv[1]), Loader=SafeLoader)
+expansions = yaml.load(open(sys.argv[2]), Loader=SafeLoader) or {}
 mismatches = []
 expanded = []
 skipped = []
@@ -109,14 +112,22 @@ def git(*args):
     r = subprocess.run(["git", *args], capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else None
 
-def ids_at(rev, section):
-    """The ids in one catalog section at a revision, or None when it cannot be read."""
+@functools.lru_cache(maxsize=None)
+def catalog_at(rev):
+    """Read and parse each revision's catalog once per probe run."""
     text = git("show", f"{rev}:catalog.yaml")
     if text is None:
         return None
-    doc = yaml.safe_load(text) or {}
+    return yaml.load(text, Loader=SafeLoader) or {}
+
+def ids_at(rev, section):
+    """The ids in one catalog section at a revision, or None when it cannot be read."""
+    doc = catalog_at(rev)
+    if doc is None:
+        return None
     return {e.get("id") for e in doc.get(section) or [] if isinstance(e, dict)}
 
+@functools.lru_cache(maxsize=None)
 def resolve(rev):
     out = git("rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}")
     return out.strip() if out else None
