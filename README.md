@@ -223,8 +223,9 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 ## Provenance
 
-Nine donors, pinned to exact commits in `provenance/upstream.lock.yaml`. Six MIT donors make up the
-engineering lifecycle (pinned 2026-09-18): `EveryInc/compound-engineering-plugin`, `obra/superpowers`,
+For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
+Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
+`EveryInc/compound-engineering-plugin`, `obra/superpowers`,
 `mattpocock/skills`, `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`,
 `Yeachan-Heo/oh-my-codex`. `BuilderIO/skills` (MIT, pinned at its 2026-09-30 commit) is the source of
 `visual-edit`. Two more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect`
@@ -255,4 +256,4 @@ Attribution and full license text locations: [`NOTICE`](NOTICE).
 
 ## License
 
-MIT — see `LICENSE`. Adapted material remains under its donors' MIT terms; see `NOTICE`.
+MIT — see `LICENSE`. Adapted material retains its original licence terms; see `NOTICE`.
