@@ -3,8 +3,8 @@
 # Full history, never --depth: a shallow clone resolves the tip and fails at the pin (AGENTS.md, "Receipts
 # name their instrument"). Blob-filtered, so history is complete and only the pinned tree is downloaded.
 # An existing clone is reused and checked out at its pin; one that lacks the pin is fetched, never deleted.
-# CI runs this before `bun test`, so the donor snapshot byte comparison in tests/donor-snapshots.test.ts
-# runs there instead of being skipped.
+# CI runs this before its test command (see .github/workflows/ci.yml), so the donor snapshot
+# comparison in tests/donor-snapshots.test.ts runs there instead of being skipped.
 # Usage, from the repository root: tools/donors/clone.sh
 set -eu
 rows=$(bun --eval '
