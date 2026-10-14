@@ -68,8 +68,8 @@
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20268,
-      "tokens": 5065
+      "bytes": 20256,
+      "tokens": 5062
     },
     "bundle/claude-code:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -318,8 +318,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20653,
-      "tokens": 5160
+      "bytes": 20641,
+      "tokens": 5157
     },
     "bundle/claude-code:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -478,8 +478,8 @@
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20268,
-      "tokens": 5065
+      "bytes": 20256,
+      "tokens": 5062
     },
     "bundle/codex:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -728,8 +728,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20814,
-      "tokens": 5200
+      "bytes": 20802,
+      "tokens": 5197
     },
     "bundle/codex:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -888,8 +888,8 @@
     },
     "bundle/droid:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20169,
-      "tokens": 5041
+      "bytes": 20157,
+      "tokens": 5038
     },
     "bundle/droid:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -1138,8 +1138,8 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20797,
-      "tokens": 5195
+      "bytes": 20785,
+      "tokens": 5192
     },
     "bundle/droid:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -1298,8 +1298,8 @@
     },
     "bundle/grok:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20169,
-      "tokens": 5041
+      "bytes": 20157,
+      "tokens": 5038
     },
     "bundle/grok:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -1548,8 +1548,8 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20638,
-      "tokens": 5156
+      "bytes": 20626,
+      "tokens": 5153
     },
     "bundle/grok:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -1708,8 +1708,8 @@
     },
     "bundle/kimi:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20367,
-      "tokens": 5090
+      "bytes": 20355,
+      "tokens": 5087
     },
     "bundle/kimi:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -1958,8 +1958,8 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20829,
-      "tokens": 5203
+      "bytes": 20817,
+      "tokens": 5200
     },
     "bundle/kimi:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
