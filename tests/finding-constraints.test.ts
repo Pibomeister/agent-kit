@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { checkSchemas } from "../src/validation/schemas.ts";
+import { checkSchemas, compileSchemas } from "../src/validation/schemas.ts";
 import { checkArtifacts } from "../src/validation/artifacts.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { makeTree } from "./helpers/tree.ts";
@@ -40,6 +40,9 @@ import { makeTree } from "./helpers/tree.ts";
  */
 
 const SCHEMAS_DIR = join(import.meta.dir, "..", "schemas");
+// The constraints come from the shipped files, compiled once. Each case still
+// passes its own artifact through checkSchemas, including its reporting path.
+const SCHEMAS = compileSchemas(join(import.meta.dir, ".."));
 
 /** Every shipped schema, written into a throwaway root so checkSchemas sees the real text. */
 function shippedSchemas(): Record<string, string> {
@@ -129,7 +132,7 @@ function findingErrors(overrides: Record<string, unknown>): string[] {
   });
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error("fixture has no catalog");
-  return checkSchemas({ root, catalog })
+  return checkSchemas({ root, catalog }, SCHEMAS)
     .filter((i) => i.file === "templates/finding.json" && i.severity === "error")
     .map((i) => i.message ?? "");
 }

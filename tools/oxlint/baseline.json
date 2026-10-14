@@ -1087,7 +1087,7 @@
     "unicorn(no-array-sort)": 2
   },
   "tests/tracker-binding.test.ts": {
-    "typescript(no-non-null-assertion)": 6,
+    "typescript(no-non-null-assertion)": 5,
     "unicorn(consistent-function-scoping)": 2
   },
   "tests/unavailable.test.ts": {

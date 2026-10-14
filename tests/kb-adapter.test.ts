@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -52,13 +52,24 @@ function git(dir: string, ...args: string[]): string {
 }
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
-function initRepo(dir: string): string {
+function repoTemplate(): string {
+  const dir = mkdtempSync(join(tmpdir(), "ak-kb-template-"));
   mkdirSync(dir, { recursive: true });
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.name", "fixture");
   git(dir, "config", "user.email", "fixture@example.invalid");
   git(dir, "config", "commit.gpgsign", "false");
   git(dir, "config", "core.hooksPath", "/dev/null");
+  return realpathSync(dir);
+}
+
+// Keep the configured, unborn repository immutable. Each caller gets its own index,
+// objects and configuration, without five setup subprocesses per repository.
+const REPO_TEMPLATE = repoTemplate();
+
+function initRepo(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  cpSync(REPO_TEMPLATE, dir, { recursive: true });
   return realpathSync(dir);
 }
 
@@ -70,8 +81,8 @@ interface Fixture {
   scratch: string;
 }
 
-function fixture(binding: string | null = BINDING): Fixture {
-  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ak-kb-")));
+function fixture(binding: string | null = BINDING, parent = tmpdir()): Fixture {
+  const scratch = realpathSync(mkdtempSync(join(parent, "ak-kb-")));
   const project = initRepo(join(scratch, "project"));
   writeFileSync(join(project, "README.md"), "# example\n");
   if (binding !== null) writeFileSync(join(project, BINDING_FILE), binding);
@@ -716,7 +727,9 @@ describe("ak kb usage", () => {
 
 describe("publishArtifact, run-artifact placement", () => {
   test("the bundled maintenance CLI publishes reviews and refuses malformed attachments before writing", async () => {
-    const fx = fixture();
+    // Bun scans the script's ancestors at startup. Keep this subprocess fixture
+    // out of the crowded per-user temp directory, as learn's startScratch does.
+    const fx = fixture(BINDING, "/tmp");
     const home = join(fx.scratch, "home");
     mkdirSync(home);
     const cli = join(fx.scratch, "ak");

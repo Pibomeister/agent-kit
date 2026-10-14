@@ -67,6 +67,7 @@
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -450,19 +451,30 @@ function writeTree(root: string, files: Readonly<Record<string, string | null>>)
 /** Claude in print mode asks before shell and file tools; the scaffold allows them for this repository only. */
 const CLAUDE_LOCAL_SETTINGS = `${JSON.stringify({ permissions: { allow: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"], defaultMode: "acceptEdits" } })}\n`;
 
+let scaffoldTemplate: string | undefined;
+
+/** Copy an unborn, configured repository; every scaffold keeps its own index and objects. */
+function initScaffold(root: string): void {
+  if (scaffoldTemplate === undefined) {
+    scaffoldTemplate = mkdtempSync(join(tmpdir(), "ak-influence-template-"));
+    git(scaffoldTemplate, "init", "-q");
+    for (const [key, value] of [
+      ["user.name", "eval"],
+      ["user.email", "eval@example.invalid"],
+      ["commit.gpgsign", "false"],
+      ["tag.gpgsign", "false"],
+    ])
+      git(scaffoldTemplate, "config", key!, value!);
+  }
+  cpSync(scaffoldTemplate, root, { recursive: true });
+}
+
 /** Write, commit and stage the scenario's repository for `arm`. Returns the base commit. */
 export function scaffold(root: string, scenario: Scenario, arm: Arm, host: string): string {
   mkdirSync(root, { recursive: true });
   writeTree(root, scenario.files);
   if (arm === "stale") writeTree(root, scenario.stale);
-  git(root, "init", "-q");
-  for (const [key, value] of [
-    ["user.name", "eval"],
-    ["user.email", "eval@example.invalid"],
-    ["commit.gpgsign", "false"],
-    ["tag.gpgsign", "false"],
-  ])
-    git(root, "config", key!, value!);
+  initScaffold(root);
   if (host === "claude") {
     writeTree(root, { ".claude/settings.local.json": CLAUDE_LOCAL_SETTINGS });
     writeFileSync(join(root, ".git", "info", "exclude"), ".claude/\n");

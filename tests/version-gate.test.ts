@@ -1,11 +1,19 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const script = join(import.meta.dir, "../tools/publish/version-gate.sh");
 const roots: string[] = [];
+const templates = mkdtempSync(join(tmpdir(), "ak-version-templates-"));
+const remoteTemplate = join(templates, "remote.git");
+const workTemplate = join(templates, "work");
+beforeAll(() => {
+  git(templates, "init", "-q", "--bare", remoteTemplate);
+  git(templates, "init", "-q", workTemplate);
+});
+afterAll(() => rmSync(templates, { recursive: true, force: true }));
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -32,11 +40,11 @@ function gate(
   roots.push(root);
   const remote = join(root, "remote.git");
   const work = join(root, "work");
-  git(root, "init", "-q", "--bare", remote);
-  git(root, "init", "-q", work);
+  cpSync(remoteTemplate, remote, { recursive: true });
+  cpSync(workTemplate, work, { recursive: true });
   if (published) {
     const release = join(root, "release");
-    git(root, "init", "-q", release);
+    cpSync(workTemplate, release, { recursive: true });
     bundle(join(release, "dist"), ...published);
     if (omitPublishedManifest) rmSync(join(release, "dist/claude-code/.claude-plugin/plugin.json"));
     git(release, "add", "dist");

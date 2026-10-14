@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -75,11 +76,19 @@ function only(records: GateRecord[]): GateRecord {
 }
 
 /** A project, the worker's linked worktree on branch `task`, a supervisor home and a ledger. */
-function setup() {
+function projectTemplate() {
   const project = makeTree({ "src/a.js": "export const a = 1;\n" });
   git(project, "init", "-q", "-b", "main");
   git(project, "add", "-A");
   git(project, "commit", "-q", "-m", "init");
+  return project;
+}
+
+const PROJECT_TEMPLATE = projectTemplate();
+
+function setup() {
+  const project = dir("ak-bypass-project-");
+  cpSync(PROJECT_TEMPLATE, project, { recursive: true });
   const worktree = join(dir("ak-bypass-wt-"), "task");
   git(project, "worktree", "add", "-q", "-b", "task", worktree);
   const home = dir("ak-bypass-home-");
