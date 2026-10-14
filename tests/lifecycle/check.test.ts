@@ -1161,7 +1161,7 @@ describe("ak lifecycle check, standalone", () => {
       const evidence = join(defaultEvidenceDir(dir), "feature", gate);
       const files = readdirSync(evidence)
         .filter((name) => name.endsWith(".json"))
-        .sort();
+        .toSorted();
       expect(files).toHaveLength(2);
       for (const [index, file] of files.entries()) {
         const path = join(evidence, file);
@@ -1614,7 +1614,7 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
     for (const host of ["claude-code", "codex"] as const) {
       const files = planBundle({ root: REPO, catalog }, host, {}).files;
       expect(files.has(GATE_FILE)).toBe(true);
-      expect([...files.keys()].filter((path) => /(?:ajv|ajv-formats)\.LICENSE$/.test(path)).sort()).toEqual([
+      expect([...files.keys()].filter((path) => /(?:ajv|ajv-formats)\.LICENSE$/.test(path)).toSorted()).toEqual([
         "LICENSES/ajv-formats.LICENSE",
         "LICENSES/ajv.LICENSE",
       ]);
@@ -1657,9 +1657,7 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
     for (const gate of PRE_SHIP_GATES)
       expect(node(legacy, "record", "--gate", gate, "--run", "legacy").exitCode).toBe(0);
     expect(node(legacy, "check", "--run", "legacy").exitCode).toBe(0);
-    expect(node(legacy, "check", "--run", "legacy", "--evidence").stderr.toString()).toContain(
-      "evidence unavailable",
-    );
+    expect(node(legacy, "check", "--run", "legacy", "--evidence").stderr.toString()).toContain("evidence unavailable");
 
     const allowed = start(`${host}-allowed`);
     expect(
@@ -1768,13 +1766,8 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
       ).exitCode,
     ).toBe(0);
     expect(
-      unstable.node(
-        "record",
-        "--gate",
-        "verify",
-        "--receipt",
-        receipt(unstable.dir, unstable.run, unstable.ticketPath),
-      ).exitCode,
+      unstable.node("record", "--gate", "verify", "--receipt", receipt(unstable.dir, unstable.run, unstable.ticketPath))
+        .exitCode,
     ).toBe(0);
     expect(unstable.node("check").stderr.toString()).toContain("evidence unstable: AC-1");
 

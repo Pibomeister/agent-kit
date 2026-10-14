@@ -1013,8 +1013,7 @@
     "typescript(no-unsafe-assignment)": 18,
     "typescript(no-unsafe-call)": 3,
     "typescript(no-unsafe-member-access)": 19,
-    "typescript(no-unsafe-type-assertion)": 5,
-    "unicorn(no-array-sort)": 1
+    "typescript(no-unsafe-type-assertion)": 5
   },
   "tests/lifecycle/verification-predicate.test.ts": {
     "anti-slop(no-shape-in-symbol-names)": 1,
