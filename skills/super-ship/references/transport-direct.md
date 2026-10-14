@@ -155,6 +155,17 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 
 ## The pull request
 
+Under the runner, execute this entire section inside its existing keyed `pr-open` operation.
+The desired payload includes the resolved base, shipped head, body and required assignee. The
+operation's reconciliation callback returns its input hash only when one matching PR has that
+base, head and required assignee. Unknown, ambiguous or incompatible state refuses. A missing PR
+or missing required assignee is incomplete, so the callback returns no confirmed hash and the
+operation's action reconciles again, creates only if absent, and assigns only if needed. Final
+read-back confirms the complete payload before the runner records `pr-open`. A create that
+succeeded before assignment failed stays unconfirmed; retry the same operation and key, reuse
+that PR and finish assignment. Never issue a second effect or key for assignment, and never
+confirm `pr-open` before assignment. No effect vocabulary or runner state transition changes.
+
 1. Look it up: `gh pr list -R <forge-host>/<base-owner>/<repo> --head <branch> --state open --limit 30 --json
    number,url,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName`.
    Pass the branch name only:
@@ -197,18 +208,20 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 7. For every path — existing, discovered before creation or newly created — read back with the
    steps 1–3 lookup and completeness check. Require exactly one matching row; otherwise stop with `failed`.
    Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
-8. After the base and head comparisons pass, satisfy any required assignee. Read `gh pr view <number>
+8. Within the same `pr-open` action, after the base and head comparisons pass, satisfy any required assignee. Read `gh pr view <number>
    -R <forge-host>/<base-owner>/<repo> --json assignees`; unknown stops the run. If the required login is absent,
    add it with `gh pr edit <number> -R <forge-host>/<base-owner>/<repo> --add-assignee <who>`, then read back with
-   the same view command and require that login. This effect carries its own idempotency key and
-   follows the same authority rule as creation. A failed assignment or missing read-back is
-   `failed`; a resumed run uses this same step for the existing PR and does not create another.
-   With no required assignee, skip assignment. Return only after these checks pass.
+   the same view command and require that login. Assignment is part of the existing PR publication
+   operation and its authority, reconciliation and key, not a separate effect. A failed assignment
+   or missing read-back is `failed`; a resumed operation uses this step for the existing PR and
+   does not create another. Re-read steps 1–3 and the assignees after assignment, and confirm only
+   when base, shipped head and required login all match. With no required assignee, omit the edit.
+   Return only after the operation's final read-back confirms the payload.
 
 The ship record carries each effect's idempotency key and its read-backs. The push target identity
 is the resolved forge host, head repository and branch; the PR target includes that host, head and
-the base repository and branch. Assignment keys include the same host and PR identity plus the
-required login. A resumed run re-derives the same keys. A head that already carries the commit is past
+the base repository and branch. The PR input hash covers any required login together with the
+publication payload. A resumed run re-derives the same keys. A head that already carries the commit is past
 the commit, and the push and pull-request reconciles return an effect already made rather than repeating it.
 
 ## What it never does
