@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from preflight import git, source_identity
+
 
 FIXTURES = Path(__file__).resolve().parent
 
@@ -90,6 +92,40 @@ class ReconstructionTests(unittest.TestCase):
             self.assertTrue(receipt["passed"])
             self.assertEqual(target.read_bytes(), sentinel)
             self.assertEqual(target.stat().st_mode, original_mode)
+
+    def test_direct_scaffolds_isolate_external_config_pointers(self):
+        cases = json.loads((FIXTURES / "matrix.json").read_text())["cases"]
+        for case in cases:
+            for existing in (False, True):
+                with self.subTest(case=case["id"], existing=existing), \
+                        tempfile.TemporaryDirectory(prefix="architecture-scaffold-") as temporary:
+                    root = Path(temporary)
+                    workspace = root / "workspace"
+                    workspace.mkdir()
+                    target = root / "caller/config"
+                    sentinel = b"[caller]\n sentinel = keep\n"
+                    if existing:
+                        target.parent.mkdir()
+                        target.write_bytes(sentinel)
+                        original_mode = target.stat().st_mode
+                    environment = dict(os.environ, GIT_CONFIG=str(target))
+                    result = subprocess.run(
+                        ["bash", str(FIXTURES.parent / case["case"] / "scaffold.sh")],
+                        cwd=workspace, capture_output=True, text=True, env=environment)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if existing:
+                        self.assertEqual(target.read_bytes(), sentinel)
+                        self.assertEqual(target.stat().st_mode, original_mode)
+                    else:
+                        self.assertFalse(target.parent.exists())
+                    identity, _ = source_identity(workspace)
+                    self.assertEqual(identity, {key: case[key] for key in identity})
+                    for key, value in (("user.email", "eval-fixture@agent-kit.local"),
+                                       ("user.name", "agent-kit eval fixture"),
+                                       ("commit.gpgsign", "false"),
+                                       ("core.hooksPath", "/dev/null")):
+                        self.assertEqual(git(workspace, "config", "--local", "--get", key).decode().strip(),
+                                         value)
 
     def test_changed_source_is_rejected_without_repinning(self):
         with tempfile.TemporaryDirectory(prefix="architecture-preflight-") as temporary:
