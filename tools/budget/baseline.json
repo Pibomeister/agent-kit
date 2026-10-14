@@ -68,8 +68,8 @@
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/claude-code:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
@@ -493,8 +493,8 @@
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/codex:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
@@ -918,8 +918,8 @@
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/droid:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
@@ -1343,8 +1343,8 @@
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/grok:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
@@ -1768,8 +1768,8 @@
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/kimi:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
@@ -2188,8 +2188,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22548,
-      "tokens": 5623
+      "bytes": 22681,
+      "tokens": 5656
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",

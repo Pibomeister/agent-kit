@@ -47,6 +47,16 @@ the nine listed above.
 
     If other attributions are required by dependencies or included code, add them here.
 
+Runtime dependencies bundled into bin/ak-gate.mjs, whose license texts ship
+with every bundle under LICENSES/:
+
+- ajv 8.20.0 — Copyright (c) 2015-2021 Evgeny Poberezkin — MIT License
+  https://github.com/ajv-validator/ajv
+  LICENSES/ajv.LICENSE
+- ajv-formats 3.0.1 — Copyright (c) 2020 Evgeny Poberezkin — MIT License
+  https://github.com/ajv-validator/ajv-formats
+  LICENSES/ajv-formats.LICENSE
+
 bin/ak is built as one file. It is the command in each plugin bundle and the
 file a curl install downloads on its own. The build inlines the components
 below, and the generated file does not keep their copyright comments, so each
