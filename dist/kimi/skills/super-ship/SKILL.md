@@ -1,6 +1,6 @@
 ---
 name: super-ship
-description: "Human-started command: it runs only when the human's message begins with `/skill:super-ship`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this publication work on a reviewed change, do not inspect the branch or act; tell the human to type `/skill:super-ship` followed by their request. Prepares a verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become a committed handoff or pull request. Not for merging, not for deploying, and not for deciding whether the change is correct."
+description: "Human-started command: it runs only when the human's message begins with `/skill:super-ship`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this publication work on a reviewed change, do not inspect the branch or act; tell the human to type `/skill:super-ship` followed by their request. Prepares a verified, reviewed commit for publication: release checks, a sensitive-data scan, the pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become a committed handoff or pull request. Not for merging, not for deploying, and not for deciding whether the change is correct."
 license: MIT
 metadata:
   ak_catalog_id: super-ship
@@ -87,7 +87,10 @@ The head being shipped, named. Verification receipts that bind to that head
 `needs-input` naming which.
 
 The mode: `dry-run` or `publish`. `dry-run` is a supported mode of this skill, not a flag an operator
-has to remember; it is the mode in which nothing leaves the machine.
+has to remember; it is the mode in which nothing leaves the machine. The transport, `direct` or
+`no-mistakes`: the task's delivery contract's, else the project conventions', else the caller's;
+named by none, the run stops with `needs-input` naming the choice (ruling
+`direct-push-as-ship-transport`).
 
 The charter, where one exists (`schemas/charter.schema.json`), with the actions it names and the
 approval bound to its hash. Absent, the run has no sensitive-action authority and does not acquire
@@ -114,17 +117,18 @@ The project's own release checks, discovered rather than assumed.
    where one was already committed, report it for rotation.
 4. Run the dependency-audit triage and the project's release checks. Record each outcome against
    the head, including checks that did not run.
-5. For direct publication, stage named owned paths, never the whole tree or a wildcard.
-6. For no-mistakes delivery, require a committed head, verify, readiness and an approved full or
-   delta review recorded after its commit, and an empty diff; otherwise stop. For direct publication, prepare the commit payload
-   without moving HEAD before the current gate check.
+5. Require build or repair to have committed the named owned paths before verification and review.
+   Direct publication uses `./references/transport-direct.md`'s commit preparation there; it never
+   creates a commit after the ship checkpoint. A missing commit returns to build or repair.
+6. For either transport, require a committed head, verify, readiness and an approved full or
+   delta review recorded after its commit, and an empty diff; otherwise stop.
 7. At that snapshot, run `node <this skill's directory>/../../bin/ak-gate.mjs check` for current
    verify, readiness and approved full or delta review. A refusal is `needs-input`; delegated
    authority also requires runner-recorded trusted evidence. Load
    [verification evidence](../../references/shared/references/verification-evidence/REFERENCE.md) and re-hash any
    declared surface artifacts. On pass, record `ship-preflight` there, with an empty diff for
-   no-mistakes delivery. A binding supplies its evidence directory; a bypass uses `--bypass <path>
-   --task <id>`. Recording closes the run; at the no-mistakes handoff a changed head needs a new run
+   either transport. A binding supplies its evidence directory; a bypass uses `--bypass <path>
+   --task <id>`. Recording closes the run; a changed head needs a new run
    and fresh gates. Compose any PR payload from the ticket, receipts and verdict, linking the recipe,
    acceptance-to-evidence matrix and evidence digests with the delegation class, sensitive factors,
    risks and rollback fields.
@@ -132,12 +136,16 @@ The project's own release checks, discovered rather than assumed.
    the task's no-mistakes delivery contract owns the branch from here. Follow
    `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`). A deprecated
    legacy `agent-kit` publish binding follows that reference's legacy publish procedure instead.
-9. For a direct publication path, detect an open pull request deterministically. Only an exit-0
-   empty result means none; any other outcome is unknown, and unknown is not none.
+9. For a direct publication path, reconcile open PRs against the resolved forge host, repository,
+   branch and base before any push, using `./references/transport-direct.md`'s shared lookup.
+   Only an exit-0 empty result means none; unknown or incomplete lookups stop the run.
 10. In `dry-run`, emit the ship evidence record with the payload and check results, then stop.
 11. In direct `publish`, a fix that moves the head needs a new run: `open` again and re-run every
     gated phase for it. Derive each effect's idempotency key from the run id,
     operation id, target identity and input artifact hash. Read the target before and after it.
+    The direct transport pushes the checkpointed commit and opens the pull request with `git` and
+    `gh`; commit preparation precedes the gates (ruling `direct-push-as-ship-transport`):
+    `./references/transport-direct.md`.
 12. Draft the lesson candidate through the knowledgebase adapter; publication needs separate
     authority.
 13. Hand a directly opened pull request to the watch lane and report the ship as prepared until
@@ -162,8 +170,8 @@ Gate: no ship begins with an uncovered criterion, an implementer-authored receip
 verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant, or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
-Gate: under no-mistakes delivery, an uncommitted head, a stale verify, review-readiness or approved
-full or delta review record, or a non-empty working-tree diff refuses the handoff before `ship-preflight` and any remote effect.
+Gate: under either transport, an uncommitted head, a stale verify, review-readiness or approved
+full or delta review record, or a non-empty working-tree diff refuses the ship before `ship-preflight` and any remote effect.
 
 Gate: `dry-run` makes no remote call. Not a reduced one, not a single harmless one — none. A run that
 pushed a branch to show what the push would look like was not a dry run.
@@ -244,7 +252,7 @@ drafted, and the watch lane holds the PR.
 
 `needs-input`: the run was started by neither the typed command nor a validated grant, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive
-action lacks a charter entry. A no-mistakes handoff with an uncommitted head, non-empty diff or stale
+action lacks a charter entry. Either transport with an uncommitted head, non-empty diff or stale
 verify, readiness or review record also stops here. Returns what it would need, which for the first
 is the command to type, and performs no remote effect. Also when the autonomous form has no trusted
 evidence: the message names trusted evidence as unavailable and says the manual form remains open.
