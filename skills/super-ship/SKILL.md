@@ -6,7 +6,7 @@ description: >-
   bypass check`. On any other request do not load or follow it; tell the human to type that
   command. When prose asks for this publication work on a reviewed change, do not inspect the
   branch or act; tell the human to type `/ak:super-ship` followed by their request. Prepares a
-  verified, reviewed change for publication: release checks, a sensitive-data scan, the commit, the
+  verified, reviewed commit for publication: release checks, a sensitive-data scan, the
   pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally
   and pushing nothing, or publishes under a grant. Use when a reviewed, verified change must become
   a committed handoff or pull request. Not for merging, not for deploying, and not for deciding whether the

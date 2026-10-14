@@ -45,7 +45,7 @@ entrypoints:
     operation: ship.prepare
     stops_without_grant: true
     summary: >-
-      Pre-flight checks, the commit, the pull-request payload and the knowledgebase draft, run dry or
+      Pre-flight checks, the pull-request payload and the knowledgebase draft, run dry or
       published under a grant. Merge and deploy are never included.
     side_effects:
       - local-commit

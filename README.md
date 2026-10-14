@@ -101,6 +101,11 @@ the lifecycle in each. Every phase leaves a gate record (`bin/ak-gate.mjs record
 session that skipped `super-build`, or whose review went stale after an edit, is refused with
 `refused: gate <g> has no current evidence`. No supervisor is needed for that.
 
+For publication, name a transport in the delivery contract, project conventions or caller input.
+See [super-ship](skills/super-ship/SKILL.md) for its inputs and
+[direct transport](skills/super-ship/references/transport-direct.md) for selection and publication
+instructions when using `git` and `gh` without a gate.
+
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
 On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
 service, and add the section printed by `ak firstmate brief` to an ordinary crewmate brief. Use the
