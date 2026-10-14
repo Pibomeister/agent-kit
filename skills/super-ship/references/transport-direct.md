@@ -53,10 +53,19 @@ have gone.
    below with an empty branch drops its filter and lists unrelated pull requests.
 2. The remote, `<remote>`: `origin`, unless the conventions name another. Resolve its destination
    with `git remote get-url --push --all <remote>`, including Git's URL rewrites. Require exit 0 and
-   exactly one URL, `<push-url>`; otherwise stop with `needs-input`. Resolve `<forge-host>` from
-   that URL's network hostname. For an SSH alias, resolve its actual hostname locally or from an
-   explicit project binding; an unresolved or ambiguous host stops with `needs-input` before any
-   forge call. Never infer it from `GH_HOST`, authentication or a client default. Resolve its repository,
+   exactly one URL, `<push-url>`; otherwise stop with `needs-input`. Resolve the Git transport
+   endpoint, including an SSH alias's effective hostname and port from local configuration.
+   Resolve canonical `<forge-host>` separately, using an explicit project binding between that
+   endpoint and the forge, or a documented provider mapping. GitHub's SSH endpoint
+   `ssh.github.com:443` maps to `github.com`, including aliases that resolve to that endpoint
+   ([provider documentation](https://docs.github.com/en/authentication/troubleshooting-ssh/using-ssh-over-the-https-port)).
+   Normal URLs whose endpoint is also the canonical forge host keep that host, such as
+   `github.com` or a project's Enterprise host. Other SSH-only endpoints require an explicit
+   binding; an unresolved, conflicting or ambiguous mapping stops with `needs-input` before any
+   forge call. Never infer the binding from `GH_HOST`, authentication or a client default.
+   Keep `<push-url>` unchanged for Git; use canonical `<forge-host>` for every forge call and
+   effect identity. Apply the same mapping when identifying the remote that fetches the base
+   repository, rather than comparing raw SSH endpoint names. Resolve its repository,
    `<head-owner>/<head-repo>`, from conventions and in `publish` confirm it with `gh repo view
    <forge-host>/<head-owner>/<head-repo> --json id,nameWithOwner,isFork,parent`. Record its node ID as `<head-id>`.
    Require a successful lookup that confirms the identity and a non-empty ID; otherwise stop.
