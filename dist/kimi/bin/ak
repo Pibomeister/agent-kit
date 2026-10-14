@@ -23642,6 +23642,7 @@ function needId(args, ctx) {
 var skillsArea;
 var init_cli3 = __esm(() => {
   init_context();
+  init_ledger();
   init_paths();
   init_trace();
   init_registry();
@@ -23701,7 +23702,7 @@ var init_cli3 = __esm(() => {
           const root = needRoot(args, ctx);
           if (root === null)
             return 2;
-          const registry = loadRegistry(skillsLedger(ctx, root));
+          const registry = loadRegistry(new Ledger(loopDir(ctx.config, root, "skills")));
           const rows = Object.entries(registry.candidates).sort((a, b) => a[0].localeCompare(b[0]));
           for (const [id, info] of rows) {
             ctx.io.out(`${id}  ${info.status.padEnd(9)} ${info.name.padEnd(32)} scope=${info.scope} uses=${info.uses} evidence=${info.evidence} ${info.confidence}`);
