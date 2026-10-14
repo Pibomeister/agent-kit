@@ -84,10 +84,13 @@ function gateWork(
   const root = mkdtempSync(join(tmpdir(), "ak-version-gate-"));
   roots.push(root);
   const work = join(root, "work");
-  const sourceRemote =
-    published === null ? remoteTemplate : publishedRemoteTemplates.get(publishedKey(published, omitPublishedManifest));
-  if (sourceRemote === undefined)
-    throw new Error(`missing published fixture ${publishedKey(published, omitPublishedManifest)}`);
+  let sourceRemote = remoteTemplate;
+  if (published !== null) {
+    const key = publishedKey(published, omitPublishedManifest);
+    const remote = publishedRemoteTemplates.get(key);
+    if (remote === undefined) throw new Error(`missing published fixture ${key}`);
+    sourceRemote = remote;
+  }
   cpSync(workTemplate, work, { recursive: true });
   appendFileSync(
     join(work, ".git/config"),
