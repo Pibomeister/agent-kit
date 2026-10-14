@@ -223,10 +223,10 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
  * NOTICE and LICENSE stay at the bundle root: both host contracts specify
  * those two names at that place (`adapters/claude-code/CONTRACT.md` §1,
  * `adapters/codex/CONTRACT.md` §2). The other rows are the licence texts of
- * code inlined into `bin/ak`. An installed package keeps its text under
- * `node_modules/`, and that path cannot be the bundle path: gitignore drops
- * it, and the packager's file walk skips it, so the distributed copy would
- * not contain the text. claude-mem's texts stay at their provenance paths,
+ * code inlined into `bin/ak` or `bin/ak-gate.mjs` (NOTICE). An installed
+ * package keeps its text under `node_modules/`, and that path cannot be the
+ * bundle path: gitignore drops it, and the packager's file walk skips it, so
+ * the distributed copy would not contain the text. claude-mem's texts stay at their provenance paths,
  * the paths they hold in the source tree.
  *
  * A licensing obligation rather than bundle tidiness. The MIT donors' licence
