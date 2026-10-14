@@ -1,6 +1,6 @@
 # no-mistakes gate configuration for agent-kit.
 #
-# Bun project (bun.lock). `bun test` runs the full suite AND typechecks the
+# Bun project (bun.lock). `bun run test` runs the full suite AND typechecks the
 # tree (tests/typecheck.test.ts shells out to node_modules/.bin/tsc over what
 # tsconfig.json includes — see that file's header) whenever the whole suite runs,
 # so no separate typecheck command is needed. The lint role runs the other
@@ -17,7 +17,7 @@
 
 commands:
   prepare: "bun install --frozen-lockfile"
-  test: "bun test"
+  test: "bun run test"
   lint: "bun run lint && bun run lint:growth && bun run fmt:check && bun run validate && bun run build"
 
 # Review findings the reviewer marks `auto-fix` (mechanical, low risk) are

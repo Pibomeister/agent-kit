@@ -164,13 +164,22 @@ not authored yet.
 ## What makes it self-checking
 
 ```bash
-bun test                  # tests/ only: units + invalid-case fixtures; eval scaffolds and dist/ excluded
+bun run test              # tests/ only: ordinary lane, then isolated integration files
 bun run ak validate       # the gate every batch passes
 bun run ak build          # validates, then writes dist/ for every host
 bun run ak attach <path>  # show which packs attach, and why
 bun run ak tracker check <project-dir>  # a project's tracker binding, and that its secret stays out of git
 bun run ak kb check <project-dir>       # a project's knowledgebase binding, and whether this machine can reach it
 ```
+
+`bun run test` runs every test file once. It finishes the ordinary lane before starting
+the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
+Bun process with concurrency limited to one. This separates the learning role calls,
+bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
+suite and from each other. Test and hook timeouts, assertions and role calls stay
+unchanged. There are no retries. Both lanes finish even if an earlier file fails;
+the command then returns failure. `bun run test:unit` and `bun run test:integration`
+run individual lanes. CI and the configured gate use `bun run test`.
 
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a
