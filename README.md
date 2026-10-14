@@ -164,7 +164,7 @@ not authored yet.
 ## What makes it self-checking
 
 ```bash
-bun test                  # tests/ only: units + invalid-case fixtures; eval scaffolds and dist/ excluded
+bun run test              # tests/ only: ordinary lane, then isolated integration files
 bun run ak validate       # the gate every batch passes
 bun run ak build          # validates, then writes dist/ for every host
 bun run ak attach <path>  # show which packs attach, and why
@@ -172,11 +172,18 @@ bun run ak tracker check <project-dir>  # a project's tracker binding, and that 
 bun run ak kb check <project-dir>       # a project's knowledgebase binding, and whether this machine can reach it
 ```
 
+`bun run test` runs every test file once. It finishes the ordinary lane before starting
+the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
+Bun process with concurrency limited to one. This separates the learning role calls,
+bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
+suite and from each other. Test and hook timeouts, assertions and role calls stay
+unchanged. There are no retries. Both lanes finish even if an earlier file fails;
+the command then returns failure. CI and the configured gate use `bun run test`.
+
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a
-content denylist (model names, pricing, effort ladders, placeholders). The trees it exempts are
-`DENYLIST_EXEMPT_PREFIXES` (`src/validation/content.ts`), and the invariant that decides that list
-is that nothing packaged into `dist/` is ever exempt.
+content denylist (model names, pricing, effort ladders, placeholders). Its scan scope and exemptions
+are defined in `src/validation/content.ts`.
 
 ## Contracts worth knowing before you read a skill
 
@@ -221,8 +228,7 @@ Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
 
-Attribution: `NOTICE`. Full license texts: `provenance/licenses/`. `NOTICE` also lists the packages
-inlined into `bin/ak`, whose texts ship in each bundle and inside `bin/ak` itself.
+Attribution and full license text locations: [`NOTICE`](NOTICE).
 
 ## Repository documents
 

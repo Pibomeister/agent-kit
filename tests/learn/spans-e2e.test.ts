@@ -14,11 +14,19 @@ import { projectFolderName } from "../../src/learn/core/paths.ts";
 import { Ledger } from "../../src/learn/core/ledger.ts";
 import { readJsonl, tokens } from "../../src/learn/core/store.ts";
 import { sessionKey, SPAN_FILE, type SpanRow } from "../../src/learn/core/trace.ts";
-import { appendRun, ensureMemoryLedger, memoryDir, saveState, writeLesson } from "../../src/learn/memory/ledger.ts";
+import { appendRun, memoryDir, saveState, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
 import { type Episode, UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
-import { gitRepo, MemFixture, projectScratch, removeProjectScratch, scratch, stubRoles } from "./helpers.ts";
+import {
+  gitRepo,
+  MemFixture,
+  memoryFixture,
+  projectScratch,
+  removeProjectScratch,
+  scratch,
+  stubRoles,
+} from "./helpers.ts";
 
 afterAll(removeProjectScratch);
 
@@ -73,7 +81,7 @@ function project(extraEnv: Record<string, string> = {}, seed?: (mem: MemFixture,
     AK_LEARN_JUDGE_TIMEOUT_S: "30",
     ...extraEnv,
   };
-  const memory = ensureMemoryLedger(memoryDir(loadConfig(env), root));
+  const memory = memoryFixture(memoryDir(loadConfig(env), root));
   saveState(memory, { last_obs_id_reflected: reflected });
   appendRun(memory, { job: "reflect", status: "ok", min_obs_id: reflected, max_obs_id: reflected });
   writeLesson(

@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -398,8 +398,8 @@
     },
     "bundle/claude-code:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9486,
-      "tokens": 2368
+      "bytes": 9494,
+      "tokens": 2370
     },
     "bundle/claude-code:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -468,8 +468,8 @@
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -803,8 +803,8 @@
     },
     "bundle/codex:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9604,
-      "tokens": 2398
+      "bytes": 9612,
+      "tokens": 2400
     },
     "bundle/codex:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -873,8 +873,8 @@
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/droid:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1208,8 +1208,8 @@
     },
     "bundle/droid:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9589,
-      "tokens": 2394
+      "bytes": 9597,
+      "tokens": 2396
     },
     "bundle/droid:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -1278,8 +1278,8 @@
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/grok:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1613,8 +1613,8 @@
     },
     "bundle/grok:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9471,
-      "tokens": 2365
+      "bytes": 9479,
+      "tokens": 2367
     },
     "bundle/grok:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -1683,8 +1683,8 @@
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6204,
-      "tokens": 1551
+      "bytes": 6300,
+      "tokens": 1575
     },
     "bundle/kimi:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -2018,8 +2018,8 @@
     },
     "bundle/kimi:skills/writing-skills/SKILL.md": {
       "file": "skills/writing-skills/SKILL.md",
-      "bytes": 9619,
-      "tokens": 2402
+      "bytes": 9627,
+      "tokens": 2404
     },
     "bundle/kimi:skills/writing-skills/references/authoring-discipline.md": {
       "file": "skills/writing-skills/references/authoring-discipline.md",
@@ -2088,8 +2088,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22550,
-      "tokens": 5624
+      "bytes": 22652,
+      "tokens": 5649
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",
