@@ -53,23 +53,27 @@ have gone.
    below with an empty branch drops its filter and lists unrelated pull requests.
 2. The remote, `<remote>`: `origin`, unless the conventions name another. Resolve its destination
    with `git remote get-url --push --all <remote>`, including Git's URL rewrites. Require exit 0 and
-   exactly one URL, `<push-url>`; otherwise stop with `needs-input`. Resolve that URL's repository,
+   exactly one URL, `<push-url>`; otherwise stop with `needs-input`. Resolve `<forge-host>` from
+   that URL's network hostname. For an SSH alias, resolve its actual hostname locally or from an
+   explicit project binding; an unresolved or ambiguous host stops with `needs-input` before any
+   forge call. Never infer it from `GH_HOST`, authentication or a client default. Resolve its repository,
    `<head-owner>/<head-repo>`, from conventions and in `publish` confirm it with `gh repo view
-   <head-owner>/<head-repo> --json id,nameWithOwner,isFork,parent`. Record its node ID as `<head-id>`.
+   <forge-host>/<head-owner>/<head-repo> --json id,nameWithOwner,isFork,parent`. Record its node ID as `<head-id>`.
    Require a successful lookup that confirms the identity and a non-empty ID; otherwise stop.
    The fetch URL never decides the head repository or owner. The base repository is the pull
    request's target, `<base-owner>/<repo>`: named by conventions, else the push repository's fork
    parent from that metadata, else the push repository itself. Every PR lookup and edit passes
-   `-R <base-owner>/<repo>`; creation uses the resolved repository IDs. A local base-branch lookup
-   uses only a remote that fetches that repository.
+   `-R <forge-host>/<base-owner>/<repo>`; creation uses the resolved repository IDs and
+   `--hostname <forge-host>`. A base repository on another forge host stops with `needs-input`.
+   A local base-branch lookup uses only a remote that fetches that repository on `<forge-host>`.
 3. The base: the branch the conventions name for this one, which may depend on its prefix. Where
    they name none, the base repository's default branch — `git symbolic-ref --short
    refs/remotes/<base-remote>/HEAD` locally, for the remote that fetches the base repository, with
    its `<base-remote>/` prefix stripped so the base is the bare branch name, and `gh repo view
-   <base-owner>/<repo> --json defaultBranchRef` in `publish`. A fork's own default branch is never
+   <forge-host>/<base-owner>/<repo> --json defaultBranchRef` in `publish`. A fork's own default branch is never
    the base. With neither, stop with `needs-input`; a base is never guessed. The ship record says
    which source gave it. In `publish`, also resolve `<base-id>` with `gh repo view
-   <base-owner>/<repo> --json id,nameWithOwner`, regardless of the branch's source. Require a
+   <forge-host>/<base-owner>/<repo> --json id,nameWithOwner`, regardless of the branch's source. Require a
    successful lookup confirming that repository and a non-empty node ID before any push.
 4. The assignee and the body shape: a required assignee, and the template the body must follow — the
    repository's own pull-request template, or the shape the conventions give. Where the conventions
@@ -121,7 +125,9 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
    Exit 1 is a diverged branch, and any other exit is unknown; both stop with `needs-input`. A
    diverged branch is never forced into line: force-push is a sensitive action (ruling
    `sensitive-actions-need-approved-charter-entry`).
-5. Push: `git push -u --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`.
+5. Immediately before the push, run the pull-request section's shared lookup and checks in
+   steps 1–3. Unknown, incomplete, ambiguous or differing-base PR state stops before the effect.
+   Push: `git push -u --no-follow-tags <remote> refs/heads/<branch>:refs/heads/<branch>`.
    The explicit refspec updates only the branch reconciled above, regardless of configured push
    mappings; `--no-follow-tags` prevents configured tag publication. Never `--force`,
    `--force-with-lease` or `--no-verify`. A
@@ -132,18 +138,21 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
 
 ## The pull request
 
-1. Look it up: `gh pr list -R <base-owner>/<repo> --head <branch> --state open --limit 30 --json
+1. Look it up: `gh pr list -R <forge-host>/<base-owner>/<repo> --head <branch> --state open --limit 30 --json
    number,url,headRefName,headRefOid,headRepository,headRepositoryOwner,baseRefName`.
    Pass the branch name only:
    `--head <owner>:<branch>` is not accepted and returns `[]`, which reads as none.
-   At every lookup — initial, immediately before creation and final read-back — require exit 0
+   At every lookup — initial, before push, before creation and final read-back — require exit 0
    and a JSON array with fewer than 30 rows before filtering by head. A saturated result may omit
-   an existing or conflicting PR; it is unknown and stops the run before any create or return.
+   an existing or conflicting PR; it is unknown and stops the run before any push, create or return.
    Malformed output is also unknown. Never accept a match from a partial list.
 2. Only exit 0 with `[]` means none (workflow step 9). Any other exit is unknown: stop.
 3. Match `headRepository.nameWithOwner` to `<head-owner>/<head-repo>`, `headRepositoryOwner.login`
    to `<head-owner>` and `headRefName` to `<branch>`. A different repository, owner or branch is
    another head. More than one matching row is ambiguous: stop and list them rather than taking the first.
+   A matching row's `baseRefName` must equal the resolved base; otherwise stop with `needs-input`
+   before the next effect, without changing its base. Apply this check on every
+   lookup, including the initial detection, the pre-push check, pre-create reconciliation and final read-back.
 4. One match: skip creation and continue to step 7; never open a second.
 5. None: repeat the lookup immediately before creation. A pull request that appeared since step 1
    takes the one-match path. Apply steps 2–3 again before any create.
@@ -151,7 +160,7 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
    head in the base repository, a user-owned fork or an organization-owned fork:
 
    ```sh
-   gh api graphql \
+   gh api graphql --hostname <forge-host> \
      -f query='mutation($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { number url } } }' \
      -f 'input[repositoryId]=<base-id>' \
      -f 'input[headRepositoryId]=<head-id>' \
@@ -170,19 +179,19 @@ Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
    [API contract](https://docs.github.com/en/graphql/reference/pulls#createpullrequestinput)).
 7. For every path — existing, discovered before creation or newly created — read back with the
    steps 1–3 lookup and completeness check. Require exactly one matching row; otherwise stop with `failed`.
-   Its `baseRefName` must be the resolved base; a different base stops with `needs-input` rather
-   than being edited. Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
-8. After both comparisons pass, satisfy any required assignee. Read `gh pr view <number>
-   -R <base-owner>/<repo> --json assignees`; unknown stops the run. If the required login is absent,
-   add it with `gh pr edit <number> -R <base-owner>/<repo> --add-assignee <who>`, then read back with
+   Its `headRefOid` must equal the shipped commit; a mismatch stops with `failed`.
+8. After the base and head comparisons pass, satisfy any required assignee. Read `gh pr view <number>
+   -R <forge-host>/<base-owner>/<repo> --json assignees`; unknown stops the run. If the required login is absent,
+   add it with `gh pr edit <number> -R <forge-host>/<base-owner>/<repo> --add-assignee <who>`, then read back with
    the same view command and require that login. This effect carries its own idempotency key and
    follows the same authority rule as creation. A failed assignment or missing read-back is
    `failed`; a resumed run uses this same step for the existing PR and does not create another.
    With no required assignee, skip assignment. Return only after these checks pass.
 
 The ship record carries each effect's idempotency key and its read-backs. The push target identity
-is the resolved head repository and branch; the PR target includes that head and the base repository
-and branch. A resumed run re-derives the same keys. A head that already carries the commit is past
+is the resolved forge host, head repository and branch; the PR target includes that host, head and
+the base repository and branch. Assignment keys include the same host and PR identity plus the
+required login. A resumed run re-derives the same keys. A head that already carries the commit is past
 the commit, and the push and pull-request reconciles return an effect already made rather than repeating it.
 
 ## What it never does

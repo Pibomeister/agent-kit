@@ -136,8 +136,9 @@ The project's own release checks, discovered rather than assumed.
    the task's no-mistakes delivery contract owns the branch from here. Follow
    `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`). A deprecated
    legacy `agent-kit` publish binding follows that reference's legacy publish procedure instead.
-9. For a direct publication path, detect an open pull request deterministically. Only an exit-0
-   empty result means none; any other outcome is unknown, and unknown is not none.
+9. For a direct publication path, reconcile open PRs against the resolved forge host, repository,
+   branch and base before any push, using `./references/transport-direct.md`'s shared lookup.
+   Only an exit-0 empty result means none; unknown or incomplete lookups stop the run.
 10. In `dry-run`, emit the ship evidence record with the payload and check results, then stop.
 11. In direct `publish`, a fix that moves the head needs a new run: `open` again and re-run every
     gated phase for it. Derive each effect's idempotency key from the run id,

@@ -318,13 +318,13 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20523,
-      "tokens": 5127
+      "bytes": 20623,
+      "tokens": 5152
     },
     "bundle/claude-code:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
-      "bytes": 13451,
-      "tokens": 3358
+      "bytes": 14460,
+      "tokens": 3609
     },
     "bundle/claude-code:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
@@ -728,13 +728,13 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20684,
-      "tokens": 5167
+      "bytes": 20784,
+      "tokens": 5192
     },
     "bundle/codex:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
-      "bytes": 13451,
-      "tokens": 3358
+      "bytes": 14460,
+      "tokens": 3609
     },
     "bundle/codex:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
@@ -1138,13 +1138,13 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20667,
-      "tokens": 5163
+      "bytes": 20767,
+      "tokens": 5188
     },
     "bundle/droid:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
-      "bytes": 13451,
-      "tokens": 3358
+      "bytes": 14460,
+      "tokens": 3609
     },
     "bundle/droid:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
@@ -1548,13 +1548,13 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20508,
-      "tokens": 5123
+      "bytes": 20608,
+      "tokens": 5148
     },
     "bundle/grok:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
-      "bytes": 13451,
-      "tokens": 3358
+      "bytes": 14460,
+      "tokens": 3609
     },
     "bundle/grok:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
@@ -1958,13 +1958,13 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 20699,
-      "tokens": 5171
+      "bytes": 20799,
+      "tokens": 5196
     },
     "bundle/kimi:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
-      "bytes": 13451,
-      "tokens": 3358
+      "bytes": 14460,
+      "tokens": 3609
     },
     "bundle/kimi:skills/super-ship/references/transport-no-mistakes.md": {
       "file": "skills/super-ship/references/transport-no-mistakes.md",
