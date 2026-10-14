@@ -178,8 +178,7 @@ Bun process with concurrency limited to one. This separates the learning role ca
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
 suite and from each other. Test and hook timeouts, assertions and role calls stay
 unchanged. There are no retries. Both lanes finish even if an earlier file fails;
-the command then returns failure. `bun run test:unit` and `bun run test:integration`
-run individual lanes. CI and the configured gate use `bun run test`.
+the command then returns failure. CI and the configured gate use `bun run test`.
 
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a
