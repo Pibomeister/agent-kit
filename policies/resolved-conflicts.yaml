@@ -1351,6 +1351,7 @@ conflicts:
       trail is never a file in the project's tree.
     discharged_in: [workflow, hard-gates, outputs]
     binds:
+      skills: [super-build]
       protocols: [work-trail]
       roles: [trail-auditor]
     scenario: 17

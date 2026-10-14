@@ -108,7 +108,9 @@ absence is recorded (`policies/limits.yaml`).
    new task opens a new run, even on a branch that already has one.
 4. Dispatch one implementer (`roles/implementer/ROLE.md`) with the ticket as its single source of
    requirements. It spawns no implementers of its own, and no second implementer runs against this
-   worktree.
+   worktree. Hand each implementer [the work-trail protocol](../../protocols/work-trail/PROTOCOL.md)
+   and the location of its own stretch, prepared in the runner's scratch space as that protocol
+   says, and no earlier stretch or pointer to one (ruling `work-trail-is-account-not-evidence`).
 5. Work the ticket test first (`protocols/tdd/PROTOCOL.md`): a failing test that names the behaviour,
    then the change that passes it. Where the behaviour is genuinely not testable, record the
    alternative verification plan in the ticket rather than proceeding with neither. Load
@@ -128,7 +130,7 @@ absence is recorded (`policies/limits.yaml`).
     already holds the context; rounds four and five dispatch a fresh implementer told how many
     attempts preceded it and that it owns the task from here, and told nothing of their framing. Each
     re-check is scoped per finding — addressed or not addressed — plus the fix diff read for new
-    breakage.
+    breakage. A resumed implementer continues its own stretch; a fresh one is seated as step 4 says.
 11. At the round cap, adjudicate every finding still open, one at a time: park it with a written
     ruling naming why the code stands and what it costs if that is wrong, or rule it load-bearing and
     stop. A silent discard is forbidden.
@@ -139,8 +141,7 @@ absence is recorded (`policies/limits.yaml`).
     for checks no recipe binds. Hand the claim, criteria, frozen revision, project
     recipe and permitted commands to `super-verify`; its verifier seat reruns them and produces
     gate-eligible receipts. Commit the work on the ticket's own branch, then publish the receipts and
-    ticket result through the knowledgebase adapter's `publishArtifact` operation. Report every
-    written ruling and out-of-scope observation.
+    ticket result through the knowledgebase adapter's `publishArtifact` operation.
 13. When both check seats pass, record the gate: `node <this skill's directory>/../../bin/ak-gate.mjs record --gate build-checks`
     (the bundle's `bin/`, two directories above this skill). super-ship refuses to ship without it.
     When a runner assigned the implementer seat, declare it by appending
@@ -150,6 +151,29 @@ absence is recorded (`policies/limits.yaml`).
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
     A binding's brief supplies `--dir` for the run opened with it.
+14. A committed ticket then runs the trail, steps 14 to 16; steps 12 and 13 never wait on it (ruling
+    `work-trail-is-account-not-evidence`). One stopped before its commit gets no audit or published
+    stretch, as the report says; a failed receipt publish stops the build as before, short of the
+    trail. The build handles a prepared stretch by location, hash, kind and id alone, never opening
+    its entries or rewriting it: one gone or at its prepared hash is missing, one not naming its
+    given kind and id is unpublished, and neither is sent; any other is sent as written, published
+    if taken, unpublished if not. A refused or failed publish in the trail fails no build and is
+    never repaired or resent; the trail writes no gate record and `complete` does not depend on it.
+15. Seat [the trail auditor](../../roles/trail-auditor/ROLE.md) once, even for an empty or missing
+    stretch, in a context that filled no other seat on the ticket and is not the build's own; hand
+    it its packet, each unpublished stretch named so, from its location. The audit is unavailable
+    with no such context, a binding not permitting the role, a packet it cannot be handed, a failed
+    seat, or a returned record not naming kind `trail-audit` and the id it was handed: withhold the
+    audit record, not the stretches, block nothing and let no seat fill in, the implementer included
+    (ruling `work-trail-is-account-not-evidence`). Otherwise publish the audit exactly as returned.
+16. Report every written ruling and out-of-scope observation last, the only existing act waiting on
+    the trail, with the audit's reference, result and items or why it is unavailable or unpublished,
+    and each missing or unpublished stretch, an unpublished one with its reason. Repeat as given an
+    audit notice that something read holds a secret, credential, token or personal data: where it
+    is, never the value. For a published stretch or audit, add that it cannot be corrected and the
+    value is exposed, for its owner to rotate, as `super-ship` does for a secret in history. The
+    attention list and that notice go only in the report and audit record, never in a receipt, check
+    result, finding, gate record or checkpoint card (ruling `work-trail-is-account-not-evidence`).
 
 ## Hard gates
 
@@ -191,6 +215,12 @@ is a blocker, not progress. The ticket is reported blocked with what is missing.
 Gate: the round cap ends the loop, not the adjudication. Reaching it with findings open is a
 `cap-reached` result carrying each one and its ruling.
 
+Gate: the wall (ruling `work-trail-is-account-not-evidence`). No seat whose output is a finding, a
+receipt, a verdict or a signoff input is shown the trail, the trail audit or the attention list.
+Nothing from them reaches a check seat or the verification hand-off, quoted, summarized or as a
+pointer, and the build's context carries nothing it saw of them into a ruling it writes, a synthesis
+or verdict it sets, or a packet it hands a seat the wall covers, for the same change.
+
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "The implementer just fixed it and is sitting right there — having it confirm the fix is faster than dispatching a seat." | A seat that cannot be filled independently is unavailable, and unavailability blocks; it is never backfilled by the implementer (ruling `missing-supervisor-never-implementer`). The context that produced the change is the one context that cannot tell you whether it is right. | Mark the seat `unavailable`, stop with `needs-input` naming which seat and why, and report the ticket as not done. |
@@ -216,11 +246,14 @@ longer has to cover.
 All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
 run-artifact placement (`adapters/knowledgebase/CONTRACT.md`); the commands are in
 [the knowledgebase-binding reference pack](../../references/knowledgebase-binding/REFERENCE.md).
-This skill names no repository path for project-derived content.
+This skill names no repository path for project-derived content. Each implementer seat's stretch
+(`schemas/trail.schema.json`) and the trail audit (`schemas/trail-audit.schema.json`) go through
+`publishArtifact` too, as an account, never evidence (ruling `work-trail-is-account-not-evidence`).
 
 ## Side effects
 
-`workspace-write`, `branch-create`, `local-commit`, `process-exec`, `artifact-write`, `kb-publish`.
+`workspace-write`, `branch-create`, `local-commit`, `process-exec`, `artifact-write`, `kb-publish`,
+`scratch-write`.
 
 `kb-publish` is a remote effect: the idempotency key is derived from the content hash of the
 published set per `adapters/runner-contract/CONTRACT.md` §5, and the returned record reference is

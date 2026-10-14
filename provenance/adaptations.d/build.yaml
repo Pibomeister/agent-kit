@@ -16,9 +16,10 @@
 # merge hazard and raises provenance.conflicting-adaptation.
 #
 # Donor ids and commits are those pinned in provenance/upstream.lock.yaml. Every path
-# below is cited in research/dossiers/build.md and was verified to exist at its pin with
-# `git cat-file -e` in the pinned clone before it was written here; none was re-derived
-# from memory or from a document's description of a donor.
+# below is cited in research/dossiers/build.md, or for the pstack rows in
+# research/dossiers/pstack.md, and was verified to exist at its pin with `git cat-file -e`
+# in the pinned clone before it was written here; none was re-derived from memory or from
+# a document's description of a donor.
 
 adaptations:
   - path: skills/super-build/SKILL.md
@@ -137,6 +138,34 @@ adaptations:
       The two-axis split becomes the declared per-ticket check result: findings from each axis with
       their disposition, emitted as findings rather than as a review artifact, so a later panel
       never reads a task check as a lane it no longer has to cover.
+
+  - path: skills/super-build/SKILL.md
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: >-
+      The semantics came over and no text did. A run is one agent conversation, including its later
+      turns, and a replacement agent starts a new run (line 42), so a resumed implementer continues
+      its own stretch and every newly seated one starts its own. The log is a working artifact, not
+      committed (line 46), so each stretch is prepared in the runner's scratch space. Self-review is
+      not a substitute (line 67), so the trail is audited once, after the commit, by a seat that
+      filled no other seat on the ticket. The donor asks other skills to reference it by name and
+      let it own the format (line 82), so this body links the work-trail protocol and does not
+      restate it. Left behind: the switch that turns model invocation off (line 4), the logging
+      script (line 38), the log file's names and the option to commit it (lines 46-48), the audit of
+      the log against the transcript (lines 55-63), and the choice of reviewer and the line that
+      names it (lines 67 and 74).
+
+  - path: skills/super-build/skill.yaml
+    source: pstack@e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a:pstack/skills/show-me-your-work/SKILL.md
+    rationale: >-
+      The semantics came over and no text did. A log that is a working artifact, not committed
+      (line 46), became the scratch-write side effect and the stretch output, published by
+      reference. Self-review is not a substitute (line 67) became the constraint that an implementer
+      never audits its own trail. A review that flags what to pay attention to and is not a redo of
+      the work (line 67) became the audit output and the constraint that an audit never blocks a
+      ticket. The wall hard gate and the constraint that a trail never reaches a judging seat come
+      from ruling `work-trail-is-account-not-evidence`, not from the donor. Left behind: the switch
+      that turns model invocation off (line 4), the logging script (line 38), the option to commit
+      the log (lines 46-48) and the choice of reviewer (lines 67 and 74).
 
   # --- super-verify --------------------------------------------------------------
 

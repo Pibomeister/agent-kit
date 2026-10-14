@@ -111,6 +111,19 @@ outputs:
     summary: >-
       What was noticed and not touched: file and line, the observation, why it is out of scope. Each
       entry is a candidate ticket, never an edit inside this one.
+  - id: work-trail-stretches
+    schema: trail
+    summary: >-
+      One stretch per implementer seat, prepared in the runner's scratch space before the seat
+      starts and published after the commit as written, by reference. An account of the work and
+      never evidence (ruling `work-trail-is-account-not-evidence`); no check seat or verification
+      hand-off is shown it.
+  - id: trail-audit
+    schema: trail-audit
+    summary: >-
+      The independent trail auditor's record, published exactly as returned, or reported
+      unavailable with the reason. It blocks nothing (ruling `work-trail-is-account-not-evidence`),
+      and its attention list goes only to the build's report and the audit record.
 
 side_effects:
   - workspace-write
@@ -119,6 +132,7 @@ side_effects:
   - process-exec
   - artifact-write
   - kb-publish
+  - scratch-write
 
 constraints:
   implementer-may-sit-on-its-own-check: false
@@ -129,6 +143,9 @@ constraints:
   open-finding-may-be-discarded-at-the-round-cap: false
   edgeless-tickets-may-be-assumed-independent: false
   unaccounted-workspace-change-may-be-discarded: false
+  trail-may-reach-a-judging-seat: false
+  implementer-may-audit-its-own-trail: false
+  trail-audit-may-block-a-ticket: false
 
 references:
   - engineering-principles
@@ -164,6 +181,12 @@ hard_gates:
     not progress.
   - The round cap ends the loop, not the adjudication. Reaching it with findings open is cap-reached,
     carrying each finding and its ruling.
+  - The wall (ruling `work-trail-is-account-not-evidence`). No seat whose output is a finding, a
+    receipt, a verdict or a signoff input is shown the trail, the trail audit or the attention
+    list. Nothing from them reaches a check seat or the verification hand-off, quoted, summarized
+    or as a pointer, and the build carries nothing it saw of them into a ruling, synthesis,
+    verdict or a packet it hands a seat the wall covers, for the same change (ruling
+    `work-trail-is-account-not-evidence`).
 
 stop_conditions:
   - complete when the ticket is committed, every acceptance criterion has a receipt bound to the
@@ -314,6 +337,20 @@ provenance:
         that produced the work never approves it. Carried as independent corroboration, which is how
         the dossier places this donor; the structural reason self-approval fails is the
         fresh-context requirement adapted above.
+    - donor: pstack
+      commit: e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a
+      path: pstack/skills/show-me-your-work/SKILL.md
+      license: MIT
+      adaptation: >-
+        The work trail's semantics are adapted and its text and code are not carried. A replacement
+        agent starts a new run, so every newly seated implementer starts its own stretch and a
+        resumed one continues its own. The log is a working artifact that is not committed, so each
+        stretch is prepared in the runner's scratch space and published by reference after the
+        commit. Self-review is no substitute, so the trail is audited once, after the commit, by a
+        seat that filled no other seat on the ticket. The body links the work-trail protocol and
+        lets it own the format. Left behind are the frontmatter switch that blocks automatic
+        invocation, the logging script, the log file's names and the option to commit it, the audit
+        against the transcript, and the choice and naming of the reviewer.
   resolved_conflicts:
     - closure-requires-independent-verification
     - diagnose-patch-or-packet-never-both
@@ -321,6 +358,7 @@ provenance:
     - numeric-heuristics-are-guidance
     - safe-auto-restricted-per-seat
     - fail-closed-adapter-lifts-ceiling
+    - work-trail-is-account-not-evidence
 
 tests:
   - id: approved-ticket-executes-and-reports-receipts

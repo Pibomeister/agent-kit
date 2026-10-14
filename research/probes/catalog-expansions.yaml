@@ -60,7 +60,7 @@ protocols:
 
 roles:
   baseline: 29
-  catalog: 35
+  catalog: 36
   expansions:
     - ids: [learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
       reason: >-
@@ -72,6 +72,11 @@ roles:
         Runtime verification needs a named non-entrypoint seat outside implementer lineage so
         receipt authorship and unavailable independence are structurally expressible.
       commits: [1c509b9]
+    - ids: [trail-auditor]
+      reason: >-
+        super-build seats an independent auditor once per ticket to read the implementer's work
+        trail after the commit; the seat is never the implementer, so it needs its own role prompt.
+      commits: [42eb864000dfe687ce93107352357845e5832ae7]
 
 references:
   baseline: 4
