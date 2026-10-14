@@ -29,7 +29,9 @@ function git(cwd: string, ...args: string[]) {
   if (run.status !== 0) throw new Error(run.stderr);
 }
 
-function bundle(dir: string, version: unknown, skill: string) {
+type VersionFixture = string | { unexpected: string };
+
+function bundle(dir: string, version: VersionFixture, skill: string) {
   mkdirSync(join(dir, "claude-code/.claude-plugin"), { recursive: true });
   writeFileSync(join(dir, "claude-code/.claude-plugin/plugin.json"), JSON.stringify({ name: "ak", version }));
   writeFileSync(join(dir, "claude-code/SKILL.md"), skill);
@@ -54,7 +56,7 @@ function seedPublishedRemote(published: [string, string], omitPublishedManifest 
 
 function gate(
   published: [string, string] | null,
-  built: [unknown, string],
+  built: [VersionFixture, string],
   packageVersion = built[0],
   origin = "",
   omitPublishedManifest = false,
@@ -76,7 +78,7 @@ async function gateAsync(published: [string, string], built: [string, string]) {
 
 function gateWork(
   published: [string, string] | null,
-  built: [unknown, string],
+  built: [VersionFixture, string],
   packageVersion = built[0],
   origin = "",
   omitPublishedManifest = false,

@@ -744,7 +744,7 @@ describe("publishArtifact, run-artifact placement", () => {
     let bundledCliBuilt = false;
     let fx: Fixture;
     let home = "";
-    let registered: Run;
+    let registration: Run;
     let publish: Awaited<ReturnType<typeof preparePublish>>;
     let invalidPublish: Awaited<ReturnType<typeof preparePublish>>;
     const children: ReturnType<typeof Bun.spawn>[] = [];
@@ -770,7 +770,7 @@ describe("publishArtifact, run-artifact placement", () => {
         encoding: "utf8",
         env: environment(),
       });
-      registered = { code: run.status ?? 1, out: run.stdout, err: run.stderr };
+      registration = { code: run.status ?? 1, out: run.stdout, err: run.stderr };
     });
 
     // A writer opens only after the real CLI has initialized and opened its input.
@@ -837,11 +837,8 @@ describe("publishArtifact, run-artifact placement", () => {
       throw new Error(`bundled CLI exited before reading its input: ${await err}`);
     }
 
-    async function send(
-      pending: Awaited<ReturnType<typeof preparePublish>>,
-      artifact: unknown,
-    ): Promise<Run> {
-      writeFileSync(pending.input, JSON.stringify(artifact));
+    async function send(pending: Awaited<ReturnType<typeof preparePublish>>, payload: string): Promise<Run> {
+      writeFileSync(pending.input, payload);
       closeSync(pending.input);
       pending.sent = true;
       const [code, out, err] = await Promise.all([pending.child.exited, pending.out, pending.err]);
@@ -850,8 +847,8 @@ describe("publishArtifact, run-artifact placement", () => {
 
     test("the bundled maintenance CLI publishes reviews and refuses malformed attachments before writing", async () => {
       expect(bundledCliBuilt).toBe(true);
-      expect(registered.code).toBe(0);
-      const sent = await send(publish, reviewExample);
+      expect(registration.code).toBe(0);
+      const sent = await send(publish, JSON.stringify(reviewExample));
       expect(sent.code).toBe(0);
       const record = published(sent);
       expect(record.ref).toBe("run:example-run-1/review/example-review-1");
@@ -862,11 +859,14 @@ describe("publishArtifact, run-artifact placement", () => {
         artifact: reviewExample,
       });
       const [head, tree] = git(fx.kb, "rev-parse", "HEAD", "HEAD^{tree}").split("\n");
-      const invalid = await send(invalidPublish, {
-        ...reviewExample,
-        id: "malformed-review",
-        packs_attached: reviewExample.packs_attached.map(({ rationale: _rationale, ...attachment }) => attachment),
-      });
+      const invalid = await send(
+        invalidPublish,
+        JSON.stringify({
+          ...reviewExample,
+          id: "malformed-review",
+          packs_attached: reviewExample.packs_attached.map(({ rationale: _rationale, ...attachment }) => attachment),
+        }),
+      );
       expect(invalid.code).toBe(1);
       expect(refusal(invalid).code).toBe("kb.artifact-invalid");
       const [afterHead, afterTree] = git(fx.kb, "rev-parse", "HEAD", "HEAD^{tree}").split("\n");

@@ -7,7 +7,7 @@ import { join } from "node:path";
 const root = join(import.meta.dir, "..");
 const files = [...new Bun.Glob("**/*.test.ts").scanSync({ cwd: join(root, "tests") })]
   .map((file) => `tests/${file}`)
-  .sort();
+  .toSorted((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 const heavy = [
   "tests/learn/spans-e2e.test.ts",
   "tests/learn/memory-evals-reflect.test.ts",
@@ -63,7 +63,9 @@ describe("configured test lanes", () => {
           return call[2]?.replace(/^\.\//, "");
         });
         expect(integrationFiles).toEqual(heavy);
-        expect([...ordinaryFiles, ...integrationFiles].sort()).toEqual(files);
+        expect(
+          [...ordinaryFiles, ...integrationFiles].toSorted((a = "", b = "") => (a < b ? -1 : a > b ? 1 : 0)),
+        ).toEqual(files);
       } finally {
         rmSync(scratch, { recursive: true, force: true });
       }
