@@ -26723,13 +26723,15 @@ function duplicateKeyIssue(file, text) {
     return error("schemas.duplicate-json-key", file, first, line === undefined ? undefined : Number(line));
   }
 }
-function compileSchemas(root) {
+function compileSchemas(root, ids) {
   const ajv = new import__2020.default({ strict: false, allErrors: true, validateFormats: true });
   import_ajv_formats.default(ajv);
   const issues = [];
   const parsed = [];
   for (const name of listFiles(join3(root, "schemas"))) {
     if (!name.endsWith(".schema.json"))
+      continue;
+    if (ids !== undefined && !ids.includes(schemaIdFromFile(name)))
       continue;
     const file = `schemas/${name}`;
     const text = readTextIfPresent(join3(root, file));
@@ -26813,7 +26815,7 @@ function loadTrackerBinding(projectRoot, schemaRoot, embedded) {
 `)[0];
     return { binding: null, issues: [error("tracker.binding-unparseable", BINDING_FILE, `Not valid YAML: ${first}`)] };
   }
-  const validate = embedded?.binding ?? compileSchemas(schemaRoot).validatorFor("tracker-binding");
+  const validate = embedded?.binding ?? compileSchemas(schemaRoot, ["common", "tracker-binding"]).validatorFor("tracker-binding");
   if (validate === undefined) {
     return {
       binding: null,
