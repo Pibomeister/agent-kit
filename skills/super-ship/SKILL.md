@@ -171,8 +171,8 @@ Gate: no ship begins with an uncovered criterion, an implementer-authored receip
 verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant, or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
-Gate: under no-mistakes delivery, an uncommitted head, a stale verify, review-readiness or approved
-full or delta review record, or a non-empty working-tree diff refuses the handoff before `ship-preflight` and any remote effect.
+Gate: under either transport, an uncommitted head, a stale verify, review-readiness or approved
+full or delta review record, or a non-empty working-tree diff refuses the ship before `ship-preflight` and any remote effect.
 
 Gate: `dry-run` makes no remote call. Not a reduced one, not a single harmless one — none. A run that
 pushed a branch to show what the push would look like was not a dry run.
@@ -253,7 +253,7 @@ drafted, and the watch lane holds the PR.
 
 `needs-input`: the run was started by neither the typed command nor a validated grant, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive
-action lacks a charter entry. A no-mistakes handoff with an uncommitted head, non-empty diff or stale
+action lacks a charter entry. Either transport with an uncommitted head, non-empty diff or stale
 verify, readiness or review record also stops here. Returns what it would need, which for the first
 is the command to type, and performs no remote effect. Also when the autonomous form has no trusted
 evidence: the message names trusted evidence as unavailable and says the manual form remains open.
