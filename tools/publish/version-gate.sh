@@ -36,12 +36,18 @@ for (let i = 0; i < Math.max(a.length, b.length); i++) {
 process.exit(1);
 JS
 }
-current_version="$(version "$current/$manifest")"
-package_version="$(version package.json)"
-if [ "$current_version" != "$package_version" ]; then
-  echo "catalog.yaml version $current_version and package.json version $package_version differ" >&2
-  exit 1
-fi
+current_version="$(node - "$current/$manifest" package.json <<'JS'
+const fs = require("fs");
+const read = path => JSON.parse(fs.readFileSync(path, "utf8")).version;
+const current = read(process.argv[2]);
+const packaged = read(process.argv[3]);
+if (String(current) !== String(packaged)) {
+  console.error(`catalog.yaml version ${current} and package.json version ${packaged} differ`);
+  process.exit(1);
+}
+console.log(current);
+JS
+)"
 found=0
 git ls-remote --exit-code --heads origin published >/dev/null || found=$?
 if [ "$found" -eq 2 ]; then

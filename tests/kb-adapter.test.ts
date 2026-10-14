@@ -1,6 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
@@ -726,66 +738,142 @@ describe("ak kb usage", () => {
 });
 
 describe("publishArtifact, run-artifact placement", () => {
-  test("the bundled maintenance CLI publishes reviews and refuses malformed attachments before writing", async () => {
-    // Bun scans the script's ancestors at startup. Keep this subprocess fixture
-    // out of the crowded per-user temp directory, as learn's startScratch does.
-    const fx = fixture(BINDING, "/tmp");
-    const home = join(fx.scratch, "home");
-    mkdirSync(home);
-    const cli = join(fx.scratch, "ak");
-    const build = await Bun.build({
-      entrypoints: [join(REPO, "src/maintenance/cli.ts")],
-      target: "bun",
-      outdir: fx.scratch,
-      naming: "ak",
+  describe("bundled maintenance CLI", () => {
+    let bundledCli = "";
+    let bundledCliDir = "";
+    let bundledCliBuilt = false;
+    let fx: Fixture;
+    let home = "";
+    let registered: Run;
+    let publish: Awaited<ReturnType<typeof preparePublish>>;
+    let invalidPublish: Awaited<ReturnType<typeof preparePublish>>;
+    const children: ReturnType<typeof Bun.spawn>[] = [];
+
+    beforeAll(async () => {
+      bundledCliDir = realpathSync(mkdtempSync(join("/tmp", "ak-kb-cli-")));
+      bundledCli = join(bundledCliDir, "ak");
+      const build = await Bun.build({
+        entrypoints: [join(REPO, "src/maintenance/cli.ts")],
+        target: "bun",
+        outdir: bundledCliDir,
+        naming: "ak",
+      });
+      bundledCliBuilt = build.success;
     });
-    expect(build.success).toBe(true);
-    const invoke = (...args: string[]): Run => {
-      const run = spawnSync(process.execPath, [cli, "kb", ...args], {
+
+    beforeAll(() => {
+      fx = fixture(BINDING, "/tmp");
+      home = join(fx.scratch, "home");
+      mkdirSync(home);
+      const run = spawnSync(process.execPath, [bundledCli, "kb", "register", "fixture-kb", fx.kb], {
         cwd: fx.project,
         encoding: "utf8",
-        env: {
-          PATH: process.env.PATH,
-          HOME: home,
-          XDG_CONFIG_HOME: home,
-          XDG_CACHE_HOME: home,
-          TMPDIR: fx.scratch,
-          GIT_CONFIG_NOSYSTEM: "1",
-          GIT_CONFIG_GLOBAL: "/dev/null",
-          AK_KB_REGISTRY: fx.registry,
-        },
+        env: environment(),
       });
-      return { code: run.status ?? 1, out: run.stdout, err: run.stderr };
-    };
-    expect(invoke("register", "fixture-kb", fx.kb).code).toBe(0);
-    const file = join(fx.scratch, "review.json");
-    writeFileSync(file, JSON.stringify(reviewExample));
-    const sent = invoke("publish", "artifact", "--file", file, "--run", "example-run-1");
-    expect(sent.code).toBe(0);
-    const record = published(sent);
-    expect(record.ref).toBe("run:example-run-1/review/example-review-1");
-    const path = "projects/example-project/runs/example-run-1/review/example-review-1.json";
-    const stored: unknown = JSON.parse(git(fx.kb, "show", `HEAD:${path}`));
-    expect(stored).toMatchObject({
-      record: { ref: record.ref, content_hash: record.content_hash },
-      artifact: reviewExample,
+      registered = { code: run.status ?? 1, out: run.stdout, err: run.stderr };
     });
-    const head = git(fx.kb, "rev-parse", "HEAD");
-    const tree = git(fx.kb, "ls-tree", "-r", "HEAD");
-    writeFileSync(
-      file,
-      JSON.stringify({
+
+    // A writer opens only after the real CLI has initialized and opened its input.
+    // Keep both inputs empty until the test sends them, so publication and refusal
+    // still happen in order inside the original five-second test budget.
+    beforeAll(async () => {
+      publish = await preparePublish("review.json");
+    });
+    beforeAll(async () => {
+      invalidPublish = await preparePublish("malformed-review.json");
+    });
+
+    afterAll(() => {
+      for (const pending of [publish, invalidPublish]) {
+        if (!pending) continue;
+        if (!pending.sent) closeSync(pending.input);
+      }
+      for (const child of children) if (child.exitCode === null) child.kill();
+      if (bundledCliDir) rmSync(bundledCliDir, { recursive: true, force: true });
+      if (fx?.scratch) rmSync(fx.scratch, { recursive: true, force: true });
+    });
+
+    function environment() {
+      return {
+        PATH: process.env.PATH,
+        HOME: home,
+        XDG_CONFIG_HOME: home,
+        XDG_CACHE_HOME: home,
+        TMPDIR: fx.scratch,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        AK_KB_REGISTRY: fx.registry,
+      };
+    }
+
+    async function preparePublish(name: string) {
+      const file = join(fx.scratch, name);
+      const made = spawnSync("mkfifo", [file], { encoding: "utf8" });
+      if (made.status !== 0) throw new Error(made.stderr);
+      const child = Bun.spawn(
+        [process.execPath, bundledCli, "kb", "publish", "artifact", "--file", file, "--run", "example-run-1"],
+        {
+          cwd: fx.project,
+          env: environment(),
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const out = new Response(child.stdout).text();
+      const err = new Response(child.stderr).text();
+      children.push(child);
+      // Nonblocking open lets a startup failure or the hook's existing timeout
+      // terminate preparation instead of hanging the test runner in open().
+      while (child.exitCode === null) {
+        try {
+          const input = openSync(file, constants.O_WRONLY | constants.O_NONBLOCK);
+          return { child, input, out, err, sent: false };
+        } catch (cause) {
+          if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENXIO") throw cause;
+          await Bun.sleep(1);
+        }
+      }
+      throw new Error(`bundled CLI exited before reading its input: ${await err}`);
+    }
+
+    async function send(
+      pending: Awaited<ReturnType<typeof preparePublish>>,
+      artifact: unknown,
+    ): Promise<Run> {
+      writeFileSync(pending.input, JSON.stringify(artifact));
+      closeSync(pending.input);
+      pending.sent = true;
+      const [code, out, err] = await Promise.all([pending.child.exited, pending.out, pending.err]);
+      return { code, out, err };
+    }
+
+    test("the bundled maintenance CLI publishes reviews and refuses malformed attachments before writing", async () => {
+      expect(bundledCliBuilt).toBe(true);
+      expect(registered.code).toBe(0);
+      const sent = await send(publish, reviewExample);
+      expect(sent.code).toBe(0);
+      const record = published(sent);
+      expect(record.ref).toBe("run:example-run-1/review/example-review-1");
+      const path = "projects/example-project/runs/example-run-1/review/example-review-1.json";
+      const stored: unknown = JSON.parse(git(fx.kb, "show", `HEAD:${path}`));
+      expect(stored).toMatchObject({
+        record: { ref: record.ref, content_hash: record.content_hash },
+        artifact: reviewExample,
+      });
+      const [head, tree] = git(fx.kb, "rev-parse", "HEAD", "HEAD^{tree}").split("\n");
+      const invalid = await send(invalidPublish, {
         ...reviewExample,
         id: "malformed-review",
         packs_attached: reviewExample.packs_attached.map(({ rationale: _rationale, ...attachment }) => attachment),
-      }),
-    );
-    const invalid = invoke("publish", "artifact", "--file", file, "--run", "example-run-1");
-    expect(invalid.code).toBe(1);
-    expect(refusal(invalid).code).toBe("kb.artifact-invalid");
-    expect(git(fx.kb, "rev-parse", "HEAD")).toBe(head);
-    expect(git(fx.kb, "ls-tree", "-r", "HEAD")).toBe(tree);
-    expect(git(fx.kb, "status", "--porcelain")).toBe("");
+      });
+      expect(invalid.code).toBe(1);
+      expect(refusal(invalid).code).toBe("kb.artifact-invalid");
+      const [afterHead, afterTree] = git(fx.kb, "rev-parse", "HEAD", "HEAD^{tree}").split("\n");
+      expect(afterHead).toBe(head);
+      expect(afterTree).toBe(tree);
+      expect(git(fx.kb, "status", "--porcelain")).toBe("");
+    });
   });
 
   test("review artifacts resolve the supporting pack schema and retain its constraints", () => {
