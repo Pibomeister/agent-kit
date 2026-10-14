@@ -45,6 +45,7 @@ class ReconstructionTests(unittest.TestCase):
             root = Path(temporary)
             nonexistent = str(root / "nonexistent")
             environment = dict(os.environ, GIT_DIR=nonexistent, GIT_WORK_TREE=nonexistent,
+                               GIT_COMMON_DIR=nonexistent,
                                GIT_INDEX_FILE=nonexistent, GIT_OBJECT_DIRECTORY=nonexistent,
                                GIT_ALTERNATE_OBJECT_DIRECTORIES=nonexistent)
             result, receipt = self.run_preflight(root / "evidence", environment=environment)
@@ -126,6 +127,39 @@ class ReconstructionTests(unittest.TestCase):
                                        ("core.hooksPath", "/dev/null")):
                         self.assertEqual(git(workspace, "config", "--local", "--get", key).decode().strip(),
                                          value)
+
+    def test_direct_scaffolds_leave_inherited_common_repository_unchanged(self):
+        cases = json.loads((FIXTURES / "matrix.json").read_text())["cases"]
+        for case in cases:
+            with self.subTest(case=case["id"]), \
+                    tempfile.TemporaryDirectory(prefix="architecture-scaffold-") as temporary:
+                root = Path(temporary)
+                caller = root / "caller"
+                caller.mkdir()
+                git(caller, "init", "-q", "-b", "main", "--template=")
+                for key, value in (("user.email", "caller@example.test"),
+                                   ("user.name", "Caller"),
+                                   ("commit.gpgsign", "false"),
+                                   ("core.hooksPath", "/dev/null")):
+                    git(caller, "config", "--local", key, value)
+                (caller / "caller.txt").write_text("Preserve caller data.\n")
+                git(caller, "add", "-A")
+                git(caller, "commit", "-q", "--no-verify", "-m", "Preserve the caller repository")
+                before = root / "before.json"
+                after = root / "after.json"
+                snapshot = [sys.executable, "-B", str(FIXTURES / "snapshot.py"), str(caller)]
+                subprocess.run([*snapshot, str(before)], check=True)
+                workspace = root / "workspace"
+                workspace.mkdir()
+                environment = dict(os.environ, GIT_COMMON_DIR=str(caller / ".git"))
+                result = subprocess.run(
+                    ["bash", str(FIXTURES.parent / case["case"] / "scaffold.sh")],
+                    cwd=workspace, capture_output=True, text=True, env=environment)
+                subprocess.run([*snapshot, str(after)], check=True)
+                self.assertEqual(after.read_bytes(), before.read_bytes())
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                identity, _ = source_identity(workspace)
+                self.assertEqual(identity, {key: case[key] for key in identity})
 
     def test_changed_source_is_rejected_without_repinning(self):
         with tempfile.TemporaryDirectory(prefix="architecture-preflight-") as temporary:
