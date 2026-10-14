@@ -915,7 +915,7 @@ references:
       plugin.
 
 # ---------------------------------------------------------------------------
-# Schemas — 35. `common` holds shared $defs and validates no document itself.
+# Schemas — 36. `common` holds shared $defs and validates no document itself.
 # ---------------------------------------------------------------------------
 schemas:
   - id: common
