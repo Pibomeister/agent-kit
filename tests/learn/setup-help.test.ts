@@ -49,6 +49,8 @@ function isolated() {
     HOME: home,
     PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
     TMPDIR: tmp,
+    // Keep Bun's platform-specific transpiler cache out of the configuration-write check.
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     CLAUDE_CONFIG_DIR: claude,
     CLAUDE_MEM_DATA_DIR: mem,
     CODEX_HOME: codex,
@@ -65,12 +67,7 @@ function isolated() {
   return { home, env };
 }
 
-/**
- * Relative path, size and content hash of every file under `root`.
- * Bun writes its own module cache under `$HOME/Library/Caches` when HOME is the scratch
- * tree. That cache is not host configuration, so the comparison leaves it out.
- * `Library/LaunchAgents` stays in the manifest: `setup schedule` writes the unit there.
- */
+/** Relative path, size and content hash of every file under `root`. */
 function manifest(root: string): string[] {
   const out: string[] = [];
   const walk = (dir: string) => {
@@ -91,7 +88,7 @@ function manifest(root: string): string[] {
     }
   };
   walk(root);
-  return out.filter((line) => !line.startsWith("/Library/Caches/") && !line.startsWith("link /Library/Caches/"));
+  return out;
 }
 
 function invoke(home: string, env: NodeJS.ProcessEnv, args: readonly string[]) {
