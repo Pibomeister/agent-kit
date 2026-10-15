@@ -1,17 +1,9 @@
 /**
  * `ak guard` — the opt-in guard runtime (docs/decisions/0009-constitution-support.md, Decision 2).
  *
- * `ak guard hook pre-tool-use --policy <file>` is the entry a host's hook
- * configuration calls. It reads the host payload from stdin, decodes it,
- * judges it with the one evaluator and encodes the verdict for the host. Every
- * answer it can give is exit 0: a deny is JSON on stdout and an allow is
- * silence. A call it cannot judge, including one it cannot judge because the
- * policy did not load or the guard itself threw, is denied. Only a wiring
- * fault it cannot answer in any host's format (an unknown event or host)
- * exits 1, which both hosts treat as a non-blocking error.
- *
- * The hook is not wired by anything yet: `ak guard setup` and the `guard`
- * profile are a later ticket.
+ * Keep policy loading, decoding and evaluation inside `answer`'s error
+ * boundary so caught failures become host-formatted denies.
+ * Command usage, response semantics and setup status: README.md, "Guard hook".
  */
 import { lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";

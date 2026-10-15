@@ -88,7 +88,9 @@ shape and evaluator limits are in [`schemas/guard-policy.schema.json`](schemas/g
 A relative policy path uses the hook process's working directory. The workspace root is
 `--root`, then an absolute `CLAUDE_PROJECT_DIR`, then the payload's absolute `cwd`.
 
-Bash becomes a shell action. Read and Grep with a path become reads. Write, Edit, MultiEdit and
+Bash becomes a shell action. Read and Grep with a path become reads. Grep treats an explicit path
+as a recursive search unless it is a known regular file. It denies the search if a secret pattern
+could match a descendant, without checking which files exist. Write, Edit, MultiEdit and
 NotebookEdit become writes, including resolved symlink targets. Other tools and Grep without a
 path pass unjudged, so writes through MCP tools are a known gap. Every call, including an unjudged
 one, requires valid arguments, a loadable policy and an absolute payload `cwd`. Malformed payloads,
