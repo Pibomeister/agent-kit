@@ -367,6 +367,15 @@ function isSourceOnly(path: string): boolean {
 function publishedPathFor(sourcePath: string, includedSkillDirs: ReadonlySet<string>): string | null {
   const skillDir = /^skills\/([^/]+)\//.exec(sourcePath)?.[1];
   if (skillDir !== undefined) return includedSkillDirs.has(skillDir) ? sourcePath : null;
+  // Consumers already name these paths. Relocating them under references/shared/ would miss.
+  if (
+    sourcePath === "catalog.yaml" ||
+    sourcePath.startsWith("roles/") ||
+    sourcePath.startsWith("schemas/") ||
+    sourcePath.startsWith("templates/")
+  ) {
+    return sourcePath;
+  }
   if (isSourceOnly(sourcePath)) return null;
   return posix.join(SHARED_ROOT, sourcePath);
 }
@@ -776,6 +785,26 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         if (published !== null) pending.push({ source: dep, published });
       }
     }
+  }
+
+  // Authored roles, the catalog, and schemas stay at the paths consumers already write.
+  const shipDeclared = (source: string) => {
+    const text = readTextIfPresent(join(root, source));
+    if (text === null) return;
+    files.set(source, { path: source, contents: text, source });
+    const rewritten = rewriteLinks(source, source, text, included, source);
+    issues.push(...rewritten.issues);
+    for (const dep of rewritten.dependencies) {
+      const published = publishedPathFor(dep, included);
+      if (published !== null) pending.push({ source: dep, published });
+    }
+  };
+  for (const entry of catalog.bySection("roles")) {
+    if (entry.status === "authored") shipDeclared(entryBodyPath("roles", entry.id));
+  }
+  shipDeclared("catalog.yaml");
+  for (const schema of walkFiles(root, "schemas")) {
+    if (schema.endsWith(".schema.json")) shipDeclared(schema);
   }
 
   // Transitive closure over shared dependencies.
