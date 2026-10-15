@@ -194,7 +194,8 @@ export interface RosterOptions {
 export function rosterSection(ctx: LearnContext, root: string | null, options: RosterOptions = {}): string {
   const envWidth = Number.parseInt(ctx.env.AK_LEARN_ROSTER_WIDTH ?? "", 10);
   const width = options.width ?? (Number.isFinite(envWidth) && envWidth > 0 ? envWidth : DEFAULT_WIDTH);
-  const catalog = catalogSkills(options.packageRoot ?? PACKAGE_ROOT);
+  // A published bundle carries catalog.yaml as an asset. That is not an installed roster.
+  const catalog = basename(import.meta.dir) === "bin" ? [] : catalogSkills(options.packageRoot ?? PACKAGE_ROOT);
   const known = new Set(catalog.map((skill) => skill.name));
   const levels: Array<[string, SkillInfo[]]> = [["catalog", catalog]];
   const installed: Array<[string, string]> = [["global", join(ctx.config.configDir, "skills")]];
