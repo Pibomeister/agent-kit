@@ -50,6 +50,17 @@ donors:
     copyright: "Copyright 2026 TesterArmy, Inc."
     license_file: provenance/licenses/tester-army_e2e.LICENSE
     notice_file: provenance/licenses/tester-army_e2e.NOTICE
+  # Research-only pin. Phase 1 adapts selected detection mechanics separately; no donor binary ships.
+  - id: blocks
+    repo: caveman-ai/blocks
+    url: https://github.com/caveman-ai/blocks
+    path: .donors/caveman-ai_blocks
+    commit: f7210f72f439c416db274520a7cffdaf9a935478
+    commit_date: "2026-10-13T19:50:55+02:00"
+    license: Apache-2.0
+    copyright: "Copyright 2026 Julius Brussee"
+    license_file: provenance/licenses/caveman-ai_blocks.LICENSE
+    notice_file: provenance/licenses/caveman-ai_blocks.NOTICE
   - id: addy
     repo: addyosmani/agent-skills
     url: https://github.com/addyosmani/agent-skills
