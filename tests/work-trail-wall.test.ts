@@ -30,6 +30,7 @@ const TRAIL = /\btrail\b/i;
 /** What only the auditor's given section may name. */
 const WALLED = [
   { name: "the trail", pattern: TRAIL },
+  { name: "a stretch", pattern: /\bstretch(es)?\b/i },
   { name: "the trail audit", pattern: /\btrail audit\b/i },
   { name: "the attention list", pattern: /\battention list\b/i },
 ];
@@ -162,6 +163,11 @@ describe("the wall around the trail", () => {
   test("refuses a judging role given the attention list, naming it", () => {
     const broken = withRole(CORRECTNESS, (body) => givenPlus(body, "the attention list"));
     expect(wallFindings(broken)).toEqual([`${CORRECTNESS}: its given section names the attention list`]);
+  });
+
+  test("refuses a judging role given a stretch, naming it", () => {
+    const broken = withRole(CORRECTNESS, (body) => givenPlus(body, "the implementer's stretch, by reference"));
+    expect(wallFindings(broken)).toEqual([`${CORRECTNESS}: its given section names a stretch`]);
   });
 
   test("refuses a super-build body without the wall sentence, naming it", () => {
