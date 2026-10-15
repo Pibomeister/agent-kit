@@ -57,6 +57,9 @@ needed. Later bundle changes require a new matching version in `catalog.yaml` an
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
+Use `ak learn skills list [--repo P]` to inspect skill candidates, their status, use counts and
+evidence. If the skills ledger is absent, the command reports zero counts without creating it.
+
 Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
 `bun run ak build --host grok`, then install that local directory with
 `grok plugin install <absolute-path-to-dist/grok> --trust`. Human-started skills use `/<id>`.
@@ -97,6 +100,11 @@ the lifecycle in each. Every phase leaves a gate record (`bin/ak-gate.mjs record
 `ak lifecycle record` in this checkout), and `super-ship` runs `ak-gate.mjs check` before it ships: a
 session that skipped `super-build`, or whose review went stale after an edit, is refused with
 `refused: gate <g> has no current evidence`. No supervisor is needed for that.
+
+For publication, name a transport in the delivery contract, project conventions or caller input.
+See [super-ship](skills/super-ship/SKILL.md) for its inputs and
+[direct transport](skills/super-ship/references/transport-direct.md) for selection and publication
+instructions when using `git` and `gh` without a gate.
 
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
 On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
@@ -172,13 +180,21 @@ bun run ak tracker check <project-dir>  # a project's tracker binding, and that 
 bun run ak kb check <project-dir>       # a project's knowledgebase binding, and whether this machine can reach it
 ```
 
-`bun run test` runs every test file once. It finishes the ordinary lane before starting
+`bun run test` runs every test file once. The ordinary lane uses four parallel workers
+by default; set `AK_TEST_PARALLEL` to change the worker count (for example,
+`AK_TEST_PARALLEL=1 bun run test`). It finishes before starting
 the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
 Bun process with concurrency limited to one. This separates the learning role calls,
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
 suite and from each other. Test and hook timeouts, assertions and role calls stay
 unchanged. There are no retries. Both lanes finish even if an earlier file fails;
 the command then returns failure. CI and the configured gate use `bun run test`.
+
+The runner gives both lanes a private `TMPDIR` and removes it at exit. Before Bun
+starts, it clears inherited Git overrides from `GIT_CONFIG_PARAMETERS` and
+`GIT_CONFIG_COUNT`, and disables automatic Git maintenance. On macOS, when Git resolves to `/usr/bin/git`,
+it bypasses that launcher with a link to the selected developer tool only if the link
+preserves Git's executable search path.
 
 `ak validate` enforces catalog completeness, JSON Schema conformance, frontmatter rules, the
 invocation graph, link closure in both source and bundle, provenance for every adapted file, and a
@@ -213,6 +229,7 @@ and the release scenario that tests it; the ids below are the lookup keys.
 ## Provenance
 
 Ten donors, pinned to exact commits in `provenance/upstream.lock.yaml`: nine MIT and one Apache-2.0.
+For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
 Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
 `EveryInc/compound-engineering-plugin`, `obra/superpowers`, `mattpocock/skills`,
 `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`, `Yeachan-Heo/oh-my-codex`.
@@ -247,4 +264,4 @@ Attribution and full license text locations: [`NOTICE`](NOTICE).
 
 ## License
 
-MIT — see `LICENSE`. Adapted material remains under its donors' MIT terms; see `NOTICE`.
+MIT — see `LICENSE`. Adapted material retains its original licence terms; see `NOTICE`.

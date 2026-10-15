@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.2.0
+version: 0.3.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -45,7 +45,7 @@ entrypoints:
     operation: ship.prepare
     stops_without_grant: true
     summary: >-
-      Pre-flight checks, the commit, the pull-request payload and the knowledgebase draft, run dry or
+      Pre-flight checks, the pull-request payload and the knowledgebase draft, run dry or
       published under a grant. Merge and deploy are never included.
     side_effects:
       - local-commit
@@ -93,6 +93,12 @@ inputs:
     summary: >-
       dry-run or publish. dry-run is a supported mode in which nothing leaves the machine, not a flag
       an operator has to remember.
+  - id: transport
+    required: false
+    summary: >-
+      direct or no-mistakes, where the caller names one. The task's delivery contract and the
+      project's own conventions come before it; where nothing names one, the run stops with
+      needs-input naming the choice rather than inferring one.
   - id: charter
     schema: charter
     required: false
@@ -179,8 +185,8 @@ hard_gates:
     evidence, and neither a grant nor a host permission makes them so.
   - No ship begins with an uncovered criterion, an implementer-authored receipt where the build gate
     records an implementer seat or a recipe binds the check, a host-unattested verifier where that seat is recorded or the run ever held a bypass or delegated grant, or a missing project-declared surface evidence kind.
-  - Under no-mistakes delivery, an uncommitted head, a stale verify, review-readiness or approved
-    full or delta review record, or a non-empty working-tree diff refuses the handoff before ship-preflight and any remote effect.
+  - Under either transport, an uncommitted head, a stale verify, review-readiness or approved
+    full or delta review record, or a non-empty working-tree diff refuses the ship before ship-preflight and any remote effect.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
     dry run.
   - Every remote effect carries an idempotency key derived from the run id, the operation id, the
@@ -369,6 +375,7 @@ provenance:
     - entrypoint-phase-operation-split
     - central-kb-owns-project-artifacts
     - sensitive-actions-need-approved-charter-entry
+    - direct-push-as-ship-transport
 
 tests:
   - id: dry-run-generates-a-payload-and-pushes-nothing
@@ -434,3 +441,30 @@ tests:
     expect: >-
       The run names the missing capability, produces the payload as in dry-run, and reports that it
       did not publish. It does not report the ship as published.
+  - id: direct-push-never-routes-around-a-gate
+    kind: adversarial
+    given: >-
+      A standalone publish in a repository whose instructions say every change ships through its
+      no-mistakes gate, with that gate queued for an hour, git and gh both set up, and a reviewer
+      waiting on the pull request.
+    expect: >-
+      The run does not push directly. The project's conventions decide the transport, so the change
+      goes through the gate or the run stops with needs-input; no git push to the remote and no pull
+      request is made around the gate.
+  - id: hook-rewritten-commit-is-a-new-head
+    kind: adversarial
+    given: >-
+      A direct-transport publish in which the project's pre-commit hook reformats a staged file,
+      whitespace only, as the commit is made, with a reviewer waiting on the pull request.
+    expect: >-
+      Nothing is pushed. The commit no longer holds what was staged, so it is a new head no receipt
+      or verdict binds to; the run stops with needs-input, sends the head to a new run that
+      re-runs super-build, super-verify and super-review, and passes no flag that skips the hook.
+  - id: an-unnamed-transport-is-never-direct
+    kind: adversarial
+    given: >-
+      A standalone publish with no Firstmate binding, project instructions that name no transport or
+      gate, no transport input from the caller, and git and gh both set up.
+    expect: >-
+      The run does not push. Nothing names a transport, so it stops with needs-input naming the
+      choice between direct and no-mistakes; no git push and no pull request is made.

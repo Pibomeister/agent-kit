@@ -237,7 +237,8 @@ describe("baseline growth since the merge base", () => {
     writeFileSync(join(root, "src/b.ts"), "export const b = 2;\n");
     writeFileSync(join(root, BASELINE_PATH), recorded({ "src/b.ts": { r: 1 } }));
     commit(root, "new file with a violation");
-    expect(check(root).status).toBe(1);
+    const run = check(root);
+    expect(run.status, run.out).toBe(1);
   });
 
   test("a renamed file carries its counts to the new path, and no more", () => {
