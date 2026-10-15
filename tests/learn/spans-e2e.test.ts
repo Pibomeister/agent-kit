@@ -4,7 +4,7 @@
  * Every judge row must name a span the same command wrote, telemetry must
  * leave no seeded text behind, and a broken span file must change nothing.
  */
-import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
@@ -28,8 +28,6 @@ import {
   stubRoles,
 } from "./helpers.ts";
 
-// These integration cases run several CLI operations and Git commands in each session.
-setDefaultTimeout(30_000);
 afterAll(removeProjectScratch);
 
 const SECRET = "AKIACANARYSECRET9F3E";
