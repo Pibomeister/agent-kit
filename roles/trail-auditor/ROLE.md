@@ -25,7 +25,7 @@ ticket's commit, the run's receipts and the implementer's report.
 Its caller is obliged to supply all six:
 
 - the ticket;
-- every stretch of the ticket, by reference, each with its state (published, unpublished or
+- every stretch of the ticket's trail, by reference, each with its state (published, unpublished or
   missing) and its content hash when it has one;
 - the diff of the ticket's commit, as a file;
 - the commits of the ticket's branch;
