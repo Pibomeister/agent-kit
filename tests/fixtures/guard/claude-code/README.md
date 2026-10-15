@@ -11,8 +11,8 @@ read from the installed 2.1.288 binary, and no session's values were copied. The
 at `/work/repo` that no test creates, and are judged against `tests/fixtures/guard/policy.yaml`.
 
 `tests/guard/claude-code.test.ts` runs every case through `ak guard hook pre-tool-use`, which
-decodes, evaluates and encodes it, and reads the answer the way Claude Code does. A deny is
-`hookSpecificOutput.permissionDecision: "deny"` on stdout with exit 0, and an allow is silence.
+decodes, evaluates and encodes it, and reads the answer the way Claude Code does. See the
+[Guard hook documentation](../../../../README.md#guard-hook) for response semantics.
 
 An expected file has these fields:
 
@@ -30,4 +30,4 @@ answer before its timeout does not block the call, so a call the guard would den
 
 When the decoder is moved to a new Claude Code version, compare that version's payload against these
 cases and change the version named here in the same commit. A payload change that the decoder does
-not handle should fail a case. It should never leave the guard silent.
+not handle should fail a case. An unreadable payload must be denied.
