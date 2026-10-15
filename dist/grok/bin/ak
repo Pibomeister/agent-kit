@@ -24448,7 +24448,7 @@ function kimiPlan(ctx, path, specs) {
   const before = existsSync25(path) ? readFileSync18(path, "utf8") : "";
   if (tomlHooks(before) === null) {
     return {
-      refuse: `${path} cannot be read as TOML by this runtime, whose parser also rejects some valid files, date and time values among them; fix the file or quote that value, nothing written`
+      refuse: `${path} cannot be parsed as a supported Kimi hooks TOML config by this runtime; fix the file, nothing written`
     };
   }
   const block = hookBlock(specs.map((spec) => ({ event: spec.event, command: spec.command, timeout: spec.timeout ?? 10 })));
