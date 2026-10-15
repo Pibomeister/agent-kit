@@ -1,7 +1,7 @@
 agent-kit
 Copyright (c) 2026 Eduardo Picazo
 
-This project adapts material from the following nine projects: eight under
+This project adapts material from the following ten donors: nine under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
 source and a note of what was changed. Full license texts are in
@@ -23,9 +23,14 @@ provenance/licenses/.
   https://github.com/BayramAnnakov/claude-reflect @ 2c892cab8fe1285d8116216ec18b6b7b44bcd394
 - BuilderIO/skills — Copyright (c) 2026 Builder.io
   https://github.com/BuilderIO/skills @ eb07be67e6d924b958445f706f5ac386243df6b4
+- pstack — Copyright (c) 2026 Lauren Tan — MIT License
+  https://github.com/cursor/plugins @ e43c7ee26e0038c6c1fa8380dd34ce86ff94cb2a
+  Only the repository's pstack/ directory is used. Its license is
+  pstack/LICENSE, copied to provenance/licenses/cursor_plugins.LICENSE.
 
 The above copyright notices and the MIT permission notice apply to the
-substantial portions adapted from each of those eight projects.
+substantial portions adapted from each MIT project among the ten donors:
+the nine listed above.
 
 - claude-mem — Copyright 2026 Alex Newman — Apache License 2.0
   https://github.com/thedotmack/claude-mem @ 02cd0c9c47e38a849e764477290c571e84dfa043
