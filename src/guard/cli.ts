@@ -13,7 +13,7 @@
  * The hook is not wired by anything yet: `ak guard setup` and the `guard`
  * profile are a later ticket.
  */
-import { lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve as resolvePath } from "node:path";
 
 import type { GuardContext } from "./action.ts";
@@ -136,7 +136,10 @@ function judge(args: HookArgs, options: RunGuardOptions): GuardVerdict {
     );
   }
   const resolve = options.resolve ?? resolveLink;
-  const decoded = decodeClaudeCode(options.stdin ?? "", { resolve });
+  const decoded = decodeClaudeCode(options.stdin ?? "", {
+    resolve,
+    isFile: (absolute) => statSync(absolute, { throwIfNoEntry: false })?.isFile() ?? false,
+  });
   if (decoded.kind === "deny") return decoded.verdict;
   if (decoded.kind === "pass") return { decision: "allow" };
   const env = options.env ?? process.env;

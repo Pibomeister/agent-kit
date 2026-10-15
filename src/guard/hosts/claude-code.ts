@@ -55,6 +55,7 @@ export type LinkResolver = (absolute: string) => string | null;
 
 export interface DecodeOptions {
   resolve?: LinkResolver;
+  isFile?: (absolute: string) => boolean;
 }
 
 export const CLAUDE_CODE_EVENT = "PreToolUse";
@@ -127,7 +128,7 @@ export function decodeClaudeCode(stdin: string, options: DecodeOptions = {}): Cl
   }
   const cwd = value.cwd;
   if (cwd === undefined || !cwd.startsWith("/")) return unjudgeable(`the ${tool} call carries no absolute cwd`);
-  const mapped = actionOf(value);
+  const mapped = actionOf(value, cwd, options);
   if (mapped.kind === "pass") return { kind: "pass", tool };
   if (mapped.kind === "bad") return unjudgeable(`the ${tool} call ${mapped.why}`);
   const action = options.resolve === undefined ? mapped.action : withLinkTargets(mapped.action, cwd, options.resolve);
@@ -135,7 +136,7 @@ export function decodeClaudeCode(stdin: string, options: DecodeOptions = {}): Cl
 }
 
 /** The action a tool call amounts to, a pass for a tool the guard does not judge, or why its input cannot be read. */
-function actionOf(call: Envelope): Mapped {
+function actionOf(call: Envelope, cwd: string, options: DecodeOptions): Mapped {
   const { tool_name: tool, tool_input: input } = call;
   const judged =
     tool === "Bash" ||
@@ -155,7 +156,11 @@ function actionOf(call: Envelope): Mapped {
     if (!grepInput(input)) return { kind: "bad", why: "has a path that is not a non-empty string" };
     // With no path Grep searches the working tree, as `grep -r needle .` does, which the shell rules allow.
     if (input.path === undefined) return { kind: "pass" };
-    return { kind: "action", action: { kind: "read", paths: [input.path] } };
+    const absolute = input.path.startsWith("/") ? input.path : `${cwd}/${input.path}`;
+    return {
+      kind: "action",
+      action: { kind: "read", paths: [input.path], recursive: options.isFile?.(absolute) !== true },
+    };
   }
   if (tool === "NotebookEdit") {
     if (!notebookInput(input)) return { kind: "bad", why: "has no notebook_path string" };

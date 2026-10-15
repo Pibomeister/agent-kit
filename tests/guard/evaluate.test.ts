@@ -165,6 +165,36 @@ describe("denies reads of secret paths", () => {
   });
 });
 
+describe("recursive reads protect secret descendants", () => {
+  const cases: ReadonlyArray<[string, string, "allow" | "deny"]> = [
+    ["**/.ssh/**", "/home/dev/.ssh", "deny"],
+    ["**/id_ed25519", "/home/dev", "deny"],
+    ["**/*.pem", "/outside/keys", "deny"],
+    ["**/.env", "/work/repo/src", "deny"],
+    ["config/secrets/token.json", "/work/repo/config", "deny"],
+    ["config/*/token.json", "/work/repo/config/dev", "deny"],
+    ["config/{dev,prod}/token.json", "/work/repo/config/dev", "deny"],
+    ["config/**/token.json", "/work/repo/config/a/b", "deny"],
+    ["config/secrets/token.json", "config/./secrets/..", "deny"],
+    ["config/secrets/token.json", "/work/repo", "deny"],
+    ["config/secrets/token.json", "/work/repo/src", "allow"],
+    ["config/secrets/token.json", "/work/repo/config/public", "allow"],
+    ["config/secrets/token.json", "/outside/config", "allow"],
+  ];
+  for (const [glob, path, decision] of cases) {
+    test(`${glob} searching ${path}`, () => {
+      const policy = {
+        ...POLICY,
+        secret_paths: [{ id: "secret.search", globs: [glob], reason: "Secret files" }],
+      };
+      const verdict = evaluate(policy, { kind: "read", paths: [path], recursive: true }, CONTEXT);
+      expect(verdict.decision).toBe(decision);
+      if (decision === "deny") expectRule(verdict, "secret.search");
+      expect(evaluate(policy, { kind: "read", paths: ["src/public.ts"] }, CONTEXT)).toEqual({ decision: "allow" });
+    });
+  }
+});
+
 describe("denies writes to protected paths", () => {
   const categories: ReadonlyArray<[string, string]> = [
     ["tests/unit/parser.test.ts", "protected.tests"],

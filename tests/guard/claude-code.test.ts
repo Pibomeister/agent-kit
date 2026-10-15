@@ -268,7 +268,9 @@ describe("the decoder", () => {
       cwd: "/work/repo",
     });
     expect(decode("Read", { file_path: "/a" })).toMatchObject({ action: { kind: "read", paths: ["/a"] } });
-    expect(decode("Grep", { pattern: "x", path: "/a" })).toMatchObject({ action: { kind: "read", paths: ["/a"] } });
+    expect(decode("Grep", { pattern: "x", path: "/a" })).toMatchObject({
+      action: { kind: "read", paths: ["/a"], recursive: true },
+    });
     for (const tool of ["Write", "Edit", "MultiEdit"]) {
       expect(decode(tool, { file_path: "/a" })).toMatchObject({ action: { kind: "write", paths: ["/a"] } });
     }
@@ -291,6 +293,28 @@ describe("the decoder", () => {
     expect(decodeClaudeCode(rawCall("Bash", { command: "echo > src/a.ts" }), { resolve })).toMatchObject({
       action: { kind: "shell", argv: ["bash", "-c", "echo > src/a.ts"] },
     });
+  });
+
+  test("keeps search extent through links and narrows only a known regular file", () => {
+    const stdin = rawCall("Grep", { path: "src/linked", pattern: "." });
+    expect(
+      decodeClaudeCode(stdin, {
+        resolve: () => "/home/dev/.ssh",
+        isFile: () => false,
+      }),
+    ).toMatchObject({
+      action: { kind: "read", paths: ["src/linked", "/home/dev/.ssh"], recursive: true },
+    });
+    const paths: string[] = [];
+    expect(
+      decodeClaudeCode(stdin, {
+        isFile: (path) => {
+          paths.push(path);
+          return true;
+        },
+      }),
+    ).toMatchObject({ action: { kind: "read", paths: ["src/linked"], recursive: false } });
+    expect(paths).toEqual(["/work/repo/src/linked"]);
   });
 
   test("denies what it cannot read as unjudgeable", () => {
@@ -372,10 +396,14 @@ describe("file tool path boundaries", () => {
         symlinkSync(`../${directory}/missing-dir`, join(root, "src", "directory-link"));
         symlinkSync("missing-link.json", join(root, "src", "chain.json"));
         symlinkSync("../src/plain.json", join(root, directory, "reported.json"));
+        if (tool === "Grep") {
+          symlinkSync(`../${directory}`, join(root, "src", "search-link"));
+          symlinkSync("../src", join(root, directory, "reported-dir"));
+        }
         symlinkSync("cycle.json", join(root, "src", "cycle.json"));
         const loaded = loadGuardPolicy(join(ROOT, POLICY));
         if (loaded.policy === null) throw new Error("test policy did not load");
-        loaded.policy.secret_paths.push({ id: "secret.anchored", globs: ["secrets/**"], reason: "Secret files" });
+        loaded.policy.secret_paths = [{ id: "secret.anchored", globs: ["secrets/**"], reason: "Secret files" }];
         const policy = join(work, "policy.yaml");
         writeFileSync(policy, stringify(loaded.policy));
         for (const source of ["flag", "environment", "payload"]) {
@@ -404,6 +432,7 @@ describe("file tool path boundaries", () => {
               "src/directory-link/new.json",
               "src/chain.json",
               `${directory}/reported.json`,
+              ...(tool === "Grep" ? [directory, "src/search-link", `${directory}/reported-dir`] : []),
             ]) {
               expectDecision(run(path), "deny", rule);
             }
@@ -421,6 +450,15 @@ describe("file tool path boundaries", () => {
 
 describe("ak guard hook", () => {
   const payload = readFileSync(join(CASES, "deny-bash-rm-recursive-force.stdin"), "utf8");
+
+  test("explicit directory Grep cannot read secret descendants in any output mode", () => {
+    for (const path of ["/home/dev/.ssh", "/home/dev", ".ssh", "config", "."]) {
+      for (const output_mode of ["content", "files_with_matches", "count"]) {
+        expect(decisionOf(replay(rawCall("Grep", { path, pattern: ".", output_mode }))).decision).toBe("deny");
+      }
+    }
+    expectDecision(replay(rawCall("Grep", { pattern: ".", output_mode: "content" })), "allow", undefined);
+  });
 
   test("ak's usage lists it; the entrypoint dispatches it, as the hook process tests below show", () => {
     const captured = captureIo();
