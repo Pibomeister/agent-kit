@@ -40,7 +40,7 @@
   },
   "$defs": {
     "entry": {
-      "description": "One decision, in the implementer's words.",
+      "description": "One working decision, in the implementer's words.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "written_at", "decision", "alternatives", "why", "pointers", "result"],

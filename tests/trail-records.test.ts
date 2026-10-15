@@ -151,6 +151,12 @@ describe("AC-9: a trail record is valid with entries, or with none and a reason,
   test("a status outside the kind's own list is refused", () => {
     expect(refusal(TRAIL, (doc) => updated(doc, ["status"], () => "draft"))).toStartWith(TRAIL_REFUSED);
   });
+
+  test("entries and a reason for being empty together are refused", () => {
+    expect(refusal(TRAIL, (doc) => updated(doc, ["empty_reason"], () => "nothing to record"))).toStartWith(
+      TRAIL_REFUSED,
+    );
+  });
 });
 
 describe("AC-12: one valid fixture per audit result, and each listed refusal", () => {
@@ -237,5 +243,35 @@ describe("AC-12: one valid fixture per audit result, and each listed refusal", (
     for (const statement of ["supplied", "agent-transcripts/example-run-1.jsonl"]) {
       expect(refusal(AUDIT_ITEMS, (doc) => updated(doc, ["transcript"], () => statement))).toStartWith(AUDIT_REFUSED);
     }
+  });
+});
+
+describe("what an audit must name, each refused by the trail-audit schema", () => {
+  test("an attention item that names an entry but no stretch is refused", () => {
+    const item = listAt(example(AUDIT_ITEMS), "attention_list")[0];
+    expect(member(item, "entry")).toBeString();
+    expect(member(item, "stretch")).toBeString();
+    expect(refusal(AUDIT_ITEMS, (doc) => edited(doc, ["attention_list", 0, "stretch"], "delete"))).toStartWith(
+      AUDIT_REFUSED,
+    );
+  });
+
+  test("an audit with no implementer seat is refused", () => {
+    expect(refusal(AUDIT_ITEMS, (doc) => edited(doc, ["auditor_seat", "implementer_seats"], "empty"))).toStartWith(
+      AUDIT_REFUSED,
+    );
+  });
+
+  test("an audit whose run is null is refused", () => {
+    expect(refusal(AUDIT_ITEMS, (doc) => edited(doc, ["run_id"], "null"))).toStartWith(AUDIT_REFUSED);
+  });
+
+  test("other material named by a reference with no hash is refused", () => {
+    const first = listAt(example(AUDIT_ITEMS), "other_material")[0];
+    expect(member(first, "ref")).toBeString();
+    expect(member(first, "hash")).toBeString();
+    expect(refusal(AUDIT_ITEMS, (doc) => edited(doc, ["other_material", 0, "hash"], "delete"))).toStartWith(
+      AUDIT_REFUSED,
+    );
   });
 });
