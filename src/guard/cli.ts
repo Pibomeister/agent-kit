@@ -164,9 +164,9 @@ function rootOf(args: HookArgs, env: NodeJS.ProcessEnv, cwd: string): string {
 }
 
 /**
- * Where a path leads through symlinks on this filesystem: the real path of
- * the deepest part that exists, with the rest appended, so a new file under a
- * linked directory resolves too. Null when nothing is linked.
+ * Follow symlink hops even when the destination does not exist yet, so a
+ * dangling link or a new file under a linked directory still names its target.
+ * Null when the path is unchanged; throw when the hop limit is exceeded.
  */
 export function resolveLink(absolute: string): string | null {
   const pending = absolute.split("/");
