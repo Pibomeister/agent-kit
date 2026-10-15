@@ -1,8 +1,11 @@
+import Ajv2020 from "ajv/dist/2020.js";
 import type { ValidateFunction } from "ajv";
+import addFormats from "ajv-formats";
 import { parse as parseYaml } from "yaml";
 
+import commonSchema from "../../schemas/common.schema.json" with { type: "json" };
+import guardPolicySchema from "../../schemas/guard-policy.schema.json" with { type: "json" };
 import { readTextIfPresent } from "../util/fs.ts";
-import { compileSchemas } from "../validation/schemas.ts";
 import { error, type Issue } from "../validation/types.ts";
 import { compileGlob } from "./glob.ts";
 
@@ -78,8 +81,6 @@ export interface PolicyResult {
   issues: Issue[];
 }
 
-export const SCHEMA_ID = "guard-policy";
-
 /** Every rule id the policy declares, in file order. */
 export function policyRuleIds(policy: GuardPolicy): string[] {
   return [
@@ -151,15 +152,31 @@ export function parseGuardPolicy(text: string, validate: ValidateFunction, file:
 }
 
 /**
- * Read and check the policy at `file`. `schemaRoot` is this package's tree,
- * where the schema lives, not the project the policy is about.
+ * The validator for schemas/guard-policy.schema.json, compiled with only the
+ * schema it references (common) rather than the whole set: `ak guard hook`
+ * loads the policy on every tool call, and compiling every schema costs it
+ * most of a second. Undefined when the schema does not compile.
  */
-export function loadGuardPolicy(file: string, schemaRoot: string): PolicyResult {
+export function guardPolicyValidator(): ValidateFunction | undefined {
+  try {
+    const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });
+    addFormats(ajv);
+    ajv.addSchema(commonSchema);
+    return ajv.compile(guardPolicySchema);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Read and check the policy at `file`.
+ */
+export function loadGuardPolicy(file: string): PolicyResult {
   const text = readTextIfPresent(file);
   if (text === null) {
     return { policy: null, issues: [error("guard.policy-missing", file, "No guard policy file at this path.")] };
   }
-  const validate = compileSchemas(schemaRoot).validatorFor(SCHEMA_ID);
+  const validate = guardPolicyValidator();
   if (validate === undefined) {
     return {
       policy: null,

@@ -72,7 +72,7 @@
       }
     },
     "secret_paths": {
-      "description": "Paths a tool call may not read. A read action, a shell argument or input redirection that names one, or inline interpreter code that names one is denied. Patterns that begin with `**` also match outside the workspace, which is how a home-directory credential is listed.",
+      "description": "Paths a tool call may not read. A read action, a shell argument or input redirection that names one, or inline interpreter code that names one is denied. A recursive read is also denied when a pattern could match a descendant of the searched path, without checking which files exist. Patterns that begin with `**` also match outside the workspace, which is how a home-directory credential is listed.",
       "type": "array",
       "items": {
         "type": "object",

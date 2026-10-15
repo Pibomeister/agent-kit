@@ -6,6 +6,7 @@
 export interface CompiledGlob {
   source: string;
   regex: RegExp;
+  prefixRegex: RegExp;
   /** The segments before the first one holding a wildcard or an alternation. */
   literalPrefix: ReadonlyArray<string>;
   /** Whether the glob begins with `**`, the form that also matches outside the workspace. */
@@ -17,6 +18,7 @@ const SPECIAL = new Set(".+^$()|[]\\");
 /** Null when the braces do not balance. */
 export function compileGlob(glob: string): CompiledGlob | null {
   let out = "^";
+  let prefix = "^";
   let depth = 0;
   for (let i = 0; i < glob.length; i++) {
     const ch = glob.charAt(i);
@@ -24,23 +26,37 @@ export function compileGlob(glob: string): CompiledGlob | null {
       if (glob.charAt(i + 1) === "*") {
         if (glob.charAt(i + 2) === "/") {
           out += "(?:.*/)?";
+          prefix += "(?:.*/|.*$)?";
           i += 2;
         } else {
           out += ".*";
+          prefix += ".*";
           i += 1;
         }
-      } else out += "[^/]*";
-    } else if (ch === "?") out += "[^/]";
-    else if (ch === "{") {
+      } else {
+        out += "[^/]*";
+        prefix += "[^/]*";
+      }
+    } else if (ch === "?") {
+      out += "[^/]";
+      prefix += "(?:[^/]|$)";
+    } else if (ch === "{") {
       depth += 1;
       out += "(?:";
+      prefix += "(?:";
     } else if (ch === "}") {
       if (depth === 0) return null;
       depth -= 1;
       out += ")";
-    } else if (ch === "," && depth > 0) out += "|";
-    else if (SPECIAL.has(ch)) out += `\\${ch}`;
-    else out += ch;
+      prefix += ")";
+    } else if (ch === "," && depth > 0) {
+      out += "|";
+      prefix += "|";
+    } else {
+      const token = SPECIAL.has(ch) ? `\\${ch}` : ch;
+      out += token;
+      prefix += `(?:${token}|$)`;
+    }
   }
   if (depth !== 0) return null;
   const literalPrefix: string[] = [];
@@ -48,7 +64,13 @@ export function compileGlob(glob: string): CompiledGlob | null {
     if (/[*?{]/.test(segment)) break;
     literalPrefix.push(segment);
   }
-  return { source: glob, regex: new RegExp(`${out}$`), literalPrefix, floating: glob.startsWith("**") };
+  return {
+    source: glob,
+    regex: new RegExp(`${out}$`),
+    prefixRegex: new RegExp(`${prefix}$`),
+    literalPrefix,
+    floating: glob.startsWith("**"),
+  };
 }
 
 /** Whether a workspace-relative path, given as segments, is the glob's literal prefix or a directory above it. */

@@ -15,7 +15,7 @@ function compileValidator(): ValidateFunction {
 }
 
 const VALIDATE = compileValidator();
-const EXAMPLE = loadGuardPolicy(FIXTURE, ROOT);
+const EXAMPLE = loadGuardPolicy(FIXTURE);
 
 function validator(): ValidateFunction {
   return VALIDATE;
@@ -65,7 +65,7 @@ describe("guard policy loader", () => {
   });
 
   test("a missing file is an issue, not an empty policy", () => {
-    const result = loadGuardPolicy(join(ROOT, "tests", "fixtures", "guard", "absent.yaml"), ROOT);
+    const result = loadGuardPolicy(join(ROOT, "tests", "fixtures", "guard", "absent.yaml"));
     expect(result.policy).toBeNull();
     expect(rules(result)).toEqual(["guard.policy-missing"]);
   });

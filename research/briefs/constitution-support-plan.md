@@ -167,8 +167,8 @@ the locator route ADR-0009 chose.
 
 ### CS-11 — Claude Code decoder and encoder, `ak guard hook`
 
-- **Changes:** `src/guard/hosts/claude-code.ts`; `ak guard hook pre-tool-use` in `src/cli.ts` (the
-  stdin read today exists only for `learn hook`); replay payloads recorded from 2.1.288 under
+- **Changes:** `src/guard/hosts/claude-code.ts`; `src/guard/cli.ts`, dispatched by `src/cli.ts` and
+  the packaged `src/maintenance/cli.ts` entrypoint; replay payloads invented in 2.1.288's shape under
   `tests/fixtures/guard/claude-code/`.
 - **Acceptance:**
   - Every replay payload runs decoder, evaluator and encoder, and the expected decision matches.

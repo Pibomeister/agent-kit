@@ -15,7 +15,7 @@ import { loadGuardPolicy, type GuardPolicy } from "../../src/guard/policy.ts";
 const ROOT = join(import.meta.dir, "..", "..");
 
 function loadExample(): GuardPolicy {
-  const result = loadGuardPolicy(join(ROOT, "tests", "fixtures", "guard", "policy.yaml"), ROOT);
+  const result = loadGuardPolicy(join(ROOT, "tests", "fixtures", "guard", "policy.yaml"));
   if (result.policy === null) throw new Error(`the example policy did not load: ${JSON.stringify(result.issues)}`);
   return result.policy;
 }
@@ -163,6 +163,55 @@ describe("denies reads of secret paths", () => {
   test("a home path with no home in the context still matches a floating pattern", () => {
     expectRule(shell("cat ~/.ssh/id_rsa", { root: "/work/repo" }), "secret.private-key");
   });
+});
+
+describe("recursive reads protect secret descendants", () => {
+  const cases: ReadonlyArray<[string, string, "allow" | "deny"]> = [
+    ["**/.ssh/**", "/home/dev/.ssh", "deny"],
+    ["**/id_ed25519", "/home/dev", "deny"],
+    ["**/*.pem", "/outside/keys", "deny"],
+    ["**/.env", "/work/repo/src", "deny"],
+    ["config/secrets/token.json", "/work/repo/config", "deny"],
+    ["config/*/token.json", "/work/repo/config/dev", "deny"],
+    ["config/{dev,prod}/token.json", "/work/repo/config/dev", "deny"],
+    ["config/{dev,prod}/token.json", "/work/repo/config/public", "allow"],
+    ["config/{dev,prod}/token.json", "/work/repo/config/prod/public", "allow"],
+    ["config/*/token.json", "/work/repo/config/dev/public", "allow"],
+    ["config/?/token.json", "/work/repo/config/a", "deny"],
+    ["config/?/token.json", "/work/repo/config/ab", "allow"],
+    ["config/key-*/token.json", "/work/repo/config/key-prod", "deny"],
+    ["config/key-*/token.json", "/work/repo/config/public", "allow"],
+    ["config/{dev,{prod/live,prod/staging}}/token.json", "/work/repo/config/prod", "deny"],
+    ["config/{dev,{prod/live,prod/staging}}/token.json", "/work/repo/config/prod/public", "allow"],
+    ["config/**/token.json", "/work/repo/config/a/b", "deny"],
+    ["config/**/token.json", "/work/repo/configuration/a/b", "allow"],
+    ["config/**token.json", "/work/repo/config/a/b", "deny"],
+    ["config/[dev]/token.json", "/work/repo/config/[dev]", "deny"],
+    ["config/[dev]/token.json", "/work/repo/config/dev", "allow"],
+    ["config/secrets/token.json", "config/./secrets/..", "deny"],
+    ["config/secrets/token.json", "/work/repo", "deny"],
+    ["config/secrets/token.json", "/work", "deny"],
+    ["config/secrets/token.json", "/", "deny"],
+    ["config/secrets/token.json", "..", "deny"],
+    ["config/secrets/token.json", "../repo/..", "deny"],
+    ["config/secrets/token.json", "/work/repo/src", "allow"],
+    ["config/secrets/token.json", "/work/repo/config/public", "allow"],
+    ["config/secrets/token.json", "/outside/config", "allow"],
+    ["config/secrets/token.json", "/workspace", "allow"],
+    ["config/secrets/token.json", "/work/repository", "allow"],
+  ];
+  for (const [glob, path, decision] of cases) {
+    test(`${glob} searching ${path}`, () => {
+      const policy = {
+        ...POLICY,
+        secret_paths: [{ id: "secret.search", globs: [glob], reason: "Secret files" }],
+      };
+      const verdict = evaluate(policy, { kind: "read", paths: [path], recursive: true }, CONTEXT);
+      expect(verdict.decision).toBe(decision);
+      if (decision === "deny") expectRule(verdict, "secret.search");
+      expect(evaluate(policy, { kind: "read", paths: ["src/public.ts"] }, CONTEXT)).toEqual({ decision: "allow" });
+    });
+  }
 });
 
 describe("denies writes to protected paths", () => {

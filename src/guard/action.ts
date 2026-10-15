@@ -12,7 +12,7 @@
  */
 export type GuardAction =
   | { kind: "shell"; argv: ReadonlyArray<string> }
-  | { kind: "read"; paths: ReadonlyArray<string> }
+  | { kind: "read"; paths: ReadonlyArray<string>; recursive?: boolean }
   | { kind: "write"; paths: ReadonlyArray<string> }
   | { kind: "patch"; paths: ReadonlyArray<string> };
 

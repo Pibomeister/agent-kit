@@ -55,7 +55,7 @@ interface Compiled {
 type View = { anchored: true; rel: string } | { anchored: false; path: string };
 
 /** How a path is touched, which decides how it is matched. */
-type Touch = "file" | "tree" | "named";
+type Touch = "file" | "tree" | "named" | "search";
 
 interface ShellState {
   /** The working directory, or null once a `cd` went somewhere the text does not say. */
@@ -175,6 +175,11 @@ function fixedSegments(view: View): string[] {
 
 function matches(glob: CompiledGlob, view: View, touch: Touch): boolean {
   if (matchesFile(glob, view)) return true;
+  if (touch === "search") {
+    if (!view.anchored && !glob.floating) return false;
+    const path = view.anchored ? view.rel : view.path;
+    return glob.prefixRegex.test(path === "" ? "" : `${path}/`);
+  }
   if (touch === "file" || !view.anchored) return false;
   const segments = fixedSegments(view);
   // A name in code reaches a directory only when it names one; the bare root is every path.
@@ -531,7 +536,7 @@ class Judge {
       case "read": {
         if (action.paths.length === 0) return unjudgeable("the read names no path");
         for (const path of action.paths) {
-          const found = this.read(path, dir, `a read of ${path}`);
+          const found = this.read(path, dir, `a read of ${path}`, action.recursive === true ? "search" : "file");
           if (found !== null) return found;
         }
         return null;
@@ -608,9 +613,9 @@ class Judge {
     return null;
   }
 
-  private secretHit(views: ReadonlyArray<View>): Deny | null {
+  private secretHit(views: ReadonlyArray<View>, touch: Touch = "file"): Deny | null {
     for (const rule of this.c.secrets) {
-      if (views.some((v) => rule.globs.some((g) => matchesFile(g, v)))) {
+      if (views.some((v) => rule.globs.some((g) => matches(g, v, touch)))) {
         return { rule: rule.entry.id, reason: rule.entry.reason };
       }
     }
@@ -624,10 +629,16 @@ class Judge {
     return hit === null ? null : { rule: hit.rule, reason: `${hit.reason} (${show(what)})` };
   }
 
-  private read(raw: string, dir: string | null, what: string): Deny | null {
+  private read(raw: string, dir: string | null, what: string, touch: Touch = "file"): Deny | null {
     const views = this.locate(raw, dir);
     if (views === null) return null;
-    const hit = this.secretHit(views);
+    if (
+      touch === "search" &&
+      views.some((v) => !v.anchored && (v.path === "" || this.c.root.startsWith(`/${v.path}/`)))
+    ) {
+      views.push({ anchored: true, rel: "" });
+    }
+    const hit = this.secretHit(views, touch);
     return hit === null ? null : { rule: hit.rule, reason: `${hit.reason} (${show(what)})` };
   }
 

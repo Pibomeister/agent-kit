@@ -1,0 +1,738 @@
+import { spawn, spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
+import Ajv2020 from "ajv/dist/2020.js";
+import { describe, expect, test } from "bun:test";
+import { stringify } from "yaml";
+
+import { runCli } from "../../src/cli.ts";
+import { loadCatalog } from "../../src/catalog/load.ts";
+import { resolveLink, runGuard } from "../../src/guard/cli.ts";
+import { UNJUDGEABLE } from "../../src/guard/evaluate.ts";
+import { decodeClaudeCode, encodeClaudeCode, type LinkResolver } from "../../src/guard/hosts/claude-code.ts";
+import { loadGuardPolicy } from "../../src/guard/policy.ts";
+import { planBundle } from "../../src/packaging/plan.ts";
+import { HOST_IDS } from "../../src/packaging/hosts.ts";
+
+/**
+ * CS-11's acceptance criteria (research/briefs/constitution-support-plan.md):
+ * the Claude Code replay suite. Each case under
+ * tests/fixtures/guard/claude-code/ is a `.stdin` file, the exact bytes a
+ * PreToolUse command hook reads on claude 2.1.288, and an `.expected.json`
+ * with the decision. The payloads are invented in that version's shape; the
+ * workspace they name, /work/repo, is a path no test creates, and the links a
+ * case declares stand in for the filesystem, so a replay reads nothing but
+ * its fixture and the example policy.
+ */
+const ROOT = join(import.meta.dir, "..", "..");
+const CASES = join(ROOT, "tests", "fixtures", "guard", "claude-code");
+const POLICY = "tests/fixtures/guard/policy.yaml";
+const HOOK = ["hook", "pre-tool-use", "--policy", POLICY];
+const ENV = { CLAUDE_PROJECT_DIR: "/work/repo", HOME: "/home/dev" };
+const RECEIPTS = join(ROOT, "research", "host-facts", "2026-10-03");
+
+interface Expected {
+  why: string;
+  decision: "allow" | "deny" | "fail-open";
+  rule?: string;
+  links?: Record<string, string>;
+  when_answered?: { decision: "allow" | "deny"; rule?: string };
+  receipt?: string;
+}
+
+interface HookOutput {
+  hookSpecificOutput: { hookEventName: "PreToolUse"; permissionDecision: "deny"; permissionDecisionReason: string };
+}
+
+const ajv = new Ajv2020({ strict: false });
+const DECISION = { enum: ["allow", "deny"] };
+const expectedFile = ajv.compile<Expected>({
+  type: "object",
+  additionalProperties: false,
+  required: ["why", "decision"],
+  properties: {
+    why: { type: "string", minLength: 1 },
+    decision: { enum: ["allow", "deny", "fail-open"] },
+    rule: { type: "string", minLength: 1 },
+    links: { type: "object", additionalProperties: { type: "string" } },
+    when_answered: {
+      type: "object",
+      additionalProperties: false,
+      required: ["decision"],
+      properties: { decision: DECISION, rule: { type: "string" } },
+    },
+    receipt: { type: "string", pattern: "^(claude-code|codex)-[0-9]+$" },
+  },
+});
+/** Exactly the deny Claude Code reads (claude-code-1): one key, the event, the decision and a reason. */
+const hookOutput = ajv.compile<HookOutput>({
+  type: "object",
+  additionalProperties: false,
+  required: ["hookSpecificOutput"],
+  properties: {
+    hookSpecificOutput: {
+      type: "object",
+      additionalProperties: false,
+      required: ["hookEventName", "permissionDecision", "permissionDecisionReason"],
+      properties: {
+        hookEventName: { const: "PreToolUse" },
+        permissionDecision: { const: "deny" },
+        permissionDecisionReason: { type: "string", minLength: 1 },
+      },
+    },
+  },
+});
+
+interface Case {
+  name: string;
+  stdin: string;
+  expected: Expected;
+}
+
+function loadCases(): Case[] {
+  return readdirSync(CASES)
+    .filter((f) => f.endsWith(".stdin"))
+    .toSorted()
+    .map((f) => {
+      const name = f.slice(0, -".stdin".length);
+      const expected: unknown = JSON.parse(readFileSync(join(CASES, `${name}.expected.json`), "utf8"));
+      if (!expectedFile(expected)) throw new Error(`${name}.expected.json: ${JSON.stringify(expectedFile.errors)}`);
+      return { name, stdin: readFileSync(join(CASES, f), "utf8"), expected };
+    });
+}
+
+const ALL = loadCases();
+
+function fixtureLinks(links: Record<string, string> = {}): LinkResolver {
+  return (path) => links[path] ?? null;
+}
+
+interface Run {
+  code: number;
+  out: string[];
+  err: string[];
+}
+
+function replay(stdin: string, links?: Record<string, string>, argv: string[] = HOOK): Run {
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = runGuard(argv, {
+    cwd: ROOT,
+    io: { out: (l) => out.push(l), err: (l) => err.push(l) },
+    stdin,
+    env: ENV,
+    resolve: fixtureLinks(links),
+  });
+  return { code, out, err };
+}
+
+/** The decision the hook's answer carries, read the way Claude Code reads it. */
+function decisionOf(run: Run): { decision: "allow" } | { decision: "deny"; reason: string } {
+  expect(run.code).toBe(0);
+  if (run.out.length === 0) return { decision: "allow" };
+  expect(run.out).toHaveLength(1);
+  const parsed: unknown = JSON.parse(run.out[0] ?? "");
+  if (!hookOutput(parsed)) throw new Error(`not a PreToolUse deny: ${run.out[0]}`);
+  return { decision: "deny", reason: parsed.hookSpecificOutput.permissionDecisionReason };
+}
+
+function expectDecision(run: Run, decision: "allow" | "deny", rule: string | undefined): void {
+  const found = decisionOf(run);
+  expect(found.decision).toBe(decision);
+  if (found.decision === "deny") expect(found.reason.startsWith(`agent-kit guard [${rule}]: `)).toBe(true);
+}
+
+describe("the replay fixtures", () => {
+  test("every payload has an expected file and every expected file a payload", () => {
+    const files = readdirSync(CASES);
+    const stdins = files.filter((f) => f.endsWith(".stdin")).map((f) => f.slice(0, -".stdin".length));
+    const expecteds = files
+      .filter((f) => f.endsWith(".expected.json"))
+      .map((f) => f.slice(0, -".expected.json".length));
+    expect(expecteds.toSorted()).toEqual(stdins.toSorted());
+    expect(stdins.length).toBeGreaterThan(0);
+  });
+
+  test("each expected file names what its decision needs, and its receipt exists", () => {
+    const receipts = readdirSync(RECEIPTS);
+    for (const { name, expected } of ALL) {
+      if (expected.decision === "deny") expect(expected.rule, name).toBeString();
+      if (expected.decision === "fail-open") expect(expected.when_answered, name).toBeDefined();
+      if (expected.receipt !== undefined) {
+        expect(
+          receipts.some((f) => f.startsWith(`${expected.receipt}-`)),
+          name,
+        ).toBe(true);
+      }
+    }
+  });
+
+  test("the bypass fixtures the plan names are all present", () => {
+    const names = new Set(ALL.map((c) => c.name));
+    for (const name of [
+      "bypass-git-dash-C-push-force",
+      "bypass-interpreter-writes-ci-config",
+      "bypass-interpreter-writes-test",
+      "bypass-symlink-into-tests",
+      "bypass-write-through-symlink",
+      "bypass-rename-into-tests",
+      "timeout-fail-open",
+      "unjudgeable-not-json",
+      "unjudgeable-no-tool-name",
+    ]) {
+      expect(names.has(name), name).toBe(true);
+    }
+  });
+});
+
+describe("every replay payload runs decoder, evaluator and encoder to the expected decision", () => {
+  for (const { name, stdin, expected } of ALL) {
+    test(name, () => {
+      const run = replay(stdin, expected.links);
+      if (expected.decision === "fail-open") {
+        // Answered in time, the guard denies; the fail-open is the host's, tested below.
+        expectDecision(run, expected.when_answered?.decision ?? "deny", expected.when_answered?.rule);
+      } else {
+        expectDecision(run, expected.decision, expected.rule);
+      }
+      expect(run.err).toEqual([]);
+    });
+  }
+});
+
+describe("the encoder", () => {
+  test("a deny is permissionDecision deny with the rule and reason, on stdout, exit 0", () => {
+    const response = encodeClaudeCode({ decision: "deny", rule: "protected.tests", reason: "Tests are protected" });
+    expect(response.exit).toBe(0);
+    expect(response.stdout.endsWith("\n")).toBe(true);
+    expect(JSON.parse(response.stdout)).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: "agent-kit guard [protected.tests]: Tests are protected",
+      },
+    });
+  });
+
+  test("an allow is silence, never a permissionDecision that would skip the user's prompt", () => {
+    expect(encodeClaudeCode({ decision: "allow" })).toEqual({ stdout: "", exit: 0 });
+  });
+
+  test("no replay answer exits 2 or carries allow or ask", () => {
+    for (const { name, stdin, expected } of ALL) {
+      const run = replay(stdin, expected.links);
+      expect(run.code, name).toBe(0);
+      for (const line of run.out) {
+        expect(line, name).not.toContain('"allow"');
+        expect(line, name).not.toContain('"ask"');
+      }
+    }
+  });
+});
+
+type ToolInput = Record<string, string | number> | string;
+const BASE = { session_id: "s-1", cwd: "/work/repo", hook_event_name: "PreToolUse" };
+
+function rawCall(tool: string, toolInput: ToolInput): string {
+  return JSON.stringify({ ...BASE, tool_name: tool, tool_input: toolInput });
+}
+
+function decode(tool: string, toolInput: ToolInput): ReturnType<typeof decodeClaudeCode> {
+  return decodeClaudeCode(rawCall(tool, toolInput));
+}
+
+const aliasIntoTests: LinkResolver = (p) => (p === "/work/repo/src/a.ts" ? "/work/repo/tests/a.test.ts" : null);
+
+function captureIo() {
+  const out: string[] = [];
+  const err: string[] = [];
+  return { out, err, io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) } };
+}
+
+describe("the decoder", () => {
+  test("maps each judged tool to its normalized action", () => {
+    expect(decode("Bash", { command: "ls" })).toEqual({
+      kind: "judge",
+      tool: "Bash",
+      action: { kind: "shell", argv: ["bash", "-c", "ls"] },
+      cwd: "/work/repo",
+    });
+    expect(decode("Read", { file_path: "/a" })).toMatchObject({ action: { kind: "read", paths: ["/a"] } });
+    expect(decode("Grep", { pattern: "x", path: "/a" })).toMatchObject({
+      action: { kind: "read", paths: ["/a"], recursive: true },
+    });
+    for (const tool of ["Write", "Edit", "MultiEdit"]) {
+      expect(decode(tool, { file_path: "/a" })).toMatchObject({ action: { kind: "write", paths: ["/a"] } });
+    }
+    expect(decode("NotebookEdit", { notebook_path: "/n.ipynb" })).toMatchObject({
+      action: { kind: "write", paths: ["/n.ipynb"] },
+    });
+  });
+
+  test("passes a tool that names no file, and Grep with no path", () => {
+    expect(decode("WebSearch", { query: "x" })).toEqual({ kind: "pass", tool: "WebSearch" });
+    expect(decode("mcp__files__write", { path: "tests/x" })).toEqual({ kind: "pass", tool: "mcp__files__write" });
+    expect(decode("Grep", { pattern: "x" })).toEqual({ kind: "pass", tool: "Grep" });
+  });
+
+  test("adds a link's target after the path, and leaves a shell action alone", () => {
+    const resolve = aliasIntoTests;
+    expect(decodeClaudeCode(rawCall("Edit", { file_path: "src/a.ts" }), { resolve })).toMatchObject({
+      action: { kind: "write", paths: ["src/a.ts", "/work/repo/tests/a.test.ts"] },
+    });
+    expect(decodeClaudeCode(rawCall("Bash", { command: "echo > src/a.ts" }), { resolve })).toMatchObject({
+      action: { kind: "shell", argv: ["bash", "-c", "echo > src/a.ts"] },
+    });
+  });
+
+  test("keeps search extent through links and narrows only a known regular file", () => {
+    const stdin = rawCall("Grep", { path: "src/linked", pattern: "." });
+    expect(
+      decodeClaudeCode(stdin, {
+        resolve: () => "/home/dev/.ssh",
+        isFile: () => false,
+      }),
+    ).toMatchObject({
+      action: { kind: "read", paths: ["src/linked", "/home/dev/.ssh"], recursive: true },
+    });
+    const paths: string[] = [];
+    expect(
+      decodeClaudeCode(stdin, {
+        isFile: (path) => {
+          paths.push(path);
+          return true;
+        },
+      }),
+    ).toMatchObject({ action: { kind: "read", paths: ["src/linked"], recursive: false } });
+    expect(paths).toEqual(["/work/repo/src/linked"]);
+  });
+
+  test("denies what it cannot read as unjudgeable", () => {
+    for (const stdin of ["", "{", "null", "[]", '"Bash"', JSON.stringify({ ...BASE, tool_name: "" })]) {
+      const decoded = decodeClaudeCode(stdin);
+      expect(decoded.kind, stdin).toBe("deny");
+      if (decoded.kind === "deny") expect(decoded.verdict.rule).toBe(UNJUDGEABLE);
+    }
+    expect(decode("Read", "not an object")).toMatchObject({ kind: "deny" });
+    expect(decode("Grep", { pattern: "x", path: 3 })).toMatchObject({ kind: "deny" });
+  });
+});
+
+describe("resolveLink", () => {
+  test("follows a linked file and a new file under a linked directory, and is null where nothing is linked", () => {
+    const work = mkdtempSync(join(tmpdir(), "ak-guard-link-"));
+    try {
+      mkdirSync(join(work, "tests"));
+      mkdirSync(join(work, "src"));
+      writeFileSync(join(work, "tests", "real.test.ts"), "");
+      symlinkSync(join(work, "tests", "real.test.ts"), join(work, "src", "alias.ts"));
+      symlinkSync(join(work, "tests"), join(work, "src", "linked"));
+      const real = resolveLink(work) ?? work;
+      expect(resolveLink(join(work, "src", "alias.ts"))).toBe(join(real, "tests", "real.test.ts"));
+      expect(resolveLink(join(work, "src", "linked", "new.test.ts"))).toBe(join(real, "tests", "new.test.ts"));
+      expect(resolveLink(join(real, "src", "plain.ts"))).toBeNull();
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  test("follows dangling relative, absolute, chained and directory links before resolving dot segments", () => {
+    const work = mkdtempSync(join(ROOT, ".guard-link-"));
+    try {
+      mkdirSync(join(work, "src"));
+      mkdirSync(join(work, "tests"));
+      symlinkSync("../tests/new.json", join(work, "src", "relative.json"));
+      symlinkSync(join(work, "tests", "new.json"), join(work, "src", "absolute.json"));
+      symlinkSync("relative.json", join(work, "src", "chain.json"));
+      symlinkSync("../tests/new-dir", join(work, "src", "directory"));
+      symlinkSync("../tests", join(work, "src", "linked"));
+      for (const name of ["relative.json", "absolute.json", "chain.json"]) {
+        expect(resolveLink(join(work, "src", name))).toBe(join(work, "tests", "new.json"));
+      }
+      expect(resolveLink(join(work, "src", "directory", "new.json"))).toBe(join(work, "tests", "new-dir", "new.json"));
+      expect(resolveLink(`${work}/src/linked/../new.json`)).toBe(join(work, "new.json"));
+      symlinkSync("cycle.json", join(work, "src", "cycle.json"));
+      expect(() => resolveLink(join(work, "src", "cycle.json"))).toThrow("too many symlink hops");
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+});
+
+const FILE_TOOLS = [
+  { tool: "Write", field: "file_path", rule: "protected.tests", directory: "tests" },
+  { tool: "Edit", field: "file_path", rule: "protected.tests", directory: "tests" },
+  { tool: "MultiEdit", field: "file_path", rule: "protected.tests", directory: "tests" },
+  { tool: "NotebookEdit", field: "notebook_path", rule: "protected.tests", directory: "tests" },
+  { tool: "Read", field: "file_path", rule: "secret.anchored", directory: "secrets" },
+  { tool: "Grep", field: "path", rule: "secret.anchored", directory: "secrets" },
+];
+
+describe("file tool path boundaries", () => {
+  for (const { tool, field, rule, directory } of FILE_TOOLS) {
+    test(`${tool} protects reported and resolved paths with every root source`, () => {
+      const work = mkdtempSync(join(ROOT, ".guard-path-"));
+      try {
+        const root = join(work, "repo");
+        const alias = join(work, "alias");
+        for (const dir of ["src", "tests", "secrets", "packages/a"]) {
+          mkdirSync(join(root, dir), { recursive: true });
+        }
+        symlinkSync(root, alias);
+        writeFileSync(join(root, "src", "plain.json"), "{}");
+        writeFileSync(join(root, directory, "existing.json"), "{}");
+        symlinkSync(`../${directory}/existing.json`, join(root, "src", "existing-link.json"));
+        symlinkSync(`../${directory}/missing.json`, join(root, "src", "missing-link.json"));
+        symlinkSync(`../${directory}/missing-dir`, join(root, "src", "directory-link"));
+        symlinkSync("missing-link.json", join(root, "src", "chain.json"));
+        symlinkSync("../src/plain.json", join(root, directory, "reported.json"));
+        if (tool === "Grep") {
+          symlinkSync(`../${directory}`, join(root, "src", "search-link"));
+          symlinkSync("../src", join(root, directory, "reported-dir"));
+          symlinkSync("../..", join(root, "src", "ancestor-link"));
+        }
+        symlinkSync("cycle.json", join(root, "src", "cycle.json"));
+        const loaded = loadGuardPolicy(join(ROOT, POLICY));
+        if (loaded.policy === null) throw new Error("test policy did not load");
+        loaded.policy.secret_paths = [{ id: "secret.anchored", globs: ["secrets/**"], reason: "Secret files" }];
+        const policy = join(work, "policy.yaml");
+        writeFileSync(policy, stringify(loaded.policy));
+        for (const source of ["flag", "environment", "payload"]) {
+          const cwd = source === "payload" ? alias : join(alias, "packages", "a");
+          const argv = ["hook", "pre-tool-use", "--policy", policy];
+          if (source === "flag") argv.push("--root", alias);
+          const env = source === "environment" ? { CLAUDE_PROJECT_DIR: alias } : {};
+          for (const representation of ["relative", "alias", "canonical"]) {
+            const run = (path: string): Run => {
+              const captured = captureIo();
+              const file =
+                representation === "relative"
+                  ? relative(cwd, join(alias, path))
+                  : join(representation === "alias" ? alias : root, path);
+              const code = runGuard(argv, {
+                cwd: ROOT,
+                io: captured.io,
+                env,
+                stdin: JSON.stringify({ ...BASE, cwd, tool_name: tool, tool_input: { [field]: file } }),
+              });
+              return { code, out: captured.out, err: captured.err };
+            };
+            for (const path of [
+              "src/existing-link.json",
+              "src/missing-link.json",
+              "src/directory-link/new.json",
+              "src/chain.json",
+              `${directory}/reported.json`,
+              ...(tool === "Grep"
+                ? [directory, "src/search-link", `${directory}/reported-dir`, "..", "../..", "src/ancestor-link"]
+                : []),
+            ]) {
+              expectDecision(run(path), "deny", rule);
+            }
+            expectDecision(run("src/plain.json"), "allow", undefined);
+            expectDecision(run("src/new.json"), "allow", undefined);
+            expectDecision(run("src/cycle.json"), "deny", UNJUDGEABLE);
+          }
+        }
+      } finally {
+        rmSync(work, { recursive: true, force: true });
+      }
+    }, 30_000);
+  }
+});
+
+describe("ak guard hook", () => {
+  const payload = readFileSync(join(CASES, "deny-bash-rm-recursive-force.stdin"), "utf8");
+
+  test("directory Grep respects full secret globs and workspace ancestors", () => {
+    interface GrepInput {
+      pattern: string;
+      path?: string;
+      output_mode?: "content" | "files_with_matches" | "count";
+    }
+    const work = mkdtempSync(join(ROOT, ".guard-search-"));
+    try {
+      const root = join(work, "repo");
+      const alias = join(work, "alias");
+      for (const directory of ["src", "config/dev/public", "config/prod/live", "config/public"]) {
+        mkdirSync(join(root, directory), { recursive: true });
+      }
+      symlinkSync(root, alias);
+      symlinkSync("../..", join(root, "src", "ancestor-link"));
+      writeFileSync(join(root, "config", "dev", "token.json"), "{}");
+      writeFileSync(join(root, "config", "public", "readme.txt"), "public");
+      const loaded = loadGuardPolicy(join(ROOT, POLICY));
+      if (loaded.policy === null) throw new Error("test policy did not load");
+      const policy = join(work, "policy.yaml");
+      for (const glob of ["config/{dev,prod}/token.json", "config/*/token.json"]) {
+        loaded.policy.secret_paths = [{ id: "secret.search", globs: [glob], reason: "Secret files" }];
+        writeFileSync(policy, stringify(loaded.policy));
+        for (const workspace of [root, alias]) {
+          const run = (input: GrepInput): Run => {
+            const captured = captureIo();
+            const code = runGuard(["hook", "pre-tool-use", "--policy", policy, "--root", workspace], {
+              cwd: ROOT,
+              io: captured.io,
+              env: {},
+              stdin: JSON.stringify({ ...BASE, cwd: workspace, tool_name: "Grep", tool_input: input }),
+            });
+            return { code, out: captured.out, err: captured.err };
+          };
+          for (const path of ["/", work, "..", "src/ancestor-link", "config", "config/dev"]) {
+            expectDecision(run({ path, pattern: ".", output_mode: "content" }), "deny", "secret.search");
+          }
+          for (const path of ["config/public", "config/dev/public", "config/public/readme.txt"]) {
+            const expected = path === "config/public" && glob.includes("*") ? "deny" : "allow";
+            for (const representation of [path, join(workspace, path)]) {
+              expectDecision(run({ path: representation, pattern: "." }), expected, "secret.search");
+            }
+          }
+          expectDecision(run({ pattern: "." }), "allow", undefined);
+        }
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  test("explicit directory Grep cannot read secret descendants in any output mode", () => {
+    for (const path of ["/home/dev/.ssh", "/home/dev", ".ssh", "config", "."]) {
+      for (const output_mode of ["content", "files_with_matches", "count"]) {
+        expect(decisionOf(replay(rawCall("Grep", { path, pattern: ".", output_mode }))).decision).toBe("deny");
+      }
+    }
+    expectDecision(replay(rawCall("Grep", { pattern: ".", output_mode: "content" })), "allow", undefined);
+  });
+
+  test("ak's usage lists it; the entrypoint dispatches it, as the hook process tests below show", () => {
+    const captured = captureIo();
+    expect(runCli([], { cwd: ROOT, io: captured.io })).toBe(2);
+    expect(captured.err.join("\n")).toContain("ak guard hook <event>");
+  });
+
+  test("without a verb it prints its usage and exits 2", () => {
+    const captured = captureIo();
+    expect(runGuard([], { cwd: ROOT, io: captured.io })).toBe(2);
+    expect(captured.err.join("\n")).toContain("ak guard hook pre-tool-use");
+  });
+
+  test("an event or host it cannot answer in is a non-blocking exit 1, never 2", () => {
+    expect(replay(payload, undefined, ["hook", "post-tool-use", "--policy", POLICY]).code).toBe(1);
+    expect(replay(payload, undefined, [...HOOK, "--host", "elsewhere"]).code).toBe(1);
+  });
+
+  test("a policy it cannot load, or a missing --policy, denies a judged call", () => {
+    const missing = replay(payload, undefined, [
+      "hook",
+      "pre-tool-use",
+      "--policy",
+      "tests/fixtures/guard/absent.yaml",
+    ]);
+    expectDecision(missing, "deny", UNJUDGEABLE);
+    expect(missing.out[0]).toContain("guard.policy-missing");
+    expectDecision(replay(payload, undefined, ["hook", "pre-tool-use"]), "deny", UNJUDGEABLE);
+    expectDecision(replay(payload, undefined, [...HOOK, "--root"]), "deny", UNJUDGEABLE);
+  });
+
+  test("every unjudged call needs a loadable policy and valid arguments before it passes", () => {
+    const work = mkdtempSync(join(ROOT, ".guard-policy-"));
+    try {
+      const invalid = join(work, "invalid.yaml");
+      writeFileSync(invalid, "version: not-a-policy\n");
+      for (const tool of ["WebFetch", "mcp__files__write", "Grep"]) {
+        const stdin = rawCall(tool, {});
+        for (const argv of [
+          ["hook", "pre-tool-use"],
+          ["hook", "pre-tool-use", "--policy", join(work, "absent.yaml")],
+          ["hook", "pre-tool-use", "--policy", invalid],
+          [...HOOK, "--unknown"],
+          [...HOOK, "--policy"],
+        ]) {
+          expectDecision(replay(stdin, undefined, argv), "deny", UNJUDGEABLE);
+        }
+        expectDecision(replay(stdin), "allow", undefined);
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  test("every tool needs an absolute cwd before it can pass or be judged", () => {
+    for (const tool of [
+      "WebFetch",
+      "mcp__files__write",
+      "Grep",
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+    ]) {
+      for (const cwd of [undefined, "", "relative/path"]) {
+        const stdin = JSON.stringify({
+          ...BASE,
+          cwd,
+          tool_name: tool,
+          tool_input: { command: "ls", file_path: "src/plain.json", notebook_path: "src/plain.ipynb" },
+        });
+        expect(decodeClaudeCode(stdin)).toMatchObject({ kind: "deny", verdict: { rule: UNJUDGEABLE } });
+        expectDecision(replay(stdin), "deny", UNJUDGEABLE);
+      }
+    }
+  });
+
+  test("--root overrides the project directory the policy's globs are relative to", () => {
+    const write = readFileSync(join(CASES, "deny-write-vendor.stdin"), "utf8");
+    expectDecision(replay(write, undefined, [...HOOK, "--root", "/work"]), "allow", undefined);
+  });
+
+  test("a relative explicit root denies instead of falling back to a nested payload cwd", () => {
+    for (const root of [".", "packages/a"]) {
+      for (const tool of ["Write", "WebFetch"]) {
+        const captured = captureIo();
+        const code = runGuard([...HOOK, "--root", root], {
+          cwd: ROOT,
+          io: captured.io,
+          env: {},
+          stdin: JSON.stringify({
+            ...BASE,
+            cwd: join(ROOT, "packages", "a"),
+            tool_name: tool,
+            tool_input: { file_path: join(ROOT, "tests", "data.json") },
+          }),
+        });
+        expectDecision({ code, out: captured.out, err: captured.err }, "deny", UNJUDGEABLE);
+      }
+    }
+  });
+});
+
+/** The real entrypoint, stdin and all, as Claude Code runs it. */
+function spawnHook(): ReturnType<typeof spawn> {
+  return spawn(process.execPath, [join(ROOT, "src", "cli.ts"), "guard", ...HOOK], {
+    cwd: ROOT,
+    env: { ...process.env, ...ENV },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+}
+
+function collect(stream: NodeJS.ReadableStream | null): () => string {
+  let text = "";
+  stream?.on("data", (chunk: Buffer) => {
+    text += chunk.toString("utf8");
+  });
+  return () => text;
+}
+
+describe("the hook process", () => {
+  test("reads the payload from stdin and answers a deny on stdout with exit 0", async () => {
+    const child = spawnHook();
+    const stdout = collect(child.stdout);
+    const done = new Promise<number | null>((resolve) => child.on("close", (code) => resolve(code)));
+    child.stdin?.end(readFileSync(join(CASES, "bypass-git-dash-C-push-force.stdin")));
+    expect(await done).toBe(0);
+    expect(stdout()).toContain('"permissionDecision":"deny"');
+    expect(stdout()).toContain("destructive.git-push-force");
+  }, 30_000);
+
+  test("a hook that has not answered when the host's timeout fires has printed nothing, so the call runs", async () => {
+    // claude-code-1: a timed-out command hook does not block the tool call.
+    // The case's expected file records the fail-open; this shows the guard
+    // leaves no partial answer behind for the host to read as a deny.
+    const timeout = ALL.find((c) => c.name === "timeout-fail-open");
+    expect(timeout?.expected.decision).toBe("fail-open");
+    expect(existsSync(join(RECEIPTS, "claude-code-1-hook-failures.md"))).toBe(true);
+    const child = spawnHook();
+    const stdout = collect(child.stdout);
+    const done = new Promise<NodeJS.Signals | null>((resolve) => child.on("close", (_code, signal) => resolve(signal)));
+    // Claude Code closes stdin once the payload is written; one that never closes stands for a hook still running.
+    child.stdin?.write(timeout?.stdin ?? "");
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    child.kill("SIGTERM");
+    expect(await done).toBe("SIGTERM");
+    expect(stdout()).toBe("");
+  }, 30_000);
+});
+
+test("source and packaged entrypoints enforce the guard from an isolated install", () => {
+  const work = mkdtempSync(join(ROOT, ".guard-bundle-"));
+  try {
+    const { catalog } = loadCatalog(ROOT);
+    if (catalog === null) throw new Error("test catalog did not load");
+    const entries = [join(ROOT, "src", "cli.ts"), join(ROOT, "src", "maintenance", "cli.ts")];
+    for (const host of HOST_IDS) {
+      const plan = planBundle({ root: ROOT, catalog }, host, {});
+      const script = plan.files.get("bin/ak");
+      if (script === undefined) throw new Error(`no bin/ak for ${host}: ${JSON.stringify(plan.issues)}`);
+      const entry = join(work, host, "bin", "ak");
+      mkdirSync(dirname(entry), { recursive: true });
+      writeFileSync(entry, script.contents);
+      entries.push(entry);
+    }
+    const project = join(work, "project");
+    mkdirSync(project);
+    writeFileSync(join(project, "policy.yaml"), readFileSync(join(ROOT, POLICY)));
+    writeFileSync(join(project, "invalid.yaml"), "version: not-a-policy\n");
+    const hook = ["hook", "pre-tool-use", "--policy", "policy.yaml"];
+    const payload = (tool: string, toolInput: ToolInput, cwd = project): string =>
+      JSON.stringify({ ...BASE, cwd, tool_name: tool, tool_input: toolInput });
+    for (const entry of entries) {
+      const invoke = (stdin: string, argv: string[] = hook): Run => {
+        const result = spawnSync(process.execPath, [entry, "guard", ...argv], {
+          cwd: project,
+          env: { HOME: work, PATH: process.env.PATH, CLAUDE_PROJECT_DIR: project },
+          input: stdin,
+          encoding: "utf8",
+          timeout: 30_000,
+        });
+        return {
+          code: result.status ?? -1,
+          out: result.stdout.trim() === "" ? [] : [result.stdout.trim()],
+          err: result.stderr.trim() === "" ? [] : [result.stderr.trim()],
+        };
+      };
+      expectDecision(invoke(payload("Write", { file_path: "tests/data.json" })), "deny", "protected.tests");
+      expectDecision(invoke(payload("Read", { file_path: ".env" })), "deny", "secret.dotenv");
+      expectDecision(
+        invoke(payload("Bash", { command: "git -C . push --force" })),
+        "deny",
+        "destructive.git-push-force",
+      );
+      expectDecision(invoke(payload("Write", { file_path: "src/plain.json" })), "allow", undefined);
+      expectDecision(invoke(payload("Bash", { command: "git status" })), "allow", undefined);
+      expectDecision(invoke("not JSON"), "deny", UNJUDGEABLE);
+      for (const tool of ["WebFetch", "mcp__files__write", "Grep"]) {
+        expectDecision(invoke(payload(tool, {})), "allow", undefined);
+        for (const argv of [
+          ["hook", "pre-tool-use"],
+          ["hook", "pre-tool-use", "--policy", "missing.yaml"],
+          ["hook", "pre-tool-use", "--policy", "invalid.yaml"],
+          [...hook, "--unknown"],
+        ]) {
+          expectDecision(invoke(payload(tool, {}), argv), "deny", UNJUDGEABLE);
+        }
+        expectDecision(invoke(payload(tool, {}, "relative/path")), "deny", UNJUDGEABLE);
+        expectDecision(
+          invoke(JSON.stringify({ ...BASE, cwd: undefined, tool_name: tool, tool_input: {} })),
+          "deny",
+          UNJUDGEABLE,
+        );
+      }
+      expect(invoke(payload("Bash", { command: "ls" }), [...hook, "--host", "unknown"]).code).toBe(1);
+      expect(invoke(payload("Bash", { command: "ls" }), ["hook", "post-tool-use"]).code).toBe(1);
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}, 120_000);

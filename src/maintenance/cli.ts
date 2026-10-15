@@ -21,6 +21,7 @@ import { scoreDelegationFiles } from "../delegation.ts";
 import { findKbProjectRoot, registryPath, resolveKnowledgebase } from "../kb/binding.ts";
 import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
+import { readGuardStdin, runGuard } from "../guard/cli.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -633,6 +634,9 @@ if (import.meta.main) {
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     const argv = process.argv.slice(2);
     process.exitCode = await runLearn(flags, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+  } else if (action === "guard") {
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    process.exitCode = runGuard(flags, { cwd: process.cwd(), io, stdin: readGuardStdin(process.argv.slice(2)) });
   } else if (action === "kb") {
     // The knowledgebase operations travel here too: a lifecycle skill calls them from an install with no checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
@@ -652,7 +656,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak kb …",
+      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb …",
     );
     process.exitCode = 2;
   }

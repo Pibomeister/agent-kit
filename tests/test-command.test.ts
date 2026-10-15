@@ -12,6 +12,8 @@ const heavy = [
   "tests/learn/spans-e2e.test.ts",
   "tests/learn/memory-evals-reflect.test.ts",
   "tests/learn/bundle.test.ts",
+  "tests/guard/claude-code.test.ts",
+  "tests/packaging.test.ts",
   "tests/version-gate.test.ts",
   "tests/catalog-progress.test.ts",
   "tests/kb-adapter.test.ts",
