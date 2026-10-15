@@ -455,6 +455,11 @@ describe("ak guard hook", () => {
   const payload = readFileSync(join(CASES, "deny-bash-rm-recursive-force.stdin"), "utf8");
 
   test("directory Grep respects full secret globs and workspace ancestors", () => {
+    interface GrepInput {
+      pattern: string;
+      path?: string;
+      output_mode?: "content" | "files_with_matches" | "count";
+    }
     const work = mkdtempSync(join(ROOT, ".guard-search-"));
     try {
       const root = join(work, "repo");
@@ -473,7 +478,7 @@ describe("ak guard hook", () => {
         loaded.policy.secret_paths = [{ id: "secret.search", globs: [glob], reason: "Secret files" }];
         writeFileSync(policy, stringify(loaded.policy));
         for (const workspace of [root, alias]) {
-          const run = (input: object): Run => {
+          const run = (input: GrepInput): Run => {
             const captured = captureIo();
             const code = runGuard(["hook", "pre-tool-use", "--policy", policy, "--root", workspace], {
               cwd: ROOT,
