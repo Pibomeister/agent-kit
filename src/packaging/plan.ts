@@ -367,15 +367,6 @@ function isSourceOnly(path: string): boolean {
 function publishedPathFor(sourcePath: string, includedSkillDirs: ReadonlySet<string>): string | null {
   const skillDir = /^skills\/([^/]+)\//.exec(sourcePath)?.[1];
   if (skillDir !== undefined) return includedSkillDirs.has(skillDir) ? sourcePath : null;
-  // Consumers already name these paths. Relocating them under references/shared/ would miss.
-  if (
-    sourcePath === "catalog.yaml" ||
-    sourcePath.startsWith("roles/") ||
-    sourcePath.startsWith("schemas/") ||
-    sourcePath.startsWith("templates/")
-  ) {
-    return sourcePath;
-  }
   if (isSourceOnly(sourcePath)) return null;
   return posix.join(SHARED_ROOT, sourcePath);
 }
@@ -792,11 +783,14 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
     files.set(source, { path: source, contents: text, source });
-    const rewritten = rewriteLinks(source, source, text, included, source);
-    issues.push(...rewritten.issues);
-    for (const dep of rewritten.dependencies) {
-      const published = publishedPathFor(dep, included);
-      if (published !== null) pending.push({ source: dep, published });
+    // Body bytes stay the source bytes, so a link keeps its source path. Copy a
+    // template that link names; other deps still travel through the shared closure.
+    const linked = rewriteLinks(source, source, text, included, source);
+    issues.push(...linked.issues);
+    for (const dep of linked.dependencies) {
+      if (!dep.startsWith("templates/")) continue;
+      const depText = readTextIfPresent(join(root, dep));
+      if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep });
     }
   };
   for (const entry of catalog.bySection("roles")) {

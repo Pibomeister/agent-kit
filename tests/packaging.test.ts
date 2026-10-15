@@ -498,7 +498,7 @@ describe("bundle planning", () => {
   test("transitive shared dependencies are copied under references/shared/", () => {
     const plan = planBundle(ctxFor(), "claude-code", {});
     expect([...plan.files.keys()]).toContain("references/shared/protocols/tdd/PROTOCOL.md");
-    expect([...plan.files.keys()]).toContain("roles/implementer/ROLE.md");
+    expect([...plan.files.keys()]).toContain("references/shared/roles/implementer/ROLE.md");
   });
 
   test("links into shared space are rewritten so closure holds in the bundle", () => {
@@ -525,7 +525,7 @@ describe("bundle planning", () => {
   test("a link between two shared files needs no rewrite because the layout is preserved", () => {
     const plan = planBundle(ctxFor(), "claude-code", {});
     const proto = plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents ?? "";
-    expect(proto).toContain("../../../roles/implementer/ROLE.md");
+    expect(proto).toContain("../../roles/implementer/ROLE.md");
   });
 
   test("--profile installs only that profile's member list", () => {

@@ -18,8 +18,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12584,
-      "tokens": 3146
+      "bytes": 12578,
+      "tokens": 3145
     },
     "bundle/claude-code:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -70,6 +70,21 @@
       "file": "references/verification-evidence/REFERENCE.md",
       "bytes": 6300,
       "tokens": 1575
+    },
+    "bundle/claude-code:references/shared/roles/trail-auditor/ROLE.md": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 9721,
+      "tokens": 2431
+    },
+    "bundle/claude-code:references/shared/templates/trail-audit.example.json": {
+      "file": "templates/trail-audit.example.json",
+      "bytes": 3001,
+      "tokens": 751
+    },
+    "bundle/claude-code:references/shared/templates/trail.example.json": {
+      "file": "templates/trail.example.json",
+      "bytes": 2325,
+      "tokens": 582
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -303,8 +318,8 @@
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 23422,
-      "tokens": 5850
+      "bytes": 23440,
+      "tokens": 5855
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -438,8 +453,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12584,
-      "tokens": 3146
+      "bytes": 12578,
+      "tokens": 3145
     },
     "bundle/codex:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -490,6 +505,21 @@
       "file": "references/verification-evidence/REFERENCE.md",
       "bytes": 6300,
       "tokens": 1575
+    },
+    "bundle/codex:references/shared/roles/trail-auditor/ROLE.md": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 9721,
+      "tokens": 2431
+    },
+    "bundle/codex:references/shared/templates/trail-audit.example.json": {
+      "file": "templates/trail-audit.example.json",
+      "bytes": 3001,
+      "tokens": 751
+    },
+    "bundle/codex:references/shared/templates/trail.example.json": {
+      "file": "templates/trail.example.json",
+      "bytes": 2325,
+      "tokens": 582
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -723,8 +753,8 @@
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 23422,
-      "tokens": 5850
+      "bytes": 23440,
+      "tokens": 5855
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -858,8 +888,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12584,
-      "tokens": 3146
+      "bytes": 12578,
+      "tokens": 3145
     },
     "bundle/droid:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -910,6 +940,21 @@
       "file": "references/verification-evidence/REFERENCE.md",
       "bytes": 6300,
       "tokens": 1575
+    },
+    "bundle/droid:references/shared/roles/trail-auditor/ROLE.md": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 9721,
+      "tokens": 2431
+    },
+    "bundle/droid:references/shared/templates/trail-audit.example.json": {
+      "file": "templates/trail-audit.example.json",
+      "bytes": 3001,
+      "tokens": 751
+    },
+    "bundle/droid:references/shared/templates/trail.example.json": {
+      "file": "templates/trail.example.json",
+      "bytes": 2325,
+      "tokens": 582
     },
     "bundle/droid:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1143,8 +1188,8 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 23418,
-      "tokens": 5849
+      "bytes": 23436,
+      "tokens": 5854
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1278,8 +1323,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12584,
-      "tokens": 3146
+      "bytes": 12578,
+      "tokens": 3145
     },
     "bundle/grok:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -1330,6 +1375,21 @@
       "file": "references/verification-evidence/REFERENCE.md",
       "bytes": 6300,
       "tokens": 1575
+    },
+    "bundle/grok:references/shared/roles/trail-auditor/ROLE.md": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 9721,
+      "tokens": 2431
+    },
+    "bundle/grok:references/shared/templates/trail-audit.example.json": {
+      "file": "templates/trail-audit.example.json",
+      "bytes": 3001,
+      "tokens": 751
+    },
+    "bundle/grok:references/shared/templates/trail.example.json": {
+      "file": "templates/trail.example.json",
+      "bytes": 2325,
+      "tokens": 582
     },
     "bundle/grok:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1563,8 +1623,8 @@
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 23422,
-      "tokens": 5850
+      "bytes": 23440,
+      "tokens": 5855
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1698,8 +1758,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12584,
-      "tokens": 3146
+      "bytes": 12578,
+      "tokens": 3145
     },
     "bundle/kimi:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -1750,6 +1810,21 @@
       "file": "references/verification-evidence/REFERENCE.md",
       "bytes": 6300,
       "tokens": 1575
+    },
+    "bundle/kimi:references/shared/roles/trail-auditor/ROLE.md": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 9721,
+      "tokens": 2431
+    },
+    "bundle/kimi:references/shared/templates/trail-audit.example.json": {
+      "file": "templates/trail-audit.example.json",
+      "bytes": 3001,
+      "tokens": 751
+    },
+    "bundle/kimi:references/shared/templates/trail.example.json": {
+      "file": "templates/trail.example.json",
+      "bytes": 2325,
+      "tokens": 582
     },
     "bundle/kimi:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
@@ -1983,8 +2058,8 @@
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 23422,
-      "tokens": 5850
+      "bytes": 23440,
+      "tokens": 5855
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
