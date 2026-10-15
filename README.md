@@ -57,6 +57,9 @@ needed. Later bundle changes require a new matching version in `catalog.yaml` an
 `tools/publish/version-gate.sh` refuses changed bundles at the old version, in pull-request CI and
 again before publishing, so host caches cannot hide an update.
 
+Use `ak learn skills list [--repo P]` to inspect skill candidates, their status, use counts and
+evidence. If the skills ledger is absent, the command reports zero counts without creating it.
+
 Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
 `bun run ak build --host grok`, then install that local directory with
 `grok plugin install <absolute-path-to-dist/grok> --trust`. Human-started skills use `/<id>`.
