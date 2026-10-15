@@ -58,7 +58,7 @@ export interface SetupArgDecision {
 }
 
 function isHelpToken(token: string): boolean {
-  return token === "-h" || token === "--help" || token.startsWith("--help=");
+  return token === "-h" || token === "--help";
 }
 
 /**

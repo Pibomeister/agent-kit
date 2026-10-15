@@ -167,13 +167,13 @@ describe("setup help writes nothing", () => {
       TIMEOUT_MS,
     );
 
-    test(
-      `setup ${name} rejects an unknown flag and writes nothing`,
-      () => {
+    test.each(["--not-a-real-flag", "--help=x"])(
+      `setup ${name} rejects %s and writes nothing`,
+      (flag) => {
         const { home, env } = isolated();
         const before = manifest(home);
         const operator = operatorStamp();
-        const result = invoke(home, env, [name, "--not-a-real-flag"]);
+        const result = invoke(home, env, [name, flag]);
         expect({
           code: result.code,
           stdout: result.stdout,
@@ -182,7 +182,7 @@ describe("setup help writes nothing", () => {
         }).toEqual({
           code: 2,
           stdout: "",
-          stderr: `ak learn setup ${name}: unexpected --not-a-real-flag; usage: ak learn ${verb.usage}\n`,
+          stderr: `ak learn setup ${name}: unexpected ${flag}; usage: ak learn ${verb.usage}\n`,
           timedOut: false,
         });
         expect(manifest(home)).toEqual(before);
