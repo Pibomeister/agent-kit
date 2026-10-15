@@ -358,7 +358,7 @@
     },
     "bundle/claude-code:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18512,
+      "bytes": 18509,
       "tokens": 4623
     },
     "bundle/claude-code:skills/triage/SKILL.md": {
@@ -793,7 +793,7 @@
     },
     "bundle/codex:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18512,
+      "bytes": 18509,
       "tokens": 4623
     },
     "bundle/codex:skills/triage/SKILL.md": {
@@ -1228,7 +1228,7 @@
     },
     "bundle/droid:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18508,
+      "bytes": 18505,
       "tokens": 4622
     },
     "bundle/droid:skills/triage/SKILL.md": {
@@ -1663,7 +1663,7 @@
     },
     "bundle/grok:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18512,
+      "bytes": 18509,
       "tokens": 4623
     },
     "bundle/grok:skills/triage/SKILL.md": {
@@ -2098,7 +2098,7 @@
     },
     "bundle/kimi:skills/super-verify/SKILL.md": {
       "file": "skills/super-verify/SKILL.md",
-      "bytes": 18512,
+      "bytes": 18509,
       "tokens": 4623
     },
     "bundle/kimi:skills/triage/SKILL.md": {
