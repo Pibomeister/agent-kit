@@ -239,8 +239,8 @@ Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
 what was changed.
 
 Every adapted file records its `donor@commit:path` in `provenance/adaptations.yaml`, and that path is
-verified to exist at the pin. Material adapted from a research report checked in under
-`research/sources/` records a digest-anchored `local:` source instead (`AUTHORING.md` §5).
+verified to exist at the pin. For report-derived material, follow the
+[anchored-local source rules](AUTHORING.md#5-provenance-law).
 Capabilities that came from the design conversation rather than a donor
 are marked `origin: conversation` with a line locator — never a fabricated source path. Upstream drift
 becomes a reviewable proposal, never an automatic re-sync.
