@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-build/SKILL.md (AUTHORING.md §4.1).
 
 id: super-build
-version: 0.1.0
+version: 0.2.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -210,8 +210,9 @@ failure_outcomes:
       finding sharpened or the seat available.
   - status: failed
     meaning: >-
-      No writable worktree, the branch is already checked out elsewhere, or the knowledgebase refused
-      the write. The worktree and the ledger are left intact for the resume.
+      No writable worktree, the branch is already checked out elsewhere, or the knowledgebase
+      refused a receipt, the ticket result or the check result; a refused trail record fails
+      nothing. The worktree and the ledger are left intact for the resume.
     next_permitted_action: Re-invoke once the worktree is available or the knowledgebase accepts writes.
   - status: cancelled
     meaning: >-
