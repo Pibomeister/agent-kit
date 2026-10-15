@@ -41,6 +41,8 @@ is named for the human rather than begun here.
 - A direction, if the human named one: a module, a subsystem or a pain point. Absent, the commit
   history chooses where to look.
 - The repository, readable at a named revision. Unreadable: `failed`.
+- Existing target tooling and recorded preferences, read only for a selected candidate's relevant
+  concern. Unknown support means no setup offer; it does not block architecture advice.
 - The project's existing decisions and domain vocabulary, through the knowledgebase adapter's
   `readContext` for `adr` and `concept` pages in the area. Unavailable: `needs-input`; a survey that
   cannot see what was already decided will re-litigate it.
@@ -74,7 +76,9 @@ is named for the human rather than begun here.
    tool where one is listed and numbered options in chat otherwise: constraints, dependencies, the
    shape of the deepened module, what sits behind the seam, which tests survive. Use the
    [deepening guide](../../references/codebase-design-vocabulary/DEEPENING.md) for dependency categories and
-   seam discipline.
+   seam discipline. Only now consult [optional linting](references/linting.md): offer a bounded setup
+   handoff only for a verified missing check that addresses this candidate's demonstrated friction
+   and runs on its supported target scope. Reuse a recorded preference; a yes installs nothing here.
 8. **Record what was decided.** When the grilling settles a shape, publish it as a proposed `adr`.
    When the human rejects the candidate for a load-bearing reason a future survey would need, offer
    to publish that rejection as a proposed `adr`, and publish only on a yes. An ephemeral reason
@@ -113,7 +117,8 @@ through the knowledgebase.
   `kb-document` placement scoped to the project. The knowledgebase resolves the location; this
   skill supplies no path and writes no decision file into the working repository (ruling
   `central-kb-owns-project-artifacts`).
-- The grilled interface shape and the implementation handoff, returned in the session.
+- The grilled interface shape and implementation handoff, including any agreed bounded tooling
+  setup and its verification, returned in the session. A decline leaves the architecture advice useful.
 
 ## Side effects
 

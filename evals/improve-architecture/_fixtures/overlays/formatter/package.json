@@ -1,0 +1,1 @@
+{"name":"order-fixture","private":true,"type":"module","scripts":{"test":"node --test test/*.test.mjs","lint":"oxlint src","fmt:check":"prettier --check src"},"devDependencies":{"oxlint":"1.86.0","prettier":"3.6.2"}}

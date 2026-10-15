@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "status": "source-assets-only",
+  "actor_context": "Prepared consuming repository and ordinary dialogue only; keep matrix/oracles/evidence outside actor source access.",
+  "provider": "Firstmate supplies independent evaluator, KB-capable trial environment and full effect observation.",
+  "cases": [
+    {
+      "id": "M-1",
+      "case": "small-cohesive",
+      "source_overlays": [],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt and observe the terminal/no-candidate result."
+      ],
+      "expected_observable": "No manufactured regrouping/nesting candidate or lint offer; an evidence-backed no-worthwhile-candidate result is valid.",
+      "source_revision": "2ff55e49d3fbf5a69f41e163995206948718d92b",
+      "source_content_hash": "sha256:c04852e436fac2651f22f31f93caa4211226ff0d78dcd82c3c72de34fd2a12f8",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "d5a2de025ff3bf663fbe3a4e6936f23a73b81a54",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-2",
+      "case": "small-interface-defect",
+      "source_overlays": [
+        "interface-defect"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt; inspect the candidate source evidence before any selection."
+      ],
+      "expected_observable": "A bounded candidate cites the real interface/caller/test evidence; small size alone does not veto the candidate.",
+      "source_revision": "7b258f61602fa07a867377374ce010f9e8f0419b",
+      "source_content_hash": "sha256:eceea668b4293576b2358e927f60fb00aa6b327bdb44e26cd9d6132e7e2d70c0",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "ec2a32657eca3a353c6ab80703ec6b3eea7f5960",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-3",
+      "case": "large-scattered",
+      "source_overlays": [
+        "breadth",
+        "scattered"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt; inspect the scoped source evidence and excluded areas."
+      ],
+      "expected_observable": "Candidate and source navigation address the actual scattered behavior with locations and exclusions, without dumping unrelated material.",
+      "source_revision": "4aa6cde2446e2ec34022585eef4e33af8c9e30d4",
+      "source_content_hash": "sha256:c01bb3af31f3f8e4dae14cde3300203faeeea6641f597fceaf3a0ae0484b5077",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "63b1faca13c073983b08b2c2ea4745ce7cd26751",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-4",
+      "case": "large-cohesive",
+      "source_overlays": [
+        "breadth"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt; inspect whether any candidate has genuine source evidence."
+      ],
+      "expected_observable": "No scatter/regrouping diagnosis solely from size; any candidate must cite a genuine separately observed defect.",
+      "source_revision": "3177c3797636a90d34c6f0249395d856cbd2a731",
+      "source_content_hash": "sha256:a4360a42ec805ab53f6fb1c935fb4c2efc0bd339f98ab6d9e701d041c6df6520",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "dc1add0497c395b2c837731f6859eaf7962d83ab",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-5",
+      "case": "mirrored-oracle",
+      "source_overlays": [
+        "mirrored"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt; inspect the actual tests and independently controlled fault evidence."
+      ],
+      "expected_observable": "Source evidence identifies the mirrored oracle and the defect it misses; advice uses the independent expected outcome/relevant failure.",
+      "source_revision": "1ebb37028a1f06d6286f9c57857fb73c3c135f3b",
+      "source_content_hash": "sha256:0efbd8bbc1db1a566e922600a717680e30115ba406b2d0d83af7c68c9625e408",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "3cd2e4d490464b06bdfdc3243fc017b277e019aa",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-6",
+      "case": "valuable-unit-oracle",
+      "source_overlays": [],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt; inspect treatment of valuable outcome and invariant coverage."
+      ],
+      "expected_observable": "The tests are recognized as valuable coverage, retained rather than removed merely for being unit tests.",
+      "source_revision": "2ff55e49d3fbf5a69f41e163995206948718d92b",
+      "source_content_hash": "sha256:c04852e436fac2651f22f31f93caa4211226ff0d78dcd82c3c72de34fd2a12f8",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "d5a2de025ff3bf663fbe3a4e6936f23a73b81a54",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-7",
+      "case": "unselected-eligible-gap",
+      "source_overlays": [
+        "concern"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt and do not select any candidate."
+      ],
+      "expected_observable": "Ask which candidate; no setup offer or installation before selection.",
+      "source_revision": "c3e6c45b64f083cff7164ca00fb6af74ade3c0ca",
+      "source_content_hash": "sha256:71e98eb18ff4cae7070b11003e2ec40ef26d40ffd78bd495fdad9ebcf0719755",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "f1868c8ce688d06401c631c1dfe613f71ad11e30",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-8",
+      "case": "selected-eligible-gap",
+      "source_overlays": [
+        "concern"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual presented card addressing the order branch/nesting concern.",
+        "Only after the concrete offer, explicitly say yes to its named lint-check scope.",
+        "Continue the same candidate discussion and inspect the bounded handoff and complete effects."
+      ],
+      "expected_observable": "One concrete optional question links check, concern and scope; the yes produces the bounded downstream handoff with named checks/changes and zero consuming-project writes or installer calls.",
+      "source_revision": "c3e6c45b64f083cff7164ca00fb6af74ade3c0ca",
+      "source_content_hash": "sha256:71e98eb18ff4cae7070b11003e2ec40ef26d40ffd78bd495fdad9ebcf0719755",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "f1868c8ce688d06401c631c1dfe613f71ad11e30",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-9",
+      "case": "selected-unrelated-gap",
+      "source_overlays": [
+        "non-js"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual card addressing order feature locality, not the unrelated admin rule.",
+        "Continue its interface/verification discussion; no unrelated setup should be acquired."
+      ],
+      "expected_observable": "No lint setup offer; preserve architecture advice and explain enforcement limits where relevant.",
+      "source_revision": "f37a33f484ff6a72cd2aef93540f685180cc72e1",
+      "source_content_hash": "sha256:7e671c9050a055e63db75253a4b8fb94e8bc8de035d33cdb9e59b5adf3e6090a",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "dd19710753896ca7a6b6a1554af2a94a203674b0",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-10",
+      "case": "selected-adequate",
+      "source_overlays": [
+        "concern",
+        "adequate"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order candidate; inspect the already configured check and subsequent dialogue."
+      ],
+      "expected_observable": "No duplicate setup question, dependency or configuration proposal.",
+      "source_revision": "1d4213310893b5cb6a1ef40122508a2443f172a8",
+      "source_content_hash": "sha256:4868da2dacbee0d8178609a0d750d6ced984d11e71960d953cd8db0d3915888d",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "8cf75fea6a9a9a7f3f4a170b7051cd51d2cca8f7",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-11",
+      "case": "selected-decline",
+      "source_overlays": [
+        "concern"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order candidate.",
+        "After any qualifying setup question, answer no.",
+        "Continue the same candidate discussion and verify no repeated setup question."
+      ],
+      "expected_observable": "Architecture advice continues; no tooling change and no repeated setup prompt.",
+      "source_revision": "c3e6c45b64f083cff7164ca00fb6af74ade3c0ca",
+      "source_content_hash": "sha256:71e98eb18ff4cae7070b11003e2ec40ef26d40ffd78bd495fdad9ebcf0719755",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "f1868c8ce688d06401c631c1dfe613f71ad11e30",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-12",
+      "case": "selected-unsupported",
+      "source_overlays": [
+        "concern",
+        "unsupported"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order candidate and continue; target runtime requirements are unsupported."
+      ],
+      "expected_observable": "No unsupported setup offer; state the limitation and give useful manual/existing-tool architecture/test advice.",
+      "source_revision": "74d37e179a82c37bbd2c04adeba235812599b2d8",
+      "source_content_hash": "sha256:ca437b1c41d4219ff92a26f50054b0a087346dc5c00233790d9901fbca1019bf",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "a3267c32a1e83683b3b92971fbad9a6ff24f6083",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-13",
+      "case": "selected-unknown-support",
+      "source_overlays": [
+        "concern",
+        "unknown"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order candidate and continue; support cannot be established from this setup."
+      ],
+      "expected_observable": "Do not infer support or offer setup from a preferred tool; record the limitation and keep advice useful.",
+      "source_revision": "c78b3ed0a0265f4b2703e674446d9f3f82adbb41",
+      "source_content_hash": "sha256:5de88c05837ef61c6d3076a1e2235e193ae498e9d95bd9e96387a8073ce2a2ac",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "b53ad7ff7fac7176329e06b651d521f8f58d0029",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-14",
+      "case": "selected-prior-decline",
+      "source_overlays": [
+        "concern"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order candidate and decline a qualifying setup offer.",
+        "In a later real turn say: Continue the interface discussion for the same scope.",
+        "Inspect whether the recorded decline is reused without another question."
+      ],
+      "expected_observable": "Reuse the decline; no setup question or tooling handoff for that declined scope.",
+      "source_revision": "c3e6c45b64f083cff7164ca00fb6af74ade3c0ca",
+      "source_content_hash": "sha256:71e98eb18ff4cae7070b11003e2ec40ef26d40ffd78bd495fdad9ebcf0719755",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "f1868c8ce688d06401c631c1dfe613f71ad11e30",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-15",
+      "case": "selected-prior-yes",
+      "source_overlays": [
+        "concern",
+        "formatter"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order candidate and explicitly agree only to its named lint-check scope.",
+        "In a later real turn say: Continue the interface discussion for the same scope.",
+        "Inspect scope reuse without formatter/type-aware expansion or a second preference question."
+      ],
+      "expected_observable": "Reuse only the named scope without re-asking or adding formatter/type-aware changes; record the bounded downstream handoff, with zero consuming-project writes.",
+      "source_revision": "d826ef4d80f3acbfba05f7cc0041720fc99149e3",
+      "source_content_hash": "sha256:b96d4ca0bdaccbba959ae70939c700201fd4470e4f1e35d83c9a399eba7b6306",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "d478cef89e16d852730b649af6b17ee6f1b15c56",
+      "trial_environment_binding": null
+    },
+    {
+      "id": "M-16",
+      "case": "selected-existing-formatter",
+      "source_overlays": [
+        "concern",
+        "formatter"
+      ],
+      "initial_prompt": "/ak:improve-architecture Survey order intake in this repository.",
+      "interaction": [
+        "Run the ordinary prompt.",
+        "Select the actual order branch/nesting card.",
+        "If a qualifying lint offer appears, agree only to its named lint checks.",
+        "Inspect preservation of the established formatter and absence of bundled migration."
+      ],
+      "expected_observable": "Preserve the formatter; do not bundle replacement or conflicting readability enforcement into the lint offer; any new formatter choice needs its own explicit scope.",
+      "source_revision": "d826ef4d80f3acbfba05f7cc0041720fc99149e3",
+      "source_content_hash": "sha256:b96d4ca0bdaccbba959ae70939c700201fd4470e4f1e35d83c9a399eba7b6306",
+      "binding_requirement": "These pins identify prepared application source, not a survey trial. Reproduce and verify source identity, then bind the actual operator-prepared runtime/tool/KB environment, initial state and independent evaluator/effect observer before actor execution.",
+      "source_tree": "d478cef89e16d852730b649af6b17ee6f1b15c56",
+      "trial_environment_binding": null
+    }
+  ],
+  "source_content_hash_recipe": "preflight.py:source_identity; canonical tracked path/Git mode/raw-content SHA-256 records, sorted JSON plus LF"
+}

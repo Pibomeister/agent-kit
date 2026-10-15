@@ -1,7 +1,7 @@
 # Execution contract for improve-architecture (schemas/skill.schema.json).
 # Prose mirror: skills/improve-architecture/SKILL.md (AUTHORING.md §4.1).
 id: improve-architecture
-version: 0.1.1
+version: 0.2.0
 kind: standalone
 invocation: U
 summary: >-
@@ -58,6 +58,12 @@ inputs:
     summary: >-
       adr and concept pages for the area, through readContext. Unavailable stops the run with
       needs-input rather than re-litigating what was decided.
+  - id: candidate-tooling-context
+    required: false
+    summary: >-
+      After candidate selection, its demonstrated concern, target scope, existing lint/format
+      versions and configuration, representative support evidence and any recorded setup preference.
+      An unrelated gap, unknown support or decline produces no setup offer, not a stopped survey.
 
 outputs:
   - id: candidate-report
@@ -72,7 +78,10 @@ outputs:
       to the project, for the grilled shape or a load-bearing rejection the human agreed to record.
       The knowledgebase resolves the location.
   - id: implementation-handoff
-    summary: The grilled interface shape and the named human-started run that would implement it.
+    summary: >-
+      The grilled interface shape and named human-started work source, including any explicitly
+      agreed bounded tooling setup, its compatibility limits, allowed changes and verification.
+      A yes installs nothing here; a decline leaves the architecture advice useful.
 
 side_effects:
   - process-exec
@@ -89,6 +98,9 @@ constraints:
   adr-may-be-accepted-by-this-skill: false
   report-may-land-in-repository: false
   ephemeral-rejection-may-be-recorded: false
+  setup-consent-may-expand-write-authority: false
+  unrelated-tooling-gap-may-trigger-offer: false
+  unknown-tooling-support-may-trigger-offer: false
 
 limits:
   candidates-grilled-per-run: 1
@@ -229,6 +241,151 @@ tests:
     expect: >-
       The skill stops with needs-input, names the missing capabilities, and writes no decision file
       into the repository.
+
+  - id: small-cohesive
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-1 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      No manufactured regrouping/nesting candidate or lint offer; an evidence-backed no-worthwhile-candidate result is valid.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: small-interface-defect
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-2 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      A bounded candidate cites the real interface/caller/test evidence; small size alone does not veto the candidate.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: large-scattered
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-3 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Candidate and source navigation address the actual scattered behavior with locations and exclusions, without dumping unrelated material.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: large-cohesive
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-4 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      No scatter/regrouping diagnosis solely from size; any candidate must cite a genuine separately observed defect.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: mirrored-oracle
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-5 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Source evidence identifies the mirrored oracle and the defect it misses; advice uses the independent expected outcome/relevant failure.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: valuable-unit-oracle
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-6 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      The tests are recognized as valuable coverage, retained rather than removed merely for being unit tests.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: unselected-eligible-gap
+    kind: negative
+    given: >-
+      A source-fixture trial runs M-7 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Ask which candidate; no setup offer or installation before selection.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-eligible-gap
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-8 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      One concrete optional question links check, concern and scope; the yes produces the bounded downstream handoff with named checks/changes and zero consuming-project writes or installer calls.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-unrelated-gap
+    kind: negative
+    given: >-
+      A source-fixture trial runs M-9 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      No lint setup offer; preserve architecture advice and explain enforcement limits where relevant.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-adequate
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-10 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      No duplicate setup question, dependency or configuration proposal.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-decline
+    kind: negative
+    given: >-
+      A source-fixture trial runs M-11 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Architecture advice continues; no tooling change and no repeated setup prompt.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-unsupported
+    kind: missing-tools
+    given: >-
+      A source-fixture trial runs M-12 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      No unsupported setup offer; state the limitation and give useful manual/existing-tool architecture/test advice.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-unknown-support
+    kind: missing-tools
+    given: >-
+      A source-fixture trial runs M-13 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Do not infer support or offer setup from a preferred tool; record the limitation and keep advice useful.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-prior-decline
+    kind: negative
+    given: >-
+      A source-fixture trial runs M-14 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Reuse the decline; no setup question or tooling handoff for that declined scope.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-prior-yes
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-15 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Reuse only the named scope without re-asking or adding formatter/type-aware changes; record the bounded downstream handoff, with zero consuming-project writes.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
+  - id: selected-existing-formatter
+    kind: positive
+    given: >-
+      A source-fixture trial runs M-16 with an ordinary survey prompt, the matrix's actual
+      selection/preference dialogue and independently bound fixture/tool/oracle/effect evidence.
+    expect: >-
+      Preserve the formatter; do not bundle replacement or conflicting readability enforcement into the lint offer; any new formatter choice needs its own explicit scope.
+      Full tool/process traces and before/after relevant consuming-project state show no
+      prohibited writes; missing trial facilities or continuation is unavailable, never a pass.
 
 body:
   line_budget: 150

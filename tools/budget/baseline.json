@@ -188,13 +188,18 @@
     },
     "bundle/claude-code:skills/improve-architecture/SKILL.md": {
       "file": "skills/improve-architecture/SKILL.md",
-      "bytes": 8723,
-      "tokens": 2178
+      "bytes": 9303,
+      "tokens": 2323
+    },
+    "bundle/claude-code:skills/improve-architecture/references/linting.md": {
+      "file": "skills/improve-architecture/references/linting.md",
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/claude-code:skills/improve-architecture/references/survey.md": {
       "file": "skills/improve-architecture/references/survey.md",
-      "bytes": 2522,
-      "tokens": 627
+      "bytes": 5776,
+      "tokens": 1440
     },
     "bundle/claude-code:skills/pov/SKILL.md": {
       "file": "skills/pov/SKILL.md",
@@ -618,13 +623,18 @@
     },
     "bundle/codex:skills/improve-architecture/SKILL.md": {
       "file": "skills/improve-architecture/SKILL.md",
-      "bytes": 8646,
-      "tokens": 2159
+      "bytes": 9226,
+      "tokens": 2304
+    },
+    "bundle/codex:skills/improve-architecture/references/linting.md": {
+      "file": "skills/improve-architecture/references/linting.md",
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/codex:skills/improve-architecture/references/survey.md": {
       "file": "skills/improve-architecture/references/survey.md",
-      "bytes": 2522,
-      "tokens": 627
+      "bytes": 5776,
+      "tokens": 1440
     },
     "bundle/codex:skills/pov/SKILL.md": {
       "file": "skills/pov/SKILL.md",
@@ -1048,13 +1058,18 @@
     },
     "bundle/droid:skills/improve-architecture/SKILL.md": {
       "file": "skills/improve-architecture/SKILL.md",
-      "bytes": 8628,
-      "tokens": 2154
+      "bytes": 9208,
+      "tokens": 2299
+    },
+    "bundle/droid:skills/improve-architecture/references/linting.md": {
+      "file": "skills/improve-architecture/references/linting.md",
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/droid:skills/improve-architecture/references/survey.md": {
       "file": "skills/improve-architecture/references/survey.md",
-      "bytes": 2522,
-      "tokens": 627
+      "bytes": 5776,
+      "tokens": 1440
     },
     "bundle/droid:skills/pov/SKILL.md": {
       "file": "skills/pov/SKILL.md",
@@ -1478,13 +1493,18 @@
     },
     "bundle/grok:skills/improve-architecture/SKILL.md": {
       "file": "skills/improve-architecture/SKILL.md",
-      "bytes": 8705,
-      "tokens": 2174
+      "bytes": 9285,
+      "tokens": 2319
+    },
+    "bundle/grok:skills/improve-architecture/references/linting.md": {
+      "file": "skills/improve-architecture/references/linting.md",
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/grok:skills/improve-architecture/references/survey.md": {
       "file": "skills/improve-architecture/references/survey.md",
-      "bytes": 2522,
-      "tokens": 627
+      "bytes": 5776,
+      "tokens": 1440
     },
     "bundle/grok:skills/pov/SKILL.md": {
       "file": "skills/pov/SKILL.md",
@@ -1908,13 +1928,18 @@
     },
     "bundle/kimi:skills/improve-architecture/SKILL.md": {
       "file": "skills/improve-architecture/SKILL.md",
-      "bytes": 8664,
-      "tokens": 2163
+      "bytes": 9244,
+      "tokens": 2308
+    },
+    "bundle/kimi:skills/improve-architecture/references/linting.md": {
+      "file": "skills/improve-architecture/references/linting.md",
+      "bytes": 5347,
+      "tokens": 1337
     },
     "bundle/kimi:skills/improve-architecture/references/survey.md": {
       "file": "skills/improve-architecture/references/survey.md",
-      "bytes": 2522,
-      "tokens": 627
+      "bytes": 5776,
+      "tokens": 1440
     },
     "bundle/kimi:skills/pov/SKILL.md": {
       "file": "skills/pov/SKILL.md",
