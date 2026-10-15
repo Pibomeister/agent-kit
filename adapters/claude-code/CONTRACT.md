@@ -248,6 +248,11 @@ contract, not here.
 
 ## 7. The learning runtime's hooks
 
+For `ak learn setup <verb>`, an exact `--help` or `-h` token prints that verb's usage to stdout
+and exits 0 before reading configuration or running the verb, even with other arguments present.
+Without a help token, unknown flags (including `--help=x`) and unexpected positional arguments
+print a usage error to stderr and exit 2 before reading or changing configuration.
+
 Under the opt-in `learning` profile, `ak learn setup wire` registers two hooks in the operator's
 host settings: `ak learn hook session-start` on `SessionStart` and `ak learn hook stop` on `Stop`.
 They inject the working memory and active guardrails at session start and queue ingestion when a
