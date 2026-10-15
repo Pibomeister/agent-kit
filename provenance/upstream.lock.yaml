@@ -39,6 +39,17 @@ donors:
     license: MIT
     copyright: "Copyright (c) 2026 Builder.io"
     license_file: provenance/licenses/BuilderIO_skills.LICENSE
+  # Research-only pin. No catalog content is adapted from this donor yet.
+  - id: tester-army-e2e
+    repo: tester-army/e2e
+    url: https://github.com/tester-army/e2e
+    path: .donors/tester-army_e2e
+    commit: 292cd0597c57b4929ad53919f0e4fe40ad87e095
+    commit_date: "2026-10-13T16:41:49Z"
+    license: Apache-2.0
+    copyright: "Copyright 2026 TesterArmy, Inc."
+    license_file: provenance/licenses/tester-army_e2e.LICENSE
+    notice_file: provenance/licenses/tester-army_e2e.NOTICE
   - id: addy
     repo: addyosmani/agent-skills
     url: https://github.com/addyosmani/agent-skills

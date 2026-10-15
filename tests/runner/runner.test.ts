@@ -1209,6 +1209,38 @@ describe("runner guards", () => {
     );
   });
 
+  test("one PR operation resumes assignment after creation without another effect", () => {
+    const f = ready();
+    reachShipReady(f);
+    const input = `sha256:${"c".repeat(64)}`;
+    let exists = false;
+    let assigned = false;
+    let creates = 0;
+    let edits = 0;
+    const readBack = () => (exists && assigned ? input : null);
+    expect(() =>
+      f.runner.effect("toy-run", "pr-open", "toy/pr", input, readBack, () => {
+        exists = true;
+        creates += 1;
+        throw new Error("assignment unavailable");
+      }),
+    ).toThrow("assignment unavailable");
+    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
+    const resume = () => {
+      if (!exists) creates += 1;
+      exists = true;
+      if (!assigned) edits += 1;
+      assigned = true;
+    };
+    const reopened = new Runner(f.privateDir, f.worker, root);
+    expect(reopened.effect("toy-run", "pr-open", "toy/pr", input, readBack, resume).confirmed).toBe(true);
+    reopened.effect("toy-run", "pr-open", "toy/pr", input, readBack, resume);
+    expect(creates).toBe(1);
+    expect(edits).toBe(1);
+    expect(reopened.status("toy-run").run_state).toBe("pr-open");
+    expect(Object.keys(reopened.status("toy-run").effects)).toHaveLength(1);
+  });
+
   test("fix cycles cannot exceed the charter cap", () => {
     const f = ready();
     expect(f.runner.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("complete");

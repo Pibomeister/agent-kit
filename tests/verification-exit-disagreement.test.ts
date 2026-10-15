@@ -6,7 +6,7 @@ import { loadCatalog } from "../src/catalog/load.ts";
 import { HOST_IDS } from "../src/packaging/hosts.ts";
 import { planBundle } from "../src/packaging/plan.ts";
 import { checkDocument, indexDocuments } from "../src/validation/docrules.ts";
-import { checkSchemas } from "../src/validation/schemas.ts";
+import { checkSchemas, compileSchemas } from "../src/validation/schemas.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 type Receipt = Record<string, unknown>;
@@ -14,6 +14,7 @@ type Receipt = Record<string, unknown>;
 const ROOT = join(import.meta.dir, "..");
 const FIXTURES = join(import.meta.dir, "fixtures", "verification-zero-exit");
 const SCHEMAS = join(ROOT, "schemas");
+const COMPILED_SCHEMAS = compileSchemas(ROOT);
 
 function parseReceipt(source: string): Receipt {
   // SAFETY: every source is a JSON object document from this repository: a
@@ -65,7 +66,7 @@ function validationContext(receipt: Receipt) {
 }
 
 function akValidateAccepts(receipt: Receipt): boolean {
-  const issues = checkSchemas(validationContext(receipt));
+  const issues = checkSchemas(validationContext(receipt), COMPILED_SCHEMAS);
   return !issues.some((issue) => issue.file === "templates/verification.json" && issue.severity === "error");
 }
 
@@ -152,7 +153,7 @@ describe("verification receipt without acceptance criteria", () => {
       expect(stated).toBeString();
       expectVerdict({ ...criteria, supports }, true);
     }
-    // This plans the repository's real bundle once per host and compiles every
-    // schema four times, which does not fit the default limit on a busy host.
+    // This plans the repository's real bundle once per host, which does not
+    // fit the default limit on a busy host.
   }, 30_000);
 });
