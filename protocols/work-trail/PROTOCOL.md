@@ -34,11 +34,12 @@ widens the authority it was called with (ruling `entrypoint-phase-operation-spli
   [an example stretch](../../templates/trail.example.json).
 
 An absent input fails closed: nothing is guessed, and nothing stops the build
-(ruling `work-trail-is-account-not-evidence`). No ticket id or hash, or no scratch space: the
-stretch is reported missing. No knowledgebase adapter: the build has already failed at its
-receipts, and no trail step is reached. A publish that fails or cannot be read back: the record is
-reported with its location, its hash and the error, and is not sent again. A missing audit input:
-the audit is unavailable, and the report names what is missing.
+(ruling `work-trail-is-account-not-evidence`). No ticket id or hash, no scratch space, or a
+stretch index that cannot hold its row: the stretch is reported missing. No stretch index on a
+resumed run: the resume rule says what is reported. No knowledgebase adapter: the build has already
+failed at its receipts, and no trail step is reached. A publish that fails or cannot be read back:
+the record is reported with its location, its hash and the error, and is not sent again. A missing
+audit input: the audit is unavailable, and the report names what is missing.
 
 ## Workflow
 
@@ -77,30 +78,80 @@ The implementer, while it works (ruling `work-trail-is-account-not-evidence`):
 7. Still write and return the closing report, with a pointer to the stretch.
 
 The build, for each ticket, in this order (ruling `work-trail-is-account-not-evidence`):
-1. Before seating an implementer, form its stretch's id; one that does not fit is reported missing.
+1. Before seating an implementer, form its stretch's id, counting its order n from the ticket's
+   stretch index, not from what the build remembers; one that does not fit is reported missing.
 2. Prepare the stretch's record outside the checkout, in the runner's scratch space, never in the
-   ticket's worktree or any tracked directory, and take the record's hash as prepared.
+   ticket's worktree or any tracked directory, and take the record's hash as prepared. Before the
+   implementer is seated, write the stretch's row into the stretch index: its id, its location, its
+   prepared hash, the implementer seat it was prepared for and its order. The index is kept in the
+   scratch space beside the stretches, under a name formed from the run id and the ticket id. Only
+   the build writes the index and the kept audit record, and neither is handed or named to an
+   implementer.
 3. Hand the implementer this protocol and the record's location. Only the implementer it was
    prepared for writes to it afterwards. A replacing implementer is handed no earlier stretch.
-4. Carry the stretch by reference: never open its entries and never rewrite its record. Handle it by
+4. When an implementer's report arrives, write into its stretch's row the stretch's hash at that
+   report.
+5. Carry the stretch by reference: never open its entries and never rewrite its record. Handle it by
    its location, its hash, and the kind and the id its record names.
-5. Wait for the ticket's commit, its receipts, its ticket result and its gate record when there is
+6. Wait for the ticket's commit, its receipts, its ticket result and its gate record when there is
    one; none of those waits on the trail steps that follow. A ticket that stops before its commit
    gets no audit and has no stretch published, and the report says so.
-6. Tell each stretch's state. Missing: the record is gone, or its hash is still the prepared hash.
+7. Tell each stretch's state. Missing: the record is gone, or its hash is still the prepared hash.
    Unpublished: the hash has changed and the knowledgebase holds no `trail` record of the run with
-   that id and hash. Published: the knowledgebase holds one.
-7. Publish each unpublished stretch as written, when its record names kind `trail` and its id,
-   through `publishArtifact` as a run artifact of the run, and keep the ref it returns. A record
-   that names another kind or id is reported and not sent.
-8. Form the audit id from the committed revision, and seat the trail auditor once.
-9. Hand the auditor the audit id, every stretch of the ticket by reference with its state and hash,
-   and the ticket, the diff, the commits, the receipts and the implementer's report. No transcript.
-10. Before sending the audit, confirm that the returned record names kind `trail-audit` and that
+   that id and hash. Published: the knowledgebase holds one. A stretch the resume rule holds back is
+   unpublished by this run, and its state is told without asking the knowledgebase.
+8. Publish each unpublished stretch that the resume rule does not hold back, as written, when its
+   record names kind `trail` and its id, through `publishArtifact` as a run artifact of the run, and
+   keep the ref it returns. A record that names another kind or id is reported and not sent.
+9. Form the audit id from the committed revision. Mark the auditor's seat in the stretch index, then
+   seat the trail auditor once. A seat the index cannot mark is not made: the seat failed, and the
+   audit is unavailable.
+10. Hand the auditor the audit id, every stretch of the ticket by reference with its state and hash,
+    and the ticket, the diff, the commits, the receipts and the implementer's report. No transcript.
+11. Keep the audit record as returned in the scratch space beside the index, and write the kept
+    record's hash into the index, before checking or publishing it.
+12. Before sending the audit, confirm that the returned record names kind `trail-audit` and that
     id. A record that does not is reported and not sent.
-11. Publish the audit as returned, through `publishArtifact` as a run artifact of the run, and keep
+13. Publish the audit as returned, through `publishArtifact` as a run artifact of the run, and keep
     the ref it returns.
-12. Report what Outputs lists.
+14. Report what Outputs lists.
+
+The trail steps are steps 7 to 13. After each, the build writes its outcome into the stretch index:
+into a stretch's row, the ref its publish returned, why it was not sent, or the error; for the
+audit, its ref, why it is unavailable or not sent, or the error. An outcome the index cannot hold is
+reported, and nothing stops the build (ruling `work-trail-is-account-not-evidence`).
+
+The resume rule (ruling `work-trail-is-account-not-evidence`). On a resumed run, for each committed
+ticket, the build reads the stretch index, reports each recorded outcome as recorded, and runs only
+the trail steps whose outcome the index does not hold; no auditor is seated again for a seat the
+index marks. The rule decides what to run from the index alone and adds no knowledgebase read
+beyond the publish's own read-back.
+- A publish whose outcome the index does not hold is made once more, as written, through
+  `publishArtifact`, after the hold-back below: when the interrupted publish landed, its
+  idempotency key and read-back return the stored ref and write nothing. An interrupted publish is
+  not a failed one, and a recorded refusal or failure is still not sent again.
+- A seat marked with no recorded audit outcome and no kept audit record failed with its seat: the
+  audit is reported unavailable, with the reason that the run was interrupted during it, and no
+  auditor is seated again.
+- A kept audit record with no recorded audit outcome is checked and published as steps 12 and 13
+  say only when its hash still equals the hash the index recorded for it; otherwise the audit is
+  reported unavailable, with the reason that the kept record is not the one the index recorded.
+- A recorded stretch with no recorded publish outcome that is no longer at its location is reported
+  missing.
+- The hold-back. On a resumed run, a stretch with no recorded publish outcome whose hash is no
+  longer its prepared hash is sent only when its row records a hash at its implementer's last report
+  and the stretch's hash still equals it. Any other such stretch, one whose implementer never
+  reported included, is held back: it is not sent, and it is reported unpublished by this run, with
+  the reason that its implementer returned no report after its last write and that the interrupted
+  run may have published it as written, which this run did not read back. A secret the audit
+  notices in a held-back stretch is reported as exposed, for its owner to rotate, as for a
+  published stretch. When the resumed run seats the trail auditor, it receives each held-back
+  stretch from its location with that state and reason.
+- The rule depends on the runner handing the resumed run the scratch space the interrupted run used.
+  An index row the scratch space cannot hold leaves that stretch reported missing. An index gone on
+  resume leaves the ticket's stretches reported missing and its audit unavailable, with that
+  reason, and no auditor is seated for it. Nothing in the rule stops the build (ruling
+  `work-trail-is-account-not-evidence`).
 
 ## Hard gates
 
@@ -165,7 +216,9 @@ No outcome here stops the build (ruling `work-trail-is-account-not-evidence`).
 - `cap-reached`: the invoking operation's cap was reached. What stands is reported as it stands.
 - `failed`: the scratch space could not hold a stretch's record, and that stretch is reported
   missing; or a publish failed or could not be read back, and that record is reported with its
-  location, its hash and the error.
+  location, its hash and the error; or the stretch index could not hold a row, a seat mark or an
+  outcome, or was gone on a resumed run, and that is reported as the build's steps and the resume
+  rule say.
 - `cancelled`: the runner cancelled the run. Each stretch is reported in the state it was left in.
 
 ## Limits

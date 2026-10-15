@@ -431,9 +431,9 @@ tests:
       A run is interrupted after two tickets committed and a third was mid-fix-loop, and is started
       again against the same ready set.
     expect: >-
-      The skill reads the recorded base commits, commits and rulings rather than its own recollection,
-      resumes the third ticket at its next round, and does not re-dispatch implementers for work
-      already committed.
+      The skill reads the recorded base commits, commits and rulings, and each ticket's work-trail
+      stretch index, rather than its own recollection, resumes the third ticket at its next round,
+      and does not re-dispatch implementers for work already committed.
   - id: task-local-child-does-not-ship
     kind: adversarial
     given: >-
