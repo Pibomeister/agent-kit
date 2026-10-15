@@ -399,6 +399,7 @@ describe("file tool path boundaries", () => {
         if (tool === "Grep") {
           symlinkSync(`../${directory}`, join(root, "src", "search-link"));
           symlinkSync("../src", join(root, directory, "reported-dir"));
+          symlinkSync("../..", join(root, "src", "ancestor-link"));
         }
         symlinkSync("cycle.json", join(root, "src", "cycle.json"));
         const loaded = loadGuardPolicy(join(ROOT, POLICY));
@@ -432,7 +433,9 @@ describe("file tool path boundaries", () => {
               "src/directory-link/new.json",
               "src/chain.json",
               `${directory}/reported.json`,
-              ...(tool === "Grep" ? [directory, "src/search-link", `${directory}/reported-dir`] : []),
+              ...(tool === "Grep"
+                ? [directory, "src/search-link", `${directory}/reported-dir`, "..", "../..", "src/ancestor-link"]
+                : []),
             ]) {
               expectDecision(run(path), "deny", rule);
             }
@@ -450,6 +453,52 @@ describe("file tool path boundaries", () => {
 
 describe("ak guard hook", () => {
   const payload = readFileSync(join(CASES, "deny-bash-rm-recursive-force.stdin"), "utf8");
+
+  test("directory Grep respects full secret globs and workspace ancestors", () => {
+    const work = mkdtempSync(join(ROOT, ".guard-search-"));
+    try {
+      const root = join(work, "repo");
+      const alias = join(work, "alias");
+      for (const directory of ["src", "config/dev/public", "config/prod/live", "config/public"]) {
+        mkdirSync(join(root, directory), { recursive: true });
+      }
+      symlinkSync(root, alias);
+      symlinkSync("../..", join(root, "src", "ancestor-link"));
+      writeFileSync(join(root, "config", "dev", "token.json"), "{}");
+      writeFileSync(join(root, "config", "public", "readme.txt"), "public");
+      const loaded = loadGuardPolicy(join(ROOT, POLICY));
+      if (loaded.policy === null) throw new Error("test policy did not load");
+      const policy = join(work, "policy.yaml");
+      for (const glob of ["config/{dev,prod}/token.json", "config/*/token.json"]) {
+        loaded.policy.secret_paths = [{ id: "secret.search", globs: [glob], reason: "Secret files" }];
+        writeFileSync(policy, stringify(loaded.policy));
+        for (const workspace of [root, alias]) {
+          const run = (input: object): Run => {
+            const captured = captureIo();
+            const code = runGuard(["hook", "pre-tool-use", "--policy", policy, "--root", workspace], {
+              cwd: ROOT,
+              io: captured.io,
+              env: {},
+              stdin: JSON.stringify({ ...BASE, cwd: workspace, tool_name: "Grep", tool_input: input }),
+            });
+            return { code, out: captured.out, err: captured.err };
+          };
+          for (const path of ["/", work, "..", "src/ancestor-link", "config", "config/dev"]) {
+            expectDecision(run({ path, pattern: ".", output_mode: "content" }), "deny", "secret.search");
+          }
+          for (const path of ["config/public", "config/dev/public", "config/public/readme.txt"]) {
+            const expected = path === "config/public" && glob.includes("*") ? "deny" : "allow";
+            for (const representation of [path, join(workspace, path)]) {
+              expectDecision(run({ path: representation, pattern: "." }), expected, "secret.search");
+            }
+          }
+          expectDecision(run({ pattern: "." }), "allow", undefined);
+        }
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
 
   test("explicit directory Grep cannot read secret descendants in any output mode", () => {
     for (const path of ["/home/dev/.ssh", "/home/dev", ".ssh", "config", "."]) {

@@ -176,9 +176,9 @@ function fixedSegments(view: View): string[] {
 function matches(glob: CompiledGlob, view: View, touch: Touch): boolean {
   if (matchesFile(glob, view)) return true;
   if (touch === "search") {
-    if (glob.floating) return true;
-    if (!view.anchored) return false;
-    return coversPrefix(glob, fixedSegments(view).slice(0, glob.literalPrefix.length));
+    if (!view.anchored && !glob.floating) return false;
+    const path = view.anchored ? view.rel : view.path;
+    return glob.prefixRegex.test(path === "" ? "" : `${path}/`);
   }
   if (touch === "file" || !view.anchored) return false;
   const segments = fixedSegments(view);
@@ -632,6 +632,12 @@ class Judge {
   private read(raw: string, dir: string | null, what: string, touch: Touch = "file"): Deny | null {
     const views = this.locate(raw, dir);
     if (views === null) return null;
+    if (
+      touch === "search" &&
+      views.some((v) => !v.anchored && (v.path === "" || this.c.root.startsWith(`/${v.path}/`)))
+    ) {
+      views.push({ anchored: true, rel: "" });
+    }
     const hit = this.secretHit(views, touch);
     return hit === null ? null : { rule: hit.rule, reason: `${hit.reason} (${show(what)})` };
   }
