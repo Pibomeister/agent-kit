@@ -25996,11 +25996,11 @@ var init_hooks2 = __esm(() => {
 
 // src/maintenance/cli.ts
 var import_ajv10 = __toESM(require_ajv(), 1);
-var import__20208 = __toESM(require_2020(), 1);
+var import__202010 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync4 } from "child_process";
-import { existsSync as existsSync32, readFileSync as readFileSync23, realpathSync as realpathSync6 } from "fs";
+import { existsSync as existsSync32, readFileSync as readFileSync24, realpathSync as realpathSync6 } from "fs";
 import { homedir as homedir5 } from "os";
-import { basename as basename16, isAbsolute as isAbsolute9, join as join33, relative as relative7 } from "path";
+import { basename as basename16, isAbsolute as isAbsolute10, join as join34, relative as relative7 } from "path";
 // schemas/common.schema.json
 var common_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -32798,8 +32798,2031 @@ async function dispatch(argv, options) {
   return verb.run(parseLearnArgs(rest), ctx);
 }
 
+// src/guard/cli.ts
+import { lstatSync as lstatSync2, readFileSync as readFileSync23, readlinkSync, statSync as statSync16 } from "fs";
+import { dirname as dirname14, isAbsolute as isAbsolute9, join as join33, resolve as resolvePath } from "path";
+
+// src/guard/glob.ts
+var SPECIAL = new Set(".+^$()|[]\\");
+function compileGlob(glob) {
+  let out = "^";
+  let prefix = "^";
+  let depth = 0;
+  for (let i = 0;i < glob.length; i++) {
+    const ch = glob.charAt(i);
+    if (ch === "*") {
+      if (glob.charAt(i + 1) === "*") {
+        if (glob.charAt(i + 2) === "/") {
+          out += "(?:.*/)?";
+          prefix += "(?:.*/|.*$)?";
+          i += 2;
+        } else {
+          out += ".*";
+          prefix += ".*";
+          i += 1;
+        }
+      } else {
+        out += "[^/]*";
+        prefix += "[^/]*";
+      }
+    } else if (ch === "?") {
+      out += "[^/]";
+      prefix += "(?:[^/]|$)";
+    } else if (ch === "{") {
+      depth += 1;
+      out += "(?:";
+      prefix += "(?:";
+    } else if (ch === "}") {
+      if (depth === 0)
+        return null;
+      depth -= 1;
+      out += ")";
+      prefix += ")";
+    } else if (ch === "," && depth > 0) {
+      out += "|";
+      prefix += "|";
+    } else {
+      const token = SPECIAL.has(ch) ? `\\${ch}` : ch;
+      out += token;
+      prefix += `(?:${token}|$)`;
+    }
+  }
+  if (depth !== 0)
+    return null;
+  const literalPrefix = [];
+  for (const segment of glob.split("/")) {
+    if (/[*?{]/.test(segment))
+      break;
+    literalPrefix.push(segment);
+  }
+  return {
+    source: glob,
+    regex: new RegExp(`${out}$`),
+    prefixRegex: new RegExp(`${prefix}$`),
+    literalPrefix,
+    floating: glob.startsWith("**")
+  };
+}
+function coversPrefix(glob, segments) {
+  if (segments.length > glob.literalPrefix.length)
+    return false;
+  return segments.every((segment, i) => segment === glob.literalPrefix[i]);
+}
+
+// src/guard/shell.ts
+var DYNAMIC = "\x00";
+var HOME = "\x01";
+var OPERATOR_CHARS = new Set([";", "&", "|", "(", ")", "<", ">"]);
+var BLANK = new Set([" ", "\t"]);
+function newCommand(stdin) {
+  return { words: [], redirects: [], stdin };
+}
+function matchParen(src, open) {
+  let depth = 0;
+  for (let i = open;i < src.length; i++) {
+    const ch = src.charAt(i);
+    if (ch === "\\")
+      i += 1;
+    else if (ch === "'") {
+      const close = src.indexOf("'", i + 1);
+      if (close < 0)
+        return -1;
+      i = close;
+    } else if (ch === '"') {
+      const close = matchDoubleQuote(src, i);
+      if (close < 0)
+        return -1;
+      i = close;
+    } else if (ch === "`") {
+      const close = matchBacktick(src, i);
+      if (close < 0)
+        return -1;
+      i = close;
+    } else if (ch === "(")
+      depth += 1;
+    else if (ch === ")") {
+      depth -= 1;
+      if (depth === 0)
+        return i;
+    }
+  }
+  return -1;
+}
+function matchDoubleQuote(src, open) {
+  for (let i = open + 1;i < src.length; i++) {
+    const ch = src.charAt(i);
+    if (ch === "\\")
+      i += 1;
+    else if (ch === '"')
+      return i;
+    else if (ch === "$" && src.charAt(i + 1) === "(") {
+      const close = matchParen(src, i + 1);
+      if (close < 0)
+        return -1;
+      i = close;
+    } else if (ch === "`") {
+      const close = matchBacktick(src, i);
+      if (close < 0)
+        return -1;
+      i = close;
+    }
+  }
+  return -1;
+}
+function matchBacktick(src, open) {
+  for (let i = open + 1;i < src.length; i++) {
+    const ch = src.charAt(i);
+    if (ch === "\\")
+      i += 1;
+    else if (ch === "`")
+      return i;
+  }
+  return -1;
+}
+function matchBrace(src, open) {
+  let depth = 0;
+  for (let i = open;i < src.length; i++) {
+    const ch = src.charAt(i);
+    if (ch === "\\")
+      i += 1;
+    else if (ch === "'") {
+      const close = src.indexOf("'", i + 1);
+      if (close < 0)
+        return -1;
+      i = close;
+    } else if (ch === '"') {
+      const close = matchDoubleQuote(src, i);
+      if (close < 0)
+        return -1;
+      i = close;
+    } else if (ch === "{")
+      depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0)
+        return i;
+    }
+  }
+  return -1;
+}
+var ANSI_ESCAPES = new Map([
+  ["n", `
+`],
+  ["t", "\t"],
+  ["r", "\r"],
+  ["0", ""],
+  ["a", "\x07"],
+  ["e", "\x1B"]
+]);
+function substitutionsIn(text2) {
+  const out = [];
+  for (let i = 0;i < text2.length; i++) {
+    const ch = text2.charAt(i);
+    if (ch === "\\")
+      i += 1;
+    else if (ch === "$" && text2.charAt(i + 1) === "(" && text2.charAt(i + 2) !== "(") {
+      const close = matchParen(text2, i + 1);
+      if (close < 0)
+        return null;
+      out.push(text2.slice(i + 2, close));
+      i = close;
+    } else if (ch === "`") {
+      const close = matchBacktick(text2, i);
+      if (close < 0)
+        return null;
+      out.push(text2.slice(i + 1, close).replaceAll("\\`", "`"));
+      i = close;
+    }
+  }
+  return out;
+}
+
+class Lexer {
+  src;
+  i = 0;
+  commands = [];
+  nested = [];
+  current = newCommand({ kind: "terminal" });
+  pendingRedirect = null;
+  heredocs = [];
+  constructor(src) {
+    this.src = src;
+  }
+  run() {
+    const src = this.src;
+    while (this.i < src.length) {
+      const ch = src.charAt(this.i);
+      if (BLANK.has(ch)) {
+        this.i += 1;
+      } else if (ch === "\\" && src.charAt(this.i + 1) === `
+`) {
+        this.i += 2;
+      } else if (ch === `
+`) {
+        this.i += 1;
+        if (!this.endCommand({ kind: "terminal" }))
+          return null;
+        if (!this.readHeredocBodies())
+          return null;
+      } else if (ch === "#") {
+        const end = src.indexOf(`
+`, this.i);
+        this.i = end < 0 ? src.length : end;
+      } else if ((ch === "<" || ch === ">") && src.charAt(this.i + 1) === "(") {
+        if (!this.readWord())
+          return null;
+      } else if (ch === "<" || ch === ">" || ch === "&" && src.charAt(this.i + 1) === ">") {
+        if (!this.readRedirectOp())
+          return null;
+      } else if (OPERATOR_CHARS.has(ch)) {
+        if (!this.readControlOp())
+          return null;
+      } else if (!this.readWord())
+        return null;
+    }
+    if (!this.endCommand({ kind: "terminal" }))
+      return null;
+    for (const doc of this.heredocs) {
+      if (!this.attachHeredoc(doc, ""))
+        return null;
+    }
+    return { commands: this.commands, nested: this.nested };
+  }
+  endCommand(next) {
+    if (this.pendingRedirect !== null)
+      return false;
+    const c = this.current;
+    if (c.words.length > 0 || c.redirects.length > 0)
+      this.commands.push(c);
+    this.current = newCommand(next);
+    return true;
+  }
+  readControlOp() {
+    const src = this.src;
+    const ch = src.charAt(this.i);
+    const two = src.slice(this.i, this.i + 2);
+    if (two === "|&" || ch === "|" && two !== "||") {
+      this.i += two === "|&" ? 2 : 1;
+      return this.endCommand({ kind: "pipe" });
+    }
+    this.i += two === "&&" || two === "||" || two === ";;" || two === ";&" ? 2 : 1;
+    return this.endCommand({ kind: "terminal" });
+  }
+  readRedirectOp() {
+    if (this.pendingRedirect !== null)
+      return false;
+    const src = this.src;
+    for (const op of ["&>>", "<<<", "<<-", "&>", ">>", ">|", ">&", "<&", "<>", "<<", ">", "<"]) {
+      if (src.startsWith(op, this.i)) {
+        this.i += op.length;
+        this.pendingRedirect = op;
+        return true;
+      }
+    }
+    return false;
+  }
+  readWord() {
+    const src = this.src;
+    let text2 = "";
+    let dynamic = false;
+    let quoted2 = false;
+    const start = this.i;
+    while (this.i < src.length) {
+      const ch = src.charAt(this.i);
+      if (BLANK.has(ch) || ch === `
+`)
+        break;
+      if ((ch === "<" || ch === ">") && src.charAt(this.i + 1) === "(") {
+        const close = matchParen(src, this.i + 1);
+        if (close < 0)
+          return false;
+        this.nested.push(src.slice(this.i + 2, close));
+        text2 += DYNAMIC;
+        dynamic = true;
+        this.i = close + 1;
+        continue;
+      }
+      if (ch === "<" || ch === ">") {
+        if (!quoted2 && /^[0-9]+$/.test(text2) && this.i - start === text2.length)
+          return true;
+        break;
+      }
+      if (OPERATOR_CHARS.has(ch))
+        break;
+      if (ch === "\\") {
+        if (src.charAt(this.i + 1) === `
+`)
+          this.i += 2;
+        else {
+          text2 += src.charAt(this.i + 1);
+          quoted2 = true;
+          this.i += 2;
+        }
+      } else if (ch === "'") {
+        const close = src.indexOf("'", this.i + 1);
+        if (close < 0)
+          return false;
+        text2 += src.slice(this.i + 1, close);
+        quoted2 = true;
+        this.i = close + 1;
+      } else if (ch === '"') {
+        const part = this.readDoubleQuoted();
+        if (part === null)
+          return false;
+        text2 += part.text;
+        dynamic ||= part.dynamic;
+        quoted2 = true;
+      } else if (ch === "$" && src.charAt(this.i + 1) === "'") {
+        const part = this.readAnsiQuoted();
+        if (part === null)
+          return false;
+        text2 += part;
+        quoted2 = true;
+      } else if (ch === "$" && src.charAt(this.i + 1) === '"') {
+        this.i += 1;
+      } else if (ch === "$" || ch === "`") {
+        const part = this.readExpansion();
+        if (part === null)
+          return false;
+        text2 += part.text;
+        dynamic ||= part.dynamic;
+      } else if (ch === "~" && this.i === start && /^(\/|$|[\s;&|<>()])/.test(src.slice(this.i + 1, this.i + 2))) {
+        text2 += HOME;
+        this.i += 1;
+      } else {
+        if (ch === DYNAMIC)
+          dynamic = true;
+        text2 += ch;
+        this.i += 1;
+      }
+    }
+    return this.finishWord({ text: text2, dynamic, quoted: quoted2 });
+  }
+  readDoubleQuoted() {
+    const src = this.src;
+    let text2 = "";
+    let dynamic = false;
+    this.i += 1;
+    while (this.i < src.length) {
+      const ch = src.charAt(this.i);
+      if (ch === '"') {
+        this.i += 1;
+        return { text: text2, dynamic };
+      }
+      if (ch === "\\") {
+        const next = src.charAt(this.i + 1);
+        if (next === `
+`) {
+          this.i += 2;
+          continue;
+        }
+        text2 += '$`"\\'.includes(next) ? next : `\\${next}`;
+        this.i += 2;
+      } else if (ch === "$" || ch === "`") {
+        const part = this.readExpansion();
+        if (part === null)
+          return null;
+        text2 += part.text;
+        dynamic ||= part.dynamic;
+      } else {
+        if (ch === DYNAMIC)
+          dynamic = true;
+        text2 += ch;
+        this.i += 1;
+      }
+    }
+    return null;
+  }
+  readAnsiQuoted() {
+    const src = this.src;
+    let text2 = "";
+    this.i += 2;
+    while (this.i < src.length) {
+      const ch = src.charAt(this.i);
+      if (ch === "'") {
+        this.i += 1;
+        return text2;
+      }
+      if (ch === "\\") {
+        const next = src.charAt(this.i + 1);
+        text2 += ANSI_ESCAPES.get(next) ?? next;
+        this.i += 2;
+      } else {
+        text2 += ch;
+        this.i += 1;
+      }
+    }
+    return null;
+  }
+  readExpansion() {
+    const src = this.src;
+    const ch = src.charAt(this.i);
+    if (ch === "`") {
+      const close = matchBacktick(src, this.i);
+      if (close < 0)
+        return null;
+      this.nested.push(src.slice(this.i + 1, close).replaceAll("\\`", "`"));
+      this.i = close + 1;
+      return { text: DYNAMIC, dynamic: true };
+    }
+    const next = src.charAt(this.i + 1);
+    if (next === "(") {
+      const close = matchParen(src, this.i + 1);
+      if (close < 0)
+        return null;
+      if (src.charAt(this.i + 2) !== "(")
+        this.nested.push(src.slice(this.i + 2, close));
+      this.i = close + 1;
+      return { text: DYNAMIC, dynamic: true };
+    }
+    if (next === "{") {
+      const close = matchBrace(src, this.i + 1);
+      if (close < 0)
+        return null;
+      const body = src.slice(this.i + 2, close);
+      const inner = substitutionsIn(body);
+      if (inner === null)
+        return null;
+      this.nested.push(...inner);
+      this.i = close + 1;
+      return { text: body === "HOME" ? HOME : DYNAMIC, dynamic: body !== "HOME" };
+    }
+    const name = /^([A-Za-z_][A-Za-z0-9_]*|[0-9@*#?$!-])/.exec(src.slice(this.i + 1));
+    if (name === null) {
+      this.i += 1;
+      return { text: "$", dynamic: false };
+    }
+    this.i += 1 + name[0].length;
+    return name[0] === "HOME" ? { text: HOME, dynamic: false } : { text: DYNAMIC, dynamic: true };
+  }
+  finishWord(word) {
+    const op = this.pendingRedirect;
+    if (op === null) {
+      this.current.words.push(word);
+      return true;
+    }
+    this.pendingRedirect = null;
+    if (op === "<<" || op === "<<-") {
+      this.heredocs.push({
+        command: this.current,
+        delimiter: word.text,
+        stripTabs: op === "<<-",
+        expands: !word.quoted
+      });
+      return true;
+    }
+    if (op === "<<<") {
+      this.current.stdin = { kind: "text", text: word.text, dynamic: word.dynamic };
+      return true;
+    }
+    if (op === "<" || op === "<&")
+      this.current.stdin = { kind: "file" };
+    this.current.redirects.push({ op, target: word });
+    return true;
+  }
+  readHeredocBodies() {
+    const src = this.src;
+    const docs = this.heredocs;
+    this.heredocs = [];
+    for (const doc of docs) {
+      const lines = [];
+      let closed = false;
+      while (this.i < src.length) {
+        const end = src.indexOf(`
+`, this.i);
+        const raw = src.slice(this.i, end < 0 ? src.length : end);
+        this.i = end < 0 ? src.length : end + 1;
+        const line = doc.stripTabs ? raw.replace(/^\t+/, "") : raw;
+        if (line === doc.delimiter) {
+          closed = true;
+          break;
+        }
+        lines.push(line);
+      }
+      const body = lines.length > 0 ? `${lines.join(`
+`)}
+` : "";
+      if (!this.attachHeredoc(doc, body))
+        return false;
+      if (!closed)
+        return true;
+    }
+    return true;
+  }
+  attachHeredoc(doc, body) {
+    let dynamic = false;
+    if (doc.expands) {
+      const inner = substitutionsIn(body);
+      if (inner === null)
+        return false;
+      this.nested.push(...inner);
+      dynamic = inner.length > 0 || /\$[A-Za-z_{]/.test(body);
+    }
+    doc.command.stdin = { kind: "text", text: body, dynamic };
+    return true;
+  }
+}
+function parseShell(src) {
+  return new Lexer(src).run();
+}
+
+// src/guard/evaluate.ts
+var UNJUDGEABLE = "guard.unjudgeable";
+var NO_VERIFY = "guard.git-no-verify";
+var MAX_DEPTH = 8;
+function evaluate(policy, action, context) {
+  const compiled2 = compilePolicy(policy, context);
+  if (compiled2 === null)
+    return deny(unjudgeable("the policy or the ticket scope holds a glob that does not compile"));
+  const judge = new Judge(compiled2);
+  const found = judge.action(action, context.cwd ?? context.root);
+  return found === null ? { decision: "allow" } : deny(found);
+}
+function deny(found) {
+  return { decision: "deny", rule: found.rule, reason: found.reason };
+}
+function unjudgeable(why) {
+  return { rule: UNJUDGEABLE, reason: `The guard cannot judge this call: ${why}.` };
+}
+function compileRules(entries) {
+  const out = [];
+  for (const entry of entries) {
+    const globs = compileAll(entry.globs);
+    if (globs === null)
+      return null;
+    out.push({ entry, globs });
+  }
+  return out;
+}
+function compileAll(globs) {
+  const out = [];
+  for (const glob of globs) {
+    const compiled2 = compileGlob(glob);
+    if (compiled2 === null)
+      return null;
+    out.push(compiled2);
+  }
+  return out;
+}
+function compilePolicy(policy, context) {
+  const protectedPaths = compileRules(policy.protected_paths);
+  const secrets = compileRules(policy.secret_paths);
+  const never = compileRules(policy.path_tiers.filter((t) => t.tier === "never"));
+  const askFirst = compileRules(policy.path_tiers.filter((t) => t.tier === "ask-first"));
+  const scope2 = compileAll(context.scope?.files ?? []);
+  if (protectedPaths === null || secrets === null || never === null || askFirst === null || scope2 === null)
+    return null;
+  return {
+    protectedPaths,
+    secrets,
+    never,
+    askFirst,
+    destructive: policy.destructive_commands,
+    scope: scope2,
+    root: normalizeAbsolute(context.root),
+    home: context.home === undefined ? null : normalizeAbsolute(context.home)
+  };
+}
+function normalizeSegments(path) {
+  const out = [];
+  for (const segment of path.split("/")) {
+    if (segment === "" || segment === ".")
+      continue;
+    if (segment === ".." && out.length > 0 && out[out.length - 1] !== "..")
+      out.pop();
+    else
+      out.push(segment);
+  }
+  return out;
+}
+function normalizeAbsolute(path) {
+  return `/${normalizeSegments(path).filter((s) => s !== "..").join("/")}`;
+}
+function normalizeRelative(path) {
+  return normalizeSegments(path).join("/");
+}
+function show2(text2) {
+  return text2.replaceAll(DYNAMIC, "$\u2026").replaceAll(HOME, "~");
+}
+function base(text2) {
+  const slash = text2.lastIndexOf("/");
+  return slash < 0 ? text2 : text2.slice(slash + 1);
+}
+function hasWildcard(segment) {
+  return /[*?[]/.test(segment);
+}
+function matchesFile(glob, view) {
+  return view.anchored ? glob.regex.test(view.rel) : glob.floating && glob.regex.test(view.path);
+}
+function fixedSegments(view) {
+  if (!view.anchored || view.rel === "")
+    return [];
+  const out = [];
+  for (const segment of view.rel.split("/")) {
+    if (hasWildcard(segment))
+      break;
+    out.push(segment);
+  }
+  return out;
+}
+function matches(glob, view, touch2) {
+  if (matchesFile(glob, view))
+    return true;
+  if (touch2 === "search") {
+    if (!view.anchored && !glob.floating)
+      return false;
+    const path = view.anchored ? view.rel : view.path;
+    return glob.prefixRegex.test(path === "" ? "" : `${path}/`);
+  }
+  if (touch2 === "file" || !view.anchored)
+    return false;
+  const segments = fixedSegments(view);
+  if (touch2 === "named" && segments.length === 0)
+    return false;
+  return coversPrefix(glob, segments);
+}
+var WRITE_REDIRECTS = new Set([">", ">>", ">|", "&>", "&>>", "<>", ">&"]);
+var READ_REDIRECTS = new Set(["<", "<>"]);
+var KEYWORDS = new Set(["{", "}", "!", "if", "then", "else", "elif", "do", "while", "until"]);
+var WRAPPERS = new Map([
+  ["env", { arg: ["-u", "-C", "-S"], long: ["--unset", "--chdir", "--split-string"], positional: 0 }],
+  [
+    "sudo",
+    {
+      arg: ["-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T"],
+      long: ["--user", "--group", "--chdir", "--host", "--prompt", "--role", "--type", "--other-user"],
+      positional: 0
+    }
+  ],
+  ["doas", { arg: ["-u", "-C"], long: [], positional: 0 }],
+  ["nice", { arg: ["-n"], long: ["--adjustment"], positional: 0 }],
+  ["nohup", { arg: [], long: [], positional: 0 }],
+  ["time", { arg: ["-f", "-o"], long: ["--format", "--output"], positional: 0 }],
+  ["command", { arg: [], long: [], positional: 0 }],
+  ["builtin", { arg: [], long: [], positional: 0 }],
+  ["exec", { arg: ["-a"], long: [], positional: 0 }],
+  ["timeout", { arg: ["-s", "-k"], long: ["--signal", "--kill-after"], positional: 1 }],
+  ["stdbuf", { arg: ["-i", "-o", "-e"], long: ["--input", "--output", "--error"], positional: 0 }],
+  ["ionice", { arg: ["-c", "-n"], long: ["--class", "--classdata"], positional: 0 }],
+  ["setsid", { arg: [], long: [], positional: 0 }],
+  ["unbuffer", { arg: [], long: [], positional: 0 }],
+  [
+    "xargs",
+    {
+      arg: ["-I", "-L", "-n", "-P", "-d", "-E", "-s", "-a"],
+      long: [
+        "--arg-file",
+        "--delimiter",
+        "--max-args",
+        "--max-procs",
+        "--max-chars",
+        "--max-lines",
+        "--replace",
+        "--eof"
+      ],
+      positional: 0
+    }
+  ]
+]);
+var ALL_OPERANDS = new Map([
+  ["rm", []],
+  ["rmdir", []],
+  ["unlink", []],
+  ["shred", ["-n", "-s"]],
+  ["touch", ["-d", "-t", "-r"]],
+  ["truncate", ["-s", "-r"]],
+  ["mkdir", ["-m"]],
+  ["chmod", []],
+  ["chown", []],
+  ["chgrp", []],
+  ["mv", ["-t", "-S"]],
+  ["ln", ["-t", "-S"]],
+  ["tee", []]
+]);
+var LAST_OPERAND = new Map([
+  ["cp", ["-t", "-S"]],
+  ["install", ["-t", "-m", "-o", "-g", "-S"]],
+  ["rsync", ["-e", "-f"]]
+]);
+var SPEC_DEFAULTS = {
+  codeShort: "",
+  codeLong: [],
+  scriptShort: "",
+  scriptLong: [],
+  argShort: "",
+  argLong: [],
+  attachedShort: "",
+  shell: false,
+  firstOperandIsCode: false,
+  inPlace: false
+};
+var SHELL_SPEC = { ...SPEC_DEFAULTS, codeShort: "c", argShort: "oO", shell: true };
+var PYTHON_SPEC = { ...SPEC_DEFAULTS, codeShort: "c", scriptShort: "m", argShort: "WX" };
+var NODE_SPEC = {
+  ...SPEC_DEFAULTS,
+  codeShort: "ep",
+  codeLong: ["--eval", "--print"],
+  argShort: "rC",
+  argLong: ["--require", "--import", "--loader", "--experimental-loader", "--input-type", "--conditions"]
+};
+var PERL_SPEC = {
+  ...SPEC_DEFAULTS,
+  codeShort: "eE",
+  attachedShort: "IMmxdDCil0",
+  inPlace: true
+};
+var RUBY_SPEC = { ...SPEC_DEFAULTS, codeShort: "e", attachedShort: "IrCKEFTx0il", inPlace: true };
+var PHP_SPEC = { ...SPEC_DEFAULTS, codeShort: "r", scriptShort: "f", argShort: "cdz" };
+var AWK_SPEC = {
+  ...SPEC_DEFAULTS,
+  codeShort: "e",
+  codeLong: ["--source"],
+  scriptShort: "f",
+  scriptLong: ["--file"],
+  argShort: "Fv",
+  argLong: ["--field-separator", "--assign"],
+  firstOperandIsCode: true
+};
+var SED_SPEC = {
+  ...SPEC_DEFAULTS,
+  codeShort: "e",
+  codeLong: ["--expression"],
+  scriptShort: "f",
+  scriptLong: ["--file"],
+  argShort: "l",
+  firstOperandIsCode: true
+};
+function interpreterFor(program) {
+  if (/^(sh|bash|zsh|dash|ksh|ash|mksh)$/.test(program))
+    return SHELL_SPEC;
+  if (/^(python[0-9.]*|pypy[0-9.]*)$/.test(program))
+    return PYTHON_SPEC;
+  if (/^(node|nodejs|bun)$/.test(program))
+    return NODE_SPEC;
+  if (program === "perl")
+    return PERL_SPEC;
+  if (program === "ruby")
+    return RUBY_SPEC;
+  if (program === "php")
+    return PHP_SPEC;
+  if (/^[gmn]?awk$/.test(program))
+    return AWK_SPEC;
+  if (program === "sed")
+    return SED_SPEC;
+  return null;
+}
+function readInterpreter(spec, args) {
+  const codes = [];
+  const operands = [];
+  let script = false;
+  let shellCode = false;
+  let stdinFlag = false;
+  let inPlace = false;
+  let optionsEnded = false;
+  for (let i = 0;i < args.length; i++) {
+    const word = args[i];
+    if (word === undefined)
+      break;
+    const t = word.text;
+    if (!optionsEnded && t === "--") {
+      optionsEnded = true;
+      continue;
+    }
+    if (!optionsEnded && t === "-") {
+      stdinFlag = true;
+      optionsEnded = true;
+      continue;
+    }
+    if (!optionsEnded && t.startsWith("--")) {
+      const eq = t.indexOf("=");
+      const name = eq < 0 ? t : t.slice(0, eq);
+      if (spec.codeLong.includes(name)) {
+        const code = eq < 0 ? args[++i] : { ...word, text: t.slice(eq + 1) };
+        if (code === undefined)
+          return { mode: "missing", codes, operands, inPlace };
+        codes.push(code);
+      } else if (spec.scriptLong.includes(name)) {
+        script = true;
+        if (eq < 0)
+          i += 1;
+      } else if (spec.argLong.includes(name) && eq < 0)
+        i += 1;
+      continue;
+    }
+    if (!optionsEnded && t.length > 1 && (t.startsWith("-") || spec.shell && t.startsWith("+"))) {
+      if (t.startsWith("+")) {
+        if (t.includes("o"))
+          i += 1;
+        continue;
+      }
+      for (let j = 1;j < t.length; j++) {
+        const c = t.charAt(j);
+        const rest = t.slice(j + 1);
+        if (spec.codeShort.includes(c)) {
+          if (spec.shell) {
+            shellCode = true;
+            continue;
+          }
+          const code = onlyFrom(rest, spec.codeShort) ? args[++i] : { ...word, text: rest };
+          if (code === undefined)
+            return { mode: "missing", codes, operands, inPlace };
+          codes.push(code);
+          break;
+        }
+        if (spec.scriptShort.includes(c)) {
+          script = true;
+          if (rest === "")
+            i += 1;
+          break;
+        }
+        if (spec.argShort.includes(c)) {
+          if (rest === "")
+            i += 1;
+          break;
+        }
+        if (spec.attachedShort.includes(c)) {
+          if (c === "i" && spec.inPlace)
+            inPlace = true;
+          break;
+        }
+        if (spec.shell && c === "s")
+          stdinFlag = true;
+      }
+      continue;
+    }
+    if (spec.shell && shellCode && codes.length === 0) {
+      codes.push(word);
+      break;
+    }
+    if (spec.firstOperandIsCode && codes.length === 0 && !script) {
+      codes.push(word);
+      continue;
+    }
+    if (codes.length === 0 && !script && !spec.firstOperandIsCode) {
+      return { mode: "script", codes, operands, inPlace };
+    }
+    operands.push(word);
+  }
+  if (spec.shell && shellCode && codes.length === 0)
+    return { mode: "missing", codes, operands, inPlace };
+  if (codes.length > 0)
+    return { mode: "code", codes, operands, inPlace };
+  if (script)
+    return { mode: "script", codes, operands, inPlace };
+  return { mode: stdinFlag || operands.length === 0 ? "stdin" : "script", codes, operands, inPlace };
+}
+function operandsOf(args, valued) {
+  const out = [];
+  let optionsEnded = false;
+  for (let i = 0;i < args.length; i++) {
+    const word = args[i];
+    if (word === undefined)
+      break;
+    const t = word.text;
+    if (optionsEnded || !t.startsWith("-") || t === "-") {
+      out.push(word);
+    } else if (t === "--") {
+      optionsEnded = true;
+    } else if (valued.includes(t)) {
+      i += 1;
+    }
+  }
+  return out;
+}
+function optionValues(args, short, long) {
+  const out = [];
+  for (let i = 0;i < args.length; i++) {
+    const word = args[i];
+    if (word === undefined)
+      break;
+    const t = word.text;
+    if (t === "--")
+      break;
+    const next = args[i + 1];
+    if (short.includes(t) || long.includes(t)) {
+      if (next !== undefined)
+        out.push(next);
+      i += 1;
+      continue;
+    }
+    for (const s of short) {
+      if (t.startsWith(s) && t.length > s.length && !t.startsWith("--"))
+        out.push({ ...word, text: t.slice(s.length) });
+    }
+    for (const l of long) {
+      if (t.startsWith(`${l}=`))
+        out.push({ ...word, text: t.slice(l.length + 1) });
+    }
+  }
+  return out;
+}
+function optionMatches(token, option) {
+  if (token === option)
+    return true;
+  if (option.startsWith("--"))
+    return token.startsWith(`${option}=`);
+  if (option.length === 2 && /^-[A-Za-z0-9]{2,}$/.test(token))
+    return token.slice(1).includes(option.charAt(1));
+  return false;
+}
+function optionTokens(args) {
+  const out = [];
+  for (const word of args) {
+    if (word.text === "--")
+      break;
+    if (word.text.startsWith("-"))
+      out.push(word.text);
+  }
+  return out;
+}
+function literal(text2) {
+  return { text: text2, dynamic: false, quoted: false };
+}
+function codeTokens(code) {
+  return code.replaceAll(HOME, "~").split(/[^A-Za-z0-9_./~@+-]+/).filter((t) => t !== "" && t !== "." && t !== "..");
+}
+function onlyFrom(text2, allowed) {
+  for (let i = 0;i < text2.length; i++)
+    if (!allowed.includes(text2.charAt(i)))
+      return false;
+  return true;
+}
+
+class Judge {
+  c;
+  constructor(compiled2) {
+    this.c = compiled2;
+  }
+  action(action, cwd) {
+    const dir = normalizeAbsolute(cwd);
+    switch (action.kind) {
+      case "shell": {
+        if (action.argv.length === 0)
+          return unjudgeable("the shell call has no argv");
+        return this.words(action.argv.map(literal), { kind: "terminal" }, { dir }, 0, true);
+      }
+      case "read": {
+        if (action.paths.length === 0)
+          return unjudgeable("the read names no path");
+        for (const path of action.paths) {
+          const found = this.read(path, dir, `a read of ${path}`, action.recursive === true ? "search" : "file");
+          if (found !== null)
+            return found;
+        }
+        return null;
+      }
+      default: {
+        if (action.paths.length === 0)
+          return unjudgeable(`the ${action.kind} names no path it touches`);
+        for (const path of action.paths) {
+          const found = this.write(path, dir, "file", `a ${action.kind} of ${path}`);
+          if (found !== null)
+            return found;
+        }
+        return null;
+      }
+    }
+  }
+  locate(raw, dir) {
+    let text2 = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+    if (text2.slice(1).includes(HOME))
+      text2 = text2.slice(0, 1) + text2.slice(1).replaceAll(HOME, DYNAMIC);
+    if (text2.includes(DYNAMIC)) {
+      const suffix = normalizeRelative(text2.slice(text2.lastIndexOf(DYNAMIC) + 1));
+      if (suffix === "")
+        return null;
+      return [
+        { anchored: true, rel: suffix },
+        { anchored: false, path: suffix }
+      ];
+    }
+    if (text2.startsWith(HOME)) {
+      if (this.c.home === null)
+        return [{ anchored: false, path: normalizeRelative(text2.slice(1)) }];
+      text2 = `${this.c.home}/${text2.slice(1)}`;
+    }
+    if (text2.startsWith("/"))
+      return [this.fromAbsolute(normalizeAbsolute(text2))];
+    if (dir !== null)
+      return [this.fromAbsolute(normalizeAbsolute(`${dir}/${text2}`))];
+    const rel = normalizeRelative(text2);
+    return [
+      { anchored: true, rel },
+      { anchored: false, path: rel }
+    ];
+  }
+  fromAbsolute(abs) {
+    const root = this.c.root;
+    if (abs === root)
+      return { anchored: true, rel: "" };
+    if (root === "/")
+      return { anchored: true, rel: abs.slice(1) };
+    if (abs.startsWith(`${root}/`))
+      return { anchored: true, rel: abs.slice(root.length + 1) };
+    return { anchored: false, path: abs.slice(1) };
+  }
+  scopeLifts(views) {
+    return views.some((v) => v.anchored && this.c.scope.some((g) => g.regex.test(v.rel)));
+  }
+  protectedHit(views, touch2) {
+    for (const rule of this.c.protectedPaths) {
+      const hit = views.some((v) => rule.globs.some((g) => matches(g, v, touch2)));
+      if (!hit)
+        continue;
+      if (rule.entry.category === "tests" && this.scopeLifts(views))
+        continue;
+      return { rule: rule.entry.id, reason: rule.entry.reason };
+    }
+    for (const rule of this.c.never) {
+      if (views.some((v) => rule.globs.some((g) => matches(g, v, touch2)))) {
+        return { rule: rule.entry.id, reason: rule.entry.reason };
+      }
+    }
+    for (const rule of this.c.askFirst) {
+      if (views.some((v) => rule.globs.some((g) => matches(g, v, touch2)))) {
+        return {
+          rule: rule.entry.id,
+          reason: `${rule.entry.reason}; the path is ask-first and no grant covers this write`
+        };
+      }
+    }
+    return null;
+  }
+  secretHit(views, touch2 = "file") {
+    for (const rule of this.c.secrets) {
+      if (views.some((v) => rule.globs.some((g) => matches(g, v, touch2)))) {
+        return { rule: rule.entry.id, reason: rule.entry.reason };
+      }
+    }
+    return null;
+  }
+  write(raw, dir, touch2, what) {
+    const views = this.locate(raw, dir);
+    if (views === null)
+      return unjudgeable(`${show2(what)} writes a path known only at run time`);
+    const hit = this.protectedHit(views, touch2);
+    return hit === null ? null : { rule: hit.rule, reason: `${hit.reason} (${show2(what)})` };
+  }
+  read(raw, dir, what, touch2 = "file") {
+    const views = this.locate(raw, dir);
+    if (views === null)
+      return null;
+    if (touch2 === "search" && views.some((v) => !v.anchored && (v.path === "" || this.c.root.startsWith(`/${v.path}/`)))) {
+      views.push({ anchored: true, rel: "" });
+    }
+    const hit = this.secretHit(views, touch2);
+    return hit === null ? null : { rule: hit.rule, reason: `${hit.reason} (${show2(what)})` };
+  }
+  named(code, dir, program) {
+    for (const raw of codeTokens(code)) {
+      const token = raw.startsWith("~/") ? `${HOME}${raw.slice(1)}` : raw;
+      const views = this.locate(token, dir) ?? [];
+      if (token.startsWith("/"))
+        views.push({ anchored: true, rel: normalizeRelative(token) });
+      const hit = this.secretHit(views) ?? this.protectedHit(views, "named");
+      if (hit !== null)
+        return { rule: hit.rule, reason: `${hit.reason} (inline ${program} code names ${show2(token)})` };
+    }
+    return null;
+  }
+  shellText(text2, state, depth) {
+    if (depth > MAX_DEPTH)
+      return unjudgeable(`shell nests more than ${MAX_DEPTH} levels deep`);
+    const parsed = parseShell(text2);
+    if (parsed === null)
+      return unjudgeable("the shell text does not parse (an unterminated quote or substitution)");
+    for (const inner of parsed.nested) {
+      const found = this.shellText(inner, { dir: state.dir }, depth + 1);
+      if (found !== null)
+        return found;
+    }
+    for (const command of parsed.commands) {
+      const found = this.command(command, state, depth);
+      if (found !== null)
+        return found;
+    }
+    return null;
+  }
+  command(command, state, depth) {
+    for (const r of command.redirects) {
+      const target = r.target.text;
+      if (WRITE_REDIRECTS.has(r.op) && !(r.op === ">&" && /^([0-9]+-?|-)$/.test(target))) {
+        const found = this.write(target, state.dir, "file", `a redirection to ${target}`);
+        if (found !== null)
+          return found;
+      }
+      if (READ_REDIRECTS.has(r.op)) {
+        const found = this.read(target, state.dir, `a redirection from ${target}`);
+        if (found !== null)
+          return found;
+      }
+    }
+    return this.words(command.words, command.stdin, state, depth, false);
+  }
+  words(all, stdin, state, depth, hostShell) {
+    const hostCode = hostShell && all[0] !== undefined && interpreterFor(base(all[0].text)) === SHELL_SPEC ? readInterpreter(SHELL_SPEC, all.slice(1)).codes[0] : undefined;
+    for (const word of all) {
+      if (word === hostCode)
+        continue;
+      const eq = word.text.indexOf("=");
+      const candidates = eq > 0 ? [word.text, word.text.slice(eq + 1)] : [word.text];
+      for (const candidate of candidates) {
+        const found = this.read(candidate, state.dir, `an argument naming ${candidate}`);
+        if (found !== null)
+          return found;
+      }
+    }
+    let rest = [...all];
+    for (;; ) {
+      while (rest[0] !== undefined && /^[A-Za-z_][A-Za-z0-9_]*=/.test(rest[0].text))
+        rest = rest.slice(1);
+      const head2 = rest[0];
+      if (head2 === undefined)
+        return null;
+      if (head2.dynamic)
+        return unjudgeable(`the program ${show2(head2.text)} is computed at run time`);
+      if (KEYWORDS.has(head2.text)) {
+        rest = rest.slice(1);
+        continue;
+      }
+      const program2 = base(head2.text);
+      const wrapper = WRAPPERS.get(program2);
+      if (wrapper === undefined)
+        break;
+      if (program2 === "command" && rest[1] !== undefined && /^-[vV]/.test(rest[1].text))
+        return null;
+      if (program2 === "env") {
+        for (const split of optionValues(rest.slice(1), ["-S"], ["--split-string"])) {
+          if (split.dynamic)
+            return unjudgeable("env -S splits a string known only at run time");
+          const found = this.shellText(split.text, { dir: state.dir }, depth + 1);
+          if (found !== null)
+            return found;
+        }
+      }
+      rest = this.unwrap(rest.slice(1), wrapper);
+    }
+    const head = rest[0];
+    if (head === undefined)
+      return null;
+    const program = base(head.text);
+    const args = rest.slice(1);
+    switch (program) {
+      case "cd":
+      case "pushd":
+        this.changeDir(args, state);
+        return null;
+      case "popd":
+        state.dir = null;
+        return null;
+      case "eval": {
+        if (args.some((a) => a.dynamic))
+          return unjudgeable("eval runs text known only at run time");
+        return this.shellText(args.map((a) => a.text).join(" "), { dir: state.dir }, depth + 1);
+      }
+      case "git":
+        return this.git(args, state, depth);
+      case "find": {
+        const found = this.find(args, state, depth);
+        if (found !== null)
+          return found;
+        break;
+      }
+      default:
+        break;
+    }
+    const destructive = this.destructive(program, args, null);
+    if (destructive !== null)
+      return destructive;
+    const spec = interpreterFor(program);
+    if (spec !== null) {
+      const found = this.interpreter(program, spec, args, stdin, state, depth, hostShell);
+      if (found !== null)
+        return found;
+    }
+    if (program === "sed")
+      return this.sedInPlace(args, state);
+    if (program === "deno" && args[0]?.text === "eval") {
+      const code = args[1];
+      if (code === undefined)
+        return unjudgeable("deno eval has no code");
+      if (code.dynamic && code.text.replaceAll(DYNAMIC, "") === "")
+        return unjudgeable("deno eval runs code known only at run time");
+      return this.named(code.text, state.dir, program);
+    }
+    return this.writeCommand(program, args, state);
+  }
+  unwrap(args, spec) {
+    let i = 0;
+    let positional = spec.positional;
+    while (i < args.length) {
+      const t = args[i]?.text ?? "";
+      if (t === "--") {
+        i += 1;
+        break;
+      }
+      if (t.startsWith("--")) {
+        i += spec.long.includes(t) ? 2 : 1;
+        continue;
+      }
+      if (t.startsWith("-") && t.length > 1) {
+        i += spec.arg.includes(t) ? 2 : 1;
+        continue;
+      }
+      if (positional > 0) {
+        positional -= 1;
+        i += 1;
+        continue;
+      }
+      break;
+    }
+    return args.slice(i);
+  }
+  changeDir(args, state) {
+    const target = args.find((a) => !a.text.startsWith("-") || a.text === "-");
+    if (target === undefined) {
+      state.dir = this.c.home;
+      return;
+    }
+    if (target.dynamic || target.text === "-") {
+      state.dir = null;
+      return;
+    }
+    let text2 = target.text;
+    if (text2.startsWith(HOME)) {
+      if (this.c.home === null) {
+        state.dir = null;
+        return;
+      }
+      text2 = `${this.c.home}/${text2.slice(1)}`;
+    }
+    if (text2.startsWith("/"))
+      state.dir = normalizeAbsolute(text2);
+    else
+      state.dir = state.dir === null ? null : normalizeAbsolute(`${state.dir}/${text2}`);
+  }
+  destructive(program, args, gitSubcommand) {
+    for (const pattern of this.c.destructive) {
+      if (pattern.program !== program)
+        continue;
+      let options = args;
+      if (pattern.subcommand !== undefined) {
+        const index = gitSubcommand ?? args.findIndex((a) => !a.text.startsWith("-"));
+        if (index < 0 || args[index]?.text !== pattern.subcommand)
+          continue;
+        options = args.slice(index + 1);
+      } else if (gitSubcommand !== null) {
+        options = args.slice(gitSubcommand + 1);
+      }
+      const tokens2 = optionTokens(options);
+      const groups2 = pattern.all_of ?? [];
+      if (groups2.every((group) => group.some((option) => tokens2.some((t) => optionMatches(t, option))))) {
+        return {
+          rule: pattern.id,
+          reason: `${pattern.reason} (${[program, ...args.map((a) => show2(a.text))].join(" ")})`
+        };
+      }
+    }
+    return null;
+  }
+  git(args, state, depth) {
+    const aliases = new Map;
+    let dir = state.dir;
+    let i = 0;
+    while (i < args.length) {
+      const word = args[i];
+      if (word === undefined)
+        break;
+      const t = word.text;
+      if (t === "-C") {
+        const target = args[i + 1];
+        dir = target === undefined || target.dynamic ? null : this.resolveDir(target.text, dir);
+        i += 2;
+      } else if (t === "-c" || t === "--config-env") {
+        const setting = args[i + 1]?.text ?? "";
+        const eq = setting.indexOf("=");
+        const key = (eq < 0 ? setting : setting.slice(0, eq)).toLowerCase();
+        if (key === "core.hookspath") {
+          return {
+            rule: NO_VERIFY,
+            reason: `git ${t} ${show2(setting)} replaces the repository's hooks; run git without it`
+          };
+        }
+        if (t === "-c" && key.startsWith("alias.") && eq > 0)
+          aliases.set(key.slice(6), setting.slice(eq + 1));
+        i += 2;
+      } else if (["--git-dir", "--work-tree", "--namespace", "--super-prefix"].includes(t)) {
+        i += 2;
+      } else if (t.startsWith("-")) {
+        i += 1;
+      } else
+        break;
+    }
+    const sub = args[i];
+    if (sub === undefined)
+      return null;
+    if (sub.dynamic)
+      return unjudgeable(`the git subcommand ${show2(sub.text)} is computed at run time`);
+    const rest = args.slice(i + 1);
+    const alias = aliases.get(sub.text.toLowerCase());
+    if (alias !== undefined) {
+      if (alias.startsWith("!"))
+        return this.shellText(alias.slice(1), { dir }, depth + 1);
+      const expanded = parseShell(alias)?.commands[0]?.words;
+      if (expanded === undefined)
+        return unjudgeable(`the git alias ${sub.text} does not parse`);
+      return this.git([...args.slice(0, i), ...expanded, ...rest], { dir }, depth + 1);
+    }
+    for (let j = 0;j < rest.length; j++) {
+      const t = rest[j]?.text ?? "";
+      if (t === "--")
+        break;
+      if (t === "-m" || t === "-F" || t === "--message" || t === "--file") {
+        j += 1;
+        continue;
+      }
+      if (t === "--no-verify" || t.startsWith("--no-verify=")) {
+        return {
+          rule: NO_VERIFY,
+          reason: `git ${sub.text} --no-verify skips the repository's hooks; run it without --no-verify`
+        };
+      }
+      if (sub.text === "commit" && /^-[A-Za-z]*n/.test(t) && !t.startsWith("--")) {
+        return {
+          rule: NO_VERIFY,
+          reason: `git commit ${t} skips the repository's hooks; -n is --no-verify for commit`
+        };
+      }
+    }
+    const destructive = this.destructive("git", args, i);
+    if (destructive !== null)
+      return destructive;
+    let targets = [];
+    if (sub.text === "rm" || sub.text === "mv")
+      targets = operandsOf(rest, []);
+    else if (sub.text === "restore")
+      targets = operandsOf(rest, ["-s", "--source"]);
+    else if (sub.text === "checkout") {
+      const dashes = rest.findIndex((w) => w.text === "--");
+      targets = dashes < 0 ? [] : rest.slice(dashes + 1);
+    }
+    for (const target of targets) {
+      const found = this.write(target.text, dir, "tree", `git ${sub.text} ${target.text}`);
+      if (found !== null)
+        return found;
+    }
+    return null;
+  }
+  resolveDir(text2, dir) {
+    if (text2.startsWith(HOME))
+      return this.c.home === null ? null : normalizeAbsolute(`${this.c.home}/${text2.slice(1)}`);
+    if (text2.startsWith("/"))
+      return normalizeAbsolute(text2);
+    return dir === null ? null : normalizeAbsolute(`${dir}/${text2}`);
+  }
+  find(args, state, depth) {
+    const first = args.findIndex((a) => a.text.startsWith("-") || a.text === "(" || a.text === "!");
+    const roots = first < 0 ? args : args.slice(0, first);
+    const expression = first < 0 ? [] : args.slice(first);
+    const changes = expression.some((a) => /^-(delete|exec|execdir|ok|okdir|fprint0?|fprintf|fls)$/.test(a.text));
+    if (!changes)
+      return null;
+    for (const root of roots.length > 0 ? roots : [literal(".")]) {
+      const found = this.write(root.text, state.dir, "tree", `find ${root.text} changing what it finds`);
+      if (found !== null)
+        return found;
+    }
+    for (let i = 0;i < expression.length; i++) {
+      if (!/^-(exec|execdir|ok|okdir)$/.test(expression[i]?.text ?? ""))
+        continue;
+      const end = expression.findIndex((a, k) => k > i && (a.text === ";" || a.text === "+"));
+      const inner = expression.slice(i + 1, end < 0 ? expression.length : end);
+      const found = this.words(inner, { kind: "terminal" }, { dir: state.dir }, depth + 1, false);
+      if (found !== null)
+        return found;
+    }
+    return null;
+  }
+  interpreter(program, spec, args, stdin, state, depth, hostShell) {
+    const call = readInterpreter(spec, args);
+    let codes = call.codes;
+    if (call.mode === "missing")
+      return unjudgeable(`${program} was given a code option with no code`);
+    if (call.mode === "script")
+      return null;
+    if (call.mode === "stdin") {
+      if (stdin.kind === "pipe" || stdin.kind === "file") {
+        return unjudgeable(`${program} runs code it reads from a pipe or a file`);
+      }
+      if (stdin.kind === "terminal")
+        return null;
+      codes = [{ text: stdin.text, dynamic: false, quoted: true }];
+    }
+    for (const code of codes) {
+      if (code.dynamic && code.text.replaceAll(DYNAMIC, "").trim() === "") {
+        return unjudgeable(`${program} runs code known only at run time`);
+      }
+      if (spec.shell) {
+        const found2 = this.shellText(code.text, { dir: state.dir }, hostShell ? depth : depth + 1);
+        if (found2 !== null)
+          return found2;
+        if (hostShell)
+          continue;
+      }
+      const found = this.named(code.text, state.dir, program);
+      if (found !== null)
+        return found;
+    }
+    if (call.inPlace) {
+      for (const operand of call.operands) {
+        const found = this.write(operand.text, state.dir, "file", `${program} -i editing ${operand.text}`);
+        if (found !== null)
+          return found;
+      }
+    }
+    return null;
+  }
+  sedInPlace(args, state) {
+    const inPlace = args.some((a) => /^-[A-Za-z]*i/.test(a.text) || a.text === "--in-place" || a.text.startsWith("--in-place="));
+    if (!inPlace)
+      return null;
+    const scripted = args.some((a) => /^-[A-Za-z]*[ef]/.test(a.text) || /^--(expression|file)/.test(a.text));
+    const operands = operandsOf(args, ["-e", "-f", "-l", "--expression", "--file"]);
+    for (const operand of scripted ? operands : operands.slice(1)) {
+      const found = this.write(operand.text, state.dir, "file", `sed -i editing ${operand.text}`);
+      if (found !== null)
+        return found;
+    }
+    return null;
+  }
+  writeCommand(program, args, state) {
+    let targets = [];
+    let touch2 = "tree";
+    const all = ALL_OPERANDS.get(program);
+    const last = LAST_OPERAND.get(program);
+    if (all !== undefined) {
+      targets = [...operandsOf(args, all), ...optionValues(args, ["-t"], ["--target-directory"])];
+      if (program === "tee")
+        touch2 = "file";
+    } else if (last !== undefined) {
+      const operands = operandsOf(args, last);
+      const directory = optionValues(args, ["-t"], ["--target-directory"]);
+      const lastOperand = operands[operands.length - 1];
+      targets = directory.length > 0 ? directory : operands.length > 1 && lastOperand !== undefined ? [lastOperand] : [];
+    } else if (program === "dd") {
+      targets = args.flatMap((a) => a.text.startsWith("of=") ? [{ ...a, text: a.text.slice(3) }] : []);
+      touch2 = "file";
+    } else if (program === "curl") {
+      targets = optionValues(args, ["-o"], ["--output"]);
+      touch2 = "file";
+    } else if (program === "wget") {
+      targets = [
+        ...optionValues(args, ["-O"], ["--output-document"]),
+        ...optionValues(args, ["-P"], ["--directory-prefix"])
+      ];
+    }
+    for (const target of targets) {
+      const found = this.write(target.text, state.dir, touch2, `${program} ${target.text}`);
+      if (found !== null)
+        return found;
+    }
+    return null;
+  }
+}
+
+// src/guard/hosts/claude-code.ts
+var import__20208 = __toESM(require_2020(), 1);
+
+// src/guard/action.ts
+function shellAction(command) {
+  return { kind: "shell", argv: ["bash", "-c", command] };
+}
+
+// src/guard/hosts/claude-code.ts
+var CLAUDE_CODE_EVENT = "PreToolUse";
+var ajv4 = new import__20208.default({ strict: false });
+var envelope = ajv4.compile({
+  type: "object",
+  required: ["tool_name"],
+  properties: {
+    tool_name: { type: "string", minLength: 1 },
+    hook_event_name: { type: "string" },
+    cwd: { type: "string" },
+    tool_input: { type: "object" }
+  }
+});
+function stringField2(field2, required) {
+  return ajv4.compile({
+    type: "object",
+    required: required ? [field2] : [],
+    properties: { [field2]: { type: "string", minLength: 1 } }
+  });
+}
+var commandInput = stringField2("command", true);
+var fileInput = stringField2("file_path", true);
+var notebookInput = stringField2("notebook_path", true);
+var grepInput = stringField2("path", false);
+var FILE_WRITERS = new Set(["Write", "Edit", "MultiEdit"]);
+function unjudgeable2(why) {
+  return {
+    kind: "deny",
+    verdict: { decision: "deny", rule: UNJUDGEABLE, reason: `The guard cannot judge this call: ${why}.` }
+  };
+}
+function firstError(validate) {
+  const first = validate.errors?.[0];
+  return first === undefined ? "it is invalid" : `${first.instancePath || "(root)"} ${first.message ?? "is invalid"}`;
+}
+function decodeClaudeCode(stdin, options = {}) {
+  let value;
+  try {
+    value = JSON.parse(stdin);
+  } catch {
+    return unjudgeable2("the hook input is not JSON");
+  }
+  if (!envelope(value))
+    return unjudgeable2(`the hook input is not a tool call payload (${firstError(envelope)})`);
+  const tool = value.tool_name;
+  const event = value.hook_event_name;
+  if (event !== undefined && event !== CLAUDE_CODE_EVENT) {
+    return unjudgeable2(`the hook input is a ${event} event, not ${CLAUDE_CODE_EVENT}`);
+  }
+  const cwd = value.cwd;
+  if (cwd === undefined || !cwd.startsWith("/"))
+    return unjudgeable2(`the ${tool} call carries no absolute cwd`);
+  const mapped = actionOf(value, cwd, options);
+  if (mapped.kind === "pass")
+    return { kind: "pass", tool };
+  if (mapped.kind === "bad")
+    return unjudgeable2(`the ${tool} call ${mapped.why}`);
+  const action = options.resolve === undefined ? mapped.action : withLinkTargets(mapped.action, cwd, options.resolve);
+  return { kind: "judge", tool, action, cwd };
+}
+function actionOf(call, cwd, options) {
+  const { tool_name: tool, tool_input: input } = call;
+  const judged = tool === "Bash" || tool === "PowerShell" || tool === "Read" || tool === "Grep" || tool === "NotebookEdit" || FILE_WRITERS.has(tool);
+  if (!judged)
+    return { kind: "pass" };
+  if (input === undefined)
+    return { kind: "bad", why: "has no tool_input object" };
+  if (tool === "PowerShell")
+    return { kind: "bad", why: "is PowerShell, which the guard does not parse" };
+  if (tool === "Bash") {
+    if (!commandInput(input))
+      return { kind: "bad", why: "has no command string" };
+    return { kind: "action", action: shellAction(input.command) };
+  }
+  if (tool === "Grep") {
+    if (!grepInput(input))
+      return { kind: "bad", why: "has a path that is not a non-empty string" };
+    if (input.path === undefined)
+      return { kind: "pass" };
+    const absolute = input.path.startsWith("/") ? input.path : `${cwd}/${input.path}`;
+    return {
+      kind: "action",
+      action: { kind: "read", paths: [input.path], recursive: options.isFile?.(absolute) !== true }
+    };
+  }
+  if (tool === "NotebookEdit") {
+    if (!notebookInput(input))
+      return { kind: "bad", why: "has no notebook_path string" };
+    return { kind: "action", action: { kind: "write", paths: [input.notebook_path] } };
+  }
+  if (!fileInput(input))
+    return { kind: "bad", why: "has no file_path string" };
+  const paths = [input.file_path];
+  return { kind: "action", action: tool === "Read" ? { kind: "read", paths } : { kind: "write", paths } };
+}
+function withLinkTargets(action, cwd, resolve10) {
+  if (action.kind === "shell")
+    return action;
+  const paths = [];
+  for (const path of action.paths) {
+    paths.push(path);
+    const target = resolve10(path.startsWith("/") ? path : `${cwd}/${path}`);
+    if (target !== null && !paths.includes(target))
+      paths.push(target);
+  }
+  return { ...action, paths };
+}
+function encodeClaudeCode(verdict) {
+  if (verdict.decision === "allow")
+    return { stdout: "", exit: 0 };
+  const output = {
+    hookSpecificOutput: {
+      hookEventName: CLAUDE_CODE_EVENT,
+      permissionDecision: "deny",
+      permissionDecisionReason: `agent-kit guard [${verdict.rule}]: ${verdict.reason}`
+    }
+  };
+  return { stdout: `${JSON.stringify(output)}
+`, exit: 0 };
+}
+
+// src/guard/policy.ts
+init_dist();
+var import__20209 = __toESM(require_2020(), 1);
+var import_ajv_formats4 = __toESM(require_dist(), 1);
+// schemas/guard-policy.schema.json
+var guard_policy_schema_default = {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "https://agent-kit.local/schemas/guard-policy.schema.json",
+  title: "Guard policy",
+  description: "The data the guard runtime's evaluator judges a tool call against: protected paths, destructive command patterns, secret path patterns, a path-to-tier map and the governed paths with their article ids (docs/decisions/0009-constitution-support.md, Decision 2). Hand-written until the constitution compiler generates it; the values belong to the adopting project, and this package holds only the shape and invented fixtures. The guard is feedback in front of the boundaries and never one of them: it denies what it judges a violation and what it cannot judge, and a missing, slow or crashing guard allows the call on both hosts (research/host-facts/2026-10-03, claude-code-1 and codex-4). The evaluator judges the command text and the paths a host reports, never the programs a command runs. Its known gaps: a script file an interpreter runs (`python tool.py`, `node build.js`) is not read; inline interpreter code that builds a path at run time (`'te' + 'sts/'`) is not resolved; a patch file applied by a command (`git apply`, `patch`) is not read; a recursive delete of a directory is matched against a pattern only through the pattern's literal directory prefix, so `rm -r src` passes a pattern that begins with `**`; and a symlink is not resolved, so a host decoder that wants a link judged at its target adds the resolved path to the action. Rule ids under `guard.` are the evaluator's own and are refused here. Every rule id is unique across the file, which the loader (src/guard/policy.ts) checks because a schema cannot.",
+  type: "object",
+  additionalProperties: false,
+  required: ["version", "protected_paths", "destructive_commands", "secret_paths", "path_tiers", "governed_paths"],
+  properties: {
+    version: {
+      description: "The policy's own version, so a deny can be traced to the policy that produced it.",
+      $ref: "common.schema.json#/$defs/semver"
+    },
+    protected_paths: {
+      description: "Paths a tool call may not write: a write, a patch, a shell redirection, or a shell command that changes, moves, links or removes them. An interpreter whose inline code names one is denied too, read or write, because the code is not executed to find out. A `tests` entry is lifted for a path the ticket scope names (the evaluation context's `scope.files`); no other category is.",
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "category", "globs", "reason"],
+        properties: {
+          id: { $ref: "#/$defs/rule_id" },
+          category: {
+            description: "What the paths hold. The first eight are the protected kinds the constitution-support brief names; `other` is the project's own.",
+            enum: [
+              "tests",
+              "ci-config",
+              "lint-config",
+              "architecture-config",
+              "baselines",
+              "codeowners",
+              "hook-config",
+              "registry",
+              "other"
+            ]
+          },
+          globs: { $ref: "#/$defs/globs" },
+          reason: { $ref: "#/$defs/reason" }
+        }
+      }
+    },
+    destructive_commands: {
+      description: "Command patterns the guard denies. A pattern matches a simple command after the shell is parsed and wrappers such as `env`, `sudo`, `timeout` and `xargs` are stripped, so quoting, chaining and a leading assignment do not hide it. `--no-verify` on any git subcommand is the evaluator's own rule (`guard.git-no-verify`) and needs no entry here.",
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "program", "reason"],
+        properties: {
+          id: { $ref: "#/$defs/rule_id" },
+          program: {
+            description: "The program's base name, compared after any directory is removed: `rm` matches `/bin/rm`.",
+            type: "string",
+            pattern: "^[^/\\s]+$"
+          },
+          subcommand: {
+            description: "The first operand that is not an option. For git it is read after the global options (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace` and the rest) are skipped, so `git -C . push` has the subcommand `push`.",
+            $ref: "common.schema.json#/$defs/nonempty_string"
+          },
+          all_of: {
+            description: "Option groups that must all be present. A group is satisfied by any one of its options. A short option also matches inside a cluster (`-f` matches `-rf`), a long option also matches its `=value` form (`--force` matches `--force=true`), and nothing after `--` is an option. Absent, the program and subcommand alone match.",
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string", pattern: "^-[^\\s=]+$" }
+            }
+          },
+          reason: { $ref: "#/$defs/reason" }
+        }
+      }
+    },
+    secret_paths: {
+      description: "Paths a tool call may not read. A read action, a shell argument or input redirection that names one, or inline interpreter code that names one is denied. A recursive read is also denied when a pattern could match a descendant of the searched path, without checking which files exist. Patterns that begin with `**` also match outside the workspace, which is how a home-directory credential is listed.",
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "globs", "reason"],
+        properties: {
+          id: { $ref: "#/$defs/rule_id" },
+          globs: { $ref: "#/$defs/globs" },
+          reason: { $ref: "#/$defs/reason" }
+        }
+      }
+    },
+    path_tiers: {
+      description: "The path-to-tier map. `never` and `ask-first` are the two most restrictive tiers (ADR-0009, decision 4), and a path no entry maps carries neither. A write to a `never` path is denied. A write to an `ask-first` path is denied until a grant covers it; this evaluator reads no grant, so it denies every one and its reason says a grant is needed. Where entries overlap, the more restrictive tier wins.",
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "tier", "globs", "reason"],
+        properties: {
+          id: { $ref: "#/$defs/rule_id" },
+          tier: { enum: ["never", "ask-first"] },
+          globs: { $ref: "#/$defs/globs" },
+          reason: { $ref: "#/$defs/reason" }
+        }
+      }
+    },
+    governed_paths: {
+      description: "Paths with the constitution articles that govern them, for the first-write notice: the first write to one in a session is denied once with the articles as the reason, because context added on an allow reaches the model a call late (claude-code-2). Which write is the first is per-session state the stateless evaluator does not hold, so it does not deny on these entries; the runtime that keeps the session state does.",
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "globs", "articles"],
+        properties: {
+          id: { $ref: "#/$defs/rule_id" },
+          globs: { $ref: "#/$defs/globs" },
+          articles: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "version", "rule"],
+              properties: {
+                id: {
+                  description: "The article's id as its registry assigns it. Its form is the registry's choice, a themed prefix and a number or otherwise (ADR-0009, decision 2).",
+                  $ref: "common.schema.json#/$defs/artifact_id"
+                },
+                version: { $ref: "common.schema.json#/$defs/nonempty_string" },
+                rule: {
+                  description: "The article's rule in one line, as the deny reason quotes it.",
+                  $ref: "#/$defs/reason"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  $defs: {
+    rule_id: {
+      description: "The id a deny names. Dotted kebab words, at least two, such as `protected.ci-config`. The `guard.` prefix is reserved for the evaluator's own rules.",
+      type: "string",
+      pattern: "^[a-z0-9]+(-[a-z0-9]+)*(\\.[a-z0-9]+(-[a-z0-9]+)*)+$",
+      not: { pattern: "^guard\\." },
+      maxLength: 96
+    },
+    globs: {
+      description: "Workspace-relative globs. `*` and `?` stay inside one path segment, `**` crosses segments and `{a,b}` is an alternation.",
+      type: "array",
+      minItems: 1,
+      items: { $ref: "common.schema.json#/$defs/glob" }
+    },
+    reason: {
+      description: "One line the deny reason carries.",
+      type: "string",
+      minLength: 1,
+      maxLength: 300,
+      pattern: "^[^\\n]*\\S[^\\n]*$"
+    }
+  }
+};
+
+// src/guard/policy.ts
+init_fs();
+function policyRuleIds(policy) {
+  return [
+    ...policy.protected_paths.map((r) => r.id),
+    ...policy.destructive_commands.map((r) => r.id),
+    ...policy.secret_paths.map((r) => r.id),
+    ...policy.path_tiers.map((r) => r.id),
+    ...policy.governed_paths.map((r) => r.id)
+  ];
+}
+function policyGlobs(policy) {
+  return [
+    ...policy.protected_paths.flatMap((r) => r.globs),
+    ...policy.secret_paths.flatMap((r) => r.globs),
+    ...policy.path_tiers.flatMap((r) => r.globs),
+    ...policy.governed_paths.flatMap((r) => r.globs)
+  ];
+}
+function checkPolicy(policy, file) {
+  const issues = [];
+  const seen = new Set;
+  for (const id of policyRuleIds(policy)) {
+    if (seen.has(id)) {
+      issues.push(error("guard.policy-duplicate-rule-id", file, `Rule id '${id}' is declared more than once.`));
+    }
+    seen.add(id);
+  }
+  for (const glob of new Set(policyGlobs(policy))) {
+    if (compileGlob(glob) === null) {
+      issues.push(error("guard.policy-bad-glob", file, `Glob '${glob}' has unbalanced braces.`));
+    }
+  }
+  return issues;
+}
+function conforms(validate, value) {
+  return validate(value);
+}
+function parseGuardPolicy(text2, validate, file) {
+  let value;
+  try {
+    value = $parse(text2, { uniqueKeys: true });
+  } catch (cause) {
+    const first = (cause instanceof Error ? cause.message : String(cause)).split(`
+`)[0];
+    return { policy: null, issues: [error("guard.policy-unparseable", file, `Not valid YAML: ${first}`)] };
+  }
+  if (!conforms(validate, value)) {
+    const detail = (validate.errors ?? []).slice(0, 6).map((e) => `${e.instancePath === "" ? "(root)" : e.instancePath} ${e.message ?? "is invalid"}`).join("; ");
+    return {
+      policy: null,
+      issues: [error("guard.policy-invalid", file, `Does not match schemas/guard-policy.schema.json: ${detail}`)]
+    };
+  }
+  const issues = checkPolicy(value, file);
+  return { policy: issues.length === 0 ? value : null, issues };
+}
+function guardPolicyValidator() {
+  try {
+    const ajv5 = new import__20209.default({ strict: false, allErrors: true, validateFormats: true });
+    import_ajv_formats4.default(ajv5);
+    ajv5.addSchema(common_schema_default);
+    return ajv5.compile(guard_policy_schema_default);
+  } catch {
+    return;
+  }
+}
+function loadGuardPolicy(file) {
+  const text2 = readTextIfPresent(file);
+  if (text2 === null) {
+    return { policy: null, issues: [error("guard.policy-missing", file, "No guard policy file at this path.")] };
+  }
+  const validate = guardPolicyValidator();
+  if (validate === undefined) {
+    return {
+      policy: null,
+      issues: [
+        error("guard.policy-schema-missing", file, "schemas/guard-policy.schema.json did not compile, so the policy cannot be checked and is not trusted.")
+      ]
+    };
+  }
+  return parseGuardPolicy(text2, validate, file);
+}
+
+// src/guard/cli.ts
+var USAGE3 = [
+  "ak guard \u2014 the opt-in guard runtime (ADR-0009)",
+  "",
+  "  ak guard hook pre-tool-use --policy <file> [--host claude-code] [--root <dir>]",
+  "      judge one host tool call read from stdin; a deny is JSON on stdout, exit 0"
+];
+var HOSTS = new Set(["claude-code"]);
+var EVENTS = new Set(["pre-tool-use"]);
+function parseHookArgs(argv) {
+  const args = { event: undefined, host: "claude-code", policy: undefined, root: undefined, bad: [] };
+  for (let i = 0;i < argv.length; i += 1) {
+    const token = argv[i] ?? "";
+    if (token === "--host" || token === "--policy" || token === "--root") {
+      const value = argv[i + 1];
+      if (value === undefined || value.startsWith("--")) {
+        args.bad.push(`${token} needs a value`);
+        continue;
+      }
+      i += 1;
+      if (token === "--host")
+        args.host = value;
+      else if (token === "--policy")
+        args.policy = value;
+      else
+        args.root = value;
+    } else if (token.startsWith("--")) {
+      args.bad.push(`unknown flag ${token}`);
+    } else if (args.event === undefined) {
+      args.event = token;
+    } else {
+      args.bad.push(`unexpected argument ${token}`);
+    }
+  }
+  return args;
+}
+function readGuardStdin(argv) {
+  if (argv[0] !== "guard" || argv[1] !== "hook" || process.stdin.isTTY)
+    return;
+  try {
+    return readFileSync23(0, "utf8");
+  } catch {
+    return;
+  }
+}
+function runGuard(argv, options) {
+  if (argv[0] !== "hook") {
+    if (argv[0] !== undefined)
+      options.io.err(`ak guard: unknown verb ${argv[0]}`);
+    for (const line of USAGE3)
+      options.io.err(line);
+    return 2;
+  }
+  const args = parseHookArgs(argv.slice(1));
+  if (args.event === undefined || !EVENTS.has(args.event)) {
+    options.io.err(`ak guard hook: unknown event ${args.event ?? "(none)"}; the guard answers pre-tool-use`);
+    return 1;
+  }
+  if (!HOSTS.has(args.host)) {
+    options.io.err(`ak guard hook: unknown host ${args.host}; the guard answers claude-code`);
+    return 1;
+  }
+  const response = answer(args, options);
+  if (response.stdout !== "")
+    options.io.out(response.stdout.trimEnd());
+  return response.exit;
+}
+function answer(args, options) {
+  try {
+    return encodeClaudeCode(judge(args, options));
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return encodeClaudeCode(cannotJudge(`the guard failed (${message.split(`
+`)[0]})`));
+  }
+}
+function cannotJudge(why) {
+  return { decision: "deny", rule: UNJUDGEABLE, reason: `The guard cannot judge this call: ${why}.` };
+}
+function judge(args, options) {
+  if (args.bad.length > 0)
+    return cannotJudge(`the hook is wired with bad arguments (${args.bad.join("; ")})`);
+  if (args.root !== undefined && !isAbsolute9(args.root))
+    return cannotJudge("--root must be an absolute path");
+  if (args.policy === undefined)
+    return cannotJudge("the hook is wired without --policy");
+  const policyFile = resolvePath(options.cwd, args.policy);
+  const loaded = loadGuardPolicy(policyFile);
+  if (loaded.policy === null) {
+    const first = loaded.issues[0];
+    return cannotJudge(`the policy at ${policyFile} did not load (${first?.rule ?? "no detail"}: ${first?.message ?? ""})`);
+  }
+  const resolve10 = options.resolve ?? resolveLink;
+  const decoded = decodeClaudeCode(options.stdin ?? "", {
+    resolve: resolve10,
+    isFile: (absolute) => statSync16(absolute, { throwIfNoEntry: false })?.isFile() ?? false
+  });
+  if (decoded.kind === "deny")
+    return decoded.verdict;
+  if (decoded.kind === "pass")
+    return { decision: "allow" };
+  const env = options.env ?? process.env;
+  const context = { root: rootOf2(args, env, decoded.cwd), cwd: decoded.cwd };
+  const home = env.HOME;
+  if (home !== undefined && isAbsolute9(home))
+    context.home = home;
+  const reported2 = evaluate(loaded.policy, decoded.action, context);
+  if (reported2.decision === "deny")
+    return reported2;
+  const canonical = {
+    root: resolve10(context.root) ?? context.root,
+    cwd: resolve10(decoded.cwd) ?? decoded.cwd
+  };
+  if (context.home !== undefined)
+    canonical.home = resolve10(context.home) ?? context.home;
+  if (canonical.root === context.root && canonical.cwd === context.cwd && canonical.home === context.home) {
+    return reported2;
+  }
+  return evaluate(loaded.policy, decoded.action, canonical);
+}
+function rootOf2(args, env, cwd) {
+  if (args.root !== undefined)
+    return args.root;
+  const project = env.CLAUDE_PROJECT_DIR;
+  return project !== undefined && isAbsolute9(project) ? project : cwd;
+}
+function resolveLink(absolute) {
+  const pending = absolute.split("/");
+  let target = "/";
+  let hops = 0;
+  while (pending.length > 0) {
+    const part = pending.shift() ?? "";
+    if (part === "" || part === ".")
+      continue;
+    if (part === "..") {
+      target = dirname14(target);
+      continue;
+    }
+    const next = join33(target, part);
+    if (lstatSync2(next, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      hops += 1;
+      if (hops > 40)
+        throw new Error("too many symlink hops");
+      const link = readlinkSync(next);
+      if (isAbsolute9(link))
+        target = "/";
+      pending.unshift(...link.split("/"));
+    } else
+      target = next;
+  }
+  return target === absolute ? null : target;
+}
+
 // src/maintenance/cli.ts
-var ajv4 = new import_ajv10.default;
+var ajv5 = new import_ajv10.default;
 var pluginSchema = {
   type: "object",
   properties: {
@@ -32813,14 +34836,14 @@ var pluginSchema = {
   },
   additionalProperties: true
 };
-var validPluginList = ajv4.compile({ type: "array", items: pluginSchema });
-var validCodexList = ajv4.compile({
+var validPluginList = ajv5.compile({ type: "array", items: pluginSchema });
+var validCodexList = ajv5.compile({
   type: "object",
   required: ["installed"],
   properties: { installed: { type: "array", items: pluginSchema } },
   additionalProperties: true
 });
-var validClaudeMarketplaces = ajv4.compile({
+var validClaudeMarketplaces = ajv5.compile({
   type: "array",
   items: {
     type: "object",
@@ -32834,7 +34857,7 @@ var validClaudeMarketplaces = ajv4.compile({
     additionalProperties: true
   }
 });
-var validCodexConfig = ajv4.compile({
+var validCodexConfig = ajv5.compile({
   type: "object",
   properties: {
     marketplaces: {
@@ -32848,18 +34871,18 @@ var validCodexConfig = ajv4.compile({
   },
   additionalProperties: true
 });
-var validManifest = ajv4.compile({
+var validManifest = ajv5.compile({
   type: "object",
   required: ["name", "version"],
   properties: { name: { type: "string" }, version: { type: "string" } },
   additionalProperties: true
 });
-var validSettings = ajv4.compile({
+var validSettings = ajv5.compile({
   type: "object",
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__20208.default({ strict: false });
+var bindingAjv = new import__202010.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -32927,9 +34950,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join33(process.env.CODEX_HOME ?? join33(homedir5(), ".codex"), "config.toml");
+  const file = join34(process.env.CODEX_HOME ?? join34(homedir5(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync23(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync24(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -32943,12 +34966,12 @@ function codexRecords() {
   return output ? parseJson2(output, validCodexList)?.installed ?? [] : [];
 }
 function checkPlugin(host, installed, latest) {
-  const matches = installed.filter((row) => row.id === ID || row.pluginId === ID);
-  if (matches.length === 0)
+  const matches2 = installed.filter((row) => row.id === ID || row.pluginId === ID);
+  if (matches2.length === 0)
     return finding("WARN", `${host} plugin`, "ak is not installed", `Install ${ID} in ${host}.`);
-  if (matches.some((row) => row.enabled !== true))
+  if (matches2.some((row) => row.enabled !== true))
     return finding("FAIL", `${host} plugin`, "ak is disabled", `Enable ${ID} in ${host}.`);
-  const versions = [...new Set(matches.map((row) => row.version ?? "unknown"))];
+  const versions = [...new Set(matches2.map((row) => row.version ?? "unknown"))];
   if (latest && versions.some((version) => version !== latest)) {
     return finding("WARN", `${host} plugin`, `installed ${versions.join(", ")}; published ${latest}`, "Run ak update.");
   }
@@ -32968,10 +34991,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join33(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join34(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson2(readFileSync23(file, "utf8"), validSettings);
+    settings = parseJson2(readFileSync24(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID}"] to true in ${file}.`);
   }
@@ -32982,7 +35005,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync32(join33(root, BINDING_FILE)) ? root : null;
+  return existsSync32(join34(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -32994,7 +35017,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join33(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join34(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -33036,12 +35059,12 @@ function checkLinearis(root, backend) {
     return finding("WARN", "linearis", "no linear-linearis binding to check", "Add the binding if this repo uses Linear.");
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync6(topResult.output) : realpathSync6(root);
-  for (const base of new Set([root, top])) {
-    const binary = join33(base, "node_modules", ".bin", "linearis");
+  for (const base2 of new Set([root, top])) {
+    const binary = join34(base2, "node_modules", ".bin", "linearis");
     if (!existsSync32(binary))
       continue;
     const target = realpathSync6(binary);
-    if ([root, top].every((folder) => relative7(join33(realpathSync6(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative7(join34(realpathSync6(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version = command(binary, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version.ok && version.output === "2026.8.0")
@@ -33053,8 +35076,8 @@ function checkLinearis(root, backend) {
 async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute9(root)) {
-      const value = parseJson2(readFileSync23(join33(root, suffix), "utf8"), validManifest);
+    if (isAbsolute10(root)) {
+      const value = parseJson2(readFileSync24(join34(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -33067,7 +35090,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
       return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return { value: null, failure: { reason: isAbsolute9(root) ? "missing" : "network" } };
+    return { value: null, failure: { reason: isAbsolute10(root) ? "missing" : "network" } };
   }
 }
 function print(items, json = false) {
@@ -33115,8 +35138,8 @@ async function maintenanceCommandNotice() {
   if (!path || basename16(path) !== "ak")
     return null;
   try {
-    const current = readFileSync23(path, "utf8");
-    const published = isAbsolute9(ROOT) ? readFileSync23(join33(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current = readFileSync24(path, "utf8");
+    const published = isAbsolute10(ROOT) ? readFileSync24(join34(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
@@ -33182,6 +35205,9 @@ if (import.meta.main) {
     const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
     const argv = process.argv.slice(2);
     process.exitCode = await runLearn(flags, { cwd: process.cwd(), io, stdin: readHookStdin(argv) });
+  } else if (action === "guard") {
+    const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
+    process.exitCode = runGuard(flags, { cwd: process.cwd(), io, stdin: readGuardStdin(process.argv.slice(2)) });
   } else if (action === "kb") {
     const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
     process.exitCode = runKb(flags, { cwd: process.cwd(), io });
@@ -33195,7 +35221,7 @@ if (import.meta.main) {
       process.exitCode = 1;
     }
   } else {
-    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak kb \u2026");
+    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026");
     process.exitCode = 2;
   }
 }
