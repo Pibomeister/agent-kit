@@ -1170,6 +1170,62 @@ describe("ak lifecycle check, standalone", () => {
     expect(ak(dir, "check").err).toContain("refused: evidence unstable: AC-1 has both failed and passed evidence");
   });
 
+  test("a correction from a different check leaves the failed receipt effective", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "cross-check-correction", {
+      acceptance_criteria: [
+        { id: "AC-1", text: "The behavior is verified.", surface: "none" },
+        { id: "AC-2", text: "The code is linted.", surface: "none" },
+      ],
+      verification: [
+        { id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1"] },
+        { id: "lint-check", check: "Run the linter.", kind: "command", supports: ["AC-2"] },
+      ],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const original = receipt(dir, run, ticketPath, { id: "verification-original", status: "failed", exit_status: 1 });
+    const originalHash = `sha256:${createHash("sha256").update(readFileSync(original)).digest("hex")}`;
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", original).code).toBe(0);
+    const correction = receipt(dir, run, ticketPath, {
+      id: "verification-lint",
+      check: "lint-check",
+      supports: ["AC-2"],
+      supersedes: { id: "verification-original", hash: originalHash },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", correction).code).toBe(0);
+    expect(ak(dir, "check").err).toContain("refused: evidence failed: AC-1 has failed evidence");
+  });
+
+  test("a correction covering fewer criteria leaves the failed receipt effective", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "partial-correction", {
+      acceptance_criteria: [
+        { id: "AC-1", text: "The behavior is verified.", surface: "none" },
+        { id: "AC-2", text: "The other behavior is verified.", surface: "none" },
+      ],
+      verification: [
+        { id: "project-check", check: "Run the project check.", kind: "command", supports: ["AC-1", "AC-2"] },
+      ],
+    });
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    const original = receipt(dir, run, ticketPath, {
+      id: "verification-original",
+      status: "failed",
+      exit_status: 1,
+      supports: ["AC-1", "AC-2"],
+    });
+    const originalHash = `sha256:${createHash("sha256").update(readFileSync(original)).digest("hex")}`;
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", original).code).toBe(0);
+    const correction = receipt(dir, run, ticketPath, {
+      id: "verification-partial",
+      supersedes: { id: "verification-original", hash: originalHash },
+    });
+    expect(ak(dir, "record", "--gate", "verify", "--receipt", correction).code).toBe(0);
+    expect(ak(dir, "check").err).toContain("AC-2 has failed evidence");
+  });
+
   test("a later pass never overwrites a failure for the same criterion and head", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "unstable-check");

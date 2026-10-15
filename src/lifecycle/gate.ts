@@ -1087,12 +1087,21 @@ function evaluateEvidence(
     const valid = reasons.length === before;
     if (valid) validReceipts.push({ ref, receipt, required, check });
   }
-  const superseded = validReceipts.flatMap(({ receipt }) => {
-    const target = object(receipt.supersedes);
-    return target !== undefined && (target.schema === undefined || target.schema === "verification") ? [target] : [];
-  });
+  const superseded = new Set(
+    validReceipts.flatMap(({ receipt: correction }) => {
+      const target = object(correction.supersedes);
+      if (target === undefined || (target.schema !== undefined && target.schema !== "verification")) return [];
+      if (correction.status !== "passed" && correction.status !== "failed") return [];
+      const original = validReceipts.find(({ ref }) => ref.id === target.id && ref.hash === target.hash);
+      if (original === undefined || original.receipt.check !== correction.check) return [];
+      const covered = strings(correction.supports) ?? [];
+      return (strings(original.receipt.supports) ?? []).every((criterion) => covered.includes(criterion))
+        ? [original.ref]
+        : [];
+    }),
+  );
   for (const { ref, receipt, required, check } of validReceipts) {
-    if (superseded.some((target) => target.id === ref.id && target.hash === ref.hash)) continue;
+    if (superseded.has(ref)) continue;
     for (const criterion of strings(receipt.supports) ?? []) {
       if (receipt.status === "passed") passed.add(criterion);
       if (receipt.status === "failed") failed.add(criterion);
