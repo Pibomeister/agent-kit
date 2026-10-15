@@ -96,6 +96,16 @@ async function dispatch(argv: readonly string[], options: RunLearnOptions): Prom
     for (const entry of Object.values(area.verbs)) options.io.err(`  ${entry.usage}`);
     return 2;
   }
+  // Help and unknown setup flags return before loadConfig reads the scope file.
+  if (areaName === "setup" && verbName !== undefined) {
+    const { decideSetupArgs } = await import("./setup/cli.ts");
+    const decision = decideSetupArgs(verbName, verb.usage, rest);
+    if (decision !== null) {
+      const write = decision.stream === "out" ? options.io.out : options.io.err;
+      for (const line of decision.lines) write(line);
+      return decision.code;
+    }
+  }
   const env = options.env ?? process.env;
   const config = loadConfig(env);
   const ctx: LearnContext = {
