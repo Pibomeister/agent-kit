@@ -119,8 +119,8 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
    a pass carries a reason.
 8. Assemble the matrix: every criterion on one axis, every receipt on the other, and no criterion
    left without a cell.
-9. Invalidate, rather than rewrite, any earlier receipt this run supersedes — record what changed and
-   when. The old receipt stays readable; what changes is whether it still describes the current state.
+9. Never rewrite a recorded receipt. To correct one, record a new passed or failed receipt for the
+   same check, covering every criterion it supports, whose `supersedes` names its `{id, hash}`.
 10. Claim exactly what the receipts support, and publish the matrix and the receipts through the
     knowledgebase adapter's `publishArtifact` operation with a run-artifact placement. Return the
     receipts and matrix exactly as artifacts. Do not add a prose approval over them; each criterion's
@@ -133,7 +133,7 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
     references into a verdict. It skips, with a note, a receipt bound to another revision and
     refuses one with a listed artifact it cannot find, and the pre-ship check refuses one whose ticket ref
     is not the run record's `artifactHash` value from step 6. Re-recording a corrected receipt under
-    the same id replaces the earlier one at this head, except a failed receipt, which stays.
+    the same id replaces the earlier one at this head, except a failed receipt: correct it by step 9.
     The record names this revision and diff hash, so any later edit makes it stale and super-ship
     sends you back here.
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
