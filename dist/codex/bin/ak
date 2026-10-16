@@ -19710,7 +19710,7 @@ function clip(text2, width) {
 function rosterSection(ctx, root, options = {}) {
   const envWidth = Number.parseInt(ctx.env.AK_LEARN_ROSTER_WIDTH ?? "", 10);
   const width = options.width ?? (Number.isFinite(envWidth) && envWidth > 0 ? envWidth : DEFAULT_WIDTH);
-  const catalog = catalogSkills(options.packageRoot ?? PACKAGE_ROOT);
+  const catalog = basename9(import.meta.dir) === "bin" ? [] : catalogSkills(options.packageRoot ?? PACKAGE_ROOT);
   const known = new Set(catalog.map((skill) => skill.name));
   const levels = [["catalog", catalog]];
   const installed = [["global", join19(ctx.config.configDir, "skills")]];
