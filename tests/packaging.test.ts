@@ -508,6 +508,20 @@ describe("bundle planning", () => {
     expect(alpha).not.toContain("](../../protocols/tdd/PROTOCOL.md)");
   });
 
+  test("a catalog-declared role resolves at its path and is absent when the file is", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    const path = "roles/implementer/ROLE.md";
+    const plan = planBundle({ root: REPO, catalog }, "codex", {});
+    expect(plan.files.get(path)?.contents).toBe(readFileSync(join(REPO, path), "utf8"));
+    expect(plan.files.has("catalog.yaml")).toBe(true);
+    expect(plan.files.has("schemas/common.schema.json")).toBe(true);
+    expect(plan.files.has("schemas/pack.schema.json")).toBe(true);
+    expect(plan.files.has("schemas/verification-recipe.schema.json")).toBe(true);
+    const absent = planBundle(ctxFor({}, [path]), "claude-code", {});
+    expect(absent.files.has(path)).toBe(false);
+  });
+
   test("a link between two shared files needs no rewrite because the layout is preserved", () => {
     const plan = planBundle(ctxFor(), "claude-code", {});
     const proto = plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents ?? "";

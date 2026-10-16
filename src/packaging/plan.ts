@@ -778,6 +778,29 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     }
   }
 
+  // Authored roles, the catalog, and schemas stay at the paths consumers already write.
+  const shipDeclared = (source: string) => {
+    const text = readTextIfPresent(join(root, source));
+    if (text === null) return;
+    files.set(source, { path: source, contents: text, source });
+    // Body bytes stay the source bytes, so a link keeps its source path. Copy a
+    // template that link names; other deps still travel through the shared closure.
+    const linked = rewriteLinks(source, source, text, included, source);
+    issues.push(...linked.issues);
+    for (const dep of linked.dependencies) {
+      if (!dep.startsWith("templates/")) continue;
+      const depText = readTextIfPresent(join(root, dep));
+      if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep });
+    }
+  };
+  for (const entry of catalog.bySection("roles")) {
+    if (entry.status === "authored") shipDeclared(entryBodyPath("roles", entry.id));
+  }
+  shipDeclared("catalog.yaml");
+  for (const schema of walkFiles(root, "schemas")) {
+    if (schema.endsWith(".schema.json")) shipDeclared(schema);
+  }
+
   // Transitive closure over shared dependencies.
   const done = new Set<string>();
   while (pending.length > 0) {

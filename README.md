@@ -260,6 +260,7 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 Ten donors, pinned to exact commits in `provenance/upstream.lock.yaml`: nine MIT and one Apache-2.0.
 For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
+The research-only [`caveman-ai/blocks` pin](research/sources/caveman-blocks-verified-blocks.md) records the procedure-detection donor and its licence and trademark limits; no donor executable is shipped.
 Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
 `EveryInc/compound-engineering-plugin`, `obra/superpowers`, `mattpocock/skills`,
 `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`, `Yeachan-Heo/oh-my-codex`.
