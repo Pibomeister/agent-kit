@@ -129,6 +129,7 @@ export type VerdictInvalidation = "patch-changed" | "ci-config-drift" | "merge-c
 export interface PatchVerdict {
   head_revision: string;
   patch_id: string;
+  verified_base_revision: string;
   reused_from?: string;
   invalidated_by?: VerdictInvalidation;
 }

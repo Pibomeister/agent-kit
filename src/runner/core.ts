@@ -263,7 +263,7 @@ export class Runner {
         delegates: { type: "object" },
         procedure: { type: "object", required: ["bundle_version", "hash"] },
         verified_base_revision: { type: "string" },
-        verdict: { type: "object", required: ["head_revision", "patch_id"] },
+        verdict: { type: "object", required: ["head_revision", "patch_id", "verified_base_revision"] },
         open_escalation: { type: ["object", "null"] },
         cancellation: {
           type: "object",
@@ -662,8 +662,14 @@ export class Runner {
     const changed = run.revision !== revision || run.diff_hash !== diffHash;
     let reuse = false;
     const verdict = run.verdict;
-    if (changed && verdict !== undefined && run.run_state === "ready-to-ship") {
-      const reason = this.verdictInvalidation(run, verdict.patch_id, revision);
+    if (
+      changed &&
+      verdict !== undefined &&
+      verdict.invalidated_by === undefined &&
+      verdict.head_revision === run.revision &&
+      run.run_state === "ready-to-ship"
+    ) {
+      const reason = this.verdictInvalidation(run, verdict, revision);
       if (reason === null || reason === "merge-conflict") {
         reuse = true;
         const oldRevision = run.revision;
@@ -683,8 +689,7 @@ export class Runner {
         verdict.reused_from = oldRevision;
         verdict.head_revision = revision;
       }
-      if (reason === null) delete verdict.invalidated_by;
-      else this.invalidate(run, verdict, reason);
+      if (reason !== null) this.invalidate(run, verdict, reason);
     }
     run.revision = revision;
     run.diff_hash = diffHash;
@@ -706,28 +711,28 @@ export class Runner {
     )
       throw new Error("a completed review round and current head are required before verdict binding");
     const baseRef = verdictBase(run);
-    if (run.verified_base_revision === undefined) throw new Error("verification recorded no trunk base");
+    const verifiedBase = run.verified_base_revision;
+    if (verifiedBase === undefined) throw new Error("verification recorded no trunk base");
     if (!cleanCommittedTree(this.gitContext, this.workerRoot))
       throw new Error("verdict needs a clean committed worktree");
     if (!mergeTreeClean(this.gitContext, this.workerRoot, baseRef, run.revision))
       throw new Error("merge-tree reports a conflict");
     const patchId = patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision);
     if (patchId === null) throw new Error("verdict needs a nonempty committed patch");
-    run.verdict = { head_revision: run.revision, patch_id: patchId };
+    run.verdict = { head_revision: run.revision, patch_id: patchId, verified_base_revision: verifiedBase };
     this.save(run);
     return run.verdict;
   }
 
   /** The one classification of a bound verdict against a head; revision() and ship both use it. */
-  private verdictInvalidation(run: Run, patchId: string, head: string): VerdictInvalidation | null {
+  private verdictInvalidation(run: Run, verdict: PatchVerdict, head: string): VerdictInvalidation | null {
     const baseRef = verdictBase(run);
-    const verifiedBase = run.verified_base_revision;
-    if (verifiedBase === undefined) throw new Error("verification recorded no trunk base");
     const clean = cleanCommittedTree(this.gitContext, this.workerRoot);
-    if ((clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== patchId)
+    if ((clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== verdict.patch_id)
       return "patch-changed";
     const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
-    if (ciConfigDrift(this.gitContext, this.workerRoot, verifiedBase, trunk)) return "ci-config-drift";
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, trunk))
+      return "ci-config-drift";
     return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
   }
 
@@ -745,7 +750,7 @@ export class Runner {
       throw new Error("current patch verdict required before unattended ship");
     }
     if (verdict.invalidated_by === undefined && verdict.head_revision === run.revision) {
-      const reason = this.verdictInvalidation(run, verdict.patch_id, run.revision);
+      const reason = this.verdictInvalidation(run, verdict, run.revision);
       if (reason === null) return;
       this.invalidate(run, verdict, reason);
       this.save(run);

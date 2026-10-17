@@ -125,8 +125,8 @@ A verdict or receipt records the reviewed head SHA and the stable `git patch-id`
 committed change from its merge base.
 The old verdict applies to an identical patch after a rebase only if CI configuration paths on
 trunk did not change since verification and `git merge-tree --write-tree` is clean. A changed
-patch, an uncommitted edit or CI configuration drift voids it and returns the run to
-verification; a conflict voids it until a rebase. Reuse records the old head as lineage. Merge preparation follows the round's started lanes and runs the merge-tree and CI drift
+patch, an uncommitted edit or CI drift voids it and returns the run to verification; a
+conflict blocks ship. A void verdict is never reused. Reuse records the old head. Merge preparation follows the round's started lanes and runs the merge-tree and CI drift
 checks immediately before a ship decision. This rule applies to the full verdict as well as a
 delta verdict; it never makes a reviewer or author into the verifier seat.
 

@@ -1041,9 +1041,9 @@ describe("runner guards", () => {
     expect(shipCard(f).id).toBe("ship");
   });
 
-  test("a clean rebase after a trunk conflict restores the same verdict", () => {
+  test("a verdict voided by a trunk conflict is never reused, even after a clean rebase", () => {
     const f = patchVerdictFixture();
-    const verdict = f.runner.bindVerdict("toy-run");
+    f.runner.bindVerdict("toy-run");
     trunkCommit(f, "feature.txt", "trunk conflict\n");
     const runner = () => new Runner(f.privateDir, f.worker, root, true);
     git(f.worker, "commit", "-q", "--allow-empty", "-m", "touch head");
@@ -1053,9 +1053,46 @@ describe("runner guards", () => {
     git(f.worker, "checkout", "feature");
     git(f.worker, "rebase", "main");
     const after = runner().syncRevision("toy-run");
-    expect(after.run_state).toBe("ready-to-ship");
-    expect(after.verdict?.invalidated_by).toBeUndefined();
-    expect(after.verdict?.patch_id).toBe(verdict.patch_id);
+    expect(after.run_state).toBe("repairing");
+    expect(after.next_permitted_action).toBe("verify.record");
+  });
+
+  test("reverting an amend after re-verification cannot revive the first verdict", () => {
+    const f = patchVerdictFixture(true, false);
+    const first = f.runner.bindVerdict("toy-run");
+    const runner = () => new Runner(f.privateDir, f.worker, root, true);
+    writeFileSync(join(f.worker, "feature.txt"), "amended feature\n");
+    git(f.worker, "commit", "-q", "--amend", "-am", "amend feature");
+    expect(runner().syncRevision("toy-run").verdict?.invalidated_by).toBe("patch-changed");
+    f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const verification = join(f.privateDir, "verification-2.txt");
+    writeFileSync(verification, "tests passed on the amended patch");
+    f.runner.collect("toy-run", "verify-2", verification, f.revision, "verify");
+    f.runner.verify("toy-run", "verify-2");
+    for (const [id, operation] of [
+      ["review-2", "review.full"],
+      ["readiness-2", "review.readiness"],
+    ] as const) {
+      f.runner.prepare("toy-run", {
+        id,
+        operation,
+        grant: { charter_hash: f.charter.immutability.hash, covers: "finding-adjudication" },
+        question: "Proceed?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["verify-2"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      });
+      f.runner.judge("toy-run", id, "seat-a", "supervisor-1", `${id}-a`, "yes", []);
+      f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-b`, "yes", []);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
+    git(f.worker, "reset", "-q", "--hard", first.head_revision);
+    const reverted = runner().syncRevision("toy-run");
+    expect(reverted.run_state).toBe("repairing");
+    expect(reverted.verdict?.invalidated_by).toBe("patch-changed");
+    expect(reverted.verdict?.reused_from).toBeUndefined();
   });
 
   test("charter-bound live smoke wakes through an event and reaches a local ready branch", async () => {

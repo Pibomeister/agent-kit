@@ -325,7 +325,7 @@ The runner persists, per run, and the package requires to be handed back on resu
 | Inbound events | Payload digest, acknowledged state and terminal marker; an unacknowledged event is replayed after restart |
 | Delegated work | Owner and child ids, expected runtime, side-effect refs and replacement lineage |
 | Governing procedure | Bundle version and content digest re-read on each audit tick |
-| Patch verdict | Reviewed head, trunk tip verification ran against, stable patch-id, reuse lineage and any invalidation cause |
+| Patch verdict | Reviewed head, stable patch-id, the trunk tip its verification ran against, reuse lineage and any invalidation cause |
 
 A restart with no such record does not resume — it starts a new run. Resuming from partial state is
 how a run repeats a remote effect, which is exactly what §5 exists to prevent.
