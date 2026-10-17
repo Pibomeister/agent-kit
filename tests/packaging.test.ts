@@ -52,6 +52,12 @@ describe("project autonomy default", () => {
   test("an invalid project setting refuses the default", () => {
     expect(select("yes").issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
   });
+  test("validate reports an invalid project record instead of passing it", () => {
+    if (catalog === null) throw new Error("real catalog must load");
+    const root = makeTree({ "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}` });
+    const issues = checkBundleLinks({ root: REPO, catalog }, { project: join(root, "project.json") });
+    expect(issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+  });
   test("an autonomy install includes the invocation policy its runner reads", () => {
     if (catalog === null) throw new Error("real catalog must load");
     const plan = planBundle({ root: REPO, catalog }, "codex", { profile: "autonomy" });

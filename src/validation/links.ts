@@ -124,7 +124,11 @@ export function checkBundleLinks(ctx: CheckContext, options: BuildOptions): Issu
   const issues: Issue[] = [];
 
   for (const plan of planAll(ctx, options)) {
-    issues.push(...plan.issues.filter((issue) => issue.rule === "packaging.gate-build-failed"));
+    issues.push(
+      ...plan.issues.filter(
+        (issue) => issue.rule === "packaging.gate-build-failed" || issue.rule === "packaging.project-invalid",
+      ),
+    );
     const present = new Set(plan.files.keys());
     const dirs = new Set<string>();
     for (const path of present) {
