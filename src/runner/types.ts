@@ -125,12 +125,12 @@ export interface Delegate {
   progress: { kind: "commit" | "push" | "pr" | "check" | "store-report"; ref: string; at: string }[];
 }
 
+export type VerdictInvalidation = "patch-changed" | "ci-config-drift" | "merge-conflict";
 export interface PatchVerdict {
   head_revision: string;
-  base_revision: string;
   patch_id: string;
   reused_from?: string;
-  invalidated_by?: "patch-changed" | "ci-config-drift" | "merge-conflict";
+  invalidated_by?: VerdictInvalidation;
 }
 export interface ProcedureIdentity {
   bundle_version: string;
@@ -161,6 +161,7 @@ export interface Run {
   >;
   delegates?: Record<string, Delegate>;
   procedure?: ProcedureIdentity;
+  verified_base_revision?: string;
   verdict?: PatchVerdict;
   open_escalation: Escalation | null;
   cancellation?: { by: string; rationale: string; at: string };

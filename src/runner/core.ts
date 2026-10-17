@@ -32,10 +32,12 @@ import type {
   Evidence,
   InvocationPolicy,
   OperationResult,
+  PatchVerdict,
   ProcedureIdentity,
   Run,
   RunLedger,
   StandingGrant,
+  VerdictInvalidation,
 } from "./types.ts";
 
 interface StageStep {
@@ -121,6 +123,12 @@ function canonicalFuturePath(path: string): string {
 
 function digest(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function verdictBase(run: Run): string {
+  const baseRef = run.charter.repos[0]?.base_branch;
+  if (baseRef === undefined) throw new Error("charter names no verdict base branch");
+  return baseRef;
 }
 
 function approved(decision: Decision): boolean {
@@ -254,7 +262,8 @@ export class Runner {
         events: { type: "object" },
         delegates: { type: "object" },
         procedure: { type: "object", required: ["bundle_version", "hash"] },
-        verdict: { type: "object", required: ["head_revision", "base_revision", "patch_id"] },
+        verified_base_revision: { type: "string" },
+        verdict: { type: "object", required: ["head_revision", "patch_id"] },
         open_escalation: { type: ["object", "null"] },
         cancellation: {
           type: "object",
@@ -652,20 +661,9 @@ export class Runner {
     const diffHash = observed?.diff_hash ?? run.diff_hash;
     const changed = run.revision !== revision || run.diff_hash !== diffHash;
     let reuse = false;
-    if (changed && run.verdict !== undefined && run.run_state === "ready-to-ship") {
-      const baseRef = run.charter.repos[0]?.base_branch;
-      if (baseRef === undefined) throw new Error("charter names no verdict base branch");
-      const clean = revision !== run.revision && cleanCommittedTree(this.gitContext, this.workerRoot);
-      const next = clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, revision) : null;
-      const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
-      const reason =
-        next !== run.verdict.patch_id
-          ? "patch-changed"
-          : ciConfigDrift(this.gitContext, this.workerRoot, run.verdict.base_revision, trunk)
-            ? "ci-config-drift"
-            : !mergeTreeClean(this.gitContext, this.workerRoot, baseRef, revision)
-              ? "merge-conflict"
-              : null;
+    const verdict = run.verdict;
+    if (changed && verdict !== undefined && run.run_state === "ready-to-ship") {
+      const reason = this.verdictInvalidation(run, verdict.patch_id, revision);
       if (reason === null || reason === "merge-conflict") {
         reuse = true;
         const oldRevision = run.revision;
@@ -682,12 +680,11 @@ export class Runner {
             decision.diff_hash = diffHash;
           }
         }
-        run.verdict.reused_from = oldRevision;
-        run.verdict.head_revision = revision;
-        run.verdict.base_revision = trunk;
-        if (reason === null) delete run.verdict.invalidated_by;
-        else run.verdict.invalidated_by = reason;
-      } else run.verdict.invalidated_by = reason;
+        verdict.reused_from = oldRevision;
+        verdict.head_revision = revision;
+      }
+      if (reason === null) delete verdict.invalidated_by;
+      else this.invalidate(run, verdict, reason);
     }
     run.revision = revision;
     run.diff_hash = diffHash;
@@ -708,55 +705,55 @@ export class Runner {
       !run.decisions.some((decision) => decision.card.operation === "review.readiness" && approved(decision))
     )
       throw new Error("a completed review round and current head are required before verdict binding");
-    const baseRef = run.charter.repos[0]?.base_branch;
-    if (baseRef === undefined) throw new Error("charter names no verdict base branch");
+    const baseRef = verdictBase(run);
+    if (run.verified_base_revision === undefined) throw new Error("verification recorded no trunk base");
     if (!cleanCommittedTree(this.gitContext, this.workerRoot))
       throw new Error("verdict needs a clean committed worktree");
     if (!mergeTreeClean(this.gitContext, this.workerRoot, baseRef, run.revision))
       throw new Error("merge-tree reports a conflict");
     const patchId = patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision);
     if (patchId === null) throw new Error("verdict needs a nonempty committed patch");
-    run.verdict = {
-      head_revision: run.revision,
-      base_revision: resolvedRevision(this.gitContext, this.workerRoot, baseRef),
-      patch_id: patchId,
-    };
+    run.verdict = { head_revision: run.revision, patch_id: patchId };
     this.save(run);
     return run.verdict;
   }
 
-  private requireCurrentVerdict(run: Run): void {
-    if (run.charter.audit_cadence_seconds === undefined) return;
-    const verdict = run.verdict;
-    if (verdict === undefined || verdict.invalidated_by !== undefined || verdict.head_revision !== run.revision)
-      throw new Error("current patch verdict required before unattended ship");
-    const baseRef = run.charter.repos[0]?.base_branch;
-    if (baseRef === undefined) throw new Error("charter names no verdict base branch");
+  /** The one classification of a bound verdict against a head; revision() and ship both use it. */
+  private verdictInvalidation(run: Run, patchId: string, head: string): VerdictInvalidation | null {
+    const baseRef = verdictBase(run);
+    const verifiedBase = run.verified_base_revision;
+    if (verifiedBase === undefined) throw new Error("verification recorded no trunk base");
     const clean = cleanCommittedTree(this.gitContext, this.workerRoot);
-    const current = clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision) : null;
-    const reason =
-      current !== verdict.patch_id
-        ? "patch-changed"
-        : ciConfigDrift(
-              this.gitContext,
-              this.workerRoot,
-              verdict.base_revision,
-              resolvedRevision(this.gitContext, this.workerRoot, baseRef),
-            )
-          ? "ci-config-drift"
-          : !mergeTreeClean(this.gitContext, this.workerRoot, baseRef, run.revision)
-            ? "merge-conflict"
-            : null;
-    if (reason === null) return;
+    if ((clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== patchId)
+      return "patch-changed";
+    const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verifiedBase, trunk)) return "ci-config-drift";
+    return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
+  }
+
+  private invalidate(run: Run, verdict: PatchVerdict, reason: VerdictInvalidation): void {
     verdict.invalidated_by = reason;
-    if (reason === "merge-conflict") {
-      this.save(run);
-      throw new Error(`verdict invalidated by ${reason}; rebase onto ${baseRef} is required`);
-    }
+    if (reason === "merge-conflict") return;
     run.run_state = "repairing";
     run.next_permitted_action = "verify.record";
-    this.save(run);
-    throw new Error(`verdict invalidated by ${reason}; verification is required`);
+  }
+
+  private requireCurrentVerdict(run: Run): void {
+    const verdict = run.verdict;
+    if (verdict === undefined) {
+      if (run.charter.audit_cadence_seconds === undefined) return;
+      throw new Error("current patch verdict required before unattended ship");
+    }
+    if (verdict.invalidated_by === undefined && verdict.head_revision === run.revision) {
+      const reason = this.verdictInvalidation(run, verdict.patch_id, run.revision);
+      if (reason === null) return;
+      this.invalidate(run, verdict, reason);
+      this.save(run);
+      if (reason !== "merge-conflict") throw new Error(`verdict invalidated by ${reason}; verification is required`);
+    }
+    if (verdict.invalidated_by === "merge-conflict")
+      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${verdictBase(run)} is required`);
+    throw new Error("current patch verdict required before unattended ship");
   }
 
   syncRevision(id: string): Run {
@@ -1222,6 +1219,11 @@ export class Runner {
       digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash
     )
       throw new Error("current runner-collected verification receipt required");
+    const baseRef = run.charter.repos[0]?.base_branch;
+    const base =
+      baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
+    if (base?.code === 0) run.verified_base_revision = base.text;
+    else delete run.verified_base_revision;
     run.run_state = "verifying";
     run.next_permitted_action = "review.full";
     this.save(run);

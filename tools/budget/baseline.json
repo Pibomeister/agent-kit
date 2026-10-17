@@ -18,8 +18,8 @@
     },
     "bundle/claude-code:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 11287,
-      "tokens": 2820
+      "bytes": 11260,
+      "tokens": 2813
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
@@ -103,8 +103,8 @@
     },
     "bundle/claude-code:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4058,
-      "tokens": 1014
+      "bytes": 4046,
+      "tokens": 1011
     },
     "bundle/claude-code:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -458,8 +458,8 @@
     },
     "bundle/codex:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 11287,
-      "tokens": 2820
+      "bytes": 11260,
+      "tokens": 2813
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
@@ -543,8 +543,8 @@
     },
     "bundle/codex:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4058,
-      "tokens": 1014
+      "bytes": 4046,
+      "tokens": 1011
     },
     "bundle/codex:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -898,8 +898,8 @@
     },
     "bundle/droid:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 11287,
-      "tokens": 2820
+      "bytes": 11260,
+      "tokens": 2813
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
@@ -983,8 +983,8 @@
     },
     "bundle/droid:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4058,
-      "tokens": 1014
+      "bytes": 4046,
+      "tokens": 1011
     },
     "bundle/droid:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -1338,8 +1338,8 @@
     },
     "bundle/grok:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 11287,
-      "tokens": 2820
+      "bytes": 11260,
+      "tokens": 2813
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
@@ -1423,8 +1423,8 @@
     },
     "bundle/grok:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4058,
-      "tokens": 1014
+      "bytes": 4046,
+      "tokens": 1011
     },
     "bundle/grok:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
@@ -1778,8 +1778,8 @@
     },
     "bundle/kimi:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
-      "bytes": 11287,
-      "tokens": 2820
+      "bytes": 11260,
+      "tokens": 2813
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
@@ -1863,8 +1863,8 @@
     },
     "bundle/kimi:skills/autopilot/references/checkpoints.md": {
       "file": "skills/autopilot/references/checkpoints.md",
-      "bytes": 4058,
-      "tokens": 1014
+      "bytes": 4046,
+      "tokens": 1011
     },
     "bundle/kimi:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",

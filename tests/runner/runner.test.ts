@@ -967,64 +967,95 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("ci-config-drift");
   });
 
-  test("a trunk merge conflict before ship asks for a rebase, not another verification round", () => {
-    const f = patchVerdictFixture(true, false);
-    f.runner.bindVerdict("toy-run");
+  const trunkCommit = (f: ReturnType<typeof patchVerdictFixture>, path: string, text: string) => {
     git(f.worker, "checkout", "main");
-    writeFileSync(join(f.worker, "feature.txt"), "trunk conflict\n");
-    git(f.worker, "add", "feature.txt");
-    git(f.worker, "commit", "-qm", "conflict on trunk");
+    mkdirSync(dirname(join(f.worker, path)), { recursive: true });
+    writeFileSync(join(f.worker, path), text);
+    git(f.worker, "add", path);
+    git(f.worker, "commit", "-qm", `trunk changes ${path}`);
     git(f.worker, "checkout", "feature");
-    expect(() =>
-      f.runner.prepare("toy-run", {
-        id: "ship",
-        operation: "ship.prepare",
-        grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
-        question: "Open the pull request?",
-        options: ["yes", "no"],
-        approve: "yes",
-        evidence: ["verify"],
-        artifact_hash: `sha256:${"b".repeat(64)}`,
-      }),
-    ).toThrow("rebase onto main is required");
-    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
-    expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("merge-conflict");
+  };
+  const shipCard = (f: ReturnType<typeof patchVerdictFixture>) =>
+    f.runner.prepare("toy-run", {
+      id: "ship",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open the pull request?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+  const invalidations = [
+    {
+      reason: "patch-changed",
+      afterBind: (f: ReturnType<typeof patchVerdictFixture>) =>
+        writeFileSync(join(f.worker, "feature.txt"), "uncommitted change\n"),
+      error: "verification is required",
+      state: "repairing",
+    },
+    {
+      reason: "ci-config-drift",
+      afterBind: (f: ReturnType<typeof patchVerdictFixture>) =>
+        trunkCommit(f, ".github/workflows/ci.yml", "name: moved\n"),
+      error: "verification is required",
+      state: "repairing",
+    },
+    {
+      reason: "merge-conflict",
+      afterBind: (f: ReturnType<typeof patchVerdictFixture>) => trunkCommit(f, "feature.txt", "trunk conflict\n"),
+      error: "rebase onto main is required",
+      state: "ready-to-ship",
+    },
+  ] as const;
+  for (const cadenced of [false, true])
+    for (const { reason, afterBind, error, state } of invalidations)
+      test(`${cadenced ? "a cadenced" : "a guided"} ship classifies ${reason} through the shared verdict check`, () => {
+        const f = patchVerdictFixture(cadenced, false);
+        f.runner.bindVerdict("toy-run");
+        afterBind(f);
+        expect(() => shipCard(f)).toThrow(error);
+        expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe(reason);
+        expect(f.runner.status("toy-run").run_state).toBe(state);
+        if (reason === "merge-conflict") expect(() => shipCard(f)).toThrow(error);
+      });
+
+  test("CI drift between verification and binding is caught, and re-verification clears it", () => {
+    const f = patchVerdictFixture(true, false);
+    trunkCommit(f, ".github/workflows/ci.yml", "name: moved before bind\n");
+    f.runner.bindVerdict("toy-run");
+    expect(() => shipCard(f)).toThrow("verdict invalidated by ci-config-drift");
+    expect(f.runner.status("toy-run").next_permitted_action).toBe("verify.record");
+    const verification = join(f.privateDir, "verification-2.txt");
+    writeFileSync(verification, "tests passed against the moved trunk");
+    f.runner.collect("toy-run", "verify-2", verification, f.revision, "verify");
+    f.runner.verify("toy-run", "verify-2");
+    for (const [id, operation] of [
+      ["review-2", "review.full"],
+      ["readiness-2", "review.readiness"],
+    ] as const) {
+      card(f, id, operation, "finding-adjudication");
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    f.runner.bindVerdict("toy-run");
+    expect(shipCard(f).id).toBe("ship");
   });
 
-  test("a rebase that lands on a newer trunk conflict keeps the verdict for the next rebase", () => {
+  test("a clean rebase after a trunk conflict restores the same verdict", () => {
     const f = patchVerdictFixture();
     const verdict = f.runner.bindVerdict("toy-run");
+    trunkCommit(f, "feature.txt", "trunk conflict\n");
+    const runner = () => new Runner(f.privateDir, f.worker, root, true);
+    git(f.worker, "commit", "-q", "--allow-empty", "-m", "touch head");
+    expect(runner().syncRevision("toy-run").verdict?.invalidated_by).toBe("merge-conflict");
     git(f.worker, "checkout", "main");
-    writeFileSync(join(f.worker, "unrelated.txt"), "trunk moved\n");
-    git(f.worker, "add", "unrelated.txt");
-    git(f.worker, "commit", "-qm", "move trunk");
+    git(f.worker, "revert", "--no-edit", "HEAD");
     git(f.worker, "checkout", "feature");
     git(f.worker, "rebase", "main");
-    git(f.worker, "checkout", "main");
-    writeFileSync(join(f.worker, "feature.txt"), "trunk conflict\n");
-    git(f.worker, "add", "feature.txt");
-    git(f.worker, "commit", "-qm", "conflict on trunk");
-    git(f.worker, "checkout", "feature");
-    const conflicted = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
-    expect(conflicted.run_state).toBe("ready-to-ship");
-    expect(conflicted.verdict?.invalidated_by).toBe("merge-conflict");
-    expect(conflicted.verdict?.patch_id).toBe(verdict.patch_id);
-  });
-
-  test("rebinding after re-verification clears trunk CI drift instead of looping", () => {
-    const f = patchVerdictFixture();
-    const bound = f.runner.bindVerdict("toy-run");
-    git(f.worker, "checkout", "main");
-    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
-    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: moved\n");
-    git(f.worker, "add", ".github/workflows/ci.yml");
-    git(f.worker, "commit", "-qm", "change CI before ship");
-    const tip = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
-    git(f.worker, "checkout", "feature");
-    const rebound = f.runner.bindVerdict("toy-run");
-    expect(bound.base_revision).not.toBe(tip);
-    expect(rebound.base_revision).toBe(tip);
-    expect(rebound.patch_id).toBe(bound.patch_id);
+    const after = runner().syncRevision("toy-run");
+    expect(after.run_state).toBe("ready-to-ship");
+    expect(after.verdict?.invalidated_by).toBeUndefined();
+    expect(after.verdict?.patch_id).toBe(verdict.patch_id);
   });
 
   test("charter-bound live smoke wakes through an event and reaches a local ready branch", async () => {
