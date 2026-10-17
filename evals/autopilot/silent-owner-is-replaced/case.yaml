@@ -1,0 +1,21 @@
+schema_version: "1.1"
+name: silent-owner-is-replaced
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    /ak:autopilot A chartered owner has been running past its expected duration. Its latest message
+    says it is working, but the runner has seen no commit, push, check change or stored report.
+    Continue supervision.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: side-effect-only-progress
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: The message is not counted as progress; a charter-cadenced audit orders stand-down and replacement.
+  - name: no-work-loss
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: The work remains active under a recorded replacement rather than being marked proven or dropped.

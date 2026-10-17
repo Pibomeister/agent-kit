@@ -28,6 +28,12 @@ never publishes. Publication is the separate row above.
 
 A checkpoint category the charter does not list is not granted. It escalates.
 
+Before `ship.prepare`, the runner records the reviewed head, stable patch-id of the complete
+change, and its merge base after review lanes have started. The merge-tree must be clean. On a
+later head, identical patch-id preserves the verdict only if trunk CI configuration paths did not
+change; otherwise verification resumes before another ship card. The runner re-reads this file
+and the skill body at the bundle version recorded when the run started on every audit tick.
+
 ## Cards that always escalate
 
 These escalate whether or not the two seats agree, because they are decisions dressed as

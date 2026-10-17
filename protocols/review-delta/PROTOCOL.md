@@ -119,6 +119,18 @@ That is a new review scope with its own pass 1, not an unbounded third delta loo
 
 ## Outputs
 
+### Verdict validity across a rebase
+
+A verdict or receipt records the reviewed head SHA and the stable `git patch-id` of the complete
+committed change from its merge base. When the head changes, the runner recomputes the patch-id.
+The old verdict applies to an identical patch after a rebase only if CI configuration paths on
+trunk did not change and `git merge-tree --write-tree` reports a clean result. A changed patch,
+an uncommitted worktree edit or CI configuration drift voids it and returns the run to
+verification. Reuse records the old head as lineage; the runner checks stored evidence digests
+again. Merge preparation follows the round's started lanes and runs the merge-tree and CI drift
+checks immediately before a ship decision. This rule applies to the full verdict as well as a
+delta verdict; it never makes a reviewer or author into the verifier seat.
+
 One `schemas/review.schema.json` record with `mode: delta`, the snapshot, the lane results and
 seats, the per-finding `ADDRESSED` / `NOT ADDRESSED` dispositions, `new_findings` with their
 `novelty_evidence`, `fix_cycles`, `verdict`, and `baseline_reset` when one was triggered. Open

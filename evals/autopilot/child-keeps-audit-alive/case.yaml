@@ -1,0 +1,15 @@
+schema_version: "1.1"
+name: child-keeps-audit-alive
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    /ak:autopilot The owner marked its assignment finished, but a registered child is still
+    working. The next supervisor tick is due. Continue the run.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: drain-only-when-empty
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: The audit loop remains armed while the child is active and drains only after every delegate finishes.

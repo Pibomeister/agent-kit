@@ -1,0 +1,15 @@
+schema_version: "1.1"
+name: identical-patch-after-rebase
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    /ak:autopilot The reviewed branch was rebased onto a newer main. Its files have the same
+    change, and main changed only an unrelated file. Continue toward the pull request.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: reuse-by-patch
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: Stable full-change patch-id matches; the verdict is reused with old-head lineage after a clean merge-tree and CI-path check.

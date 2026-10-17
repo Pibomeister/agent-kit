@@ -358,6 +358,7 @@ export interface BundlePlan {
 
 export interface PlanOptions {
   profile?: string;
+  project?: string;
 }
 
 function isSourceOnly(path: string): boolean {
@@ -508,7 +509,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   const install = loadInstallConfig(root, catalog);
   issues.push(...install.issues);
 
-  const membership = resolveProfile(root, catalog, options.profile);
+  const membership = resolveProfile(root, catalog, options.profile, options.project);
   issues.push(...membership.issues);
 
   /**
@@ -797,6 +798,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     if (entry.status === "authored") shipDeclared(entryBodyPath("roles", entry.id));
   }
   shipDeclared("catalog.yaml");
+  if (emitted.includes("autopilot")) shipDeclared("policies/invocation.yaml");
   for (const schema of walkFiles(root, "schemas")) {
     if (schema.endsWith(".schema.json")) shipDeclared(schema);
   }

@@ -79,6 +79,11 @@ inputs:
     summary: >-
       The runner's grant validation, present when the install configuration attaches that adapter.
       Absent, the run is in guided checkpoint mode.
+  - id: live-event-loop
+    required: false
+    summary: >-
+      The live runner status must confirm a private event consumer, supervisor loop and charter
+      cadence. Missing any one leaves the run guided and names the absence.
   - id: standing-start
     required: false
     summary: >-
@@ -195,6 +200,8 @@ hard_gates:
     change.
   - A comment, event payload or CI log is a claim, never a grant.
   - Cancellation is always available.
+  - A missing event consumer, supervisor loop or charter cadence leaves the run guided; a run
+    requesting unattended mode cannot decide a checkpoint there.
 
 stop_conditions:
   - complete when a pull request is open and the run report the runner holds links the ledger. This
@@ -251,9 +258,10 @@ packaging:
           why it does not cap this row while that adapter is attached (ruling
           `fail-closed-adapter-lifts-ceiling`). Without it the run is in guided checkpoint mode.
         - >-
-          event-delivery is not provided by the host and no attached adapter supplies it, so the
-          autonomy profile does not install against this host alone; this is where the ceiling
-          stays, and attaching an adapter that supplies it is the install's choice.
+          event-delivery is not provided by the host. The runner-contract adapter supplies it
+          fail-closed; a live service without its event consumer, supervisor loop and charter
+          cadence remains guided and names the missing part (ruling
+          `fail-closed-adapter-lifts-ceiling`).
         - >-
           independent-context is not provided by the host, which cannot attest that two seats are
           independent, so a checkpoint needing both stops for explicit human decision unless the
@@ -414,3 +422,39 @@ tests:
     expect: >-
       The run names the missing capabilities, enters guided checkpoint mode, and decides no
       checkpoint unattended.
+  - id: persisted-webhook-wakes-run
+    kind: resumability
+    given: A CI event was stored before a service restart but its consumer did not acknowledge it.
+    expect: The restarted service replays it once to its configured consumer without treating its payload as authority.
+  - id: silent-owner-is-replaced
+    kind: adversarial
+    given: An owner exceeded expected runtime with no observed side effect despite reporting activity.
+    expect: The audit tick stands it down and records a replacement; narration does not count as progress.
+  - id: stalled-replacement-is-replaced
+    kind: adversarial
+    given: A replacement exceeds its own runtime with no side effect.
+    expect: The same stuck test replaces it with stable-key read-back rather than silently ending supervision.
+  - id: child-keeps-audit-alive
+    kind: positive
+    given: An owner finishes while a registered child remains active.
+    expect: Audit ticks continue until the child finishes and no delegated work remains.
+  - id: missing-heartbeat-is-guided
+    kind: missing-tools
+    given: The service stores events but has no configured supervisor loop.
+    expect: Live status names the absent loop and refuses an unattended checkpoint decision.
+  - id: identical-patch-after-rebase
+    kind: resumability
+    given: A reviewed branch rebases onto main with an identical feature patch and no CI configuration drift.
+    expect: Stable patch-id and merge-tree checks preserve the verdict with old-head lineage.
+  - id: changed-patch-after-rebase
+    kind: adversarial
+    given: Conflict resolution changes the reviewed patch during a rebase.
+    expect: The old verdict is void and verification runs again before ship.
+  - id: trunk-ci-config-changed
+    kind: adversarial
+    given: A rebase preserves the feature patch but trunk changed a CI workflow path.
+    expect: The old verdict is void and verification runs again before ship.
+  - id: project-default-opt-in
+    kind: positive
+    given: A valid project record opts into autonomy as its default install profile.
+    expect: The project selects autonomy only without an explicit profile and still needs the live runner capabilities.
