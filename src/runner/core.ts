@@ -666,7 +666,7 @@ export class Runner {
             : !mergeTreeClean(this.gitContext, this.workerRoot, baseRef, revision)
               ? "merge-conflict"
               : null;
-      if (reason === null) {
+      if (reason === null || reason === "merge-conflict") {
         reuse = true;
         const oldRevision = run.revision;
         const oldDiff = run.diff_hash;
@@ -685,7 +685,8 @@ export class Runner {
         run.verdict.reused_from = oldRevision;
         run.verdict.head_revision = revision;
         run.verdict.base_revision = trunk;
-        delete run.verdict.invalidated_by;
+        if (reason === null) delete run.verdict.invalidated_by;
+        else run.verdict.invalidated_by = reason;
       } else run.verdict.invalidated_by = reason;
     }
     run.revision = revision;

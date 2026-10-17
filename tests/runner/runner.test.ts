@@ -991,6 +991,26 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("merge-conflict");
   });
 
+  test("a rebase that lands on a newer trunk conflict keeps the verdict for the next rebase", () => {
+    const f = patchVerdictFixture();
+    const verdict = f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "unrelated.txt"), "trunk moved\n");
+    git(f.worker, "add", "unrelated.txt");
+    git(f.worker, "commit", "-qm", "move trunk");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "feature.txt"), "trunk conflict\n");
+    git(f.worker, "add", "feature.txt");
+    git(f.worker, "commit", "-qm", "conflict on trunk");
+    git(f.worker, "checkout", "feature");
+    const conflicted = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(conflicted.run_state).toBe("ready-to-ship");
+    expect(conflicted.verdict?.invalidated_by).toBe("merge-conflict");
+    expect(conflicted.verdict?.patch_id).toBe(verdict.patch_id);
+  });
+
   test("rebinding after re-verification clears trunk CI drift instead of looping", () => {
     const f = patchVerdictFixture();
     const bound = f.runner.bindVerdict("toy-run");
