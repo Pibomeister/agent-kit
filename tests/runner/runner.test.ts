@@ -769,6 +769,22 @@ describe("runner guards", () => {
     expect(f.runner.auditTick("toy-run", started + 6_000).drained).toBe(true);
   });
 
+  test("a silent child stays replaceable after its owner is replaced or finishes", () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const started = Date.parse("2026-10-16T18:00:00Z");
+    f.runner.registerDelegate("toy-run", "owner-1", 1, undefined, started);
+    f.runner.registerDelegate("toy-run", "child-1", 1, "owner-1", started);
+    expect(f.runner.auditTick("toy-run", started + 2_000).replace).toEqual(["owner-1", "child-1"]);
+    f.runner.replaceDelegate("toy-run", "owner-1", "owner-2", 10, started + 2_000);
+    f.runner.replaceDelegate("toy-run", "child-1", "child-2", 1, started + 2_000);
+    expect(f.runner.status("toy-run").delegates?.["child-2"]?.parent).toBe("owner-2");
+    f.runner.finishDelegate("toy-run", "owner-2");
+    f.runner.replaceDelegate("toy-run", "child-2", "child-3", 10, started + 4_000);
+    expect(f.runner.status("toy-run").delegates?.["child-3"]?.state).toBe("active");
+  });
+
   test("live charter tick calls the supervisor adapter to replace an overdue delegate", async () => {
     const f = fixture();
     withAuditCadence(f);
@@ -933,9 +949,13 @@ describe("runner guards", () => {
     git(f.worker, "checkout", "feature");
     f.runner.judge("toy-run", "ship", "seat-a", "supervisor-1", "ship-a", "yes", []);
     f.runner.judge("toy-run", "ship", "seat-b", "supervisor-2", "ship-b", "yes", []);
-    expect(() => f.runner.decide("toy-run", "ship")).toThrow("verdict invalidated");
-    expect(f.runner.status("toy-run").run_state).toBe("repairing");
+    expect(() => f.runner.decide("toy-run", "ship")).toThrow("rebase onto main is required");
+    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
     expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("ci-config-drift");
+    git(f.worker, "rebase", "main");
+    const rebased = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(rebased.run_state).toBe("repairing");
+    expect(rebased.next_permitted_action).toBe("verify.record");
   });
 
   test("charter-bound live smoke wakes through an event and reaches a local ready branch", async () => {

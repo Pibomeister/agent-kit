@@ -126,8 +126,7 @@ committed change from its merge base. When the head changes, the runner recomput
 The old verdict applies to an identical patch after a rebase only if CI configuration paths on
 trunk did not change and `git merge-tree --write-tree` reports a clean result. A changed patch,
 an uncommitted worktree edit or CI configuration drift voids it and returns the run to
-verification. Reuse records the old head as lineage; the runner checks stored evidence digests
-again. Merge preparation follows the round's started lanes and runs the merge-tree and CI drift
+verification. Reuse records the old head as lineage. Merge preparation follows the round's started lanes and runs the merge-tree and CI drift
 checks immediately before a ship decision. This rule applies to the full verdict as well as a
 delta verdict; it never makes a reviewer or author into the verifier seat.
 

@@ -744,10 +744,16 @@ export class Runner {
             : null;
     if (reason === null) return;
     verdict.invalidated_by = reason;
-    run.run_state = "repairing";
-    run.next_permitted_action = "verify.record";
+    if (reason === "patch-changed") {
+      run.run_state = "repairing";
+      run.next_permitted_action = "verify.record";
+    }
     this.save(run);
-    throw new Error(`verdict invalidated by ${reason}; verification is required`);
+    throw new Error(
+      reason === "patch-changed"
+        ? `verdict invalidated by ${reason}; verification is required`
+        : `verdict invalidated by ${reason}; rebase onto ${baseRef} is required`,
+    );
   }
 
   syncRevision(id: string): Run {
@@ -1349,8 +1355,6 @@ export class Runner {
       run.delegates?.[replacementId] !== undefined
     )
       throw new Error("replacement id or expected runtime is invalid");
-    if (old.parent !== undefined && run.delegates?.[old.parent]?.state !== "active")
-      throw new Error("replacement parent is not active");
     const tick = this.auditTick(id, now);
     if (!tick.replace.includes(oldId)) throw new Error("delegate has not exceeded its expected runtime");
     const replacement: Delegate = {
@@ -1365,6 +1369,8 @@ export class Runner {
     old.replacement = replacementId;
     const delegates = run.delegates;
     if (delegates === undefined) throw new Error("delegate registry is unavailable");
+    for (const child of Object.values(delegates))
+      if (child.parent === oldId && child.state === "active") child.parent = replacementId;
     delegates[replacementId] = replacement;
     this.save(run);
     return replacement;
