@@ -75,8 +75,8 @@ run-scoped worker socket token, never the admin token. The private loop config h
 command and timeout shape. A timed-out consumer or loop command leaves status guided until a
 successful retry. On a charter cadence the loop receives a `probe` request listing every active delegate
 and the recorded procedure identity; it must return the same `probed` list and a `progress` list
-whose entries name delegate, side-effect kind and observed ref. For each overdue delegate with
-zero side effects, it receives `stand-down-replace` with a stable key and returns that key,
+whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
+effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
 `stood_down:true`, a replacement id and its expected runtime after read-back. Failure leaves the
 delegate active and status guided. Both config files must be outside the worker root and shared
 Git directory. Restarting the service replays unacknowledged events and resumes the audit timer

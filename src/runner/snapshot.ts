@@ -126,12 +126,12 @@ export function patchIdentity(context: RunnerGitContext, project: string, baseRe
     throw new Error(`cannot resolve verdict base: ${base.stderr || base.text}`);
   const diff = runnerGit(context, project, ["diff", "--binary", base.text, head, "--"]);
   if (diff.code !== 0) throw new Error(`cannot read committed patch: ${diff.stderr}`);
-  if (diff.stdout.length === 0) return { base_revision: base.text, patch_id: null };
+  if (diff.stdout.length === 0) return null;
   const patch = gitProcess(context, project, ["patch-id", "--stable"], 10_000, diff.stdout);
   const patchId = patch.text.split(" ")[0];
   if (patch.code !== 0 || patchId === undefined || !/^[0-9a-f]{40}$/.test(patchId))
     throw new Error(`cannot compute stable patch-id: ${patch.stderr || patch.text}`);
-  return { base_revision: base.text, patch_id: patchId };
+  return patchId;
 }
 
 /** Only trunk-side CI configuration changes invalidate an otherwise identical patch. */

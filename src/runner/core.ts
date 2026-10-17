@@ -657,16 +657,16 @@ export class Runner {
       if (baseRef === undefined) throw new Error("charter names no verdict base branch");
       const clean = revision !== run.revision && cleanCommittedTree(this.gitContext, this.workerRoot);
       const next = clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, revision) : null;
+      const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
       const reason =
-        next === null || next.patch_id !== run.verdict.patch_id
+        next !== run.verdict.patch_id
           ? "patch-changed"
-          : ciConfigDrift(this.gitContext, this.workerRoot, run.verdict.base_revision, next.base_revision)
+          : ciConfigDrift(this.gitContext, this.workerRoot, run.verdict.base_revision, trunk)
             ? "ci-config-drift"
             : !mergeTreeClean(this.gitContext, this.workerRoot, baseRef, revision)
               ? "merge-conflict"
               : null;
       if (reason === null) {
-        if (next === null) throw new Error("verdict identity is unavailable");
         reuse = true;
         const oldRevision = run.revision;
         const oldDiff = run.diff_hash;
@@ -684,7 +684,7 @@ export class Runner {
         }
         run.verdict.reused_from = oldRevision;
         run.verdict.head_revision = revision;
-        run.verdict.base_revision = next.base_revision;
+        run.verdict.base_revision = trunk;
         delete run.verdict.invalidated_by;
       } else run.verdict.invalidated_by = reason;
     }
@@ -713,9 +713,13 @@ export class Runner {
       throw new Error("verdict needs a clean committed worktree");
     if (!mergeTreeClean(this.gitContext, this.workerRoot, baseRef, run.revision))
       throw new Error("merge-tree reports a conflict");
-    const identity = patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision);
-    if (identity.patch_id === null) throw new Error("verdict needs a nonempty committed patch");
-    run.verdict = { head_revision: run.revision, ...identity };
+    const patchId = patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision);
+    if (patchId === null) throw new Error("verdict needs a nonempty committed patch");
+    run.verdict = {
+      head_revision: run.revision,
+      base_revision: resolvedRevision(this.gitContext, this.workerRoot, baseRef),
+      patch_id: patchId,
+    };
     this.save(run);
     return run.verdict;
   }
@@ -730,7 +734,7 @@ export class Runner {
     const clean = cleanCommittedTree(this.gitContext, this.workerRoot);
     const current = clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision) : null;
     const reason =
-      current === null || current.patch_id !== verdict.patch_id
+      current !== verdict.patch_id
         ? "patch-changed"
         : ciConfigDrift(
               this.gitContext,
@@ -744,16 +748,10 @@ export class Runner {
             : null;
     if (reason === null) return;
     verdict.invalidated_by = reason;
-    if (reason === "patch-changed") {
-      run.run_state = "repairing";
-      run.next_permitted_action = "verify.record";
-    }
+    run.run_state = "repairing";
+    run.next_permitted_action = "verify.record";
     this.save(run);
-    throw new Error(
-      reason === "patch-changed"
-        ? `verdict invalidated by ${reason}; verification is required`
-        : `verdict invalidated by ${reason}; rebase onto ${baseRef} is required`,
-    );
+    throw new Error(`verdict invalidated by ${reason}; verification is required`);
   }
 
   syncRevision(id: string): Run {
@@ -1299,7 +1297,7 @@ export class Runner {
     return delegate;
   }
 
-  recordProgress(id: string, delegateId: string, kind: string, ref: string): void {
+  recordProgress(id: string, delegateId: string, kind: string, ref: string, now = Date.now()): void {
     const run = this.load(id);
     const delegate = run.delegates?.[delegateId];
     if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
@@ -1309,7 +1307,7 @@ export class Runner {
       if (observed.code !== 0 || observed.text !== "commit") throw new Error("commit side effect was not observed");
     }
     if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
-      delegate.progress.push({ kind, ref, at: new Date().toISOString() });
+      delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
     this.save(run);
   }
 
@@ -1324,8 +1322,8 @@ export class Runner {
     const replace = active
       .filter(
         (delegate) =>
-          now - Date.parse(delegate.started_at) > delegate.expected_runtime_seconds * 1000 &&
-          delegate.progress.length === 0,
+          now - Date.parse(delegate.progress.at(-1)?.at ?? delegate.started_at) >
+          delegate.expected_runtime_seconds * 1000,
       )
       .map((delegate) => delegate.id);
     return {
@@ -1347,7 +1345,7 @@ export class Runner {
   ): Delegate {
     const run = this.load(id);
     const old = run.delegates?.[oldId];
-    if (old?.state !== "active" || old.progress.length > 0) throw new Error("delegate is not eligible for replacement");
+    if (old?.state !== "active") throw new Error("delegate is not eligible for replacement");
     if (
       !ID.test(replacementId) ||
       !Number.isSafeInteger(expectedSeconds) ||

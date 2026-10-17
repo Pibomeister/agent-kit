@@ -769,6 +769,19 @@ describe("runner guards", () => {
     expect(f.runner.auditTick("toy-run", started + 6_000).drained).toBe(true);
   });
 
+  test("an early side effect does not protect a delegate that later hangs", () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const started = Date.parse("2026-10-16T18:00:00Z");
+    f.runner.registerDelegate("toy-run", "owner-1", 10, undefined, started);
+    f.runner.recordProgress("toy-run", "owner-1", "commit", f.revision, started + 1_000);
+    expect(f.runner.auditTick("toy-run", started + 10_000).replace).toEqual([]);
+    expect(f.runner.auditTick("toy-run", started + 12_000).replace).toEqual(["owner-1"]);
+    f.runner.replaceDelegate("toy-run", "owner-1", "owner-2", 10, started + 12_000);
+    expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("replaced");
+  });
+
   test("a silent child stays replaceable after its owner is replaced or finishes", () => {
     const f = fixture();
     withAuditCadence(f);
@@ -949,13 +962,25 @@ describe("runner guards", () => {
     git(f.worker, "checkout", "feature");
     f.runner.judge("toy-run", "ship", "seat-a", "supervisor-1", "ship-a", "yes", []);
     f.runner.judge("toy-run", "ship", "seat-b", "supervisor-2", "ship-b", "yes", []);
-    expect(() => f.runner.decide("toy-run", "ship")).toThrow("rebase onto main is required");
-    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
+    expect(() => f.runner.decide("toy-run", "ship")).toThrow("verdict invalidated");
+    expect(f.runner.status("toy-run").run_state).toBe("repairing");
     expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("ci-config-drift");
-    git(f.worker, "rebase", "main");
-    const rebased = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
-    expect(rebased.run_state).toBe("repairing");
-    expect(rebased.next_permitted_action).toBe("verify.record");
+  });
+
+  test("rebinding after re-verification clears trunk CI drift instead of looping", () => {
+    const f = patchVerdictFixture();
+    const bound = f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: moved\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI before ship");
+    const tip = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    git(f.worker, "checkout", "feature");
+    const rebound = f.runner.bindVerdict("toy-run");
+    expect(bound.base_revision).not.toBe(tip);
+    expect(rebound.base_revision).toBe(tip);
+    expect(rebound.patch_id).toBe(bound.patch_id);
   });
 
   test("charter-bound live smoke wakes through an event and reaches a local ready branch", async () => {

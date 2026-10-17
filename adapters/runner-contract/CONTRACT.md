@@ -267,7 +267,7 @@ The `loop-config` is a separate supervisor-owned command. The charter's
 autopilot skill and checkpoint procedure at the bundle version and content hash recorded at run
 start; drift refuses the tick. The adapter probes every active owner and child and returns only
 observed side effects: commit, push, PR change, check change, or stored report. Narration is not
-progress. After the expected runtime, a delegate with zero side effects is sent to the adapter
+progress. A delegate with no side effect within its expected runtime is sent to the adapter
 with a stable replacement key; only a matching stand-down and replacement read-back records the
 new delegate. The next tick audits the replacement too. A failed probe or replacement leaves the
 work active and the service in guided mode until a successful tick. The timer drains only when
@@ -325,7 +325,7 @@ The runner persists, per run, and the package requires to be handed back on resu
 | Inbound events | Payload digest, acknowledged state and terminal marker; an unacknowledged event is replayed after restart |
 | Delegated work | Owner and child ids, expected runtime, side-effect refs and replacement lineage |
 | Governing procedure | Bundle version and content digest re-read on each audit tick |
-| Patch verdict | Reviewed head, merge base, stable patch-id, reuse lineage and any invalidation cause |
+| Patch verdict | Reviewed head, trunk tip it was bound against, stable patch-id, reuse lineage and any invalidation cause |
 
 A restart with no such record does not resume — it starts a new run. Resuming from partial state is
 how a run repeats a remote effect, which is exactly what §5 exists to prevent.
