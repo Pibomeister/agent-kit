@@ -967,6 +967,30 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("ci-config-drift");
   });
 
+  test("a trunk merge conflict before ship asks for a rebase, not another verification round", () => {
+    const f = patchVerdictFixture(true, false);
+    f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "feature.txt"), "trunk conflict\n");
+    git(f.worker, "add", "feature.txt");
+    git(f.worker, "commit", "-qm", "conflict on trunk");
+    git(f.worker, "checkout", "feature");
+    expect(() =>
+      f.runner.prepare("toy-run", {
+        id: "ship",
+        operation: "ship.prepare",
+        grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+        question: "Open the pull request?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["verify"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      }),
+    ).toThrow("rebase onto main is required");
+    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
+    expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("merge-conflict");
+  });
+
   test("rebinding after re-verification clears trunk CI drift instead of looping", () => {
     const f = patchVerdictFixture();
     const bound = f.runner.bindVerdict("toy-run");

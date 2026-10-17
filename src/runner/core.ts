@@ -748,6 +748,10 @@ export class Runner {
             : null;
     if (reason === null) return;
     verdict.invalidated_by = reason;
+    if (reason === "merge-conflict") {
+      this.save(run);
+      throw new Error(`verdict invalidated by ${reason}; rebase onto ${baseRef} is required`);
+    }
     run.run_state = "repairing";
     run.next_permitted_action = "verify.record";
     this.save(run);
