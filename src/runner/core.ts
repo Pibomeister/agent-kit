@@ -10,19 +10,34 @@ import { unknownSelector } from "../util/suggest.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
-import { resolveRunnerGit, runnerGit, takeRunnerSnapshot, type RunnerGitContext } from "./snapshot.ts";
+import { isVersionManifest } from "./wire.ts";
+import {
+  ciConfigDrift,
+  cleanCommittedTree,
+  mergeTreeClean,
+  patchIdentity,
+  resolvedRevision,
+  resolveRunnerGit,
+  runnerGit,
+  takeRunnerSnapshot,
+  type RunnerGitContext,
+} from "./snapshot.ts";
 import type {
   Card,
   CardInput,
   Charter,
   Decision,
+  Delegate,
   Effect,
   Evidence,
   InvocationPolicy,
   OperationResult,
+  PatchVerdict,
+  ProcedureIdentity,
   Run,
   RunLedger,
   StandingGrant,
+  VerdictInvalidation,
 } from "./types.ts";
 
 interface StageStep {
@@ -53,6 +68,7 @@ const LIMIT_NAME = new Map([
 const HASH = /^sha256:[a-f0-9]{64}$/;
 const REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
 const ID = /^[a-z0-9][a-z0-9-]*$/;
+const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
 const EFFECTS = new Set([
@@ -76,6 +92,10 @@ const EFFECT_ACTION = new Map([
   ["branch-create", "local-commit"],
 ]);
 const STOPPED = new Set(["needs-input", "cap-reached", "failed", "cancelled", "complete"]);
+const TERMINAL = new Set(["cap-reached", "failed", "cancelled", "complete"]);
+function isProgressKind(kind: string): kind is Delegate["progress"][number]["kind"] {
+  return kind === "commit" || kind === "push" || kind === "pr" || kind === "check" || kind === "store-report";
+}
 const RUNTIME_SCRATCH_DIRS = [".omc", ".omx"] as const;
 const ACTION_FOR = new Map([
   ["spec-approval", "approve-spec"],
@@ -103,6 +123,12 @@ function canonicalFuturePath(path: string): string {
 
 function digest(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+function verdictBase(run: Run): string {
+  const baseRef = run.charter.repos[0]?.base_branch;
+  if (baseRef === undefined) throw new Error("charter names no verdict base branch");
+  return baseRef;
 }
 
 function approved(decision: Decision): boolean {
@@ -146,6 +172,7 @@ function charterDigest(charter: Charter): string {
 export class Runner {
   readonly stateDir: string;
   readonly workerRoot: string;
+  private readonly kitRoot: string;
   private readonly covers: Map<string, { authority: string; covers: string }>;
   private readonly decisionSchema: ValidateFunction<object>;
   private readonly ledgerSchema: ValidateFunction<RunLedger>;
@@ -159,6 +186,8 @@ export class Runner {
   constructor(stateDir: string, workerRoot: string, kitRoot: string, enforceSnapshot = false) {
     const requestedStateDir = canonicalFuturePath(stateDir);
     this.workerRoot = realpathSync(workerRoot);
+    this.kitRoot = realpathSync(kitRoot);
+    if (inside(this.kitRoot, this.workerRoot)) throw new Error("runner bundle is worker-writable");
     this.enforceSnapshot = enforceSnapshot;
     if (inside(requestedStateDir, this.workerRoot)) throw new Error("runner state is worker-writable");
     const gitContext = resolveRunnerGit(this.workerRoot);
@@ -167,6 +196,8 @@ export class Runner {
       commonDir.code === 0
         ? realpathSync(isAbsolute(commonDir.text) ? commonDir.text : join(this.workerRoot, commonDir.text))
         : null;
+    if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
+      throw new Error("runner bundle cannot use the shared git common directory");
     if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
       throw new Error("runner state cannot use the shared git common directory");
     mkdirSync(requestedStateDir, { recursive: true, mode: 0o700 });
@@ -229,6 +260,10 @@ export class Runner {
         budget_consumption: { type: "object" },
         effects: { type: "object" },
         events: { type: "object" },
+        delegates: { type: "object" },
+        procedure: { type: "object", required: ["bundle_version", "hash"] },
+        verified_base_revision: { type: "string" },
+        verdict: { type: "object", required: ["head_revision", "patch_id", "verified_base_revision"] },
         open_escalation: { type: ["object", "null"] },
         cancellation: {
           type: "object",
@@ -287,6 +322,24 @@ export class Runner {
   private current(run: Run): boolean {
     const observed = this.observedSnapshot();
     return observed === null || (observed.revision === run.revision && observed.diff_hash === run.diff_hash);
+  }
+
+  private governingProcedure(): ProcedureIdentity {
+    const manifestPath = [
+      "package.json",
+      ".codex-plugin/plugin.json",
+      ".claude-plugin/plugin.json",
+      ".kimi-plugin/plugin.json",
+      ".factory-plugin/plugin.json",
+    ]
+      .map((path) => join(this.kitRoot, path))
+      .find((path) => existsSync(path));
+    if (manifestPath === undefined) throw new Error("recorded bundle version is unavailable");
+    const manifest: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (!isVersionManifest(manifest)) throw new Error("recorded bundle version is invalid");
+    const files = ["skills/autopilot/SKILL.md", "skills/autopilot/references/checkpoints.md"];
+    const bytes = files.map((file) => `${file}\0${readFileSync(join(this.kitRoot, file), "utf8")}`).join("\0");
+    return { bundle_version: manifest.version, hash: `sha256:${sha256Hex(bytes)}` };
   }
 
   private load(id: string): Run {
@@ -566,6 +619,8 @@ export class Runner {
       budget_consumption: {},
       effects: {},
       events: {},
+      delegates: {},
+      procedure: this.governingProcedure(),
       open_escalation: null,
     };
     this.save(run);
@@ -605,14 +660,105 @@ export class Runner {
     if (observed !== null && observed.revision !== revision) throw new Error("revision differs from worker checkout");
     const diffHash = observed?.diff_hash ?? run.diff_hash;
     const changed = run.revision !== revision || run.diff_hash !== diffHash;
+    let reuse = false;
+    const verdict = run.verdict;
+    if (
+      changed &&
+      verdict !== undefined &&
+      verdict.invalidated_by === undefined &&
+      verdict.head_revision === run.revision &&
+      run.run_state === "ready-to-ship"
+    ) {
+      const reason = this.verdictInvalidation(run, verdict, revision);
+      if (reason === null || reason === "merge-conflict") {
+        reuse = true;
+        const oldRevision = run.revision;
+        const oldDiff = run.diff_hash;
+        for (const evidence of Object.values(run.evidence)) {
+          if (evidence.revision === oldRevision && evidence.diff_hash === oldDiff) {
+            evidence.revision = revision;
+            evidence.diff_hash = diffHash;
+          }
+        }
+        for (const decision of run.decisions) {
+          if (decision.revision === oldRevision && decision.diff_hash === oldDiff) {
+            decision.revision = revision;
+            decision.diff_hash = diffHash;
+          }
+        }
+        verdict.reused_from = oldRevision;
+        verdict.head_revision = revision;
+      }
+      if (reason !== null) this.invalidate(run, verdict, reason);
+    }
     run.revision = revision;
     run.diff_hash = diffHash;
-    if (changed && ["verifying", "reviewing", "ready-to-ship", "pr-open"].includes(run.run_state)) {
+    if (changed && !reuse && ["verifying", "reviewing", "ready-to-ship", "pr-open"].includes(run.run_state)) {
       run.run_state = "repairing";
       run.next_permitted_action = "verify.record";
     }
     this.save(run);
     return run;
+  }
+
+  bindVerdict(id: string) {
+    const run = this.load(id);
+    if (
+      run.run_state !== "ready-to-ship" ||
+      !this.current(run) ||
+      !run.decisions.some((decision) => decision.card.operation === "review.full" && approved(decision)) ||
+      !run.decisions.some((decision) => decision.card.operation === "review.readiness" && approved(decision))
+    )
+      throw new Error("a completed review round and current head are required before verdict binding");
+    const baseRef = verdictBase(run);
+    const verifiedBase = run.verified_base_revision;
+    if (verifiedBase === undefined) throw new Error("verification recorded no trunk base");
+    if (!cleanCommittedTree(this.gitContext, this.workerRoot))
+      throw new Error("verdict needs a clean committed worktree");
+    if (!mergeTreeClean(this.gitContext, this.workerRoot, baseRef, run.revision))
+      throw new Error("merge-tree reports a conflict");
+    const patchId = patchIdentity(this.gitContext, this.workerRoot, baseRef, run.revision);
+    if (patchId === null) throw new Error("verdict needs a nonempty committed patch");
+    run.verdict = { head_revision: run.revision, patch_id: patchId, verified_base_revision: verifiedBase };
+    this.save(run);
+    return run.verdict;
+  }
+
+  /** The one classification of a bound verdict against a head; revision() and ship both use it. */
+  private verdictInvalidation(run: Run, verdict: PatchVerdict, head: string): VerdictInvalidation | null {
+    const baseRef = verdictBase(run);
+    const clean = cleanCommittedTree(this.gitContext, this.workerRoot);
+    if ((clean ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== verdict.patch_id)
+      return "patch-changed";
+    const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, trunk))
+      return "ci-config-drift";
+    return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
+  }
+
+  private invalidate(run: Run, verdict: PatchVerdict, reason: VerdictInvalidation): void {
+    verdict.invalidated_by = reason;
+    if (reason === "merge-conflict") return;
+    run.run_state = "repairing";
+    run.next_permitted_action = "verify.record";
+  }
+
+  private requireCurrentVerdict(run: Run): void {
+    const verdict = run.verdict;
+    if (verdict === undefined) {
+      if (run.charter.audit_cadence_seconds === undefined) return;
+      throw new Error("current patch verdict required before unattended ship");
+    }
+    if (verdict.invalidated_by === undefined && verdict.head_revision === run.revision) {
+      const reason = this.verdictInvalidation(run, verdict, run.revision);
+      if (reason === null) return;
+      this.invalidate(run, verdict, reason);
+      this.save(run);
+      if (reason !== "merge-conflict") throw new Error(`verdict invalidated by ${reason}; verification is required`);
+    }
+    if (verdict.invalidated_by === "merge-conflict")
+      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${verdictBase(run)} is required`);
+    throw new Error("current patch verdict required before unattended ship");
   }
 
   syncRevision(id: string): Run {
@@ -644,6 +790,7 @@ export class Runner {
   prepare(id: string, card: CardInput): Card {
     const run = this.load(id);
     if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new checkpoint can be prepared");
+    if (card.operation === "ship.prepare") this.requireCurrentVerdict(run);
     if (
       !ID.test(card.id) ||
       !HASH.test(card.artifact_hash) ||
@@ -774,6 +921,7 @@ export class Runner {
     if (prior !== undefined) return prior.result;
     const card = run.cards[cardId];
     if (card === undefined) throw new Error(unknownCard(run, cardId));
+    if (card.operation === "ship.prepare") this.requireCurrentVerdict(run);
     if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new checkpoint can be decided");
     const step = STAGE.get(card.operation);
     if (step === undefined || !step.from.includes(run.run_state) || run.next_permitted_action !== card.operation)
@@ -799,6 +947,8 @@ export class Runner {
         "charter:allowed_capabilities",
         "Charter does not allow runner grants and trusted evidence",
       );
+    if (charter.audit_cadence_seconds !== undefined && !charter.allowed_capabilities.includes("event-delivery"))
+      return this.refuse(run, card, "charter:allowed_capabilities", "Charter does not allow unattended event delivery");
     const checkpoints = charter.checkpoints;
     const action = ACTION_FOR.get(card.grant.covers);
     if (
@@ -1074,6 +1224,11 @@ export class Runner {
       digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash
     )
       throw new Error("current runner-collected verification receipt required");
+    const baseRef = run.charter.repos[0]?.base_branch;
+    const base =
+      baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
+    if (base?.code === 0) run.verified_base_revision = base.text;
+    else delete run.verified_base_revision;
     run.run_state = "verifying";
     run.next_permitted_action = "review.full";
     this.save(run);
@@ -1081,20 +1236,162 @@ export class Runner {
   }
 
   event(id: string, key: string, payload: string) {
+    if (!EVENT_KEY.test(key) || ["__proto__", "prototype", "constructor"].includes(key))
+      throw new Error("invalid event key");
     const run = this.load(id);
     const duplicate = run.events[key] !== undefined;
     const payloadHash = `sha256:${sha256Hex(payload)}`;
     if (duplicate && run.events[key]?.payload_hash !== payloadHash)
       throw new Error("event key was reused with a different payload");
-    const terminal = ["complete", "cancelled", "failed", "cap-reached"].includes(run.run_state);
+    const terminal = TERMINAL.has(run.run_state);
     if (!duplicate)
       run.events[key] = {
         payload_hash: payloadHash,
+        payload,
         received_at: new Date().toISOString(),
         acted: false,
+        terminal,
       };
     this.save(run);
     return { duplicate, terminal };
+  }
+
+  pendingEvents(id: string): { key: string; payload: string }[] {
+    const run = this.load(id);
+    if (TERMINAL.has(run.run_state)) return [];
+    return Object.entries(run.events).flatMap(([key, event]) => {
+      if (event.acted || event.terminal) return [];
+      if (event.payload === undefined || `sha256:${sha256Hex(event.payload)}` !== event.payload_hash)
+        throw new Error(`event ${key} cannot be delivered: payload is missing or changed`);
+      return [{ key, payload: event.payload }];
+    });
+  }
+
+  ackEvent(id: string, key: string): void {
+    const run = this.load(id);
+    const event = run.events[key];
+    if (event === undefined || event.terminal) throw new Error("event is not deliverable");
+    if (event.acted) return;
+    if (event.payload === undefined || `sha256:${sha256Hex(event.payload)}` !== event.payload_hash)
+      throw new Error("event payload is missing or changed");
+    event.acted = true;
+    this.save(run);
+  }
+
+  registerDelegate(
+    id: string,
+    delegateId: string,
+    expectedSeconds: number,
+    parent?: string,
+    now = Date.now(),
+  ): Delegate {
+    const run = this.load(id);
+    if (
+      STOPPED.has(run.run_state) ||
+      !ID.test(delegateId) ||
+      !Number.isSafeInteger(expectedSeconds) ||
+      expectedSeconds < 1
+    )
+      throw new Error("invalid active delegate");
+    const delegates = run.delegates ?? (run.delegates = {});
+    if (delegates[delegateId] !== undefined) throw new Error("delegate id already registered");
+    if (parent !== undefined && delegates[parent]?.state !== "active") throw new Error("parent delegate is not active");
+    const delegate: Delegate = {
+      id: delegateId,
+      started_at: new Date(now).toISOString(),
+      expected_runtime_seconds: expectedSeconds,
+      state: "active",
+      progress: [],
+    };
+    if (parent !== undefined) delegate.parent = parent;
+    delegates[delegateId] = delegate;
+    this.save(run);
+    return delegate;
+  }
+
+  recordProgress(id: string, delegateId: string, kind: string, ref: string, now = Date.now()): void {
+    const run = this.load(id);
+    const delegate = run.delegates?.[delegateId];
+    if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
+      throw new Error("progress must identify an active delegate and a side effect");
+    if (kind === "commit") {
+      const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
+      if (observed.code !== 0 || observed.text !== "commit") throw new Error("commit side effect was not observed");
+    }
+    if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
+      delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
+    this.save(run);
+  }
+
+  auditTick(id: string, now = Date.now()) {
+    const run = this.load(id);
+    if (run.charter.audit_cadence_seconds === undefined || run.procedure === undefined)
+      throw new Error("audit loop is not configured for this charter");
+    const procedure = this.governingProcedure();
+    if (procedure.bundle_version !== run.procedure.bundle_version || procedure.hash !== run.procedure.hash)
+      throw new Error("recorded bundle procedure changed; audit cannot continue");
+    const active = Object.values(run.delegates ?? {}).filter((delegate) => delegate.state === "active");
+    const replace = active
+      .filter(
+        (delegate) =>
+          now - Date.parse(delegate.progress.at(-1)?.at ?? delegate.started_at) >
+          delegate.expected_runtime_seconds * 1000,
+      )
+      .map((delegate) => delegate.id);
+    return {
+      run: id,
+      at: new Date(now).toISOString(),
+      procedure,
+      active: active.map((delegate) => delegate.id),
+      replace,
+      drained: active.length === 0,
+    };
+  }
+
+  replaceDelegate(
+    id: string,
+    oldId: string,
+    replacementId: string,
+    expectedSeconds: number,
+    now = Date.now(),
+  ): Delegate {
+    const run = this.load(id);
+    const old = run.delegates?.[oldId];
+    if (old?.state !== "active") throw new Error("delegate is not eligible for replacement");
+    if (
+      !ID.test(replacementId) ||
+      !Number.isSafeInteger(expectedSeconds) ||
+      expectedSeconds < 1 ||
+      run.delegates?.[replacementId] !== undefined
+    )
+      throw new Error("replacement id or expected runtime is invalid");
+    const tick = this.auditTick(id, now);
+    if (!tick.replace.includes(oldId)) throw new Error("delegate has not exceeded its expected runtime");
+    const replacement: Delegate = {
+      id: replacementId,
+      started_at: new Date(now).toISOString(),
+      expected_runtime_seconds: expectedSeconds,
+      state: "active",
+      progress: [],
+    };
+    if (old.parent !== undefined) replacement.parent = old.parent;
+    old.state = "replaced";
+    old.replacement = replacementId;
+    const delegates = run.delegates;
+    if (delegates === undefined) throw new Error("delegate registry is unavailable");
+    for (const child of Object.values(delegates))
+      if (child.parent === oldId && child.state === "active") child.parent = replacementId;
+    delegates[replacementId] = replacement;
+    this.save(run);
+    return replacement;
+  }
+
+  finishDelegate(id: string, delegateId: string): void {
+    const run = this.load(id);
+    const delegate = run.delegates?.[delegateId];
+    if (delegate?.state !== "active") throw new Error("delegate is not active");
+    delegate.state = "finished";
+    this.save(run);
   }
 
   /** The callbacks belong to the trusted remote adapter, never to a worker request. */
@@ -1108,6 +1405,7 @@ export class Runner {
   ): Effect {
     if (!HASH.test(inputHash) || !EFFECTS.has(operation) || !target) throw new Error("invalid remote effect request");
     const run = this.load(id);
+    if (operation === "pr-open") this.requireCurrentVerdict(run);
     const key = sha256Hex(`${id}\0${operation}\0${target}\0${inputHash}`);
     const old = run.effects[key];
     const action = EFFECT_ACTION.get(operation);

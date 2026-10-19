@@ -20,6 +20,7 @@ import {
   loadInstallConfig,
 } from "../src/packaging/install.ts";
 import { BUILD_RECORD_FILE, GATE_FILE, inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
+import { resolveProfile } from "../src/packaging/profiles.ts";
 import { checkBundleLinks } from "../src/validation/links.ts";
 import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
@@ -31,6 +32,38 @@ const HEAD = (name: string) => `---\nname: ${name}\ndescription: Use when asked.
 
 /** This repository, for the tests that measure against its real schemas. */
 const REPO = join(import.meta.dir, "..");
+
+describe("project autonomy default", () => {
+  const source = readFileSync(join(REPO, "tests/fixtures/delegation/valid.project.json"), "utf8").trimEnd();
+  const catalog = loadCatalog(REPO).catalog;
+  function select(setting?: boolean | "yes", explicit?: string) {
+    if (catalog === null) throw new Error("real catalog must load");
+    const record =
+      setting === undefined ? source : `${source.slice(0, -1)}, "autonomy":{"default":${JSON.stringify(setting)}}}`;
+    const root = makeTree({ "project.json": record });
+    return resolveProfile(REPO, catalog, explicit, join(root, "project.json"));
+  }
+  test("a project opts in while false and absent preserve core and explicit profile wins", () => {
+    expect(select(true).profile).toBe("autonomy");
+    expect(select(false).profile).toBe("core");
+    expect(select().profile).toBe("core");
+    expect(select(true, "core").profile).toBe("core");
+  });
+  test("an invalid project setting refuses the default", () => {
+    expect(select("yes").issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+  });
+  test("validate reports an invalid project record instead of passing it", () => {
+    if (catalog === null) throw new Error("real catalog must load");
+    const root = makeTree({ "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}` });
+    const issues = checkBundleLinks({ root: REPO, catalog }, { project: join(root, "project.json") });
+    expect(issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+  });
+  test("an autonomy install includes the invocation policy its runner reads", () => {
+    if (catalog === null) throw new Error("real catalog must load");
+    const plan = planBundle({ root: REPO, catalog }, "codex", { profile: "autonomy" });
+    expect(plan.files.has("policies/invocation.yaml")).toBe(true);
+  });
+});
 
 const CATALOG = `schema_version: 1
 package:
@@ -566,10 +599,9 @@ describe("bundle planning", () => {
   });
 
   /**
-   * `package.default_profile` is the only statement in the tree about what a
-   * plain `ak build` installs: catalog.yaml calls core "the default install" and
-   * profiles/core.yaml repeats it. A build that names no profile must therefore
-   * apply that one.
+   * `package.default_profile` governs a build with no explicit profile and no
+   * project record. A validated project record may opt in to autonomy, while
+   * a plain build still applies the package default.
    *
    * The fixture has to carry a skill outside the default for any of this to be
    * visible. In the real catalog every authored skill happens to be in `core`,
@@ -2638,7 +2670,7 @@ describe("the adapters an install attaches, and what they lift", () => {
     expect(byAdapter).toEqual({
       firstmate: ["firstmate-supervision"],
       knowledgebase: ["kb-write"],
-      "runner-contract": ["independent-context", "runner-grants", "trusted-evidence"],
+      "runner-contract": ["event-delivery", "independent-context", "runner-grants", "trusted-evidence"],
       tracker: ["tracker-access"],
     });
     // adapters/tracker/CONTRACT.md §1: with no backend its refusal is kb-write's.

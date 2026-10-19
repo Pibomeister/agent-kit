@@ -69,6 +69,10 @@ Grok's Claude-compatibility skill discovery may also load an installed Claude `a
 
 `profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
 with progressive disclosure.
+To make autonomy the default for one project, set `autonomy: {default: true}` in a valid project
+record and run `bun run ak build --project <record-path>`. The package default remains core;
+`--profile` overrides the project setting. The installed profile alone grants no action: the live
+runner still needs a charter, independent seats, a delivered-event consumer and an audit loop.
 
 Factory Droid has a native bundle at `dist/droid`, built with `bun run ak build --host droid`.
 Its human-started commands use `/<id>`. See the [Droid host contract](adapters/droid/CONTRACT.md)

@@ -22,6 +22,7 @@ import { findKbProjectRoot, registryPath, resolveKnowledgebase } from "../kb/bin
 import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
+import { runRunner } from "../runner/cli.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -641,6 +642,9 @@ if (import.meta.main) {
     // The knowledgebase operations travel here too: a lifecycle skill calls them from an install with no checkout.
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     process.exitCode = runKb(flags, { cwd: process.cwd(), io });
+  } else if (action === "runner") {
+    const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
+    process.exitCode = await runRunner(flags, io);
   } else if (
     (action === "doctor" && flags.every((flag) => flag === "--json") && flags.length <= 1) ||
     (action === "update" && flags.length === 0)
@@ -656,7 +660,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb …",
+      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call …",
     );
     process.exitCode = 2;
   }

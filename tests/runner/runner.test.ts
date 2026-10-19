@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
-import type { RunnerArgs } from "../../src/runner/wire.ts";
+import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
@@ -54,6 +54,12 @@ function callRunnerCli(
     throw new Error(`runner call ${verb} timed out after ${timeoutMs}ms and was killed`);
   if (child.error !== undefined) throw child.error;
   return { exitCode: child.status, stdout: child.stdout, stderr: child.stderr };
+}
+
+function autonomyOf(response: ReturnType<typeof callRunnerCli>) {
+  const value: unknown = JSON.parse(response.stdout.toString());
+  if (!isAutonomyStatus(value)) throw new Error("runner status has no autonomy mode");
+  return value.autonomy;
 }
 
 function spawnRunnerCli(
@@ -175,7 +181,7 @@ function fixture(limit = 3) {
   const requestDir = join(worker, ".runner-requests");
   mkdirSync(requestDir);
   const path = join(privateDir, "charter.json");
-  const charter = {
+  const initialCharter = {
     schema: "charter",
     schema_version: 1,
     id: "toy-charter",
@@ -238,6 +244,7 @@ function fixture(limit = 3) {
     },
     approvals: [{ artifact_hash: "", by: "human", authority: "explicit", at: "2026-10-01T00:00:00Z" }],
   };
+  const charter: typeof initialCharter & { audit_cadence_seconds?: number } = initialCharter;
   charter.immutability.hash = artifactHash({ ...charter, immutability: { ...charter.immutability, hash: "" } });
   const approval = charter.approvals[0];
   if (approval === undefined) throw new Error("toy charter approval missing");
@@ -262,6 +269,15 @@ function standing(f: ReturnType<typeof fixture>): StandingGrant {
     controller: "firstmate",
     run_id: "toy-run",
   };
+}
+
+function withAuditCadence(f: ReturnType<typeof fixture>) {
+  f.charter.audit_cadence_seconds = 1;
+  f.charter.immutability.hash = artifactHash({ ...f.charter, immutability: { ...f.charter.immutability, hash: "" } });
+  const approval = f.charter.approvals[0];
+  if (approval === undefined) throw new Error("toy charter approval missing");
+  approval.artifact_hash = f.charter.immutability.hash;
+  writeFileSync(f.path, JSON.stringify(f.charter));
 }
 
 function card(
@@ -341,6 +357,45 @@ function reachShipReady(f: ReturnType<typeof ready>, ship = true) {
   f.runner.judge("toy-run", "ship", "seat-b", "supervisor-2", "ship-b", "yes", []);
   expect(f.runner.decide("toy-run", "ship").status).toBe("complete");
   expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
+}
+
+function patchVerdictFixture(autonomous = false, ship = true) {
+  const f = fixture();
+  if (autonomous) withAuditCadence(f);
+  git(f.worker, "branch", "-M", "main");
+  git(f.worker, "checkout", "-qb", "feature");
+  writeFileSync(join(f.worker, "feature.txt"), "feature\n");
+  git(f.worker, "add", "feature.txt");
+  git(f.worker, "commit", "-qm", "add feature");
+  f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+  f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+  const receipt = join(f.privateDir, "source.txt");
+  writeFileSync(receipt, "source evidence");
+  f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+  reachShipReady(f, ship);
+  return f;
+}
+
+function trunkCommit(f: ReturnType<typeof patchVerdictFixture>, path: string, text: string) {
+  git(f.worker, "checkout", "main");
+  mkdirSync(dirname(join(f.worker, path)), { recursive: true });
+  writeFileSync(join(f.worker, path), text);
+  git(f.worker, "add", path);
+  git(f.worker, "commit", "-qm", `trunk changes ${path}`);
+  git(f.worker, "checkout", "feature");
+}
+
+function shipCard(f: ReturnType<typeof patchVerdictFixture>) {
+  return f.runner.prepare("toy-run", {
+    id: "ship",
+    operation: "ship.prepare",
+    grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+    question: "Open the pull request?",
+    options: ["yes", "no"],
+    approve: "yes",
+    evidence: ["verify"],
+    artifact_hash: `sha256:${"b".repeat(64)}`,
+  });
 }
 
 describe("runner guards", () => {
@@ -490,7 +545,7 @@ describe("runner guards", () => {
     );
   });
 
-  test("standing start does not require event delivery the service does not supply", () => {
+  test("standing start permits a guided charter without event delivery", () => {
     const f = fixture();
     f.charter.allowed_capabilities = f.charter.allowed_capabilities.filter(
       (capability) => capability !== "event-delivery",
@@ -501,6 +556,729 @@ describe("runner guards", () => {
     approval.artifact_hash = f.charter.immutability.hash;
     writeFileSync(f.path, JSON.stringify(f.charter));
     expect(f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f)).run_state).toBe("created");
+  });
+
+  test("a charter cannot request unattended decisions without event-delivery authority", () => {
+    const f = fixture();
+    f.charter.allowed_capabilities = f.charter.allowed_capabilities.filter(
+      (capability) => capability !== "event-delivery",
+    );
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const source = join(f.privateDir, "source.txt");
+    writeFileSync(source, "approved source");
+    f.runner.collect("toy-run", "e1", source, f.revision, "source");
+    card(f);
+    expect(f.runner.decide("toy-run", "card-1").escalation?.charter_rule).toBe("charter:allowed_capabilities");
+  });
+
+  test("event delivery is durable until acknowledged and terminal events do not wake a run", () => {
+    const f = fixture();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    expect(f.runner.event("toy-run", "wake-1", "check the next checkpoint")).toEqual({
+      duplicate: false,
+      terminal: false,
+    });
+    const restarted = new Runner(f.privateDir, f.worker, root);
+    expect(restarted.pendingEvents("toy-run")).toEqual([{ key: "wake-1", payload: "check the next checkpoint" }]);
+    restarted.ackEvent("toy-run", "wake-1");
+    expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+    expect(f.runner.event("toy-run", "wake-1", "check the next checkpoint").duplicate).toBe(true);
+    expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+    f.runner.event("toy-run", "wake-before-stop", "finish the run");
+    f.runner.cancel("toy-run", "captain", "finished");
+    f.runner.ackEvent("toy-run", "wake-before-stop");
+    expect(f.runner.status("toy-run").events["wake-before-stop"]?.acted).toBe(true);
+    expect(f.runner.event("toy-run", "wake-after-stop", "resume").terminal).toBe(true);
+    expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+  });
+
+  test("transport-scoped event keys remain usable without prototype-key collisions", () => {
+    const f = fixture();
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    expect(f.runner.event("toy-run", "ci:run/42", "check finished").duplicate).toBe(false);
+    expect(f.runner.pendingEvents("toy-run")).toEqual([{ key: "ci:run/42", payload: "check finished" }]);
+    expect(() => f.runner.event("toy-run", "__proto__", "instruction")).toThrow("invalid event key");
+  });
+
+  test("live runner wakes a configured event consumer and reports guided mode without a loop", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const receipt = join(f.privateDir, "source.txt");
+    writeFileSync(receipt, "source evidence");
+    f.runner.collect("toy-run", "e1", receipt, f.revision, "source");
+    card(f, "guided-align");
+    const socket = join(f.privateDir, "runner.sock");
+    const config = join(f.privateDir, "event.json");
+    const log = join(f.privateDir, "delivered.json");
+    const tokenFile = join(f.privateDir, "admin.token");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    writeFileSync(tokenFile, adminToken, { mode: 0o600 });
+    writeFileSync(
+      config,
+      JSON.stringify({
+        timeout_ms: 10_000,
+        command: [
+          "bun",
+          "-e",
+          "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1], JSON.stringify(e)); console.log(JSON.stringify({run:e.run,key:e.key}));",
+          log,
+        ],
+      }),
+    );
+    const service = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        tokenFile,
+        "--event-config",
+        config,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      await waitForPath(socket, service);
+      const request = join(f.requestDir, "event.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      const status = callRunnerCli("status", request, socket, workerToken);
+      expect(autonomyOf(status)).toEqual({
+        mode: "guided",
+        missing: ["loop-adapter"],
+      });
+      writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "guided-align" }));
+      const refused = callRunnerCli("decide", request, socket, workerToken);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr.toString()).toContain("guided mode");
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check the checkpoint" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitForPath(log, service);
+      expect(JSON.parse(readFileSync(log, "utf8"))).toMatchObject({
+        run: "toy-run",
+        key: "wake-1",
+        payload: "check the checkpoint",
+      });
+      for (let attempt = 0; attempt < 100 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
+        await Bun.sleep(10);
+      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("failed event delivery goes guided and restart replays it", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const socket = join(f.privateDir, "runner.sock");
+    const eventConfig = join(f.privateDir, "event.json");
+    const loopConfig = join(f.privateDir, "loop.json");
+    const attempted = join(f.privateDir, "attempted");
+    const release = join(f.privateDir, "release");
+    const tokenFile = join(f.privateDir, "admin.token");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    writeFileSync(tokenFile, adminToken, { mode: 0o600 });
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({
+        timeout_ms: 100,
+        command: [
+          "bun",
+          "-e",
+          "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1],'attempted'); if(!(await Bun.file(process.argv[2]).exists())) await Bun.sleep(10000); console.log(JSON.stringify({run:e.run,key:e.key}));",
+          attempted,
+          release,
+        ],
+      }),
+    );
+    writeFileSync(
+      loopConfig,
+      JSON.stringify({
+        timeout_ms: 1000,
+        command: [
+          "bun",
+          "-e",
+          "const x=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
+        ],
+      }),
+    );
+    const launch = [
+      "bun",
+      "src/cli.ts",
+      "runner",
+      "serve",
+      "--socket",
+      socket,
+      "--state-dir",
+      f.privateDir,
+      "--worker-root",
+      f.worker,
+      "--run-id",
+      "toy-run",
+      "--admin-token-file",
+      tokenFile,
+      "--event-config",
+      eventConfig,
+      "--loop-config",
+      loopConfig,
+    ];
+    const options = {
+      cwd: root,
+      env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken },
+      stdout: "pipe" as const,
+      stderr: "pipe" as const,
+    };
+    let service = Bun.spawn(launch, options);
+    try {
+      await waitForPath(socket, service);
+      const request = join(f.requestDir, "event.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitForPath(attempted, service);
+      expect(f.runner.pendingEvents("toy-run")).toHaveLength(1);
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const status = autonomyOf(callRunnerCli("status", request, socket, workerToken));
+        if (status.missing.includes("event-delivery-failed")) break;
+        await Bun.sleep(10);
+      }
+      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing).toContain(
+        "event-delivery-failed",
+      );
+      service.kill("SIGTERM");
+      await service.exited;
+      writeFileSync(release, "retry may succeed");
+      service = Bun.spawn(launch, options);
+      await waitForPath(socket, service);
+      for (let attempt = 0; attempt < 100 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
+        await Bun.sleep(10);
+      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("audit replaces silent owners and stalled replacements, then drains only after children finish", () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const started = Date.parse("2026-10-16T18:00:00Z");
+    f.runner.registerDelegate("toy-run", "owner-1", 1, undefined, started);
+    f.runner.registerDelegate("toy-run", "child-1", 10, "owner-1", started);
+    expect(f.runner.auditTick("toy-run", started + 2_000).replace).toEqual(["owner-1"]);
+    f.runner.replaceDelegate("toy-run", "owner-1", "owner-2", 1, started + 2_000);
+    expect(f.runner.auditTick("toy-run", started + 4_000).replace).toEqual(["owner-2"]);
+    expect(() => f.runner.recordProgress("toy-run", "child-1", "narration", "still working")).toThrow("side effect");
+    f.runner.recordProgress("toy-run", "child-1", "commit", f.revision);
+    f.runner.finishDelegate("toy-run", "owner-2");
+    expect(f.runner.auditTick("toy-run", started + 5_000).drained).toBe(false);
+    f.runner.finishDelegate("toy-run", "child-1");
+    expect(f.runner.auditTick("toy-run", started + 6_000).drained).toBe(true);
+  });
+
+  test("an early side effect does not protect a delegate that later hangs", () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const started = Date.parse("2026-10-16T18:00:00Z");
+    f.runner.registerDelegate("toy-run", "owner-1", 10, undefined, started);
+    f.runner.recordProgress("toy-run", "owner-1", "commit", f.revision, started + 1_000);
+    expect(f.runner.auditTick("toy-run", started + 10_000).replace).toEqual([]);
+    expect(f.runner.auditTick("toy-run", started + 12_000).replace).toEqual(["owner-1"]);
+    f.runner.replaceDelegate("toy-run", "owner-1", "owner-2", 10, started + 12_000);
+    expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("replaced");
+  });
+
+  test("a silent child stays replaceable after its owner is replaced or finishes", () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    const started = Date.parse("2026-10-16T18:00:00Z");
+    f.runner.registerDelegate("toy-run", "owner-1", 1, undefined, started);
+    f.runner.registerDelegate("toy-run", "child-1", 1, "owner-1", started);
+    expect(f.runner.auditTick("toy-run", started + 2_000).replace).toEqual(["owner-1", "child-1"]);
+    f.runner.replaceDelegate("toy-run", "owner-1", "owner-2", 10, started + 2_000);
+    f.runner.replaceDelegate("toy-run", "child-1", "child-2", 1, started + 2_000);
+    expect(f.runner.status("toy-run").delegates?.["child-2"]?.parent).toBe("owner-2");
+    f.runner.finishDelegate("toy-run", "owner-2");
+    f.runner.replaceDelegate("toy-run", "child-2", "child-3", 10, started + 4_000);
+    expect(f.runner.status("toy-run").delegates?.["child-3"]?.state).toBe("active");
+  });
+
+  test("live charter tick calls the supervisor adapter to replace an overdue delegate", async () => {
+    const f = fixture();
+    withAuditCadence(f);
+    f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+    f.runner.registerDelegate("toy-run", "owner-1", 1, undefined, Date.now() - 3_000);
+    const socket = join(f.privateDir, "runner.sock");
+    const eventConfig = join(f.privateDir, "event.json");
+    const loopConfig = join(f.privateDir, "loop.json");
+    const replacementLog = join(f.privateDir, "replaced.json");
+    const tokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(tokenFile, "a".repeat(48), { mode: 0o600 });
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({
+        timeout_ms: 10_000,
+        command: [
+          "bun",
+          "-e",
+          "const e=JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({run:e.run,key:e.key}));",
+        ],
+      }),
+    );
+    writeFileSync(
+      loopConfig,
+      JSON.stringify({
+        timeout_ms: 10_000,
+        command: [
+          "bun",
+          "-e",
+          "const x=JSON.parse(await Bun.stdin.text()); if(x.action==='probe') console.log(JSON.stringify({probed:x.delegates,progress:[]})); else { await Bun.write(process.argv[1],JSON.stringify(x)); console.log(JSON.stringify({stood_down:true,replacement:'owner-2',expected_runtime_seconds:10,key:x.key})); }",
+          replacementLog,
+        ],
+      }),
+    );
+    const service = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        tokenFile,
+        "--event-config",
+        eventConfig,
+        "--loop-config",
+        loopConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: "b".repeat(48) }, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      await waitForPath(socket, service);
+      const request = join(f.requestDir, "status.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run" }));
+      expect(autonomyOf(callRunnerCli("status", request, socket, "b".repeat(48)))).toEqual({
+        mode: "autonomous",
+        missing: [],
+      });
+      await waitForPath(replacementLog, service);
+      for (
+        let attempt = 0;
+        attempt < 100 && f.runner.status("toy-run").delegates?.["owner-2"] === undefined;
+        attempt += 1
+      )
+        await Bun.sleep(10);
+      expect(f.runner.status("toy-run").delegates?.["owner-1"]?.state).toBe("replaced");
+      expect(f.runner.status("toy-run").delegates?.["owner-2"]?.state).toBe("active");
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
+  });
+
+  test("an identical-patch rebase reuses a current verdict", () => {
+    const f = patchVerdictFixture();
+    const verdict = f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    writeFileSync(join(f.worker, "unrelated.txt"), "trunk moved\n");
+    git(f.worker, "add", "unrelated.txt");
+    git(f.worker, "commit", "-qm", "move trunk");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.revision).not.toBe(verdict.head_revision);
+    expect(after.run_state).toBe("ready-to-ship");
+    expect(after.verdict?.patch_id).toBe(verdict.patch_id);
+    expect(after.verdict?.reused_from).toBe(verdict.head_revision);
+  });
+
+  test("a changed patch voids its verdict and re-enters verification", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    writeFileSync(join(f.worker, "feature.txt"), "different feature\n");
+    git(f.worker, "commit", "-qam", "change feature");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.next_permitted_action).toBe("verify.record");
+    expect(after.verdict?.invalidated_by).toBe("patch-changed");
+  });
+
+  test("an uncommitted edit cannot inherit a patch-id verdict", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    writeFileSync(join(f.worker, "feature.txt"), "uncommitted change\n");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("patch-changed");
+  });
+
+  test("a reverted patch voids its verdict and re-enters verification", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    git(f.worker, "revert", "--no-edit", "HEAD");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("patch-changed");
+  });
+
+  test("trunk CI configuration drift voids a verdict even when the patch is identical", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: changed\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = new Runner(f.privateDir, f.worker, root, true).syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  test("an unattended ship requires a current verdict and rechecks trunk before its ruling", () => {
+    const f = patchVerdictFixture(true, false);
+    const prepareShip = () =>
+      f.runner.prepare("toy-run", {
+        id: "ship",
+        operation: "ship.prepare",
+        grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+        question: "Open the pull request?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["verify"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      });
+    expect(prepareShip).toThrow("current patch verdict required");
+    f.runner.bindVerdict("toy-run");
+    prepareShip();
+    git(f.worker, "checkout", "main");
+    mkdirSync(join(f.worker, ".github", "workflows"), { recursive: true });
+    writeFileSync(join(f.worker, ".github", "workflows", "ci.yml"), "name: moved\n");
+    git(f.worker, "add", ".github/workflows/ci.yml");
+    git(f.worker, "commit", "-qm", "change CI before ship");
+    git(f.worker, "checkout", "feature");
+    f.runner.judge("toy-run", "ship", "seat-a", "supervisor-1", "ship-a", "yes", []);
+    f.runner.judge("toy-run", "ship", "seat-b", "supervisor-2", "ship-b", "yes", []);
+    expect(() => f.runner.decide("toy-run", "ship")).toThrow("verdict invalidated");
+    expect(f.runner.status("toy-run").run_state).toBe("repairing");
+    expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("ci-config-drift");
+  });
+
+  const invalidations = [
+    {
+      reason: "patch-changed",
+      afterBind: (f: ReturnType<typeof patchVerdictFixture>) =>
+        writeFileSync(join(f.worker, "feature.txt"), "uncommitted change\n"),
+      error: "verification is required",
+      state: "repairing",
+    },
+    {
+      reason: "ci-config-drift",
+      afterBind: (f: ReturnType<typeof patchVerdictFixture>) =>
+        trunkCommit(f, ".github/workflows/ci.yml", "name: moved\n"),
+      error: "verification is required",
+      state: "repairing",
+    },
+    {
+      reason: "merge-conflict",
+      afterBind: (f: ReturnType<typeof patchVerdictFixture>) => trunkCommit(f, "feature.txt", "trunk conflict\n"),
+      error: "rebase onto main is required",
+      state: "ready-to-ship",
+    },
+  ] as const;
+  for (const cadenced of [false, true])
+    for (const { reason, afterBind, error, state } of invalidations)
+      test(`${cadenced ? "a cadenced" : "a guided"} ship classifies ${reason} through the shared verdict check`, () => {
+        const f = patchVerdictFixture(cadenced, false);
+        f.runner.bindVerdict("toy-run");
+        afterBind(f);
+        expect(() => shipCard(f)).toThrow(error);
+        expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe(reason);
+        expect(f.runner.status("toy-run").run_state).toBe(state);
+        if (reason === "merge-conflict") expect(() => shipCard(f)).toThrow(error);
+      });
+
+  test("CI drift between verification and binding is caught, and re-verification clears it", () => {
+    const f = patchVerdictFixture(true, false);
+    trunkCommit(f, ".github/workflows/ci.yml", "name: moved before bind\n");
+    f.runner.bindVerdict("toy-run");
+    expect(() => shipCard(f)).toThrow("verdict invalidated by ci-config-drift");
+    expect(f.runner.status("toy-run").next_permitted_action).toBe("verify.record");
+    const verification = join(f.privateDir, "verification-2.txt");
+    writeFileSync(verification, "tests passed against the moved trunk");
+    f.runner.collect("toy-run", "verify-2", verification, f.revision, "verify");
+    f.runner.verify("toy-run", "verify-2");
+    for (const [id, operation] of [
+      ["review-2", "review.full"],
+      ["readiness-2", "review.readiness"],
+    ] as const) {
+      card(f, id, operation, "finding-adjudication");
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    f.runner.bindVerdict("toy-run");
+    expect(shipCard(f).id).toBe("ship");
+  });
+
+  test("a verdict voided by a trunk conflict is never reused, even after a clean rebase", () => {
+    const f = patchVerdictFixture();
+    f.runner.bindVerdict("toy-run");
+    trunkCommit(f, "feature.txt", "trunk conflict\n");
+    const runner = () => new Runner(f.privateDir, f.worker, root, true);
+    git(f.worker, "commit", "-q", "--allow-empty", "-m", "touch head");
+    expect(runner().syncRevision("toy-run").verdict?.invalidated_by).toBe("merge-conflict");
+    git(f.worker, "checkout", "main");
+    git(f.worker, "revert", "--no-edit", "HEAD");
+    git(f.worker, "checkout", "feature");
+    git(f.worker, "rebase", "main");
+    const after = runner().syncRevision("toy-run");
+    expect(after.run_state).toBe("repairing");
+    expect(after.next_permitted_action).toBe("verify.record");
+  });
+
+  test("reverting an amend after re-verification cannot revive the first verdict", () => {
+    const f = patchVerdictFixture(true, false);
+    const first = f.runner.bindVerdict("toy-run");
+    const runner = () => new Runner(f.privateDir, f.worker, root, true);
+    writeFileSync(join(f.worker, "feature.txt"), "amended feature\n");
+    git(f.worker, "commit", "-q", "--amend", "-am", "amend feature");
+    expect(runner().syncRevision("toy-run").verdict?.invalidated_by).toBe("patch-changed");
+    f.revision = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const verification = join(f.privateDir, "verification-2.txt");
+    writeFileSync(verification, "tests passed on the amended patch");
+    f.runner.collect("toy-run", "verify-2", verification, f.revision, "verify");
+    f.runner.verify("toy-run", "verify-2");
+    for (const [id, operation] of [
+      ["review-2", "review.full"],
+      ["readiness-2", "review.readiness"],
+    ] as const) {
+      f.runner.prepare("toy-run", {
+        id,
+        operation,
+        grant: { charter_hash: f.charter.immutability.hash, covers: "finding-adjudication" },
+        question: "Proceed?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["verify-2"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      });
+      f.runner.judge("toy-run", id, "seat-a", "supervisor-1", `${id}-a`, "yes", []);
+      f.runner.judge("toy-run", id, "seat-b", "supervisor-2", `${id}-b`, "yes", []);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    expect(f.runner.status("toy-run").run_state).toBe("ready-to-ship");
+    git(f.worker, "reset", "-q", "--hard", first.head_revision);
+    const reverted = runner().syncRevision("toy-run");
+    expect(reverted.run_state).toBe("repairing");
+    expect(reverted.verdict?.invalidated_by).toBe("patch-changed");
+    expect(reverted.verdict?.reused_from).toBeUndefined();
+  });
+
+  test("charter-bound live smoke wakes through an event and reaches a local ready branch", async () => {
+    const f = fixture();
+    const cliEntry = process.env["AK_AUTONOMY_SMOKE_ENTRY"] ?? join(root, "src", "cli.ts");
+    withAuditCadence(f);
+    git(f.worker, "branch", "-M", "main");
+    git(f.worker, "checkout", "-qb", "feature");
+    writeFileSync(join(f.worker, "feature.txt"), "ready branch\n");
+    git(f.worker, "add", "feature.txt");
+    git(f.worker, "commit", "-qm", "prepare feature");
+    const head = Bun.spawnSync(["git", "-C", f.worker, "rev-parse", "HEAD"]).stdout.toString().trim();
+    const socket = join(f.privateDir, "runner.sock");
+    const tokenFile = join(f.privateDir, "admin.token");
+    const eventConfig = join(f.privateDir, "event.json");
+    const loopConfig = join(f.privateDir, "loop.json");
+    const seatConfig = join(f.privateDir, "seats.json");
+    const verifyConfig = join(f.privateDir, "verify.json");
+    const loopLog = join(f.privateDir, "audit-probe.json");
+    const consumerRequest = join(f.privateDir, "consumer.json");
+    const request = join(f.requestDir, "smoke.json");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    writeFileSync(tokenFile, adminToken, { mode: 0o600 });
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: ["seat-a", "seat-b"].map((seat) => ({
+          seat,
+          actor: `supervisor-${seat}`,
+          lineage: [`supervisor-${seat}`],
+          command: [
+            "bun",
+            "-e",
+            "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'charter and evidence agree'}));",
+          ],
+        })),
+      }),
+    );
+    writeFileSync(verifyConfig, JSON.stringify({ command: ["bun", "-e", "console.log('scratch behavior passed')"] }));
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({
+        timeout_ms: 10_000,
+        command: [
+          "bun",
+          "-e",
+          "const e=JSON.parse(await Bun.stdin.text());await Bun.write(process.argv[1],JSON.stringify({run:e.run,card_id:'align'}));const p=Bun.spawnSync(['bun',process.argv[2],'runner','call','decide','--json',process.argv[1],'--socket',process.env.AK_RUNNER_SOCKET],{env:process.env,stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());console.log(JSON.stringify({run:e.run,key:e.key}));",
+          consumerRequest,
+          cliEntry,
+        ],
+      }),
+    );
+    writeFileSync(
+      loopConfig,
+      JSON.stringify({
+        timeout_ms: 10_000,
+        command: [
+          "bun",
+          "-e",
+          "const x=JSON.parse(await Bun.stdin.text());if(x.action!=='probe')process.exit(2);await Bun.write(process.argv[1],JSON.stringify(x));console.log(JSON.stringify({probed:x.delegates,progress:[]}));",
+          loopLog,
+        ],
+      }),
+    );
+    const service = Bun.spawn(
+      [
+        "bun",
+        cliEntry,
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        tokenFile,
+        "--event-config",
+        eventConfig,
+        "--loop-config",
+        loopConfig,
+        "--seat-config",
+        seatConfig,
+        "--verify-config",
+        verifyConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    );
+    const call = (verb: string, token: string, args: RunnerArgs) => {
+      writeFileSync(request, JSON.stringify(args));
+      const response = callRunnerCli(verb, request, socket, token);
+      expect(response.exitCode).toBe(0);
+      return response;
+    };
+    const prepare = (id: string, operation: string, covers: string, evidence: string) =>
+      call("prepare", workerToken, {
+        run: "toy-run",
+        card: {
+          id,
+          operation,
+          grant: { charter_hash: f.charter.immutability.hash, covers },
+          question: "Proceed under the charter?",
+          options: ["yes", "no"],
+          approve: "yes",
+          evidence: [evidence],
+          artifact_hash: `sha256:${"b".repeat(64)}`,
+        },
+      });
+    try {
+      await waitForPath(socket, service);
+      call("start", adminToken, {
+        run: "toy-run",
+        charter: f.path,
+        implementer: "implementer-1",
+        revision: head,
+        standing_grant: {
+          charter_hash: f.charter.immutability.hash,
+          covers: "autopilot.start",
+          controller: "firstmate",
+          run_id: "toy-run",
+        },
+      });
+      expect(autonomyOf(call("status", workerToken, { run: "toy-run" }))).toEqual({ mode: "autonomous", missing: [] });
+      const source = join(f.privateDir, "source.txt");
+      writeFileSync(source, "approved scratch work source");
+      call("collect", adminToken, { run: "toy-run", id: "e1", source, revision: head, kind: "source" });
+      call("delegate", adminToken, { run: "toy-run", id: "owner-1", amount: 30 });
+      call("progress", adminToken, { run: "toy-run", id: "owner-1", kind: "commit", source: head });
+      prepare("align", "align.run", "align-answer", "e1");
+      call("event", adminToken, { run: "toy-run", key: "wake-align", payload: "checkpoint available" });
+      for (let attempt = 0; attempt < 150 && f.runner.status("toy-run").run_state !== "alignment"; attempt += 1)
+        await Bun.sleep(10);
+      expect(f.runner.status("toy-run").run_state).toBe("alignment");
+      for (let attempt = 0; attempt < 150 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
+        await Bun.sleep(10);
+      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+      for (const [id, operation, covers] of [
+        ["bound", "bound.run", "spec-approval"],
+        ["build", "build.dispatch", "build-go"],
+      ] as const) {
+        prepare(id, operation, covers, "e1");
+        call("decide", workerToken, { run: "toy-run", card_id: id });
+      }
+      call("run-verify", workerToken, { run: "toy-run" });
+      const verify = Object.values(f.runner.status("toy-run").evidence).find((entry) => entry.kind === "verify");
+      if (verify === undefined) throw new Error("live verification receipt missing");
+      for (const [id, operation, covers] of [
+        ["review", "review.full", "finding-adjudication"],
+        ["readiness", "review.readiness", "finding-adjudication"],
+      ] as const) {
+        prepare(id, operation, covers, verify.id);
+        call("decide", workerToken, { run: "toy-run", card_id: id });
+      }
+      call("verdict", adminToken, { run: "toy-run" });
+      prepare("ship", "ship.prepare", "ship-pr", verify.id);
+      call("decide", workerToken, { run: "toy-run", card_id: "ship" });
+      await waitForPath(loopLog, service);
+      call("finish", adminToken, { run: "toy-run", id: "owner-1" });
+      const ledger = f.runner.ledger("toy-run");
+      const run = f.runner.status("toy-run");
+      expect(ledger.status).toBe("ready-to-ship");
+      expect(ledger.entries).toHaveLength(6);
+      expect(ledger.entries.every((entry) => entry.outcome === "ruling")).toBe(true);
+      expect(
+        run.decisions.every((decision) => decision.card.judgments.length === 2 && decision.answer === undefined),
+      ).toBe(true);
+      expect(run.verdict?.head_revision).toBe(head);
+      const ledgerPath = process.env["AK_AUTONOMY_SMOKE_LEDGER"];
+      if (ledgerPath !== undefined) writeFileSync(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
+      const transcriptPath = process.env["AK_AUTONOMY_SMOKE_TRANSCRIPT"];
+      if (transcriptPath !== undefined)
+        writeFileSync(
+          transcriptPath,
+          `scratch=${f.worker}\nhead=${head}\nmode=autonomous\nevent=wake-align acknowledged\naudit=probe observed\ncheckpoints=${ledger.entries.map((entry) => entry.checkpoint).join(",")}\nstatus=${ledger.status}\n`,
+        );
+    } finally {
+      service.kill("SIGTERM");
+      await service.exited;
+    }
   });
 
   test("worker CLI cannot use supervisor verbs through the live service", async () => {
@@ -2132,6 +2910,11 @@ describe("runner guards", () => {
 });
 
 describe("unknown runner selectors", () => {
+  test("the installed command exposes the runner service entrypoint", () => {
+    const command = Bun.spawnSync(["bun", "src/maintenance/cli.ts", "runner"], { cwd: root });
+    expect(command.exitCode).toBe(2);
+    expect(command.stderr.toString()).toContain("ak runner serve");
+  });
   test("a checkpoint card the run lacks is refused with the cards it has", () => {
     const f = ready();
     card(f, "align-1");

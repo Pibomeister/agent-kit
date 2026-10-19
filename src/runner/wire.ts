@@ -23,6 +23,7 @@ export interface RunnerArgs {
   target?: string;
   input_hash?: string;
   limit?: string;
+  parent?: string;
   subject?: string;
   amount?: number;
   excluded_actors?: string[];
@@ -57,6 +58,30 @@ export interface SeatAnswer {
 }
 export interface VerifyConfig {
   command: string[];
+}
+export interface EventConfig {
+  command: string[];
+  timeout_ms: number;
+}
+export interface EventAck {
+  run: string;
+  key: string;
+}
+export interface AuditProbeReply {
+  probed: string[];
+  progress: { delegate: string; kind: "commit" | "push" | "pr" | "check" | "store-report"; ref: string }[];
+}
+export interface AuditReplacementReply {
+  key: string;
+  stood_down: true;
+  replacement: string;
+  expected_runtime_seconds: number;
+}
+export interface AutonomyStatus {
+  autonomy: { mode: "autonomous" | "guided"; missing: string[] };
+}
+export interface VersionManifest {
+  version: string;
 }
 export interface EffectAdapter {
   effect: string;
@@ -96,6 +121,7 @@ const stringFields = [
   "input_hash",
   "limit",
   "subject",
+  "parent",
 ];
 const argsSchema = {
   type: "object",
@@ -179,6 +205,70 @@ export const isVerifyConfig = ajv.compile<VerifyConfig>({
   additionalProperties: false,
   required: ["command"],
   properties: { command: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } },
+});
+export const isEventConfig = ajv.compile<EventConfig>({
+  type: "object",
+  additionalProperties: false,
+  required: ["command", "timeout_ms"],
+  properties: {
+    command: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+    timeout_ms: { type: "integer", minimum: 1 },
+  },
+});
+export const isEventAck = ajv.compile<EventAck>({
+  type: "object",
+  additionalProperties: false,
+  required: ["run", "key"],
+  properties: { run: { type: "string" }, key: { type: "string" } },
+});
+export const isAuditProbeReply = ajv.compile<AuditProbeReply>({
+  type: "object",
+  additionalProperties: false,
+  required: ["probed", "progress"],
+  properties: {
+    probed: stringArray,
+    progress: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["delegate", "kind", "ref"],
+        properties: {
+          delegate: { type: "string" },
+          kind: { enum: ["commit", "push", "pr", "check", "store-report"] },
+          ref: { type: "string" },
+        },
+      },
+    },
+  },
+});
+export const isAuditReplacementReply = ajv.compile<AuditReplacementReply>({
+  type: "object",
+  additionalProperties: false,
+  required: ["key", "stood_down", "replacement", "expected_runtime_seconds"],
+  properties: {
+    key: { type: "string" },
+    stood_down: { const: true },
+    replacement: { type: "string" },
+    expected_runtime_seconds: { type: "integer", minimum: 1 },
+  },
+});
+export const isAutonomyStatus = ajv.compile<AutonomyStatus>({
+  type: "object",
+  required: ["autonomy"],
+  properties: {
+    autonomy: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mode", "missing"],
+      properties: { mode: { enum: ["autonomous", "guided"] }, missing: stringArray },
+    },
+  },
+});
+export const isVersionManifest = ajv.compile<VersionManifest>({
+  type: "object",
+  required: ["version"],
+  properties: { version: { type: "string", minLength: 1 } },
 });
 export const isEffectConfig = ajv.compile<EffectConfig>({
   type: "object",

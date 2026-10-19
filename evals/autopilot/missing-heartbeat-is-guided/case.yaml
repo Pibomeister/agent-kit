@@ -1,0 +1,20 @@
+schema_version: "1.1"
+name: missing-heartbeat-is-guided
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    /ak:autopilot Start this approved charter. The runner can store inbound events, but this
+    installation has no supervisor loop command configured.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: live-capability-check
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: Live runner status names the absent loop and the run enters guided checkpoint mode.
+  - name: no-unattended-ruling
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: No checkpoint is automatically decided while the loop adapter is absent.

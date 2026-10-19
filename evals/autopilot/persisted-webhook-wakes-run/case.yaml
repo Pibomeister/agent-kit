@@ -1,0 +1,23 @@
+schema_version: "1.1"
+name: persisted-webhook-wakes-run
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    /ak:autopilot The chartered run is paused between checkpoints. A CI webhook arrived while its
+    worker session was closed, and the service restarted before its controller acknowledged it.
+    Resume the run from the runner record.
+  max_turns: 14
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: durable-wake
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The runner replays the unacknowledged event to its configured consumer and records a matching
+      acknowledgement before advancing. The webhook payload is treated as a claim, not a grant.
+  - name: no-duplicate-action
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: A repeated event key causes no second side effect.
