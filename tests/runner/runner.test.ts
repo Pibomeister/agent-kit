@@ -15,6 +15,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
+
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
 import type { Run, StandingGrant } from "../../src/runner/types.ts";
@@ -1663,6 +1665,143 @@ describe("runner guards", () => {
     transcript.push(
       "Refusal: same actor in both seats and a seat input containing the other dispatch → rejected before judgment.",
     );
+  });
+
+  test("a second seat whose lineage names the first seat's actor is refused", () => {
+    const f = ready();
+    const prepare = (id: string) =>
+      f.runner.prepare("toy-run", {
+        id,
+        operation: "align.run",
+        grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+        question: "Proceed?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["e1"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      });
+    prepare("forward");
+    f.runner.judge("toy-run", "forward", "seat-a", "supervisor-1", "forward-a", "yes", [], ["supervisor-1"]);
+    expect(() =>
+      f.runner.judge(
+        "toy-run",
+        "forward",
+        "seat-b",
+        "supervisor-2",
+        "forward-b",
+        "yes",
+        [],
+        ["supervisor-2", "supervisor-1"],
+      ),
+    ).toThrow("invalid or excluded seat");
+    prepare("reverse");
+    f.runner.judge(
+      "toy-run",
+      "reverse",
+      "seat-a",
+      "supervisor-1",
+      "reverse-a",
+      "yes",
+      [],
+      ["supervisor-1", "supervisor-2"],
+    );
+    expect(() =>
+      f.runner.judge("toy-run", "reverse", "seat-b", "supervisor-2", "reverse-b", "yes", [], ["supervisor-2"]),
+    ).toThrow("invalid or excluded seat");
+    // A persisted pair that slipped past judge still cannot complete the card.
+    const run = f.runner.status("toy-run");
+    const forward = run.cards["forward"];
+    if (forward === undefined) throw new Error("forward card missing");
+    forward.judgments.push({
+      seat: "seat-b",
+      actor: "supervisor-2",
+      dispatch: "forward-b",
+      choice: "yes",
+      rationale: "Independent supervisor judgment",
+      input_dispatches: [],
+      lineage: ["supervisor-2", "supervisor-1"],
+    });
+    writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+    const decided = new Runner(f.privateDir, f.worker, root).decide("toy-run", "forward");
+    expect(decided.status).toBe("needs-input");
+    expect(decided.escalation?.charter_rule).toBe("runner:seat-independence");
+  });
+
+  test("seat judgments are accepted exactly when actors and lineages are independent", () => {
+    const f = ready();
+    const actors = ["supervisor-1", "supervisor-2", "supervisor-3", "supervisor-4"];
+    const seat = tuple(constantFrom(...actors), subarray(actors)).map(([actor, ancestors]) => ({
+      actor,
+      lineage: [actor, ...ancestors.filter((a) => a !== actor)],
+    }));
+    let n = 0;
+    fcAssert(
+      property(seat, seat, (a, b) => {
+        const id = `prop-${(n += 1)}`;
+        f.runner.prepare("toy-run", {
+          id,
+          operation: "align.run",
+          grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+          question: "Proceed?",
+          options: ["yes", "no"],
+          approve: "yes",
+          evidence: ["e1"],
+          artifact_hash: `sha256:${"b".repeat(64)}`,
+        });
+        f.runner.judge("toy-run", id, "seat-a", a.actor, `${id}-a`, "yes", [], a.lineage);
+        const independent = a.actor !== b.actor && !a.lineage.includes(b.actor) && !b.lineage.includes(a.actor);
+        const second = () => f.runner.judge("toy-run", id, "seat-b", b.actor, `${id}-b`, "yes", [], b.lineage);
+        if (independent) expect(second().judgments).toHaveLength(2);
+        else
+          expect(second).toThrow(
+            a.actor === b.actor ? "seat is not independently dispatched" : "invalid or excluded seat",
+          );
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  test("seat configuration with overlapping lineages is refused at load", async () => {
+    const f = fixture();
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, "a".repeat(48), { mode: 0o600 });
+    const seatConfig = join(f.privateDir, "seats.json");
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: [
+          { seat: "seat-a", actor: "supervisor-1", lineage: ["supervisor-1"], command: ["true"] },
+          { seat: "seat-b", actor: "supervisor-2", lineage: ["supervisor-2", "supervisor-1"], command: ["true"] },
+        ],
+      }),
+    );
+    const err: string[] = [];
+    const previous = process.env["AK_RUNNER_WORKER_TOKEN"];
+    process.env["AK_RUNNER_WORKER_TOKEN"] = "b".repeat(48);
+    try {
+      const argv = [
+        "serve",
+        "--socket",
+        join(f.privateDir, "runner.sock"),
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--kit-root",
+        root,
+        "--seat-config",
+        seatConfig,
+      ];
+      expect(await runRunner(argv, { out: () => {}, err: (line) => err.push(line) })).toBe(1);
+    } finally {
+      if (previous === undefined) delete process.env["AK_RUNNER_WORKER_TOKEN"];
+      else process.env["AK_RUNNER_WORKER_TOKEN"] = previous;
+    }
+    expect(err).toEqual(["ak runner: seat configuration lineages must be independent"]);
   });
 
   test("budget exhaustion is durable and returns cap-reached", () => {

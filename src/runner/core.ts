@@ -131,6 +131,14 @@ function verdictBase(run: Run): string {
   return baseRef;
 }
 
+// CONTRACT.md §3: independent seats share no lineage, so neither seat's lineage may name the other's actor.
+export function sharesLineage(
+  a: { actor: string; lineage: string[] },
+  b: { actor: string; lineage: string[] },
+): boolean {
+  return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+}
+
 function approved(decision: Decision): boolean {
   const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
   return (
@@ -877,6 +885,7 @@ export class Runner {
       )
     )
       throw new Error("seat is not independently dispatched");
+    if (card.judgments.some((j) => sharesLineage(j, { actor, lineage }))) throw new Error("invalid or excluded seat");
     if (inputDispatches.length > 0) throw new Error("seat input includes another dispatch");
     card.judgments.push({ seat, actor, dispatch, choice, rationale, input_dispatches: inputDispatches, lineage });
     this.save(run);
@@ -1054,6 +1063,7 @@ export class Runner {
       card.judgments.length !== 2 ||
       new Set(card.judgments.map((j) => j.actor)).size !== 2 ||
       new Set(card.judgments.map((j) => j.dispatch)).size !== 2 ||
+      card.judgments.some((j, i) => card.judgments.slice(i + 1).some((k) => sharesLineage(j, k))) ||
       card.judgments.some(
         (j) =>
           !seats.includes(j.seat) ||
