@@ -25434,8 +25434,75 @@ var init_verify = __esm(() => {
 var exports_cli4 = {};
 __export(exports_cli4, {
   setupArea: () => setupArea,
+  decideSetupArgs: () => decideSetupArgs,
   createSetupArea: () => createSetupArea
 });
+function flagSet(value, bool) {
+  return { value, bool };
+}
+function knownFlags(verb) {
+  switch (verb) {
+    case "doctor":
+      return SETUP_FLAGS.doctor;
+    case "wire":
+      return SETUP_FLAGS.wire;
+    case "schedule":
+      return SETUP_FLAGS.schedule;
+    case "scope":
+      return SETUP_FLAGS.scope;
+    case "seed":
+      return SETUP_FLAGS.seed;
+    case "verify":
+      return SETUP_FLAGS.verify;
+    case "uninstall":
+      return SETUP_FLAGS.uninstall;
+    default:
+      return flagSet([], []);
+  }
+}
+function isHelpToken(token) {
+  return token === "-h" || token === "--help";
+}
+function decideSetupArgs(verb, usage2, argv) {
+  if (argv.some(isHelpToken))
+    return { code: 0, stream: "out", lines: [`ak learn ${usage2}`] };
+  const known = knownFlags(verb);
+  const unexpected = [];
+  for (let i = 0;i < argv.length; i += 1) {
+    const token = argv[i];
+    if (token === undefined)
+      continue;
+    if (!token.startsWith("--")) {
+      unexpected.push(token);
+      continue;
+    }
+    const body = token.slice(2);
+    const eq = body.indexOf("=");
+    const name = eq === -1 ? body : body.slice(0, eq);
+    if (name === "") {
+      unexpected.push(token);
+      continue;
+    }
+    if (known.bool.includes(name))
+      continue;
+    if (known.value.includes(name)) {
+      if (eq === -1) {
+        const next = argv[i + 1];
+        if (next !== undefined && !next.startsWith("-"))
+          i += 1;
+      }
+      continue;
+    }
+    unexpected.push(eq === -1 ? `--${name}` : token);
+  }
+  if (unexpected.length === 0)
+    return null;
+  return {
+    code: 2,
+    stream: "err",
+    lines: [`ak learn setup ${verb}: unexpected ${unexpected.join(" ")}; usage: ak learn ${usage2}`]
+  };
+}
 function createSetupArea(depsFor = defaultDeps) {
   return {
     summary: "install and check the host wiring: hooks, scheduler, claude-mem mode, first seed",
@@ -25508,7 +25575,7 @@ function createSetupArea(depsFor = defaultDeps) {
     }
   };
 }
-var setupArea;
+var SETUP_FLAGS, setupArea;
 var init_cli4 = __esm(() => {
   init_context();
   init_doctor();
@@ -25518,6 +25585,15 @@ var init_cli4 = __esm(() => {
   init_uninstall();
   init_verify();
   init_wire();
+  SETUP_FLAGS = {
+    doctor: flagSet([], []),
+    wire: flagSet(["host"], ["no-mem", "restart-worker"]),
+    schedule: flagSet(["interval"], ["load"]),
+    scope: flagSet(["set"], ["clear"]),
+    seed: flagSet(["repo", "since"], ["no-github"]),
+    verify: flagSet(["repo"], []),
+    uninstall: flagSet([], ["purge"])
+  };
   setupArea = createSetupArea();
 });
 
@@ -26001,11 +26077,11 @@ var init_hooks2 = __esm(() => {
 
 // src/maintenance/cli.ts
 var import_ajv10 = __toESM(require_ajv(), 1);
-var import__202010 = __toESM(require_2020(), 1);
-import { spawnSync as spawnSync4 } from "child_process";
-import { existsSync as existsSync32, readFileSync as readFileSync24, realpathSync as realpathSync6 } from "fs";
+var import__202011 = __toESM(require_2020(), 1);
+import { spawnSync as spawnSync5 } from "child_process";
+import { existsSync as existsSync35, readFileSync as readFileSync29, realpathSync as realpathSync12 } from "fs";
 import { homedir as homedir5 } from "os";
-import { basename as basename16, isAbsolute as isAbsolute10, join as join34, relative as relative7 } from "path";
+import { basename as basename17, isAbsolute as isAbsolute16, join as join37, relative as relative13 } from "path";
 // schemas/common.schema.json
 var common_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -27310,6 +27386,13 @@ var project_schema_default = {
       uniqueItems: true,
       items: { $ref: "common.schema.json#/$defs/kebab_id" }
     },
+    autonomy: {
+      description: "Project opt-in for selecting the autonomy install profile when no explicit profile is requested. This never grants an action or bypasses a missing live runner capability.",
+      type: "object",
+      additionalProperties: false,
+      required: ["default"],
+      properties: { default: { type: "boolean" } }
+    },
     packs: {
       description: "Packs enabled for this project. An enabled pack still attaches only when its activation rules match (plan 3).",
       type: "array",
@@ -28301,6 +28384,11 @@ var charter_schema_default = {
         },
         review_rounds: { type: "integer", minimum: 1, maximum: 5 }
       }
+    },
+    audit_cadence_seconds: {
+      description: "Supervisor audit cadence supplied by the charter. Required for unattended mode; absence keeps the run guided.",
+      type: "integer",
+      minimum: 1
     },
     budgets: {
       description: "Plan 7.2: cost accounting, when available, is passed in by the runner. 'provided_by' is pinned so a charter cannot become the place where consumption is calculated; the charter records only the cap it was handed and which limits it enforces.",
@@ -33126,6 +33214,16 @@ async function dispatch(argv, options) {
       options.io.err(`  ${entry.usage}`);
     return 2;
   }
+  if (areaName === "setup" && verbName !== undefined) {
+    const { decideSetupArgs: decideSetupArgs2 } = await Promise.resolve().then(() => (init_cli4(), exports_cli4));
+    const decision = decideSetupArgs2(verbName, verb.usage, rest);
+    if (decision !== null) {
+      const write = decision.stream === "out" ? options.io.out : options.io.err;
+      for (const line of decision.lines)
+        write(line);
+      return decision.code;
+    }
+  }
   const env = options.env ?? process.env;
   const config = loadConfig(env);
   const ctx = {
@@ -35162,8 +35260,2301 @@ function resolveLink(absolute) {
   return target === absolute ? null : target;
 }
 
+// src/runner/cli.ts
+init_hash();
+import { timingSafeEqual } from "crypto";
+import { chmodSync as chmodSync2, existsSync as existsSync34, readFileSync as readFileSync28, realpathSync as realpathSync11, unlinkSync } from "fs";
+import { createConnection, createServer } from "net";
+import { dirname as dirname18, isAbsolute as isAbsolute15, relative as relative12, resolve as resolve13 } from "path";
+
+// src/runner/core.ts
+init_dist();
+init_hash();
+import { createHash as createHash9 } from "crypto";
+import { existsSync as existsSync33, mkdirSync as mkdirSync20, readFileSync as readFileSync26, realpathSync as realpathSync9, renameSync as renameSync5, writeFileSync as writeFileSync13 } from "fs";
+import { basename as basename16, dirname as dirname16, isAbsolute as isAbsolute13, join as join36, relative as relative10, resolve as resolve12 } from "path";
+
+// src/runner/evidence.ts
+import { mkdirSync as mkdirSync19, readFileSync as readFileSync24, realpathSync as realpathSync6, writeFileSync as writeFileSync12 } from "fs";
+import { isAbsolute as isAbsolute10, join as join34, relative as relative7 } from "path";
+
+class PrivateFileEvidenceStore {
+  root;
+  constructor(stateDir) {
+    this.root = join34(stateDir, "evidence");
+    mkdirSync19(this.root, { recursive: true, mode: 448 });
+    const resolved = realpathSync6(this.root);
+    const rel = relative7(stateDir, resolved);
+    if (rel === "" || rel.startsWith("..") || isAbsolute10(rel))
+      throw new Error("evidence store escapes runner state directory");
+  }
+  put(runId, evidenceId, bytes) {
+    const ref = join34(this.root, `${runId}-${evidenceId}.evidence`);
+    writeFileSync12(ref, bytes, { flag: "wx", mode: 384 });
+    return ref;
+  }
+  read(ref) {
+    const resolved = realpathSync6(ref);
+    const rel = relative7(this.root, resolved);
+    if (rel === "" || rel.startsWith("..") || isAbsolute10(rel))
+      throw new Error("evidence ref escapes runner store");
+    return readFileSync24(resolved);
+  }
+}
+
+// src/runner/wire.ts
+var import__202010 = __toESM(require_2020(), 1);
+var grant = {
+  type: "object",
+  required: ["charter_hash", "covers"],
+  additionalProperties: false,
+  properties: { charter_hash: { type: "string" }, covers: { type: "string" }, decision: { type: "string" } }
+};
+var stringArray = { type: "array", items: { type: "string" } };
+var stringFields = [
+  "run",
+  "charter",
+  "implementer",
+  "revision",
+  "id",
+  "source",
+  "kind",
+  "card_id",
+  "seat",
+  "actor",
+  "dispatch",
+  "choice",
+  "rationale",
+  "evidence",
+  "key",
+  "payload",
+  "effect",
+  "target",
+  "input_hash",
+  "limit",
+  "subject",
+  "parent"
+];
+var argsSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    ...Object.fromEntries(stringFields.map((field2) => [field2, { type: "string" }])),
+    amount: { type: "integer", minimum: 1 },
+    excluded_actors: stringArray,
+    input_dispatches: stringArray,
+    lineage: stringArray,
+    standing_grant: {
+      type: "object",
+      additionalProperties: false,
+      required: ["charter_hash", "covers", "controller", "run_id"],
+      properties: {
+        charter_hash: { type: "string" },
+        covers: { const: "autopilot.start" },
+        controller: { const: "firstmate" },
+        run_id: { type: "string" }
+      }
+    },
+    card: {
+      type: "object",
+      additionalProperties: false,
+      required: ["id", "operation", "grant", "question", "options", "approve", "evidence", "artifact_hash"],
+      properties: {
+        id: { type: "string" },
+        operation: { type: "string" },
+        grant,
+        additional_grants: { type: "array", items: grant },
+        emits_tickets: { type: "boolean" },
+        question: { type: "string" },
+        options: stringArray,
+        approve: { type: "string" },
+        evidence: stringArray,
+        artifact_hash: { type: "string" },
+        human_experience: { type: "boolean" }
+      }
+    }
+  }
+};
+var ajv5 = new import__202010.default({ strict: false });
+var isArgs = ajv5.compile(argsSchema);
+var isRequest = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["token", "verb", "args"],
+  properties: { token: { type: "string" }, verb: { type: "string" }, args: argsSchema }
+});
+var isResponse = ajv5.compile({
+  type: "object",
+  required: ["ok"],
+  properties: { ok: { type: "boolean" }, result: true, error: { type: "string" } }
+});
+var isSeatConfig = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["launchers"],
+  properties: {
+    launchers: {
+      type: "array",
+      minItems: 2,
+      maxItems: 2,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["seat", "actor", "lineage", "command"],
+        properties: { seat: { type: "string" }, actor: { type: "string" }, lineage: stringArray, command: stringArray }
+      }
+    }
+  }
+});
+var isSeatAnswer = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["choice", "rationale"],
+  properties: { choice: { type: "string" }, rationale: { type: "string" } }
+});
+var isVerifyConfig = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["command"],
+  properties: { command: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } } }
+});
+var isEventConfig = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["command", "timeout_ms"],
+  properties: {
+    command: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+    timeout_ms: { type: "integer", minimum: 1 }
+  }
+});
+var isEventAck = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["run", "key"],
+  properties: { run: { type: "string" }, key: { type: "string" } }
+});
+var isAuditProbeReply = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["probed", "progress"],
+  properties: {
+    probed: stringArray,
+    progress: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["delegate", "kind", "ref"],
+        properties: {
+          delegate: { type: "string" },
+          kind: { enum: ["commit", "push", "pr", "check", "store-report"] },
+          ref: { type: "string" }
+        }
+      }
+    }
+  }
+});
+var isAuditReplacementReply = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["key", "stood_down", "replacement", "expected_runtime_seconds"],
+  properties: {
+    key: { type: "string" },
+    stood_down: { const: true },
+    replacement: { type: "string" },
+    expected_runtime_seconds: { type: "integer", minimum: 1 }
+  }
+});
+var isAutonomyStatus = ajv5.compile({
+  type: "object",
+  required: ["autonomy"],
+  properties: {
+    autonomy: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mode", "missing"],
+      properties: { mode: { enum: ["autonomous", "guided"] }, missing: stringArray }
+    }
+  }
+});
+var isVersionManifest = ajv5.compile({
+  type: "object",
+  required: ["version"],
+  properties: { version: { type: "string", minLength: 1 } }
+});
+var isEffectConfig = ajv5.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["adapters"],
+  properties: {
+    adapters: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["effect", "read_back", "perform"],
+        properties: {
+          effect: { type: "string" },
+          read_back: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+          perform: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } }
+        }
+      }
+    }
+  }
+});
+
+// src/runner/snapshot.ts
+import { spawnSync as spawnSync4 } from "child_process";
+import { createHash as createHash8 } from "crypto";
+import { accessSync, constants, existsSync as existsSync32, lstatSync as lstatSync4, readFileSync as readFileSync25, readlinkSync as readlinkSync2, realpathSync as realpathSync8 } from "fs";
+import { delimiter as delimiter4, isAbsolute as isAbsolute12, join as join35, relative as relative9, resolve as resolve11 } from "path";
+
+// src/runner/path.ts
+import { lstatSync as lstatSync3, realpathSync as realpathSync7 } from "fs";
+import { delimiter as delimiter3, dirname as dirname15, isAbsolute as isAbsolute11, relative as relative8, resolve as resolve10 } from "path";
+function workerControlledPath(path, workerRoot) {
+  if (!isAbsolute11(path))
+    return true;
+  let existing = resolve10(path);
+  for (;; ) {
+    try {
+      lstatSync3(existing);
+      break;
+    } catch (cause) {
+      if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
+        return true;
+      const parent = dirname15(existing);
+      if (parent === existing)
+        return true;
+      existing = parent;
+    }
+  }
+  try {
+    const rel = relative8(workerRoot, realpathSync7(existing));
+    return rel === "" || !rel.startsWith("..") && !isAbsolute11(rel);
+  } catch {
+    return true;
+  }
+}
+function workerFreePath(path, workerRoot) {
+  const entries = (path ?? "").split(delimiter3).filter((entry) => entry.length > 0 && !workerControlledPath(entry, workerRoot));
+  return entries.length > 0 ? entries.join(delimiter3) : "/usr/bin:/bin";
+}
+
+// src/runner/snapshot.ts
+function resolveRunnerGit(workerRoot) {
+  const path = workerFreePath(process.env["PATH"], workerRoot);
+  for (const directory of path.split(delimiter4)) {
+    const candidate = join35(directory, "git");
+    try {
+      accessSync(candidate, constants.X_OK);
+      const binary = realpathSync8(candidate);
+      if (!workerControlledPath(binary, workerRoot))
+        return { binary, path, workerRoot, home: "/dev/null" };
+    } catch {}
+  }
+  throw new Error("runner cannot find a trusted git executable outside the worker root");
+}
+function failedGit(stderr) {
+  return { code: -1, stdout: new Uint8Array, text: "", stderr };
+}
+function gitProcess(context, project, args, timeoutMs = 1e4, input) {
+  const env = {
+    PATH: context.path,
+    HOME: context.home,
+    XDG_CONFIG_HOME: context.home,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    LC_ALL: "C"
+  };
+  const proc = spawnSync4(context.binary, [
+    "-c",
+    `safe.directory=${realpathSync8(project)}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.excludesFile=/dev/null",
+    ...args
+  ], { cwd: project, env, input, maxBuffer: 1 << 30, timeout: timeoutMs, killSignal: "SIGKILL" });
+  if (proc.error !== undefined) {
+    if ("code" in proc.error && proc.error.code === "ETIMEDOUT")
+      return failedGit(`runner git timed out after ${timeoutMs / 1000} seconds`);
+    return failedGit(`cannot run isolated git: ${proc.error.message}`);
+  }
+  const stdout = proc.stdout ?? new Uint8Array;
+  return {
+    code: proc.status ?? -1,
+    stdout,
+    text: new TextDecoder().decode(stdout).trim(),
+    stderr: (proc.stderr ?? "").toString().trim()
+  };
+}
+function checkGitControls(context, project) {
+  const entryPath = join35(project, ".git");
+  let paths;
+  try {
+    const entry = lstatSync4(entryPath);
+    if (entry.isDirectory())
+      paths = [join35(entryPath, "index"), join35(entryPath, "HEAD")];
+    else if (entry.isFile() && entry.size <= 4096) {
+      const pointer = /^gitdir: (.+)$/.exec(readFileSync25(entryPath, "utf8").trim())?.[1];
+      if (pointer === undefined)
+        return failedGit("runner git directory pointer is invalid");
+      const gitDir = isAbsolute12(pointer) ? pointer : resolve11(project, pointer);
+      paths = [join35(gitDir, "index"), join35(gitDir, "HEAD")];
+    } else
+      return failedGit("runner git directory entry is not regular");
+  } catch (cause) {
+    if (!(cause instanceof Error) || !("code" in cause) || cause.code !== "ENOENT")
+      return failedGit("runner cannot inspect git directory entry");
+    const controls = gitProcess(context, project, ["rev-parse", "--git-path", "index", "--git-path", "HEAD"], 2000);
+    if (controls.code !== 0)
+      return controls;
+    paths = controls.text.split(`
+`);
+  }
+  if (paths.length !== 2)
+    return failedGit("runner cannot locate git index and HEAD");
+  for (const [index, name] of ["index", "HEAD"].entries()) {
+    const path = paths[index];
+    if (path === undefined)
+      return failedGit(`runner cannot locate git ${name}`);
+    try {
+      if (!lstatSync4(isAbsolute12(path) ? path : resolve11(project, path)).isFile())
+        return failedGit(`runner git ${name} must be a regular file`);
+    } catch (cause) {
+      if (name === "index" && cause instanceof Error && "code" in cause && cause.code === "ENOENT")
+        continue;
+      return failedGit(`runner cannot inspect git ${name}`);
+    }
+  }
+  return null;
+}
+function runnerGit(context, project, args) {
+  const controls = checkGitControls(context, project);
+  if (controls !== null)
+    return controls;
+  return gitProcess(context, project, args);
+}
+function patchIdentity(context, project, baseRef, head) {
+  const base2 = runnerGit(context, project, ["merge-base", baseRef, head]);
+  if (base2.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(base2.text))
+    throw new Error(`cannot resolve verdict base: ${base2.stderr || base2.text}`);
+  const diff = runnerGit(context, project, ["diff", "--binary", base2.text, head, "--"]);
+  if (diff.code !== 0)
+    throw new Error(`cannot read committed patch: ${diff.stderr}`);
+  if (diff.stdout.length === 0)
+    return null;
+  const patch = gitProcess(context, project, ["patch-id", "--stable"], 1e4, diff.stdout);
+  const patchId = patch.text.split(" ")[0];
+  if (patch.code !== 0 || patchId === undefined || !/^[0-9a-f]{40}$/.test(patchId))
+    throw new Error(`cannot compute stable patch-id: ${patch.stderr || patch.text}`);
+  return patchId;
+}
+function ciConfigDrift(context, project, oldBase, newBase) {
+  if (oldBase === newBase)
+    return false;
+  const changed = runnerGit(context, project, ["diff", "--name-only", "-z", oldBase, newBase, "--"]);
+  if (changed.code !== 0)
+    throw new Error(`cannot compare CI configuration: ${changed.stderr}`);
+  return new TextDecoder().decode(changed.stdout).split("\x00").some((path) => path.startsWith(".github/workflows/") || path.startsWith(".github/actions/") || path.startsWith(".circleci/") || path.startsWith(".buildkite/") || [".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile", "bitbucket-pipelines.yml"].includes(path));
+}
+function mergeTreeClean(context, project, baseRef, head) {
+  const result = runnerGit(context, project, ["merge-tree", "--write-tree", baseRef, head]);
+  if (result.code > 1)
+    throw new Error(`cannot inspect merge tree: ${result.stderr}`);
+  return result.code === 0;
+}
+function cleanCommittedTree(context, project) {
+  const status2 = runnerGit(context, project, ["status", "--porcelain", "-z", "--untracked-files=all"]);
+  if (status2.code !== 0)
+    throw new Error(`cannot inspect committed worktree: ${status2.stderr}`);
+  return status2.stdout.length === 0;
+}
+function resolvedRevision(context, project, ref) {
+  const result = runnerGit(context, project, ["rev-parse", "--verify", ref]);
+  if (result.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(result.text))
+    throw new Error(`cannot resolve revision ${ref}: ${result.stderr || result.text}`);
+  return result.text;
+}
+function rawFile(context, project, path) {
+  try {
+    const at = join35(project, path);
+    const stat = lstatSync4(at);
+    if (stat.isSymbolicLink())
+      return `link:${readlinkSync2(at)}`;
+    if (stat.isFile())
+      return `file:${stat.mode & 73}:${createHash8("sha256").update(readFileSync25(at)).digest("hex")}`;
+    if (stat.isDirectory()) {
+      if (!existsSync32(join35(at, ".git")))
+        return "dir";
+      const tree = treeHash(context, at, []);
+      if (!(tree instanceof Object))
+        throw new Error(`runner snapshot cannot read embedded repository ${path}: ${tree}`);
+      const head = runnerGit(context, at, ["rev-parse", "--verify", "-q", "HEAD"]);
+      return `repo:${head.code === 0 ? head.text : "unborn"}:${tree.hash}`;
+    }
+    throw new Error(`runner snapshot refuses a non-file worktree entry: ${path}`);
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT")
+      return "missing";
+    throw cause;
+  }
+}
+function takeRunnerSnapshot(context, project, ignoreUntrackedDirs = []) {
+  const head = runnerGit(context, project, ["rev-parse", "HEAD"]);
+  if (head.code !== 0 || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(head.text))
+    return `${project} has no committed revision: ${head.stderr || head.text}`;
+  const tree = treeHash(context, project, ignoreUntrackedDirs);
+  if (!(tree instanceof Object))
+    return tree;
+  const remote = runnerGit(context, project, ["config", "--get", "remote.origin.url"]);
+  return {
+    repo: remote.code === 0 && remote.text !== "" ? remote.text : project,
+    revision: head.text,
+    diff_hash: tree.hash
+  };
+}
+function treeHash(context, project, ignoreUntrackedDirs) {
+  const tracked = runnerGit(context, project, ["ls-files", "--stage", "-z"]);
+  if (tracked.code !== 0)
+    return `cannot list tracked files: ${tracked.stderr}`;
+  const untracked = runnerGit(context, project, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (untracked.code !== 0)
+    return `cannot list untracked files: ${untracked.stderr}`;
+  const paths = new Map;
+  for (const row of new TextDecoder().decode(tracked.stdout).split("\x00")) {
+    if (row === "")
+      continue;
+    const tab = row.indexOf("\t");
+    if (tab < 0)
+      return "runner index contains an invalid tracked entry";
+    const path = row.slice(tab + 1);
+    const entries = paths.get(path) ?? [];
+    entries.push(row.slice(0, tab));
+    paths.set(path, entries);
+  }
+  for (const path of new TextDecoder().decode(untracked.stdout).split("\x00")) {
+    if (path === "" || ignoreUntrackedDirs.some((dir) => path === dir || path.startsWith(`${dir}/`)))
+      continue;
+    paths.set(path, ["untracked"]);
+  }
+  const digest = createHash8("sha256");
+  const root = realpathSync8(project);
+  for (const path of [...paths.keys()].toSorted((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))) {
+    const at = resolve11(project, path);
+    const rel = relative9(root, at);
+    if (path === "" || isAbsolute12(path) || rel === "" || rel.startsWith("..") || isAbsolute12(rel))
+      return "runner index contains a path outside the worker root";
+    digest.update(JSON.stringify([path, paths.get(path)?.toSorted(), rawFile(context, project, path)]));
+    digest.update(`
+`);
+  }
+  return { hash: `sha256:${digest.digest("hex")}` };
+}
+
+// src/runner/core.ts
+var STAGE = new Map([
+  [
+    "align.run",
+    { from: ["created", "grounding", "alignment"], to: "alignment", next: "bound.run", budget: "alignment_questions" }
+  ],
+  ["bound.run", { from: ["alignment", "planning"], to: "planning", next: "build.dispatch", budget: "tickets" }],
+  ["build.dispatch", { from: ["planning"], to: "building", next: "verify.record" }],
+  [
+    "review.full",
+    { from: ["verifying", "repairing"], to: "reviewing", next: "review.readiness", budget: "review_rounds" }
+  ],
+  ["review.readiness", { from: ["reviewing"], to: "ready-to-ship", next: "ship.prepare" }],
+  ["ship.prepare", { from: ["ready-to-ship"], to: "ready-to-ship", next: "pr-open" }]
+]);
+var LIMIT_NAME = new Map([
+  ["alignment_questions", "alignment-questions"],
+  ["tickets", "tickets"],
+  ["review_rounds", "review-rounds"]
+]);
+var HASH = /^sha256:[a-f0-9]{64}$/;
+var REVISION = /^[a-f0-9]{40}([a-f0-9]{24})?$/;
+var ID = /^[a-z0-9][a-z0-9-]*$/;
+var EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+var HUMAN_REFUSAL = "no";
+var HUMAN_RETRY = "retry";
+var EFFECTS = new Set([
+  "remote-push",
+  "pr-open",
+  "pr-comment",
+  "pr-thread-resolve",
+  "kb-publish",
+  "tracker-write",
+  "local-commit",
+  "branch-create"
+]);
+var EFFECT_ACTION = new Map([
+  ["remote-push", "push-branch"],
+  ["pr-open", "open-pr"],
+  ["pr-comment", "reply-pr-comment"],
+  ["pr-thread-resolve", "resolve-pr-thread"],
+  ["kb-publish", "publish-lesson"],
+  ["tracker-write", "approve-ticket"],
+  ["local-commit", "local-commit"],
+  ["branch-create", "local-commit"]
+]);
+var STOPPED = new Set(["needs-input", "cap-reached", "failed", "cancelled", "complete"]);
+var TERMINAL = new Set(["cap-reached", "failed", "cancelled", "complete"]);
+function isProgressKind(kind) {
+  return kind === "commit" || kind === "push" || kind === "pr" || kind === "check" || kind === "store-report";
+}
+var RUNTIME_SCRATCH_DIRS = [".omc", ".omx"];
+var ACTION_FOR = new Map([
+  ["spec-approval", "approve-spec"],
+  ["ticket-approval", "approve-ticket"],
+  ["build-go", "start-implementation-ticket"],
+  ["finding-adjudication", "adjudicate-finding"],
+  ["ship-pr", "open-pr"]
+]);
+function inside(path, root) {
+  const rel = relative10(root, path);
+  return rel === "" || !rel.startsWith("..") && !isAbsolute13(rel);
+}
+function canonicalFuturePath(path) {
+  let existing = resolve12(path);
+  const missing = [];
+  while (!existsSync33(existing)) {
+    missing.unshift(basename16(existing));
+    existing = dirname16(existing);
+  }
+  return join36(realpathSync9(existing), ...missing);
+}
+function digest(bytes) {
+  return `sha256:${createHash9("sha256").update(bytes).digest("hex")}`;
+}
+function verdictBase(run2) {
+  const baseRef = run2.charter.repos[0]?.base_branch;
+  if (baseRef === undefined)
+    throw new Error("charter names no verdict base branch");
+  return baseRef;
+}
+function approved(decision) {
+  const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
+  return decision.result.status === "complete" && choice === decision.card.approve && choice !== HUMAN_REFUSAL && choice !== HUMAN_RETRY;
+}
+function optionsFor(card) {
+  const options = card.options.map((option) => ({
+    id: option,
+    summary: option === HUMAN_REFUSAL ? `${option} (refuses ${card.operation})` : option === card.approve ? `${option} (approves ${card.operation})` : option === HUMAN_RETRY ? `${option} (reopens ${card.operation})` : `${option} (does not approve ${card.operation})`
+  }));
+  if (!card.options.includes(HUMAN_REFUSAL))
+    options.push({ id: HUMAN_REFUSAL, summary: `${HUMAN_REFUSAL} (refuses ${card.operation})` });
+  return options;
+}
+function unknownCard(run2, cardId) {
+  return unknownSelector("checkpoint card", cardId, Object.keys(run2.cards));
+}
+function charterDigest(charter) {
+  const blanked = structuredClone(charter);
+  blanked.immutability.hash = "";
+  return artifactHash(blanked);
+}
+
+class Runner {
+  stateDir;
+  workerRoot;
+  kitRoot;
+  covers;
+  decisionSchema;
+  ledgerSchema;
+  runSchema;
+  validateCharter;
+  enforceSnapshot;
+  sharedGitDir;
+  gitContext;
+  evidenceStore;
+  constructor(stateDir, workerRoot, kitRoot, enforceSnapshot = false) {
+    const requestedStateDir = canonicalFuturePath(stateDir);
+    this.workerRoot = realpathSync9(workerRoot);
+    this.kitRoot = realpathSync9(kitRoot);
+    if (inside(this.kitRoot, this.workerRoot))
+      throw new Error("runner bundle is worker-writable");
+    this.enforceSnapshot = enforceSnapshot;
+    if (inside(requestedStateDir, this.workerRoot))
+      throw new Error("runner state is worker-writable");
+    const gitContext = resolveRunnerGit(this.workerRoot);
+    const commonDir2 = runnerGit(gitContext, this.workerRoot, ["rev-parse", "--git-common-dir"]);
+    this.sharedGitDir = commonDir2.code === 0 ? realpathSync9(isAbsolute13(commonDir2.text) ? commonDir2.text : join36(this.workerRoot, commonDir2.text)) : null;
+    if (this.sharedGitDir !== null && inside(this.kitRoot, this.sharedGitDir))
+      throw new Error("runner bundle cannot use the shared git common directory");
+    if (this.sharedGitDir !== null && inside(requestedStateDir, this.sharedGitDir))
+      throw new Error("runner state cannot use the shared git common directory");
+    mkdirSync20(requestedStateDir, { recursive: true, mode: 448 });
+    this.stateDir = realpathSync9(requestedStateDir);
+    if (inside(this.stateDir, this.workerRoot))
+      throw new Error("runner state resolves into worker root");
+    if (this.sharedGitDir !== null && inside(this.stateDir, this.sharedGitDir))
+      throw new Error("runner state resolves into the shared git common directory");
+    this.gitContext = { ...gitContext, home: this.stateDir };
+    this.evidenceStore = new PrivateFileEvidenceStore(this.stateDir);
+    const schemas = compileSchemas(kitRoot);
+    if (schemas.issues.some((issue) => issue.severity === "error"))
+      throw new Error("runner cannot compile charter schema");
+    const charterSchema = schemas.ajv.getSchema("https://agent-kit.local/schemas/charter.schema.json");
+    const decisionSchema = schemas.ajv.getSchema("https://agent-kit.local/schemas/decision.schema.json");
+    const ledgerSchema = schemas.ajv.getSchema("https://agent-kit.local/schemas/run-ledger.schema.json");
+    if (charterSchema === undefined || decisionSchema === undefined || ledgerSchema === undefined)
+      throw new Error("runner cannot compile ledger schemas");
+    this.validateCharter = charterSchema;
+    this.decisionSchema = decisionSchema;
+    this.ledgerSchema = ledgerSchema;
+    this.runSchema = schemas.ajv.compile({
+      type: "object",
+      required: [
+        "id",
+        "charter_path",
+        "charter_hash",
+        "charter",
+        "start_authority",
+        "implementer",
+        "excluded_actors",
+        "revision",
+        "diff_hash",
+        "created_at",
+        "run_state",
+        "next_permitted_action",
+        "cards",
+        "evidence",
+        "decisions",
+        "budget_consumption",
+        "effects",
+        "events",
+        "open_escalation"
+      ],
+      properties: {
+        id: { type: "string" },
+        charter_path: { type: "string" },
+        charter_hash: { type: "string" },
+        charter: { $ref: "https://agent-kit.local/schemas/charter.schema.json" },
+        start_authority: { type: "object", required: ["kind", "grant"] },
+        implementer: { type: "string" },
+        excluded_actors: { type: "array", items: { type: "string" } },
+        revision: { type: "string" },
+        diff_hash: { type: "string" },
+        created_at: { type: "string" },
+        run_state: { type: "string" },
+        next_permitted_action: { type: ["string", "null"] },
+        cards: { type: "object" },
+        evidence: { type: "object" },
+        decisions: { type: "array" },
+        budget_consumption: { type: "object" },
+        effects: { type: "object" },
+        events: { type: "object" },
+        delegates: { type: "object" },
+        procedure: { type: "object", required: ["bundle_version", "hash"] },
+        verified_base_revision: { type: "string" },
+        verdict: { type: "object", required: ["head_revision", "patch_id", "verified_base_revision"] },
+        open_escalation: { type: ["object", "null"] },
+        cancellation: {
+          type: "object",
+          required: ["by", "rationale", "at"],
+          properties: { by: { type: "string" }, rationale: { type: "string" }, at: { type: "string" } }
+        }
+      }
+    });
+    const policySchema = schemas.ajv.compile({
+      type: "object",
+      required: ["operations"],
+      properties: {
+        operations: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["id", "authority"],
+            properties: {
+              id: { type: "string" },
+              authority: { type: "string" },
+              grant: { type: "object", required: ["covers"], properties: { covers: { type: "string" } } }
+            }
+          }
+        }
+      }
+    });
+    const policyValue = $parse(readFileSync26(join36(kitRoot, "policies", "invocation.yaml"), "utf8"));
+    if (!policySchema(policyValue))
+      throw new Error("runner cannot parse invocation policy");
+    this.covers = new Map;
+    for (const operation of policyValue.operations) {
+      if (operation.grant === undefined)
+        continue;
+      this.covers.set(operation.id, { authority: operation.authority, covers: operation.grant.covers });
+    }
+    this.covers.set("build.dispatch", { authority: "delegated-grant", covers: "build-go" });
+  }
+  path(id) {
+    if (!ID.test(id))
+      throw new Error("invalid run id");
+    return join36(this.stateDir, `${id}.json`);
+  }
+  assertPrivatePath(path) {
+    const canonical = canonicalFuturePath(path);
+    if (inside(canonical, this.workerRoot))
+      throw new Error("path is inside the worker root");
+    if (this.sharedGitDir !== null && inside(canonical, this.sharedGitDir))
+      throw new Error("path is inside the shared git common directory");
+  }
+  observedSnapshot() {
+    if (!this.enforceSnapshot)
+      return null;
+    const snapshot = takeRunnerSnapshot(this.gitContext, this.workerRoot, RUNTIME_SCRATCH_DIRS);
+    if (snapshot instanceof Object)
+      return snapshot;
+    throw new Error(`runner cannot observe worker revision: ${snapshot}`);
+  }
+  current(run2) {
+    const observed = this.observedSnapshot();
+    return observed === null || observed.revision === run2.revision && observed.diff_hash === run2.diff_hash;
+  }
+  governingProcedure() {
+    const manifestPath = [
+      "package.json",
+      ".codex-plugin/plugin.json",
+      ".claude-plugin/plugin.json",
+      ".kimi-plugin/plugin.json",
+      ".factory-plugin/plugin.json"
+    ].map((path) => join36(this.kitRoot, path)).find((path) => existsSync33(path));
+    if (manifestPath === undefined)
+      throw new Error("recorded bundle version is unavailable");
+    const manifest = JSON.parse(readFileSync26(manifestPath, "utf8"));
+    if (!isVersionManifest(manifest))
+      throw new Error("recorded bundle version is invalid");
+    const files = ["skills/autopilot/SKILL.md", "skills/autopilot/references/checkpoints.md"];
+    const bytes = files.map((file) => `${file}\x00${readFileSync26(join36(this.kitRoot, file), "utf8")}`).join("\x00");
+    return { bundle_version: manifest.version, hash: `sha256:${sha256Hex(bytes)}` };
+  }
+  load(id) {
+    const runValue = JSON.parse(readFileSync26(this.path(id), "utf8"));
+    if (!this.runSchema(runValue))
+      throw new Error(`runner state is invalid: ${JSON.stringify(this.runSchema.errors)}`);
+    const run2 = runValue;
+    if (run2.run_state === "cancelled")
+      return run2;
+    const charterValue = JSON.parse(readFileSync26(run2.charter_path, "utf8"));
+    if (!this.validateCharter(charterValue))
+      throw new Error("charter no longer validates");
+    const charter = charterValue;
+    if (charterDigest(charter) !== run2.charter_hash || JSON.stringify(charter) !== JSON.stringify(run2.charter))
+      throw new Error("charter changed; this run cannot resume");
+    return run2;
+  }
+  save(run2) {
+    const entries = run2.decisions.map((decision) => {
+      const doc = this.decisionArtifact(run2, decision);
+      if (!this.decisionSchema(doc))
+        throw new Error(`runner decision artifact invalid: ${JSON.stringify(this.decisionSchema.errors)}`);
+      this.atomic(join36(this.stateDir, `${run2.id}-${decision.card.id}.decision.json`), doc);
+      const outcome = (decision.answer?.refusal ?? decision.result).status === "complete" ? "ruling" : "escalation";
+      const entry = {
+        checkpoint: this.covers.get(decision.card.operation)?.covers ?? "align-answer",
+        decision: { id: decision.card.id, schema: "decision", hash: artifactHash(doc) },
+        outcome,
+        ruling: {
+          what: decision.card.judgments[0]?.choice ?? "unavailable",
+          why: "Independent seats agreed under a validated grant",
+          cost_if_wrong: "The approved artifact would need correction"
+        },
+        answered: decision.answer !== undefined
+      };
+      if (outcome === "ruling")
+        return { checkpoint: entry.checkpoint, decision: entry.decision, outcome: entry.outcome, ruling: entry.ruling };
+      const answer2 = decision.answer;
+      const escalation = {
+        checkpoint: entry.checkpoint,
+        decision: entry.decision,
+        outcome: entry.outcome,
+        answered: entry.answered
+      };
+      if (answer2 !== undefined)
+        escalation.answer = { choice: answer2.choice, by: answer2.by, rationale: answer2.rationale, at: answer2.at };
+      return escalation;
+    });
+    const ledger = {
+      schema: "run-ledger",
+      schema_version: 1,
+      id: `${run2.id}-ledger`,
+      project: run2.charter.project,
+      run_id: run2.id,
+      created_by: { role: "runner" },
+      inputs: [{ id: run2.charter.id, hash: run2.charter_hash }],
+      source_revision: {
+        repo: run2.charter.repos[0]?.repo ?? "unavailable",
+        revision: run2.revision,
+        diff_hash: run2.diff_hash
+      },
+      created_at: run2.created_at,
+      status: run2.run_state,
+      cancellation: run2.cancellation ?? null,
+      charter: { hash: run2.charter_hash },
+      entries
+    };
+    if (!this.ledgerSchema(ledger))
+      throw new Error(`runner ledger invalid: ${JSON.stringify(this.ledgerSchema.errors)}`);
+    this.atomic(join36(this.stateDir, `${run2.id}.ledger.json`), ledger);
+    const target = this.path(run2.id);
+    this.atomic(target, run2);
+  }
+  atomic(target, value) {
+    const partial = `${target}.partial-${process.pid}`;
+    writeFileSync13(partial, `${JSON.stringify(value, null, 2)}
+`, { mode: 384 });
+    renameSync5(partial, target);
+  }
+  decisionArtifact(run2, decision) {
+    const { card, at } = decision;
+    const result = decision.answer?.refusal ?? decision.result;
+    const charterSeats = run2.charter.supervisors.seats;
+    const evidence = card.evidence.flatMap((id) => {
+      const found = run2.evidence[id];
+      return found === undefined ? [] : [{ ref: id, kind: "receipt", hash: found.hash }];
+    });
+    const charterPermits = this.covers.get(card.operation)?.covers === card.grant.covers && card.grant.charter_hash === run2.charter_hash;
+    const declaredCheckpoint = this.covers.get(card.operation)?.covers ?? "align-answer";
+    const checkpointInCharter = run2.charter.checkpoints.includes(declaredCheckpoint);
+    const evidencePresent = evidence.length === card.evidence.length && card.evidence.length > 0;
+    const seatsIndependent = card.judgments.length === 2 && new Set(card.judgments.map((j) => j.actor)).size === 2;
+    const checks = {
+      charter_permits: charterPermits,
+      required_evidence_present: evidencePresent,
+      seats_independent: seatsIndependent,
+      checkpoint_in_charter: checkpointInCharter
+    };
+    const failedChecks = Object.entries(checks).filter(([, value]) => !value).map(([key]) => key);
+    const decided = result.status === "complete";
+    const escalation = result.escalation ?? {
+      need: "Runner cap was reached",
+      options: optionsFor(card),
+      tried: [{ ref: card.evidence[0] ?? run2.charter_hash, kind: "receipt" }],
+      default: HUMAN_REFUSAL,
+      charter_rule: `runner:budget/${result.cap?.limit ?? "unknown"}`,
+      blocked: [card.id],
+      operation: card.operation,
+      approve: card.approve
+    };
+    const document = {
+      schema: "decision",
+      schema_version: 1,
+      id: card.id,
+      project: run2.charter.project,
+      run_id: run2.id,
+      created_by: { role: "runner" },
+      inputs: [{ id: run2.charter.id, hash: run2.charter_hash }],
+      source_revision: {
+        repo: run2.charter.repos[0]?.repo ?? "unavailable",
+        revision: decision.revision,
+        diff_hash: decision.diff_hash
+      },
+      created_at: at,
+      status: decided ? "ruled" : "blocked",
+      checkpoint: declaredCheckpoint,
+      question: card.question,
+      options: card.options.map((option) => ({ id: option, summary: option })),
+      evidence,
+      required_evidence: card.evidence,
+      affected_artifacts: [{ id: `${card.id}-subject`, hash: card.artifact_hash }],
+      charter: { hash: run2.charter_hash, rule: `charter:checkpoints/${declaredCheckpoint}`, grant: card.grant },
+      seats: charterSeats.map((seat) => ({
+        id: seat.id,
+        filled_by: seat.filled_by,
+        independent: true,
+        may_implement: false
+      })),
+      judgments: card.judgments.length === 0 ? undefined : card.judgments.map((j) => ({
+        seat: j.seat,
+        by: j.actor,
+        choice: j.choice,
+        rationale: j.rationale,
+        unresolved_assumptions: [],
+        escalate: false,
+        saw_other_judgment: false
+      })),
+      agreement: card.judgments.length === 2 && card.judgments[0]?.choice === card.judgments[1]?.choice,
+      authority_check: {
+        deterministic: true,
+        ...checks,
+        both_judgments_returned: card.judgments.length === 2,
+        result: failedChecks.length === 0 ? "pass" : "fail",
+        failed_checks: failedChecks.length === 0 ? undefined : failedChecks
+      },
+      ruling: {
+        outcome: decided ? "decided" : "blocked",
+        chosen_option: decided ? card.judgments[0]?.choice : null,
+        at,
+        recorded_by: "runner",
+        note: result.status
+      },
+      grants_issued: decided && card.judgments[0]?.choice === card.approve ? [card.grant] : [],
+      escalation: decided ? undefined : escalation,
+      result
+    };
+    return document;
+  }
+  ledger(id) {
+    this.save(this.load(id));
+    const value = JSON.parse(readFileSync26(join36(this.stateDir, `${id}.ledger.json`), "utf8"));
+    if (!this.ledgerSchema(value))
+      throw new Error("runner ledger no longer validates");
+    return value;
+  }
+  packet(id, cardId) {
+    const run2 = this.load(id);
+    const card = run2.cards[cardId];
+    if (card === undefined)
+      throw new Error(unknownCard(run2, cardId));
+    return {
+      run: run2.id,
+      charter_hash: run2.charter_hash,
+      revision: run2.revision,
+      diff_hash: run2.diff_hash,
+      card: {
+        id: card.id,
+        operation: card.operation,
+        question: card.question,
+        options: card.options,
+        approve: card.approve,
+        artifact_hash: card.artifact_hash,
+        evidence: card.evidence.map((evidenceId) => ({ id: evidenceId, hash: run2.evidence[evidenceId]?.hash ?? null }))
+      }
+    };
+  }
+  start(id, charterPath, implementer, revision, standingGrant, excludedActors = []) {
+    if (!REVISION.test(revision))
+      throw new Error("revision must be a full version-control object id");
+    const observed = this.observedSnapshot();
+    if (observed !== null && observed.revision !== revision)
+      throw new Error("start revision differs from worker checkout");
+    const source = realpathSync9(charterPath);
+    this.assertPrivatePath(source);
+    const charterValue = JSON.parse(readFileSync26(source, "utf8"));
+    if (!this.validateCharter(charterValue))
+      throw new Error(`invalid charter: ${JSON.stringify(this.validateCharter.errors)}`);
+    const charter = charterValue;
+    const immutable = charter.immutability;
+    const hash = charterDigest(charter);
+    if (charter.status !== "active" || immutable.hash !== hash || realpathSync9(immutable.location) !== source)
+      throw new Error("charter is inactive, moved or has a mismatched hash");
+    if (!charter.approvals.some((a) => a.by === "human" && a.authority === "explicit" && a.artifact_hash === hash))
+      throw new Error("active charter lacks a human approval bound to its hash");
+    for (const sensitive of charter.sensitive_grants ?? []) {
+      const approval = sensitive.approval;
+      if (approval.artifact_hash !== hash || approval.by !== "human" || approval.authority !== "explicit")
+        throw new Error("sensitive grant lacks human approval bound to this charter");
+    }
+    if (charter.run_id !== id)
+      throw new Error("run id does not match charter");
+    if (!["runner-grants", "trusted-evidence", "independent-context"].every((capability) => charter.allowed_capabilities.includes(capability)))
+      throw new Error("standing start requires charter-approved runner grants, trusted evidence and independent context");
+    if (standingGrant.charter_hash !== hash || standingGrant.run_id !== id || standingGrant.covers !== "autopilot.start" || standingGrant.controller !== "firstmate" || !charter.standing_grants?.some((entry) => entry.covers === standingGrant.covers && entry.controller === standingGrant.controller))
+      throw new Error("standing grant is absent, forged or unbound to the approved charter");
+    try {
+      this.load(id);
+      throw new Error("run already exists");
+    } catch (cause) {
+      if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT"))
+        throw cause;
+    }
+    const run2 = {
+      id,
+      charter_path: source,
+      charter_hash: hash,
+      charter,
+      start_authority: { kind: "standing-grant", grant: standingGrant },
+      implementer,
+      excluded_actors: [...new Set([implementer, ...excludedActors])],
+      revision,
+      diff_hash: observed?.diff_hash ?? `sha256:${sha256Hex("")}`,
+      created_at: new Date().toISOString(),
+      run_state: "created",
+      next_permitted_action: "align.run",
+      cards: {},
+      evidence: {},
+      decisions: [],
+      budget_consumption: {},
+      effects: {},
+      events: {},
+      delegates: {},
+      procedure: this.governingProcedure(),
+      open_escalation: null
+    };
+    this.save(run2);
+    return run2;
+  }
+  status(id) {
+    return this.load(id);
+  }
+  collect(id, evidenceId, sourcePath, revision, kind) {
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new gate evidence can be collected");
+    if (!ID.test(evidenceId))
+      throw new Error("invalid evidence id");
+    const source = realpathSync9(sourcePath);
+    try {
+      this.assertPrivatePath(source);
+    } catch {
+      throw new Error("worker-written evidence is not trusted");
+    }
+    if (revision !== run2.revision || !this.current(run2))
+      throw new Error("evidence is stale for current revision");
+    const bytes = readFileSync26(source);
+    const ref = this.evidenceStore.put(id, evidenceId, bytes);
+    const hash = digest(bytes);
+    if (digest(this.evidenceStore.read(ref)) !== hash)
+      throw new Error("evidence store read-back did not match");
+    const evidence = { id: evidenceId, hash, revision, diff_hash: run2.diff_hash, kind, ref };
+    run2.evidence[evidenceId] = evidence;
+    this.save(run2);
+    return evidence;
+  }
+  revision(id, revision) {
+    if (!REVISION.test(revision))
+      throw new Error("revision must be a full version-control object id");
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; revision cannot advance");
+    const observed = this.observedSnapshot();
+    if (observed !== null && observed.revision !== revision)
+      throw new Error("revision differs from worker checkout");
+    const diffHash = observed?.diff_hash ?? run2.diff_hash;
+    const changed = run2.revision !== revision || run2.diff_hash !== diffHash;
+    let reuse = false;
+    const verdict = run2.verdict;
+    if (changed && verdict !== undefined && verdict.invalidated_by === undefined && verdict.head_revision === run2.revision && run2.run_state === "ready-to-ship") {
+      const reason = this.verdictInvalidation(run2, verdict, revision);
+      if (reason === null || reason === "merge-conflict") {
+        reuse = true;
+        const oldRevision = run2.revision;
+        const oldDiff = run2.diff_hash;
+        for (const evidence of Object.values(run2.evidence)) {
+          if (evidence.revision === oldRevision && evidence.diff_hash === oldDiff) {
+            evidence.revision = revision;
+            evidence.diff_hash = diffHash;
+          }
+        }
+        for (const decision of run2.decisions) {
+          if (decision.revision === oldRevision && decision.diff_hash === oldDiff) {
+            decision.revision = revision;
+            decision.diff_hash = diffHash;
+          }
+        }
+        verdict.reused_from = oldRevision;
+        verdict.head_revision = revision;
+      }
+      if (reason !== null)
+        this.invalidate(run2, verdict, reason);
+    }
+    run2.revision = revision;
+    run2.diff_hash = diffHash;
+    if (changed && !reuse && ["verifying", "reviewing", "ready-to-ship", "pr-open"].includes(run2.run_state)) {
+      run2.run_state = "repairing";
+      run2.next_permitted_action = "verify.record";
+    }
+    this.save(run2);
+    return run2;
+  }
+  bindVerdict(id) {
+    const run2 = this.load(id);
+    if (run2.run_state !== "ready-to-ship" || !this.current(run2) || !run2.decisions.some((decision) => decision.card.operation === "review.full" && approved(decision)) || !run2.decisions.some((decision) => decision.card.operation === "review.readiness" && approved(decision)))
+      throw new Error("a completed review round and current head are required before verdict binding");
+    const baseRef = verdictBase(run2);
+    const verifiedBase = run2.verified_base_revision;
+    if (verifiedBase === undefined)
+      throw new Error("verification recorded no trunk base");
+    if (!cleanCommittedTree(this.gitContext, this.workerRoot))
+      throw new Error("verdict needs a clean committed worktree");
+    if (!mergeTreeClean(this.gitContext, this.workerRoot, baseRef, run2.revision))
+      throw new Error("merge-tree reports a conflict");
+    const patchId = patchIdentity(this.gitContext, this.workerRoot, baseRef, run2.revision);
+    if (patchId === null)
+      throw new Error("verdict needs a nonempty committed patch");
+    run2.verdict = { head_revision: run2.revision, patch_id: patchId, verified_base_revision: verifiedBase };
+    this.save(run2);
+    return run2.verdict;
+  }
+  verdictInvalidation(run2, verdict, head) {
+    const baseRef = verdictBase(run2);
+    const clean2 = cleanCommittedTree(this.gitContext, this.workerRoot);
+    if ((clean2 ? patchIdentity(this.gitContext, this.workerRoot, baseRef, head) : null) !== verdict.patch_id)
+      return "patch-changed";
+    const trunk = resolvedRevision(this.gitContext, this.workerRoot, baseRef);
+    if (ciConfigDrift(this.gitContext, this.workerRoot, verdict.verified_base_revision, trunk))
+      return "ci-config-drift";
+    return mergeTreeClean(this.gitContext, this.workerRoot, baseRef, head) ? null : "merge-conflict";
+  }
+  invalidate(run2, verdict, reason) {
+    verdict.invalidated_by = reason;
+    if (reason === "merge-conflict")
+      return;
+    run2.run_state = "repairing";
+    run2.next_permitted_action = "verify.record";
+  }
+  requireCurrentVerdict(run2) {
+    const verdict = run2.verdict;
+    if (verdict === undefined) {
+      if (run2.charter.audit_cadence_seconds === undefined)
+        return;
+      throw new Error("current patch verdict required before unattended ship");
+    }
+    if (verdict.invalidated_by === undefined && verdict.head_revision === run2.revision) {
+      const reason = this.verdictInvalidation(run2, verdict, run2.revision);
+      if (reason === null)
+        return;
+      this.invalidate(run2, verdict, reason);
+      this.save(run2);
+      if (reason !== "merge-conflict")
+        throw new Error(`verdict invalidated by ${reason}; verification is required`);
+    }
+    if (verdict.invalidated_by === "merge-conflict")
+      throw new Error(`verdict invalidated by merge-conflict; rebase onto ${verdictBase(run2)} is required`);
+    throw new Error("current patch verdict required before unattended ship");
+  }
+  syncRevision(id) {
+    const observed = this.observedSnapshot();
+    if (observed === null)
+      throw new Error("runner checkout observation is unavailable");
+    return this.revision(id, observed.revision);
+  }
+  recordOutput(id, evidenceId, output, kind) {
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new gate evidence can be recorded");
+    if (!ID.test(evidenceId) || !this.current(run2))
+      throw new Error("runner output cannot be recorded for a stale snapshot");
+    const hash = digest(output);
+    const existing = run2.evidence[evidenceId];
+    if (existing !== undefined) {
+      if (existing.hash !== hash || existing.revision !== run2.revision || existing.diff_hash !== run2.diff_hash)
+        throw new Error("evidence id was reused for different output");
+      return existing;
+    }
+    const ref = this.evidenceStore.put(id, evidenceId, output);
+    if (digest(this.evidenceStore.read(ref)) !== hash)
+      throw new Error("evidence store read-back did not match");
+    const evidence = { id: evidenceId, hash, revision: run2.revision, diff_hash: run2.diff_hash, kind, ref };
+    run2.evidence[evidenceId] = evidence;
+    this.save(run2);
+    return evidence;
+  }
+  prepare(id, card) {
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new checkpoint can be prepared");
+    if (card.operation === "ship.prepare")
+      this.requireCurrentVerdict(run2);
+    if (!ID.test(card.id) || !HASH.test(card.artifact_hash) || !card.question || card.options.length < 2 || card.options.length > 6 || card.options.length === 6 && !card.options.includes(HUMAN_REFUSAL) || card.options.some((option) => !ID.test(option)) || new Set(card.options).size !== card.options.length || !card.options.includes(card.approve) || card.approve === HUMAN_REFUSAL || card.approve === HUMAN_RETRY)
+      throw new Error("invalid checkpoint card: options must leave room for refusal and name a non-reserved approving option");
+    const existing = run2.cards[card.id];
+    if (existing !== undefined) {
+      if (JSON.stringify({ ...existing, judgments: [] }) !== JSON.stringify({ ...card, judgments: [] }))
+        throw new Error("checkpoint card changed");
+      return existing;
+    }
+    if (run2.decisions.some((d) => d.result.status === "complete" && !approved(d) && d.answer?.choice !== "retry" && d.card.operation === card.operation && d.card.artifact_hash === card.artifact_hash && d.revision === run2.revision && d.diff_hash === run2.diff_hash))
+      throw new Error("a non-approving ruling settled this artifact at this revision; revise it before preparing another");
+    const prepared = { ...card, judgments: [] };
+    run2.cards[card.id] = prepared;
+    this.save(run2);
+    return prepared;
+  }
+  judge(id, cardId, seat, actor, dispatch2, choice, inputDispatches, lineage = [actor], rationale = "Independent supervisor judgment") {
+    const run2 = this.load(id);
+    const card = run2.cards[cardId];
+    if (card === undefined)
+      throw new Error(unknownCard(run2, cardId));
+    const prior = card.judgments.find((judgment) => judgment.seat === seat);
+    if (prior !== undefined) {
+      if (prior.actor === actor && prior.dispatch === dispatch2 && prior.choice === choice && prior.rationale === rationale && JSON.stringify(prior.lineage) === JSON.stringify(lineage) && JSON.stringify(prior.input_dispatches) === JSON.stringify(inputDispatches))
+        return card;
+      throw new Error("seat judgment changed after first submission");
+    }
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new judgment can be submitted");
+    const seats = run2.charter.supervisors.seats.map((s) => s.id);
+    if (!seats.includes(seat) || !card.options.includes(choice) || run2.excluded_actors.some((excluded) => actor === excluded || lineage.includes(excluded)) || !ID.test(dispatch2) || !lineage.includes(actor))
+      throw new Error("invalid or excluded seat");
+    if (card.judgments.some((j) => j.seat === seat || j.actor === actor || j.dispatch === dispatch2 || inputDispatches.includes(j.dispatch)))
+      throw new Error("seat is not independently dispatched");
+    if (inputDispatches.length > 0)
+      throw new Error("seat input includes another dispatch");
+    card.judgments.push({ seat, actor, dispatch: dispatch2, choice, rationale, input_dispatches: inputDispatches, lineage });
+    this.save(run2);
+    return card;
+  }
+  refuse(run2, card, rule, reason) {
+    const escalation = {
+      need: reason,
+      options: optionsFor(card),
+      tried: [{ ref: card.evidence[0] ?? run2.charter_hash, kind: "receipt" }],
+      default: HUMAN_REFUSAL,
+      charter_rule: rule,
+      blocked: [card.id],
+      operation: card.operation,
+      approve: card.approve
+    };
+    const result = {
+      operation: card.operation,
+      status: "needs-input",
+      next_permitted_action: null,
+      escalation
+    };
+    run2.resume = { run_state: run2.run_state, next_permitted_action: run2.next_permitted_action };
+    run2.run_state = "needs-input";
+    run2.next_permitted_action = null;
+    run2.open_escalation = escalation;
+    run2.decisions.push({
+      card,
+      result,
+      at: new Date().toISOString(),
+      revision: run2.revision,
+      diff_hash: run2.diff_hash
+    });
+    this.save(run2);
+    return result;
+  }
+  authorize(id, cardId) {
+    const run2 = this.load(id);
+    const prior = run2.decisions.find((d) => d.card.id === cardId);
+    if (prior !== undefined)
+      return prior.result;
+    const card = run2.cards[cardId];
+    if (card === undefined)
+      throw new Error(unknownCard(run2, cardId));
+    if (card.operation === "ship.prepare")
+      this.requireCurrentVerdict(run2);
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new checkpoint can be decided");
+    const step = STAGE.get(card.operation);
+    if (step === undefined || !step.from.includes(run2.run_state) || run2.next_permitted_action !== card.operation)
+      throw new Error(`${card.operation} is not the next permitted action; next is ${run2.next_permitted_action}`);
+    const policy = this.covers.get(card.operation);
+    if (policy === undefined || policy.authority === "explicit" || policy.authority === "model" || policy.covers !== card.grant.covers || card.grant.charter_hash !== run2.charter_hash || card.grant.decision !== undefined && card.grant.decision !== card.id)
+      return this.refuse(run2, card, "runner:grant", "Grant does not cover this delegated operation or charter");
+    const charter = run2.charter;
+    if (!charter.allowed_capabilities.includes("runner-grants") || !charter.allowed_capabilities.includes("trusted-evidence"))
+      return this.refuse(run2, card, "charter:allowed_capabilities", "Charter does not allow runner grants and trusted evidence");
+    if (charter.audit_cadence_seconds !== undefined && !charter.allowed_capabilities.includes("event-delivery"))
+      return this.refuse(run2, card, "charter:allowed_capabilities", "Charter does not allow unattended event delivery");
+    const checkpoints = charter.checkpoints;
+    const action = ACTION_FOR.get(card.grant.covers);
+    if (!checkpoints.includes(card.grant.covers) || charter.denied_actions.includes(card.grant.covers) || action !== undefined && !charter.default_grants.includes(action))
+      return this.refuse(run2, card, "charter:checkpoints", "Checkpoint is outside the approved charter");
+    if (card.operation === "bound.run" && card.emits_tickets && (!checkpoints.includes("ticket-approval") || !charter.default_grants.includes("approve-ticket") || !card.additional_grants?.some((grant2) => grant2.charter_hash === run2.charter_hash && grant2.covers === "ticket-approval")))
+      return this.refuse(run2, card, "policy:invocation/bound.run", "Emitting tickets requires a separate ticket-approval grant");
+    if (card.human_experience)
+      return this.refuse(run2, card, "policy:prototype-human-experience-needs-human", "A named human must judge the experience");
+    if (!this.current(run2))
+      return this.refuse(run2, card, "runner:evidence-freshness", "Worker revision or diff changed; sync and collect new evidence");
+    if (card.evidence.length === 0 || card.evidence.some((e) => {
+      const found = run2.evidence[e];
+      return found === undefined || found.revision !== run2.revision || found.diff_hash !== run2.diff_hash || digest(this.evidenceStore.read(found.ref)) !== found.hash;
+    }))
+      return this.refuse(run2, card, "runner:trusted-evidence", "Required trusted evidence is missing or stale");
+    if (card.operation === "ship.prepare" && !card.evidence.some((e) => run2.evidence[e]?.kind === "verify"))
+      return this.refuse(run2, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+    const reached = this.capReached(run2, step);
+    if (reached !== null)
+      return this.cap(run2, card, reached.limit, reached.value);
+    const lastHumanRuling = run2.decisions.findLast((decision) => decision.card.operation === card.operation && decision.answer !== undefined);
+    if (lastHumanRuling?.answer !== undefined && lastHumanRuling.answer.choice !== lastHumanRuling.card.approve)
+      return this.refuse(run2, card, "runner:human-ruling", "A previous human refusal keeps this operation human-gated until a human approves it");
+    return null;
+  }
+  capReached(run2, step) {
+    const elapsed = (Date.now() - Date.parse(run2.created_at)) / 60000;
+    const limits = run2.charter.limits;
+    if (elapsed >= limits.elapsed_minutes)
+      return { limit: "elapsed-minutes", value: limits.elapsed_minutes };
+    if (step.budget !== undefined) {
+      const used = run2.budget_consumption[step.budget] ?? 0;
+      const cap = step.budget === "alignment_questions" ? limits.alignment_questions : step.budget === "tickets" ? limits.tickets : limits.review_rounds;
+      if (cap !== undefined && used >= cap)
+        return { limit: LIMIT_NAME.get(step.budget) ?? step.budget, value: cap };
+    }
+    return null;
+  }
+  decide(id, cardId, seatFailures = []) {
+    const early = this.authorize(id, cardId);
+    if (early !== null)
+      return early;
+    const run2 = this.load(id);
+    const card = run2.cards[cardId];
+    if (card === undefined)
+      throw new Error(unknownCard(run2, cardId));
+    const step = STAGE.get(card.operation);
+    if (step === undefined)
+      throw new Error("phase is not declared");
+    if (seatFailures.length > 0)
+      return this.refuse(run2, card, "runner:seat-independence", `Supervisor seat dispatch failed: ${seatFailures.join("; ")}`.slice(0, 2000));
+    const charter = run2.charter;
+    const seats = charter.supervisors.seats.map((s) => s.id);
+    if (card.judgments.length !== 2 || new Set(card.judgments.map((j) => j.actor)).size !== 2 || new Set(card.judgments.map((j) => j.dispatch)).size !== 2 || card.judgments.some((j) => !seats.includes(j.seat) || run2.excluded_actors.some((excluded) => j.actor === excluded || j.lineage.includes(excluded)) || j.input_dispatches.length > 0))
+      return this.refuse(run2, card, "runner:seat-independence", "Two independent supervisor dispatches are required");
+    if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
+      return this.refuse(run2, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
+    const approve = card.judgments[0]?.choice === card.approve;
+    const result = {
+      operation: card.operation,
+      status: "complete",
+      next_permitted_action: approve ? step.next : card.operation
+    };
+    run2.decisions.push({
+      card,
+      result,
+      at: new Date().toISOString(),
+      revision: run2.revision,
+      diff_hash: run2.diff_hash
+    });
+    if (approve)
+      this.advance(run2, step);
+    this.save(run2);
+    return result;
+  }
+  answer(id, cardId, choice, by, rationale) {
+    const run2 = this.load(id);
+    const decision = run2.decisions.find((d) => d.card.id === cardId);
+    const resume = run2.resume;
+    if (run2.run_state !== "needs-input" || !run2.open_escalation?.blocked.includes(cardId) || decision?.result.status !== "needs-input" || resume === undefined)
+      throw new Error("card has no open escalation to answer");
+    const card = decision.card;
+    if (choice !== HUMAN_REFUSAL && !card.options.includes(choice) || !ID.test(by) || !rationale.trim())
+      throw new Error("answer must name the runner refusal or one of the card's options, who answered and why");
+    if (run2.excluded_actors.includes(by))
+      throw new Error("an excluded actor cannot answer the escalation");
+    const step = STAGE.get(card.operation);
+    if (step === undefined)
+      throw new Error("phase is not declared");
+    run2.run_state = resume.run_state;
+    run2.next_permitted_action = resume.next_permitted_action;
+    const approving = choice === card.approve && choice !== HUMAN_REFUSAL && choice !== HUMAN_RETRY;
+    const reached = approving ? this.capReached(run2, step) : null;
+    if (reached !== null) {
+      run2.run_state = "cap-reached";
+      run2.next_permitted_action = null;
+    } else if (approving)
+      this.advance(run2, step);
+    const result = reached === null ? { operation: card.operation, status: "complete", next_permitted_action: run2.next_permitted_action } : { operation: card.operation, status: "cap-reached", next_permitted_action: null, cap: reached };
+    decision.answer = { by, choice, rationale, at: new Date().toISOString(), refusal: decision.result };
+    decision.result = result;
+    run2.open_escalation = null;
+    delete run2.resume;
+    this.save(run2);
+    return result;
+  }
+  cancel(id, by, rationale) {
+    if (!ID.test(by) || !rationale.trim())
+      throw new Error("cancel needs a supervisor actor and rationale");
+    const runValue = JSON.parse(readFileSync26(this.path(id), "utf8"));
+    if (!this.runSchema(runValue))
+      throw new Error("runner state is invalid and cannot be cancelled");
+    const run2 = runValue;
+    if (run2.excluded_actors.includes(by))
+      throw new Error("an excluded actor cannot cancel the run");
+    if (run2.run_state === "complete")
+      throw new Error("completed run cannot be cancelled");
+    if (run2.run_state === "cancelled")
+      return run2;
+    run2.run_state = "cancelled";
+    run2.next_permitted_action = null;
+    run2.open_escalation = null;
+    run2.cancellation = { by, rationale, at: new Date().toISOString() };
+    delete run2.resume;
+    this.save(run2);
+    return run2;
+  }
+  advance(run2, step) {
+    if (step.budget !== undefined) {
+      const used = run2.budget_consumption[step.budget] ?? 0;
+      const limits = run2.charter.limits;
+      const cap = step.budget === "alignment_questions" ? limits.alignment_questions : step.budget === "tickets" ? limits.tickets : limits.review_rounds;
+      if (cap !== undefined)
+        run2.budget_consumption[step.budget] = used + 1;
+    }
+    run2.run_state = step.to;
+    run2.next_permitted_action = step.next;
+  }
+  cap(run2, card, limit, value) {
+    const result = {
+      operation: card.operation,
+      status: "cap-reached",
+      next_permitted_action: null,
+      cap: { limit, value }
+    };
+    run2.run_state = "cap-reached";
+    run2.next_permitted_action = null;
+    run2.decisions.push({
+      card,
+      result,
+      at: new Date().toISOString(),
+      revision: run2.revision,
+      diff_hash: run2.diff_hash
+    });
+    this.save(run2);
+    return result;
+  }
+  charge(id, limit, amount, subject) {
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new budget charge is allowed");
+    if (!Number.isInteger(amount) || amount < 1)
+      throw new Error("budget charge must be a positive integer");
+    const caps = run2.charter.limits;
+    const cap = limit === "fix_cycles" ? caps.fix_cycles : limit === "ci_repair_attempts" ? caps.ci_repair_attempts : limit === "alignment_questions" ? caps.alignment_questions : limit === "tickets" ? caps.tickets : limit === "review_rounds" ? caps.review_rounds : limit === "resource_units" ? caps.resource_units : undefined;
+    if (cap === undefined)
+      throw new Error("runner was not given this budget cap");
+    if (limit === "fix_cycles" && !subject)
+      throw new Error("fix-cycle charge needs a finding id");
+    const key = subject === undefined ? limit : `${limit}:${subject}`;
+    const used = run2.budget_consumption[key] ?? 0;
+    if (used + amount > cap) {
+      run2.run_state = "cap-reached";
+      run2.next_permitted_action = null;
+      this.save(run2);
+      return {
+        operation: "runner.charge",
+        status: "cap-reached",
+        next_permitted_action: null,
+        cap: { limit: LIMIT_NAME.get(limit) ?? limit.replaceAll("_", "-"), value: cap }
+      };
+    }
+    run2.budget_consumption[key] = used + amount;
+    this.save(run2);
+    return { operation: "runner.charge", status: "complete", next_permitted_action: run2.next_permitted_action };
+  }
+  verify(id, evidenceId) {
+    const run2 = this.load(id);
+    const evidence = run2.evidence[evidenceId];
+    if (!["building", "repairing"].includes(run2.run_state) || run2.next_permitted_action !== "verify.record" || evidence?.kind !== "verify" || evidence.revision !== run2.revision || evidence.diff_hash !== run2.diff_hash || !this.current(run2) || digest(this.evidenceStore.read(evidence.ref)) !== evidence.hash)
+      throw new Error("current runner-collected verification receipt required");
+    const baseRef = run2.charter.repos[0]?.base_branch;
+    const base2 = baseRef === undefined ? null : runnerGit(this.gitContext, this.workerRoot, ["rev-parse", "--verify", baseRef]);
+    if (base2?.code === 0)
+      run2.verified_base_revision = base2.text;
+    else
+      delete run2.verified_base_revision;
+    run2.run_state = "verifying";
+    run2.next_permitted_action = "review.full";
+    this.save(run2);
+    return run2;
+  }
+  event(id, key, payload) {
+    if (!EVENT_KEY.test(key) || ["__proto__", "prototype", "constructor"].includes(key))
+      throw new Error("invalid event key");
+    const run2 = this.load(id);
+    const duplicate = run2.events[key] !== undefined;
+    const payloadHash = `sha256:${sha256Hex(payload)}`;
+    if (duplicate && run2.events[key]?.payload_hash !== payloadHash)
+      throw new Error("event key was reused with a different payload");
+    const terminal = TERMINAL.has(run2.run_state);
+    if (!duplicate)
+      run2.events[key] = {
+        payload_hash: payloadHash,
+        payload,
+        received_at: new Date().toISOString(),
+        acted: false,
+        terminal
+      };
+    this.save(run2);
+    return { duplicate, terminal };
+  }
+  pendingEvents(id) {
+    const run2 = this.load(id);
+    if (TERMINAL.has(run2.run_state))
+      return [];
+    return Object.entries(run2.events).flatMap(([key, event]) => {
+      if (event.acted || event.terminal)
+        return [];
+      if (event.payload === undefined || `sha256:${sha256Hex(event.payload)}` !== event.payload_hash)
+        throw new Error(`event ${key} cannot be delivered: payload is missing or changed`);
+      return [{ key, payload: event.payload }];
+    });
+  }
+  ackEvent(id, key) {
+    const run2 = this.load(id);
+    const event = run2.events[key];
+    if (event === undefined || event.terminal)
+      throw new Error("event is not deliverable");
+    if (event.acted)
+      return;
+    if (event.payload === undefined || `sha256:${sha256Hex(event.payload)}` !== event.payload_hash)
+      throw new Error("event payload is missing or changed");
+    event.acted = true;
+    this.save(run2);
+  }
+  registerDelegate(id, delegateId, expectedSeconds, parent, now = Date.now()) {
+    const run2 = this.load(id);
+    if (STOPPED.has(run2.run_state) || !ID.test(delegateId) || !Number.isSafeInteger(expectedSeconds) || expectedSeconds < 1)
+      throw new Error("invalid active delegate");
+    const delegates = run2.delegates ?? (run2.delegates = {});
+    if (delegates[delegateId] !== undefined)
+      throw new Error("delegate id already registered");
+    if (parent !== undefined && delegates[parent]?.state !== "active")
+      throw new Error("parent delegate is not active");
+    const delegate = {
+      id: delegateId,
+      started_at: new Date(now).toISOString(),
+      expected_runtime_seconds: expectedSeconds,
+      state: "active",
+      progress: []
+    };
+    if (parent !== undefined)
+      delegate.parent = parent;
+    delegates[delegateId] = delegate;
+    this.save(run2);
+    return delegate;
+  }
+  recordProgress(id, delegateId, kind, ref, now = Date.now()) {
+    const run2 = this.load(id);
+    const delegate = run2.delegates?.[delegateId];
+    if (delegate?.state !== "active" || !isProgressKind(kind) || !ref)
+      throw new Error("progress must identify an active delegate and a side effect");
+    if (kind === "commit") {
+      const observed = runnerGit(this.gitContext, this.workerRoot, ["cat-file", "-t", ref]);
+      if (observed.code !== 0 || observed.text !== "commit")
+        throw new Error("commit side effect was not observed");
+    }
+    if (!delegate.progress.some((entry) => entry.kind === kind && entry.ref === ref))
+      delegate.progress.push({ kind, ref, at: new Date(now).toISOString() });
+    this.save(run2);
+  }
+  auditTick(id, now = Date.now()) {
+    const run2 = this.load(id);
+    if (run2.charter.audit_cadence_seconds === undefined || run2.procedure === undefined)
+      throw new Error("audit loop is not configured for this charter");
+    const procedure = this.governingProcedure();
+    if (procedure.bundle_version !== run2.procedure.bundle_version || procedure.hash !== run2.procedure.hash)
+      throw new Error("recorded bundle procedure changed; audit cannot continue");
+    const active = Object.values(run2.delegates ?? {}).filter((delegate) => delegate.state === "active");
+    const replace = active.filter((delegate) => now - Date.parse(delegate.progress.at(-1)?.at ?? delegate.started_at) > delegate.expected_runtime_seconds * 1000).map((delegate) => delegate.id);
+    return {
+      run: id,
+      at: new Date(now).toISOString(),
+      procedure,
+      active: active.map((delegate) => delegate.id),
+      replace,
+      drained: active.length === 0
+    };
+  }
+  replaceDelegate(id, oldId, replacementId, expectedSeconds, now = Date.now()) {
+    const run2 = this.load(id);
+    const old = run2.delegates?.[oldId];
+    if (old?.state !== "active")
+      throw new Error("delegate is not eligible for replacement");
+    if (!ID.test(replacementId) || !Number.isSafeInteger(expectedSeconds) || expectedSeconds < 1 || run2.delegates?.[replacementId] !== undefined)
+      throw new Error("replacement id or expected runtime is invalid");
+    const tick2 = this.auditTick(id, now);
+    if (!tick2.replace.includes(oldId))
+      throw new Error("delegate has not exceeded its expected runtime");
+    const replacement = {
+      id: replacementId,
+      started_at: new Date(now).toISOString(),
+      expected_runtime_seconds: expectedSeconds,
+      state: "active",
+      progress: []
+    };
+    if (old.parent !== undefined)
+      replacement.parent = old.parent;
+    old.state = "replaced";
+    old.replacement = replacementId;
+    const delegates = run2.delegates;
+    if (delegates === undefined)
+      throw new Error("delegate registry is unavailable");
+    for (const child of Object.values(delegates))
+      if (child.parent === oldId && child.state === "active")
+        child.parent = replacementId;
+    delegates[replacementId] = replacement;
+    this.save(run2);
+    return replacement;
+  }
+  finishDelegate(id, delegateId) {
+    const run2 = this.load(id);
+    const delegate = run2.delegates?.[delegateId];
+    if (delegate?.state !== "active")
+      throw new Error("delegate is not active");
+    delegate.state = "finished";
+    this.save(run2);
+  }
+  effect(id, operation, target, inputHash, readBack, perform) {
+    if (!HASH.test(inputHash) || !EFFECTS.has(operation) || !target)
+      throw new Error("invalid remote effect request");
+    const run2 = this.load(id);
+    if (operation === "pr-open")
+      this.requireCurrentVerdict(run2);
+    const key = sha256Hex(`${id}\x00${operation}\x00${target}\x00${inputHash}`);
+    const old = run2.effects[key];
+    const action = EFFECT_ACTION.get(operation);
+    if (action === undefined || !run2.charter.default_grants.includes(action) || !this.current(run2))
+      throw new Error("effect lacks a charter grant or current revision");
+    const repoEffect = ["remote-push", "pr-open", "pr-comment", "pr-thread-resolve"].includes(operation);
+    if (repoEffect) {
+      if (!run2.charter.repos.some((repo) => target === repo.repo || target.startsWith(`${repo.repo}/`) || target.startsWith(`${repo.repo}#`) || target.startsWith(`${repo.repo}:`)))
+        throw new Error("remote target is outside charter repositories");
+    }
+    if (old?.confirmed)
+      return old;
+    if (repoEffect) {
+      const ship = run2.decisions.findLast((decision) => decision.card.operation === "ship.prepare");
+      const permitted = operation === "pr-open" ? run2.run_state === "ready-to-ship" && run2.next_permitted_action === "pr-open" : operation === "remote-push" ? ["ready-to-ship", "pr-open"].includes(run2.run_state) : ["pr-open", "complete"].includes(run2.run_state);
+      if (!permitted || ship === undefined || !approved(ship) || ship.revision !== run2.revision || ship.diff_hash !== run2.diff_hash)
+        throw new Error("remote effect requires a current ship checkpoint");
+    }
+    if (["local-commit", "branch-create"].includes(operation) && !["building", "repairing"].includes(run2.run_state))
+      throw new Error("local history effect requires an active build or repair");
+    if (["kb-publish", "tracker-write"].includes(operation) && ["needs-input", "cap-reached", "failed", "cancelled"].includes(run2.run_state))
+      throw new Error("new writes stop while the run is blocked");
+    const observed = readBack();
+    if (observed !== null && observed !== inputHash)
+      throw new Error("remote target contains different input");
+    if (observed === null) {
+      run2.effects[key] = {
+        key,
+        effect: operation,
+        target,
+        input_hash: inputHash,
+        revision: run2.revision,
+        diff_hash: run2.diff_hash,
+        confirmed: false
+      };
+      this.save(run2);
+      perform();
+    }
+    const after = readBack();
+    if (after !== inputHash)
+      throw new Error("remote read-back did not confirm effect");
+    const effect = {
+      key,
+      effect: operation,
+      target,
+      input_hash: inputHash,
+      revision: run2.revision,
+      diff_hash: run2.diff_hash,
+      confirmed: true,
+      observed: after
+    };
+    run2.effects[key] = effect;
+    if (operation === "pr-open") {
+      run2.run_state = "pr-open";
+      run2.next_permitted_action = null;
+    }
+    this.save(run2);
+    return effect;
+  }
+  complete(id) {
+    const run2 = this.load(id);
+    const ship = run2.decisions.findLast((decision) => decision.card.operation === "ship.prepare" && approved(decision));
+    const verification = Object.values(run2.evidence).find((evidence) => evidence.kind === "verify" && evidence.revision === run2.revision && evidence.diff_hash === run2.diff_hash);
+    if (run2.run_state !== "pr-open" || !this.current(run2) || ship?.revision !== run2.revision || ship.diff_hash !== run2.diff_hash || verification === undefined || digest(this.evidenceStore.read(verification.ref)) !== verification.hash || !Object.values(run2.effects).some((effect) => ["pr-open", "remote-push"].includes(effect.effect) && effect.confirmed && effect.revision === run2.revision && effect.diff_hash === run2.diff_hash))
+      throw new Error("a read-back-confirmed open pull request is required");
+    run2.run_state = "complete";
+    run2.next_permitted_action = null;
+    this.save(run2);
+    return run2;
+  }
+}
+
+// src/runner/token.ts
+import { readFileSync as readFileSync27, realpathSync as realpathSync10, statSync as statSync17 } from "fs";
+import { dirname as dirname17, isAbsolute as isAbsolute14, relative as relative11 } from "path";
+function readAdminToken(path, forbiddenRoot) {
+  const at = realpathSync10(path);
+  const root = realpathSync10(forbiddenRoot);
+  const rel = relative11(root, at);
+  const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute14(rel);
+  const probe = gitProcess(resolveRunnerGit(root), dirname17(at), [
+    "rev-parse",
+    "--is-inside-work-tree",
+    "--is-inside-git-dir"
+  ]);
+  if (underRoot || probe.code === 0 && probe.text.includes("true"))
+    throw new Error("runner admin token file must live outside the Firstmate home, the worker root and any git checkout");
+  if ((statSync17(at).mode & 63) !== 0)
+    throw new Error("runner admin token file must be mode 0600");
+  const token = readFileSync27(at, "utf8").trim();
+  if (token.length < 32)
+    throw new Error("runner admin token must be at least 32 characters");
+  return token;
+}
+
+// src/runner/cli.ts
+var ADMIN = new Set([
+  "start",
+  "collect",
+  "revision",
+  "judge",
+  "answer",
+  "verify",
+  "event",
+  "effect",
+  "complete",
+  "cancel",
+  "charge",
+  "delegate",
+  "progress",
+  "finish",
+  "verdict"
+]);
+var WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
+function equal(a, b) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+function str3(args, name) {
+  const value = args[name];
+  if (value === undefined || value.length === 0)
+    throw new Error(`${name} must be a nonempty string`);
+  return value;
+}
+function strings4(args, name) {
+  const value = args[name];
+  if (value === undefined)
+    throw new Error(`${name} must be a string array`);
+  return value;
+}
+function effectCommand(template, target, inputHash) {
+  return template.map((part) => part.replaceAll("{target}", target).replaceAll("{input_hash}", inputHash));
+}
+function runCommand(argv, runner) {
+  const result = Bun.spawnSync(argv, {
+    cwd: runner.stateDir,
+    env: privateChildEnv(runner),
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  if (result.exitCode !== 0)
+    throw new Error(`trusted adapter command failed: ${result.stderr.toString().trim()}`);
+  return result.stdout.toString().trim();
+}
+function childEnv() {
+  const env = { ...process.env };
+  delete env["AK_RUNNER_ADMIN_TOKEN"];
+  delete env["AK_RUNNER_WORKER_TOKEN"];
+  delete env["AK_RUNNER_TOKEN"];
+  delete env["AK_RUNNER_SOCKET"];
+  return env;
+}
+function privateChildEnv(runner) {
+  const env = {};
+  for (const [key, value] of Object.entries(childEnv())) {
+    if (!/^(BUN_|NODE_OPTIONS$|NODE_PATH$|NPM_CONFIG_|NPM_LIFECYCLE_|YARN_|PNPM_|COREPACK_|GIT_CONFIG_|PYTHONPATH$|PYTHONHOME$|RUBYOPT$|RUBYLIB$|PERL5LIB$|PERL5OPT$|INIT_CWD$|PWD$|OLDPWD$)/i.test(key))
+      env[key] = value;
+  }
+  for (const key of ["HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "TMPDIR", "TMP", "TEMP"]) {
+    const value = env[key];
+    if (value !== undefined && workerControlledPath(value, runner.workerRoot))
+      env[key] = runner.stateDir;
+  }
+  env["PATH"] = workerFreePath(env["PATH"], runner.workerRoot);
+  return env;
+}
+async function spawnPiped(argv, cwd, stdin, env = childEnv(), activeChildren, timeoutMs) {
+  const child = Bun.spawn(argv, {
+    cwd,
+    env,
+    stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+  activeChildren?.add(child);
+  let timedOut = false;
+  const timer = timeoutMs === undefined ? null : setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, timeoutMs);
+  try {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(child.stdout).arrayBuffer(),
+      new Response(child.stderr).arrayBuffer(),
+      child.exited
+    ]);
+    if (timedOut)
+      throw new Error(`adapter command timed out after ${timeoutMs}ms`);
+    return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
+  } finally {
+    if (timer !== null)
+      clearTimeout(timer);
+    activeChildren?.delete(child);
+  }
+}
+async function dispatchSeat(runner, runId, cardId, launcher, activeChildren) {
+  const card = runner.status(runId).cards[cardId];
+  if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat))
+    return;
+  const packet = runner.packet(runId, cardId);
+  const child = await spawnPiped(launcher.command, runner.stateDir, JSON.stringify(packet), privateChildEnv(runner), activeChildren);
+  if (child.exitCode !== 0)
+    throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
+  const answerValue = JSON.parse(child.stdout.toString());
+  if (!isSeatAnswer(answerValue))
+    throw new Error("launcher returned an invalid judgment");
+  runner.judge(runId, cardId, launcher.seat, launcher.actor, `${cardId}-${launcher.seat}`, answerValue.choice, [], launcher.lineage, answerValue.rationale);
+}
+async function decideCard(runner, runId, cardId, launchers, activeChildren) {
+  const early = runner.authorize(runId, cardId);
+  if (early !== null)
+    return early;
+  const failures = [];
+  for (const launcher of launchers) {
+    try {
+      await dispatchSeat(runner, runId, cardId, launcher, activeChildren);
+    } catch (cause) {
+      failures.push(`seat ${launcher.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+  return runner.decide(runId, cardId, failures);
+}
+async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable) {
+  const admin = equal(request.token, adminToken);
+  if (!admin && !equal(request.token, workerToken))
+    throw new Error("unauthorized runner request");
+  if (!WORKER.has(request.verb) && !(admin && ADMIN.has(request.verb)))
+    throw new Error("runner verb unavailable to this token");
+  const a = request.args;
+  if (a.run !== allowedRun)
+    throw new Error("run is outside this runner endpoint");
+  switch (request.verb) {
+    case "start":
+      if (a.standing_grant === undefined)
+        throw new Error("a runner-validated standing grant is required to start autopilot");
+      return runner.start(str3(a, "run"), str3(a, "charter"), str3(a, "implementer"), str3(a, "revision"), a.standing_grant, a.excluded_actors ?? []);
+    case "collect":
+      return runner.collect(str3(a, "run"), str3(a, "id"), str3(a, "source"), str3(a, "revision"), str3(a, "kind"));
+    case "revision":
+      return runner.revision(str3(a, "run"), str3(a, "revision"));
+    case "judge":
+      return runner.judge(str3(a, "run"), str3(a, "card_id"), str3(a, "seat"), str3(a, "actor"), str3(a, "dispatch"), str3(a, "choice"), strings4(a, "input_dispatches"), strings4(a, "lineage"), str3(a, "rationale"));
+    case "answer":
+      return runner.answer(str3(a, "run"), str3(a, "card_id"), str3(a, "choice"), str3(a, "actor"), str3(a, "rationale"));
+    case "verify":
+      return runner.verify(str3(a, "run"), str3(a, "evidence"));
+    case "event":
+      return runner.event(str3(a, "run"), str3(a, "key"), str3(a, "payload"));
+    case "delegate":
+      if (a.amount === undefined)
+        throw new Error("delegate needs expected runtime in seconds");
+      return runner.registerDelegate(str3(a, "run"), str3(a, "id"), a.amount, a.parent);
+    case "progress":
+      runner.recordProgress(str3(a, "run"), str3(a, "id"), str3(a, "kind"), str3(a, "source"));
+      return runner.status(str3(a, "run")).delegates?.[str3(a, "id")];
+    case "finish":
+      runner.finishDelegate(str3(a, "run"), str3(a, "id"));
+      return runner.status(str3(a, "run")).delegates?.[str3(a, "id")];
+    case "verdict":
+      return runner.bindVerdict(str3(a, "run"));
+    case "charge": {
+      if (a.amount === undefined)
+        throw new Error("amount is required");
+      return runner.charge(str3(a, "run"), str3(a, "limit"), a.amount, a.subject);
+    }
+    case "effect": {
+      const effect = str3(a, "effect");
+      const target = str3(a, "target");
+      const inputHash = str3(a, "input_hash");
+      const adapter = effectAdapters.get(effect);
+      if (adapter === undefined)
+        throw new Error(`no supervisor-owned adapter for ${effect}`);
+      return runner.effect(str3(a, "run"), effect, target, inputHash, () => runCommand(effectCommand(adapter.read_back, target, inputHash), runner) || null, () => {
+        runCommand(effectCommand(adapter.perform, target, inputHash), runner);
+      });
+    }
+    case "complete":
+      return runner.complete(str3(a, "run"));
+    case "cancel":
+      return runner.cancel(str3(a, "run"), str3(a, "actor"), str3(a, "rationale"));
+    case "status":
+      return runner.status(str3(a, "run"));
+    case "sync":
+      return runner.syncRevision(str3(a, "run"));
+    case "run-verify": {
+      if (verifyCommand === null)
+        throw new Error("runner verification command is unconfigured");
+      const runId = str3(a, "run");
+      const before = runner.syncRevision(runId);
+      if (before.next_permitted_action !== "verify.record")
+        throw new Error("verification is not the next permitted action");
+      const result = await spawnPiped(verifyCommand, runner.workerRoot, undefined, childEnv(), activeChildren);
+      const after = runner.syncRevision(runId);
+      if (before.revision !== after.revision || before.diff_hash !== after.diff_hash)
+        throw new Error("verification changed the worker snapshot");
+      if (result.exitCode !== 0)
+        throw new Error(`verification failed (${result.exitCode}): ${result.stderr.toString().slice(0, 4000)}`);
+      const evidenceId = `verify-${after.revision.slice(0, 8)}-${after.diff_hash.slice(7, 15)}`;
+      runner.recordOutput(runId, evidenceId, Buffer.concat([result.stdout, result.stderr]), "verify");
+      return runner.verify(runId, evidenceId);
+    }
+    case "ledger":
+      return runner.ledger(str3(a, "run"));
+    case "packet":
+      return runner.packet(str3(a, "run"), str3(a, "card_id"));
+    case "prepare": {
+      if (a.card === undefined)
+        throw new Error("card is required");
+      return runner.prepare(str3(a, "run"), a.card);
+    }
+    case "decide": {
+      const charter = runner.status(str3(a, "run")).charter;
+      if (charter.audit_cadence_seconds !== undefined && (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery")))
+        throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
+      const cardId = str3(a, "card_id");
+      const pending = decisions.get(cardId) ?? decideCard(runner, str3(a, "run"), cardId, launchers, activeChildren).finally(() => decisions.delete(cardId));
+      decisions.set(cardId, pending);
+      return pending;
+    }
+    default:
+      throw new Error("unknown runner verb");
+  }
+}
+function flag2(argv, name) {
+  const index = argv.indexOf(`--${name}`);
+  return index < 0 ? undefined : argv[index + 1];
+}
+async function serve(argv, io) {
+  const socket = flag2(argv, "socket");
+  const state = flag2(argv, "state-dir");
+  const worker = flag2(argv, "worker-root");
+  const runId = flag2(argv, "run-id");
+  const mode = flag2(argv, "socket-mode") ?? "600";
+  const seatConfigPath = flag2(argv, "seat-config");
+  const verifyConfigPath = flag2(argv, "verify-config");
+  const effectConfigPath = flag2(argv, "effect-config");
+  const eventConfigPath = flag2(argv, "event-config");
+  const loopConfigPath = flag2(argv, "loop-config");
+  const adminTokenFile = flag2(argv, "admin-token-file");
+  const kitRootFlag = flag2(argv, "kit-root");
+  const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
+  if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
+    throw new Error("serve needs --socket, --state-dir, --worker-root, --run-id, --admin-token-file, a 32+ character AK_RUNNER_WORKER_TOKEN, and socket mode 600 or 660");
+  const workerRoot = realpathSync11(worker);
+  const socketPath = resolve13(socket);
+  const relativeSocket = relative12(workerRoot, socketPath);
+  if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute15(relativeSocket))
+    throw new Error("runner socket is inside worker root");
+  if (existsSync34(socketPath)) {
+    const live = await new Promise((done, fail) => {
+      const probe = createConnection(socketPath);
+      probe.once("connect", () => {
+        probe.end();
+        done(true);
+      });
+      probe.once("error", (cause) => {
+        if (cause.code === "ECONNREFUSED" || cause.code === "ENOENT")
+          done(false);
+        else
+          fail(cause);
+      });
+    });
+    if (live)
+      throw new Error("runner socket already has a live service");
+    if (existsSync34(socketPath))
+      unlinkSync(socketPath);
+  }
+  const socketParent = realpathSync11(dirname18(socketPath));
+  const relativeParent = relative12(workerRoot, socketParent);
+  if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute15(relativeParent))
+    throw new Error("runner socket parent resolves inside worker root");
+  const entry = process.argv[1];
+  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve13(import.meta.dir, "..", "..") : resolve13(realpathSync11(entry), "..", ".."));
+  const runner = new Runner(state, workerRoot, kitRoot, true);
+  runner.assertPrivatePath(socketPath);
+  runner.assertPrivatePath(adminTokenFile);
+  const adminToken = readAdminToken(adminTokenFile, workerRoot);
+  if (adminToken === workerToken)
+    throw new Error("admin and worker tokens must differ");
+  let launchers = [];
+  if (seatConfigPath !== undefined) {
+    const configPath = realpathSync11(seatConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue = JSON.parse(readFileSync28(configPath, "utf8"));
+    if (!isSeatConfig(configValue))
+      throw new Error(`invalid seat configuration: ${JSON.stringify(isSeatConfig.errors)}`);
+    launchers = configValue.launchers;
+    if (new Set(launchers.map((launcher) => launcher.seat)).size !== 2 || new Set(launchers.map((launcher) => launcher.actor)).size !== 2)
+      throw new Error("seat configuration must name two distinct seats and actors");
+  }
+  let verifyCommand = null;
+  if (verifyConfigPath !== undefined) {
+    const configPath = realpathSync11(verifyConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue = JSON.parse(readFileSync28(configPath, "utf8"));
+    if (!isVerifyConfig(configValue))
+      throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
+    verifyCommand = configValue.command;
+  }
+  let eventCommand = null;
+  let eventTimeoutMs = null;
+  if (eventConfigPath !== undefined) {
+    const configPath = realpathSync11(eventConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue = JSON.parse(readFileSync28(configPath, "utf8"));
+    if (!isEventConfig(configValue))
+      throw new Error(`invalid event configuration: ${JSON.stringify(isEventConfig.errors)}`);
+    eventCommand = configValue.command;
+    eventTimeoutMs = configValue.timeout_ms;
+  }
+  let loopCommand = null;
+  let loopTimeoutMs = null;
+  if (loopConfigPath !== undefined) {
+    const configPath = realpathSync11(loopConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue = JSON.parse(readFileSync28(configPath, "utf8"));
+    if (!isEventConfig(configValue))
+      throw new Error(`invalid loop configuration: ${JSON.stringify(isEventConfig.errors)}`);
+    loopCommand = configValue.command;
+    loopTimeoutMs = configValue.timeout_ms;
+  }
+  const effectAdapters = new Map;
+  if (effectConfigPath !== undefined) {
+    const configPath = realpathSync11(effectConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue = JSON.parse(readFileSync28(configPath, "utf8"));
+    if (!isEffectConfig(configValue))
+      throw new Error(`invalid effect configuration: ${JSON.stringify(isEffectConfig.errors)}`);
+    for (const adapter of configValue.adapters) {
+      if (effectAdapters.has(adapter.effect))
+        throw new Error(`duplicate effect adapter ${adapter.effect}`);
+      effectAdapters.set(adapter.effect, adapter);
+    }
+  }
+  const decisions = new Map;
+  const activeChildren = new Set;
+  let delivering = false;
+  let rescanEvents = false;
+  let deliveryHealthy = true;
+  const wakeEvents = () => {
+    if (eventCommand === null)
+      return;
+    if (delivering) {
+      rescanEvents = true;
+      return;
+    }
+    delivering = true;
+    (async () => {
+      do {
+        rescanEvents = false;
+        for (const event of runner.pendingEvents(runId)) {
+          try {
+            const delivered2 = await spawnPiped(eventCommand, runner.stateDir, JSON.stringify({ run: runId, ...event }), { ...privateChildEnv(runner), AK_RUNNER_SOCKET: socketPath, AK_RUNNER_TOKEN: workerToken }, activeChildren, eventTimeoutMs ?? undefined);
+            if (delivered2.exitCode !== 0)
+              throw new Error(`consumer exited ${delivered2.exitCode}`);
+            const answer2 = JSON.parse(delivered2.stdout.toString());
+            if (!isEventAck(answer2) || answer2.run !== runId || answer2.key !== event.key)
+              throw new Error("consumer acknowledgement did not match the event");
+            runner.ackEvent(runId, event.key);
+          } catch (cause) {
+            deliveryHealthy = false;
+            io.err(`ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`);
+          }
+        }
+      } while (rescanEvents);
+      if (runner.pendingEvents(runId).length === 0)
+        deliveryHealthy = true;
+    })().catch((cause) => {
+      if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT")) {
+        deliveryHealthy = false;
+        io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
+    }).finally(() => {
+      delivering = false;
+    });
+  };
+  let auditTimer = null;
+  let auditRunning = false;
+  let auditHealthy = true;
+  const runAudit = async () => {
+    if (loopCommand === null || auditRunning)
+      return;
+    auditRunning = true;
+    try {
+      const before = runner.auditTick(runId);
+      if (before.drained) {
+        if (auditTimer !== null)
+          clearInterval(auditTimer);
+        auditTimer = null;
+        return;
+      }
+      const probe = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "probe", run: runId, delegates: before.active, procedure: before.procedure }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
+      if (probe.exitCode !== 0)
+        throw new Error(`audit probe exited ${probe.exitCode}`);
+      const observed = JSON.parse(probe.stdout.toString());
+      if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
+        throw new Error("audit probe did not cover every active delegate");
+      for (const progress of observed.progress) {
+        runner.recordProgress(runId, progress.delegate, progress.kind, progress.ref);
+      }
+      const tick2 = runner.auditTick(runId);
+      for (const delegate of tick2.replace) {
+        const key = sha256Hex(`${runId}\x00replace\x00${delegate}`);
+        const replaced = await spawnPiped(loopCommand, runner.stateDir, JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }), privateChildEnv(runner), activeChildren, loopTimeoutMs ?? undefined);
+        if (replaced.exitCode !== 0)
+          throw new Error(`replacement adapter exited ${replaced.exitCode}`);
+        const value = JSON.parse(replaced.stdout.toString());
+        if (!isAuditReplacementReply(value) || value.key !== key)
+          throw new Error("replacement lacked matching read-back");
+        runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+      }
+      auditHealthy = true;
+    } catch (cause) {
+      auditHealthy = false;
+      io.err(`ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      auditRunning = false;
+    }
+  };
+  const armAudit = () => {
+    if (loopCommand === null || auditTimer !== null)
+      return;
+    try {
+      const run2 = runner.status(runId);
+      if (run2.charter.audit_cadence_seconds === undefined || !Object.values(run2.delegates ?? {}).some((delegate) => delegate.state === "active"))
+        return;
+      auditTimer = setInterval(() => {
+        runAudit();
+      }, run2.charter.audit_cadence_seconds * 1000);
+    } catch (cause) {
+      if (!(cause instanceof Error && ("code" in cause) && cause.code === "ENOENT"))
+        io.err(`ak runner: cannot arm audit: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  };
+  const server = createServer((connection) => {
+    let body = "";
+    let handled = false;
+    connection.setEncoding("utf8");
+    const respond = async (line) => {
+      try {
+        const requestValue = JSON.parse(line);
+        if (!isRequest(requestValue))
+          throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
+        const request = requestValue;
+        const result = await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
+        const missing = [
+          eventCommand === null ? "event-adapter" : null,
+          !deliveryHealthy ? "event-delivery-failed" : null,
+          loopCommand === null ? "loop-adapter" : null,
+          !runner.status(runId).charter.allowed_capabilities.includes("event-delivery") ? "charter-event-delivery" : null,
+          loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined ? "charter-cadence" : null,
+          !auditHealthy ? "audit-failed" : null
+        ].filter((part) => part !== null);
+        const presented = request.verb === "status" ? { ...runner.status(runId), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } } : result;
+        connection.end(`${JSON.stringify({ ok: true, result: presented })}
+`);
+        if (request.verb === "event" || request.verb === "start")
+          wakeEvents();
+        if (request.verb === "delegate" || request.verb === "start")
+          armAudit();
+      } catch (cause) {
+        connection.end(`${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}
+`);
+      }
+    };
+    connection.on("data", (chunk) => {
+      if (handled)
+        return;
+      body += chunk;
+      if (body.length > 1e6)
+        connection.destroy(new Error("runner request too large"));
+      const newline = body.indexOf(`
+`);
+      if (newline < 0)
+        return;
+      handled = true;
+      respond(body.slice(0, newline));
+    });
+  });
+  server.listen(socketPath, () => {
+    chmodSync2(socketPath, Number.parseInt(mode, 8));
+    io.out(`ak runner: listening on ${socketPath}`);
+    wakeEvents();
+    armAudit();
+  });
+  const close = () => {
+    if (auditTimer !== null)
+      clearInterval(auditTimer);
+    for (const child of activeChildren)
+      child.kill("SIGKILL");
+    if (existsSync34(socketPath))
+      unlinkSync(socketPath);
+    process.exit(0);
+  };
+  process.once("SIGINT", close);
+  process.once("SIGTERM", close);
+  return 0;
+}
+async function call(argv, io) {
+  const socket = flag2(argv, "socket") ?? process.env["AK_RUNNER_SOCKET"];
+  const token = process.env["AK_RUNNER_TOKEN"];
+  const verb = argv[0];
+  if (!socket || !token || !verb || verb.startsWith("--"))
+    throw new Error("call needs a verb, --socket or AK_RUNNER_SOCKET, and AK_RUNNER_TOKEN");
+  if (!WORKER.has(verb) && !ADMIN.has(verb)) {
+    io.err(`ak runner: ${unknownSelector("verb", verb, [...WORKER, ...ADMIN])}`);
+    return 2;
+  }
+  const source = flag2(argv, "json");
+  if (source === undefined)
+    throw new Error("call needs --json <request-file>");
+  const argsValue = await Bun.file(source).json();
+  if (!isArgs(argsValue))
+    throw new Error(`invalid request arguments: ${JSON.stringify(isArgs.errors)}`);
+  const args = argsValue;
+  return new Promise((resolveCode) => {
+    const connection = createConnection(socket);
+    let response = "";
+    connection.on("connect", () => connection.write(`${JSON.stringify({ token, verb, args })}
+`));
+    connection.on("data", (chunk) => {
+      response += chunk.toString();
+    });
+    connection.on("end", () => {
+      try {
+        const resultValue = JSON.parse(response);
+        if (!isResponse(resultValue))
+          throw new Error("invalid response envelope");
+        const result = resultValue;
+        if (!result.ok) {
+          io.err(`ak runner: ${result.error}`);
+          resolveCode(1);
+          return;
+        }
+        io.out(JSON.stringify(result.result, null, 2));
+        resolveCode(0);
+      } catch {
+        io.err("ak runner: invalid service response");
+        resolveCode(1);
+      }
+    });
+    connection.on("error", (cause) => {
+      io.err(`ak runner: ${cause.message}`);
+      resolveCode(1);
+    });
+  });
+}
+async function runRunner(argv, io) {
+  try {
+    if (argv[0] === "serve")
+      return await serve(argv.slice(1), io);
+    if (argv[0] === "call")
+      return call(argv.slice(1), io);
+    if (argv[0] !== undefined)
+      io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
+    io.err("usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]");
+    io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
+    return 2;
+  } catch (cause) {
+    io.err(`ak runner: ${cause instanceof Error ? cause.message : String(cause)}`);
+    return 1;
+  }
+}
+
 // src/maintenance/cli.ts
-var ajv5 = new import_ajv10.default;
+var ajv6 = new import_ajv10.default;
 var pluginSchema = {
   type: "object",
   properties: {
@@ -35177,14 +37568,14 @@ var pluginSchema = {
   },
   additionalProperties: true
 };
-var validPluginList = ajv5.compile({ type: "array", items: pluginSchema });
-var validCodexList = ajv5.compile({
+var validPluginList = ajv6.compile({ type: "array", items: pluginSchema });
+var validCodexList = ajv6.compile({
   type: "object",
   required: ["installed"],
   properties: { installed: { type: "array", items: pluginSchema } },
   additionalProperties: true
 });
-var validClaudeMarketplaces = ajv5.compile({
+var validClaudeMarketplaces = ajv6.compile({
   type: "array",
   items: {
     type: "object",
@@ -35198,7 +37589,7 @@ var validClaudeMarketplaces = ajv5.compile({
     additionalProperties: true
   }
 });
-var validCodexConfig = ajv5.compile({
+var validCodexConfig = ajv6.compile({
   type: "object",
   properties: {
     marketplaces: {
@@ -35212,18 +37603,18 @@ var validCodexConfig = ajv5.compile({
   },
   additionalProperties: true
 });
-var validManifest = ajv5.compile({
+var validManifest = ajv6.compile({
   type: "object",
   required: ["name", "version"],
   properties: { name: { type: "string" }, version: { type: "string" } },
   additionalProperties: true
 });
-var validSettings = ajv5.compile({
+var validSettings = ajv6.compile({
   type: "object",
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__202010.default({ strict: false });
+var bindingAjv = new import__202011.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -35231,7 +37622,7 @@ var bindingValidators = {
   binding: validBinding2,
   backends: new Map([["linear-linearis", validLinearis]])
 };
-var ID = "ak@agent-kit";
+var ID2 = "ak@agent-kit";
 var ROOT = process.env.AK_PUBLISHED_ROOT ?? "https://raw.githubusercontent.com/Pibomeister/agent-kit/published";
 var COMMAND_TIMEOUT_MS = 15000;
 var MUTATION_TIMEOUT_MS = 300000;
@@ -35241,7 +37632,7 @@ function finding(level, check2, detail, remedy) {
 }
 function command(binary, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
-  const run2 = spawnSync4(binary, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
+  const run2 = spawnSync5(binary, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run2.status === 0, output: (run2.stdout || run2.stderr || run2.error?.message || "").trim() };
 }
 function parseJson2(source, validate) {
@@ -35258,7 +37649,7 @@ function jsonCommand(binary, args, cwd = process.cwd()) {
 }
 function projectRoot() {
   const top = command("git", ["rev-parse", "--show-toplevel"]);
-  return realpathSync6(top.ok ? top.output : process.cwd());
+  return realpathSync12(top.ok ? top.output : process.cwd());
 }
 function inProject(row, root) {
   if (row.projectEnabled === true)
@@ -35266,7 +37657,7 @@ function inProject(row, root) {
   if (row.projectPath === undefined)
     return true;
   try {
-    return realpathSync6(row.projectPath) === root;
+    return realpathSync12(row.projectPath) === root;
   } catch {
     return false;
   }
@@ -35291,9 +37682,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join34(process.env.CODEX_HOME ?? join34(homedir5(), ".codex"), "config.toml");
+  const file = join37(process.env.CODEX_HOME ?? join37(homedir5(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync24(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync29(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -35307,11 +37698,11 @@ function codexRecords() {
   return output ? parseJson2(output, validCodexList)?.installed ?? [] : [];
 }
 function checkPlugin(host, installed, latest) {
-  const matches2 = installed.filter((row) => row.id === ID || row.pluginId === ID);
+  const matches2 = installed.filter((row) => row.id === ID2 || row.pluginId === ID2);
   if (matches2.length === 0)
-    return finding("WARN", `${host} plugin`, "ak is not installed", `Install ${ID} in ${host}.`);
+    return finding("WARN", `${host} plugin`, "ak is not installed", `Install ${ID2} in ${host}.`);
   if (matches2.some((row) => row.enabled !== true))
-    return finding("FAIL", `${host} plugin`, "ak is disabled", `Enable ${ID} in ${host}.`);
+    return finding("FAIL", `${host} plugin`, "ak is disabled", `Enable ${ID2} in ${host}.`);
   const versions = [...new Set(matches2.map((row) => row.version ?? "unknown"))];
   if (latest && versions.some((version) => version !== latest)) {
     return finding("WARN", `${host} plugin`, `installed ${versions.join(", ")}; published ${latest}`, "Run ak update.");
@@ -35332,21 +37723,21 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join34(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join37(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson2(readFileSync24(file, "utf8"), validSettings);
+    settings = parseJson2(readFileSync29(file, "utf8"), validSettings);
   } catch {
-    return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID}"] to true in ${file}.`);
+    return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
-  if (settings?.enabledPlugins?.[ID] !== true) {
-    return finding("WARN", "project enablement", `${ID} is not enabled for this repo`, `Set enabledPlugins["${ID}"] to true in ${file}.`);
+  if (settings?.enabledPlugins?.[ID2] !== true) {
+    return finding("WARN", "project enablement", `${ID2} is not enabled for this repo`, `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
-  return finding("PASS", "project enablement", `${ID} is enabled in this repo`, "No action needed.");
+  return finding("PASS", "project enablement", `${ID2} is enabled in this repo`, "No action needed.");
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync32(join34(root, BINDING_FILE)) ? root : null;
+  return existsSync35(join37(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -35358,7 +37749,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join34(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join37(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -35399,13 +37790,13 @@ function checkLinearis(root, backend) {
   if (!root || backend !== "linear-linearis")
     return finding("WARN", "linearis", "no linear-linearis binding to check", "Add the binding if this repo uses Linear.");
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
-  const top = topResult.ok ? realpathSync6(topResult.output) : realpathSync6(root);
+  const top = topResult.ok ? realpathSync12(topResult.output) : realpathSync12(root);
   for (const base2 of new Set([root, top])) {
-    const binary = join34(base2, "node_modules", ".bin", "linearis");
-    if (!existsSync32(binary))
+    const binary = join37(base2, "node_modules", ".bin", "linearis");
+    if (!existsSync35(binary))
       continue;
-    const target = realpathSync6(binary);
-    if ([root, top].every((folder) => relative7(join34(realpathSync6(folder), "node_modules"), target).startsWith("..")))
+    const target = realpathSync12(binary);
+    if ([root, top].every((folder) => relative13(join37(realpathSync12(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version = command(binary, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version.ok && version.output === "2026.8.0")
@@ -35417,8 +37808,8 @@ function checkLinearis(root, backend) {
 async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
-    if (isAbsolute10(root)) {
-      const value = parseJson2(readFileSync24(join34(root, suffix), "utf8"), validManifest);
+    if (isAbsolute16(root)) {
+      const value = parseJson2(readFileSync29(join37(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -35431,7 +37822,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
       return { value, failure: value ? undefined : { reason: "invalid" } };
     }
   } catch {
-    return { value: null, failure: { reason: isAbsolute10(root) ? "missing" : "network" } };
+    return { value: null, failure: { reason: isAbsolute16(root) ? "missing" : "network" } };
   }
 }
 function print(items, json = false) {
@@ -35447,8 +37838,8 @@ async function doctor2(json = false) {
   const hostRoot = projectRoot();
   const claude = claudeRecords(hostRoot);
   const codex = codexRecords();
-  const hasClaude = claude.some((row) => row.id === ID);
-  const hasCodex = codex.some((row) => row.pluginId === ID);
+  const hasClaude = claude.some((row) => row.id === ID2);
+  const hasCodex = codex.some((row) => row.pluginId === ID2);
   const claudeConfigured = claudeSourceConfigured(hostRoot);
   const codexConfigured = codexSourceConfigured();
   const root = findBindingRoot(process.cwd());
@@ -35476,11 +37867,11 @@ function checkMaintenanceCommand(current, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename16(path) !== "ak")
+  if (!path || basename17(path) !== "ak")
     return null;
   try {
-    const current = readFileSync24(path, "utf8");
-    const published = isAbsolute10(ROOT) ? readFileSync24(join34(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current = readFileSync29(path, "utf8");
+    const published = isAbsolute16(ROOT) ? readFileSync29(join37(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
@@ -35499,7 +37890,7 @@ async function update() {
     return print([checkSource("published", null, true, claudeSource.failure ?? codexSource.failure)]);
   let failures = 0;
   const root = projectRoot();
-  const claudeBefore = claudeRecords(root).filter((row) => row.id === ID);
+  const claudeBefore = claudeRecords(root).filter((row) => row.id === ID2);
   if (claudeBefore.length > 0) {
     const source = checkSource("Claude Code", claudeSource.value, claudeSourceConfigured(root), claudeSource.failure);
     const marketplace = source.level === "PASS" ? command("claude", ["plugin", "marketplace", "update", "agent-kit"], root, process.env, MUTATION_TIMEOUT_MS) : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
@@ -35511,8 +37902,8 @@ async function update() {
         const installation = claudeBefore.find((row) => (row.scope ?? "user") === scope2);
         const oldVersion = installation?.version ?? "unknown";
         const updateRoot = scope2 === "user" ? root : installation?.projectPath ?? root;
-        const result = command("claude", ["plugin", "update", ID, "--scope", scope2, "--json"], updateRoot, process.env, MUTATION_TIMEOUT_MS);
-        const after = claudeRecords(root).find((row) => row.id === ID && (row.scope ?? "user") === scope2);
+        const result = command("claude", ["plugin", "update", ID2, "--scope", scope2, "--json"], updateRoot, process.env, MUTATION_TIMEOUT_MS);
+        const after = claudeRecords(root).find((row) => row.id === ID2 && (row.scope ?? "user") === scope2);
         const current = after?.version ?? "unknown";
         const okay = result.ok && current === claudeSource.value?.version;
         console.log(`${okay ? "PASS" : "FAIL"} Claude Code ${scope2}: ${oldVersion} -> ${current}${okay ? "" : `; ${result.output || "published version not installed"}`}`);
@@ -35520,12 +37911,12 @@ async function update() {
           failures += 1;
       }
   }
-  const codexBefore = codexRecords().find((row) => row.pluginId === ID);
+  const codexBefore = codexRecords().find((row) => row.pluginId === ID2);
   if (codexBefore) {
     const source = checkSource("Codex", codexSource.value, codexSourceConfigured(), codexSource.failure);
     const refresh = source.level === "PASS" ? command("codex", ["plugin", "marketplace", "upgrade", "agent-kit", "--json"], process.cwd(), process.env, MUTATION_TIMEOUT_MS) : { ok: false, output: `${source.detail}. Remedy: ${source.remedy}` };
-    const result = refresh.ok ? command("codex", ["plugin", "add", ID, "--json"], process.cwd(), process.env, MUTATION_TIMEOUT_MS) : refresh;
-    const after = codexRecords().find((row) => row.pluginId === ID);
+    const result = refresh.ok ? command("codex", ["plugin", "add", ID2, "--json"], process.cwd(), process.env, MUTATION_TIMEOUT_MS) : refresh;
+    const after = codexRecords().find((row) => row.pluginId === ID2);
     const current = after?.version ?? "unknown";
     const okay = result.ok && current === codexSource.value?.version;
     console.log(`${okay ? "PASS" : "FAIL"} Codex: ${codexBefore.version ?? "unknown"} -> ${current}${okay ? "" : `; ${result.output || "published version not installed"}`}`);
@@ -35552,7 +37943,10 @@ if (import.meta.main) {
   } else if (action === "kb") {
     const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
     process.exitCode = runKb(flags, { cwd: process.cwd(), io });
-  } else if (action === "doctor" && flags.every((flag2) => flag2 === "--json") && flags.length <= 1 || action === "update" && flags.length === 0)
+  } else if (action === "runner") {
+    const io = { out: (line) => console.log(line), err: (line) => console.error(line) };
+    process.exitCode = await runRunner(flags, io);
+  } else if (action === "doctor" && flags.every((flag3) => flag3 === "--json") && flags.length <= 1 || action === "update" && flags.length === 0)
     process.exitCode = action === "doctor" ? await doctor2(flags[0] === "--json") : await update();
   else if (action === "delegation" && flags.length === 3 && flags[1] === "--project") {
     try {
@@ -35562,7 +37956,7 @@ if (import.meta.main) {
       process.exitCode = 1;
     }
   } else {
-    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026");
+    console.error("Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn \u2026 | ak guard hook <event> \u2026 | ak kb \u2026 | ak runner serve|call \u2026");
     process.exitCode = 2;
   }
 }

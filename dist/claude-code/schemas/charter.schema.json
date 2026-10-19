@@ -166,6 +166,11 @@
         "review_rounds": { "type": "integer", "minimum": 1, "maximum": 5 }
       }
     },
+    "audit_cadence_seconds": {
+      "description": "Supervisor audit cadence supplied by the charter. Required for unattended mode; absence keeps the run guided.",
+      "type": "integer",
+      "minimum": 1
+    },
     "budgets": {
       "description": "Plan 7.2: cost accounting, when available, is passed in by the runner. 'provided_by' is pinned so a charter cannot become the place where consumption is calculated; the charter records only the cap it was handed and which limits it enforces.",
       "type": "object",
