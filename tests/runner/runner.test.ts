@@ -376,6 +376,28 @@ function patchVerdictFixture(autonomous = false, ship = true) {
   return f;
 }
 
+function trunkCommit(f: ReturnType<typeof patchVerdictFixture>, path: string, text: string) {
+  git(f.worker, "checkout", "main");
+  mkdirSync(dirname(join(f.worker, path)), { recursive: true });
+  writeFileSync(join(f.worker, path), text);
+  git(f.worker, "add", path);
+  git(f.worker, "commit", "-qm", `trunk changes ${path}`);
+  git(f.worker, "checkout", "feature");
+}
+
+function shipCard(f: ReturnType<typeof patchVerdictFixture>) {
+  return f.runner.prepare("toy-run", {
+    id: "ship",
+    operation: "ship.prepare",
+    grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+    question: "Open the pull request?",
+    options: ["yes", "no"],
+    approve: "yes",
+    evidence: ["verify"],
+    artifact_hash: `sha256:${"b".repeat(64)}`,
+  });
+}
+
 describe("runner guards", () => {
   // This checks the test harness, not the product: `src/runner/cli.ts` call() sets no client timeout,
   // and the kill below comes from callRunnerCli's own spawn timeout. It keeps a hung service from
@@ -967,25 +989,6 @@ describe("runner guards", () => {
     expect(f.runner.status("toy-run").verdict?.invalidated_by).toBe("ci-config-drift");
   });
 
-  const trunkCommit = (f: ReturnType<typeof patchVerdictFixture>, path: string, text: string) => {
-    git(f.worker, "checkout", "main");
-    mkdirSync(dirname(join(f.worker, path)), { recursive: true });
-    writeFileSync(join(f.worker, path), text);
-    git(f.worker, "add", path);
-    git(f.worker, "commit", "-qm", `trunk changes ${path}`);
-    git(f.worker, "checkout", "feature");
-  };
-  const shipCard = (f: ReturnType<typeof patchVerdictFixture>) =>
-    f.runner.prepare("toy-run", {
-      id: "ship",
-      operation: "ship.prepare",
-      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
-      question: "Open the pull request?",
-      options: ["yes", "no"],
-      approve: "yes",
-      evidence: ["verify"],
-      artifact_hash: `sha256:${"b".repeat(64)}`,
-    });
   const invalidations = [
     {
       reason: "patch-changed",
