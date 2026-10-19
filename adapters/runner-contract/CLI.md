@@ -30,7 +30,7 @@ policy and procedure the service reads. The service refuses a bundle inside the 
 
 `start` requires the approved charter to allow `runner-grants`, `trusted-evidence` and
 `independent-context`. `status.autonomy` reports `autonomous` only when the live service has both
-private adapters and the charter sets `audit_cadence_seconds`; otherwise it reports `guided` and
+private adapters and the charter allows `event-delivery` and sets `audit_cadence_seconds`; otherwise it reports `guided` and
 names what is missing. A charter requesting unattended mode cannot use `decide` while guided.
 
 | Verb | Caller | JSON argument shape |
