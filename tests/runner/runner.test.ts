@@ -7,12 +7,12 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   watch,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { runRunner } from "../../src/runner/cli.ts";
@@ -31,6 +31,11 @@ const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;
 const CONTENDED_RUNNER_CALL_TIMEOUT_MS = 120_000;
 const runnerCallChildren = new Set<ReturnType<typeof Bun.spawn>>();
+// Bun lists every directory above its cwd when it starts, and the live service starts each consumer,
+// launcher and verifier in its state directory. A crowded macOS $TMPDIR makes each start there cost
+// about a second, so fixtures live under a private root that this file removes when it ends.
+const scratchRoot = mkdtempSync(join(realpathSync("/tmp"), "ak-runner-test-"));
+afterAll(() => rmSync(scratchRoot, { recursive: true, force: true }));
 
 function callRunnerCli(
   verb: string,
@@ -142,6 +147,14 @@ function waitForPath(path: string, owner: { exited: Promise<number> }) {
   });
 }
 
+async function waitUntil(what: string, holds: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!holds()) {
+    if (Date.now() > deadline) throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+    await Bun.sleep(10);
+  }
+}
+
 async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -156,7 +169,7 @@ async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<bool
 }
 
 function fixture(limit = 3) {
-  const dir = mkdtempSync(join(tmpdir(), "ak-runner-"));
+  const dir = mkdtempSync(join(scratchRoot, "ak-runner-"));
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
@@ -686,25 +699,13 @@ describe("runner guards", () => {
     const socket = join(f.privateDir, "runner.sock");
     const eventConfig = join(f.privateDir, "event.json");
     const loopConfig = join(f.privateDir, "loop.json");
-    const attempted = join(f.privateDir, "attempted");
-    const release = join(f.privateDir, "release");
+    const delivered = join(f.privateDir, "delivered");
     const tokenFile = join(f.privateDir, "admin.token");
     const adminToken = "a".repeat(48);
     const workerToken = "b".repeat(48);
     writeFileSync(tokenFile, adminToken, { mode: 0o600 });
-    writeFileSync(
-      eventConfig,
-      JSON.stringify({
-        timeout_ms: 100,
-        command: [
-          "bun",
-          "-e",
-          "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1],'attempted'); if(!(await Bun.file(process.argv[2]).exists())) await Bun.sleep(10000); console.log(JSON.stringify({run:e.run,key:e.key}));",
-          attempted,
-          release,
-        ],
-      }),
-    );
+    // The first consumer never answers, so its timeout fails delivery however long the host takes to start it.
+    writeFileSync(eventConfig, JSON.stringify({ timeout_ms: 100, command: ["bun", "-e", "await Bun.sleep(60_000);"] }));
     writeFileSync(
       loopConfig,
       JSON.stringify({
@@ -748,25 +749,33 @@ describe("runner guards", () => {
       const request = join(f.requestDir, "event.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
       expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
-      await waitForPath(attempted, service);
-      expect(f.runner.pendingEvents("toy-run")).toHaveLength(1);
       writeFileSync(request, JSON.stringify({ run: "toy-run" }));
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const status = autonomyOf(callRunnerCli("status", request, socket, workerToken));
-        if (status.missing.includes("event-delivery-failed")) break;
-        await Bun.sleep(10);
-      }
-      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing).toContain(
-        "event-delivery-failed",
+      await waitUntil("status to report event-delivery-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("event-delivery-failed"),
       );
+      expect(f.runner.pendingEvents("toy-run")).toHaveLength(1);
       service.kill("SIGTERM");
       await service.exited;
-      writeFileSync(release, "retry may succeed");
+      expect(await new Response(service.stderr).text()).toContain(
+        "event wake-1 remains pending: adapter command timed out after 100ms",
+      );
+      writeFileSync(
+        eventConfig,
+        JSON.stringify({
+          timeout_ms: 10_000,
+          command: [
+            "bun",
+            "-e",
+            "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1], e.key); console.log(JSON.stringify({run:e.run,key:e.key}));",
+            delivered,
+          ],
+        }),
+      );
       service = Bun.spawn(launch, options);
       await waitForPath(socket, service);
-      for (let attempt = 0; attempt < 100 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
-        await Bun.sleep(10);
-      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+      await waitForPath(delivered, service);
+      expect(readFileSync(delivered, "utf8")).toBe("wake-1");
+      await waitUntil("the replayed event to be acknowledged", () => f.runner.pendingEvents("toy-run").length === 0);
     } finally {
       service.kill("SIGTERM");
       await service.exited;
@@ -1230,12 +1239,8 @@ describe("runner guards", () => {
       call("progress", adminToken, { run: "toy-run", id: "owner-1", kind: "commit", source: head });
       prepare("align", "align.run", "align-answer", "e1");
       call("event", adminToken, { run: "toy-run", key: "wake-align", payload: "checkpoint available" });
-      for (let attempt = 0; attempt < 150 && f.runner.status("toy-run").run_state !== "alignment"; attempt += 1)
-        await Bun.sleep(10);
-      expect(f.runner.status("toy-run").run_state).toBe("alignment");
-      for (let attempt = 0; attempt < 150 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
-        await Bun.sleep(10);
-      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+      await waitUntil("the event wake to reach alignment", () => f.runner.status("toy-run").run_state === "alignment");
+      await waitUntil("the wake event to be acknowledged", () => f.runner.pendingEvents("toy-run").length === 0);
       for (const [id, operation, covers] of [
         ["bound", "bound.run", "spec-approval"],
         ["build", "build.dispatch", "build-go"],
@@ -2899,7 +2904,7 @@ describe("runner guards", () => {
   });
 
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ak-runner-link-"));
+    const dir = mkdtempSync(join(scratchRoot, "ak-runner-link-"));
     const worker = join(dir, "worker");
     const state = join(dir, "private");
     mkdirSync(worker);
@@ -2936,7 +2941,7 @@ describe("unknown runner selectors", () => {
     const previous = process.env["AK_RUNNER_TOKEN"];
     process.env["AK_RUNNER_TOKEN"] = "t".repeat(32);
     try {
-      const socket = join(mkdtempSync(join(tmpdir(), "ak-runner-verb-")), "absent.sock");
+      const socket = join(mkdtempSync(join(scratchRoot, "ak-runner-verb-")), "absent.sock");
       expect(await runRunner(["call", "stauts", "--socket", socket], io)).toBe(2);
     } finally {
       if (previous === undefined) delete process.env["AK_RUNNER_TOKEN"];
