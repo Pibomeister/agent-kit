@@ -56,7 +56,7 @@ protocols:
         super-build needs one protocol for the implementer's account of its working decisions on
         each ticket: a stretch per implementer seat and an independent audit after the commit,
         both carried by reference and never evidence.
-      commits: [e0ea1af1e554d47c16990ddbd2acab9920c8ad23]
+      commits: [f92da557]
 
 roles:
   baseline: 29
@@ -76,7 +76,7 @@ roles:
       reason: >-
         super-build seats an independent auditor once per ticket to read the implementer's work
         trail after the commit; the seat is never the implementer, so it needs its own role prompt.
-      commits: [42eb864000dfe687ce93107352357845e5832ae7]
+      commits: [f92da557]
 
 references:
   baseline: 4
@@ -176,7 +176,7 @@ schemas:
       reason: >-
         A work trail leaves two run records, the implementer's stretch and the independent audit
         of it, and publishArtifact carries only schema ids, so each needed a declared shape.
-      commits: [ab88a14e474fa309cd906e6bfdc9327c64fb211a]
+      commits: [f92da557]
 
 profiles:
   baseline: 4
