@@ -5,7 +5,6 @@
  */
 import { Database } from "bun:sqlite";
 import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
 import type { LearnContext } from "../../src/learn/core/context.ts";
@@ -13,10 +12,11 @@ import type { JudgeCallContext, JudgeFn } from "../../src/learn/core/judge.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { ensureMemoryLedger, SECTIONS } from "../../src/learn/memory/ledger.ts";
 import type { ReflectReply } from "../../src/learn/memory/reflect.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
-/** A fresh directory with one canonical spelling (macOS `/var` is a symlink). */
+/** A fresh directory inside the process temporary directory, with one canonical spelling. */
 export function scratch(prefix = "ak-learn-"): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  return processScratch(prefix);
 }
 
 /** Run a probe from `dir` without git discovering a repository above that scratch directory. */
@@ -77,13 +77,12 @@ const startScratches: string[] = [];
 
 /**
  * A fresh directory for a script a test starts with bun, and for that run's
- * HOME. It sits under `/tmp`, not `tmpdir()`: bun lists every directory above
- * a script it starts, and a per-user temporary directory that has collected
- * many entries (macOS `$TMPDIR`) turns each start into tens of seconds. `/tmp`
- * is outside any checkout on every runner. Remove with `removeStartScratch`.
+ * HOME. It uses processScratch; see `../helpers/process-tmp.ts` for the path
+ * policy and Bun startup constraint. Remove early with `removeStartScratch`;
+ * otherwise the process directory's cleanup removes it.
  */
 export function startScratch(prefix = "ak-learn-"): string {
-  const dir = realpathSync(mkdtempSync(join("/tmp", prefix)));
+  const dir = processScratch(prefix);
   startScratches.push(dir);
   return dir;
 }
