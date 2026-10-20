@@ -131,7 +131,7 @@ function verdictBase(run: Run): string {
   return baseRef;
 }
 
-// CONTRACT.md §3: independent seats share no lineage, so neither seat's lineage may name the other's actor.
+// CONTRACT.md §3: neither supervisor's lineage may name the other supervisor's actor.
 export function sharesLineage(
   a: { actor: string; lineage: string[] },
   b: { actor: string; lineage: string[] },
