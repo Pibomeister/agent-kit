@@ -1198,11 +1198,7 @@ describe("the store: pages stay files, run artifacts share one file", () => {
     const contents = readFileSync(join(fx.kb, ARTIFACTS), "utf8");
     rmSync(join(fx.kb, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
 
-    for (const request of [
-      [file],
-      [decision(fx, { id: "new-record" })],
-      [file, "--link", first.ref],
-    ]) {
+    for (const request of [[file], [decision(fx, { id: "new-record" })], [file, "--link", first.ref]]) {
       const sent = kb(fx, fx.project, ...args, ...request);
       expect(sent.code).toBe(1);
       expect(refusal(sent)).toMatchObject({ status: "failed", code: "kb.unreadable" });
