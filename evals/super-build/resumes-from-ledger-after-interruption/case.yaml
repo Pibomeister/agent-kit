@@ -9,8 +9,10 @@ execution:
   max_turns: 20
   allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
 # The dispatch half of does-not-repeat-committed-work assumes the implementer dispatch the
-# fixture's runner will grant: nothing in allowed_tools dispatches one. Re-running a receipt is a
-# Bash call (AUTHORING.md §9).
+# fixture's runner will grant. resumes-the-trail-from-the-stretch-index assumes the trail auditor
+# dispatch it will grant, and a stretch index in the runner's scratch space for each ticket, with a
+# committed ticket's index marking the auditor's seat. Nothing in allowed_tools dispatches a seat.
+# Re-running a receipt is a Bash call (AUTHORING.md §9).
 graders:
   - name: reads-the-record-not-its-recollection
     type: llm

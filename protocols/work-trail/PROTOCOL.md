@@ -35,13 +35,15 @@ widens the authority it was called with (ruling `entrypoint-phase-operation-spli
   [an example stretch](../../templates/trail.example.json).
 
 An absent input fails closed: nothing is guessed, and nothing stops the build
-(ruling `work-trail-is-account-not-evidence`). No ticket id or hash, no scratch space, no
-directory for the build, or a stretch index that cannot hold its row: the stretch is reported
-missing. A stretch index gone on a resumed run: the resume rule says what is reported. No
-knowledgebase adapter: the build has already failed at its receipts, and no trail step is reached.
-A publish that fails or cannot be read back: the record is reported with its location, its hash
-and the error, and is not sent again. A missing audit input: the audit is unavailable, and the
-report names what is missing.
+(ruling `work-trail-is-account-not-evidence`). No ticket id or hash, or no scratch space: the
+stretch is reported missing. No directory for the build, or a stretch index that cannot hold a
+stretch's row: step 7 tells that stretch's state from its record, as for any stretch this run
+formed, and the build's steps say what the index's failure leaves unpublished or unavailable. A
+stretch index gone on a resumed run: the resume rule says what is reported. No knowledgebase
+adapter: the build has already failed at its receipts, and no trail step is reached. A publish that
+fails or cannot be read back: the record is reported with its location, its hash and the error, and
+is not sent again. A missing audit input: the audit is unavailable, and the report names what is
+missing.
 
 ## Workflow
 
@@ -97,7 +99,9 @@ The build, for each ticket, in this order (ruling `work-trail-is-account-not-evi
    alone. Only the implementer it was prepared for writes to it afterwards. A replacing implementer
    is handed no earlier stretch (ruling `work-trail-is-account-not-evidence`).
 4. When an implementer's report arrives, write into its stretch's row the stretch's hash at that
-   report.
+   report. A hash the index cannot hold is reported, and nothing stops the build (ruling
+   `work-trail-is-account-not-evidence`); on a resumed run, that stretch is held back as the resume
+   rule says.
 5. Carry the stretch by reference: never open its entries and never rewrite its record. Handle it by
    its location, its hash, and the kind and the id its record names.
 6. Wait for the ticket's commit, its receipts, its ticket result and its gate record when there is
@@ -235,10 +239,11 @@ No outcome here stops the build (ruling `work-trail-is-account-not-evidence`).
 - `cap-reached`: the invoking operation's cap was reached. What stands is reported as it stands.
 - `failed`: the scratch space could not hold a stretch's record, and that stretch is reported
   missing; or a publish failed or could not be read back, and that record is reported with its
-  location, its hash and the error; or the stretch index could not hold a row, the trail-started
-  mark, a seat mark or an outcome, or was gone on a resumed run, and that is reported as the build's
-  steps and the resume rule say; or an audit record the build's directory cannot keep, or a hash
-  the index cannot hold, made the audit unavailable, and that is reported with that reason.
+  location, its hash and the error; or the stretch index could not hold a row, a report's hash, the
+  trail-started mark, a seat mark or an outcome, or was gone on a resumed run, and that is reported
+  as the build's steps and the resume rule say; or an audit record the build's directory cannot
+  keep, or a hash the index cannot hold, made the audit unavailable, and that is reported with that
+  reason.
 - `cancelled`: the runner cancelled the run. Each stretch is reported in the state it was left in.
 
 ## Limits
