@@ -6,11 +6,15 @@
  * Raw layers are append-only and are never reverted. Wiki layers (pattern
  * pages, memory, lessons, guardrails) are revertible through git. That
  * asymmetry is the point: a rolled-back guardrail stays on record as having
- * been tried.
+ * been tried. A raw layer kept in the SQLite store (`RAW_STORE_FILE`) is never
+ * committed at all: it is rewritten in place, and git would only copy it.
  */
 import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "./proc.ts";
+
+/** The ledger's raw SQLite store (`memory/raw-store.ts`). `commit` never stages it or its journal. */
+export const RAW_STORE_FILE = "raw/learn.sqlite";
 
 const GIT_ENV = {
   GIT_AUTHOR_NAME: "ak learn",
@@ -57,11 +61,19 @@ export class Ledger {
    * null when there was nothing to commit. Lock files are excluded here as well as
    * in `.gitignore`, because ledgers seeded before `.lock*` was ignored still list
    * only `.lock`, and a competing process's transient lock file must never be staged.
-   * The review pipeline log's rotated generation is excluded for the same reason:
-   * ledgers seeded before it existed do not ignore it.
+   * The review pipeline log's rotated generation and the raw store are excluded for
+   * the same reason: ledgers seeded before they existed do not ignore them.
    */
   commit(message: string): string | null {
-    this.git(["add", "-A", "--", ".", ":(exclude).lock*", ":(exclude)raw/.pipeline.1.log"]);
+    this.git([
+      "add",
+      "-A",
+      "--",
+      ".",
+      ":(exclude).lock*",
+      ":(exclude)raw/.pipeline.1.log",
+      `:(exclude)${RAW_STORE_FILE}*`,
+    ]);
     const result = this.git(["commit", "-q", "--no-gpg-sign", "-m", message]);
     if (result.code !== 0) return null;
     return this.head();

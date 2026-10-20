@@ -16,7 +16,7 @@ import { readJsonl, tokens } from "../../src/learn/core/store.ts";
 import { sessionKey, SPAN_FILE, type SpanRow } from "../../src/learn/core/trace.ts";
 import { appendRun, memoryDir, saveState, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { rollbackWiki } from "../../src/learn/memory/cli.ts";
-import { type Episode, UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
+import { loadEpisodes, UNDONE_RUNS_FILE } from "../../src/learn/memory/episodes.ts";
 import { reviewLedger } from "../../src/learn/review/ledger.ts";
 import {
   gitRepo,
@@ -342,7 +342,7 @@ describe("session-start exposure", () => {
     expect(start?.attrs.session).toMatch(/^[0-9a-f]{16}$/);
     expect(readFileSync(join(p.runtimeDir, SPAN_FILE), "utf8")).not.toContain("canaryhostid");
 
-    const episodes = readJsonl<Episode>(new Ledger(memoryDir(config, p.root)).path("episodes.jsonl"));
+    const episodes = loadEpisodes(new Ledger(memoryDir(config, p.root)));
     expect(episodes.find((episode) => episode.sid === sid)).toMatchObject({
       shown: ["rp-007", "ls-001", "ls-002"],
       completed: true,

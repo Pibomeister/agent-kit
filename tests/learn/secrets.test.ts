@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
-import { commandJudge, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
+import { commandJudge, JUDGE_BODIES_FILE, judgeBody, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
 import { scrubJsonText, scrubSecrets, SECRET_KINDS, type SecretKind } from "../../src/learn/core/secrets.ts";
 import { gateText, readJsonl, SECRET_REDACTIONS_FILE, type RedactionRecord } from "../../src/learn/core/store.ts";
 import { lessonDraft, proposeLesson } from "../../src/learn/kb.ts";
@@ -361,10 +361,11 @@ describe("the gate", () => {
     ).toEqual({ answer: "kept" });
     const [row] = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
     if (row === undefined) throw new Error("expected a judge trace row");
-    const prompt = readFileSync(join(config.runtimeDir, "judge-bodies", `${row.call_id}.prompt`), "utf8");
-    expect(prompt).toBe("observation: ran with [redacted:github-token]");
+    expect(judgeBody(config, row.call_id)?.prompt).toBe("observation: ran with [redacted:github-token]");
     const rows = readJsonl<RedactionRecord>(join(config.runtimeDir, SECRET_REDACTIONS_FILE));
-    expect(rows.map((r) => [r.file, r.kinds])).toEqual([[`judge-bodies/${row.call_id}.prompt`, { "github-token": 1 }]]);
+    expect(rows.map((r) => [r.file, r.kinds])).toEqual([
+      [`${JUDGE_BODIES_FILE}#judge_bodies/${row.call_id}.prompt`, { "github-token": 1 }],
+    ]);
   });
 
   test("a review rollback keeps the redaction record append-only", () => {
