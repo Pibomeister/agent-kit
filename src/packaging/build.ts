@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { readTextIfPresent, walkFiles } from "../util/fs.ts";
@@ -6,7 +6,7 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, type Issue } from "../validation/types.ts";
 import { ADAPTATIONS_FILE, loadAdaptationFragments, renderAdaptations } from "../validation/provenance.ts";
 import { HOST_IDS, type HostId } from "./hosts.ts";
-import { planBundle, type BundlePlan, type PlanOptions } from "./plan.ts";
+import { isExecutable, planBundle, type BundlePlan, type PlanOptions } from "./plan.ts";
 
 export interface BuildOptions extends PlanOptions {
   hosts?: ReadonlyArray<HostId>;
@@ -73,10 +73,17 @@ export function writeBundles(ctx: CheckContext, options: BuildOptions): BuildRes
       const target = join(outRoot, file.path);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, file.contents);
+      // chmod rather than a write mode, which the umask would narrow.
+      if (isExecutable(file)) chmodSync(target, 0o755);
     }
   }
 
   return { issues: collapseDuplicates(issues), profile };
+}
+
+/** Windows has no executable bit to read, so there every file counts as carrying it. */
+function hasExecBit(path: string): boolean {
+  return process.platform === "win32" || (statSync(path).mode & 0o111) !== 0;
 }
 
 /** Verify dist/ matches what a build would emit. Writes nothing. */
@@ -107,6 +114,15 @@ export function checkBundles(ctx: CheckContext, options: BuildOptions): Issue[] 
             "packaging.dist-stale",
             `${dir}/${file.path}`,
             "Content differs from what ak build would emit. Run ak build.",
+          ),
+        );
+      }
+      if (isExecutable(file) && !hasExecBit(join(ctx.root, dir, file.path))) {
+        issues.push(
+          error(
+            "packaging.dist-not-executable",
+            `${dir}/${file.path}`,
+            "Starts with a shebang under bin/ and lacks the executable bit, so running it fails with Permission denied. Run ak build.",
           ),
         );
       }

@@ -340,6 +340,17 @@ export interface BundleFile {
   source?: string;
 }
 
+/**
+ * Whether `file` is a program the bundle runs by its own path: a `bin/` file
+ * that starts with a shebang. The skills run `ak …`, which resolves to the
+ * installed `bin/ak`, and a shell refuses that file with "Permission denied"
+ * unless it carries the executable bit. `bin/ak-gate.mjs` has no shebang and
+ * every caller runs it as `node …/bin/ak-gate.mjs`, so it needs none.
+ */
+export function isExecutable(file: BundleFile): boolean {
+  return file.path.startsWith("bin/") && file.contents.startsWith("#!");
+}
+
 export interface HostDecision {
   skill: string;
   mode: SkillMode;
