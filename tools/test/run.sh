@@ -9,7 +9,8 @@ while IFS= read -r file; do
   fi
 done < tools/test/integration-files.txt
 
-# Give fixtures a private TMPDIR that is removed at exit. Bun lists every directory
+# Fixtures using TMPDIR share this private root, removed at exit. Process-scoped fixture helpers
+# manage their own root (tests/helpers/process-tmp.ts). Bun lists every directory
 # above its cwd and script on start, so a crowded macOS $TMPDIR costs each bun child about 250ms.
 TMPDIR=$(mktemp -d /tmp/ak-test-XXXXXX) || exit 1
 trap 'rm -rf "$TMPDIR"' EXIT
