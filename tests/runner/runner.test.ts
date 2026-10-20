@@ -25,6 +25,7 @@ import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
+import { parseJson } from "../helpers/json.ts";
 
 // Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
 // cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
@@ -1728,7 +1729,8 @@ describe("runner guards", () => {
     expect(decided.status).toBe("needs-input");
     expect(decided.escalation?.charter_rule).toBe("runner:seat-independence");
     const file = join(f.privateDir, "toy-run-forward.decision.json");
-    const doc: Record<string, unknown> = JSON.parse(readFileSync(file, "utf8"));
+    const doc = parseJson(readFileSync(file, "utf8"));
+    if (!(doc instanceof Object) || Array.isArray(doc)) throw new Error("expected decision object");
     expect(doc).toMatchObject({
       status: "blocked",
       authority_check: { seats_independent: false, result: "fail", failed_checks: ["seats_independent"] },
@@ -1760,7 +1762,8 @@ describe("runner guards", () => {
     const runner = new Runner(f.privateDir, f.worker, root);
     expect(runner.decide("toy-run", "card-1", [...failures]).status).toBe(independent ? "complete" : "needs-input");
     const file = join(f.privateDir, "toy-run-card-1.decision.json");
-    const doc: Record<string, unknown> = JSON.parse(readFileSync(file, "utf8"));
+    const doc = parseJson(readFileSync(file, "utf8"));
+    if (!(doc instanceof Object) || Array.isArray(doc)) throw new Error("expected decision object");
     expect(doc["authority_check"]).toMatchObject({
       seats_independent: independent,
       result: independent ? "pass" : "fail",
@@ -1810,7 +1813,7 @@ describe("runner guards", () => {
     const result = runner.decide("toy-run", "card-1");
     expect(result.status).toBe(cause === "elapsed cap" ? "cap-reached" : "needs-input");
     const file = join(f.privateDir, "toy-run-card-1.decision.json");
-    const doc: Record<string, unknown> = JSON.parse(readFileSync(file, "utf8"));
+    const doc = parseJson(readFileSync(file, "utf8"));
     expect(doc).toMatchObject({
       status: "blocked",
       authority_check: { seats_independent: false, result: "fail" },

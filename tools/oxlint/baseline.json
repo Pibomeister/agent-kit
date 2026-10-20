@@ -402,7 +402,7 @@
     "anti-slop(no-unknown-returns)": 1,
     "anti-slop(no-unsafe-dictionary-type)": 11,
     "anti-slop(require-safety-comment-for-type-assertion)": 3,
-    "typescript(no-base-to-string)": 7,
+    "typescript(no-base-to-string)": 6,
     "typescript(no-unsafe-type-assertion)": 3,
     "unicorn(consistent-function-scoping)": 1
   },
