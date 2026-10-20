@@ -33,3 +33,11 @@ graders:
     criteria: >-
       The rounds already spent on AK-703 still count against the cap of five. The interruption does
       not reset the loop's budget.
+  - name: resumes-the-trail-from-the-stretch-index
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The resumed run establishes from each ticket's stretch index which stretches were prepared and
+      which trail outcomes were recorded, and seats no trail auditor again for a ticket whose index
+      marks the seat.
