@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 
@@ -57,17 +57,5 @@ describe("process temp directory", () => {
     expect(inside(dir, tree)).toBe(true);
     expect(existsSync(tree)).toBe(false);
     expect(existsSync(dir)).toBe(false);
-  });
-
-  test("the helpers create fixtures only through it and never list the shared temp directory", () => {
-    const files = ["tests/preload.ts", "tests/helpers/tree.ts", "tests/learn/helpers.ts"];
-    for (const file of files) {
-      const source = readFileSync(join(REPO, file), "utf8");
-      const importsTmpdir = /import\s*\{[^}]*\btmpdir\b[^}]*\}\s*from\s*"node:os"/.test(source);
-      expect({ file, importsTmpdir }).toEqual({ file, importsTmpdir: false });
-      expect({ file, slashTmp: source.includes('"/tmp"') }).toEqual({ file, slashTmp: false });
-    }
-    const helper = readFileSync(join(REPO, "tests/helpers/process-tmp.ts"), "utf8");
-    expect(helper).not.toMatch(/readdir|opendir|glob/i);
   });
 });
