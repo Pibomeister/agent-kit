@@ -4,8 +4,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import {
@@ -20,6 +19,7 @@ import type { Matrix, Subject } from "./evals/matrix.ts";
 import { buildPanel, type Judge } from "./evals/panel.ts";
 import { adapterFor } from "./evals/subjects/index.ts";
 import type { HostKind, SessionEvent, SessionResult } from "./evals/subjects/types.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "case-runner");
 const CASE_FILE = join(FIXTURES, "case.yaml");
@@ -346,7 +346,7 @@ const UNRUNNABLE_GRADERS = [
 
 /** A copy of the fixture case, renamed, with one more grader appended. */
 function caseWith(grader: string): string {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-unrunnable-")));
+  const cwd = processScratch("ak-case-runner-unrunnable-");
   work.push(cwd);
   const file = join(cwd, "case.yaml");
   const text = readFileSync(CASE_FILE, "utf8").replace("cross-host-runner-fixture", "unrunnable-grader-fixture");
@@ -431,7 +431,7 @@ describe("evaluateCaseSession", () => {
       evalCase.graders.flatMap((grader) => (grader.type === "llm" ? [[grader.criteria, grader.name] as const] : [])),
     );
     for (const arm of ["good", "bad"] as const) {
-      const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-grader-reference-${arm}-`)));
+      const cwd = processScratch(`ak-grader-reference-${arm}-`);
       work.push(cwd);
       const selected = reference[arm];
       const marker = (names: string[]) => JSON.stringify({ offline_grader_passes: arm === "good" ? names : [] });
@@ -484,7 +484,7 @@ describe("evaluateCaseSession", () => {
     ["codex", "codex-turn.jsonl"],
     ["grok", "grok.jsonl"],
   ] as const)("applies tool, reply and file-focused graders to the %s transcript shape", async (host, fixture) => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-${host}-`)));
+    const cwd = processScratch(`ak-case-runner-${host}-`);
     work.push(cwd);
     mkdirSync(join(cwd, "tickets"));
     writeFileSync(join(cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
@@ -515,7 +515,7 @@ describe("evaluateCaseSession", () => {
     ["absent", null, "unavailable", "ungraded", 0],
     ["empty", "", "pass", "pass", 2],
   ] as const)("a judged file that is %s gives a %s grader", async (_label, content, verdict, result, judged) => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-file-focus-")));
+    const cwd = processScratch("ak-case-runner-file-focus-");
     work.push(cwd);
     if (content !== null) {
       mkdirSync(join(cwd, "tickets"));
@@ -544,7 +544,7 @@ describe("evaluateCaseSession", () => {
   });
 
   test("a row with a failed deterministic grader and an absent judged file is ungraded, with no reviewer asked", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-mixed-")));
+    const cwd = processScratch("ak-case-runner-mixed-");
     work.push(cwd);
     let asked = 0;
     const row = await evaluateCaseSession(
@@ -577,7 +577,7 @@ describe("evaluateCaseSession", () => {
     ["pass", ["PASS", "PASS", "FAIL"]],
     ["fail", ["FAIL", "FAIL", "PASS"]],
   ] as const)("a 2-1 reviewer majority produces a %s verdict and records the split", async (verdict, votes) => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-majority-${verdict}-`)));
+    const cwd = processScratch(`ak-case-runner-majority-${verdict}-`);
     work.push(cwd);
     mkdirSync(join(cwd, "tickets"));
     writeFileSync(join(cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
@@ -604,7 +604,7 @@ describe("evaluateCaseSession", () => {
   });
 
   test("a 1-1 reviewer tie stays ungraded and later graders are not judged", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-disagree-")));
+    const cwd = processScratch("ak-case-runner-disagree-");
     work.push(cwd);
     mkdirSync(join(cwd, "tickets"));
     writeFileSync(join(cwd, "tickets", "result.json"), '{"class":"red","owner":"Maya Chen"}\n');
@@ -640,7 +640,7 @@ describe("evaluateCaseSession", () => {
     const parsed = adapterFor("grok").parse(
       readFileSync(join(import.meta.dir, "evals", "fixtures", "transcripts", "grok-cancelled-read.jsonl"), "utf8"),
     );
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-invalid-")));
+    const cwd = processScratch("ak-case-runner-invalid-");
     work.push(cwd);
     const row = await evaluateCaseSession(
       loadCase(CASE_FILE),
@@ -676,7 +676,7 @@ describe("evaluateCaseSession", () => {
   });
 
   test("a session with no host-reported served model is invalid before grading", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-no-model-")));
+    const cwd = processScratch("ak-case-runner-no-model-");
     work.push(cwd);
     const row = await evaluateCaseSession(
       loadCase(CASE_FILE),
@@ -791,7 +791,7 @@ const hostCli = (help: ReadonlyMap<string, string>) => (probe: readonly string[]
 const GROK_TOOLS = ["run_terminal_command", "read_file", "search_replace", "list_dir", "grep", "write"];
 
 function bundles(): string {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-")));
+  const cwd = processScratch("ak-case-runner-preflight-");
   work.push(cwd);
   for (const bundle of ["claude-code", "codex"]) {
     const skill = join(cwd, bundle, "skills", "super-bound", "SKILL.md");
@@ -894,7 +894,7 @@ describe("preflight", () => {
   });
 
   test("fails loudly when a referenced bundle skill is absent", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-preflight-red-")));
+    const cwd = processScratch("ak-case-runner-preflight-red-");
     work.push(cwd);
     const { code, errors } = await preflight({ bundleRoot: cwd });
 
@@ -1037,7 +1037,7 @@ describe("execute path", () => {
     ["codex", "codex-turn.jsonl", "codex"],
     ["grok", "grok.jsonl", "grok"],
   ] as const)("runs the %s transcript fixture through the receipt path", async (host, fixture, binary) => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-main-${host}-`)));
+    const cwd = processScratch(`ak-case-runner-main-${host}-`);
     work.push(cwd);
     const bundle = join(cwd, "dist");
     mkdirSync(join(bundle, "claude-code"), { recursive: true });
@@ -1140,7 +1140,7 @@ describe("execute path", () => {
   });
 
   test("checks every subject's bundle before starting any session", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-bundles-")));
+    const cwd = processScratch("ak-case-runner-bundles-");
     work.push(cwd);
     const bundle = join(cwd, "dist");
     mkdirSync(join(bundle, "claude-code"), { recursive: true });
@@ -1178,7 +1178,7 @@ describe("execute path", () => {
   });
 
   test("writes the completed rows and the aborted session when a later session throws", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-abort-")));
+    const cwd = processScratch("ak-case-runner-abort-");
     work.push(cwd);
     const bundle = join(cwd, "dist");
     mkdirSync(join(bundle, "claude-code"), { recursive: true });
@@ -1230,7 +1230,7 @@ describe("execute path", () => {
   });
 
   test("commits the class of an invalid reason and keeps the refused call it quotes in the raw receipt", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-invalid-")));
+    const cwd = processScratch("ak-case-runner-invalid-");
     work.push(cwd);
     const bundle = join(cwd, "dist");
     mkdirSync(join(bundle, "claude-code"), { recursive: true });
@@ -1271,7 +1271,7 @@ describe("execute path", () => {
   });
 
   test("keeps the raw stream and artifacts of a session whose grading throws in the raw receipt only", async () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-runner-judge-abort-")));
+    const cwd = processScratch("ak-case-runner-judge-abort-");
     work.push(cwd);
     const bundle = join(cwd, "dist");
     mkdirSync(join(bundle, "claude-code"), { recursive: true });
@@ -1351,7 +1351,7 @@ describe("execute path", () => {
 });
 
 function stage(tag: string) {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), `ak-case-runner-${tag}-`)));
+  const cwd = processScratch(`ak-case-runner-${tag}-`);
   work.push(cwd);
   const bundle = join(cwd, "dist");
   mkdirSync(join(bundle, "claude-code"), { recursive: true });

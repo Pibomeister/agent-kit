@@ -9,7 +9,6 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, test } from "bun:test";
@@ -23,6 +22,7 @@ import { decodeClaudeCode, encodeClaudeCode, type LinkResolver } from "../../src
 import { loadGuardPolicy } from "../../src/guard/policy.ts";
 import { planBundle } from "../../src/packaging/plan.ts";
 import { HOST_IDS } from "../../src/packaging/hosts.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 /**
  * CS-11's acceptance criteria (research/briefs/constitution-support-plan.md):
@@ -330,7 +330,7 @@ describe("the decoder", () => {
 
 describe("resolveLink", () => {
   test("follows a linked file and a new file under a linked directory, and is null where nothing is linked", () => {
-    const work = mkdtempSync(join(tmpdir(), "ak-guard-link-"));
+    const work = processScratch("ak-guard-link-");
     try {
       mkdirSync(join(work, "tests"));
       mkdirSync(join(work, "src"));

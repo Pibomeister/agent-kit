@@ -66,8 +66,7 @@
  * single-call eval, research/sources/learning-stack/skills/dreamd/evals/reflect_eval.py, from one
  * real repository to fixed fixtures with known answers. The last stdout line is one JSON summary.
  */
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../../../src/learn/core/config.ts";
 import type { LearnContext } from "../../../src/learn/core/context.ts";
@@ -81,6 +80,7 @@ import { fetchNew, reflect, reflectPrompt } from "../../../src/learn/memory/refl
 import { ClaudeMemSource } from "../../../src/learn/sources/claude-mem.ts";
 import { buildFixture, type BuiltFixture, loadFixtureSet } from "./reflect/fixtures.ts";
 import { evalInstrument, option } from "./session.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 export const RECALL_AT = 0.8;
 export const PRECISION_AT = 0.8;
@@ -524,7 +524,7 @@ async function main(argv: string[]): Promise<number> {
   const results: FixtureResult[] = [];
   for (const { spec, set: which } of tagged) {
     const fresh = () => {
-      const base = realpathSync(mkdtempSync(join(tmpdir(), `ak-reflect-eval-${spec.id}-`)));
+      const base = processScratch(`ak-reflect-eval-${spec.id}-`);
       return { base, built: buildFixture(spec, set.distractors, join(base, "mem.db")) };
     };
     if (argv.includes("--dry-run")) {

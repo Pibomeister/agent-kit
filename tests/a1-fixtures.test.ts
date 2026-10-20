@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse as parseYaml } from "yaml";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -45,7 +45,7 @@ function loadCase(dir: string): CaseSpec {
 
 function buildScaffold(dir: string): string {
   const prefix = `ak-a1-${dir.replaceAll("/", "-")}-`;
-  const workspace = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  const workspace = processScratch(prefix);
   made.push(workspace);
   const script = join(ROOT, "evals", dir, "scaffold.sh");
   const result = spawnSync("bash", [script], { cwd: workspace, encoding: "utf8" });

@@ -3,7 +3,6 @@ import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
-  mkdtempSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -12,7 +11,6 @@ import {
   watch,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { runRunner } from "../../src/runner/cli.ts";
@@ -22,6 +20,7 @@ import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 // Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
 // cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
@@ -156,7 +155,7 @@ async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<bool
 }
 
 function fixture(limit = 3) {
-  const dir = mkdtempSync(join(tmpdir(), "ak-runner-"));
+  const dir = processScratch("ak-runner-");
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
@@ -2899,7 +2898,7 @@ describe("runner guards", () => {
   });
 
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
-    const dir = mkdtempSync(join(tmpdir(), "ak-runner-link-"));
+    const dir = processScratch("ak-runner-link-");
     const worker = join(dir, "worker");
     const state = join(dir, "private");
     mkdirSync(worker);
@@ -2936,7 +2935,7 @@ describe("unknown runner selectors", () => {
     const previous = process.env["AK_RUNNER_TOKEN"];
     process.env["AK_RUNNER_TOKEN"] = "t".repeat(32);
     try {
-      const socket = join(mkdtempSync(join(tmpdir(), "ak-runner-verb-")), "absent.sock");
+      const socket = join(processScratch("ak-runner-verb-"), "absent.sock");
       expect(await runRunner(["call", "stauts", "--socket", socket], io)).toBe(2);
     } finally {
       if (previous === undefined) delete process.env["AK_RUNNER_TOKEN"];

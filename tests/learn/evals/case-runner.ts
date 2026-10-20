@@ -4,7 +4,6 @@
  */
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -14,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { PACKAGE_ROOT } from "../../../src/learn/core/roles.ts";
@@ -32,6 +31,7 @@ import { runCodexAppServer } from "./subjects/codex.ts";
 import { grokToolList } from "./subjects/grok.ts";
 import type { HostKind, SessionRequest, SessionResult, TokenUsage, ToolEvent } from "./subjects/types.ts";
 import { invalidSession } from "./trigger-eval.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 type Focus = "trace" | "last_message" | "files" | "mock_calls" | { source: "file"; path: string };
 type ToolReference = string | { tool: string; input_match?: string };
@@ -475,7 +475,7 @@ interface PreparedCase {
 }
 
 function prepareCase(evalCase: EvalCase): PreparedCase {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-case-")));
+  const cwd = processScratch("ak-case-");
   const scaffold = evalCase.context?.scaffold_script;
   if (scaffold !== undefined) {
     const script = resolve(PACKAGE_ROOT, dirname(evalCase.file), scaffold);
@@ -693,7 +693,7 @@ async function inPrivateHome<T>(
   request: SessionRequest,
   use: (options: { cwd: string; env: Record<string, string>; timeoutMs: number }) => Promise<T>,
 ): Promise<T> {
-  const scratch = realpathSync(mkdtempSync(join(tmpdir(), `ak-preflight-${host}-`)));
+  const scratch = processScratch(`ak-preflight-${host}-`);
   const cwd = join(scratch, "cwd");
   mkdirSync(cwd);
   const isolation = adapterFor(host).isolate?.(scratch, request);

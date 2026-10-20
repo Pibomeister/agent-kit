@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 
@@ -87,5 +87,44 @@ describe("process temp directory", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+// Outside the lifecycle and Firstmate trees, which keep their own fixtures for now, every test,
+// eval harness and budget tool directory is made through the helper above.
+// The eval subject repositories under evals/**/_fixtures/ are copied into each run's own
+// workspace and cannot import the helper. The search reads tracked source, never a temp directory.
+const SHARED_PARENT = /mkdtemp(?:Sync)?\(\s*(?:(?:path\.)?join\(\s*)?(?:(?:os\.)?tmpdir\(\)|["'`]\/tmp["'`])/;
+const EXEMPT = /^(?:tests\/lifecycle\/|tests\/firstmate\/|evals\/.*\/_fixtures\/|tests\/helpers\/process-tmp\.ts$)/;
+
+function sharedParentSites(): string[] {
+  const listed = Bun.spawnSync(["git", "ls-files", "--", "tests", "evals", "tools/budget"], { cwd: REPO });
+  const files = listed.stdout
+    .toString()
+    .split("\n")
+    .filter((file) => /\.(?:[cm]?[jt]s)$/.test(file) && !EXEMPT.test(file));
+  return files.flatMap((file) =>
+    readFileSync(join(REPO, file), "utf8")
+      .split("\n")
+      .flatMap((line, i) => (SHARED_PARENT.test(line) ? [`${file}:${i + 1}`] : [])),
+  );
+}
+
+describe("test call sites", () => {
+  test("the search recognises a mkdtemp in the shared temp directory", () => {
+    // Spelled in pieces so this file's own source does not match the search below.
+    const make = "mkdtemp";
+    for (const line of [
+      `${make}Sync(join(tmpdir(), "ak-x-"))`,
+      `fs.${make}Sync(path.join(os.tmpdir(), 'x-'))`,
+      `${make}Sync(join("/tmp", "ak-x-"))`,
+      `await ${make}(tmpdir())`,
+    ])
+      expect(SHARED_PARENT.test(line)).toBe(true);
+    expect(SHARED_PARENT.test('processScratch("ak-x-")')).toBe(false);
+  });
+
+  test("outside lifecycle and Firstmate, none makes a temp directory in the shared parent", () => {
+    expect(sharedParentSites()).toEqual([]);
   });
 });

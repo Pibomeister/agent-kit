@@ -5,8 +5,7 @@
  * Judges are stubbed, so no host CLI runs here.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   DEFAULT_MATRIX,
@@ -20,8 +19,9 @@ import {
 import { buildPanel, calibration, grade, type Judge, parseVote, readQueue } from "./evals/panel.ts";
 import { loadPriceTable } from "./evals/pricing.ts";
 import type { SessionResult } from "./evals/subjects/types.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ak-panel-test-")));
+const scratch = processScratch("ak-panel-test-");
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const seat = (id: string, host: Seat["host"], model: string): Seat => ({ id, host, model });

@@ -5,14 +5,12 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -29,6 +27,7 @@ import {
 } from "../src/tracker/binding.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { makeTree } from "./helpers/tree.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 /**
  * adapters/tracker/CONTRACT.md §5 and ruling `tracker-of-record-falls-back-to-kb`:
@@ -356,7 +355,7 @@ describe("the secret stays in the folder and out of git", () => {
     const binding = loadTrackerBinding(dir, REPO).binding!;
     // A real `git log` on a one-commit fixture can finish inside any timeout, so the
     // scan is made to hang: a `git` first on PATH sleeps on `log` and defers the rest.
-    const bin = mkdtempSync(join(tmpdir(), "ak-slow-git-"));
+    const bin = processScratch("ak-slow-git-");
     writeFileSync(
       join(bin, "git"),
       `#!/bin/sh\nfor a in "$@"; do [ "$a" = log ] && exec sleep 30; done\nexec ${Bun.which("git")} "$@"\n`,
@@ -414,7 +413,7 @@ describe("the secret stays in the folder and out of git", () => {
   });
 
   test("a token file linking outside the folder is not project-local", () => {
-    const outside = realpathSync(mkdtempSync(join(tmpdir(), "ak-global-")));
+    const outside = processScratch("ak-global-");
     writeToken(join(outside, "token"));
     const dir = project({ [BINDING_FILE]: BINDING, ".gitignore": ".linear-token\n" });
     symlinkSync(join(outside, "token"), join(dir, ".linear-token"));
@@ -437,7 +436,7 @@ describe("the secret stays in the folder and out of git", () => {
     const untracked = project({ [BINDING_FILE]: BINDING, ".linear-token": TOKEN });
     const loose = project({ [BINDING_FILE]: BINDING, ".gitignore": ".linear-token\n", ".linear-token": TOKEN });
     chmodSync(join(loose, ".linear-token"), 0o644);
-    const outside = realpathSync(mkdtempSync(join(tmpdir(), "ak-global-")));
+    const outside = processScratch("ak-global-");
     writeToken(join(outside, "token"));
     const linked = project({ [BINDING_FILE]: BINDING, ".gitignore": ".linear-token\n" });
     symlinkSync(join(outside, "token"), join(linked, ".linear-token"));

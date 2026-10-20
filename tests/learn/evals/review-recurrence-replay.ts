@@ -10,8 +10,6 @@
  * measuring recurrence. Events go straight into the raw layer, so neither
  * GitHub nor claude-mem is read.
  */
-import { mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { loadConfig } from "../../../src/learn/core/config.ts";
 import type { LearnContext } from "../../../src/learn/core/context.ts";
@@ -21,6 +19,7 @@ import { reviewLedger } from "../../../src/learn/review/ledger.ts";
 import { maintain } from "../../../src/learn/review/maintain.ts";
 import { runRows } from "../../../src/learn/review/patterns.ts";
 import { GOLD, goldEvents, RECURRING } from "./review-fixtures.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 /** Replay both runs against `ctx.judge` and return the second run's repeat count, or -1 without a second run row. */
 export function replay(ctx: LearnContext, root: string, print: (line: string) => void = console.log): number {
@@ -42,7 +41,7 @@ export function replay(ctx: LearnContext, root: string, print: (line: string) =>
 }
 
 if (import.meta.main) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "ak-review-replay-")));
+  const base = processScratch("ak-review-replay-");
   const env = { ...process.env, CLAUDE_CONFIG_DIR: join(base, "config") };
   const config = loadConfig(env);
   const ctx: LearnContext = {

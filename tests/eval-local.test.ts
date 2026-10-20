@@ -6,18 +6,10 @@
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const SCRIPT = join(REPO, "scripts", "eval-local.sh");
@@ -120,7 +112,7 @@ afterAll(() => {
 });
 
 function runFixture(args: string[], env: Record<string, string> = {}) {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-eval-local-")));
+  const dir = processScratch("ak-eval-local-");
   made.push(dir);
   const bin = join(dir, "bin");
   mkdirSync(bin);

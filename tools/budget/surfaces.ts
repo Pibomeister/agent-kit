@@ -11,8 +11,7 @@
  * It is planned for the default install: `ak.install.yaml` changes the generated frontmatter, so
  * the planner reads a root that links every top-level entry of the tree except that file.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { entryBodyPath } from "../../src/catalog/layout.ts";
@@ -35,6 +34,7 @@ import { HOST_IDS } from "../../src/packaging/hosts.ts";
 import { INSTALL_FILE } from "../../src/packaging/install.ts";
 import { planBundle } from "../../src/packaging/plan.ts";
 import { parseFrontmatter } from "../../src/util/frontmatter.ts";
+import { processScratch } from "../../tests/helpers/process-tmp.ts";
 
 export interface Surface {
   /** Stable key in the baseline. */
@@ -66,7 +66,7 @@ function read(root: string, file: string): string {
 
 /** A root holding every top-level entry of `root` but the install file, so planning sees the default install. */
 export function withDefaultInstall<T>(root: string, use: (planRoot: string) => T): T {
-  const farm = mkdtempSync(join(tmpdir(), "ak-budget-"));
+  const farm = processScratch("ak-budget-");
   try {
     for (const name of readdirSync(root)) if (name !== INSTALL_FILE) symlinkSync(join(root, name), join(farm, name));
     return use(farm);
@@ -111,7 +111,7 @@ function roleSurfaces(root: string, catalog: Catalog): Surface[] {
 
 /** The learning hook's session-start block, outside a repository and for an invented project. */
 function hookSurfaces(root: string): Surface[] {
-  const base = mkdtempSync(join(tmpdir(), "ak-budget-"));
+  const base = processScratch("ak-budget-");
   try {
     const env: NodeJS.ProcessEnv = {
       CLAUDE_CONFIG_DIR: join(base, "config"),
