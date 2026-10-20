@@ -283,3 +283,19 @@ judge call. The host CLI documents
 `--disable-slash-commands` as disabling skills and `--setting-sources` as selecting settings inputs,
 but documents no login guarantee for either. The runtime therefore adopts neither: login
 preservation is required before a context-reduction flag can enter the scheduled path.
+
+Each memory ledger keeps episodes, captured worker observations and worker sessions in
+`raw/learn.sqlite`, an agent-kit database excluded from ledger commits along with its journal files.
+It does not replace claude-mem's database or require that plugin. An episode is keyed by session id;
+a refresh replaces its row. The first non-empty write (or worker-store replacement) imports existing
+`episodes.jsonl`, `raw/worker-observations.jsonl` and `raw/worker-sessions.jsonl` once, in the same
+transaction. Those files stay on disk and receive no further appends. Until that write, reads use
+the legacy files without creating a database. `memory.md`, `lessons/` and `lessons.md` stay in git
+and form the rollback layer; raw rows are never rolled back.
+
+Judge tracing defaults to metadata only. With `AK_LEARN_TRACE=full`, scrubbed prompts and replies
+go into the runtime directory's `trace.sqlite`, in the `judge_bodies` table keyed by call id.
+`judge-calls.jsonl` and `spans.jsonl` remain JSONL, each rotating at 10 MiB and retaining one previous
+generation. Dropping a judge metadata generation deletes its body rows and any corresponding
+legacy `<call-id>.prompt` and `.reply` files under `judge-bodies/`. The database has no separate byte
+cap; body retention follows metadata rotation (`src/learn/core/judge.ts`).

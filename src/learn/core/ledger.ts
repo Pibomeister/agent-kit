@@ -1,10 +1,10 @@
 /**
  * A git-versioned ledger directory: one commit per completed job, one lock per
  * ledger. A failed or rejected reflect, and a failed nightly, commit nothing;
- * the rows they record ride in the next commit.
+ * the git-tracked rows they record ride in the next commit.
  *
- * Raw layers are append-only and are never reverted. Wiki layers (pattern
- * pages, memory, lessons, guardrails) are revertible through git. That
+ * Raw layers are never reverted. Wiki layers (pattern pages, memory, lessons,
+ * guardrails) are revertible through git. That
  * asymmetry is the point: a rolled-back guardrail stays on record as having
  * been tried. A raw layer kept in the SQLite store (`RAW_STORE_FILE`) is never
  * committed at all: it is rewritten in place, and git would only copy it.
@@ -57,8 +57,9 @@ export class Ledger {
   }
 
   /**
-   * Stage everything except lock files and commit. Returns the new HEAD sha, or
-   * null when there was nothing to commit. Lock files are excluded here as well as
+   * Stage ledger files except locks, the rotated pipeline log and the raw store.
+   * Commit and return the new HEAD sha, or null when there was nothing to commit.
+   * Lock files are excluded here as well as
    * in `.gitignore`, because ledgers seeded before `.lock*` was ignored still list
    * only `.lock`, and a competing process's transient lock file must never be staged.
    * The review pipeline log's rotated generation and the raw store are excluded for

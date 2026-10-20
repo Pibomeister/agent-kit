@@ -76,7 +76,8 @@ const TRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const TRACE_GENERATIONS = ["judge-calls.1.jsonl", "judge-calls.jsonl"] as const;
 /**
  * The runtime directory's database. With `AK_LEARN_TRACE=full` its one table, `judge_bodies`, holds each
- * retained call's prompt and reply, keyed by call id. Absent under the default metadata-only trace.
+ * retained call's prompt and reply, keyed by call id. Created only for full tracing; later
+ * metadata-only runs still prune an existing database on rotation.
  */
 export const JUDGE_BODIES_FILE = "trace.sqlite";
 /** Where an older version wrote one file per body, `<call id>.prompt` and `.reply`. Rotation still removes them. */

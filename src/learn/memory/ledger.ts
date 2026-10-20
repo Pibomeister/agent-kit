@@ -5,12 +5,12 @@
  * |---|---|
  * | `memory.md` | the organized working memory; the only prose injected at session start, with confirmed lessons |
  * | `raw/learn.sqlite` | the raw store, outside git (`raw-store.ts`): one row per episode of an ended observed session, and the turns and sessions captured from worker host records (`sources/worker-sessions.ts`) |
- * | `episodes.jsonl`, `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | what ledgers kept before the store; read once into it, then left in place |
+ * | `episodes.jsonl`, `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | legacy input; migration rules are in `raw-store.ts` |
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
- * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the worker files above hold, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
+ * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the raw store holds, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *
  * `memory.md` and the lessons are the revertible wiki layer; the raw store

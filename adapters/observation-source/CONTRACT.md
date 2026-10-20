@@ -231,7 +231,10 @@ A turn still running is left for a later scan: the last turn is stored once its 
 turn's end, or once the record has been quiet for an hour. A session past 999 turns keeps its first
 prompt and its most recent turns, with a `truncated` row counting the turns left out between them.
 
-Rows are append-only with a separate numeric id range. A row is new when the ledger holds no row of
+Worker storage and legacy-file migration are described in
+[`adapters/claude-code/CONTRACT.md` §7](../claude-code/CONTRACT.md#7-the-learning-runtimes-hooks).
+Observations are append-only within the retained scan window, with a separate numeric id range.
+A row is new when the ledger holds no row of
 that session with the same digest of title and excerpt-form text, so a record its host rewrites
 (Grok compaction) still appends only what was not captured. A distilled row keeps the digest of the
 excerpt form it replaced, which is the form every later scan rebuilds. A session its host last wrote
