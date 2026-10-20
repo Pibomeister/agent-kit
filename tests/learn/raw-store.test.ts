@@ -10,7 +10,7 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
-import { commandJudge, JUDGE_BODIES_FILE, judgeBody, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
+import { commandJudge, JUDGE_BODIES_FILE, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
 import { Ledger, RAW_STORE_FILE } from "../../src/learn/core/ledger.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { appendCapped } from "../../src/learn/core/trace.ts";
@@ -364,13 +364,16 @@ describe("trace metadata caps and full judge bodies", () => {
           .map((row) => row.call_id)
           .toSorted(),
       ).toEqual(retained.toSorted());
+      const bodies = db.query<{ prompt: string; reply: string }, [string]>(
+        "SELECT prompt, reply FROM judge_bodies WHERE call_id = ?1",
+      );
+      expect(retained.map((id) => bodies.get(id))).toEqual([
+        { prompt: "second", reply: '{"answer":"kept"}' },
+        { prompt: "third", reply: '{"answer":"kept"}' },
+      ]);
     } finally {
       db.close();
     }
-    expect(retained.map((id) => judgeBody(config, id))).toEqual([
-      { prompt: "second", reply: '{"answer":"kept"}' },
-      { prompt: "third", reply: '{"answer":"kept"}' },
-    ]);
   });
 
   test("the default metadata-only trace creates no body database", () => {

@@ -1,8 +1,9 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../../src/learn/core/config.ts";
-import { commandJudge, JUDGE_BODIES_FILE, judgeBody, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
+import { commandJudge, JUDGE_BODIES_FILE, type JudgeTraceRow } from "../../src/learn/core/judge.ts";
 import { scrubJsonText, scrubSecrets, SECRET_KINDS, type SecretKind } from "../../src/learn/core/secrets.ts";
 import { gateText, readJsonl, SECRET_REDACTIONS_FILE, type RedactionRecord } from "../../src/learn/core/store.ts";
 import { lessonDraft, proposeLesson } from "../../src/learn/kb.ts";
@@ -361,7 +362,15 @@ describe("the gate", () => {
     ).toEqual({ answer: "kept" });
     const [row] = readJsonl<JudgeTraceRow>(join(config.runtimeDir, "judge-calls.jsonl"));
     if (row === undefined) throw new Error("expected a judge trace row");
-    expect(judgeBody(config, row.call_id)?.prompt).toBe("observation: ran with [redacted:github-token]");
+    const db = new Database(join(config.runtimeDir, JUDGE_BODIES_FILE), { readonly: true });
+    try {
+      expect(
+        db.query<{ prompt: string }, [string]>("SELECT prompt FROM judge_bodies WHERE call_id = ?1").get(row.call_id)
+          ?.prompt,
+      ).toBe("observation: ran with [redacted:github-token]");
+    } finally {
+      db.close();
+    }
     const rows = readJsonl<RedactionRecord>(join(config.runtimeDir, SECRET_REDACTIONS_FILE));
     expect(rows.map((r) => [r.file, r.kinds])).toEqual([
       [`${JUDGE_BODIES_FILE}#judge_bodies/${row.call_id}.prompt`, { "github-token": 1 }],

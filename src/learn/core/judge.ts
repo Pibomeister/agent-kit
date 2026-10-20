@@ -208,21 +208,6 @@ function existingBodies(config: LearnConfig): Database | null {
   return existsSync(join(config.runtimeDir, JUDGE_BODIES_FILE)) ? openBodies(config) : null;
 }
 
-/** One retained call's full prompt and reply, or null when the call is not retained or was traced metadata-only. */
-export function judgeBody(config: LearnConfig, callId: string): { prompt: string; reply: string } | null {
-  const db = existingBodies(config);
-  if (db === null) return null;
-  try {
-    return (
-      db
-        .query<{ prompt: string; reply: string }, [string]>("SELECT prompt, reply FROM judge_bodies WHERE call_id = ?1")
-        .get(callId) ?? null
-    );
-  } finally {
-    db.close();
-  }
-}
-
 /** Move the current trace over the previous one, dropping the bodies of the calls that leave with it. */
 function rotateTrace(config: LearnConfig, trace: string): void {
   const rotated = join(config.runtimeDir, TRACE_GENERATIONS[0]);
