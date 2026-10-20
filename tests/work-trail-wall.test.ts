@@ -33,6 +33,7 @@ const WALLED = [
   { name: "a stretch", pattern: /\bstretch(es)?\b/i },
   { name: "the trail audit", pattern: /\btrail audit\b/i },
   { name: "the attention list", pattern: /\battention list\b/i },
+  { name: "the kept audit record", pattern: /\b(kept|audit) record\b/i },
 ];
 
 /** The ruling's binds, exactly, and the files they resolve to. */
@@ -165,10 +166,21 @@ describe("the wall around the trail", () => {
     expect(wallFindings(broken)).toEqual([`${CORRECTNESS}: its given section names the attention list`]);
   });
 
-  test("refuses a judging role given a stretch, naming it", () => {
-    const broken = withRole(CORRECTNESS, (body) => givenPlus(body, "the implementer's stretch, by reference"));
-    expect(wallFindings(broken)).toEqual([`${CORRECTNESS}: its given section names a stretch`]);
-  });
+  test.each(["the implementer's stretch, by reference", "the ticket's stretches, by reference"])(
+    "refuses a judging role given %s, naming a stretch",
+    (words) => {
+      const broken = withRole(CORRECTNESS, (body) => givenPlus(body, words));
+      expect(wallFindings(broken)).toEqual([`${CORRECTNESS}: its given section names a stretch`]);
+    },
+  );
+
+  test.each(["the kept audit record", "the kept record, by location"])(
+    "refuses a second role given %s, naming the kept audit record",
+    (words) => {
+      const broken = withRole(VERIFIER, (body) => givenPlus(body, words));
+      expect(wallFindings(broken)).toEqual([`${VERIFIER}: its given section names the kept audit record`]);
+    },
+  );
 
   test("refuses a super-build body without the wall sentence, naming it", () => {
     const real = realTexts();
