@@ -317,7 +317,9 @@ describe("judge call trace", () => {
       try {
         expect(
           db
-            .query<{ prompt: string; reply: string }, [string]>("SELECT prompt, reply FROM judge_bodies WHERE call_id = ?1")
+            .query<{ prompt: string; reply: string }, [string]>(
+              "SELECT prompt, reply FROM judge_bodies WHERE call_id = ?1",
+            )
             .get(row.call_id),
         ).toEqual({ prompt: "private prompt", reply: '{"answer":"kept"}' });
       } finally {
