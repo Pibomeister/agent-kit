@@ -1,9 +1,10 @@
 /**
  * One temporary directory per process, removed when the process exits.
  *
- * Every test fixture is a child of this directory, so a run adds one entry to
- * the shared temporary directory and a killed run leaves one entry, not one per
- * fixture. On macOS the directory sits under `/tmp`, not `os.tmpdir()`: the
+ * Fixtures created through processScratch share this directory, so these
+ * helpers add one entry to the temporary parent and a killed process leaves
+ * one entry, not one per fixture. Other fixture builders manage their own paths.
+ * On macOS the directory sits under `/tmp`, not `os.tmpdir()`: the
  * per-user `$TMPDIR` collects entries until each create in it stalls, and bun
  * lists every directory above a script it starts. Elsewhere it sits under
  * `os.tmpdir()`.

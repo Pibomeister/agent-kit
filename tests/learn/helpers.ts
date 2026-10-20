@@ -77,12 +77,9 @@ const startScratches: string[] = [];
 
 /**
  * A fresh directory for a script a test starts with bun, and for that run's
- * HOME. It is a child of the process temporary directory, which on macOS sits
- * under `/tmp`, not `tmpdir()`: bun lists every directory above a script it
- * starts, and a per-user temporary directory that has collected many entries
- * (macOS `$TMPDIR`) turns each start into tens of seconds. The process
- * directory holds only this run's fixtures and is outside any checkout.
- * Remove with `removeStartScratch`.
+ * HOME. It uses processScratch; see `../helpers/process-tmp.ts` for the path
+ * policy and Bun startup constraint. Remove early with `removeStartScratch`;
+ * otherwise the process directory's cleanup removes it.
  */
 export function startScratch(prefix = "ak-learn-"): string {
   const dir = processScratch(prefix);
