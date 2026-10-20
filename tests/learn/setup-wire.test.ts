@@ -209,12 +209,14 @@ describe("setup wire", () => {
     expect(spec?.timeout).toBe(10);
 
     const ctx = context(deps);
-    expect(deps.home.startsWith(homedir())).toBe(false);
+    expect(deps.home).not.toBe(homedir());
+    expect(deps.home.startsWith(join(homedir(), ".claude"))).toBe(false);
     expect(ctx.config.configDir.startsWith(join(homedir(), ".claude"))).toBe(false);
-    expect(wire(ctx, deps)).toBe(0);
+    expect(wire(ctx, deps, { host: "claude", noMem: true })).toBe(0);
     const doc = readDoc(join(ctx.config.configDir, "settings.json"));
     expect(doc.hooks?.SessionStart?.[0]?.hooks?.[0]?.timeout).toBe(10);
-    expect(deps.calls.some((cmd) => cmd.includes("restart"))).toBe(false);
+    expect(existsSync(join(deps.home, ".claude-mem"))).toBe(false);
+    expect(deps.calls).toEqual([]);
   });
 
   test("a settings file that is not valid JSON is refused and left byte-identical, and nothing else is written", () => {
