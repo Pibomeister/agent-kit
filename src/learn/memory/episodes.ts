@@ -1,8 +1,8 @@
 /**
- * Episode memory: ended observed sessions become `episodes.jsonl` rows,
- * deterministically, each with a priority. Rows are only ever appended; when a
- * resumed session gains observations, its newer row supersedes the older one.
- * Consolidation is recorded beside them in `raw/consolidated.jsonl` as
+ * Episode memory: ended observed sessions become rows of the ledger's raw
+ * store (`raw-store.ts`), deterministically, each with a priority. A session
+ * has one row; when a resumed session gains observations, its newer row
+ * replaces the older one. Consolidation is recorded beside them in `raw/consolidated.jsonl` as
  * `{sid, run, obs, obs_id}`, also append-only; a rollback appends the runs it
  * undid to `raw/undone-runs.jsonl`, and their marks stop counting.
  *
@@ -17,6 +17,7 @@ import { appendJsonl, nowIso, nowMs, readJsonl } from "../core/store.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { jsonList, type MemoryObservationSource, type SessionRow } from "../sources/claude-mem.ts";
 import { isFailureObservation } from "./ledger.ts";
+import { RawStore } from "./raw-store.ts";
 
 export interface Episode {
   sid: string;
@@ -171,10 +172,11 @@ export function score(
   return fresh.map((episode) => ({ ...episode, priority: scored.get(episode.sid)! }));
 }
 
+/** The latest row of each episode, in the order each was first written. */
 export function loadEpisodes(ledger: Ledger): Episode[] {
-  const latest = new Map<string, Episode>();
-  for (const episode of readJsonl<Episode>(ledger.path("episodes.jsonl"))) latest.set(episode.sid, episode);
-  return [...latest.values()];
+  return RawStore.of(ledger.dir)
+    .episodes<Episode>()
+    .map((entry) => entry.row);
 }
 
 /** Runs a rollback undid. Their consolidation marks no longer count. */
@@ -185,12 +187,11 @@ export function undoneRuns(ledger: Ledger): Set<string> {
 /** Session ids consolidated by a run that still stands. */
 export function consolidatedSids(ledger: Ledger): Set<string> {
   const undone = undoneRuns(ledger);
-  const rows = readJsonl<Episode>(ledger.path("episodes.jsonl"));
-  const latest = new Map(loadEpisodes(ledger).map((episode) => [episode.sid, episode]));
-  const revisions = new Map<string, number>();
-  for (const row of rows) revisions.set(row.sid, (revisions.get(row.sid) ?? 0) + 1);
+  const entries = RawStore.of(ledger.dir).episodes<Episode>();
+  const latest = new Map(entries.map(({ row }) => [row.sid, row]));
+  const revisions = new Map(entries.map(({ row, revisions: count }) => [row.sid, count]));
   const marks: ConsolidationMark[] = [
-    ...rows.flatMap((row) => (row.consolidated_run ? [{ sid: row.sid, run: row.consolidated_run, obs: row.obs }] : [])),
+    ...entries.flatMap(({ row, marks: legacy }) => legacy.map((mark) => ({ sid: row.sid, ...mark }))),
     ...readJsonl<ConsolidationMark>(ledger.path(CONSOLIDATED_FILE)),
   ];
   const consolidated = new Set<string>();
@@ -203,7 +204,7 @@ export function consolidatedSids(ledger: Ledger): Set<string> {
   return consolidated;
 }
 
-/** Episodes no standing run has consolidated, in file order. */
+/** Episodes no standing run has consolidated, in the order each was first written. */
 export function unconsolidatedEpisodes(ledger: Ledger): Episode[] {
   const done = consolidatedSids(ledger);
   return loadEpisodes(ledger).filter((episode) => !done.has(episode.sid));
@@ -246,8 +247,8 @@ function shownIds(
 }
 
 /**
- * Append new or observation-refreshed episodes, oldest first. Returns the
- * appended rows. `shown` is asked only for the sessions a row is written for,
+ * Write new or observation-refreshed episodes, oldest first; a refreshed
+ * episode replaces its row. Returns the written rows. `shown` is asked only for the sessions a row is written for,
  * and a refreshed row keeps what its earlier revision recorded, because the
  * span files that answer it are rotated and the ledger is not.
  */
@@ -277,12 +278,10 @@ export function buildEpisodes(
     existing.filter((episode) => !refreshed.has(episode.sid)),
     now,
   );
-  if (fresh.length > 0 && options.dryRun !== true) {
-    appendJsonl(
-      ledger.path("episodes.jsonl"),
+  if (options.dryRun !== true)
+    RawStore.of(ledger.dir).putEpisodes(
       [...fresh].sort((a, b) => a.started - b.started),
       ledger.dir,
     );
-  }
   return fresh;
 }

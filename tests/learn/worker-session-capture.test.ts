@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import {
   appendFileSync,
   cpSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -17,7 +18,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { type LearnContext, parseLearnArgs } from "../../src/learn/core/context.ts";
-import { Ledger } from "../../src/learn/core/ledger.ts";
+import { Ledger, RAW_STORE_FILE } from "../../src/learn/core/ledger.ts";
 import { inProtectedFolder } from "../../src/learn/core/paths.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
@@ -25,6 +26,7 @@ import { hookArea } from "../../src/learn/hooks.ts";
 import { ensureMemoryLedger, writeLesson } from "../../src/learn/memory/ledger.ts";
 import { memoryDir, readState } from "../../src/learn/memory/ledger.ts";
 import { loadEpisodes } from "../../src/learn/memory/episodes.ts";
+import { RawStore } from "../../src/learn/memory/raw-store.ts";
 import { type Registry, readWorktrees, registerRoot } from "../../src/learn/memory/registry.ts";
 import { fetchNew, formatObservation } from "../../src/learn/memory/reflect.ts";
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
@@ -425,9 +427,9 @@ describe("worker session parsers", () => {
     const session = requiredSession(parseCodexSession(path));
     expect(session.request).toBe("Charge with [redacted:stripe-key] now.");
     captureWorkerSessions(ledger, [{ ...session, completed: `Used ${stripe}.` }]);
-    expect(readFileSync(ledger.path("raw", "worker-sessions.jsonl"), "utf8")).not.toContain(stripe);
+    expect(JSON.stringify(RawStore.of(ledger.dir).workers().sessions)).not.toContain(stripe);
     expect(readJsonl<{ file: string; kinds: object }>(ledger.path("raw", "secret-redactions.jsonl"))).toEqual([
-      expect.objectContaining({ file: "raw/worker-sessions.jsonl", kinds: { "stripe-key": 1 } }),
+      expect.objectContaining({ file: `${RAW_STORE_FILE}#worker_sessions`, kinds: { "stripe-key": 1 } }),
     ]);
   });
 
@@ -1150,16 +1152,20 @@ describe("captured observation ledger", () => {
     expect(observations).toHaveLength(4);
     expect(observations.every((row) => row.id >= CAPTURE_ID_BASE)).toBe(true);
     expect(new Set(observations.map((row) => row.id)).size).toBe(4);
-    expect(new Ledger(ledger.dir).git(["status", "--porcelain"]).stdout).not.toBe("");
+    // The rows sit in the raw store, which git ignores, so capture leaves the ledger's worktree clean.
+    expect(existsSync(ledger.path(RAW_STORE_FILE))).toBe(true);
+    expect(new Ledger(ledger.dir).git(["status", "--porcelain"]).stdout).toBe("");
   });
 
   test("a row's text is written once, beside a digest rather than a second copy", () => {
     const ledger = ensureMemoryLedger(scratch("ak-capture-once-"));
     captureWorkerSessions(ledger, [workerSession("t", [1])]);
 
-    const path = ledger.path("raw/worker-observations.jsonl");
-    expect(readFileSync(path, "utf8").split("t step 0")).toHaveLength(2);
-    const rows = readJsonl<{ narrative: string | null; facts: string; key: string }>(path);
+    const rows = RawStore.of(ledger.dir).workers<
+      { id: number; memory_session_id: string; narrative: string | null; facts: string; key: string },
+      { memory_session_id: string }
+    >().observations;
+    expect(JSON.stringify(rows).split("t step 0")).toHaveLength(2);
     expect(rows.map((row) => [row.narrative, row.facts])).toEqual([[null, "t step 0"]]);
     expect(rows[0]?.key).toMatch(/^[0-9a-f]{16}$/);
     expect(WorkerSessionSource.open(ledger).observationsSince("", 0).map(formatObservation).join("")).toContain(
@@ -1187,7 +1193,7 @@ describe("captured observation ledger", () => {
       current.memory_session_id,
       later.memory_session_id,
     ]);
-    expect(readFileSync(ledger.path("raw/worker-sessions.jsonl"), "utf8").trim().split("\n")).toHaveLength(2);
+    expect(RawStore.of(ledger.dir).workers().sessions).toHaveLength(2);
   });
 
   test("a host record rewritten shorter still appends its new rows, and only those", () => {

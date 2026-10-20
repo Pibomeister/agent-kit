@@ -4,7 +4,7 @@
  * `tick` is the scheduled entry and stays stat-only. Every other verb runs in
  * the foreground on the user's behalf, so it may resolve a linked worktree
  * with git. `rollback` restores the wiki layer (memory.md, lessons) only; the
- * raw episodes and runs are append-only and never reverted.
+ * raw episodes and runs are never reverted (`core/ledger.ts`).
  */
 import { rmSync } from "node:fs";
 import { basename } from "node:path";

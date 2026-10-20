@@ -7,6 +7,7 @@
  * deterministic gates before it touches a ledger; the judge never sets counts,
  * status, ids or rates.
  */
+import { Database } from "bun:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -14,7 +15,7 @@ import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
 import type { Loop } from "./paths.ts";
 import { run } from "./proc.ts";
-import { gateJsonText, writeGated } from "./store.ts";
+import { gateJsonText, gateText } from "./store.ts";
 import type { LearnRole } from "./roles.ts";
 import { carrierOf, recordJudgeAttempt } from "./trace.ts";
 
@@ -73,6 +74,15 @@ const STDERR_TAIL_BYTES = 2 * 1024;
 const TRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** Retained trace generations, oldest first; `rotateTrace` moves the second over the first. */
 const TRACE_GENERATIONS = ["judge-calls.1.jsonl", "judge-calls.jsonl"] as const;
+/**
+ * The runtime directory's database. With `AK_LEARN_TRACE=full` its one table, `judge_bodies`, holds each
+ * retained call's prompt and reply, keyed by call id. Created only for full tracing; later
+ * metadata-only runs still prune an existing database on rotation.
+ */
+export const JUDGE_BODIES_FILE = "trace.sqlite";
+/** Where an older version wrote one file per body, `<call id>.prompt` and `.reply`. Rotation still removes them. */
+const LEGACY_BODIES_DIR = "judge-bodies";
+const BODIES_BUSY_MS = 5_000;
 const jsonValidator = new Ajv({ strict: false });
 const validateHostEnvelope = jsonValidator.compile<HostEnvelope>({ type: "object" });
 const validateString = jsonValidator.compile<string>({ type: "string" });
@@ -185,15 +195,58 @@ function traceRows(path: string): JudgeTraceSummaryRow[] {
   return rows;
 }
 
+function openBodies(config: LearnConfig): Database {
+  const db = new Database(join(config.runtimeDir, JUDGE_BODIES_FILE), { create: true });
+  db.exec(`PRAGMA busy_timeout = ${BODIES_BUSY_MS}`);
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS judge_bodies (call_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, reply TEXT NOT NULL)",
+  );
+  return db;
+}
+
+/** The body database when a full trace has created it, else null; never creates it. */
+function existingBodies(config: LearnConfig): Database | null {
+  return existsSync(join(config.runtimeDir, JUDGE_BODIES_FILE)) ? openBodies(config) : null;
+}
+
 /** Move the current trace over the previous one, dropping the bodies of the calls that leave with it. */
 function rotateTrace(config: LearnConfig, trace: string): void {
   const rotated = join(config.runtimeDir, TRACE_GENERATIONS[0]);
-  const bodies = join(config.runtimeDir, "judge-bodies");
-  for (const row of traceRows(rotated)) {
-    rmSync(join(bodies, `${row.call_id}.prompt`), { force: true });
-    rmSync(join(bodies, `${row.call_id}.reply`), { force: true });
+  const leaving = traceRows(rotated).map((row) => row.call_id);
+  const db = existingBodies(config);
+  if (db !== null) {
+    try {
+      const drop = db.query<unknown, [string]>("DELETE FROM judge_bodies WHERE call_id = ?1");
+      db.transaction(() => {
+        for (const callId of leaving) drop.run(callId);
+      })();
+    } finally {
+      db.close();
+    }
+  }
+  const legacy = join(config.runtimeDir, LEGACY_BODIES_DIR);
+  for (const callId of leaving) {
+    rmSync(join(legacy, `${callId}.prompt`), { force: true });
+    rmSync(join(legacy, `${callId}.reply`), { force: true });
   }
   renameSync(trace, rotated);
+}
+
+/** Store one call's prompt and reply behind the runtime directory's secret gate. */
+function writeBodies(config: LearnConfig, callId: string, prompt: string, reply: string): void {
+  const label = join(config.runtimeDir, `${JUDGE_BODIES_FILE}#judge_bodies`, callId);
+  const db = openBodies(config);
+  try {
+    db.query<unknown, [string, string, string]>(
+      "INSERT OR REPLACE INTO judge_bodies (call_id, prompt, reply) VALUES (?1, ?2, ?3)",
+    ).run(
+      callId,
+      gateText(config.runtimeDir, `${label}.prompt`, prompt),
+      gateText(config.runtimeDir, `${label}.reply`, reply),
+    );
+  } finally {
+    db.close();
+  }
 }
 
 /**
@@ -251,12 +304,7 @@ function traceAttempt(
     if (existsSync(trace) && statSync(trace).size + Buffer.byteLength(line) > config.traceMaxBytes)
       rotateTrace(config, trace);
     appendFileSync(trace, line);
-    if (config.traceFull) {
-      const bodies = join(config.runtimeDir, "judge-bodies");
-      mkdirSync(bodies, { recursive: true });
-      writeGated(config.runtimeDir, join(bodies, `${callId}.prompt`), prompt);
-      writeGated(config.runtimeDir, join(bodies, `${callId}.reply`), stringField(envelope.result) ?? result.stdout);
-    }
+    if (config.traceFull) writeBodies(config, callId, prompt, stringField(envelope.result) ?? result.stdout);
   } catch {
     return;
   }
