@@ -117,7 +117,7 @@ interface StoredArtifact {
 }
 
 type CommittedContent = { status: "found"; text: string } | { status: "absent" } | KbRefusal;
-type CommittedRef = { status: "found" | "absent" } | KbRefusal;
+type CommittedRef = { status: "found" } | { status: "absent" } | KbRefusal;
 
 const ajv = new Ajv2020({ strict: false });
 const validMeta = ajv.compile<DocumentMeta>({
