@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import type { RunResult } from "../../src/learn/core/proc.ts";
@@ -11,6 +12,7 @@ import {
   ensureHook,
   type HookDoc,
   hookCommands,
+  hostHooks,
   MEM_MODE,
   memPreviousPath,
   ourHookVerb,
@@ -199,6 +201,22 @@ describe("setup wire", () => {
     ]);
     expect(doc.hooks!.Stop![1]!.hooks![0]!.timeout).toBe(120);
     expect(JSON.parse(readFileSync(`${settings}.bak`, "utf8")).theme).toBe("dark");
+  });
+
+  test("the Claude SessionStart spec carries its own timeout, written into a scratch home without a worker", () => {
+    const deps = fakeDeps();
+    const spec = hostHooks(hookCommands(deps)).claude.find((hook) => hook.event === "SessionStart");
+    expect(spec?.timeout).toBe(10);
+
+    const ctx = context(deps);
+    expect(deps.home).not.toBe(homedir());
+    expect(deps.home.startsWith(join(homedir(), ".claude"))).toBe(false);
+    expect(ctx.config.configDir.startsWith(join(homedir(), ".claude"))).toBe(false);
+    expect(wire(ctx, deps, { host: "claude", noMem: true })).toBe(0);
+    const doc = readDoc(join(ctx.config.configDir, "settings.json"));
+    expect(doc.hooks?.SessionStart?.[0]?.hooks?.[0]?.timeout).toBe(10);
+    expect(existsSync(join(deps.home, ".claude-mem"))).toBe(false);
+    expect(deps.calls).toEqual([]);
   });
 
   test("a settings file that is not valid JSON is refused and left byte-identical, and nothing else is written", () => {
