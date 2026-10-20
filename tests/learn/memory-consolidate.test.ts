@@ -24,6 +24,7 @@ import {
   buildEpisodes,
   CONSOLIDATED_FILE,
   type Episode,
+  loadEpisodes,
   unconsolidatedEpisodes,
   UNDONE_RUNS_FILE,
 } from "../../src/learn/memory/episodes.ts";
@@ -669,7 +670,7 @@ describe("nightly", () => {
       confirmedReply(first, second),
     ]);
     saveState(ledger, { ...readState(ledger), last_nightly_attempt: 1, nightly_failures: 3 });
-    const episodesBefore = readFileSync(ledger.path("episodes.jsonl"), "utf8");
+    const episodesBefore = loadEpisodes(ledger);
     try {
       expect(consolidate(ctx, source, ledger, root, review)).toBe(
         "nightly: 2/2 episodes -> +1 lessons, 1 review events",
@@ -683,8 +684,8 @@ describe("nightly", () => {
     );
     expect(ctx.judgeContexts.map((context) => context?.runId)).toEqual([nightlyRun?.id]);
     expect(nightlyRun?.id).toStartWith("nightly-");
-    // Consolidation is appended beside the episodes; episodes.jsonl itself is never rewritten.
-    expect(readFileSync(ledger.path("episodes.jsonl"), "utf8")).toBe(episodesBefore);
+    // Consolidation is appended beside the episodes; the episode rows themselves are not rewritten.
+    expect(loadEpisodes(ledger)).toEqual(episodesBefore);
     const marks = readJsonl<{ sid: string; run: string }>(ledger.path(CONSOLIDATED_FILE));
     expect(marks.map((mark) => mark.sid).sort()).toEqual(["aaaa1111-0000", "bbbb2222-0000"]);
     expect(unconsolidatedEpisodes(ledger)).toEqual([]);

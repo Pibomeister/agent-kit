@@ -893,9 +893,7 @@
     "typescript(no-unsafe-type-assertion)": 1
   },
   "tests/learn/memory-episodes.test.ts": {
-    "anti-slop(require-safety-comment-for-type-assertion)": 1,
     "typescript(no-non-null-assertion)": 8,
-    "typescript(no-unsafe-type-assertion)": 1,
     "unicorn(no-array-sort)": 1
   },
   "tests/learn/memory-evals-influence.test.ts": {

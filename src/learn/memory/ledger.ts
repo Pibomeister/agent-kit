@@ -4,16 +4,16 @@
  * | File | What |
  * |---|---|
  * | `memory.md` | the organized working memory; the only prose injected at session start, with confirmed lessons |
- * | `episodes.jsonl` | append-only episode revisions for ended observed sessions, with latest revision winning |
- * | `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | turns and sessions captured from worker host records (`sources/worker-sessions.ts`) |
+ * | `raw/learn.sqlite` | the raw store, outside git (`raw-store.ts`): one row per episode of an ended observed session, and the turns and sessions captured from worker host records (`sources/worker-sessions.ts`) |
+ * | `episodes.jsonl`, `raw/worker-observations.jsonl`, `raw/worker-sessions.jsonl` | legacy input; migration rules are in `raw-store.ts` |
  * | `raw/consolidated.jsonl`, `raw/undone-runs.jsonl` | which run consolidated which session, and the runs a rollback undid |
  * | `raw/pending-review-events.jsonl` | review events waiting for the review ledger's lock; emptied once delivered |
  * | `raw/secret-redactions.jsonl` | what the secret gate took out of each written file: kinds and counts, never values |
  * | `lessons/ls-NNN.md`, `lessons.md` | typed lessons and their index |
- * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the worker files above hold, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
+ * | `proposals/learn-<project>-<id>.json` | knowledgebase drafts; each evidence ref is `worker:<id>` for a captured-range `obs:` id or a session the raw store holds, `claude-mem:<id>` when claude-mem holds the row, else `unresolved:<id>` |
  * | `runs.jsonl`, `log.md`, `.state.json` | the run record, the log, and the watermarks and mute switch |
  *
- * `memory.md` and the lessons are the revertible wiki layer; `episodes.jsonl`
+ * `memory.md` and the lessons are the revertible wiki layer; the raw store
  * and `runs.jsonl` are raw and are never rolled back.
  *
  * Every recorded text is written through the secret gate (`core/store.ts`
@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { LearnConfig } from "../core/config.ts";
 import type { LearnContext } from "../core/context.ts";
-import { Ledger } from "../core/ledger.ts";
+import { Ledger, RAW_STORE_FILE } from "../core/ledger.ts";
 import { parsePage, renderPage, type PageMeta } from "../core/pages.ts";
 import { loopDir } from "../core/paths.ts";
 import type { Candidate } from "../core/similar.ts";
@@ -77,12 +77,11 @@ export const LESSONS_INDEX_HEAD =
 
 const SEED: Readonly<Record<string, string>> = {
   "memory.md": "",
-  "episodes.jsonl": "",
   "runs.jsonl": "",
   "log.md": "# memory log\n",
   "lessons.md": LESSONS_INDEX_HEAD,
   ".state.json": "{}",
-  ".gitignore": ".lock*\n",
+  ".gitignore": `.lock*\n${RAW_STORE_FILE}*\n`,
 };
 
 export interface MemoryState {
