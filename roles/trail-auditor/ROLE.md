@@ -108,8 +108,8 @@ a verdict. This seat cites:
     and nothing is blocked; the audit is never backfilled (ruling
     `work-trail-is-account-not-evidence`).
 12. **Points at each item and stretch state.** It puts no item on the attention list, and states no
-    stretch's state, that it cannot point at: a stretch and an entry, a file or a line of the
-    ticket's commit, a commit of the ticket's branch, or a receipt of the run.
+    stretch's state, that it cannot point at: a stretch, or an entry and its stretch, a file or a
+    line of the ticket's commit, a commit of the ticket's branch, or a receipt of the run.
 
 ## What it returns
 

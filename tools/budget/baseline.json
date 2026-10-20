@@ -73,8 +73,8 @@
     },
     "bundle/claude-code:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 10187,
-      "tokens": 2547
+      "bytes": 10203,
+      "tokens": 2551
     },
     "bundle/claude-code:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
@@ -508,8 +508,8 @@
     },
     "bundle/codex:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 10187,
-      "tokens": 2547
+      "bytes": 10203,
+      "tokens": 2551
     },
     "bundle/codex:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
@@ -943,8 +943,8 @@
     },
     "bundle/droid:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 10187,
-      "tokens": 2547
+      "bytes": 10203,
+      "tokens": 2551
     },
     "bundle/droid:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
@@ -1378,8 +1378,8 @@
     },
     "bundle/grok:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 10187,
-      "tokens": 2547
+      "bytes": 10203,
+      "tokens": 2551
     },
     "bundle/grok:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
@@ -1813,8 +1813,8 @@
     },
     "bundle/kimi:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 10187,
-      "tokens": 2547
+      "bytes": 10203,
+      "tokens": 2551
     },
     "bundle/kimi:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
@@ -2418,8 +2418,8 @@
     },
     "role:trail-auditor": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 10187,
-      "tokens": 2547
+      "bytes": 10203,
+      "tokens": 2551
     },
     "role:verifier": {
       "file": "roles/verifier/ROLE.md",
