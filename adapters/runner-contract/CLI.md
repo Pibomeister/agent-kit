@@ -53,7 +53,12 @@ names what is missing. A charter requesting unattended mode cannot use `decide` 
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |
 
 The private seat config names exactly two launchers, each with `seat`, `actor`, `lineage` and a
-`command` argv array. Each receives a frozen card on stdin and returns JSON with `choice` and
+`command` argv array. `serve` requires distinct seats and actors and rejects cross-seat lineage
+violations of [seat independence](CONTRACT.md#3-seat-independence) with
+`seat configuration lineages must be independent`. `judge` rejects such a lineage with
+`invalid or excluded seat`; `decide` rechecks persisted judgments and returns `needs-input` with a
+`runner:seat-independence` escalation if the pair violates the rule.
+Each launcher receives a frozen card on stdin and returns JSON with `choice` and
 `rationale`. Seat launchers and effect commands run from the private state directory with worker-root
 runtime configuration and `PATH` entries removed. The verification command alone runs from the worker
 root, so it executes worker-controlled code under the runner's OS identity; isolate that identity

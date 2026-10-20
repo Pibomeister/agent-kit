@@ -131,6 +131,14 @@ function verdictBase(run: Run): string {
   return baseRef;
 }
 
+// CONTRACT.md §3: neither supervisor's lineage may name the other supervisor's actor.
+export function sharesLineage(
+  a: { actor: string; lineage: string[] },
+  b: { actor: string; lineage: string[] },
+): boolean {
+  return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+}
+
 function approved(decision: Decision): boolean {
   const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
   return (
@@ -421,6 +429,24 @@ export class Runner {
     renameSync(partial, target);
   }
 
+  private seatsIndependent(run: Run, card: Card): boolean {
+    const seats = run.charter.supervisors.seats.map((s) => s.id);
+    return (
+      card.judgments.length === 2 &&
+      new Set(card.judgments.map((j) => j.seat)).size === 2 &&
+      new Set(card.judgments.map((j) => j.dispatch)).size === 2 &&
+      !card.judgments.some((j, i) => card.judgments.slice(i + 1).some((k) => sharesLineage(j, k))) &&
+      card.judgments.every(
+        (j) =>
+          seats.includes(j.seat) &&
+          ID.test(j.dispatch) &&
+          j.lineage.includes(j.actor) &&
+          !run.excluded_actors.some((excluded) => j.actor === excluded || j.lineage.includes(excluded)) &&
+          j.input_dispatches.length === 0,
+      )
+    );
+  }
+
   private decisionArtifact(run: Run, decision: Decision) {
     const { card, at } = decision;
     const result = decision.answer?.refusal ?? decision.result;
@@ -434,7 +460,8 @@ export class Runner {
     const declaredCheckpoint = this.covers.get(card.operation)?.covers ?? "align-answer";
     const checkpointInCharter = run.charter.checkpoints.includes(declaredCheckpoint);
     const evidencePresent = evidence.length === card.evidence.length && card.evidence.length > 0;
-    const seatsIndependent = card.judgments.length === 2 && new Set(card.judgments.map((j) => j.actor)).size === 2;
+    const seatsIndependent =
+      this.seatsIndependent(run, card) && result.escalation?.charter_rule !== "runner:seat-independence";
     const checks = {
       charter_permits: charterPermits,
       required_evidence_present: evidencePresent,
@@ -877,6 +904,7 @@ export class Runner {
       )
     )
       throw new Error("seat is not independently dispatched");
+    if (card.judgments.some((j) => sharesLineage(j, { actor, lineage }))) throw new Error("invalid or excluded seat");
     if (inputDispatches.length > 0) throw new Error("seat input includes another dispatch");
     card.judgments.push({ seat, actor, dispatch, choice, rationale, input_dispatches: inputDispatches, lineage });
     this.save(run);
@@ -1048,19 +1076,7 @@ export class Runner {
         "runner:seat-independence",
         `Supervisor seat dispatch failed: ${seatFailures.join("; ")}`.slice(0, 2000),
       );
-    const charter = run.charter;
-    const seats = charter.supervisors.seats.map((s) => s.id);
-    if (
-      card.judgments.length !== 2 ||
-      new Set(card.judgments.map((j) => j.actor)).size !== 2 ||
-      new Set(card.judgments.map((j) => j.dispatch)).size !== 2 ||
-      card.judgments.some(
-        (j) =>
-          !seats.includes(j.seat) ||
-          run.excluded_actors.some((excluded) => j.actor === excluded || j.lineage.includes(excluded)) ||
-          j.input_dispatches.length > 0,
-      )
-    )
+    if (!this.seatsIndependent(run, card))
       return this.refuse(run, card, "runner:seat-independence", "Two independent supervisor dispatches are required");
     if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
       return this.refuse(run, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
