@@ -44,8 +44,8 @@ learned from the failed deployment."
 
 | Summary layer | Review loop | Memory loop |
 |---|---|---|
-| Raw | `raw/review-events.jsonl` (`schemas/review-event.schema.json`), append-only | claude-mem's observations, read-only through the adapter |
-| Wiki | Pattern pages (`schemas/review-pattern.schema.json`), recomputed from raw | Episodes (`schemas/episode.schema.json`), working memory, lessons |
+| Raw | `raw/review-events.jsonl` (`schemas/review-event.schema.json`), append-only | Observations through the adapter and runtime-owned rows; storage: [host contract §7](../../adapters/claude-code/CONTRACT.md#7-the-learning-runtimes-hooks) |
+| Wiki | Pattern pages (`schemas/review-pattern.schema.json`), recomputed from raw | Working memory and lessons |
 | Policy | Guardrail drafts, promoted by count | Confirmed lessons, and skill candidates |
 
 `ak learn review rollback` is §7 applied: it reverts judgement and policy commits and restores the

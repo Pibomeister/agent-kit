@@ -1,10 +1,10 @@
 /**
  * Episodes from a claude-mem fixture: fields and priority literals, the stale
  * active session, edits recorded only by tool use, a second run that
- * appends nothing, and the ids a session was shown joined onto its row.
+ * writes nothing, and the ids a session was shown joined onto its row.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildEpisodes,
@@ -14,7 +14,7 @@ import {
   markConsolidated,
   unconsolidatedEpisodes,
 } from "../../src/learn/memory/episodes.ts";
-import { readJsonl } from "../../src/learn/core/store.ts";
+import { RAW_STORE_FILE } from "../../src/learn/core/ledger.ts";
 import { sessionKey, span } from "../../src/learn/core/trace.ts";
 import { shownLookup } from "../../src/learn/memory/exposure.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
@@ -137,11 +137,7 @@ describe("episodes", () => {
     // s2: T=0.5 N=0.5 (a.ts seen in s1) A=1        -> 0.05+0.05+0.15 = 0.25
     // s3: T=0.125 N=0 A=e^(-(7/24)/14)=0.979382    -> 0.0125+0.146907 = 0.1594
     expect([by.get("s1")!.priority, by.get("s2")!.priority, by.get("s3")!.priority]).toEqual([0.4252, 0.25, 0.1594]);
-    const rows = readFileSync(ledger.path("episodes.jsonl"), "utf8")
-      .split("\n")
-      .filter((line) => line !== "")
-      .map((line) => (JSON.parse(line) as Episode).sid);
-    expect(rows).toEqual(["s1", "s3", "s2"]); // written oldest first
+    expect(loadEpisodes(ledger).map((row) => row.sid)).toEqual(["s1", "s3", "s2"]); // written oldest first
   });
 
   test("a second run appends nothing", () => {
@@ -152,11 +148,7 @@ describe("episodes", () => {
     } finally {
       source.close();
     }
-    expect(
-      readFileSync(ledger.path("episodes.jsonl"), "utf8")
-        .split("\n")
-        .filter((line) => line !== "").length,
-    ).toBe(3);
+    expect(loadEpisodes(ledger)).toHaveLength(3);
   });
 
   test("a session with new observations is rebuilt and re-queued for nightly", () => {
@@ -228,7 +220,7 @@ describe("episodes", () => {
     } finally {
       source.close();
     }
-    expect(readFileSync(ledger.path("episodes.jsonl"), "utf8")).toBe("");
+    expect(existsSync(ledger.path(RAW_STORE_FILE))).toBe(false);
   });
 });
 
@@ -279,7 +271,7 @@ describe("what a session was shown", () => {
       source.close();
     }
     expect(asked).toEqual(["host-a", "host-b", "host-c"]);
-    const rows = readJsonl<Episode>(ledger.path("episodes.jsonl"));
+    const rows = loadEpisodes(ledger);
     expect(rows.map((row) => [row.sid, row.shown])).toEqual([
       ["a", ["rp-001", "ls-002"]],
       ["b", []],
