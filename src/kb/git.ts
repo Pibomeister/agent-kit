@@ -19,7 +19,7 @@ export function git(root: string, args: readonly string[], input?: string): GitR
     encoding: "utf8",
     env,
     input,
-    maxBuffer: 64 * 1024 * 1024,
+    maxBuffer: Infinity,
   });
   return { status: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
 }

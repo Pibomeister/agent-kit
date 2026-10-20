@@ -16,7 +16,8 @@ import { git } from "./git.ts";
  * It carries `readContext` and `publishArtifact` and nothing else. Reads come
  * from the committed tree, never the working files, so what a run reads is
  * what the knowledgebase's history holds; a publish is one commit touching one
- * record, read back from that commit before it is reported.
+ * file, read back from that commit before it is reported. The backend guide
+ * §3 defines the storage layout.
  */
 
 /** `common#/$defs/kb_kind`: the nine kinds, and no tenth (ADR-0001 §2). */
@@ -25,6 +26,8 @@ export const KB_KINDS = ["adr", "concept", "foundation", "gotcha", "pattern", "p
 /** The scope that means the whole project rather than one component of it. */
 export const PROJECT_SCOPE = "project";
 
+/** The one file under `projects/<project>/runs/` that holds the project's run artifacts, a record per line. */
+const ARTIFACTS_FILE = "artifacts.jsonl";
 const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /** Names the layout uses, which a scope segment may not reuse: a scope carrying one is a path. */
@@ -113,6 +116,9 @@ interface StoredArtifact {
   artifact: RunArtifact;
 }
 
+type CommittedContent = { status: "found"; text: string } | { status: "absent" } | KbRefusal;
+type CommittedRef = { status: "found" } | { status: "absent" } | KbRefusal;
+
 const ajv = new Ajv2020({ strict: false });
 const validMeta = ajv.compile<DocumentMeta>({
   type: "object",
@@ -197,26 +203,45 @@ function documentRef(scope: string, kind: string, id: string): string {
   return `doc:${scope}/${kind}/${id}`;
 }
 
-function artifactPath(project: string, run: string, schema: string, id: string): string {
-  return ["projects", project, "runs", run, schema, `${id}.json`].join("/");
+function artifactsPath(project: string): string {
+  return ["projects", project, "runs", ARTIFACTS_FILE].join("/");
 }
 
-/** Where a record ref points in the knowledgebase, or null when it is not a ref this backend issued. */
-function refPath(project: string, ref: string): string | null {
+/**
+ * The last record the artifacts file holds for `ref`, with its 1-based line,
+ * or null when it holds none. A later line for a ref is a later copy of the
+ * same record; a line that is not a record names no ref.
+ */
+function storedArtifact(text: string, ref: string): { line: number; value: StoredArtifact } | null {
+  const lines = text.split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const value = parseStored(lines[index] ?? "");
+    if (value?.record.ref === ref) return { line: index + 1, value };
+  }
+  return null;
+}
+
+/** Whether a record ref names a committed record, absent when it is not a ref this backend issued. */
+function refCommitted(root: string, project: string, ref: string): CommittedRef {
   if (ref.startsWith("doc:")) {
     const parts = ref.slice(4).split("/");
     const id = parts.at(-1) ?? "";
     const kind = parts.at(-2) ?? "";
     const segments = scopeSegments(parts.slice(0, -2).join("/"));
-    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) return null;
-    return documentPath(project, segments, kind, id);
+    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) {
+      return { status: "absent" };
+    }
+    const content = committed(root, documentPath(project, segments, kind, id));
+    return content.status === "found" ? { status: "found" } : content;
   }
   if (ref.startsWith("run:")) {
     const parts = ref.slice(4).split("/");
-    if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part))) return null;
-    return artifactPath(project, parts[0] ?? "", parts[1] ?? "", parts[2] ?? "");
+    if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part))) return { status: "absent" };
+    const content = committed(root, artifactsPath(project));
+    if (content.status !== "found") return content;
+    return { status: storedArtifact(content.text, ref) !== null ? "found" : "absent" };
   }
-  return null;
+  return { status: "absent" };
 }
 
 function documentHash(request: DocumentRequest): string {
@@ -246,10 +271,15 @@ function headCommit(root: string): string | null {
   return head.status === 0 ? head.stdout.trim() : null;
 }
 
-/** The committed bytes at `path`, or null when the commit has no such file. */
-function committed(root: string, path: string): string | null {
+/** The committed bytes at `path`, absent when not listed, or a failure when git cannot read them. */
+function committed(root: string, path: string): CommittedContent {
+  const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
+  if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
+  if (listed.stdout === "") return { status: "absent" };
   const shown = git(root, ["show", `HEAD:${path}`]);
-  return shown.status === 0 ? shown.stdout : null;
+  return shown.status === 0
+    ? { status: "found", text: shown.stdout }
+    : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
 }
 
 function normalizeBody(body: string): string {
@@ -339,7 +369,9 @@ export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: str
       const listed = git(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
       if (listed.status !== 0) return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\0").filter((name) => name.endsWith(".md"))) {
-        const parsed = parseDocument(committed(kb.root, path) ?? "");
+        const content = committed(kb.root, path);
+        if (content.status !== "found" && content.status !== "absent") return content;
+        const parsed = parseDocument(content.status === "found" ? content.text : "");
         if (parsed === null) {
           outcome.coverage.unreadable.push(path);
           continue;
@@ -373,6 +405,8 @@ interface RecordIdentity {
 
 /** What a committed record says of itself. */
 interface StoredRecord {
+  /** The knowledgebase commit that wrote this copy of the record. */
+  revision: () => string;
   /** The digest it was published with. */
   published: string;
   /** The digest recomputed from the committed bytes. */
@@ -412,35 +446,42 @@ function withLock(root: string, write: () => PublishOutcome | KbRefusal): Publis
   return failed("kb.locked", "Another publish held the knowledgebase for too long. Nothing was written; retry.");
 }
 
+/** How one placement keeps its records in the file at `path`. */
+interface RecordFile {
+  path: string;
+  /** The record's stored copy in the committed file: null when the file holds none, `unreadable` when it holds one that does not parse. */
+  find: (text: string) => StoredRecord | "unreadable" | null;
+  /** The whole file with this record written, given what is committed there now. */
+  write: (text: string | null) => string;
+}
+
 /**
- * Commit `content` at `path` as one record and read it back. `read` parses a
- * committed record at that path. Its published digest is how an unchanged
- * republish becomes a no-op and a changed one a refusal (runner-contract §5),
- * and its links may not change either. Approvals are outside the digest, so a
- * republish that brings every approval the record holds and at least one more is committed over
- * it. Every result reports what the knowledgebase holds, not what was sent.
+ * Write one record into its file, commit that file alone and read the record
+ * back. `find` reads the record's stored copy. Its published digest is how an
+ * unchanged republish becomes a no-op and a changed one a refusal
+ * (runner-contract §5), and its links may not change either. Approvals are
+ * outside the digest, so a republish that brings every approval the record
+ * holds and at least one more commits a new stored copy. Every result reports what
+ * the knowledgebase holds, not what was sent.
  */
-function commitRecord(
-  kb: ResolvedKb,
-  path: string,
-  content: string,
-  identity: RecordIdentity,
-  read: (text: string) => StoredRecord | null,
-): PublishOutcome | KbRefusal {
+function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentity): PublishOutcome | KbRefusal {
   return withLock(kb.root, () => {
+    const path = store.path;
     const before = headCommit(kb.root);
-    const existing = before === null ? null : committed(kb.root, path);
+    const content: CommittedContent = before === null ? { status: "absent" } : committed(kb.root, path);
+    if (content.status !== "found" && content.status !== "absent") return content;
+    const existing = content.status === "found" ? content.text : null;
     const file = join(kb.root, path);
     const uncommitted = failed(
       "kb.uncommitted-record",
       `${path} has uncommitted content in the knowledgebase checkout. Nothing was written over it; commit or remove it there first.`,
     );
-    if (existing !== null) {
-      const stored = read(existing);
-      if (stored === null || stored.published !== identity.hash) {
+    const stored = existing === null ? null : store.find(existing);
+    if (stored !== null) {
+      if (stored === "unreadable" || stored.published !== identity.hash) {
         return refused(
           "kb.changed-under-reused-record",
-          `${identity.ref} is already published with a different digest (${stored?.published ?? "unreadable"}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`,
+          `${identity.ref} is already published with a different digest (${stored === "unreadable" ? stored : stored.published}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`,
         );
       }
       const linked = [...new Set(stored.links)].toSorted();
@@ -458,7 +499,7 @@ function commitRecord(
           content_hash: stored.published,
           idempotency_key: stored.key,
           run: stored.run,
-          revision: git(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
+          revision: stored.revision(),
           effect: "none",
         };
       }
@@ -468,12 +509,14 @@ function commitRecord(
           `${identity.ref} is already published with approvals this copy does not carry. Stored approvals are added to, never replaced; republish the copy that holds every approval already stored.`,
         );
       }
-      if (git(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "") return uncommitted;
-    } else if (existsSync(file)) {
+    }
+    if (
+      existing === null ? existsSync(file) : git(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== ""
+    ) {
       return uncommitted;
     }
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, content);
+    writeFileSync(file, store.write(existing));
     const added = git(kb.root, ["add", "--", path]);
     const made =
       added.status === 0
@@ -498,14 +541,16 @@ function commitRecord(
       );
     }
     const readBack = committed(kb.root, path);
+    if (readBack.status !== "found" && readBack.status !== "absent") return readBack;
     const after = headCommit(kb.root);
-    const stored = readBack === null ? null : read(readBack);
+    const written = readBack.status === "absent" ? null : store.find(readBack.text);
     if (
-      stored === null ||
+      written === null ||
+      written === "unreadable" ||
       after === null ||
       after === before ||
-      stored.observed !== identity.hash ||
-      stored.approvals.join("\n") !== identity.approvals.join("\n")
+      written.observed !== identity.hash ||
+      written.approvals.join("\n") !== identity.approvals.join("\n")
     ) {
       return failed(
         "kb.read-back-mismatch",
@@ -515,9 +560,9 @@ function commitRecord(
     return {
       status: "complete",
       ref: identity.ref,
-      content_hash: stored.observed,
-      idempotency_key: stored.key,
-      run: stored.run,
+      content_hash: written.observed,
+      idempotency_key: written.key,
+      run: written.run,
       revision: after,
       effect: "published",
     };
@@ -568,15 +613,14 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
     idempotency_key: key,
     run: request.run,
   };
-  return commitRecord(
-    kb,
-    documentPath(kb.binding.project, segments, request.kind, request.id),
-    renderDocument(meta, body),
-    { ref, hash, key, links: [], approvals: [] },
-    (text) => {
+  const path = documentPath(kb.binding.project, segments, request.kind, request.id);
+  const store: RecordFile = {
+    path,
+    find: (text) => {
       const parsed = parseDocument(text);
-      if (parsed === null) return null;
+      if (parsed === null) return "unreadable";
       return {
+        revision: () => git(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
         published: parsed.meta.published_hash,
         observed: documentHash({ ...parsed.meta, body: parsed.body }),
         key: parsed.meta.idempotency_key,
@@ -585,14 +629,17 @@ export function publishDocument(kb: ResolvedKb, request: DocumentRequest): Publi
         approvals: [],
       };
     },
-  );
+    write: () => renderDocument(meta, body),
+  };
+  return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
 
 /**
  * `publishArtifact` with a `run-artifact` placement: one schema-bound record,
- * stored under its run and linked from the records in `links`. It is validated
- * against its own schema before anything is written, and a link that names no
- * committed record is refused rather than stored dangling.
+ * appended as one line to the project's artifacts file and linked from the
+ * records in `links`. It is validated against its own schema before anything
+ * is written, and a link that names no committed record is refused rather
+ * than stored dangling.
  */
 export function publishRunArtifact(
   kb: ResolvedKb,
@@ -618,8 +665,9 @@ export function publishRunArtifact(
   }
   const head = headCommit(kb.root);
   for (const link of links) {
-    const target = refPath(project, link);
-    if (target === null || head === null || committed(kb.root, target) === null) {
+    const resolved: CommittedRef = head === null ? { status: "absent" } : refCommitted(kb.root, project, link);
+    if (resolved.status !== "found" && resolved.status !== "absent") return resolved;
+    if (resolved.status === "absent") {
       return refused(
         "kb.link-unresolved",
         `'${link}' names no record in the knowledgebase, so nothing can link from it.`,
@@ -630,15 +678,18 @@ export function publishRunArtifact(
   const hash = artifactHash(artifact);
   const key = idempotencyKey(run, ref, hash);
   const stored = { record: { ref, content_hash: hash, idempotency_key: key, links: [...links] }, artifact };
-  return commitRecord(
-    kb,
-    artifactPath(project, run, artifact.schema, artifact.id),
-    `${JSON.stringify(stored, null, 2)}\n`,
-    { ref, hash, key, links, approvals: approvalsOf(artifact) },
-    (content) => {
-      const value = parseStored(content);
-      if (value === null) return null;
+  const path = artifactsPath(project);
+  const store: RecordFile = {
+    path,
+    find: (lines) => {
+      const found = storedArtifact(lines, ref);
+      if (found === null) return null;
+      const { line, value } = found;
       return {
+        revision: () => {
+          const blamed = git(kb.root, ["blame", "--porcelain", "-L", `${line},${line}`, "HEAD", "--", path]);
+          return blamed.stdout.split(" ")[0] ?? "";
+        },
         published: value.record.content_hash,
         observed: artifactHash(value.artifact),
         key: value.record.idempotency_key,
@@ -647,5 +698,10 @@ export function publishRunArtifact(
         approvals: approvalsOf(value.artifact),
       };
     },
-  );
+    write: (lines) => {
+      const kept = lines === null || lines === "" || lines.endsWith("\n") ? (lines ?? "") : `${lines}\n`;
+      return `${kept}${JSON.stringify(stored)}\n`;
+    },
+  };
+  return commitRecord(kb, store, { ref, hash, key, links, approvals: approvalsOf(artifact) });
 }
