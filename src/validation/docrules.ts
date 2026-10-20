@@ -477,7 +477,13 @@ function decisionRules(rc: RuleContext): void {
     const independent =
       seats.length === 2 &&
       seats.every((s) => s !== null && s["independent"] === true) &&
-      new Set(holders).size === holders.length;
+      new Set(holders).size === holders.length &&
+      judgments.length === 2 &&
+      judgments.every((j) => j !== null && str(j["by"]) !== null && seatIds.has(str(j["seat"]) ?? "")) &&
+      new Set(judgments.map((j) => j?.["seat"])).size === 2 &&
+      new Set(judgments.map((j) => j?.["by"])).size === 2 &&
+      str(at(doc, "result.escalation.charter_rule")) !== "runner:seat-independence" &&
+      str(at(doc, "escalation.charter_rule")) !== "runner:seat-independence";
     if (check["seats_independent"] !== undefined && check["seats_independent"] !== independent) {
       fail(
         rc,

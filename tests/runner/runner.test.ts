@@ -24,6 +24,7 @@ import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 
 // Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
 // cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
@@ -1722,9 +1723,63 @@ describe("runner guards", () => {
       lineage: ["supervisor-2", "supervisor-1"],
     });
     writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
-    const decided = new Runner(f.privateDir, f.worker, root).decide("toy-run", "forward");
+    const runner = new Runner(f.privateDir, f.worker, root);
+    const decided = runner.decide("toy-run", "forward");
     expect(decided.status).toBe("needs-input");
     expect(decided.escalation?.charter_rule).toBe("runner:seat-independence");
+    const file = join(f.privateDir, "toy-run-forward.decision.json");
+    const doc: Record<string, unknown> = JSON.parse(readFileSync(file, "utf8"));
+    expect(doc).toMatchObject({
+      status: "blocked",
+      authority_check: { seats_independent: false, result: "fail", failed_checks: ["seats_independent"] },
+      grants_issued: [],
+    });
+    expect(checkDocument(file, doc, indexDocuments([{ file, doc }]))).toEqual([]);
+    expect(runner.answer("toy-run", "forward", "yes", "captain", "Explicit approval").status).toBe("complete");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ authority_check: doc["authority_check"] });
+  });
+
+  test.each([
+    ["independent", {}, true, []],
+    ["reverse lineage", { lineage: ["supervisor-1", "supervisor-2"] }, false, []],
+    ["duplicate actor", { actor: "supervisor-2", lineage: ["supervisor-2"] }, false, []],
+    ["duplicate seat", { seat: "seat-b" }, false, []],
+    ["duplicate dispatch", { dispatch: "card-1-dispatch-b" }, false, []],
+    ["excluded lineage", { lineage: ["supervisor-1", "implementer-1"] }, false, []],
+    ["shared input", { input_dispatches: ["card-1-dispatch-b"] }, false, []],
+    ["missing own lineage", { lineage: [] }, false, []],
+    ["failed dispatch", {}, false, ["seat-b failed"]],
+  ] as const)("persisted %s seats produce consistent authority evidence", (_name, change, independent, failures) => {
+    const f = ready();
+    card(f);
+    const run = f.runner.status("toy-run");
+    const judgment = run.cards["card-1"]?.judgments[0];
+    if (judgment === undefined) throw new Error("first judgment missing");
+    Object.assign(judgment, change);
+    writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+    const runner = new Runner(f.privateDir, f.worker, root);
+    expect(runner.decide("toy-run", "card-1", [...failures]).status).toBe(independent ? "complete" : "needs-input");
+    const file = join(f.privateDir, "toy-run-card-1.decision.json");
+    const doc: Record<string, unknown> = JSON.parse(readFileSync(file, "utf8"));
+    expect(doc["authority_check"]).toMatchObject({
+      seats_independent: independent,
+      result: independent ? "pass" : "fail",
+    });
+    const index = indexDocuments([{ file, doc }]);
+    const rule = "decision.authority-check-recomputed-from-charter-and-evidence";
+    expect(checkDocument(file, doc, index).filter((issue) => issue.rule === rule)).toEqual([]);
+    if (!independent) {
+      doc["authority_check"] = {
+        deterministic: true,
+        charter_permits: true,
+        required_evidence_present: true,
+        seats_independent: true,
+        checkpoint_in_charter: true,
+        both_judgments_returned: true,
+        result: "pass",
+      };
+      expect(checkDocument(file, doc, index).some((issue) => issue.rule === rule)).toBe(true);
+    }
   });
 
   test("seat judgments are accepted exactly when actors and lineages are independent", () => {
