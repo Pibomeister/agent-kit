@@ -60,9 +60,12 @@ projects/<project>/runs/artifacts.jsonl                             run artifact
 A **page** is its own markdown file, so a human accepts an ADR by editing that file (§5). A **run
 artifact** is one line of the project's `artifacts.jsonl`: one JSON object holding the stored
 record (ref, content hash, idempotency key, links) beside the artifact. The file is append-only. A
-publish adds a line and never rewrites one, so git stores each publish as a small delta. A later
+publish adds a line and never rewrites one, so git can delta successive versions of the file. A later
 line for the same ref is a later copy of that record (the approved copy in §5) and is the one that
 counts. A line that does not parse as a record names no ref.
+
+The former `projects/<project>/runs/<run>/<schema>/<artifact id>.json` files are not read or
+automatically migrated by this backend.
 
 A **scope** is a component, written as kebab-case words joined by `/` (`billing/exports`), or
 `project` for the whole project. A scope segment may not be one of the nine kinds, nor `project`,

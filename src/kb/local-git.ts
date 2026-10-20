@@ -16,9 +16,8 @@ import { git } from "./git.ts";
  * It carries `readContext` and `publishArtifact` and nothing else. Reads come
  * from the committed tree, never the working files, so what a run reads is
  * what the knowledgebase's history holds; a publish is one commit touching one
- * file, read back from that commit before it is reported. A page is its own
- * markdown file; every run artifact of a project is one line of one
- * append-only file, which git can delta where it could not a file per record.
+ * file, read back from that commit before it is reported. The backend guide
+ * §3 defines the storage layout.
  */
 
 /** `common#/$defs/kb_kind`: the nine kinds, and no tenth (ADR-0001 §2). */
@@ -267,7 +266,7 @@ function headCommit(root: string): string | null {
   return head.status === 0 ? head.stdout.trim() : null;
 }
 
-/** The committed bytes at `path`, or null when the commit has no such file. */
+/** The committed bytes at `path`, null when absent, or a failure when git cannot read them. */
 function committed(root: string, path: string): string | null | KbRefusal {
   const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
   if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
@@ -457,7 +456,7 @@ interface RecordFile {
  * unchanged republish becomes a no-op and a changed one a refusal
  * (runner-contract §5), and its links may not change either. Approvals are
  * outside the digest, so a republish that brings every approval the record
- * holds and at least one more is committed over it. Every result reports what
+ * holds and at least one more commits a new stored copy. Every result reports what
  * the knowledgebase holds, not what was sent.
  */
 function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentity): PublishOutcome | KbRefusal {
