@@ -1782,6 +1782,46 @@ describe("runner guards", () => {
     }
   });
 
+  test.each([
+    ["elapsed cap", "runner:budget/elapsed-minutes"],
+    ["grant", "runner:grant"],
+    ["freshness", "runner:evidence-freshness"],
+    ["evidence", "runner:trusted-evidence"],
+    ["human experience", "policy:prototype-human-experience-needs-human"],
+  ] as const)("an earlier %s refusal preserves conservative independence evidence", (cause, rule) => {
+    const f = ready();
+    card(f);
+    const run = f.runner.status("toy-run");
+    const prepared = run.cards["card-1"];
+    const judgment = prepared?.judgments[1];
+    if (prepared === undefined || judgment === undefined) throw new Error("prepared judgments missing");
+    judgment.lineage.push("supervisor-1");
+    if (cause === "elapsed cap") run.created_at = new Date(Date.now() - 61 * 60_000).toISOString();
+    if (cause === "grant") prepared.grant.charter_hash = `sha256:${"0".repeat(64)}`;
+    if (cause === "freshness") writeFileSync(join(f.worker, "README.md"), "changed worker\n");
+    if (cause === "evidence") {
+      const evidence = run.evidence["e1"];
+      if (evidence === undefined) throw new Error("evidence missing");
+      evidence.revision = "0".repeat(40);
+    }
+    if (cause === "human experience") prepared.human_experience = true;
+    writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+    const runner = new Runner(f.privateDir, f.worker, root, cause === "freshness");
+    const result = runner.decide("toy-run", "card-1");
+    expect(result.status).toBe(cause === "elapsed cap" ? "cap-reached" : "needs-input");
+    const file = join(f.privateDir, "toy-run-card-1.decision.json");
+    const doc: Record<string, unknown> = JSON.parse(readFileSync(file, "utf8"));
+    expect(doc).toMatchObject({
+      status: "blocked",
+      authority_check: { seats_independent: false, result: "fail" },
+      escalation: { charter_rule: rule },
+      grants_issued: [],
+    });
+    expect(checkDocument(file, doc, indexDocuments([{ file, doc }]))).toEqual([]);
+    expect(runner.decide("toy-run", "card-1")).toEqual(result);
+    expect(runner.ledger("toy-run").entries).toHaveLength(1);
+  });
+
   test("seat judgments are accepted exactly when actors and lineages are independent", () => {
     const f = ready();
     const actors = ["supervisor-1", "supervisor-2", "supervisor-3", "supervisor-4"];

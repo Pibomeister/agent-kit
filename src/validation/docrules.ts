@@ -484,7 +484,7 @@ function decisionRules(rc: RuleContext): void {
       new Set(judgments.map((j) => j?.["by"])).size === 2 &&
       str(at(doc, "result.escalation.charter_rule")) !== "runner:seat-independence" &&
       str(at(doc, "escalation.charter_rule")) !== "runner:seat-independence";
-    if (check["seats_independent"] !== undefined && check["seats_independent"] !== independent) {
+    if (check["seats_independent"] === true && !independent) {
       fail(
         rc,
         RULE_AUTH,
