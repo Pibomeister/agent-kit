@@ -220,19 +220,22 @@ function storedArtifact(text: string, ref: string): { line: number; value: Store
 }
 
 /** Whether a record ref names a committed record, false when it is not a ref this backend issued. */
-function refCommitted(root: string, project: string, ref: string): boolean {
+function refCommitted(root: string, project: string, ref: string): boolean | KbRefusal {
   if (ref.startsWith("doc:")) {
     const parts = ref.slice(4).split("/");
     const id = parts.at(-1) ?? "";
     const kind = parts.at(-2) ?? "";
     const segments = scopeSegments(parts.slice(0, -2).join("/"));
     if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) return false;
-    return committed(root, documentPath(project, segments, kind, id)) !== null;
+    const content = committed(root, documentPath(project, segments, kind, id));
+    return typeof content === "object" && content !== null ? content : content !== null;
   }
   if (ref.startsWith("run:")) {
     const parts = ref.slice(4).split("/");
     if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part))) return false;
-    return storedArtifact(committed(root, artifactsPath(project)) ?? "", ref) !== null;
+    const content = committed(root, artifactsPath(project));
+    if (typeof content === "object" && content !== null) return content;
+    return storedArtifact(content ?? "", ref) !== null;
   }
   return false;
 }
@@ -265,9 +268,14 @@ function headCommit(root: string): string | null {
 }
 
 /** The committed bytes at `path`, or null when the commit has no such file. */
-function committed(root: string, path: string): string | null {
+function committed(root: string, path: string): string | null | KbRefusal {
+  const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
+  if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
+  if (listed.stdout === "") return null;
   const shown = git(root, ["show", `HEAD:${path}`]);
-  return shown.status === 0 ? shown.stdout : null;
+  return shown.status === 0
+    ? shown.stdout
+    : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
 }
 
 function normalizeBody(body: string): string {
@@ -357,7 +365,9 @@ export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: str
       const listed = git(kb.root, ["ls-tree", "-z", "--name-only", "HEAD", `${dir}/`]);
       if (listed.status !== 0) return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\0").filter((name) => name.endsWith(".md"))) {
-        const parsed = parseDocument(committed(kb.root, path) ?? "");
+        const content = committed(kb.root, path);
+        if (typeof content === "object" && content !== null) return content;
+        const parsed = parseDocument(content ?? "");
         if (parsed === null) {
           outcome.coverage.unreadable.push(path);
           continue;
@@ -455,6 +465,7 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
     const path = store.path;
     const before = headCommit(kb.root);
     const existing = before === null ? null : committed(kb.root, path);
+    if (typeof existing === "object" && existing !== null) return existing;
     const file = join(kb.root, path);
     const uncommitted = failed(
       "kb.uncommitted-record",
@@ -525,6 +536,7 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
       );
     }
     const readBack = committed(kb.root, path);
+    if (typeof readBack === "object" && readBack !== null) return readBack;
     const after = headCommit(kb.root);
     const written = readBack === null ? null : store.find(readBack);
     if (
@@ -648,7 +660,9 @@ export function publishRunArtifact(
   }
   const head = headCommit(kb.root);
   for (const link of links) {
-    if (head === null || !refCommitted(kb.root, project, link)) {
+    const resolved = head === null ? false : refCommitted(kb.root, project, link);
+    if (typeof resolved === "object") return resolved;
+    if (!resolved) {
       return refused(
         "kb.link-unresolved",
         `'${link}' names no record in the knowledgebase, so nothing can link from it.`,

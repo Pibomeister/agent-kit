@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
@@ -60,7 +61,7 @@ const PAGE = "# Queue the exports\n\nExports run on a queue, because a request c
 
 function git(dir: string, ...args: string[]): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env });
+  return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", env, maxBuffer: Infinity });
 }
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
@@ -1158,6 +1159,78 @@ describe("the store: pages stay files, run artifacts share one file", () => {
     expect(sent.code).toBe(1);
     expect(refusal(sent).code).toBe("kb.uncommitted-record");
     expect(commits(fx.kb)).toBe(1);
+  });
+
+  test("publication, republishing and run links survive an artifacts file growing past 64 MiB", () => {
+    const fx = registered();
+    const args = ["publish", "artifact", "--run", "example-run-1", "--file"];
+    const first = published(kb(fx, fx.project, ...args, decision(fx, { question: "q".repeat(1024 * 1024) })));
+    const line = git(fx.kb, "show", `HEAD:${ARTIFACTS}`);
+    writeFileSync(join(fx.kb, ARTIFACTS), line.repeat(63));
+    git(fx.kb, "add", "--", ARTIFACTS);
+    git(fx.kb, "commit", "-q", "-m", "fixture: seed accumulated artifact copies");
+    expect(Number(git(fx.kb, "cat-file", "-s", `HEAD:${ARTIFACTS}`))).toBeLessThan(64 * 1024 * 1024);
+
+    const file = decision(fx, { id: "crossing-limit", question: "r".repeat(1024 * 1024) });
+    const crossing = kb(fx, fx.project, ...args, file);
+    expect(crossing.code).toBe(0);
+    const second = published(crossing);
+    expect(second.effect).toBe("published");
+    expect(Number(git(fx.kb, "cat-file", "-s", `${second.revision}:${ARTIFACTS}`))).toBeGreaterThan(64 * 1024 * 1024);
+    expect(storedAt(fx, second.ref, second.revision).artifact).toEqual(JSON.parse(readFileSync(file, "utf8")));
+    expect(touched(fx, second.revision)).toEqual([ARTIFACTS]);
+
+    const linked = kb(fx, fx.project, ...args, decision(fx, { id: "after-limit" }), "--link", first.ref);
+    expect(linked.code).toBe(0);
+    expect(published(linked).effect).toBe("published");
+    const again = kb(fx, fx.project, ...args, file);
+    expect(again.code).toBe(0);
+    expect(published(again)).toMatchObject({ effect: "none", revision: second.revision });
+    expect(git(fx.kb, "status", "--porcelain")).toBe("");
+  }, 30_000);
+
+  test("an unreadable committed artifact blob fails both publication and run-link resolution", () => {
+    const fx = registered();
+    const args = ["publish", "artifact", "--run", "example-run-1", "--file"];
+    const file = decision(fx);
+    const first = published(kb(fx, fx.project, ...args, file));
+    const oid = git(fx.kb, "rev-parse", `HEAD:${ARTIFACTS}`).trim();
+    const contents = readFileSync(join(fx.kb, ARTIFACTS), "utf8");
+    rmSync(join(fx.kb, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+
+    for (const request of [
+      [file],
+      [decision(fx, { id: "new-record" })],
+      [file, "--link", first.ref],
+    ]) {
+      const sent = kb(fx, fx.project, ...args, ...request);
+      expect(sent.code).toBe(1);
+      expect(refusal(sent)).toMatchObject({ status: "failed", code: "kb.unreadable" });
+    }
+    expect(git(fx.kb, "rev-parse", "HEAD").trim()).toBe(first.revision);
+    expect(readFileSync(join(fx.kb, ARTIFACTS), "utf8")).toBe(contents);
+  });
+
+  test("an unreadable committed page blob fails reads, republishing and document-link resolution", () => {
+    const fx = registered();
+    const file = page(fx);
+    const first = published(publishPage(fx, fx.project, file));
+    const path = "projects/example-project/documents/billing/exports/adr/queue-the-exports.md";
+    const oid = git(fx.kb, "rev-parse", `HEAD:${path}`).trim();
+    const contents = readFileSync(join(fx.kb, path), "utf8");
+    rmSync(join(fx.kb, ".git", "objects", oid.slice(0, 2), oid.slice(2)));
+
+    const results = [
+      kb(fx, fx.project, "read", "--kind", "adr", "--scope", "billing/exports"),
+      publishPage(fx, fx.project, file),
+      kb(fx, fx.project, "publish", "artifact", "--run", "example-run-1", "--file", decision(fx), "--link", first.ref),
+    ];
+    for (const sent of results) {
+      expect(sent.code).toBe(1);
+      expect(refusal(sent)).toMatchObject({ status: "failed", code: "kb.unreadable" });
+    }
+    expect(git(fx.kb, "rev-parse", "HEAD").trim()).toBe(first.revision);
+    expect(readFileSync(join(fx.kb, path), "utf8")).toBe(contents);
   });
 });
 
