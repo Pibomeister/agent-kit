@@ -327,7 +327,7 @@ export interface HookSpec {
 export function hostHooks(commands: HookCommands): Record<WireHost, HookSpec[]> {
   return {
     claude: [
-      { event: "SessionStart", command: commands.sessionStart, matcher: SESSION_MATCHER },
+      { event: "SessionStart", command: commands.sessionStart, matcher: SESSION_MATCHER, timeout: 10 },
       { event: "Stop", command: commands.claudeStop, timeout: 120 },
     ],
     codex: [
