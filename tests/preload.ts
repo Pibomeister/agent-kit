@@ -10,10 +10,13 @@
  * passes a config built from the environment, never `loadConfig({})`.
  * It also makes every test that reaches no assertion fail (see the end of this file).
  */
-import { beforeEach, expect } from "bun:test";
+import { afterAll, beforeEach, expect } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { processScratch } from "./helpers/process-tmp.ts";
+import { processScratch, removeProcessDir } from "./helpers/process-tmp.ts";
+
+// Bun test does not emit process exit events; a preload's teardown runs after all test files.
+afterAll(removeProcessDir, 60_000);
 
 for (const key of Object.keys(process.env)) if (key.startsWith("AK_LEARN_")) Reflect.deleteProperty(process.env, key);
 const root = processScratch("ak-test-env-");

@@ -29,10 +29,15 @@ export function processTmpParent(platform: NodeJS.Platform = process.platform): 
 export function processDir(): string {
   if (dir === undefined) {
     const created = realpathSync(mkdtempSync(join(processTmpParent(), "ak-proc-")));
-    process.on("exit", () => rmSync(created, { recursive: true, force: true }));
+    process.on("exit", removeProcessDir);
     dir = created;
   }
   return dir;
+}
+
+/** Bun's test runner uses suite teardown instead of emitting the process exit event. */
+export function removeProcessDir(): void {
+  if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
 }
 
 export function processScratch(prefix: string): string {

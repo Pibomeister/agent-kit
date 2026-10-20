@@ -29,9 +29,10 @@ const EMPTY_WORKSPACE_CASES = [
 ] as const;
 
 const made: string[] = [];
+// Removing every scaffold can exceed Bun's default hook timeout on a loaded host.
 afterAll(() => {
   for (const dir of made) rmSync(dir, { recursive: true, force: true });
-});
+}, 60_000);
 
 type CaseSpec = {
   tags?: string[];

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 
@@ -57,5 +57,32 @@ describe("process temp directory", () => {
     expect(inside(dir, tree)).toBe(true);
     expect(existsSync(tree)).toBe(false);
     expect(existsSync(dir)).toBe(false);
+  });
+
+  test.each([false, true])("is removed when the Bun test runner finishes (failing test: %s)", (failing) => {
+    const file = join(processScratch("ak-runner-"), "cleanup.test.ts");
+    const script = [
+      `import { afterAll, test, expect } from "bun:test";`,
+      `import { existsSync } from "node:fs";`,
+      `import { processDir } from ${JSON.stringify(join(REPO, "tests/helpers/process-tmp.ts"))};`,
+      `afterAll(() => expect(existsSync(processDir())).toBe(true));`,
+      `test("fixture exists during the test", () => {`,
+      `  console.log("PROCESS_DIR " + processDir());`,
+      `  expect(existsSync(processDir())).toBe(true);`,
+      `  expect(${!failing}).toBe(true);`,
+      `});`,
+    ].join("\n");
+    writeFileSync(file, script);
+    const child = Bun.spawnSync([process.execPath, "test", file], { cwd: REPO });
+    expect(child.exitCode).toBe(failing ? 1 : 0);
+    const line = child.stdout.toString().split("\n").find((value) => value.startsWith("PROCESS_DIR "));
+    expect(line).toBeDefined();
+    const dir = line?.slice("PROCESS_DIR ".length) ?? "";
+    expect(dir).not.toBe(processDir());
+    try {
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

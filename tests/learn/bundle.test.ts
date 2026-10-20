@@ -18,7 +18,7 @@ import { planBundle } from "../../src/packaging/plan.ts";
 import { gitRepo, projectScratch, removeProjectScratch, removeStartScratch, scratch, startScratch } from "./helpers.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
-/** Each call starts bun on a large bundle, which under a loaded full run takes longer than the default 5s. */
+/** Starting and removing large bundles under load can take longer than the default 5s. */
 const TIMEOUT_MS = 60_000;
 
 let bundle = "";
@@ -26,7 +26,7 @@ let codexBundle = "";
 afterAll(() => {
   removeProjectScratch();
   removeStartScratch();
-});
+}, TIMEOUT_MS);
 beforeAll(() => {
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
