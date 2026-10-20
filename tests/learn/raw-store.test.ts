@@ -180,9 +180,14 @@ describe("the ledger commit", () => {
     ]);
   });
 
-  test("a new ledger's .gitignore names the store", () => {
+  test("a new ledger ignores the store and SQLite sidecars", () => {
     const ledger = ensureMemoryLedger(scratch("ak-raw-ignore-"));
-    expect(readFileSync(ledger.path(".gitignore"), "utf8")).toContain(`${RAW_STORE_FILE}*`);
+    for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+      const path = `${RAW_STORE_FILE}${suffix}`;
+      const result = ledger.git(["check-ignore", "--", path]);
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim()).toBe(path);
+    }
   });
 });
 
