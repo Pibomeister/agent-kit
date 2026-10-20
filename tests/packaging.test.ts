@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
@@ -19,7 +20,13 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
-import { BUILD_RECORD_FILE, GATE_FILE, inlinedSetFromMetafile, planBundle } from "../src/packaging/plan.ts";
+import {
+  BUILD_RECORD_FILE,
+  GATE_FILE,
+  inlinedSetFromMetafile,
+  isExecutable,
+  planBundle,
+} from "../src/packaging/plan.ts";
 import { resolveProfile } from "../src/packaging/profiles.ts";
 import { checkBundleLinks } from "../src/validation/links.ts";
 import { runCli } from "../src/cli.ts";
@@ -2899,4 +2906,143 @@ describe("Kimi native bundle", () => {
       expect(text).not.toContain("disable-model-invocation:");
     }
   });
+});
+
+/**
+ * The executable bit on the programs a bundle runs by path.
+ *
+ * `published` carried `dist/*\/bin/ak` as 100644, so every install's `ak kb check`
+ * failed with Permission denied. The bit has to survive two hops: `ak build`
+ * writing dist/, and the publish job carrying dist/ through a tarball and `cp -R`
+ * into the index it commits (.github/workflows/publish-bundle.yml).
+ */
+const EXEC_BITS = join(REPO, "tools/publish/exec-bits.sh");
+const SHEBANG = "#!/usr/bin/env bun\n";
+
+/** A fixture whose bundles carry bin/ak: it needs an inlined package with a licence row, or the build refuses. */
+function withMaintenance() {
+  return ctxFor({
+    "src/maintenance/cli.ts": 'import { parse } from "yaml";\nconsole.log(parse("a: 1"));\n',
+    "node_modules/yaml/package.json": '{"name":"yaml","main":"index.js"}\n',
+    "node_modules/yaml/index.js": "module.exports = { parse: (s) => s };\n",
+  });
+}
+
+function executable(path: string): boolean {
+  return (statSync(path).mode & 0o111) !== 0;
+}
+
+function sh(cwd: string, script: string) {
+  return spawnSync("sh", ["-c", script], { cwd, encoding: "utf8" });
+}
+
+function run(cwd: string, script: string): string {
+  const result = sh(cwd, script);
+  if (result.status !== 0) throw new Error(`${script}: ${result.stderr}`);
+  return result.stdout;
+}
+
+function shebangPrograms(root: string, host: string): string[] {
+  return readdirSync(join(root, "dist", host, "bin"))
+    .map((name) => join(root, "dist", host, "bin", name))
+    .filter((path) => readFileSync(path, "utf8").startsWith("#!"));
+}
+
+describe("the executable bit on bin/ programs", () => {
+  test("ak build writes every bin/ file that starts with a shebang executable, in every host bundle", () => {
+    const ctx = withMaintenance();
+    expect(writeBundles(ctx, {}).issues.filter((i) => i.severity === "error")).toEqual([]);
+    for (const host of HOST_IDS) {
+      const programs = shebangPrograms(ctx.root, host);
+      expect(programs.map((path) => path.slice(ctx.root.length + 1))).toContain(`dist/${host}/bin/ak`);
+      for (const path of programs) expect(`${path}:${executable(path)}`).toBe(`${path}:true`);
+    }
+    expect(checkBundles(ctx, {}).filter((i) => i.severity === "error")).toEqual([]);
+  }, 60_000);
+
+  test("--check refuses a bin/ program that lost its executable bit", () => {
+    const ctx = withMaintenance();
+    writeBundles(ctx, {});
+    chmodSync(join(ctx.root, "dist/claude-code/bin/ak"), 0o644);
+    const issue = expectError(checkBundles(ctx, {}), "packaging.dist-not-executable", "Permission denied");
+    expect(issue.file).toBe("dist/claude-code/bin/ak");
+  }, 60_000);
+
+  test("what the publish job commits carries bin/ak as 100755", () => {
+    // The publish job's own hops, in its order: the build job tars dist/, the
+    // publish job untars it, copies it into the published worktree with cp -R,
+    // stages with add -A and runs exec-bits.sh before it commits.
+    const ctx = withMaintenance();
+    writeBundles(ctx, {});
+    run(ctx.root, "tar -czf published-bundle.tar.gz dist");
+    const publish = makeTree({});
+    run(publish, `tar -xzf ${JSON.stringify(join(ctx.root, "published-bundle.tar.gz"))}`);
+    const release = makeTree({});
+    run(release, "git init -q && git config core.fileMode true");
+    run(publish, `cp -R dist ${JSON.stringify(join(release, "dist"))}`);
+    run(release, "git add -A");
+    expect(sh(REPO, `${EXEC_BITS} ${JSON.stringify(release)}`).status).toBe(0);
+    for (const host of HOST_IDS) {
+      expect(run(release, `git ls-files -s dist/${host}/bin/ak`).split(" ")[0]).toBe("100755");
+    }
+  }, 60_000);
+
+  test("exec-bits.sh refuses a staged bin/ program without the bit and passes the files that need none", () => {
+    const release = makeTree({
+      "dist/claude-code/bin/ak": `${SHEBANG}console.log("ak");\n`,
+      // Run as `node bin/ak-gate.mjs`: no shebang, so 100644 is correct.
+      "dist/claude-code/bin/ak-gate.mjs": 'console.log("gate");\n',
+      // A shebang below an eval fixture's own bin/ is not a bundle program.
+      "dist/claude-code/evals/x/_fixtures/repo/bin/tool.js": "#!/usr/bin/env node\n",
+    });
+    run(release, "git init -q && git config core.fileMode true");
+    chmodSync(join(release, "dist/claude-code/bin/ak"), 0o644);
+    run(release, "git add -A");
+    const refused = sh(REPO, `${EXEC_BITS} ${JSON.stringify(release)}`);
+    expect(refused.status).toBe(1);
+    expect(refused.stderr.trim()).toBe(
+      "refused: dist/claude-code/bin/ak starts with a shebang and is staged as 100644, not 100755",
+    );
+    chmodSync(join(release, "dist/claude-code/bin/ak"), 0o755);
+    run(release, "git add -A");
+    expect(sh(REPO, `${EXEC_BITS} ${JSON.stringify(release)}`).status).toBe(0);
+  });
+
+  test("the publish job runs exec-bits.sh on the staged release before it commits", () => {
+    const workflow = readFileSync(join(REPO, ".github/workflows/publish-bundle.yml"), "utf8");
+    const lines = workflow.split("\n").map((line) => line.trim());
+    const added = lines.indexOf('git -C "$release_dir" add -A');
+    const checked = lines.indexOf('tools/publish/exec-bits.sh "$release_dir"');
+    const committed = lines.findIndex((line) => line.includes("commit -m"));
+    expect(added).toBeGreaterThanOrEqual(0);
+    expect(checked).toBeGreaterThan(added);
+    expect(committed).toBeGreaterThan(checked);
+  });
+
+  test("every bin/ file the shipped text runs by name or path is one the build makes executable", () => {
+    // A skill runs `ak …`, which resolves to the installed bin/ak; one that ran
+    // `<bundle>/bin/<name>` with no interpreter in front would need the bit too.
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    for (const host of HOST_IDS) {
+      const plan = planBundle({ root: REPO, catalog }, host, {});
+      const programs = [...plan.files.values()].filter((file) => file.path.startsWith("bin/"));
+      const commands: string[] = [];
+      for (const file of plan.files.values()) {
+        if (file.path.startsWith("evals/") || !/\.(md|json|ya?ml)$/.test(file.path)) continue;
+        // A description names `ak-gate.mjs bypass check` for routing; the body runs it with node.
+        const text = file.path.endsWith(".md") ? parseFrontmatter(file.contents).body : file.contents;
+        for (const span of text.matchAll(/`([^`\n]+)`/g)) commands.push(span[1] ?? "");
+        for (const hook of file.contents.matchAll(/"command"\s*:\s*"([^"]+)"/g)) commands.push(hook[1] ?? "");
+      }
+      const runs = (name: string) =>
+        commands.some((command) => {
+          const head = command.trim().split(/\s+/)[0] ?? "";
+          return head === name || head === `bin/${name}` || head.endsWith(`/bin/${name}`);
+        });
+      const direct = programs.filter((file) => runs(file.path.slice("bin/".length)));
+      expect(direct.map((file) => `${host}:${file.path}`)).toContain(`${host}:bin/ak`);
+      for (const file of direct) expect(`${host}:${file.path}:${isExecutable(file)}`).toBe(`${host}:${file.path}:true`);
+    }
+  }, 120_000);
 });
