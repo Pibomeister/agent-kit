@@ -1,12 +1,12 @@
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { DENY_TERMS, PLACEHOLDER_TERMS } from "../../src/denylist.ts";
+import { processScratch } from "./process-tmp.ts";
 
 /** Build a throwaway repo root from a path -> contents map. */
 export function makeTree(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "ak-tree-"));
+  const root = processScratch("ak-tree-");
   for (const [rel, contents] of Object.entries(files)) {
     const full = join(root, rel);
     mkdirSync(dirname(full), { recursive: true });
@@ -136,7 +136,7 @@ function substituteInPlace(dir: string, from: string, to: string): void {
 /** Copy a committed fixture tree to a temp root, substituting the denied strings. */
 export function materializeFixture(relPath: string): string {
   const source = join(import.meta.dir, "..", "fixtures", relPath);
-  const root = mkdtempSync(join(tmpdir(), "ak-fixture-"));
+  const root = processScratch("ak-fixture-");
   cpSync(source, root, { recursive: true });
   substituteInPlace(root, DENY_MARKER, sampleModelTerm());
   substituteInPlace(root, PLACEHOLDER_MARKER, samplePlaceholderTerm());
