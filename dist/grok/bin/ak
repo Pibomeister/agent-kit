@@ -36067,6 +36067,9 @@ function verdictBase(run2) {
     throw new Error("charter names no verdict base branch");
   return baseRef;
 }
+function sharesLineage(a, b) {
+  return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+}
 function approved(decision) {
   const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
   return decision.result.status === "complete" && choice === decision.card.approve && choice !== HUMAN_REFUSAL && choice !== HUMAN_RETRY;
@@ -36338,6 +36341,10 @@ class Runner {
 `, { mode: 384 });
     renameSync5(partial, target);
   }
+  seatsIndependent(run2, card) {
+    const seats = run2.charter.supervisors.seats.map((s) => s.id);
+    return card.judgments.length === 2 && new Set(card.judgments.map((j) => j.seat)).size === 2 && new Set(card.judgments.map((j) => j.dispatch)).size === 2 && !card.judgments.some((j, i) => card.judgments.slice(i + 1).some((k) => sharesLineage(j, k))) && card.judgments.every((j) => seats.includes(j.seat) && ID.test(j.dispatch) && j.lineage.includes(j.actor) && !run2.excluded_actors.some((excluded) => j.actor === excluded || j.lineage.includes(excluded)) && j.input_dispatches.length === 0);
+  }
   decisionArtifact(run2, decision) {
     const { card, at } = decision;
     const result = decision.answer?.refusal ?? decision.result;
@@ -36350,7 +36357,7 @@ class Runner {
     const declaredCheckpoint = this.covers.get(card.operation)?.covers ?? "align-answer";
     const checkpointInCharter = run2.charter.checkpoints.includes(declaredCheckpoint);
     const evidencePresent = evidence.length === card.evidence.length && card.evidence.length > 0;
-    const seatsIndependent = card.judgments.length === 2 && new Set(card.judgments.map((j) => j.actor)).size === 2;
+    const seatsIndependent = this.seatsIndependent(run2, card) && result.escalation?.charter_rule !== "runner:seat-independence";
     const checks = {
       charter_permits: charterPermits,
       required_evidence_present: evidencePresent,
@@ -36712,6 +36719,8 @@ class Runner {
       throw new Error("invalid or excluded seat");
     if (card.judgments.some((j) => j.seat === seat || j.actor === actor || j.dispatch === dispatch2 || inputDispatches.includes(j.dispatch)))
       throw new Error("seat is not independently dispatched");
+    if (card.judgments.some((j) => sharesLineage(j, { actor, lineage })))
+      throw new Error("invalid or excluded seat");
     if (inputDispatches.length > 0)
       throw new Error("seat input includes another dispatch");
     card.judgments.push({ seat, actor, dispatch: dispatch2, choice, rationale, input_dispatches: inputDispatches, lineage });
@@ -36823,9 +36832,7 @@ class Runner {
       throw new Error("phase is not declared");
     if (seatFailures.length > 0)
       return this.refuse(run2, card, "runner:seat-independence", `Supervisor seat dispatch failed: ${seatFailures.join("; ")}`.slice(0, 2000));
-    const charter = run2.charter;
-    const seats = charter.supervisors.seats.map((s) => s.id);
-    if (card.judgments.length !== 2 || new Set(card.judgments.map((j) => j.actor)).size !== 2 || new Set(card.judgments.map((j) => j.dispatch)).size !== 2 || card.judgments.some((j) => !seats.includes(j.seat) || run2.excluded_actors.some((excluded) => j.actor === excluded || j.lineage.includes(excluded)) || j.input_dispatches.length > 0))
+    if (!this.seatsIndependent(run2, card))
       return this.refuse(run2, card, "runner:seat-independence", "Two independent supervisor dispatches are required");
     if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
       return this.refuse(run2, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
@@ -37507,6 +37514,8 @@ async function serve(argv, io) {
     launchers = configValue.launchers;
     if (new Set(launchers.map((launcher) => launcher.seat)).size !== 2 || new Set(launchers.map((launcher) => launcher.actor)).size !== 2)
       throw new Error("seat configuration must name two distinct seats and actors");
+    if (launchers.some((launcher, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher, other))))
+      throw new Error("seat configuration lineages must be independent");
   }
   let verifyCommand = null;
   if (verifyConfigPath !== undefined) {
