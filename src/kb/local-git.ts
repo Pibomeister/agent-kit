@@ -116,6 +116,9 @@ interface StoredArtifact {
   artifact: RunArtifact;
 }
 
+type CommittedContent = { status: "found"; text: string } | { status: "absent" } | KbRefusal;
+type CommittedRef = { status: "found" | "absent" } | KbRefusal;
+
 const ajv = new Ajv2020({ strict: false });
 const validMeta = ajv.compile<DocumentMeta>({
   type: "object",
@@ -218,25 +221,27 @@ function storedArtifact(text: string, ref: string): { line: number; value: Store
   return null;
 }
 
-/** Whether a record ref names a committed record, false when it is not a ref this backend issued. */
-function refCommitted(root: string, project: string, ref: string): boolean | KbRefusal {
+/** Whether a record ref names a committed record, absent when it is not a ref this backend issued. */
+function refCommitted(root: string, project: string, ref: string): CommittedRef {
   if (ref.startsWith("doc:")) {
     const parts = ref.slice(4).split("/");
     const id = parts.at(-1) ?? "";
     const kind = parts.at(-2) ?? "";
     const segments = scopeSegments(parts.slice(0, -2).join("/"));
-    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) return false;
+    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) {
+      return { status: "absent" };
+    }
     const content = committed(root, documentPath(project, segments, kind, id));
-    return typeof content === "object" && content !== null ? content : content !== null;
+    return content.status === "found" ? { status: "found" } : content;
   }
   if (ref.startsWith("run:")) {
     const parts = ref.slice(4).split("/");
-    if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part))) return false;
+    if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part))) return { status: "absent" };
     const content = committed(root, artifactsPath(project));
-    if (typeof content === "object" && content !== null) return content;
-    return storedArtifact(content ?? "", ref) !== null;
+    if (content.status !== "found") return content;
+    return { status: storedArtifact(content.text, ref) !== null ? "found" : "absent" };
   }
-  return false;
+  return { status: "absent" };
 }
 
 function documentHash(request: DocumentRequest): string {
@@ -266,14 +271,14 @@ function headCommit(root: string): string | null {
   return head.status === 0 ? head.stdout.trim() : null;
 }
 
-/** The committed bytes at `path`, null when absent, or a failure when git cannot read them. */
-function committed(root: string, path: string): string | null | KbRefusal {
+/** The committed bytes at `path`, absent when not listed, or a failure when git cannot read them. */
+function committed(root: string, path: string): CommittedContent {
   const listed = git(root, ["ls-tree", "-z", "HEAD", "--", path]);
   if (listed.status !== 0) return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
-  if (listed.stdout === "") return null;
+  if (listed.stdout === "") return { status: "absent" };
   const shown = git(root, ["show", `HEAD:${path}`]);
   return shown.status === 0
-    ? shown.stdout
+    ? { status: "found", text: shown.stdout }
     : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
 }
 
@@ -365,8 +370,8 @@ export function readContext(kb: ResolvedKb, kinds: readonly string[], scope: str
       if (listed.status !== 0) return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\0").filter((name) => name.endsWith(".md"))) {
         const content = committed(kb.root, path);
-        if (typeof content === "object" && content !== null) return content;
-        const parsed = parseDocument(content ?? "");
+        if (content.status !== "found" && content.status !== "absent") return content;
+        const parsed = parseDocument(content.status === "found" ? content.text : "");
         if (parsed === null) {
           outcome.coverage.unreadable.push(path);
           continue;
@@ -463,8 +468,9 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
   return withLock(kb.root, () => {
     const path = store.path;
     const before = headCommit(kb.root);
-    const existing = before === null ? null : committed(kb.root, path);
-    if (typeof existing === "object" && existing !== null) return existing;
+    const content: CommittedContent = before === null ? { status: "absent" } : committed(kb.root, path);
+    if (content.status !== "found" && content.status !== "absent") return content;
+    const existing = content.status === "found" ? content.text : null;
     const file = join(kb.root, path);
     const uncommitted = failed(
       "kb.uncommitted-record",
@@ -535,9 +541,9 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
       );
     }
     const readBack = committed(kb.root, path);
-    if (typeof readBack === "object" && readBack !== null) return readBack;
+    if (readBack.status !== "found" && readBack.status !== "absent") return readBack;
     const after = headCommit(kb.root);
-    const written = readBack === null ? null : store.find(readBack);
+    const written = readBack.status === "absent" ? null : store.find(readBack.text);
     if (
       written === null ||
       written === "unreadable" ||
@@ -659,9 +665,9 @@ export function publishRunArtifact(
   }
   const head = headCommit(kb.root);
   for (const link of links) {
-    const resolved = head === null ? false : refCommitted(kb.root, project, link);
-    if (typeof resolved === "object") return resolved;
-    if (!resolved) {
+    const resolved: CommittedRef = head === null ? { status: "absent" } : refCommitted(kb.root, project, link);
+    if (resolved.status !== "found" && resolved.status !== "absent") return resolved;
+    if (resolved.status === "absent") {
       return refused(
         "kb.link-unresolved",
         `'${link}' names no record in the knowledgebase, so nothing can link from it.`,
