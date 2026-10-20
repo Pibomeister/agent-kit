@@ -2,9 +2,7 @@
  * One entry point for every host: pick the adapter, run one isolated session, parse it.
  * Not a test file.
  */
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 import type { HostId } from "../../../../src/packaging/hosts.ts";
 import { runAsync } from "../session.ts";
 import { costOf, type PriceTable } from "../pricing.ts";
@@ -13,6 +11,7 @@ import { codex } from "./codex.ts";
 import { grok } from "./grok.ts";
 import { kimi } from "./kimi.ts";
 import type { HostKind, SessionRequest, SessionResult, SubjectAdapter } from "./types.ts";
+import { processScratch } from "../../../helpers/process-tmp.ts";
 
 const ADAPTERS: Record<HostKind, SubjectAdapter> = { claude, codex, grok, kimi };
 
@@ -56,7 +55,7 @@ export async function runSubject(
   req: SessionRequest,
   prices?: PriceTable,
 ): Promise<SessionResult> {
-  const scratch = realpathSync(mkdtempSync(join(tmpdir(), `ak-subject-${adapter.host}-`)));
+  const scratch = processScratch(`ak-subject-${adapter.host}-`);
   const isolation = adapter.isolate?.(scratch, req);
   const started = Date.now();
   try {

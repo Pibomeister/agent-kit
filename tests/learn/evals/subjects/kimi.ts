@@ -17,11 +17,11 @@
  * passed: prompt mode runs the one prompt and the caller's timeout bounds it. `command` is the
  * receipt argv and omits the two per-call paths.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runAsync } from "../session.ts";
 import type { SessionEvent, SessionRequest, SubjectAdapter } from "./types.ts";
+import { processScratch } from "../../../helpers/process-tmp.ts";
 
 /** The per-call agent definition: no tools, no sub-agents, and a body that replaces the default prompt. */
 const KIMI_REVIEWER_AGENT = [
@@ -46,7 +46,7 @@ export const kimi: SubjectAdapter = {
     return ["kimi", "--prompt", prompt, "--output-format", "text", ...(model === undefined ? [] : ["--model", model])];
   },
   async run(req, model, options) {
-    const dir = mkdtempSync(join(tmpdir(), "ak-kimi-"));
+    const dir = processScratch("ak-kimi-");
     try {
       const agent = join(dir, "text-reviewer.md");
       const skills = join(dir, "skills");

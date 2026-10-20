@@ -12,8 +12,6 @@
  * config directory and is discarded.
  */
 import { basename, join } from "node:path";
-import { mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { loadConfig } from "../../../src/learn/core/config.ts";
 import type { LearnContext } from "../../../src/learn/core/context.ts";
 import { commandJudge } from "../../../src/learn/core/judge.ts";
@@ -22,6 +20,7 @@ import { reviewLedger } from "../../../src/learn/review/ledger.ts";
 import { applyReply, emptyState, maintainerPrompt, validReply } from "../../../src/learn/review/maintain.ts";
 import { section, str } from "../../../src/learn/review/patterns.ts";
 import { GOLD, goldEvents, HOSTILE } from "./review-fixtures.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 export interface MaintainerScore {
   patterns: number;
@@ -117,7 +116,7 @@ export function scoreMaintainer(
 }
 
 if (import.meta.main) {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "ak-review-eval-")));
+  const base = processScratch("ak-review-eval-");
   const env = { ...process.env, CLAUDE_CONFIG_DIR: join(base, "config") };
   const config = loadConfig(env);
   const ctx: LearnContext = {

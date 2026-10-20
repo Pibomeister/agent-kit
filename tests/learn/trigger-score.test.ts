@@ -4,8 +4,7 @@
  * `expects` outcomes, invalid sessions and the no-op floor. No session runs here.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { usageReceipt } from "./evals/pricing.ts";
 import { claude } from "./evals/subjects/claude.ts";
@@ -43,6 +42,7 @@ import {
   typedSkill,
   workflowCalls,
 } from "./evals/trigger-eval.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 const tool = (name: string, input: Record<string, unknown>): ToolEvent => ({ kind: "tool", name, raw: name, input });
 const say = (text: string): SessionEvent => ({ kind: "message", text });
@@ -1624,7 +1624,7 @@ describe("a typed command expands on the client: the prompt prefix plus the init
 
 describe("bundleMissing", () => {
   const bundle = () => {
-    const dir = mkdtempSync(join(tmpdir(), "bundle-"));
+    const dir = processScratch("bundle-");
     for (const id of ["super-align", "diagnose"]) {
       mkdirSync(join(dir, "skills", id), { recursive: true });
       writeFileSync(join(dir, "skills", id, "SKILL.md"), `---\nname: ${id}\n---\n`);

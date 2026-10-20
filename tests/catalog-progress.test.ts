@@ -11,12 +11,13 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify } from "yaml";
 
 import { makeTree } from "./helpers/tree.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const PROBE = join(ROOT, "research/probes/catalog-progress.sh");
@@ -213,7 +214,7 @@ describe("catalog-progress.sh", () => {
 
   test("a shallow clone without the history skips the history checks, not the counts", () => {
     const r = repo({ adapters: ["extra"] });
-    const clone = join(mkdtempSync(join(tmpdir(), "ak-shallow-")), "c");
+    const clone = join(processScratch("ak-shallow-"), "c");
     git(tmpdir(), "clone", "-q", "--depth", "1", `file://${r.root}`, clone);
     const run = probe(clone, r.baseline, one(["extra"], [r.added]));
     expect(run).toEqual({
@@ -254,7 +255,7 @@ describe("catalog-progress.sh", () => {
       git(root, "add", "notes.md");
       git(root, "commit", "-q", "-m", "notes");
       const later = git(root, "rev-parse", "HEAD");
-      const clone = join(mkdtempSync(join(tmpdir(), "ak-partial-")), "c");
+      const clone = join(processScratch("ak-partial-"), "c");
       git(tmpdir(), "clone", "-q", "--depth", "3", "--single-branch", "--branch", "main", `file://${root}`, clone);
       expect(git(clone, "rev-parse", "--is-shallow-repository")).toBe("true");
       return { clone, baseline, added, later, side };

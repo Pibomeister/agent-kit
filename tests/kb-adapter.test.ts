@@ -6,7 +6,6 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
@@ -14,7 +13,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -36,6 +34,7 @@ import {
 import { EXIT_UNAVAILABLE, runKb } from "../src/kb/cli.ts";
 import { KB_KINDS } from "../src/kb/local-git.ts";
 import { checkKnowledgebase } from "../src/maintenance/cli.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 /**
  * adapters/knowledgebase/CONTRACT.md §6 and §7, ruling `kb-binding-is-a-locator`.
@@ -66,7 +65,7 @@ function git(dir: string, ...args: string[]): string {
 
 /** A repository whose commits need nothing from the operator's own git configuration. */
 function repoTemplate(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ak-kb-template-"));
+  const dir = processScratch("ak-kb-template-");
   mkdirSync(dir, { recursive: true });
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.name", "fixture");
@@ -94,8 +93,8 @@ interface Fixture {
   scratch: string;
 }
 
-function fixture(binding: string | null = BINDING, parent = tmpdir()): Fixture {
-  const scratch = realpathSync(mkdtempSync(join(parent, "ak-kb-")));
+function fixture(binding: string | null = BINDING): Fixture {
+  const scratch = processScratch("ak-kb-");
   const project = initRepo(join(scratch, "project"));
   writeFileSync(join(project, "README.md"), "# example\n");
   if (binding !== null) writeFileSync(join(project, BINDING_FILE), binding);
@@ -771,7 +770,7 @@ describe("publishArtifact, run-artifact placement", () => {
     const children: ReturnType<typeof Bun.spawn>[] = [];
 
     beforeAll(async () => {
-      bundledCliDir = realpathSync(mkdtempSync(join("/tmp", "ak-kb-cli-")));
+      bundledCliDir = processScratch("ak-kb-cli-");
       bundledCli = join(bundledCliDir, "ak");
       const build = await Bun.build({
         entrypoints: [join(REPO, "src/maintenance/cli.ts")],
@@ -783,7 +782,7 @@ describe("publishArtifact, run-artifact placement", () => {
     });
 
     beforeAll(() => {
-      fx = fixture(BINDING, "/tmp");
+      fx = fixture(BINDING);
       home = join(fx.scratch, "home");
       mkdirSync(home);
       const run = spawnSync(process.execPath, [bundledCli, "kb", "register", "fixture-kb", fx.kb], {

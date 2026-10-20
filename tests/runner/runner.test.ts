@@ -26,6 +26,7 @@ import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
 import { parseJson } from "../helpers/json.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 // Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
 // cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
@@ -38,7 +39,7 @@ const runnerCallChildren = new Set<ReturnType<typeof Bun.spawn>>();
 // Bun lists every directory above its cwd when it starts, and the live service starts each consumer,
 // launcher and verifier in its state directory. A crowded macOS $TMPDIR makes each start there cost
 // about a second, so fixtures live under a private root that this file removes when it ends.
-const scratchRoot = mkdtempSync(join(realpathSync("/tmp"), "ak-runner-test-"));
+const scratchRoot = processScratch("ak-runner-test-");
 afterAll(() => rmSync(scratchRoot, { recursive: true, force: true }));
 
 function callRunnerCli(

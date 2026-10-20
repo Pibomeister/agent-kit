@@ -16,15 +16,15 @@
  * of null for a human to fill; labelled rows are the calibration set that `calibration` turns into
  * κ per reviewer pair and per reviewer against the human.
  */
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { Matrix, Seat, Subject } from "./matrix.ts";
 import type { PriceTable } from "./pricing.ts";
 import { cleanEnv } from "./session.ts";
 import { type KappaRow, kappaTable } from "./stats.ts";
 import type { HostKind, SessionResult, TokenUsage } from "./subjects/types.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 export type SeatStatus = "seated" | "unavailable" | "unused";
 
@@ -190,7 +190,7 @@ export const hostJudge =
   (prices?: PriceTable): Judge =>
   async (reviewer, prompt) => {
     const { adapterFor, runSubject } = await import("./subjects/index.ts");
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "ak-judge-")));
+    const cwd = processScratch("ak-judge-");
     try {
       const adapter = adapterFor(reviewer.host);
       return await runSubject(

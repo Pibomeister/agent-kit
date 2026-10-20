@@ -19,9 +19,9 @@
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const TSC = join(REPO, "node_modules", ".bin", "tsc");
@@ -138,7 +138,7 @@ describe("the tree typechecks, and the typechecker is doing work", () => {
     // expensive to read. A gate that is green where the repository lives and
     // red wherever it is verified teaches people to skip it, and this file's
     // own docstring records that happening once already.
-    const dir = mkdtempSync(join(tmpdir(), "ak-tsc-link-"));
+    const dir = processScratch("ak-tsc-link-");
     const link = join(dir, "repo");
     symlinkSync(REPO, link);
 
@@ -152,7 +152,7 @@ describe("the tree typechecks, and the typechecker is doing work", () => {
     // The positive control, run against a scratch file so the repository is
     // never mutated -- three lanes are in this tree and a test that writes into
     // it would race them.
-    const dir = mkdtempSync(join(tmpdir(), "ak-tsc-"));
+    const dir = processScratch("ak-tsc-");
     const file = join(dir, "planted.ts");
     writeFileSync(file, 'export const x: number = "not a number";\n');
     const run = tsc(["--noEmit", "--strict", "--types", "", file], dir);
