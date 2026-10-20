@@ -28172,7 +28172,7 @@ function git2(root, args, input) {
     encoding: "utf8",
     env,
     input,
-    maxBuffer: 64 * 1024 * 1024
+    maxBuffer: Infinity
   });
   return { status: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
 }
@@ -32689,6 +32689,7 @@ function checkRunArtifact(text) {
 // src/kb/local-git.ts
 var KB_KINDS = ["adr", "concept", "foundation", "gotcha", "pattern", "prd", "process", "sop", "system"];
 var PROJECT_SCOPE = "project";
+var ARTIFACTS_FILE = "artifacts.jsonl";
 var KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 var ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 var RESERVED_SEGMENTS = new Set([...KB_KINDS, PROJECT_SCOPE, "projects", "documents", "runs"]);
@@ -32759,26 +32760,41 @@ function documentPath(project, segments, kind, id) {
 function documentRef(scope, kind, id) {
   return `doc:${scope}/${kind}/${id}`;
 }
-function artifactPath(project, run, schema, id) {
-  return ["projects", project, "runs", run, schema, `${id}.json`].join("/");
+function artifactsPath(project) {
+  return ["projects", project, "runs", ARTIFACTS_FILE].join("/");
 }
-function refPath(project, ref) {
+function storedArtifact(text, ref) {
+  const lines = text.split(`
+`);
+  for (let index = lines.length - 1;index >= 0; index -= 1) {
+    const value = parseStored(lines[index] ?? "");
+    if (value?.record.ref === ref)
+      return { line: index + 1, value };
+  }
+  return null;
+}
+function refCommitted(root, project, ref) {
   if (ref.startsWith("doc:")) {
     const parts = ref.slice(4).split("/");
     const id = parts.at(-1) ?? "";
     const kind = parts.at(-2) ?? "";
     const segments = scopeSegments(parts.slice(0, -2).join("/"));
-    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id))
-      return null;
-    return documentPath(project, segments, kind, id);
+    if (parts.length < 3 || segments === null || !KB_KINDS.includes(kind) || !KEBAB.test(id)) {
+      return { status: "absent" };
+    }
+    const content = committed(root, documentPath(project, segments, kind, id));
+    return content.status === "found" ? { status: "found" } : content;
   }
   if (ref.startsWith("run:")) {
     const parts = ref.slice(4).split("/");
     if (parts.length !== 3 || !parts.every((part) => ARTIFACT_ID.test(part)))
-      return null;
-    return artifactPath(project, parts[0] ?? "", parts[1] ?? "", parts[2] ?? "");
+      return { status: "absent" };
+    const content = committed(root, artifactsPath(project));
+    if (content.status !== "found")
+      return content;
+    return { status: storedArtifact(content.text, ref) !== null ? "found" : "absent" };
   }
-  return null;
+  return { status: "absent" };
 }
 function documentHash(request) {
   const subject = {
@@ -32803,8 +32819,13 @@ function headCommit(root) {
   return head.status === 0 ? head.stdout.trim() : null;
 }
 function committed(root, path) {
+  const listed = git2(root, ["ls-tree", "-z", "HEAD", "--", path]);
+  if (listed.status !== 0)
+    return failed("kb.unreadable", `git could not locate ${path}: ${listed.stderr.trim()}`);
+  if (listed.stdout === "")
+    return { status: "absent" };
   const shown = git2(root, ["show", `HEAD:${path}`]);
-  return shown.status === 0 ? shown.stdout : null;
+  return shown.status === 0 ? { status: "found", text: shown.stdout } : failed("kb.unreadable", `git could not read ${path}: ${shown.stderr.trim()}`);
 }
 function normalizeBody(body) {
   return `${body.replace(/\r+\n/g, `
@@ -32892,7 +32913,10 @@ function readContext(kb, kinds, scope) {
       if (listed.status !== 0)
         return failed("kb.unreadable", `git could not list ${dir}: ${listed.stderr.trim()}`);
       for (const path of listed.stdout.split("\x00").filter((name) => name.endsWith(".md"))) {
-        const parsed = parseDocument(committed(kb.root, path) ?? "");
+        const content = committed(kb.root, path);
+        if (content.status !== "found" && content.status !== "absent")
+          return content;
+        const parsed = parseDocument(content.status === "found" ? content.text : "");
         if (parsed === null) {
           outcome.coverage.unreadable.push(path);
           continue;
@@ -32938,45 +32962,48 @@ function withLock(root, write) {
   }
   return failed("kb.locked", "Another publish held the knowledgebase for too long. Nothing was written; retry.");
 }
-function commitRecord(kb, path, content, identity2, read) {
+function commitRecord(kb, store, identity2) {
   return withLock(kb.root, () => {
+    const path = store.path;
     const before = headCommit(kb.root);
-    const existing = before === null ? null : committed(kb.root, path);
+    const content = before === null ? { status: "absent" } : committed(kb.root, path);
+    if (content.status !== "found" && content.status !== "absent")
+      return content;
+    const existing = content.status === "found" ? content.text : null;
     const file = join6(kb.root, path);
     const uncommitted = failed("kb.uncommitted-record", `${path} has uncommitted content in the knowledgebase checkout. Nothing was written over it; commit or remove it there first.`);
-    if (existing !== null) {
-      const stored2 = read(existing);
-      if (stored2 === null || stored2.published !== identity2.hash) {
-        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with a different digest (${stored2?.published ?? "unreadable"}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`);
+    const stored = existing === null ? null : store.find(existing);
+    if (stored !== null) {
+      if (stored === "unreadable" || stored.published !== identity2.hash) {
+        return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with a different digest (${stored === "unreadable" ? stored : stored.published}). A changed artifact under a reused record is refused rather than overwritten; publish the change as a new record that supersedes this one.`);
       }
-      const linked = [...new Set(stored2.links)].toSorted();
+      const linked = [...new Set(stored.links)].toSorted();
       const wanted = [...new Set(identity2.links)].toSorted();
       if (linked.join(`
 `) !== wanted.join(`
 `)) {
         return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with other links (${linked.join(", ") || "none"}). A stored record's links are not rewritten; publish the linked artifact as a new record that supersedes this one.`);
       }
-      if (identity2.approvals.every((approval) => stored2.approvals.includes(approval))) {
+      if (identity2.approvals.every((approval) => stored.approvals.includes(approval))) {
         return {
           status: "complete",
           ref: identity2.ref,
-          content_hash: stored2.published,
-          idempotency_key: stored2.key,
-          run: stored2.run,
-          revision: git2(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
+          content_hash: stored.published,
+          idempotency_key: stored.key,
+          run: stored.run,
+          revision: stored.revision(),
           effect: "none"
         };
       }
-      if (!stored2.approvals.every((approval) => identity2.approvals.includes(approval))) {
+      if (!stored.approvals.every((approval) => identity2.approvals.includes(approval))) {
         return refused("kb.changed-under-reused-record", `${identity2.ref} is already published with approvals this copy does not carry. Stored approvals are added to, never replaced; republish the copy that holds every approval already stored.`);
       }
-      if (git2(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "")
-        return uncommitted;
-    } else if (existsSync5(file)) {
+    }
+    if (existing === null ? existsSync5(file) : git2(kb.root, ["status", "--porcelain", "--", path]).stdout.trim() !== "") {
       return uncommitted;
     }
     mkdirSync3(dirname3(file), { recursive: true });
-    writeFileSync3(file, content);
+    writeFileSync3(file, store.write(existing));
     const added = git2(kb.root, ["add", "--", path]);
     const made = added.status === 0 ? git2(kb.root, [
       "commit",
@@ -32998,9 +33025,11 @@ function commitRecord(kb, path, content, identity2, read) {
 `)[0] ?? "git failed"}`);
     }
     const readBack = committed(kb.root, path);
+    if (readBack.status !== "found" && readBack.status !== "absent")
+      return readBack;
     const after = headCommit(kb.root);
-    const stored = readBack === null ? null : read(readBack);
-    if (stored === null || after === null || after === before || stored.observed !== identity2.hash || stored.approvals.join(`
+    const written = readBack.status === "absent" ? null : store.find(readBack.text);
+    if (written === null || written === "unreadable" || after === null || after === before || written.observed !== identity2.hash || written.approvals.join(`
 `) !== identity2.approvals.join(`
 `)) {
       return failed("kb.read-back-mismatch", `${identity2.ref} was written but its read-back does not match what was sent.`);
@@ -33008,9 +33037,9 @@ function commitRecord(kb, path, content, identity2, read) {
     return {
       status: "complete",
       ref: identity2.ref,
-      content_hash: stored.observed,
-      idempotency_key: stored.key,
-      run: stored.run,
+      content_hash: written.observed,
+      idempotency_key: written.key,
+      run: written.run,
       revision: after,
       effect: "published"
     };
@@ -33053,19 +33082,26 @@ function publishDocument(kb, request) {
     idempotency_key: key,
     run: request.run
   };
-  return commitRecord(kb, documentPath(kb.binding.project, segments, request.kind, request.id), renderDocument(meta, body), { ref, hash, key, links: [], approvals: [] }, (text) => {
-    const parsed = parseDocument(text);
-    if (parsed === null)
-      return null;
-    return {
-      published: parsed.meta.published_hash,
-      observed: documentHash({ ...parsed.meta, body: parsed.body }),
-      key: parsed.meta.idempotency_key,
-      run: parsed.meta.run,
-      links: [],
-      approvals: []
-    };
-  });
+  const path = documentPath(kb.binding.project, segments, request.kind, request.id);
+  const store = {
+    path,
+    find: (text) => {
+      const parsed = parseDocument(text);
+      if (parsed === null)
+        return "unreadable";
+      return {
+        revision: () => git2(kb.root, ["log", "-1", "--format=%H", "HEAD", "--", path]).stdout.trim(),
+        published: parsed.meta.published_hash,
+        observed: documentHash({ ...parsed.meta, body: parsed.body }),
+        key: parsed.meta.idempotency_key,
+        run: parsed.meta.run,
+        links: [],
+        approvals: []
+      };
+    },
+    write: () => renderDocument(meta, body)
+  };
+  return commitRecord(kb, store, { ref, hash, key, links: [], approvals: [] });
 }
 function publishRunArtifact(kb, text, run, links) {
   if (!ARTIFACT_ID.test(run))
@@ -33084,8 +33120,10 @@ function publishRunArtifact(kb, text, run, links) {
   }
   const head = headCommit(kb.root);
   for (const link of links) {
-    const target = refPath(project, link);
-    if (target === null || head === null || committed(kb.root, target) === null) {
+    const resolved = head === null ? { status: "absent" } : refCommitted(kb.root, project, link);
+    if (resolved.status !== "found" && resolved.status !== "absent")
+      return resolved;
+    if (resolved.status === "absent") {
       return refused("kb.link-unresolved", `'${link}' names no record in the knowledgebase, so nothing can link from it.`);
     }
   }
@@ -33093,20 +33131,36 @@ function publishRunArtifact(kb, text, run, links) {
   const hash = artifactHash(artifact);
   const key = idempotencyKey(run, ref, hash);
   const stored = { record: { ref, content_hash: hash, idempotency_key: key, links: [...links] }, artifact };
-  return commitRecord(kb, artifactPath(project, run, artifact.schema, artifact.id), `${JSON.stringify(stored, null, 2)}
-`, { ref, hash, key, links, approvals: approvalsOf(artifact) }, (content) => {
-    const value = parseStored(content);
-    if (value === null)
-      return null;
-    return {
-      published: value.record.content_hash,
-      observed: artifactHash(value.artifact),
-      key: value.record.idempotency_key,
-      run,
-      links: value.record.links,
-      approvals: approvalsOf(value.artifact)
-    };
-  });
+  const path = artifactsPath(project);
+  const store = {
+    path,
+    find: (lines) => {
+      const found = storedArtifact(lines, ref);
+      if (found === null)
+        return null;
+      const { line, value } = found;
+      return {
+        revision: () => {
+          const blamed = git2(kb.root, ["blame", "--porcelain", "-L", `${line},${line}`, "HEAD", "--", path]);
+          return blamed.stdout.split(" ")[0] ?? "";
+        },
+        published: value.record.content_hash,
+        observed: artifactHash(value.artifact),
+        key: value.record.idempotency_key,
+        run,
+        links: value.record.links,
+        approvals: approvalsOf(value.artifact)
+      };
+    },
+    write: (lines) => {
+      const kept = lines === null || lines === "" || lines.endsWith(`
+`) ? lines ?? "" : `${lines}
+`;
+      return `${kept}${JSON.stringify(stored)}
+`;
+    }
+  };
+  return commitRecord(kb, store, { ref, hash, key, links, approvals: approvalsOf(artifact) });
 }
 
 // src/kb/cli.ts
