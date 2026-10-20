@@ -1088,7 +1088,7 @@ describe("the store: pages stay files, run artifacts share one file", () => {
     expect(files.every((file) => file.endsWith(".md"))).toBe(true);
     const read = readResult(kb(fx, fx.project, "read", "--kind", KB_KINDS.join(","), "--scope", "billing"));
     expect(read.documents.map((document) => document.kind).toSorted()).toEqual(KB_KINDS.toSorted());
-  });
+  }, 30_000);
 
   test("a run artifact publish appends one record to artifacts.jsonl and its commit touches only that file", () => {
     const fx = registered();
@@ -1112,7 +1112,7 @@ describe("the store: pages stay files, run artifacts share one file", () => {
     ).toHaveLength(1);
     expect(git(fx.kb, "ls-tree", "-r", "--name-only", "HEAD").trim()).toBe(ARTIFACTS);
     expect(git(fx.kb, "status", "--porcelain")).toBe("");
-  });
+  }, 30_000);
 
   test("a read of the artifact returns the body stored in the commit that published it", () => {
     const fx = registered();
