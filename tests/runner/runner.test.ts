@@ -497,12 +497,34 @@ describe("runner guards", () => {
       { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
     );
     let decision: ReturnType<typeof spawnRunnerCli> | undefined;
+    // Nothing else reads either process's stderr, so an early exit would otherwise name only its exit code.
+    const awaitPath = async (path: string, owner: { exited: Promise<number> }) => {
+      try {
+        await waitForPath(path, owner);
+      } catch (cause) {
+        const pending = decision;
+        const serverState = server.exitCode === null ? "was still running" : `exited ${server.exitCode}`;
+        pending?.kill("SIGKILL");
+        server.kill("SIGKILL");
+        const [[decided], serverErr, decisionErr] = await Promise.all([
+          Promise.allSettled(pending === undefined ? [] : [pending.exited]),
+          new Response(server.stderr).text(),
+          pending === undefined ? "" : new Response(pending.stderr).text(),
+        ]);
+        const decide =
+          decided === undefined
+            ? "decide was not started"
+            : `decide ${decided.status === "fulfilled" ? `exited ${decided.value}` : String(decided.reason)}: ${decisionErr.trim()}`;
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(`${reason}; ${decide}; server ${serverState}: ${serverErr.trim()}`, { cause });
+      }
+    };
     try {
-      await waitForPath(socket, server);
+      await awaitPath(socket, server);
       const request = join(f.requestDir, "request.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "align" }));
       decision = spawnRunnerCli("decide", request, socket, workerToken, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
-      await waitForPath(launcherPid, decision);
+      await awaitPath(launcherPid, decision);
       const pid = Number(readFileSync(launcherPid, "utf8"));
       server.kill();
       const stopped = await Promise.race([server.exited.then(() => true), Bun.sleep(60_000).then(() => false)]);
