@@ -27,19 +27,19 @@ skills:
       reason: >-
         Running-application verification needs a human-started, host-neutral command that records
         runtime receipts and a reusable recipe without changing the existing super-verify phase.
-      commits: [3a6b18c]
+      commits: [820a2338]
     - ids: [visual-edit]
       reason: >-
         Visual edits made on a canvas of a running local app's routes need a human-started command
         that applies the pending revision through source and receipts it, which no existing skill
         covers: prototype answers unbuilt questions and super-build needs an approved ticket.
-      commits: [f13b193]
+      commits: [e777ab6e]
     - ids: [codebase-design]
       reason: >-
         The adopted deep-module vocabulary needs a read-only reference skill with an explicit
         no-question stopping rule, while repository surveys, alignment, review and implementation
         remain with their existing lifecycle owners.
-      commits: [5021380]
+      commits: [be033471]
 
 protocols:
   baseline: 7
@@ -56,7 +56,7 @@ protocols:
         super-build needs one protocol for the implementer's account of its working decisions on
         each ticket: a stretch per implementer seat and an independent audit after the commit,
         both carried by reference and never evidence.
-      commits: [e0ea1af1e554d47c16990ddbd2acab9920c8ad23]
+      commits: [f92da557]
 
 roles:
   baseline: 29
@@ -71,12 +71,12 @@ roles:
       reason: >-
         Runtime verification needs a named non-entrypoint seat outside implementer lineage so
         receipt authorship and unavailable independence are structurally expressible.
-      commits: [1c509b9]
+      commits: [6e5decb0]
     - ids: [trail-auditor]
       reason: >-
         super-build seats an independent auditor once per ticket to read the implementer's work
         trail after the commit; the seat is never the implementer, so it needs its own role prompt.
-      commits: [42eb864000dfe687ce93107352357845e5832ae7]
+      commits: [f92da557]
 
 references:
   baseline: 4
@@ -97,13 +97,13 @@ references:
       reason: >-
         Surface evidence kinds, recipe semantics and verifier-seat lineage need one host-neutral
         vocabulary shared by the lifecycle phases that produce or consume them.
-      commits: [1c509b9]
+      commits: [6e5decb0]
     - ids: [knowledgebase-binding]
       reason: >-
         A lifecycle run in a task copy could reach no knowledgebase, and the contract that says how
         to bind one does not ship with the plugin; the skills that read or publish need the check,
         the commands and what unconfigured means inside the bundle.
-      commits: [c4d1f9cd]
+      commits: [89b0290f]
       docs: [docs/decisions/0010-file-backed-knowledgebase.md]
 
 schemas:
@@ -165,18 +165,18 @@ schemas:
       reason: >-
         A successful host-neutral setup-through-cleanup path needs a content-addressed artifact
         shape that projects can declare and later verifier seats can replay.
-      commits: [1c509b9]
+      commits: [6e5decb0]
     - ids: [kb-binding]
       reason: >-
         The committed knowledgebase locator, ak.kb.yaml, needed a shape that refuses a machine
         path and a secret, so that every checkout of a project binds the same knowledgebase.
-      commits: [c4d1f9cd]
+      commits: [89b0290f]
       docs: [docs/decisions/0010-file-backed-knowledgebase.md]
     - ids: [trail, trail-audit]
       reason: >-
         A work trail leaves two run records, the implementer's stretch and the independent audit
         of it, and publishArtifact carries only schema ids, so each needed a declared shape.
-      commits: [ab88a14e474fa309cd906e6bfdc9327c64fb211a]
+      commits: [f92da557]
 
 profiles:
   baseline: 4

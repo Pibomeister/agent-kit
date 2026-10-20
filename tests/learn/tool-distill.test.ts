@@ -16,10 +16,11 @@ import {
   type DistillFn,
   type DistillRequest,
 } from "../../src/learn/core/distill.ts";
-import { Ledger } from "../../src/learn/core/ledger.ts";
-import { run } from "../../src/learn/core/proc.ts";
+import { Ledger, RAW_STORE_FILE } from "../../src/learn/core/ledger.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
+import { run } from "../../src/learn/core/proc.ts";
 import { ensureMemoryLedger, memoryDir } from "../../src/learn/memory/ledger.ts";
+import { RawStore } from "../../src/learn/memory/raw-store.ts";
 import { formatObservation } from "../../src/learn/memory/reflect.ts";
 import { registerRoot } from "../../src/learn/memory/registry.ts";
 import { tick } from "../../src/learn/memory/tick.ts";
@@ -40,6 +41,13 @@ import {
   WorkerSessionSource,
 } from "../../src/learn/sources/worker-sessions.ts";
 import { projectScratch, reflectorOrEmptyJudge, removeProjectScratch, scratch, testContext } from "./helpers.ts";
+
+type StoredRow<T> = T & { id: number; memory_session_id: string };
+
+/** The worker observations a ledger's raw store holds, in id order. */
+function storedObservations<T>(ledger: Ledger): StoredRow<T>[] {
+  return RawStore.of(ledger.dir).workers<StoredRow<T>, { memory_session_id: string }>().observations;
+}
 
 const FIXTURES = join(import.meta.dir, "fixtures", "worker-sessions");
 const DAY_MS = 86_400_000;
@@ -329,7 +337,7 @@ describe("the scrub runs before the model seam", () => {
     expect(seam.requests).toHaveLength(1);
     const sent = JSON.stringify(seam.requests);
     const ledger = new Ledger(memoryDir(ctx.config, root));
-    const stored = readFileSync(ledger.path("raw", "worker-observations.jsonl"), "utf8");
+    const stored = JSON.stringify(storedObservations<{ facts: string }>(ledger));
     for (const secret of [SECRETS.github, SECRETS.bearer, SECRETS.env, SECRETS.home]) {
       expect(sent).not.toContain(secret);
       expect(stored).not.toContain(secret);
@@ -735,9 +743,7 @@ describe("captured rows and the distilled text", () => {
 
     expect(seam.requests).toHaveLength(1);
     expect(again.report()).toEqual([]);
-    const rows = readJsonl<{ facts: string; discovery_tokens: number }>(
-      ledger.path("raw", "worker-observations.jsonl"),
-    );
+    const rows = storedObservations<{ facts: string; discovery_tokens: number }>(ledger);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.facts).toEndWith("tools: shell x1\nshell did step 1 -> step 1 came back");
     expect(rows[0]?.discovery_tokens).toBe(Math.ceil((rows[0]?.facts.length ?? 0) / 4));
@@ -765,11 +771,11 @@ describe("captured rows and the distilled text", () => {
     });
 
     type Stored = Record<string, string | number | null>;
-    const [kept] = readJsonl<Stored>(plain.path("raw", "worker-observations.jsonl"));
-    const rows = readJsonl<Stored>(ledger.path("raw", "worker-observations.jsonl"));
+    const kept: Stored = storedObservations<Stored>(plain)[0] ?? {};
+    const rows = storedObservations<Stored>(ledger);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.facts).toBe(`reworded\n${"z".repeat(1_991)}`);
-    expect(rows[0]).toEqual({ ...kept, facts: rows[0]?.facts ?? "", discovery_tokens: 500 });
+    expect<Stored | undefined>(rows[0]).toEqual({ ...kept, facts: rows[0]?.facts ?? "", discovery_tokens: 500 });
   });
 
   test("a row captured as an excerpt before the binding existed is not sent once it does", () => {
@@ -783,7 +789,7 @@ describe("captured rows and the distilled text", () => {
     expect(WorkerSessionSource.open(ledger).capture([parsed(path)], { rewrite: bound.rewrite }).observations).toBe(0);
 
     expect(seam.requests).toEqual([]);
-    const rows = readJsonl<{ facts: string }>(ledger.path("raw", "worker-observations.jsonl"));
+    const rows = storedObservations<{ facts: string }>(ledger);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.facts).toContain("shell bun test -> Process exited with code 1 1 fail in tests/cart.test.ts");
   });
@@ -802,7 +808,7 @@ describe("captured rows and the distilled text", () => {
     ).toBe(1);
 
     expect(seam.requests).toEqual([]);
-    expect(existsSync(ledger.path("raw", "worker-observations.jsonl"))).toBe(false);
+    expect(existsSync(ledger.path(RAW_STORE_FILE))).toBe(false);
     expect(stage.report()[0]).toStartWith("tool distillation: dry run, codex would send 1 call (");
   });
 });

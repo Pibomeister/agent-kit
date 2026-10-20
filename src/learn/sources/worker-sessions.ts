@@ -16,8 +16,8 @@ import { homedir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Ledger } from "../core/ledger.ts";
 import { inProtectedFolder, linkedWorktree } from "../core/paths.ts";
-import { appendJsonl, readJsonl, writeJsonl } from "../core/store.ts";
 import { sid8 } from "../memory/ledger.ts";
+import { RawStore } from "../memory/raw-store.ts";
 import { scrubCaptured } from "../memory/redact.ts";
 import type { Registry, Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
@@ -125,8 +125,6 @@ interface Turn {
 }
 
 export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
-export const CAPTURE_OBSERVATIONS_FILE = "raw/worker-observations.jsonl";
-export const CAPTURE_SESSIONS_FILE = "raw/worker-sessions.jsonl";
 /** How far back the scan reads host records, and how long the ledger keeps a session its host stopped writing. */
 export const CAPTURE_WINDOW_MS = 30 * 86_400_000;
 export const MAX_OBSERVATIONS = 999;
@@ -1087,26 +1085,25 @@ export function isCapturedObservation(row: Pick<ObservationRow, "id">): boolean 
   return row.id >= CAPTURE_ID_BASE;
 }
 
-/** A project's captured worker rows, read from its ledger once and kept in step with what `capture` writes. */
+/**
+ * A project's captured worker rows, read from its ledger's raw store (`memory/raw-store.ts`) once and
+ * kept in step with what `capture` writes.
+ */
 export class WorkerSessionSource implements MemoryObservationSource {
   private observations: StoredObservation[] = [];
   private readonly bySession = new Map<string, StoredObservation[]>();
   private sessionRows = new Map<string, StoredSession>();
 
   private constructor(
-    private readonly observationsPath: string,
-    private readonly sessionsPath: string,
+    private readonly store: RawStore,
     private readonly gate: string,
   ) {
-    this.hold(readJsonl<StoredObservation>(observationsPath), readJsonl<StoredSession>(sessionsPath));
+    const { observations, sessions } = store.workers<StoredObservation, StoredSession>();
+    this.hold(observations, sessions);
   }
 
   static open(ledger: Ledger): WorkerSessionSource {
-    return new WorkerSessionSource(
-      ledger.path(CAPTURE_OBSERVATIONS_FILE),
-      ledger.path(CAPTURE_SESSIONS_FILE),
-      ledger.dir,
-    );
+    return new WorkerSessionSource(RawStore.of(ledger.dir), ledger.dir);
   }
 
   private hold(observations: readonly StoredObservation[], sessions: readonly StoredSession[]): void {
@@ -1123,7 +1120,7 @@ export class WorkerSessionSource implements MemoryObservationSource {
   /**
    * Append the rows of each host session the ledger does not hold yet, matched by a digest of title
    * and text rather than position, since a host may rewrite its record. A stored session that is not
-   * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the files hold the same
+   * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the store holds the same
    * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
    * A finished session whose record changed without a new row has its session row rewritten, so the
    * scan can tell the ledger is level with the record, and so has a Droid session read whole with
@@ -1188,17 +1185,13 @@ export class WorkerSessionSource implements MemoryObservationSource {
     const latest = [...this.sessionRows.values(), ...revisions].filter(
       (row) => !pruned || !expired(row.memory_session_id),
     );
-    if (pruned) {
-      writeJsonl(this.observationsPath, [...kept, ...fresh], this.gate);
-      writeJsonl(
-        this.sessionsPath,
+    if (pruned)
+      this.store.replaceWorkers(
+        [...kept, ...fresh],
         [...new Map(latest.map((row) => [row.memory_session_id, row])).values()],
         this.gate,
       );
-    } else {
-      appendJsonl(this.observationsPath, fresh, this.gate);
-      appendJsonl(this.sessionsPath, revisions, this.gate);
-    }
+    else this.store.addWorkers(fresh, revisions, this.gate);
     this.hold([...kept, ...fresh], latest);
     return written;
   }
