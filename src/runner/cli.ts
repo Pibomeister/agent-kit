@@ -5,7 +5,7 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { unknownSelector } from "../util/suggest.ts";
 import { sha256Hex } from "../util/hash.ts";
-import { Runner } from "./core.ts";
+import { Runner, sharesLineage } from "./core.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
@@ -426,6 +426,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       new Set(launchers.map((launcher) => launcher.actor)).size !== 2
     )
       throw new Error("seat configuration must name two distinct seats and actors");
+    if (launchers.some((launcher, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher, other))))
+      throw new Error("seat configuration lineages must be independent");
   }
   let verifyCommand: string[] | null = null;
   if (verifyConfigPath !== undefined) {

@@ -3,15 +3,19 @@ import { spawnSync as nodeSpawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   unlinkSync,
   watch,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+
+import { assert as fcAssert, constantFrom, property, subarray, tuple } from "fast-check";
 
 import { runRunner } from "../../src/runner/cli.ts";
 import { Runner } from "../../src/runner/core.ts";
@@ -20,6 +24,8 @@ import { isAutonomyStatus, type RunnerArgs } from "../../src/runner/wire.ts";
 import { preflightStock } from "../../src/firstmate/stock.ts";
 import { takeSnapshot } from "../../src/lifecycle/gate.ts";
 import { artifactHash } from "../../src/util/hash.ts";
+import { checkDocument, indexDocuments } from "../../src/validation/docrules.ts";
+import { parseJson } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 // Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
@@ -30,6 +36,11 @@ const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;
 const CONTENDED_RUNNER_CALL_TIMEOUT_MS = 120_000;
 const runnerCallChildren = new Set<ReturnType<typeof Bun.spawn>>();
+// Bun lists every directory above its cwd when it starts, and the live service starts each consumer,
+// launcher and verifier in its state directory. A crowded macOS $TMPDIR makes each start there cost
+// about a second, so fixtures live under a private root that this file removes when it ends.
+const scratchRoot = processScratch("ak-runner-test-");
+afterAll(() => rmSync(scratchRoot, { recursive: true, force: true }));
 
 function callRunnerCli(
   verb: string,
@@ -141,6 +152,14 @@ function waitForPath(path: string, owner: { exited: Promise<number> }) {
   });
 }
 
+async function waitUntil(what: string, holds: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!holds()) {
+    if (Date.now() > deadline) throw new Error(`timed out after ${timeoutMs}ms waiting for ${what}`);
+    await Bun.sleep(10);
+  }
+}
+
 async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -155,7 +174,7 @@ async function waitForProcessExit(pid: number, timeoutMs = 60_000): Promise<bool
 }
 
 function fixture(limit = 3) {
-  const dir = processScratch("ak-runner-");
+  const dir = mkdtempSync(join(scratchRoot, "ak-runner-"));
   const worker = join(dir, "worker");
   const privateDir = join(dir, "private");
   mkdirSync(worker);
@@ -483,12 +502,34 @@ describe("runner guards", () => {
       { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
     );
     let decision: ReturnType<typeof spawnRunnerCli> | undefined;
+    // Nothing else reads either process's stderr, so an early exit would otherwise name only its exit code.
+    const awaitPath = async (path: string, owner: { exited: Promise<number> }) => {
+      try {
+        await waitForPath(path, owner);
+      } catch (cause) {
+        const pending = decision;
+        const serverState = server.exitCode === null ? "was still running" : `exited ${server.exitCode}`;
+        pending?.kill("SIGKILL");
+        server.kill("SIGKILL");
+        const [[decided], serverErr, decisionErr] = await Promise.all([
+          Promise.allSettled(pending === undefined ? [] : [pending.exited]),
+          new Response(server.stderr).text(),
+          pending === undefined ? "" : new Response(pending.stderr).text(),
+        ]);
+        const decide =
+          decided === undefined
+            ? "decide was not started"
+            : `decide ${decided.status === "fulfilled" ? `exited ${decided.value}` : String(decided.reason)}: ${decisionErr.trim()}`;
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(`${reason}; ${decide}; server ${serverState}: ${serverErr.trim()}`, { cause });
+      }
+    };
     try {
-      await waitForPath(socket, server);
+      await awaitPath(socket, server);
       const request = join(f.requestDir, "request.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "align" }));
       decision = spawnRunnerCli("decide", request, socket, workerToken, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
-      await waitForPath(launcherPid, decision);
+      await awaitPath(launcherPid, decision);
       const pid = Number(readFileSync(launcherPid, "utf8"));
       server.kill();
       const stopped = await Promise.race([server.exited.then(() => true), Bun.sleep(60_000).then(() => false)]);
@@ -685,25 +726,13 @@ describe("runner guards", () => {
     const socket = join(f.privateDir, "runner.sock");
     const eventConfig = join(f.privateDir, "event.json");
     const loopConfig = join(f.privateDir, "loop.json");
-    const attempted = join(f.privateDir, "attempted");
-    const release = join(f.privateDir, "release");
+    const delivered = join(f.privateDir, "delivered");
     const tokenFile = join(f.privateDir, "admin.token");
     const adminToken = "a".repeat(48);
     const workerToken = "b".repeat(48);
     writeFileSync(tokenFile, adminToken, { mode: 0o600 });
-    writeFileSync(
-      eventConfig,
-      JSON.stringify({
-        timeout_ms: 100,
-        command: [
-          "bun",
-          "-e",
-          "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1],'attempted'); if(!(await Bun.file(process.argv[2]).exists())) await Bun.sleep(10000); console.log(JSON.stringify({run:e.run,key:e.key}));",
-          attempted,
-          release,
-        ],
-      }),
-    );
+    // The first consumer never answers, so its timeout fails delivery however long the host takes to start it.
+    writeFileSync(eventConfig, JSON.stringify({ timeout_ms: 100, command: ["bun", "-e", "await Bun.sleep(60_000);"] }));
     writeFileSync(
       loopConfig,
       JSON.stringify({
@@ -747,25 +776,33 @@ describe("runner guards", () => {
       const request = join(f.requestDir, "event.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
       expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
-      await waitForPath(attempted, service);
-      expect(f.runner.pendingEvents("toy-run")).toHaveLength(1);
       writeFileSync(request, JSON.stringify({ run: "toy-run" }));
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        const status = autonomyOf(callRunnerCli("status", request, socket, workerToken));
-        if (status.missing.includes("event-delivery-failed")) break;
-        await Bun.sleep(10);
-      }
-      expect(autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing).toContain(
-        "event-delivery-failed",
+      await waitUntil("status to report event-delivery-failed", () =>
+        autonomyOf(callRunnerCli("status", request, socket, workerToken)).missing.includes("event-delivery-failed"),
       );
+      expect(f.runner.pendingEvents("toy-run")).toHaveLength(1);
       service.kill("SIGTERM");
       await service.exited;
-      writeFileSync(release, "retry may succeed");
+      expect(await new Response(service.stderr).text()).toContain(
+        "event wake-1 remains pending: adapter command timed out after 100ms",
+      );
+      writeFileSync(
+        eventConfig,
+        JSON.stringify({
+          timeout_ms: 10_000,
+          command: [
+            "bun",
+            "-e",
+            "const e=JSON.parse(await Bun.stdin.text()); await Bun.write(process.argv[1], e.key); console.log(JSON.stringify({run:e.run,key:e.key}));",
+            delivered,
+          ],
+        }),
+      );
       service = Bun.spawn(launch, options);
       await waitForPath(socket, service);
-      for (let attempt = 0; attempt < 100 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
-        await Bun.sleep(10);
-      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+      await waitForPath(delivered, service);
+      expect(readFileSync(delivered, "utf8")).toBe("wake-1");
+      await waitUntil("the replayed event to be acknowledged", () => f.runner.pendingEvents("toy-run").length === 0);
     } finally {
       service.kill("SIGTERM");
       await service.exited;
@@ -1229,12 +1266,8 @@ describe("runner guards", () => {
       call("progress", adminToken, { run: "toy-run", id: "owner-1", kind: "commit", source: head });
       prepare("align", "align.run", "align-answer", "e1");
       call("event", adminToken, { run: "toy-run", key: "wake-align", payload: "checkpoint available" });
-      for (let attempt = 0; attempt < 150 && f.runner.status("toy-run").run_state !== "alignment"; attempt += 1)
-        await Bun.sleep(10);
-      expect(f.runner.status("toy-run").run_state).toBe("alignment");
-      for (let attempt = 0; attempt < 150 && f.runner.pendingEvents("toy-run").length > 0; attempt += 1)
-        await Bun.sleep(10);
-      expect(f.runner.pendingEvents("toy-run")).toEqual([]);
+      await waitUntil("the event wake to reach alignment", () => f.runner.status("toy-run").run_state === "alignment");
+      await waitUntil("the wake event to be acknowledged", () => f.runner.pendingEvents("toy-run").length === 0);
       for (const [id, operation, covers] of [
         ["bound", "bound.run", "spec-approval"],
         ["build", "build.dispatch", "build-go"],
@@ -1662,6 +1695,239 @@ describe("runner guards", () => {
     transcript.push(
       "Refusal: same actor in both seats and a seat input containing the other dispatch → rejected before judgment.",
     );
+  });
+
+  test("a second seat whose lineage names the first seat's actor is refused", () => {
+    const f = ready();
+    const prepare = (id: string) =>
+      f.runner.prepare("toy-run", {
+        id,
+        operation: "align.run",
+        grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+        question: "Proceed?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["e1"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      });
+    prepare("forward");
+    f.runner.judge("toy-run", "forward", "seat-a", "supervisor-1", "forward-a", "yes", [], ["supervisor-1"]);
+    expect(() =>
+      f.runner.judge(
+        "toy-run",
+        "forward",
+        "seat-b",
+        "supervisor-2",
+        "forward-b",
+        "yes",
+        [],
+        ["supervisor-2", "supervisor-1"],
+      ),
+    ).toThrow("invalid or excluded seat");
+    prepare("reverse");
+    f.runner.judge(
+      "toy-run",
+      "reverse",
+      "seat-a",
+      "supervisor-1",
+      "reverse-a",
+      "yes",
+      [],
+      ["supervisor-1", "supervisor-2"],
+    );
+    expect(() =>
+      f.runner.judge("toy-run", "reverse", "seat-b", "supervisor-2", "reverse-b", "yes", [], ["supervisor-2"]),
+    ).toThrow("invalid or excluded seat");
+    // A persisted pair that slipped past judge still cannot complete the card.
+    const run = f.runner.status("toy-run");
+    const forward = run.cards["forward"];
+    if (forward === undefined) throw new Error("forward card missing");
+    forward.judgments.push({
+      seat: "seat-b",
+      actor: "supervisor-2",
+      dispatch: "forward-b",
+      choice: "yes",
+      rationale: "Independent supervisor judgment",
+      input_dispatches: [],
+      lineage: ["supervisor-2", "supervisor-1"],
+    });
+    writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+    const runner = new Runner(f.privateDir, f.worker, root);
+    const decided = runner.decide("toy-run", "forward");
+    expect(decided.status).toBe("needs-input");
+    expect(decided.escalation?.charter_rule).toBe("runner:seat-independence");
+    const file = join(f.privateDir, "toy-run-forward.decision.json");
+    const doc = parseJson(readFileSync(file, "utf8"));
+    if (!(doc instanceof Object) || Array.isArray(doc)) throw new Error("expected decision object");
+    expect(doc).toMatchObject({
+      status: "blocked",
+      authority_check: { seats_independent: false, result: "fail", failed_checks: ["seats_independent"] },
+      grants_issued: [],
+    });
+    expect(checkDocument(file, doc, indexDocuments([{ file, doc }]))).toEqual([]);
+    expect(runner.answer("toy-run", "forward", "yes", "captain", "Explicit approval").status).toBe("complete");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({ authority_check: doc["authority_check"] });
+  });
+
+  test.each([
+    ["independent", {}, true, []],
+    ["reverse lineage", { lineage: ["supervisor-1", "supervisor-2"] }, false, []],
+    ["duplicate actor", { actor: "supervisor-2", lineage: ["supervisor-2"] }, false, []],
+    ["duplicate seat", { seat: "seat-b" }, false, []],
+    ["duplicate dispatch", { dispatch: "card-1-dispatch-b" }, false, []],
+    ["excluded lineage", { lineage: ["supervisor-1", "implementer-1"] }, false, []],
+    ["shared input", { input_dispatches: ["card-1-dispatch-b"] }, false, []],
+    ["missing own lineage", { lineage: [] }, false, []],
+    ["failed dispatch", {}, false, ["seat-b failed"]],
+  ] as const)("persisted %s seats produce consistent authority evidence", (_name, change, independent, failures) => {
+    const f = ready();
+    card(f);
+    const run = f.runner.status("toy-run");
+    const judgment = run.cards["card-1"]?.judgments[0];
+    if (judgment === undefined) throw new Error("first judgment missing");
+    Object.assign(judgment, change);
+    writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+    const runner = new Runner(f.privateDir, f.worker, root);
+    expect(runner.decide("toy-run", "card-1", [...failures]).status).toBe(independent ? "complete" : "needs-input");
+    const file = join(f.privateDir, "toy-run-card-1.decision.json");
+    const doc = parseJson(readFileSync(file, "utf8"));
+    if (!(doc instanceof Object) || Array.isArray(doc)) throw new Error("expected decision object");
+    expect(doc["authority_check"]).toMatchObject({
+      seats_independent: independent,
+      result: independent ? "pass" : "fail",
+    });
+    const index = indexDocuments([{ file, doc }]);
+    const rule = "decision.authority-check-recomputed-from-charter-and-evidence";
+    expect(checkDocument(file, doc, index).filter((issue) => issue.rule === rule)).toEqual([]);
+    if (!independent) {
+      doc["authority_check"] = {
+        deterministic: true,
+        charter_permits: true,
+        required_evidence_present: true,
+        seats_independent: true,
+        checkpoint_in_charter: true,
+        both_judgments_returned: true,
+        result: "pass",
+      };
+      expect(checkDocument(file, doc, index).some((issue) => issue.rule === rule)).toBe(true);
+    }
+  });
+
+  test.each([
+    ["elapsed cap", "runner:budget/elapsed-minutes"],
+    ["grant", "runner:grant"],
+    ["freshness", "runner:evidence-freshness"],
+    ["evidence", "runner:trusted-evidence"],
+    ["human experience", "policy:prototype-human-experience-needs-human"],
+  ] as const)("an earlier %s refusal preserves conservative independence evidence", (cause, rule) => {
+    const f = ready();
+    card(f);
+    const run = f.runner.status("toy-run");
+    const prepared = run.cards["card-1"];
+    const judgment = prepared?.judgments[1];
+    if (prepared === undefined || judgment === undefined) throw new Error("prepared judgments missing");
+    judgment.lineage.push("supervisor-1");
+    if (cause === "elapsed cap") run.created_at = new Date(Date.now() - 61 * 60_000).toISOString();
+    if (cause === "grant") prepared.grant.charter_hash = `sha256:${"0".repeat(64)}`;
+    if (cause === "freshness") writeFileSync(join(f.worker, "README.md"), "changed worker\n");
+    if (cause === "evidence") {
+      const evidence = run.evidence["e1"];
+      if (evidence === undefined) throw new Error("evidence missing");
+      evidence.revision = "0".repeat(40);
+    }
+    if (cause === "human experience") prepared.human_experience = true;
+    writeFileSync(join(f.privateDir, "toy-run.json"), JSON.stringify(run));
+    const runner = new Runner(f.privateDir, f.worker, root, cause === "freshness");
+    const result = runner.decide("toy-run", "card-1");
+    expect(result.status).toBe(cause === "elapsed cap" ? "cap-reached" : "needs-input");
+    const file = join(f.privateDir, "toy-run-card-1.decision.json");
+    const doc = parseJson(readFileSync(file, "utf8"));
+    expect(doc).toMatchObject({
+      status: "blocked",
+      authority_check: { seats_independent: false, result: "fail" },
+      escalation: { charter_rule: rule },
+      grants_issued: [],
+    });
+    expect(checkDocument(file, doc, indexDocuments([{ file, doc }]))).toEqual([]);
+    expect(runner.decide("toy-run", "card-1")).toEqual(result);
+    expect(runner.ledger("toy-run").entries).toHaveLength(1);
+  });
+
+  test("seat judgments are accepted exactly when actors and lineages are independent", () => {
+    const f = ready();
+    const actors = ["supervisor-1", "supervisor-2", "supervisor-3", "supervisor-4"];
+    const seat = tuple(constantFrom(...actors), subarray(actors)).map(([actor, ancestors]) => ({
+      actor,
+      lineage: [actor, ...ancestors.filter((a) => a !== actor)],
+    }));
+    let n = 0;
+    fcAssert(
+      property(seat, seat, (a, b) => {
+        const id = `prop-${(n += 1)}`;
+        f.runner.prepare("toy-run", {
+          id,
+          operation: "align.run",
+          grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+          question: "Proceed?",
+          options: ["yes", "no"],
+          approve: "yes",
+          evidence: ["e1"],
+          artifact_hash: `sha256:${"b".repeat(64)}`,
+        });
+        f.runner.judge("toy-run", id, "seat-a", a.actor, `${id}-a`, "yes", [], a.lineage);
+        const independent = a.actor !== b.actor && !a.lineage.includes(b.actor) && !b.lineage.includes(a.actor);
+        const second = () => f.runner.judge("toy-run", id, "seat-b", b.actor, `${id}-b`, "yes", [], b.lineage);
+        if (independent) expect(second().judgments).toHaveLength(2);
+        else
+          expect(second).toThrow(
+            a.actor === b.actor ? "seat is not independently dispatched" : "invalid or excluded seat",
+          );
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  test("seat configuration with overlapping lineages is refused at load", async () => {
+    const f = fixture();
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, "a".repeat(48), { mode: 0o600 });
+    const seatConfig = join(f.privateDir, "seats.json");
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: [
+          { seat: "seat-a", actor: "supervisor-1", lineage: ["supervisor-1"], command: ["true"] },
+          { seat: "seat-b", actor: "supervisor-2", lineage: ["supervisor-2", "supervisor-1"], command: ["true"] },
+        ],
+      }),
+    );
+    const err: string[] = [];
+    const previous = process.env["AK_RUNNER_WORKER_TOKEN"];
+    process.env["AK_RUNNER_WORKER_TOKEN"] = "b".repeat(48);
+    try {
+      const argv = [
+        "serve",
+        "--socket",
+        join(f.privateDir, "runner.sock"),
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--kit-root",
+        root,
+        "--seat-config",
+        seatConfig,
+      ];
+      expect(await runRunner(argv, { out: () => {}, err: (line) => err.push(line) })).toBe(1);
+    } finally {
+      if (previous === undefined) delete process.env["AK_RUNNER_WORKER_TOKEN"];
+      else process.env["AK_RUNNER_WORKER_TOKEN"] = previous;
+    }
+    expect(err).toEqual(["ak runner: seat configuration lineages must be independent"]);
   });
 
   test("budget exhaustion is durable and returns cap-reached", () => {
@@ -2898,7 +3164,7 @@ describe("runner guards", () => {
   });
 
   test("a symlink cannot redirect the runner evidence backend into worker scope", () => {
-    const dir = processScratch("ak-runner-link-");
+    const dir = mkdtempSync(join(scratchRoot, "ak-runner-link-"));
     const worker = join(dir, "worker");
     const state = join(dir, "private");
     mkdirSync(worker);
@@ -2935,7 +3201,7 @@ describe("unknown runner selectors", () => {
     const previous = process.env["AK_RUNNER_TOKEN"];
     process.env["AK_RUNNER_TOKEN"] = "t".repeat(32);
     try {
-      const socket = join(processScratch("ak-runner-verb-"), "absent.sock");
+      const socket = join(mkdtempSync(join(scratchRoot, "ak-runner-verb-")), "absent.sock");
       expect(await runRunner(["call", "stauts", "--socket", socket], io)).toBe(2);
     } finally {
       if (previous === undefined) delete process.env["AK_RUNNER_TOKEN"];

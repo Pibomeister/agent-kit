@@ -157,6 +157,9 @@ must attest for two seats declared independent:
 | A `verifier` | The implementer, change author, spec approver, recipe author for this change, or a seat already used on the same decision | ruling `missing-supervisor-never-implementer` |
 | The second `supervisor` | The first `supervisor` | plan §7.3 |
 
+The supervisor exclusion is symmetric: neither supervisor's lineage may contain the other
+supervisor's actor.
+
 Independence means independent **of the author**, not amnesiac between cycles: reviewer continuity
 through a prior-review dossier is desirable and permitted (ruling `reviewer-continuity-not-amnesia`).
 
