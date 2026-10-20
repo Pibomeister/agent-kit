@@ -75,7 +75,10 @@ describe("process temp directory", () => {
     writeFileSync(file, script);
     const child = Bun.spawnSync([process.execPath, "test", file], { cwd: REPO });
     expect(child.exitCode).toBe(failing ? 1 : 0);
-    const line = child.stdout.toString().split("\n").find((value) => value.startsWith("PROCESS_DIR "));
+    const line = child.stdout
+      .toString()
+      .split("\n")
+      .find((value) => value.startsWith("PROCESS_DIR "));
     expect(line).toBeDefined();
     const dir = line?.slice("PROCESS_DIR ".length) ?? "";
     expect(dir).not.toBe(processDir());
