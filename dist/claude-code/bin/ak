@@ -24485,7 +24485,7 @@ function isWireHost(value) {
 function hostHooks(commands) {
   return {
     claude: [
-      { event: "SessionStart", command: commands.sessionStart, matcher: SESSION_MATCHER },
+      { event: "SessionStart", command: commands.sessionStart, matcher: SESSION_MATCHER, timeout: 10 },
       { event: "Stop", command: commands.claudeStop, timeout: 120 }
     ],
     codex: [
