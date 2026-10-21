@@ -188,7 +188,8 @@ Placement = { class: "kb-document", kind: KBDocumentType, scope: Scope }
   skill does not hold, which is the same principle as this package's review independence and its rule
   that an author may not close their own finding.
 - **Side effects** — `kb-publish`. Idempotency key derived per runner-contract §5 from the artifact
-  hash, so republishing an unchanged artifact after a restart is a no-op success.
+  hash. Publication admission and read-back follow the binding's idempotency rules; for `local-git`,
+  see [§5](backends/local-git.md#5-publishartifact).
 
 ### `linkCodeEvidence`
 
@@ -406,6 +407,8 @@ machine has not been told where the knowledgebase is.
 | `recordDecision`, `linkCodeEvidence`, `requestImpactAnalysis`, `linkPullRequests`, `proposeLesson` | `ak kb record-decision` and its four siblings | no: each refuses and writes nothing |
 
 `ak kb check [<project-dir>]` reports the binding, the registration and which of these can run.
+The [local-git binding](backends/local-git.md#5-publishartifact) owns the additional publication
+options and requirements for trail records.
 `read`, `publish` and the five refusing commands print one JSON result; `check` and `register` print
 lines for a person. Every command exits 0 when the operation completed, 1 when it failed or
 was refused, 2 on a usage error and 3 when no knowledgebase is configured, so a caller can tell an

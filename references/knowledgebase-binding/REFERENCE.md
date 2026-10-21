@@ -88,6 +88,9 @@ A run artifact, one of the envelope schemas:
 ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]…
 ```
 
+For `trail` and `trail-audit`, use the work-trail protocol's publication boundary and resume rule.
+Its non-blocking failure reporting and no-resend rule replace the retry and stop guidance below.
+
 Write the page or artifact to a scratch file outside the repository and pass its path. Then:
 
 - **Keep the returned `ref`, `content_hash` and `revision`.** They are the record reference the

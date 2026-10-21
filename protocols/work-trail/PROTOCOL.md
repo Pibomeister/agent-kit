@@ -57,8 +57,8 @@ characters) maps to outcomes that already exist: the stretch is reported missing
 unavailable because its packet cannot be handed over.
 
 A stretch is known by its ticket, starting revision and order, an audit by its ticket and audited
-revision, so a later fix run publishes beside the earlier records, never over them. An unchanged
-republish does nothing; changed content under a published id is refused, reported and stops nothing.
+revision, so a later fix run publishes beside the earlier records, never over them. Publication
+and replay follow the publication boundary and resume rule below.
 
 The implementer, while it works (ruling `work-trail-is-account-not-evidence`):
 1. On each working decision, a choice the ticket leaves open and the implementer settles (one

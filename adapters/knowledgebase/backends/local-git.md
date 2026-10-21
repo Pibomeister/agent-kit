@@ -122,7 +122,7 @@ header of its own is refused, because the header carries the status.
 
 ### `run-artifact` placement
 
-`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]…`
+`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]… [--trail-attempts <directory>]`
 
 - **Validated before any write** against the schema its envelope names. A failing artifact leaves
   the knowledgebase untouched.
