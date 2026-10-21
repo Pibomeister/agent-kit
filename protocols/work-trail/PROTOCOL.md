@@ -129,8 +129,8 @@ The build, for each ticket, in this order (ruling `work-trail-is-account-not-evi
     that reason, and the record is neither checked nor sent.
 12. Before sending the audit, confirm that the returned record names kind `trail-audit` and that
     id. A record that does not is reported and not sent.
-13. Publish the audit as returned, through `publishArtifact` as a run artifact of the run, and keep
-    the ref it returns.
+13. When the resume rule permits, publish the audit as returned, through `publishArtifact` as a run
+    artifact of the run, and keep the ref it returns.
 14. Report what Outputs lists.
 
 The trail steps are steps 7 to 13. After each, the build writes its outcome into the stretch index:
@@ -146,30 +146,31 @@ recorded outcome as recorded and runs only the trail steps whose outcome the ind
 It reads the auditor's seat mark, kept record and outcome only under the audit id formed from the
 ticket's current committed revision, and no auditor is seated again for a seat the index marks
 under that id. The rule decides what to run from the index alone and adds no knowledgebase read
-beyond the publish's own read-back.
-- A publish whose outcome the index does not hold is made once more, as written, through
-  `publishArtifact`, after the hold-back below: when the interrupted publish landed, its
-  idempotency key and read-back return the stored ref and write nothing. An interrupted publish is
-  not a failed one, and a recorded refusal or failure is still not sent again.
+beyond the publish's own read-back. It governs both publication steps, 8 and 13.
+- When the index read on resume marks the ticket's trail started, no stretch or audit with an
+  unrecorded publish outcome is sent. The earlier publish may have failed, even when its failure
+  could not be recorded. Report a stretch as missing under step 7, or unpublished by this run;
+  report the audit as unavailable. Give the reason that the publication outcome is unknown and
+  the record may already be published. A secret noticed in such a stretch or audit is reported as
+  exposed, for its owner to rotate, as for a published record. Recorded outcomes are still reported
+  as recorded, and a recorded refusal or failure is never sent again.
 - A seat marked with no recorded audit outcome and no kept audit record failed with its seat: the
   audit is reported unavailable, with the reason that the run was interrupted during it, and no
   auditor is seated again.
-- A kept audit record with no recorded audit outcome is checked and published as steps 12 and 13
-  say only when its hash still equals the hash the index recorded for it; otherwise the audit is
-  reported unavailable, with the reason that the kept record is not the one the index recorded.
+- A kept audit record with no recorded audit outcome, whose publication the rule above permits,
+  is checked and published as steps 12 and 13 say only when its hash still equals the hash the
+  index recorded for it; otherwise the audit is reported unavailable, with the reason that the
+  kept record is not the one the index recorded.
 - A recorded stretch with no recorded publish outcome that is no longer at its location is reported
   missing.
-- The hold-back. On a resumed run, a stretch the index held on resume, with no recorded publish
-  outcome and a hash that is no longer its prepared hash, is sent only when its row records a hash
-  at its implementer's last report and the stretch's hash still equals it. Any other such stretch,
-  one whose implementer never reported included, is held back: it is not sent, and it is reported
-  unpublished by this run, with the reason that its implementer returned no report after its last
-  write. When the index read on resume marks the ticket's trail started, the reason adds that the
-  interrupted run may have published the stretch as written, which this run did not read back, and
-  a secret the audit notices in it is reported as exposed, for its owner to rotate, as for a
-  published stretch; otherwise the reason adds that the stretch was never sent. When the resumed
-  run seats the trail auditor, it receives each held-back stretch from its location with that state
-  and reason.
+- The hold-back. When the index read on resume does not mark the ticket's trail started, a stretch
+  it held, with no recorded publish outcome and a hash that is no longer its prepared hash, is sent
+  only when its row records a hash at its implementer's last report and the stretch's hash still
+  equals it. Any other such stretch, one whose implementer never reported included, is held back:
+  it is not sent, and it is reported unpublished by this run, with the reason that its implementer
+  returned no report after its last write and the stretch was never sent. When the resumed run
+  seats the trail auditor, it receives each unpublished stretch from its location with its reason,
+  including one whose publication outcome is unknown.
 - The rule depends on the runner handing the resumed run the scratch space the interrupted run used.
   An index row the scratch space cannot hold leaves that stretch reported missing. An index that is
   present but cannot be read in full is gone. Where the index is gone, the first row of the new

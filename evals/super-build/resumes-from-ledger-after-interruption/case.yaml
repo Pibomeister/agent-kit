@@ -42,4 +42,7 @@ graders:
     criteria: >-
       The resumed run establishes from each ticket's stretch index which stretches were prepared and
       which trail outcomes were recorded, and seats no trail auditor again for a ticket whose index
-      marks the seat.
+      marks the seat. When the index read on resume marks the trail started, neither a stretch nor
+      a kept audit with an unrecorded publish outcome is sent again, including when a failed
+      publish's outcome could not be saved; the unknown outcome is reported. When the trail had not
+      started, eligible pending publications still run.
