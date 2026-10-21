@@ -8,6 +8,7 @@ import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
 import type { ResolvedKb } from "./binding.ts";
 import { git } from "./git.ts";
+import { publishTrailRecord } from "./trail-publish.ts";
 
 /**
  * The `local-git` backend (adapters/knowledgebase/backends/local-git.md): a
@@ -646,6 +647,7 @@ export function publishRunArtifact(
   text: string,
   run: string,
   links: readonly string[],
+  trailAttempts?: string,
 ): PublishOutcome | KbRefusal {
   if (!ARTIFACT_ID.test(run)) return refused("kb.run-invalid", `'${run}' is not a run id.`);
   const checked = checkRunArtifact(text);
@@ -703,5 +705,15 @@ export function publishRunArtifact(
       return `${kept}${JSON.stringify(stored)}\n`;
     },
   };
-  return commitRecord(kb, store, { ref, hash, key, links, approvals: approvalsOf(artifact) });
+  const publishArtifact = () => commitRecord(kb, store, { ref, hash, key, links, approvals: approvalsOf(artifact) });
+  if (artifact.schema === "trail" || artifact.schema === "trail-audit") {
+    if (trailAttempts === undefined) {
+      return refused("kb.trail-attempts-required", "Trail and trail-audit publication needs --trail-attempts.");
+    }
+    return publishTrailRecord(trailAttempts, `${kb.knowledgebase}/${project}/${ref}`, publishArtifact);
+  }
+  if (trailAttempts !== undefined) {
+    return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
+  }
+  return publishArtifact();
 }
