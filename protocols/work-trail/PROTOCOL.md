@@ -113,8 +113,7 @@ The build, for each ticket, in this order (ruling `work-trail-is-account-not-evi
    unpublished by this run, and its state is told without asking the knowledgebase.
 8. Before the trail's first publish for the ticket, a stretch here or the audit at step 13, mark
    the ticket's trail started in the stretch index. A trail the index cannot mark publishes nothing:
-   missing and published stretches keep their states, unpublished stretches add that reason, and
-   its audit is not sent. Otherwise
+   its stretches are reported unpublished, with that reason, and its audit is not sent. Otherwise
    publish each unpublished stretch that the resume rule does not hold back, as written, when its
    record names kind `trail` and its id, through `publishArtifact` as a run artifact of the run, and
    keep the ref it returns. A record that names another kind or id is reported and not sent.
