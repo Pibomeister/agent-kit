@@ -23,8 +23,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20384,
-      "tokens": 5096
+      "bytes": 20348,
+      "tokens": 5087
     },
     "bundle/claude-code:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -58,8 +58,8 @@
     },
     "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5825,
-      "tokens": 1454
+      "bytes": 6022,
+      "tokens": 1504
     },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -463,8 +463,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20384,
-      "tokens": 5096
+      "bytes": 20348,
+      "tokens": 5087
     },
     "bundle/codex:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -498,8 +498,8 @@
     },
     "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5825,
-      "tokens": 1454
+      "bytes": 6022,
+      "tokens": 1504
     },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -903,8 +903,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20384,
-      "tokens": 5096
+      "bytes": 20348,
+      "tokens": 5087
     },
     "bundle/droid:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -938,8 +938,8 @@
     },
     "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5825,
-      "tokens": 1454
+      "bytes": 6022,
+      "tokens": 1504
     },
     "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1343,8 +1343,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20384,
-      "tokens": 5096
+      "bytes": 20348,
+      "tokens": 5087
     },
     "bundle/grok:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -1378,8 +1378,8 @@
     },
     "bundle/grok:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5825,
-      "tokens": 1454
+      "bytes": 6022,
+      "tokens": 1504
     },
     "bundle/grok:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1783,8 +1783,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20384,
-      "tokens": 5096
+      "bytes": 20348,
+      "tokens": 5087
     },
     "bundle/kimi:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -1818,8 +1818,8 @@
     },
     "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5825,
-      "tokens": 1454
+      "bytes": 6022,
+      "tokens": 1504
     },
     "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
