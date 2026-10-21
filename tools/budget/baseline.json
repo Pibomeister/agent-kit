@@ -23,8 +23,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 19274,
-      "tokens": 4819
+      "bytes": 19309,
+      "tokens": 4828
     },
     "bundle/claude-code:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -463,8 +463,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 19274,
-      "tokens": 4819
+      "bytes": 19309,
+      "tokens": 4828
     },
     "bundle/codex:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -903,8 +903,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 19274,
-      "tokens": 4819
+      "bytes": 19309,
+      "tokens": 4828
     },
     "bundle/droid:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -1343,8 +1343,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 19274,
-      "tokens": 4819
+      "bytes": 19309,
+      "tokens": 4828
     },
     "bundle/grok:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
@@ -1783,8 +1783,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 19274,
-      "tokens": 4819
+      "bytes": 19309,
+      "tokens": 4828
     },
     "bundle/kimi:references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
       "file": "references/codebase-design-vocabulary/DEEPENING.md",
