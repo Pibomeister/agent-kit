@@ -1,12 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { appendFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const script = join(import.meta.dir, "../tools/publish/version-gate.sh");
 const roots: string[] = [];
-const templates = mkdtempSync(join(tmpdir(), "ak-version-templates-"));
+const templates = processScratch("ak-version-templates-");
 const remoteTemplate = join(templates, "remote.git");
 const workTemplate = join(templates, "work");
 const publishedRemoteTemplates = new Map<string, string>();
@@ -83,7 +83,7 @@ function gateWork(
   origin = "",
   omitPublishedManifest = false,
 ) {
-  const root = mkdtempSync(join(tmpdir(), "ak-version-gate-"));
+  const root = processScratch("ak-version-gate-");
   roots.push(root);
   const work = join(root, "work");
   let sourceRemote = remoteTemplate;

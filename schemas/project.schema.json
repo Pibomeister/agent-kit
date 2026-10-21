@@ -309,6 +309,13 @@
       "uniqueItems": true,
       "items": { "$ref": "common.schema.json#/$defs/kebab_id" }
     },
+    "autonomy": {
+      "description": "Project opt-in for selecting the autonomy install profile when no explicit profile is requested. This never grants an action or bypasses a missing live runner capability.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default"],
+      "properties": { "default": { "type": "boolean" } }
+    },
     "packs": {
       "description": "Packs enabled for this project. An enabled pack still attaches only when its activation rules match (plan 3).",
       "type": "array",

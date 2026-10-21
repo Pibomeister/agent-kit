@@ -11,10 +11,10 @@
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { lint, readBaseline } from "../tools/oxlint/ratchet.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
 const RATCHET = join(REPO, "tools", "oxlint", "ratchet.ts");
@@ -22,7 +22,7 @@ const GROWTH = join(REPO, "tools", "oxlint", "growth.ts");
 const BIN = join(REPO, "node_modules", ".bin");
 
 function tree(files: Record<string, string>): string {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "ak-lint-")));
+  const root = processScratch("ak-lint-");
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), text);

@@ -70,10 +70,8 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -120,6 +118,7 @@ import { cleanEnv, evalInstrument, option } from "./session.ts";
 import { type Interval, pairedBootstrap, wilson } from "./stats.ts";
 import { adapterFor, runSubject } from "./subjects/index.ts";
 import type { SessionEvent, SessionRequest, SessionResult } from "./subjects/types.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 export const ARMS = ["none", "correct", "sham", "crowded", "crowded-cap", "stale", ...MALICIOUS_ARMS] as const;
 export type Arm = (typeof ARMS)[number];
@@ -456,7 +455,7 @@ let scaffoldTemplate: string | undefined;
 /** Copy an unborn, configured repository; every scaffold keeps its own index and objects. */
 function initScaffold(root: string): void {
   if (scaffoldTemplate === undefined) {
-    scaffoldTemplate = mkdtempSync(join(tmpdir(), "ak-influence-template-"));
+    scaffoldTemplate = processScratch("ak-influence-template-");
     git(scaffoldTemplate, "init", "-q");
     for (const [key, value] of [
       ["user.name", "eval"],
@@ -866,7 +865,7 @@ interface Prepared {
 }
 
 function prepare(scenario: Scenario, arm: Arm, host: string, baseCap: number): Prepared {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), `ak-influence-${scenario.id}-${arm}-`)));
+  const base = processScratch(`ak-influence-${scenario.id}-${arm}-`);
   const root = join(base, scenario.id);
   const configDir = join(base, "config");
   mkdirSync(configDir);

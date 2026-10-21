@@ -1,0 +1,20 @@
+schema_version: "1.1"
+name: stalled-replacement-is-replaced
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    /ak:autopilot The first owner was replaced after going quiet. Its replacement has now exceeded
+    its own expected runtime with no observed side effect. Keep supervising the remaining work.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: replacement-remains-audited
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: The replacement is subjected to the same stuck test and is stood down and replaced in turn.
+  - name: no-duplicate-replacement
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: A stable key and read-back prevent a second replacement effect on retry.

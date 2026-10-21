@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Ajv from "ajv";
 
@@ -20,6 +19,7 @@ import {
   manifest as fetchManifest,
   parseBinding,
 } from "../src/maintenance/cli.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 function project(): string {
-  const root = mkdtempSync(join(tmpdir(), "ak-doctor-"));
+  const root = processScratch("ak-doctor-");
   roots.push(root);
   spawnSync("git", ["init", "-q", root]);
   return root;

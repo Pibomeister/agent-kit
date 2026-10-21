@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const root = join(import.meta.dir, "..");
 const files = [...new Bun.Glob("**/*.test.ts").scanSync({ cwd: join(root, "tests") })]
@@ -28,7 +28,7 @@ const heavy = [
 describe("configured test lanes", () => {
   for (const childStatus of [0, 7]) {
     test(`every file runs once, even when child commands exit ${childStatus}`, () => {
-      const scratch = mkdtempSync(join(tmpdir(), "ak-test-lanes-"));
+      const scratch = processScratch("ak-test-lanes-");
       try {
         const bin = join(scratch, "bin");
         const log = join(scratch, "calls");

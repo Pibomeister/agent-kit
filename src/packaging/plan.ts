@@ -340,6 +340,17 @@ export interface BundleFile {
   source?: string;
 }
 
+/**
+ * Whether `file` is a program the bundle runs by its own path: a `bin/` file
+ * that starts with a shebang. The skills run `ak …`, which resolves to the
+ * installed `bin/ak`, and a shell refuses that file with "Permission denied"
+ * unless it carries the executable bit. `bin/ak-gate.mjs` has no shebang and
+ * every caller runs it as `node …/bin/ak-gate.mjs`, so it needs none.
+ */
+export function isExecutable(file: BundleFile): boolean {
+  return file.path.startsWith("bin/") && file.contents.startsWith("#!");
+}
+
 export interface HostDecision {
   skill: string;
   mode: SkillMode;
@@ -358,6 +369,7 @@ export interface BundlePlan {
 
 export interface PlanOptions {
   profile?: string;
+  project?: string;
 }
 
 function isSourceOnly(path: string): boolean {
@@ -508,7 +520,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   const install = loadInstallConfig(root, catalog);
   issues.push(...install.issues);
 
-  const membership = resolveProfile(root, catalog, options.profile);
+  const membership = resolveProfile(root, catalog, options.profile, options.project);
   issues.push(...membership.issues);
 
   /**
@@ -776,6 +788,30 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         if (published !== null) pending.push({ source: dep, published });
       }
     }
+  }
+
+  // Authored roles, the catalog, and schemas stay at the paths consumers already write.
+  const shipDeclared = (source: string) => {
+    const text = readTextIfPresent(join(root, source));
+    if (text === null) return;
+    files.set(source, { path: source, contents: text, source });
+    // Body bytes stay the source bytes, so a link keeps its source path. Copy a
+    // template that link names; other deps still travel through the shared closure.
+    const linked = rewriteLinks(source, source, text, included, source);
+    issues.push(...linked.issues);
+    for (const dep of linked.dependencies) {
+      if (!dep.startsWith("templates/")) continue;
+      const depText = readTextIfPresent(join(root, dep));
+      if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep });
+    }
+  };
+  for (const entry of catalog.bySection("roles")) {
+    if (entry.status === "authored") shipDeclared(entryBodyPath("roles", entry.id));
+  }
+  shipDeclared("catalog.yaml");
+  if (emitted.includes("autopilot")) shipDeclared("policies/invocation.yaml");
+  for (const schema of walkFiles(root, "schemas")) {
+    if (schema.endsWith(".schema.json")) shipDeclared(schema);
   }
 
   // Transitive closure over shared dependencies.

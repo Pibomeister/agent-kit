@@ -84,6 +84,7 @@ jobs:
           }
           JSON
           git -C "$release_dir" add -A
+          tools/publish/exec-bits.sh "$release_dir"
           if ! git -C "$release_dir" diff --cached --quiet; then
             git -C "$release_dir" -c user.name=github-actions -c user.email=github-actions[bot]@users.noreply.github.com commit -m "Publish validated agent-kit bundles from $GITHUB_SHA"
             git -C "$release_dir" push origin published

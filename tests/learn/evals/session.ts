@@ -3,13 +3,13 @@
  * async spawn with a timeout, scratch space, and the instrument fields every
  * receipt carries. Not a test file.
  */
-import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { loadCatalog } from "../../../src/catalog/load.ts";
 import { run } from "../../../src/learn/core/proc.ts";
 import { describeInstall, loadInstallConfig } from "../../../src/packaging/install.ts";
 import { hasErrors } from "../../../src/validation/types.ts";
+import { processScratch } from "../../helpers/process-tmp.ts";
 
 /** Variables that make a nested host CLI believe it runs inside the parent session. */
 const NESTED_SESSION_VARS = new Set(["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"]);
@@ -78,7 +78,7 @@ export function evalInstrument(root: string, revision: string) {
 
 /** A fresh git repository in scratch space, with one commit. */
 export function scratchRepo(): string {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "ak-eval-")));
+  const base = processScratch("ak-eval-");
   const repo = join(base, "repo");
   mkdirSync(repo);
   run(["git", "init", "-q"], { cwd: repo });

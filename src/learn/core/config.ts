@@ -28,7 +28,7 @@ export interface LearnConfig {
   distillTimeoutMs: number;
   /** The most distiller requests one project's capture makes in a run; calls past it keep their excerpts. */
   distillMaxRequests: number;
-  /** `AK_LEARN_TRACE=full`: also write each call's prompt and reply bodies beside the metadata trace. */
+  /** `AK_LEARN_TRACE=full`: also store prompt and reply bodies; `core/judge.ts` owns storage and retention. */
   traceFull: boolean;
   /** Maximum bytes in the current judge-call metadata file before rotation. Fixed; not an environment option. */
   traceMaxBytes: number;

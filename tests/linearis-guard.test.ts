@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -17,7 +17,7 @@ function fixture(
   shell = "sh",
   errexit = false,
 ) {
-  const root = mkdtempSync(join(tmpdir(), "ak-linearis-"));
+  const root = processScratch("ak-linearis-");
   roots.push(root);
   spawnSync("git", ["init", "-q", root]);
   writeFileSync(join(root, "ak.tracker.yaml"), "backend: linear-linearis\ntoken_file: .linear-token\n");

@@ -53,9 +53,9 @@ export interface CliOptions {
 const USAGE = [
   "ak — the agent-kit contract tool",
   "",
-  "  ak validate [--profile <id>] [--host <id>] [--json]  check the tree against catalog.yaml",
+  "  ak validate [--profile <id>] [--project <record>] [--host <id>] [--json]  check the tree against catalog.yaml",
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
-  "  ak build [--check] [--profile <id>|all] [--host <id>]  emit dist/<host> for all hosts, or one",
+  "  ak build [--check] [--profile <id>|all] [--project <record>] [--host <id>]  emit dist/<host> for all hosts, or one",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
   "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
@@ -197,6 +197,7 @@ function buildOptions(parsed: Parsed): BuildOptions {
   const host = parsed.values.get("host");
   return {
     profile: parsed.values.get("profile"),
+    project: parsed.values.get("project"),
     hosts: host === undefined ? undefined : HOST_IDS.filter((id): id is HostId => id === host),
   };
 }

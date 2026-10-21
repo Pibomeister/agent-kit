@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { canonicalJson, artifactHash, sha256Hex } from "../src/util/hash.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
 import { walkFiles, readTextIfPresent, listDirs } from "../src/util/fs.ts";
 import { DENY_TERMS, PLACEHOLDER_TERMS, SCANNER_DEFINITION_FILE, matchTerms } from "../src/denylist.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 function tmpRoot(): string {
-  return mkdtempSync(join(tmpdir(), "ak-util-"));
+  return processScratch("ak-util-");
 }
 
 describe("canonical hashing", () => {

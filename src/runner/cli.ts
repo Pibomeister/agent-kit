@@ -4,12 +4,17 @@ import { createConnection, createServer } from "node:net";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { unknownSelector } from "../util/suggest.ts";
-import { Runner } from "./core.ts";
+import { sha256Hex } from "../util/hash.ts";
+import { Runner, sharesLineage } from "./core.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
   isArgs,
   isEffectConfig,
+  isEventConfig,
+  isEventAck,
+  isAuditProbeReply,
+  isAuditReplacementReply,
   isRequest,
   isResponse,
   isSeatAnswer,
@@ -35,6 +40,10 @@ const ADMIN = new Set([
   "complete",
   "cancel",
   "charge",
+  "delegate",
+  "progress",
+  "finish",
+  "verdict",
 ]);
 const WORKER = new Set(["status", "ledger", "packet", "prepare", "decide", "sync", "run-verify"]);
 type StringKey =
@@ -57,7 +66,8 @@ type StringKey =
   | "effect"
   | "target"
   | "input_hash"
-  | "limit";
+  | "limit"
+  | "parent";
 type ArrayKey = "excluded_actors" | "input_dispatches" | "lineage";
 
 function equal(a: string, b: string): boolean {
@@ -126,6 +136,7 @@ async function spawnPiped(
   stdin?: string,
   env = childEnv(),
   activeChildren?: Set<KillableChild>,
+  timeoutMs?: number,
 ) {
   const child = Bun.spawn(argv, {
     cwd,
@@ -135,14 +146,24 @@ async function spawnPiped(
     stderr: "pipe",
   });
   activeChildren?.add(child);
+  let timedOut = false;
+  const timer =
+    timeoutMs === undefined
+      ? null
+      : setTimeout(() => {
+          timedOut = true;
+          child.kill("SIGKILL");
+        }, timeoutMs);
   try {
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(child.stdout).arrayBuffer(),
       new Response(child.stderr).arrayBuffer(),
       child.exited,
     ]);
+    if (timedOut) throw new Error(`adapter command timed out after ${timeoutMs}ms`);
     return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
   } finally {
+    if (timer !== null) clearTimeout(timer);
     activeChildren?.delete(child);
   }
 }
@@ -211,6 +232,7 @@ async function execute(
   effectAdapters: Map<string, EffectAdapter>,
   decisions: Map<string, Promise<unknown>>,
   activeChildren: Set<KillableChild>,
+  autonomousAvailable: boolean,
 ) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
@@ -252,6 +274,17 @@ async function execute(
       return runner.verify(str(a, "run"), str(a, "evidence"));
     case "event":
       return runner.event(str(a, "run"), str(a, "key"), str(a, "payload"));
+    case "delegate":
+      if (a.amount === undefined) throw new Error("delegate needs expected runtime in seconds");
+      return runner.registerDelegate(str(a, "run"), str(a, "id"), a.amount, a.parent);
+    case "progress":
+      runner.recordProgress(str(a, "run"), str(a, "id"), str(a, "kind"), str(a, "source"));
+      return runner.status(str(a, "run")).delegates?.[str(a, "id")];
+    case "finish":
+      runner.finishDelegate(str(a, "run"), str(a, "id"));
+      return runner.status(str(a, "run")).delegates?.[str(a, "id")];
+    case "verdict":
+      return runner.bindVerdict(str(a, "run"));
     case "charge": {
       if (a.amount === undefined) throw new Error("amount is required");
       return runner.charge(str(a, "run"), str(a, "limit"), a.amount, a.subject);
@@ -306,6 +339,12 @@ async function execute(
       return runner.prepare(str(a, "run"), a.card);
     }
     case "decide": {
+      const charter = runner.status(str(a, "run")).charter;
+      if (
+        charter.audit_cadence_seconds !== undefined &&
+        (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery"))
+      )
+        throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
       const cardId = str(a, "card_id");
       const pending =
         decisions.get(cardId) ??
@@ -332,7 +371,10 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const seatConfigPath = flag(argv, "seat-config");
   const verifyConfigPath = flag(argv, "verify-config");
   const effectConfigPath = flag(argv, "effect-config");
+  const eventConfigPath = flag(argv, "event-config");
+  const loopConfigPath = flag(argv, "loop-config");
   const adminTokenFile = flag(argv, "admin-token-file");
+  const kitRootFlag = flag(argv, "kit-root");
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
   if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error(
@@ -362,7 +404,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const relativeParent = relative(workerRoot, socketParent);
   if (relativeParent === "" || (!relativeParent.startsWith("..") && !isAbsolute(relativeParent)))
     throw new Error("runner socket parent resolves inside worker root");
-  const runner = new Runner(state, workerRoot, resolve(import.meta.dir, "..", ".."), true);
+  const entry = process.argv[1];
+  const kitRoot =
+    kitRootFlag ??
+    (entry === undefined ? resolve(import.meta.dir, "..", "..") : resolve(realpathSync(entry), "..", ".."));
+  const runner = new Runner(state, workerRoot, kitRoot, true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
   const adminToken = readAdminToken(adminTokenFile, workerRoot);
@@ -380,6 +426,8 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       new Set(launchers.map((launcher) => launcher.actor)).size !== 2
     )
       throw new Error("seat configuration must name two distinct seats and actors");
+    if (launchers.some((launcher, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher, other))))
+      throw new Error("seat configuration lineages must be independent");
   }
   let verifyCommand: string[] | null = null;
   if (verifyConfigPath !== undefined) {
@@ -389,6 +437,28 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     if (!isVerifyConfig(configValue))
       throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
     verifyCommand = configValue.command;
+  }
+  let eventCommand: string[] | null = null;
+  let eventTimeoutMs: number | null = null;
+  if (eventConfigPath !== undefined) {
+    const configPath = realpathSync(eventConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!isEventConfig(configValue))
+      throw new Error(`invalid event configuration: ${JSON.stringify(isEventConfig.errors)}`);
+    eventCommand = configValue.command;
+    eventTimeoutMs = configValue.timeout_ms;
+  }
+  let loopCommand: string[] | null = null;
+  let loopTimeoutMs: number | null = null;
+  if (loopConfigPath !== undefined) {
+    const configPath = realpathSync(loopConfigPath);
+    runner.assertPrivatePath(configPath);
+    const configValue: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+    if (!isEventConfig(configValue))
+      throw new Error(`invalid loop configuration: ${JSON.stringify(isEventConfig.errors)}`);
+    loopCommand = configValue.command;
+    loopTimeoutMs = configValue.timeout_ms;
   }
   const effectAdapters = new Map<string, EffectAdapter>();
   if (effectConfigPath !== undefined) {
@@ -404,6 +474,124 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   }
   const decisions = new Map<string, Promise<unknown>>();
   const activeChildren = new Set<KillableChild>();
+  let delivering = false;
+  let rescanEvents = false;
+  let deliveryHealthy = true;
+  const wakeEvents = () => {
+    if (eventCommand === null) return;
+    if (delivering) {
+      rescanEvents = true;
+      return;
+    }
+    delivering = true;
+    void (async () => {
+      do {
+        rescanEvents = false;
+        for (const event of runner.pendingEvents(runId)) {
+          try {
+            const delivered = await spawnPiped(
+              eventCommand,
+              runner.stateDir,
+              JSON.stringify({ run: runId, ...event }),
+              { ...privateChildEnv(runner), AK_RUNNER_SOCKET: socketPath, AK_RUNNER_TOKEN: workerToken },
+              activeChildren,
+              eventTimeoutMs ?? undefined,
+            );
+            if (delivered.exitCode !== 0) throw new Error(`consumer exited ${delivered.exitCode}`);
+            const answer: unknown = JSON.parse(delivered.stdout.toString());
+            if (!isEventAck(answer) || answer.run !== runId || answer.key !== event.key)
+              throw new Error("consumer acknowledgement did not match the event");
+            runner.ackEvent(runId, event.key);
+          } catch (cause) {
+            deliveryHealthy = false;
+            io.err(
+              `ak runner: event ${event.key} remains pending: ${cause instanceof Error ? cause.message : String(cause)}`,
+            );
+          }
+        }
+      } while (rescanEvents);
+      if (runner.pendingEvents(runId).length === 0) deliveryHealthy = true;
+    })()
+      .catch((cause) => {
+        if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
+          deliveryHealthy = false;
+          io.err(`ak runner: event delivery stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
+        }
+      })
+      .finally(() => {
+        delivering = false;
+      });
+  };
+  let auditTimer: ReturnType<typeof setInterval> | null = null;
+  let auditRunning = false;
+  let auditHealthy = true;
+  const runAudit = async () => {
+    if (loopCommand === null || auditRunning) return;
+    auditRunning = true;
+    try {
+      const before = runner.auditTick(runId);
+      if (before.drained) {
+        if (auditTimer !== null) clearInterval(auditTimer);
+        auditTimer = null;
+        return;
+      }
+      const probe = await spawnPiped(
+        loopCommand,
+        runner.stateDir,
+        JSON.stringify({ action: "probe", run: runId, delegates: before.active, procedure: before.procedure }),
+        privateChildEnv(runner),
+        activeChildren,
+        loopTimeoutMs ?? undefined,
+      );
+      if (probe.exitCode !== 0) throw new Error(`audit probe exited ${probe.exitCode}`);
+      const observed: unknown = JSON.parse(probe.stdout.toString());
+      if (!isAuditProbeReply(observed) || JSON.stringify(observed.probed) !== JSON.stringify(before.active))
+        throw new Error("audit probe did not cover every active delegate");
+      for (const progress of observed.progress) {
+        runner.recordProgress(runId, progress.delegate, progress.kind, progress.ref);
+      }
+      const tick = runner.auditTick(runId);
+      for (const delegate of tick.replace) {
+        const key = sha256Hex(`${runId}\0replace\0${delegate}`);
+        const replaced = await spawnPiped(
+          loopCommand,
+          runner.stateDir,
+          JSON.stringify({ action: "stand-down-replace", run: runId, delegate, key }),
+          privateChildEnv(runner),
+          activeChildren,
+          loopTimeoutMs ?? undefined,
+        );
+        if (replaced.exitCode !== 0) throw new Error(`replacement adapter exited ${replaced.exitCode}`);
+        const value: unknown = JSON.parse(replaced.stdout.toString());
+        if (!isAuditReplacementReply(value) || value.key !== key)
+          throw new Error("replacement lacked matching read-back");
+        runner.replaceDelegate(runId, delegate, value.replacement, value.expected_runtime_seconds);
+      }
+      auditHealthy = true;
+    } catch (cause) {
+      auditHealthy = false;
+      io.err(`ak runner: audit tick failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      auditRunning = false;
+    }
+  };
+  const armAudit = () => {
+    if (loopCommand === null || auditTimer !== null) return;
+    try {
+      const run = runner.status(runId);
+      if (
+        run.charter.audit_cadence_seconds === undefined ||
+        !Object.values(run.delegates ?? {}).some((delegate) => delegate.state === "active")
+      )
+        return;
+      auditTimer = setInterval(() => {
+        void runAudit();
+      }, run.charter.audit_cadence_seconds * 1000);
+    } catch (cause) {
+      if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT"))
+        io.err(`ak runner: cannot arm audit: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  };
   const server = createServer((connection) => {
     let body = "";
     let handled = false;
@@ -413,9 +601,38 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
         const requestValue: unknown = JSON.parse(line);
         if (!isRequest(requestValue)) throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
-        connection.end(
-          `${JSON.stringify({ ok: true, result: await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters, decisions, activeChildren) })}\n`,
+        const result = await execute(
+          runner,
+          request,
+          adminToken,
+          workerToken,
+          runId,
+          launchers,
+          verifyCommand,
+          effectAdapters,
+          decisions,
+          activeChildren,
+          eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy,
         );
+        const missing = [
+          eventCommand === null ? "event-adapter" : null,
+          !deliveryHealthy ? "event-delivery-failed" : null,
+          loopCommand === null ? "loop-adapter" : null,
+          !runner.status(runId).charter.allowed_capabilities.includes("event-delivery")
+            ? "charter-event-delivery"
+            : null,
+          loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined
+            ? "charter-cadence"
+            : null,
+          !auditHealthy ? "audit-failed" : null,
+        ].filter((part): part is string => part !== null);
+        const presented =
+          request.verb === "status"
+            ? { ...runner.status(runId), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } }
+            : result;
+        connection.end(`${JSON.stringify({ ok: true, result: presented })}\n`);
+        if (request.verb === "event" || request.verb === "start") wakeEvents();
+        if (request.verb === "delegate" || request.verb === "start") armAudit();
       } catch (cause) {
         connection.end(
           `${JSON.stringify({ ok: false, error: cause instanceof Error ? cause.message : String(cause) })}\n`,
@@ -435,8 +652,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   server.listen(socketPath, () => {
     chmodSync(socketPath, Number.parseInt(mode, 8));
     io.out(`ak runner: listening on ${socketPath}`);
+    wakeEvents();
+    armAudit();
   });
   const close = () => {
+    if (auditTimer !== null) clearInterval(auditTimer);
     for (const child of activeChildren) child.kill("SIGKILL");
     if (existsSync(socketPath)) unlinkSync(socketPath);
     process.exit(0);
@@ -499,7 +719,7 @@ export async function runRunner(argv: readonly string[], io: Io): Promise<number
     if (argv[0] === "call") return call(argv.slice(1), io);
     if (argv[0] !== undefined) io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
     io.err(
-      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--socket-mode 600|660]",
+      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]",
     );
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;

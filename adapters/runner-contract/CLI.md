@@ -9,7 +9,9 @@ AK_RUNNER_WORKER_TOKEN=<task-token> \
     --worker-root <task-worktree> --run-id <run-id> \
     --admin-token-file ~/.config/agent-kit/runner/<run-id>/admin.token \
     --seat-config <private-seat-config> --verify-config <private-verification-config> \
-    --effect-config <private-effect-config>
+    --effect-config <private-effect-config> \
+    --event-config <private-event-config> --loop-config <private-loop-config> \
+    --kit-root <installed-bundle-root>
 ```
 
 The admin token file must be mode 0600 and sit outside the Firstmate home, the worker worktree and
@@ -23,10 +25,13 @@ directory. The service holds its own state and evidence there. The worker receiv
 and task token. Both callers use `ak runner call <verb> --json <request-file>`, with
 `AK_RUNNER_SOCKET` and `AK_RUNNER_TOKEN` set for their respective token. A supervisor command file
 must be supervisor-owned; a worker-authored file never supplies effect commands.
+The installed `bin/ak` exposes `runner serve|call`; `--kit-root` pins the installed bundle whose
+policy and procedure the service reads. The service refuses a bundle inside the worker root.
 
 `start` requires the approved charter to allow `runner-grants`, `trusted-evidence` and
-`independent-context`. It does not require `event-delivery`: storing an event does not yet deliver
-it to a worker or supply that capability to a skill.
+`independent-context`. `status.autonomy` reports `autonomous` only when the live service has both
+private adapters and the charter allows `event-delivery` and sets `audit_cadence_seconds`; otherwise it reports `guided` and
+names what is missing. A charter requesting unattended mode cannot use `decide` while guided.
 
 | Verb | Caller | JSON argument shape |
 |---|---|---|
@@ -35,7 +40,9 @@ it to a worker or supply that capability to a skill.
 | `packet` | Worker or Firstmate | `{"run":"r","card_id":"align-1"}`; returns a frozen card, operation, approving option and evidence hashes without either seat's judgment |
 | `collect` | Firstmate | `{"run":"r","id":"receipt-id","source":"/private/receipt","revision":"<full-git-sha>","kind":"source"}` |
 | `revision`, `verify` | Firstmate | `{"run":"r","revision":"<full-git-sha>"}` or `{"run":"r","evidence":"verify-id"}`; records a changed head or an already collected verification receipt |
-| `event`, `charge` | Firstmate | `{"run":"r","key":"event-key","payload":"..."}` or `{"run":"r","limit":"fix_cycles","amount":1,"subject":"finding-id"}`; event storage alone does not deliver it to a worker |
+| `event`, `charge` | Firstmate | `{"run":"r","key":"event-key","payload":"..."}` or `{"run":"r","limit":"fix_cycles","amount":1,"subject":"finding-id"}`; the event is persisted before its private consumer wakes |
+| `delegate`, `progress`, `finish` | Firstmate | `delegate`: `{"run":"r","id":"owner-1","amount":120,"parent":"optional-parent"}` where amount is expected seconds; `progress`: `{"run":"r","id":"owner-1","kind":"commit","source":"<observed-ref>"}`; `finish`: `{"run":"r","id":"owner-1"}` |
+| `verdict` | Firstmate | `{"run":"r"}` after full review and readiness; records full-change stable patch-id and head before merge preparation |
 | `prepare` | Worker | `{"run":"r","card":{"id":"align-1","operation":"align.run","grant":{"charter_hash":"sha256:<digest>","covers":"align-answer"},"question":"...","options":["yes","retry"],"approve":"yes","evidence":["receipt-id"],"artifact_hash":"sha256:<digest>"}}`; `no` and `retry` cannot be the approving option, and the runner reserves a slot for its human `no` |
 | `judge` | Firstmate | `{"run":"r","card_id":"align-1","seat":"seat-a","actor":"supervisor-a","dispatch":"fm-task-a","choice":"yes","rationale":"...","input_dispatches":[],"lineage":["supervisor-a"]}`; submit the other seat separately |
 | `decide` | Worker | `{"run":"r","card_id":"align-1"}`; configured launchers may supply the two judgments before the decision. A card that is not the next permitted action is an error and leaves the run unchanged; decide it once its phase arrives. A launcher that fails or answers outside the options refuses the card with its error |
@@ -46,7 +53,12 @@ it to a worker or supply that capability to a skill.
 | `complete` | Firstmate | `{"run":"r"}` after a current ship decision, verification and remote read-back |
 
 The private seat config names exactly two launchers, each with `seat`, `actor`, `lineage` and a
-`command` argv array. Each receives a frozen card on stdin and returns JSON with `choice` and
+`command` argv array. `serve` requires distinct seats and actors and rejects cross-seat lineage
+violations of [seat independence](CONTRACT.md#3-seat-independence) with
+`seat configuration lineages must be independent`. `judge` rejects such a lineage with
+`invalid or excluded seat`; `decide` rechecks persisted judgments and returns `needs-input` with a
+`runner:seat-independence` escalation if the pair violates the rule.
+Each launcher receives a frozen card on stdin and returns JSON with `choice` and
 `rationale`. Seat launchers and effect commands run from the private state directory with worker-root
 runtime configuration and `PATH` entries removed. The verification command alone runs from the worker
 root, so it executes worker-controlled code under the runner's OS identity; isolate that identity
@@ -59,6 +71,21 @@ available on the filtered `PATH`. The optional private
 effect config is `{"adapters":[{"effect":"pr-open","read_back":["..."],"perform":["..."]}]}`;
 `{target}` and `{input_hash}` in an argv element are replaced by the runner. A request cannot
 carry either command array.
+
+The private event config is `{"command":["..."],"timeout_ms":10000}`. The supervisor supplies
+the timeout; the runner guesses no cap. Its command receives
+`{"run":"r","key":"event-key","payload":"..."}` on stdin and returns a matching
+`{"run":"r","key":"event-key"}` only after handing the wake to the controller. It receives a
+run-scoped worker socket token, never the admin token. The private loop config has the same
+command and timeout shape. A timed-out consumer or loop command leaves status guided until a
+successful retry. On a charter cadence the loop receives a `probe` request listing every active delegate
+and the recorded procedure identity; it must return the same `probed` list and a `progress` list
+whose entries name delegate, side-effect kind and observed ref. For each delegate with no side
+effect within its expected runtime, it receives `stand-down-replace` with a stable key and returns that key,
+`stood_down:true`, a replacement id and its expected runtime after read-back. Failure leaves the
+delegate active and status guided. Both config files must be outside the worker root and shared
+Git directory. Restarting the service replays unacknowledged events and resumes the audit timer
+for active delegates.
 
 On stock Firstmate, `ak firstmate seat-launch` accepts the runner's `packet` JSON, a private
 evidence directory, the captain's intent file and the implementer worktree. It registers a new

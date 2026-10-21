@@ -69,6 +69,10 @@ Grok's Claude-compatibility skill discovery may also load an installed Claude `a
 
 `profiles/core.yaml` is the recommended install. The full catalog has a real startup cost even
 with progressive disclosure.
+To make autonomy the default for one project, set `autonomy: {default: true}` in a valid project
+record and run `bun run ak build --project <record-path>`. The package default remains core;
+`--profile` overrides the project setting. The installed profile alone grants no action: the live
+runner still needs a charter, independent seats, a delivered-event consumer and an audit loop.
 
 Factory Droid has a native bundle at `dist/droid`, built with `bun run ak build --host droid`.
 Its human-started commands use `/<id>`. See the [Droid host contract](adapters/droid/CONTRACT.md)
@@ -216,13 +220,14 @@ by default; set `AK_TEST_PARALLEL` to change the worker count (for example,
 the files in `tools/test/integration-files.txt`. Each integration file runs in a fresh
 Bun process with concurrency limited to one. This separates the learning role calls,
 bundle CLI, Git fixtures, Firstmate, lifecycle and runner tests from the rest of the
-suite and from each other. Test and hook timeouts, assertions and role calls stay
-unchanged. There are no retries. Both lanes finish even if an earlier file fails;
+suite and from each other. There are no retries. Both lanes finish even if an earlier file fails;
 the command then returns failure. CI and the configured gate use `bun run test`.
 
-The runner gives both lanes a private `TMPDIR` and removes it at exit. Before Bun
-starts, it clears inherited Git overrides from `GIT_CONFIG_PARAMETERS` and
-`GIT_CONFIG_COUNT`, and disables automatic Git maintenance. On macOS, when Git resolves to `/usr/bin/git`,
+The runner gives both lanes a private `TMPDIR` and removes it at exit. Shared fixture
+helpers use a separate process directory; [`tests/helpers/process-tmp.ts`](tests/helpers/process-tmp.ts)
+owns its path and cleanup policy. Before Bun starts, the runner clears inherited Git
+overrides from `GIT_CONFIG_PARAMETERS` and `GIT_CONFIG_COUNT`, and disables automatic Git
+maintenance. On macOS, when Git resolves to `/usr/bin/git`,
 it bypasses that launcher with a link to the selected developer tool only if the link
 preserves Git's executable search path.
 
@@ -260,6 +265,7 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 Ten donors, pinned to exact commits in `provenance/upstream.lock.yaml`: nine MIT and one Apache-2.0.
 For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
+The research-only [`caveman-ai/blocks` pin](research/sources/caveman-blocks-verified-blocks.md) records the procedure-detection donor and its licence and trademark limits; no donor executable is shipped.
 Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
 `EveryInc/compound-engineering-plugin`, `obra/superpowers`, `mattpocock/skills`,
 `addyosmani/agent-skills`, `Yeachan-Heo/oh-my-claudecode`, `Yeachan-Heo/oh-my-codex`.

@@ -895,6 +895,12 @@ function evaluateEvidence(
   const reasons: DecisionReason[] = [];
   const passed = new Set<string>();
   const failed = new Set<string>();
+  const validReceipts: {
+    ref: ArtifactRef;
+    receipt: NonNullable<ReturnType<typeof object>>;
+    required: string[];
+    check: ReturnType<typeof object>;
+  }[] = [];
   const surfaceCoverage = new Map<string, Set<string>>();
   const requiredKinds = new Map<string, Set<string>>();
   for (const check of checks.values()) {
@@ -957,13 +963,13 @@ function evaluateEvidence(
       reasons.push({ code: "malformed", detail: `receipt ${ref.id}: ${shape.join("; ")}`, evidence: ref.id });
       continue;
     }
+    const before = reasons.length;
     if (receipt.id !== ref.id)
       reasons.push({
         code: "malformed",
         detail: `receipt ${ref.id} contains id ${String(receipt.id)}`,
         evidence: ref.id,
       });
-    const before = reasons.length;
     if (receipt.run_id !== a.run)
       reasons.push({
         code: "wrong-run",
@@ -1079,7 +1085,24 @@ function evaluateEvidence(
       });
     }
     const valid = reasons.length === before;
-    for (const criterion of valid ? (strings(receipt.supports) ?? []) : []) {
+    if (valid) validReceipts.push({ ref, receipt, required, check });
+  }
+  const superseded = new Set(
+    validReceipts.flatMap(({ receipt: correction }) => {
+      const target = object(correction.supersedes);
+      if (target === undefined || (target.schema !== undefined && target.schema !== "verification")) return [];
+      if (correction.status !== "passed" && correction.status !== "failed") return [];
+      const original = validReceipts.find(({ ref }) => ref.id === target.id && ref.hash === target.hash);
+      if (original === undefined || original.receipt.check !== correction.check) return [];
+      const covered = strings(correction.supports) ?? [];
+      return (strings(original.receipt.supports) ?? []).every((criterion) => covered.includes(criterion))
+        ? [original.ref]
+        : [];
+    }),
+  );
+  for (const { ref, receipt, required, check } of validReceipts) {
+    if (superseded.has(ref)) continue;
+    for (const criterion of strings(receipt.supports) ?? []) {
       if (receipt.status === "passed") passed.add(criterion);
       if (receipt.status === "failed") failed.add(criterion);
       if (

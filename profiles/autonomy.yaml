@@ -12,6 +12,7 @@
 schema_version: 1
 profile: autonomy
 default: false
+# A validated project record may opt in with autonomy.default: true; the package default stays core.
 requires: [core]
 
 why_it_exists: >-

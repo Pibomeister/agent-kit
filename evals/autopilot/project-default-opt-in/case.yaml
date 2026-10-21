@@ -1,0 +1,21 @@
+schema_version: "1.1"
+name: project-default-opt-in
+tags: [needs-fixture]
+execution:
+  prompt: >-
+    Build an install for this project record. It opts into unattended autonomy by default; the
+    package-wide default is still core. Report which profile is selected and whether the runner
+    can actually start an unattended run.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Bash, Skill]
+graders:
+  - name: project-selection
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: The validated project setting selects autonomy unless an explicit profile overrides it.
+  - name: runtime-remains-gated
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: The installed profile is not presented as authority; live event and loop capability, charter and seats remain required.

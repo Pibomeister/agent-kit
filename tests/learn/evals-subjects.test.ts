@@ -6,8 +6,7 @@
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { PACKAGE_ROOT } from "../../src/learn/core/roles.ts";
@@ -24,13 +23,14 @@ import { readsOf, unwrap, words } from "./evals/subjects/shell.ts";
 import type { SessionRequest, SubjectAdapter, TokenUsage, ToolEvent } from "./evals/subjects/types.ts";
 import { cleanEnv, evalInstrument } from "./evals/session.ts";
 import { SECRET_ENV, SECRET_VALUE } from "./evals/influence/scenarios.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
 const FIXTURES = join(import.meta.dir, "evals", "fixtures", "transcripts");
 const fixture = (name: string) => readFileSync(join(FIXTURES, name), "utf8");
 const tools = (events: ReturnType<SubjectAdapter["parse"]>["events"]) =>
   events.filter((e): e is ToolEvent => e.kind === "tool");
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ak-subjects-test-")));
+const scratch = processScratch("ak-subjects-test-");
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const req: SessionRequest = { prompt: "Load the greet skill.", cwd: "/scratch/repo", env: {}, timeoutMs: 1000 };

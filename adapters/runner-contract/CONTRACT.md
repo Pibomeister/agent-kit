@@ -46,6 +46,7 @@ The package computes no prices, selects nothing, and schedules nothing.
 | `runner-grants` | `fails-closed` | `delegated-grant` operations are unavailable and the entrypoint stops for explicit invocation (§2, "With no runner attached") |
 | `trusted-evidence` | `fails-closed` | Autonomous evidence-consuming operations are unavailable when the runner cannot keep their evidence outside worker reach (§2, "How a runner signals trusted evidence") |
 | `independent-context` | `fails-closed` | A seat whose distinct context and excluded lineage cannot be attested is unavailable and is never backfilled (§3, "Failure behavior") |
+| `event-delivery` | `fails-closed` | Without both a private event consumer and supervisor loop, or without a charter cadence, `status.autonomy` names guided mode; a run requesting unattended mode cannot decide a checkpoint (§6) |
 
 This table is read by `ak build` and `ak validate` (`loadAdapterSupplies` in
 `src/packaging/install.ts`). A row is a claim that an operation needing the capability refuses
@@ -53,13 +54,9 @@ when it is unconfigured rather than degrading, which is what lets an attached ad
 skill's mode ceiling on a host that does not provide the capability (ruling
 `fail-closed-adapter-lifts-ceiling`).
 
-`event-delivery` is deliberately **not** a row, although this contract owns it. It has no stated
-behavior for an unconfigured runner (§6 says what may be done on receipt, not what happens when
-nothing is delivered), so nothing here says its absence refuses. The local service (§9) stores a
-delivered `event` with its key, but nothing yet hands a stored event to the run; that consumer is
-the follow-up that would make this a row. A skill requiring it stays capped at `guided` on a host
-that lacks it, attached runner or not, and `profiles/autonomy` still does not install against a host
-on its own. `tracker-access` is not a row here because this contract does not supply it:
+The row describes the attached adapter's fail-closed behavior, not proof that a live service was
+configured. `autopilot` reads the live `status.autonomy` before advancing. `tracker-access` is not
+a row here because this contract does not supply it:
 `adapters/tracker/CONTRACT.md` §1 does, with the fallback it depends on stated beside it.
 
 ---
@@ -160,6 +157,9 @@ must attest for two seats declared independent:
 | A `verifier` | The implementer, change author, spec approver, recipe author for this change, or a seat already used on the same decision | ruling `missing-supervisor-never-implementer` |
 | The second `supervisor` | The first `supervisor` | plan §7.3 |
 
+The supervisor exclusion is symmetric: neither supervisor's lineage may contain the other
+supervisor's actor.
+
 Independence means independent **of the author**, not amnesiac between cycles: reviewer continuity
 through a prior-review dossier is desirable and permitted (ruling `reviewer-continuity-not-amnesia`).
 
@@ -256,6 +256,27 @@ idempotency key. The package's obligation on receipt:
   (release scenario 15).
 - **An event for a run in a terminal state is recorded and not acted on.**
 
+The local service persists the payload and its digest before invoking its private `event-config`
+consumer. The consumer receives `{run,key,payload}` on stdin and can use only the run-scoped worker
+socket token. It returns `{run,key}` after it has delivered the wake into the run controller. The
+runner marks the event acted only after that matching acknowledgement. An unacknowledged event
+remains in the private queue and is retried after service restart. Duplicate keys with changed
+payloads refuse; duplicate keys with the same payload never repeat an acknowledged delivery.
+The supervisor configures an explicit command timeout; a timeout leaves the event pending and
+the run guided. Payload content is an untrusted claim and cannot issue a grant.
+
+The `loop-config` is a separate supervisor-owned command. The charter's
+`audit_cadence_seconds` arms a tick while any delegate remains active. Each tick re-reads the
+autopilot skill and checkpoint procedure at the bundle version and content hash recorded at run
+start; drift refuses the tick. The adapter probes every active owner and child and returns only
+observed side effects: commit, push, PR change, check change, or stored report. Narration is not
+progress. A delegate with no side effect within its expected runtime is sent to the adapter
+with a stable replacement key; only a matching stand-down and replacement read-back records the
+new delegate. The next tick audits the replacement too. A failed probe or replacement leaves the
+work active and the service in guided mode until a successful tick. The timer drains only when
+no active delegate remains. The adapter owns the actual process stop and replacement; the runner
+owns the policy and durable record. Neither an event nor a probe result is authority for a phase.
+
 ### `tracker-access`
 
 Owned by `adapters/tracker/CONTRACT.md`: the ticket operations, the one-system-of-record rule
@@ -304,6 +325,10 @@ The runner persists, per run, and the package requires to be handed back on resu
 | Decided checkpoints | Each with its decision card, grant and artifact hashes, so a decision is not re-litigated |
 | Open escalation | The `escalation` object, if the run is `needs-input` |
 | Budget consumption | Against each cap the runner handed in |
+| Inbound events | Payload digest, acknowledged state and terminal marker; an unacknowledged event is replayed after restart |
+| Delegated work | Owner and child ids, expected runtime, side-effect refs and replacement lineage |
+| Governing procedure | Bundle version and content digest re-read on each audit tick |
+| Patch verdict | Reviewed head, stable patch-id, the trunk tip its verification ran against, reuse lineage and any invalidation cause |
 
 A restart with no such record does not resume — it starts a new run. Resuming from partial state is
 how a run repeats a remote effect, which is exactly what §5 exists to prevent.

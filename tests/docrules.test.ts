@@ -397,6 +397,20 @@ describe("decision rules", () => {
     (doc["authority_check"] as Record<string, unknown>)["result"] = "fail";
     expect(rulesOf(run(doc))).toContain("decision.ruling-requires-a-passed-authority-check-not-mere-agreement");
   });
+
+  test("a blocked decision accepts conservative independence evidence", () => {
+    const doc = decision({
+      status: "blocked",
+      authority_check: {
+        ...AUTHORITY_CHECK,
+        seats_independent: false,
+        result: "fail",
+        failed_checks: ["seats_independent"],
+      },
+      ruling: { outcome: "blocked", chosen_option: null, at: "2026-09-19T00:00:00Z", recorded_by: "runner" },
+    });
+    expect(run(doc)).toEqual([]);
+  });
 });
 
 const DECISION_SEAT_A = { id: "seat-a", filled_by: "reviewer-a", independent: true, may_implement: false };
@@ -459,9 +473,14 @@ describe("decision rules, one defect per row", () => {
       "both_judgments_returned is true with 1 judgment(s) recorded",
     ],
     [
-      "seats claimed dependent against the recorded seating",
+      "a decided ruling with conservative independence evidence",
       () => decision({ authority_check: { ...AUTHORITY_CHECK, seats_independent: false, result: "fail" } }),
-      "seats_independent is false but the recorded seating gives true",
+      "ruling is decided without a passed deterministic authority check",
+    ],
+    [
+      "a passing result with conservative independence evidence",
+      () => decision({ authority_check: { ...AUTHORITY_CHECK, seats_independent: false } }),
+      "authority_check.result is pass while its components give fail",
     ],
     [
       "a failing result whose components all pass",

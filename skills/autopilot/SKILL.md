@@ -67,6 +67,8 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
   the implementer seat, bound separately.
 - Runner grant validation (`adapters/runner-contract/CONTRACT.md` §2). Absent: guided checkpoint
   mode, Workflow step 2.
+- Live event delivery and a supervisor loop at the charter's audit cadence. A stored event alone
+  does not supply a wake path.
 - The runner's budgets and caps. A cap it did not supply is not enforced and not guessed.
 - On resume, the restart record (`adapters/runner-contract/CONTRACT.md` §7). None: a new run.
 - A named human for any human-experience question. None on this run: that checkpoint escalates
@@ -82,10 +84,11 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    alone is not proof. If neither start resolves, stop; do no other work and give the human
    `/ak:autopilot` to type (ADR-0007).
 2. Resolve the mode from a live `ak runner call status` on this run, not from an attached contract
-   alone. Firstmate passes the worker token and socket; the charter must allow `runner-grants` and
-   `trusted-evidence`. A service that cannot resolve the approved charter, persist its ledger or
-   independently dispatch both seats leaves the run in guided checkpoint mode. Each card then stops
-   for explicit invocation. How far a run advances is the charter's and the live install's to set.
+   alone. Firstmate passes the worker token and socket; the charter must allow `runner-grants`,
+   `trusted-evidence` and `event-delivery`. Require `status.autonomy.mode: autonomous`: the private
+   event consumer, supervisor loop and charter cadence must all be live. If the status names a
+   missing part, stay guided, say which part, and stop each card for explicit invocation. A
+   stored event or an attached contract alone proves no wake path.
 3. Load the charter and recompute its hash. A mismatch refuses the run; it is not repaired, reloaded
    or adopted. On resume, do this before reading the restart record, then treat every ruling and
    remote effect it lists as done.
@@ -99,6 +102,11 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
    The runner's build gate authorizes the implementer seat's `/ak:super-build`; `run-verify` records the
    configured verification command's output outside the worker root. The supervisors do not write
    the patch.
+   Register each delegated owner and child with its expected runtime. The runner's charter-cadenced
+   tick re-reads this skill and `./references/checkpoints.md` at the recorded bundle version,
+   probes side effects, and replaces an overdue silent delegate through its private loop adapter.
+   A report of activity without a side effect does not reset the stuck test. Keep ticking until
+   every delegated owner and child is finished.
 6. At each checkpoint, freeze a decision card: the question, two to six bounded options, the one
    option that approves, the evidence refs and the affected artifact hashes
    (`schemas/decision.schema.json`). Only the approving option advances the run.
@@ -117,6 +125,11 @@ may never enlarge its own authority (ruling `sensitive-actions-need-approved-cha
     human ruling.
 11. Count fix cycles per finding. The third cycle on one finding is not authorized; that finding
     escalates as blocked-or-replan while other findings continue.
+    Before merge preparation, bind the reviewed full change to its head SHA and stable Git patch-id
+    using the verdict validity rule in `../../protocols/review-delta/PROTOCOL.md`. A rebase with the
+    same patch reuses the verdict only if trunk CI configuration did not change and merge-tree is
+    clean; a changed patch returns to verification. Merge preparation follows the started review
+    lanes, never precedes them.
 12. End at an open pull request, with the ledger linked from the run report the runner holds, or at
     the escalation, or at the cap. Nothing is written to the pull request by this skill, and nothing
     is merged.
@@ -146,6 +159,10 @@ Gate: cancellation is always available. No open checkpoint, stale state or cap b
 Gate: a capability a host lacks is supplied only by an attached fail-closed adapter that refuses
 when unconfigured, and that lifts the ceiling on a capability, never on authority (ruling
 `fail-closed-adapter-lifts-ceiling`).
+
+Gate: a missing live event consumer, supervisor loop or charter cadence leaves the run guided.
+The runner refuses unattended `decide` when the charter requested a cadence and either adapter is
+absent. An event payload is still a claim, not authority.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|

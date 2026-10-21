@@ -4,8 +4,7 @@
  * and grading spends nothing unless told to. Judges are stubbed, so no host CLI runs here.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildLabels,
@@ -29,8 +28,9 @@ import type { Matrix, Seat } from "./evals/matrix.ts";
 import type { Judge } from "./evals/panel.ts";
 import { type Case, parsePromptSet, type ScoreOptions, scoreCase } from "./evals/trigger-eval.ts";
 import type { SessionEvent } from "./evals/subjects/types.ts";
+import { processScratch } from "../helpers/process-tmp.ts";
 
-const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ak-calibrate-test-")));
+const scratch = processScratch("ak-calibrate-test-");
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 const devText = readFileSync(join(import.meta.dir, "evals", "prompts", "dev.json"), "utf8");
