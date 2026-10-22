@@ -122,7 +122,7 @@ header of its own is refused, because the header carries the status.
 
 ### `run-artifact` placement
 
-`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]…`
+`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]… [--trail-attempts <directory>]`
 
 - **Validated before any write** against the schema its envelope names. A failing artifact leaves
   the knowledgebase untouched.
@@ -132,11 +132,23 @@ header of its own is refused, because the header carries the status.
   the commit touches that file alone. Lines already there are not changed.
 - **Links resolve or the publish is refused.** Each `--link` must name a committed record: a page
   file, or a line of `artifacts.jsonl` that carries that ref.
+- **Trail attempts are durable and per record.** A `trail` or `trail-audit` publication requires
+  `--trail-attempts <directory>`, the existing attempt directory of the build's stretch index.
+  The command exclusively creates and flushes a mark for that knowledgebase, project, run, kind
+  and id before calling the publisher. A mark already present returns
+  `kb.trail-publication-unknown` without sending anything; a mark that cannot be made durable
+  returns `kb.trail-attempt-unrecorded` without sending anything. Neither failure stops the build.
+  The caller records the outcome in its index and replays a recorded outcome without invoking the
+  publisher. It never removes marks or uses another directory to retry a record. Other artifact
+  kinds and document publication do not accept this flag.
 
 ### Idempotency and read-back
 
 Per `adapters/runner-contract/CONTRACT.md` §5. The key is the digest of the run, the operation, the
 record ref and the content hash.
+
+Trail records first pass the per-record attempt boundary above. The table describes records
+admitted to publication.
 
 | The record at that ref | Result |
 |---|---|

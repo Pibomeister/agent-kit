@@ -73,8 +73,9 @@ const USAGE = [
   "      readContext: committed pages at the scope and above it, most specific first",
   "  ak kb publish document --kind <kind> --scope <scope> --id <id> --title <title> --file <page.md> [--run <run-id>]",
   "      publishArtifact, kb-document placement; an adr is stored proposed",
-  "  ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]…",
+  "  ak kb publish artifact --file <artifact.json> --run <run-id> [--link <record-ref>]… [--trail-attempts <directory>]",
   "      publishArtifact, run-artifact placement; validated against its schema first",
+  "      --trail-attempts durably marks each trail or trail-audit record before sending it",
   "  ak kb register <knowledgebase-id> <path>",
   "      the operator's step, once per machine: where that knowledgebase is checked out",
   "",
@@ -93,7 +94,7 @@ const NOT_CARRIED = new Map([
   ["propose-lesson", "proposeLesson"],
 ]);
 
-const VALUE_FLAGS = new Set(["kind", "scope", "id", "title", "file", "run", "dir"]);
+const VALUE_FLAGS = new Set(["kind", "scope", "id", "title", "file", "run", "dir", "trail-attempts"]);
 
 interface KbArgs {
   positional: string[];
@@ -229,8 +230,11 @@ function publishOne(options: KbOptions, args: KbArgs, kb: ResolvedKb, text: stri
   const run = args.values.get("run");
   if (args.positional[1] === "artifact") {
     if (run === undefined) return usage(options.io, "publish artifact needs --run");
-    return finish(options.io, publishRunArtifact(kb, text, run, args.links));
+    const attempts = args.values.get("trail-attempts");
+    const directory = attempts === undefined || isAbsolute(attempts) ? attempts : join(options.cwd, attempts);
+    return finish(options.io, publishRunArtifact(kb, text, run, args.links, directory));
   }
+  if (args.values.has("trail-attempts")) return usage(options.io, "--trail-attempts belongs to publish artifact");
   const kind = args.values.get("kind");
   const scope = args.values.get("scope");
   const id = args.values.get("id");
