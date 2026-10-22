@@ -7,8 +7,7 @@
  * names: the assertion is the complete set of constitution rule ids the run
  * reports, not a subset it must contain.
  */
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
@@ -17,6 +16,7 @@ import { parseDocument, type Document } from "yaml";
 import { runCli } from "../src/cli.ts";
 import { runValidation } from "../src/validation/run.ts";
 import type { Issue } from "../src/validation/types.ts";
+import { processScratch } from "./helpers/process-tmp.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const FIXTURES = join(import.meta.dir, "fixtures", "constitution");
@@ -46,7 +46,7 @@ function writeRecord(dir: string, registry: Registry | null, edit?: (record: Doc
 }
 
 function freshRepository(): string {
-  const repo = mkdtempSync(join(tmpdir(), "ak-constitution-"));
+  const repo = processScratch("ak-constitution-");
   mkdirSync(join(repo, ".git"));
   return repo;
 }
@@ -72,6 +72,12 @@ function articleOf(articles: Map<string, Document>, id: string): Document {
 }
 
 const errorRules = (issues: readonly Issue[]) => [...new Set(issues.map((i) => i.rule))].toSorted();
+
+/** The errors of a run that plans every host's bundle under `project`, the packager's view of the record. */
+function packagerErrors(project: string): string[] {
+  const issues = runValidation(ROOT, { only: ["constitution", "links-bundle"], build: { project } }).issues;
+  return errorRules(issues.filter((i) => i.severity === "error"));
+}
 
 function summary(argv: string[]): string {
   const out: string[] = [];
@@ -239,13 +245,28 @@ describe("where the registry is", () => {
     }
   });
 
-  test("a record that is missing or invalid is the packager's to report, once", () => {
-    const invalid = writeRecord(freshRepository(), { path: "registry" }, (r) => r.deleteIn(["limits"]));
-    for (const record of [invalid, join(tmpdir(), "ak-no-such-record.json")]) {
-      const issues = runValidation(ROOT, { only: ["constitution", "links-bundle"], build: { project: record } }).issues;
-      expect(errorRules(issues.filter((i) => i.severity === "error"))).toEqual(["packaging.project-invalid"]);
-    }
-  });
+  // These two run the packager: `links-bundle` plans every host's bundle under
+  // the record, which is where `packaging.project-invalid` comes from. That took
+  // 11.8s for both on a CI runner against the 5s default, so each states its
+  // budget. The budget is for the planning, not for anything this file asserts.
+  const PLANS_BUNDLES_MS = 60_000;
+
+  test(
+    "a record that does not validate is the packager's to report, once",
+    () => {
+      const invalid = writeRecord(freshRepository(), { path: "registry" }, (r) => r.deleteIn(["limits"]));
+      expect(packagerErrors(invalid)).toEqual(["packaging.project-invalid"]);
+    },
+    PLANS_BUNDLES_MS,
+  );
+
+  test(
+    "a record that does not exist is the packager's to report, once",
+    () => {
+      expect(packagerErrors(join(freshRepository(), "no-such-record.json"))).toEqual(["packaging.project-invalid"]);
+    },
+    PLANS_BUNDLES_MS,
+  );
 });
 
 describe("with no registry configured", () => {
