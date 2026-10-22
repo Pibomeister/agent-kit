@@ -170,7 +170,7 @@ schemas:
       reason: >-
         Constitution support keeps each article of a project's constitution in a registry held in
         an overlay; agent-kit owns the article's shape and checks it, and the overlay owns the text.
-      commits: [2a2fc89]
+      commits: [e5fde22c]
       docs: [docs/decisions/0009-constitution-support.md]
     - ids: [kb-binding]
       reason: >-
