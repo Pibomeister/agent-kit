@@ -2070,8 +2070,8 @@ need it.
   `evals.missing-case-kind`, both blocking.
 - Nothing in the body links to a file the bundle does not carry — `links.broken-bundle`.
 - Every file the body names in inline code by its root path under one of `MENTION_TREES`
-  (`src/packaging/mentions.ts`), every role named by its catalog id, and every protocol cited as
-  ``protocol `<id>` `` is one the packager can carry and link; a root path with a `.` or `..`
+  (`src/packaging/mentions.ts`), read first from the body's own directory, every role named by its
+  catalog id, and every protocol cited as ``protocol `<id>` `` or ``the `<id>` protocol`` is one the packager can carry and link; a root path with a `.` or `..`
   segment is refused — `links.mention-not-bundled`.
 
 **Not checked by anything. This is the part of the list that is yours**, and each entry says what

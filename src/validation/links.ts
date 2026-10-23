@@ -197,7 +197,7 @@ export function unlinkedMentions(
     else if (root !== null)
       message = `'${root.path}' is named here, and the ${host} bundle does not carry it. The packager copies every file or catalog entry a bundled body names by root path into ${SHARED_ROOT}/ and links it; write a path that exists in the source tree, or name it without a root path.`;
     else if (protocolCited ? ids.protocols.has(span) : ids.roles.has(span))
-      message = `${protocolCited ? "Protocol" : "Role"} '${span}' is named here, and the ${host} bundle does not carry its body as a link. The packager links every authored ${protocolCited ? "protocol cited as protocol `<id>`" : "role"} a bundled body names; check that it is authored.`;
+      message = `${protocolCited ? "Protocol" : "Role"} '${span}' is named here, and the ${host} bundle does not carry its body as a link. The packager links every authored ${protocolCited ? "protocol cited as protocol `<id>` or the `<id>` protocol" : "role"} a bundled body names; check that it is authored.`;
     if (message !== null) issues.push(error("links.mention-not-bundled", where, message, line));
   }
   return issues;

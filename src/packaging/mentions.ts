@@ -42,10 +42,11 @@ export interface MentionTarget {
 }
 
 /**
- * What a code span names: a root path under a mention tree, a role by its catalog id, or, where the
- * prose cites it as ``protocol `<id>` ``, a protocol by its catalog id.
+ * What a code span in the body at `from` names: a root path under a mention tree, read first from the
+ * body's own directory, a role by its catalog id, or, where the prose cites it as ``protocol `<id>` ``
+ * or ``the `<id>` protocol``, a protocol by its catalog id.
  */
-export type MentionResolver = (span: string, protocolCited: boolean) => MentionTarget | null;
+export type MentionResolver = (span: string, protocolCited: boolean, from: string) => MentionTarget | null;
 
 export interface MentionSources {
   /** Whether `path` is a file in the source tree. */
@@ -88,10 +89,11 @@ export function escapesTree(span: string): boolean {
 }
 
 export function mentionResolver(sources: MentionSources): MentionResolver {
-  return (span, protocolCited) => {
+  return (span, protocolCited, from) => {
     const root = rootPathOf(span);
     if (root !== null) {
-      const source = sources.isFile(root.path) ? root.path : sources.bodyOf(root.path);
+      const local = posix.join(posix.dirname(from), root.path);
+      const source = sources.isFile(local) ? local : sources.isFile(root.path) ? root.path : sources.bodyOf(root.path);
       if (source === null) return null;
       return root.anchor === undefined ? { source } : { source, anchor: root.anchor };
     }
@@ -107,7 +109,7 @@ export interface CodeSpan {
   line: number;
   /** Already the text of a markdown link, e.g. [`roles/x/ROLE.md`](../roles/x/ROLE.md). */
   linked: boolean;
-  /** Written as ``protocol `<id>` ``, so the span is a protocol's catalog id. */
+  /** Written as ``protocol `<id>` `` or ``the `<id>` protocol``, so the span is a protocol's catalog id. */
   protocolCited: boolean;
 }
 
@@ -146,7 +148,7 @@ export function codeSpans(text: string): CodeSpan[] {
         span: m[1],
         line: i + 1,
         linked: isLinkText(line, start, end),
-        protocolCited: isProtocolCited(line, start),
+        protocolCited: isProtocolCited(line, start, end),
       });
     }
   });
@@ -157,8 +159,8 @@ function isLinkText(line: string, start: number, end: number): boolean {
   return line[start - 1] === "[" && line.startsWith("](", end);
 }
 
-function isProtocolCited(line: string, start: number): boolean {
-  return /(?:^|[^A-Za-z-])protocol $/.test(line.slice(0, start));
+function isProtocolCited(line: string, start: number, end: number): boolean {
+  return /(?:^|[^A-Za-z-])protocol $/.test(line.slice(0, start)) || /^ protocol(?![A-Za-z-])/.test(line.slice(end));
 }
 
 export interface LinkedText {
@@ -176,6 +178,7 @@ export interface LinkedText {
  * bundle never installs it; such a span is left as written.
  */
 export function linkMentions(
+  sourcePath: string,
   publishedPath: string,
   text: string,
   resolve: MentionResolver,
@@ -185,8 +188,9 @@ export function linkMentions(
   const lines = proseLines(text).map(({ line, prose }) => {
     if (!prose) return line;
     return line.replace(CODE_SPAN, (whole: string, span: string, offset: number) => {
-      if (isLinkText(line, offset, offset + whole.length)) return whole;
-      const target = resolve(span, isProtocolCited(line, offset));
+      const end = offset + whole.length;
+      if (isLinkText(line, offset, end)) return whole;
+      const target = resolve(span, isProtocolCited(line, offset, end), sourcePath);
       if (target === null) return whole;
       const published = publishedFor(target.source);
       if (published === null) return whole;

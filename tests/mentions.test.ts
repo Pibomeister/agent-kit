@@ -110,6 +110,23 @@ describe("the packager carries what a skill names", () => {
     expect(bundle.get("skills/alpha/SKILL.md")).toContain("see also `tdd`.");
   });
 
+  test("a skill's own references/ file is linked where the skill carries it and passes the bundle check", () => {
+    const body = "The checklist is in `references/checklist.md`.\n";
+    const extra = { "skills/alpha/references/checklist.md": "# Checklist\n" };
+    expect(claudeBundle(body, extra).get("skills/alpha/SKILL.md")).toContain(
+      "[`references/checklist.md`](./references/checklist.md)",
+    );
+    expect(checkBundleLinks(ctxFor(body, extra), {})).toEqual([]);
+  });
+
+  test("an id written before the word protocol travels as its PROTOCOL.md and passes the bundle check", () => {
+    const body = "Test-first under the `tdd` protocol.\n";
+    expect(claudeBundle(body).get("skills/alpha/SKILL.md")).toContain(
+      "the [`tdd`](../../references/shared/protocols/tdd/PROTOCOL.md) protocol.",
+    );
+    expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
+  });
+
   // `roles/../../x` would copy a file from outside the repository into dist/.
   test("a mention that climbs out of its tree copies nothing and fails the bundle check", () => {
     const body =
@@ -165,18 +182,32 @@ describe("the packager carries what a skill names", () => {
 
 describe("what counts as naming a file", () => {
   const resolve = mentionResolver({
-    isFile: (path) => path === "schemas/common.schema.json" || path === "roles/implementer/ROLE.md",
+    isFile: (path) =>
+      path === "schemas/common.schema.json" ||
+      path === "roles/implementer/ROLE.md" ||
+      path === "skills/a/references/checklist.md",
     bodyOf: (dir) => (dir === "roles/implementer" ? "roles/implementer/ROLE.md" : null),
     roleBody: (id) => (id === "implementer" ? "roles/implementer/ROLE.md" : null),
     protocolBody: (id) => (id === "tdd" ? "protocols/tdd/PROTOCOL.md" : null),
   });
   const link = (text: string) =>
-    linkMentions("skills/a/SKILL.md", text, resolve, (source) => `references/shared/${source}`);
+    linkMentions("skills/a/SKILL.md", "skills/a/SKILL.md", text, resolve, (source) => `references/shared/${source}`);
 
   test("an anchor stays on the link", () => {
     expect(link("`schemas/common.schema.json#/$defs/escalation`").text).toBe(
       "[`schemas/common.schema.json#/$defs/escalation`](../../references/shared/schemas/common.schema.json#/$defs/escalation)",
     );
+  });
+
+  test("a path the body's own directory holds names that file, not a root one", () => {
+    expect(link("`references/checklist.md`").text).toBe(
+      "[`references/checklist.md`](../../references/shared/skills/a/references/checklist.md)",
+    );
+  });
+
+  test("an id written before the word protocol is cited as one", () => {
+    expect(link("under the `tdd` protocol.").dependencies).toEqual(["protocols/tdd/PROTOCOL.md"]);
+    expect(link("the `tdd` protocols").dependencies).toEqual([]);
   });
 
   test("a catalog entry's directory names its body", () => {

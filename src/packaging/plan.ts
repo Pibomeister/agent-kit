@@ -438,7 +438,9 @@ function rewriteLinks(
   }
 
   if (sourcePath.endsWith(".md")) {
-    const linked = linkMentions(publishedPath, out, mentions, (source) => publishedPathFor(source, includedSkillDirs));
+    const linked = linkMentions(sourcePath, publishedPath, out, mentions, (source) =>
+      publishedPathFor(source, includedSkillDirs),
+    );
     out = linked.text;
     dependencies.push(...linked.dependencies);
   } else if (sourcePath.endsWith(".schema.json")) {
