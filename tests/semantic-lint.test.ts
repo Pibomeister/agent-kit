@@ -623,15 +623,24 @@ describe("optional semantic sibling hook", () => {
     ).toMatchObject({ status: "error", reason: "receipt" });
   });
 
-  test("Noul values stay separate from probability and confidence", () => {
-    expect(measurement({ type: "noul", noul: -2.5, confidence: 0.99 })).toEqual({
-      noulScore: -2.5,
-      score: null,
-      probability: null,
-      confidence: null,
+  test("non-score answers to score questions never become findings", async () => {
+    const options = fixture();
+    const result = await runHook({
+      ...options,
+      transport: async (_url, init) => {
+        if (!isText(init.body)) throw new Error("non-text request");
+        return Response.json({
+          model: pin.model,
+          usage: { input_tokens: 100, output_tokens: 5 },
+          answers: Object.fromEntries(
+            Object.keys(request(init.body).questions).map((id) => [id, { type: "noul", noul: -2.5 }]),
+          ),
+        });
+      },
     });
+    expect(result).toMatchObject({ status: "error", reason: "response", findings: [] });
+    expect(measurement({ type: "noul", noul: -2.5, confidence: 0.99 })).toBeNull();
     expect(measurement({ type: "score", score: 0.8, confidence: 0.4 })).toEqual({
-      noulScore: null,
       score: 0.8,
       probability: null,
       confidence: 0.4,

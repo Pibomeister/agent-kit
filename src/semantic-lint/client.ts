@@ -12,8 +12,7 @@ import type { Json } from "../learn/setup/wire.ts";
 export type Transport = (url: string, init: RequestInit) => Promise<Response>;
 export type Failure = "auth" | "network" | "timeout" | "cancelled" | "http" | "response" | "receipt";
 export interface Measurement {
-  noulScore: number | null;
-  score: number | null;
+  score: number;
   probability: null;
   confidence: number | null;
 }
@@ -22,10 +21,6 @@ interface ScoreAnswer {
   type: "score";
   score: number;
   confidence?: number;
-}
-interface NoulAnswer {
-  type: "noul";
-  noul: number;
 }
 export interface Usage {
   input_tokens: number;
@@ -54,11 +49,6 @@ const isScore = ajv.compile<ScoreAnswer>({
     confidence: unit,
   },
 });
-const isNoul = ajv.compile<NoulAnswer>({
-  type: "object",
-  required: ["type", "noul"],
-  properties: { type: { const: "noul" }, noul: { type: "number" } },
-});
 const isReply = ajv.compile<Reply>(responseSchema);
 
 export interface AttemptReceipt {
@@ -74,11 +64,9 @@ export interface AttemptReceipt {
   http_status: number | null;
 }
 
-/** A Noul value is retained in its own unit. It is never relabelled as confidence or probability. */
 export function measurement(value: Json | undefined): Measurement | null {
-  if (isNoul(value)) return { noulScore: value.noul, score: null, probability: null, confidence: null };
   if (!isScore(value)) return null;
-  return { noulScore: null, score: value.score, probability: null, confidence: value.confidence ?? null };
+  return { score: value.score, probability: null, confidence: value.confidence ?? null };
 }
 
 export interface Finding extends Measurement {
@@ -205,7 +193,7 @@ export async function askBatch(input: HookInput, options: BatchOptions): Promise
             const answers = raw.answers;
             for (const subject of subjects) {
               const value = measurement(answers[subject.id]);
-              if (value === null || value.score === null) break;
+              if (value === null) break;
               findings.push({ file: subject.file, rule: subject.rule, ...value, advisory: true });
             }
             if (findings.length !== subjects.length) findings = [];

@@ -72,10 +72,9 @@ find receipts for that invocation. Missing usage or a resolved runtime different
 unknown cost, not zero.
 The key and response error text are never recorded. A receipt write failure prevents a new call.
 A valid `TRACEPARENT` is propagated; otherwise the hook creates one. Retain these receipts as
-private source material. Noul values, ordered scores, probabilities and confidence have distinct
-fields. The measurement decoder retains Noul separately. The hook asks only score questions;
-it requires the resolved runtime to match the pin, valid token usage, and a valid score answer for
-every question. Missing identity or usage, incomplete answers, and Noul answers to score questions
+private source material. Ordered scores, probabilities and confidence have distinct fields.
+The hook asks only score questions; it requires the resolved runtime to match the pin, valid token
+usage, and a valid score answer for every question. Missing identity or usage, incomplete answers, and non-score answers to score questions
 report `error/response` with no findings. Unavailable identity, usage and cost estimates remain
 `null` in their receipt fields.
 
