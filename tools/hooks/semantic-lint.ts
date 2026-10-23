@@ -82,7 +82,7 @@ export async function runHook(options: HookOptions): Promise<HookResult> {
 
 export function hookOutput(result: HookResult) {
   const details = result.findings.map((finding) => {
-    const label = finding.score === null ? "unknown" : (scoreCriteria[Math.floor(finding.score)] ?? "unknown");
+    const label = scoreCriteria[Math.floor(finding.score)] ?? "unknown";
     return `${JSON.stringify(finding.file)} (${finding.rule}): score ${finding.score}/3 (${label}); confidence ${finding.confidence ?? "unknown"}`;
   });
   return {
@@ -91,7 +91,7 @@ export function hookOutput(result: HookResult) {
       `JEV lint (advisory): ${result.status}${"reason" in result ? ` (${result.reason})` : ""}.`,
       ...(result.traceparent === undefined ? [] : [`Receipt trace: ${result.traceparent}`]),
       ...details,
-      ...(result.findings.some((finding) => finding.score !== null && finding.score >= 2)
+      ...(result.findings.some((finding) => finding.score >= 2)
         ? ["JEV does not identify the exact claim; inspect the named files manually before changing code."]
         : []),
       ...result.excluded.map((item) => `${JSON.stringify(item.path)}: excluded (${item.reason})`),
