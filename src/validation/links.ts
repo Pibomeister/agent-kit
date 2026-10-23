@@ -153,7 +153,7 @@ export function checkBundleLinks(ctx: CheckContext, options: BuildOptions): Issu
             error(
               "links.broken-bundle",
               `dist/${plan.host}/${file.path}`,
-              `A relative $ref resolves to '${ref}', which is not in the ${plan.host} bundle. The packager carries a schema's relative $ref siblings unless the file is missing or leaves its tree through a symlink.`,
+              `A relative $ref resolves to '${ref}', which is not in the ${plan.host} bundle.`,
             ),
           );
         }

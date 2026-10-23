@@ -892,8 +892,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     if (done.has(next.source) || files.has(next.published)) continue;
     done.add(next.source);
 
-    // A source that leaves its tree through a symlink is not copied, so whatever linked it
-    // dangles and the bundle check fails rather than carrying an outside file.
+    // A source that leaves its tree through a symlink is not copied. A Markdown link or
+    // mention to it, or a schema's $ref, then dangles and the bundle check fails; a link
+    // from any other file type dangles without a check reporting it.
     if (!insideOwnTree(resolve(root), next.source)) continue;
     const text = readTextIfPresent(join(root, next.source));
     if (text === null) continue; // checkSourceLinks owns the dangling-source case.

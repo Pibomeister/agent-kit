@@ -160,8 +160,14 @@ export function codeSpans(text: string): CodeSpan[] {
   return out;
 }
 
+/**
+ * Whether the span at `start`..`end` sits inside a link's text. Code span contents are blanked
+ * first, so a `[` or `](` written inside one span cannot pair with another and pass the prose
+ * between them off as link text.
+ */
 function isLinkText(line: string, start: number, end: number): boolean {
-  for (const m of line.matchAll(LINK_TEXT)) {
+  const masked = line.replace(CODE_SPAN, (whole: string) => `\`${"_".repeat(whole.length - 2)}\``);
+  for (const m of masked.matchAll(LINK_TEXT)) {
     const open = (m.index ?? 0) + 1;
     if (start >= open && end <= open + (m[1] ?? "").length) return true;
   }

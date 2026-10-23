@@ -112,6 +112,16 @@ describe("the packager carries what a skill names", () => {
     expect(bundle.get("skills/alpha/SKILL.md")).toContain("see also `tdd`.");
   });
 
+  test("brackets written inside code spans do not hide a mention between them as link text", () => {
+    const body = "Brackets: `[`, then protocol `phase-operations`, then `](`.\n";
+    const bundle = claudeBundle(body);
+    expect(bundle.has("references/shared/protocols/phase-operations/PROTOCOL.md")).toBe(true);
+    expect(bundle.get("skills/alpha/SKILL.md")).toContain(
+      "protocol [`phase-operations`](../../references/shared/protocols/phase-operations/PROTOCOL.md), then `](`.",
+    );
+    expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
+  });
+
   test("a skill's own references/ file is linked where the skill carries it and passes the bundle check", () => {
     const body = "The checklist is in `references/checklist.md`.\n";
     const extra = { "skills/alpha/references/checklist.md": "# Checklist\n" };
