@@ -29,7 +29,7 @@ reads.
 
 Not for a ticket typed `decision`. A decision ticket asks which of two things to do; executing one of
 them answers the question by doing it and calls the answer an implementation. The type field settles
-this (`schemas/ticket.schema.json`), and implementation-shaped prose in the body does not reopen it.
+this ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), and implementation-shaped prose in the body does not reopen it.
 
 Not for an unapproved or draft ticket. Approval binds to the ticket's artifact hash, so a ticket
 edited after approval is unapproved again and re-enters the step that approves it.
@@ -54,14 +54,14 @@ Authority: `model`. A controller or a parent skill starts it when an approved ti
 slash command exposes it and no human act is required to start it.
 
 No grant covers delegation, because no phase operation exposes this skill —
-`policies/invocation.yaml` records model-invoked skills as exposing none by construction. What
+[`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none by construction. What
 authority governs here is the ticket rather than the caller: the approval the ticket carries, and the
 charter checkpoint the run took before its build phase opened. A skill that cannot see either stops
 rather than treating its own invocation as the approval.
 
 ## Inputs
 
-One approved ticket typed `implementation` (`schemas/ticket.schema.json`), with its
+One approved ticket typed `implementation` ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), with its
 `acceptance_criteria`, `verification`, `allowed_changes`, `read_dependencies`, `write_ownership` and
 `integration_owner`. Absent, unapproved, or typed `decision`: stop and report `needs-input` naming
 the field that decided it.
@@ -75,13 +75,13 @@ independently is `unavailable`, and unavailability blocks the ticket; it is neve
 implementer, by the author, by whoever approved the spec, or by the other seat (ruling
 `missing-supervisor-never-implementer`).
 
-The source finding, where the ticket came from one (`schemas/finding.schema.json`). A finding
+The source finding, where the ticket came from one ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json)). A finding
 arriving from a peer review lane graded `autofix_class: safe_auto` is remapped to `gated_auto` on
 intake and is never dropped for its class: the restriction is on emission by a seat, never on the
 vocabulary (ruling `safe-auto-restricted-per-seat`).
 
 Optionally a ticket budget from the runner. Absent: the cap is not enforced and not guessed, and the
-absence is recorded (`policies/limits.yaml`).
+absence is recorded ([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).
 
 ## Workflow
 
@@ -94,7 +94,7 @@ absence is recorded (`policies/limits.yaml`).
    Contention that survives inspection serializes exactly the contending tickets; the rest of the
    layer still dispatches together.
 3. Record the base commit, then open the worktree this ticket owns
-   (`protocols/worktree-ownership/PROTOCOL.md`). The worktree handle is bound to this ticket and is
+   ([`protocols/worktree-ownership/PROTOCOL.md`](../../references/shared/protocols/worktree-ownership/PROTOCOL.md)). The worktree handle is bound to this ticket and is
    retired when the ticket integrates, never retasked.
    On the standalone path, open the task-bound run next, from inside that worktree with the
    ticket's branch checked out and before implementation:
@@ -106,12 +106,12 @@ absence is recorded (`policies/limits.yaml`).
    pointer it writes. A run never closed by `ship-preflight` stays the branch's default until a
    new `open`, and the gate does not tell an earlier task's unclosed run from this one, so every
    new task opens a new run, even on a branch that already has one.
-4. Dispatch one implementer (`roles/implementer/ROLE.md`) with the ticket as its single source of
+4. Dispatch one implementer ([`roles/implementer/ROLE.md`](../../references/shared/roles/implementer/ROLE.md)) with the ticket as its single source of
    requirements. It spawns no implementers of its own, and no second implementer runs against this
    worktree. Hand each implementer [the work-trail protocol](../../references/shared/protocols/work-trail/PROTOCOL.md)
    and the location of its own stretch, prepared in the runner's scratch space as that protocol
    says, and no earlier stretch or pointer to one (ruling `work-trail-is-account-not-evidence`).
-5. Work the ticket test first (`protocols/tdd/PROTOCOL.md`): a failing test that names the behaviour,
+5. Work the ticket test first ([`protocols/tdd/PROTOCOL.md`](../../references/shared/protocols/tdd/PROTOCOL.md)): a failing test that names the behaviour,
    then the change that passes it. Where the behaviour is genuinely not testable, record the
    alternative verification plan in the ticket rather than proceeding with neither. Load
    [the engineering-principles reference pack](../../references/shared/references/engineering-principles/REFERENCE.md) for the standards the change is held to.
@@ -123,8 +123,8 @@ absence is recorded (`policies/limits.yaml`).
 8. Hand the diff to both check seats at once, as a file, with the ticket's constraints copied
    verbatim from the ticket. Neither prompt carries the implementer's account of the work or any
    expectation of what the seat will find.
-9. Keep the axes separate: `reviewer-spec` checks whether the ticket's obligations were met,
-   `reviewer-standards` checks the result against the project's own designated rules, rule by rule.
+9. Keep the axes separate: [`reviewer-spec`](../../references/shared/roles/reviewer-spec/ROLE.md) checks whether the ticket's obligations were met,
+   [`reviewer-standards`](../../references/shared/roles/reviewer-standards/ROLE.md) checks the result against the project's own designated rules, rule by rule.
    Findings are not merged or re-ranked across the two; one axis passing does not cover the other.
 10. Fix and re-check, at most five rounds per ticket. Rounds one to three resume the implementer that
     already holds the context; rounds four and five dispatch a fresh implementer told how many
@@ -181,8 +181,8 @@ Gate: a ticket typed `decision` is never executed as implementation work, and ne
 make it executable. It returns to the lane that resolves decisions.
 
 Gate: a finding graded `smell`, or carrying `difficulty: null`, is refused as an implementation
-ticket (`schemas/finding.schema.json`); the shared rule for applying a finding at all is
-`protocols/apply-findings/PROTOCOL.md`. Difficulty without a solution class is not a specification,
+ticket ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json)); the shared rule for applying a finding at all is
+[`protocols/apply-findings/PROTOCOL.md`](../../references/shared/protocols/apply-findings/PROTOCOL.md). Difficulty without a solution class is not a specification,
 and a re-grading performed by the lane that wants to execute it is the refusal being routed around.
 
 Gate: a receipt created by the implementer, change author, spec approver or recipe author is
@@ -235,19 +235,19 @@ or verdict it sets, or a packet it hands a seat the wall covers, for the same ch
 One commit per ticket, on the branch that ticket owns, recorded against the ticket by id. The commit
 is the patch link the lane's result carries; nothing is merged here.
 
-Verification receipts (`schemas/verification.schema.json`), one per acceptance criterion the ticket
+Verification receipts ([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)), one per acceptance criterion the ticket
 names, each naming the criteria it supports and bound to the revision it describes.
 
-The per-ticket check result: the findings each axis raised (`schemas/finding.schema.json`), their
+The per-ticket check result: the findings each axis raised ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json)), their
 disposition, and every ruling written at the round cap. A per-ticket check is a lighter instrument
 than a review panel — it emits no `review` artifact, and a later panel never reads it as a lane it no
 longer has to cover.
 
 All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`); the commands are in
+run-artifact placement ([`adapters/knowledgebase/CONTRACT.md`](../../references/shared/adapters/knowledgebase/CONTRACT.md)); the commands are in
 [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 This skill names no repository path for project-derived content. Each implementer seat's stretch
-(`schemas/trail.schema.json`) and the trail audit (`schemas/trail-audit.schema.json`) go through
+([`schemas/trail.schema.json`](../../references/shared/schemas/trail.schema.json)) and the trail audit ([`schemas/trail-audit.schema.json`](../../references/shared/schemas/trail-audit.schema.json)) go through
 `publishArtifact` too, as an account, never evidence (ruling `work-trail-is-account-not-evidence`).
 
 ## Side effects
@@ -256,7 +256,7 @@ This skill names no repository path for project-derived content. Each implemente
 `scratch-write`.
 
 `kb-publish` is a remote effect: the idempotency key is derived from the content hash of the
-published set per `adapters/runner-contract/CONTRACT.md` §5, and the returned record reference is
+published set per [`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5, and the returned record reference is
 read back before the ticket reports. Republishing an unchanged set after an interruption is a no-op
 success rather than a second record.
 
@@ -284,7 +284,7 @@ rulings are kept rather than cleaned up, because the next run reads them instead
 
 Fix rounds: 5 per ticket (gate). Rounds one to three resume the same implementer; four and five
 dispatch a fresh one. This is the per-ticket implementer-and-check loop, and it is not
-`policies/limits.yaml`'s `fix_cycles`, which bounds the fix-and-verify cycles that follow a review
+[`policies/limits.yaml`](../../references/shared/policies/limits.yaml)'s `fix_cycles`, which bounds the fix-and-verify cycles that follow a review
 run's first pass and does not name this skill. Two caps, two scopes, and neither relaxes the other.
 
 Implementers per worktree: 1 (gate). Parallel dispatch is across tickets, never inside one.
@@ -294,7 +294,7 @@ small to outweigh its own dispatch runs inline or batched with related units; th
 budget is the only cap this skill enforces on how many start.
 
 Changed-line target and test-pyramid shape: guidance, configurable per project and carried in the
-project record (`schemas/project.schema.json`). Neither is validated or enforced here and neither is
+project record ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)). Neither is validated or enforced here and neither is
 grounds for a finding on its own; a ticket that exceeds the configured target records the exception
 rather than answering it with an artificial file split or a meaningless test (ruling
 `numeric-heuristics-are-guidance`).

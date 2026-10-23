@@ -70,12 +70,12 @@ authority to apply a correction rides on the caller's authorization, recorded on
    the same document starts at round one with no primer.
 4. Compose the panel. Selection is layered: a seat runs when the artifact's own evidence and the
    declared risk earn it, never off a fixed roster (ruling `panel-composition-by-declared-risk`).
-   `doc-review/coherence` and `doc-review/feasibility` declare no activation signal and so reach
-   every document; `doc-review/product-lens`, `doc-review/design-lens`, `doc-review/security-lens`,
-   `doc-review/scope-guardian` and `doc-review/adversarial-document` each state their own signal,
+   [`doc-review/coherence`](../../references/shared/roles/doc-review/coherence/ROLE.md) and [`doc-review/feasibility`](../../references/shared/roles/doc-review/feasibility/ROLE.md) declare no activation signal and so reach
+   every document; [`doc-review/product-lens`](../../references/shared/roles/doc-review/product-lens/ROLE.md), [`doc-review/design-lens`](../../references/shared/roles/doc-review/design-lens/ROLE.md), [`doc-review/security-lens`](../../references/shared/roles/doc-review/security-lens/ROLE.md),
+   [`doc-review/scope-guardian`](../../references/shared/roles/doc-review/scope-guardian/ROLE.md) and [`doc-review/adversarial-document`](../../references/shared/roles/doc-review/adversarial-document/ROLE.md) each state their own signal,
    which this skill reads from the seat rather than restating. Uncertainty is not a missing signal:
-   where the classification or the artifact's evidence is unclear, `doc-review/security-lens` and
-   `doc-review/adversarial-document` run rather than being skipped (ruling
+   where the classification or the artifact's evidence is unclear, [`doc-review/security-lens`](../../references/shared/roles/doc-review/security-lens/ROLE.md) and
+   [`doc-review/adversarial-document`](../../references/shared/roles/doc-review/adversarial-document/ROLE.md) run rather than being skipped (ruling
    `low-confidence-security-adjudicated`). Record every lane in the lane table, including the ones
    that did not activate and why.
 5. Dispatch each selected lane into its own independent context with the snapshot and its own
@@ -94,7 +94,7 @@ authority to apply a correction rides on the caller's authorization, recorded on
    observation that a fix did land is logged in coverage and not presented.
 9. Gate on the confidence anchor before bucketing: anchors 0 and 25 are dropped, anchor 50 is
    observation that never enters the walk-through, and 75 and 100 are actionable. A finding from
-   `doc-review/security-lens` is never dropped by that gate — it stays visible and is adjudicated
+   [`doc-review/security-lens`](../../references/shared/roles/doc-review/security-lens/ROLE.md) is never dropped by that gate — it stays visible and is adjudicated
    (ruling `low-confidence-security-adjudicated`).
 10. Assign the action class per seat and sort every finding into its bucket. The result takes
     exactly this form, in this order, with every heading present even when its bucket is empty:
@@ -129,7 +129,7 @@ Gate: a correction that changes what the document *decides*, rather than how it 
 applied on one lane's say-so. It needs a second lane that found the same thing independently, or
 it is a Decision and goes to the human as one question.
 
-Gate: `safe_auto` is emitted by `doc-review/coherence` only, for its own closed pattern list, and
+Gate: `safe_auto` is emitted by [`doc-review/coherence`](../../references/shared/roles/doc-review/coherence/ROLE.md) only, for its own closed pattern list, and
 only where `spec_quality: patch`, `difficulty: mechanical` and a `suggested_fix` all hold. A
 `safe_auto` arriving from any other lane is remapped to `gated_auto`; it is never dropped (ruling
 `safe-auto-restricted-per-seat`).
@@ -143,24 +143,24 @@ quote does not establish unchanged evidence, and neither does a differently word
 the same concern.
 
 Gate: at most two fix rounds. The third does not run; the run returns the open forks and stops
-(`schemas/review.schema.json`, `fix_cycles`).
+([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json), `fix_cycles`).
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "Both sides of the contradiction are in the document, and one is obviously right — I'll apply it." | Choosing which side wins changes what the document decides. Obvious to a reviewer is not decided by the people who own the document. | Raise it as a Decision with one question naming both sides. |
 | "One lane timed out and the other five agree, so the review is effectively complete." | A lane that did not run produced no evidence, and five agreements about other things are not that lane's result. | Record it `unavailable` with the reason and let it block the approval verdict. |
 | "We rejected this in round one and the document still says the same thing, so I'll suppress it again." | Suppression rides on the rejection's evidence still being current, not on the document being unchanged. The constraints or the facts may have moved under it. | Check what the rejection rested on. If any of it moved, re-raise the finding. |
-| "This is a clean one-line patch with an obvious fix, so I'll mark it automatic from the feasibility lane." | The restriction is on emission by a seat, not on how tidy the fix looks. Only `doc-review/coherence`'s own closed pattern list qualifies. | Emit it `gated_auto` and let it go through the grouped confirmation. |
+| "This is a clean one-line patch with an obvious fix, so I'll mark it automatic from the feasibility lane." | The restriction is on emission by a seat, not on how tidy the fix looks. Only [`doc-review/coherence`](../../references/shared/roles/doc-review/coherence/ROLE.md)'s own closed pattern list qualifies. | Emit it `gated_auto` and let it go through the grouped confirmation. |
 | "Round two did not settle the fork, but it is close — one more round will finish it." | A fork that survived two rounds is not converging; it is a decision nobody in the run has the authority to make. | Stop at two, return the open fork, and hand it to a human. |
 
 ## Outputs
 
-- `review` (`schemas/review.schema.json`) — the run artifact: mode `full` at round one and `delta`
+- `review` ([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json)) — the run artifact: mode `full` at round one and `delta`
   at a later round, the snapshot hash, the reviewed head, the full lane table with a reason on
   every skipped and unavailable lane, the verdict, and `fix_cycles`. Published through the
   knowledgebase adapter's `publishArtifact` under a run-artifact placement; no repository path is
   written (ruling `central-kb-owns-project-artifacts`).
-- `finding` (`schemas/finding.schema.json`) — one per retained observation, each carrying its lane,
+- `finding` ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json)) — one per retained observation, each carrying its lane,
   its fingerprint, severity, `confidence_anchor`, `spec_quality`, `difficulty`, `autofix_class`,
   evidence and verification.
 - The fixed presented form, printed in the final reply after the edits are read back and the
@@ -181,7 +181,7 @@ the document under review and never the source the document describes.
 
 `kb-publish` is a remote effect. Its idempotency key derives from the run, the operation, the
 record's stable identity and the artifact's hash, and the read-back is the record the write
-returns, read before the write and confirmed after it (`adapters/runner-contract/CONTRACT.md`,
+returns, read before the write and confirmed after it ([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md),
 "Idempotency"). A publish whose read-back cannot be performed is recorded as failed.
 
 ## Stop conditions
@@ -198,7 +198,7 @@ returns, read before the write and confirmed after it (`adapters/runner-contract
 
 ## Limits
 
-- Fix rounds: 2 (gate). The cap is structural in `schemas/review.schema.json`, whose `fix_cycles`
+- Fix rounds: 2 (gate). The cap is structural in [`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json), whose `fix_cycles`
   admits no value above two, so no configuration buys a third.
 - Confidence anchors: 0 and 25 are dropped before any bucket, 50 never enters the walk-through,
   and the security exception above overrides both.

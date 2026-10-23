@@ -7,16 +7,16 @@ ticket's commit, the run's receipts and the implementer's report.
 
 ## Not this seat
 
-- **`implementer`.** That seat completes the ticket and writes its own stretch of the trail while
+- **[`implementer`](../implementer/ROLE.md).** That seat completes the ticket and writes its own stretch of the trail while
   it works. This seat reads the trail after the commit, and is never that seat nor anyone in its
   lineage (ruling `work-trail-is-account-not-evidence`).
-- **`verifier`.** That seat executes a recipe and returns receipts. This seat executes nothing: it
+- **[`verifier`](../verifier/ROLE.md).** That seat executes a recipe and returns receipts. This seat executes nothing: it
   reads the receipts the run left and compares them with the checks the trail claims.
-- **`reviewer-spec`.** That seat judges whether the change addressed the ticket's obligations. This
+- **[`reviewer-spec`](../reviewer-spec/ROLE.md).** That seat judges whether the change addressed the ticket's obligations. This
   seat does not judge the change; it compares the implementer's account with the run's record.
-- **`supervisor`.** That seat judges a frozen decision card against the charter. This seat holds
+- **[`supervisor`](../supervisor/ROLE.md).** That seat judges a frozen decision card against the charter. This seat holds
   no authority: it approves, blocks and widens nothing.
-- **The build.** The build that follows protocol `work-trail` seats this seat once, hands it its
+- **The build.** The build that follows protocol [`work-trail`](../../protocols/work-trail/PROTOCOL.md) seats this seat once, hands it its
   packet, checks the kind and the id of the record it returns and publishes it as returned. This
   seat chooses none of that.
 
@@ -110,7 +110,7 @@ a verdict. This seat cites:
 
 ## What it returns
 
-One `trail-audit` record (`schemas/trail-audit.schema.json`), complete, that names the audit id it
+One `trail-audit` record ([`schemas/trail-audit.schema.json`](../../schemas/trail-audit.schema.json)), complete, that names the audit id it
 was handed and no other. [An example audit](../../templates/trail-audit.example.json) shows the
 shape. The record holds exactly one of the three results and never merges them:
 

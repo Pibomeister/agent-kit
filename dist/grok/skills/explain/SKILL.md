@@ -33,7 +33,7 @@ a recommendation or an implementation plan.
 ## Authority
 
 Authority: `explicit`. A human starts it with `/explain`. No phase operation exposes it
-(`policies/invocation.yaml` lists it among the user-invoked skills that expose none), so no
+([`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) lists it among the user-invoked skills that expose none), so no
 controller can start it under a grant. Started any other way, it stops at step 1 and names the
 command.
 

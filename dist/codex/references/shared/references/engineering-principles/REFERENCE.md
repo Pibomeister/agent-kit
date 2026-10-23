@@ -12,9 +12,9 @@ into each of them (ruling `full-catalog-opt-in-profiles`), and every one of them
 of it at the moment of loading.
 
 A principle here says what to look for. It is not a finding. A finding raised with one of these in
-mind still carries its own evidence in the shape `schemas/finding.schema.json` requires, and a
+mind still carries its own evidence in the shape [`schemas/finding.schema.json`](../../schemas/finding.schema.json) requires, and a
 principle named without that evidence is an opinion. The domain packs apply the four standards
-below as constraints when the artifact earns them (`protocols/attach-pack/PROTOCOL.md`): `pack-api`
+below as constraints when the artifact earns them ([`protocols/attach-pack/PROTOCOL.md`](../../protocols/attach-pack/PROTOCOL.md)): `pack-api`
 the first, `pack-delete` the fence and the liability, `pack-test` the last. This pack explains the
 standards and does not attach anything.
 
@@ -165,12 +165,12 @@ recorded rather than answered by forcing an artificial file split or a meaningle
 
 | Heuristic | Starting point | Configured in | What it is for |
 |---|---|---|---|
-| Change size | About 100 changed lines, where that is natural | `schemas/project.schema.json` `guidance.pr_size` | Changes a reviewer can hold in their head |
-| Test mix | About 80 / 15 / 5 unit / integration / end to end | `schemas/project.schema.json` `guidance.test_pyramid` | Most confidence from the cheapest tests |
+| Change size | About 100 changed lines, where that is natural | [`schemas/project.schema.json`](../../schemas/project.schema.json) `guidance.pr_size` | Changes a reviewer can hold in their head |
+| Test mix | About 80 / 15 / 5 unit / integration / end to end | [`schemas/project.schema.json`](../../schemas/project.schema.json) `guidance.test_pyramid` | Most confidence from the cheapest tests |
 
 The project record pins both to `enforcement: advisory`, and a departure goes in its `exceptions`
 list with a reason. A policy may read a configured value as one input among others;
-`policies/limits.yaml` `not_gates` records each such use, and none of them makes the number grounds
+[`policies/limits.yaml`](../../policies/limits.yaml) `not_gates` records each such use, and none of them makes the number grounds
 for a finding on its own (ruling `numeric-heuristics-are-guidance`).
 
 What this means where each loader meets it:

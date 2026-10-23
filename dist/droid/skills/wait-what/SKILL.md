@@ -30,7 +30,7 @@ change the decision.
 
 Authority: `model`. The agent starts it when the human's reply shows the last proposal did not
 land; no slash command exposes it. No grant covers delegation here, because no phase operation
-exposes this skill (`policies/invocation.yaml` records model-invoked skills as exposing none).
+exposes this skill ([`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none).
 
 ## Inputs
 

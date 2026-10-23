@@ -37,7 +37,7 @@ billing code. A brief with no completion condition spends the turn budget and re
 for the narrower question instead.
 
 Not for deciding whether a change is safe, sizing an impact radius or rating risk. Those are
-verdicts, and `schemas/dossier.schema.json` has no field that can carry one.
+verdicts, and [`schemas/dossier.schema.json`](../../references/shared/schemas/dossier.schema.json) has no field that can carry one.
 
 ## Authority
 
@@ -45,7 +45,7 @@ Authority: `model`. A controller or a parent skill starts it when the caller's q
 description; no human invocation is required and no slash command exposes it.
 
 No grant covers delegation here, because no phase operation exposes this skill:
-`policies/invocation.yaml` records model-invoked skills as exposing none by construction, so there
+[`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none by construction, so there
 is no delegated path for a runner to validate and nothing in this skill runs on one.
 
 ## Inputs
@@ -61,7 +61,7 @@ Optionally a symbol or code-graph provider, with its index revision and freshnes
 stale, or indexed at a revision other than the one being explored: continue on lexical search and
 record a coverage limit. Absence of a graph is a limitation to document, never a reason to stop.
 
-Optionally a turn budget from the runner. Absent: four turns (`policies/limits.yaml`).
+Optionally a turn budget from the runner. Absent: four turns ([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).
 
 A caller's guess about where the answer lives is an input, never a hit. It may direct the first
 search and it is `assumed` at best until read back in the source.
@@ -99,7 +99,7 @@ an unknown, never fixed, and the run does not acquire a write by having found so
 writing.
 
 Gate: no architectural verdict, safety assessment, risk rating or impact map. The dossier object is
-closed and refuses those keys outright (`schemas/dossier.schema.json`, rule
+closed and refuses those keys outright ([`schemas/dossier.schema.json`](../../references/shared/schemas/dossier.schema.json), rule
 dossier.no-architectural-verdict); prose that carries one into `recommendation` is the same breach
 through a field that happens to accept strings.
 
@@ -131,13 +131,13 @@ recorded as evidence that the function is slow.
 
 ## Outputs
 
-One `dossier` artifact (`schemas/dossier.schema.json`), carrying the envelope of
-`schemas/common.schema.json`: the question, the budget as allowed and used, every search, the
+One `dossier` artifact ([`schemas/dossier.schema.json`](../../references/shared/schemas/dossier.schema.json)), carrying the envelope of
+[`schemas/common.schema.json`](../../references/shared/schemas/common.schema.json): the question, the budget as allowed and used, every search, the
 structured hits, the coverage limits, the unknowns, the files not to touch, and a recommendation for
 further inspection only.
 
 The dossier is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`), by the commands in
+run-artifact placement ([`adapters/knowledgebase/CONTRACT.md`](../../references/shared/adapters/knowledgebase/CONTRACT.md)), by the commands in
 [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 The scout supplies no path: the
 knowledgebase resolves placement, and a scout that writes a documentation tree into the repository
@@ -152,7 +152,7 @@ nor the search transcript.
 `process-exec`, `artifact-write`, `kb-publish`.
 
 `kb-publish` is a remote effect: the idempotency key is derived from the dossier's content hash per
-`adapters/runner-contract/CONTRACT.md` §5, and the returned record reference is read back before the
+[`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5, and the returned record reference is read back before the
 run reports. Republishing an unchanged dossier after an interruption is a no-op success rather than
 a second record.
 
@@ -175,7 +175,7 @@ rather than published as a dossier nobody asked to keep.
 
 ## Limits
 
-Turns: 4 (gate, `policies/limits.yaml` `scout_turns`). A project may configure a lower value and
+Turns: 4 (gate, [`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `scout_turns`). A project may configure a lower value and
 cannot raise it. Multiple independent reads may run inside one turn where the host permits it;
 parallel reads do not buy extra turns.
 

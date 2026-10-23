@@ -2,7 +2,7 @@
 
 What an agent needs, inside an installed plugin, to reach the project's central knowledgebase: how
 to tell whether one is configured, the commands for the two operations that are carried, and what
-each result obliges. The contract this condenses is `adapters/knowledgebase/CONTRACT.md` §1, §3 and
+each result obliges. The contract this condenses is [`adapters/knowledgebase/CONTRACT.md`](../../adapters/knowledgebase/CONTRACT.md) §1, §3 and
 §7 and the `local-git` binding, which do not ship with the plugin (ruling
 `kb-binding-is-a-locator`). A skill loads it before its first knowledgebase operation.
 

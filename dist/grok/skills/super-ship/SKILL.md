@@ -76,14 +76,14 @@ first remote call, as in `dry-run`, and every remote effect waits for the superv
 
 For the autonomous form, `ship.prepare` delegated under a grant, exit 0 is necessary and not
 sufficient. That form also needs trusted evidence: gate evidence the runner recorded into the run's
-evidence store, outside this worker's reach (`adapters/runner-contract/CONTRACT.md` §2). Gate records
+evidence store, outside this worker's reach ([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §2). Gate records
 this worker wrote are worker-attested, and no grant turns them into trusted evidence.
 
 ## Inputs
 
 The head being shipped, named. Verification receipts that bind to that head
-(`schemas/verification.schema.json`), and a review verdict that binds to that head's artifact hash
-(`schemas/review.schema.json`). Any of the three missing or bound to a different revision: stop with
+([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)), and a review verdict that binds to that head's artifact hash
+([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json)). Any of the three missing or bound to a different revision: stop with
 `needs-input` naming which.
 
 The mode: `dry-run` or `publish`. `dry-run` is a supported mode of this skill, not a flag an operator
@@ -92,12 +92,12 @@ has to remember; it is the mode in which nothing leaves the machine. The transpo
 named by none, the run stops with `needs-input` naming the choice (ruling
 `direct-push-as-ship-transport`).
 
-The charter, where one exists (`schemas/charter.schema.json`), with the actions it names and the
+The charter, where one exists ([`schemas/charter.schema.json`](../../references/shared/schemas/charter.schema.json)), with the actions it names and the
 approval bound to its hash. Absent, the run has no sensitive-action authority and does not acquire
 any by running.
 
 The idempotency inputs the runner supplies: the run id, the operation id, the target identity and the
-input artifact hash (`adapters/runner-contract/CONTRACT.md` §5).
+input artifact hash ([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5).
 
 The project's own release checks, discovered rather than assumed.
 
@@ -178,7 +178,7 @@ pushed a branch to show what the push would look like was not a dry run.
 
 Gate: every remote effect carries an idempotency key derived from the run id, the operation id, the
 target identity and the input artifact hash, with a read-back before and after
-(`adapters/runner-contract/CONTRACT.md` §5). A restart re-derives the same key and returns the
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5). A restart re-derives the same key and returns the
 existing record rather than creating a second one.
 
 Gate: staging is by named path. The whole tree is never staged and a wildcard is never used, because
@@ -209,7 +209,7 @@ with `needs-input` and the decision named, rather than waiting on a prompt nobod
 
 No-mistakes delivery outputs the committed head and `ship-preflight`. It requires no PR payload,
 `ship-evidence` or lesson draft. Direct publication and `dry-run` emit `ship-evidence`
-(`schemas/ship-evidence.schema.json`) with three parts.
+([`schemas/ship-evidence.schema.json`](../../references/shared/schemas/ship-evidence.schema.json)) with three parts.
 
 The pull-request payload: title, description, the linked ticket, the receipts and the review verdict
 it rests on, and the branch it would be opened from. In `dry-run` the record holds this payload and
@@ -229,7 +229,7 @@ candidate through the knowledgebase adapter.
 `local-commit`, `branch-create`, `remote-push`, `pr-open`, `kb-draft`, `artifact-write`.
 
 `remote-push` and `pr-open` are remote effects and occur only in `publish`. Each carries an
-idempotency key derived per `adapters/runner-contract/CONTRACT.md` §5 and is read back before and
+idempotency key derived per [`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5 and is read back before and
 after, so a resumed run returns the existing branch or pull request rather than creating a second.
 
 Under no-mistakes delivery, super-ship performs neither effect. It records the committed handoff;
@@ -279,4 +279,4 @@ Pull-request size: not a gate (guidance). Size targets are configurable starting
 a reason to withhold a prepared change.
 
 Runner budgets: a cap the runner did not supply is not enforced and not guessed
-(`policies/limits.yaml`).
+([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).

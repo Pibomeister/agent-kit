@@ -3,7 +3,7 @@
 Loaded by `super-ship publish` when the push and the pull request go straight to the forge through
 `git` and the forge's command-line client, with no gate and no supervisor between them. The authority
 for every rule here is ruling `direct-push-as-ship-transport` and
-`adapters/runner-contract/CONTRACT.md` §5; this file is the operating form of them. The commands are
+[`adapters/runner-contract/CONTRACT.md`](../../../references/shared/adapters/runner-contract/CONTRACT.md) §5; this file is the operating form of them. The commands are
 GitHub's `gh`. Another forge's client stands in only where it gives the same exit-status guarantees;
 where it does not, every lookup below is unknown and the run stops.
 
@@ -137,7 +137,7 @@ so the hook has nothing left to rewrite.
 
 ## The push
 
-Reconcile before the effect, per `adapters/runner-contract/CONTRACT.md` §5:
+Reconcile before the effect, per [`adapters/runner-contract/CONTRACT.md`](../../../references/shared/adapters/runner-contract/CONTRACT.md) §5:
 
 1. Re-read `git branch --show-current` and `git remote get-url --push --all <remote>`. They must
    still be the resolved branch and sole `<push-url>`; a changed target stops with `needs-input`.

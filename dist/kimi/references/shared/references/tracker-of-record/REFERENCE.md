@@ -2,7 +2,7 @@
 
 What an agent needs, inside an installed plugin, to decide which ticket system a project uses and to
 reach it without leaking or borrowing a credential. The contract this condenses is
-`adapters/tracker/CONTRACT.md`, which does not ship with the plugin; the rules below are that
+[`adapters/tracker/CONTRACT.md`](../../adapters/tracker/CONTRACT.md), which does not ship with the plugin; the rules below are that
 contract's §2 and §5 and the `linear-linearis` binding's setup and invocation, restated so the
 plugin carries them (ruling `tracker-of-record-falls-back-to-kb`). `wayfind` loads it before its
 first ticket operation.

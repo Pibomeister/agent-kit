@@ -1,7 +1,7 @@
 # Pass 1: the panel, its seats, and what each seat is given
 
 Loaded when `super-review full` selects seats, and when a reader needs to know why a particular seat
-did or did not run. The authority for every rule here is `policies/review.yaml`; this file is the
+did or did not run. The authority for every rule here is [`policies/review.yaml`](../../../references/shared/policies/review.yaml); this file is the
 operating form of it.
 
 ## Selection
@@ -13,24 +13,24 @@ panel the design preserves and a documentation typo does not (ruling
 
 | Seat | Tier | What activates it | Pack signal |
 |---|---|---|---|
-| `code-review/correctness` | always-on | every pass-1 review, without exception | — |
-| `code-review/project-standards` | standards-gate | the project declares standards files, or standards discovery returned an uncertain result | — |
-| `code-review/testing` | generic-conditional | the change adds or alters behavior | `pack-test` |
-| `code-review/maintainability` | generic-conditional | the change introduces, moves or removes structure rather than only text | — |
-| `code-review/agent-native` | generic-conditional | the change adds or alters an action surface a user can take | — |
-| `code-review/learnings` | generic-conditional | the captured-lesson corpus is non-empty and has hits on the touched surface | — |
-| `code-review/security` | conditional | trust boundaries, authentication, authorization, tenancy, secrets, payments, money movement, user-controlled input reaching a privileged path, or a declared risk in the project's own standards | `pack-secure` |
-| `code-review/adversarial` | conditional | the same evidence that activates the security seat, or a change large enough that the project's configured size guidance was exceeded and the exception was recorded | `pack-secure` |
-| `code-review/api-contract` | conditional | an externally consumed boundary changes and downstream callers are evidenced | `pack-api` |
-| `code-review/data-migration` | conditional | migration or schema artifacts are present; model-only or query-only changes do not activate it | `pack-data` |
-| `code-review/performance` | conditional | a stated performance budget exists, or a performance problem was measured | `pack-perf` |
-| `code-review/reliability` | conditional | error handling, retries, breakers, timeouts, background jobs or health checks | — |
-| `code-review/previous-comments` | conditional | the review target is a PR that already carries review comments or threads | — |
-| `code-review/frontend-races` | stack-conditional | DOM event wiring, timers or async UI flows with race potential | `pack-frontend` |
-| `code-review/swift-ios` | stack-conditional | SwiftUI state, concurrency, Core Data threading, entitlements, accessibility | — |
+| [`code-review/correctness`](../../../references/shared/roles/code-review/correctness/ROLE.md) | always-on | every pass-1 review, without exception | — |
+| [`code-review/project-standards`](../../../references/shared/roles/code-review/project-standards/ROLE.md) | standards-gate | the project declares standards files, or standards discovery returned an uncertain result | — |
+| [`code-review/testing`](../../../references/shared/roles/code-review/testing/ROLE.md) | generic-conditional | the change adds or alters behavior | `pack-test` |
+| [`code-review/maintainability`](../../../references/shared/roles/code-review/maintainability/ROLE.md) | generic-conditional | the change introduces, moves or removes structure rather than only text | — |
+| [`code-review/agent-native`](../../../references/shared/roles/code-review/agent-native/ROLE.md) | generic-conditional | the change adds or alters an action surface a user can take | — |
+| [`code-review/learnings`](../../../references/shared/roles/code-review/learnings/ROLE.md) | generic-conditional | the captured-lesson corpus is non-empty and has hits on the touched surface | — |
+| [`code-review/security`](../../../references/shared/roles/code-review/security/ROLE.md) | conditional | trust boundaries, authentication, authorization, tenancy, secrets, payments, money movement, user-controlled input reaching a privileged path, or a declared risk in the project's own standards | `pack-secure` |
+| [`code-review/adversarial`](../../../references/shared/roles/code-review/adversarial/ROLE.md) | conditional | the same evidence that activates the security seat, or a change large enough that the project's configured size guidance was exceeded and the exception was recorded | `pack-secure` |
+| [`code-review/api-contract`](../../../references/shared/roles/code-review/api-contract/ROLE.md) | conditional | an externally consumed boundary changes and downstream callers are evidenced | `pack-api` |
+| [`code-review/data-migration`](../../../references/shared/roles/code-review/data-migration/ROLE.md) | conditional | migration or schema artifacts are present; model-only or query-only changes do not activate it | `pack-data` |
+| [`code-review/performance`](../../../references/shared/roles/code-review/performance/ROLE.md) | conditional | a stated performance budget exists, or a performance problem was measured | `pack-perf` |
+| [`code-review/reliability`](../../../references/shared/roles/code-review/reliability/ROLE.md) | conditional | error handling, retries, breakers, timeouts, background jobs or health checks | — |
+| [`code-review/previous-comments`](../../../references/shared/roles/code-review/previous-comments/ROLE.md) | conditional | the review target is a PR that already carries review comments or threads | — |
+| [`code-review/frontend-races`](../../../references/shared/roles/code-review/frontend-races/ROLE.md) | stack-conditional | DOM event wiring, timers or async UI flows with race potential | `pack-frontend` |
+| [`code-review/swift-ios`](../../../references/shared/roles/code-review/swift-ios/ROLE.md) | stack-conditional | SwiftUI state, concurrency, Core Data threading, entitlements, accessibility | — |
 
-`code-review/correctness` and `code-review/project-standards` are required lanes. `code-review/security`
-and `code-review/adversarial` are required once activated.
+[`code-review/correctness`](../../../references/shared/roles/code-review/correctness/ROLE.md) and [`code-review/project-standards`](../../../references/shared/roles/code-review/project-standards/ROLE.md) are required lanes. [`code-review/security`](../../../references/shared/roles/code-review/security/ROLE.md)
+and [`code-review/adversarial`](../../../references/shared/roles/code-review/adversarial/ROLE.md) are required once activated.
 
 Discovery uncertainty runs the standards gate rather than skipping it, so that a failed lookup never
 becomes a silent pass.
@@ -61,8 +61,8 @@ the project's.
 
 ## Lane results
 
-Two vocabularies, one per layer. A seat returns a lane result from `policies/review.yaml`
-`lane_results`; the review records a lane state from `schemas/review.schema.json`. The review never
+Two vocabularies, one per layer. A seat returns a lane result from [`policies/review.yaml`](../../../references/shared/policies/review.yaml)
+`lane_results`; the review records a lane state from [`schemas/review.schema.json`](../../../references/shared/schemas/review.schema.json). The review never
 records a seat's result verbatim.
 
 | Seat returned | Review records | Meaning |

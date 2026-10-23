@@ -133,7 +133,7 @@ result, not an absence, and three things follow. It is never replaced by the aut
 another seat's judgment or a re-read by the synthesis step. It is never downgraded to `empty`: "we
 could not look" and "we looked and found nothing" are different claims, and reporting the first as
 the second is the failure this gate exists to catch. And the run names which lane was unavailable and
-why, and stays resumable (ruling `required-lane-failure-is-unavailable`, `policies/review.yaml`).
+why, and stays resumable (ruling `required-lane-failure-is-unavailable`, [`policies/review.yaml`](../../references/shared/policies/review.yaml)).
 
 Gate: this skill emits no `safe_auto` action class. At assessment time a code edit has no single
 mechanically correct answer, so the class is a proposal; an inbound `safe_auto` from a peer lane is
@@ -169,7 +169,7 @@ that a decision is required.
 
 The routed items: what was handed to CI repair, to the review lane or to verification, and why.
 
-Findings (`schemas/finding.schema.json`) for anything this assessment newly establishes about the
+Findings ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json)) for anything this assessment newly establishes about the
 code, each carrying its evidence and an action class that is never `safe_auto`.
 
 All of it is emitted as run artifacts. This skill names no repository path for project-derived
@@ -181,7 +181,7 @@ content.
 
 `pr-comment` and `pr-thread-resolve` are remote effects. Each carries an idempotency key derived from
 the run id, the operation id, the thread identity and the input artifact hash per
-`adapters/runner-contract/CONTRACT.md` §5, and the thread is read back before and after, so a resumed
+[`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5, and the thread is read back before and after, so a resumed
 run recognises a reply it already posted instead of posting it twice.
 
 `pr-thread-resolve` occurs only where a resolve grant is held, independently of the reply grant.
@@ -216,4 +216,4 @@ Clusters: no cap (guidance). Clustering follows the root assumptions the threads
 the count is an outcome rather than a target.
 
 Runner budgets: a cap the runner did not supply is not enforced and not guessed
-(`policies/limits.yaml`).
+([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).

@@ -25,12 +25,12 @@ widens the authority it was called with (ruling `entrypoint-phase-operation-spli
 
 ## Inputs
 
-- The ticket (`schemas/ticket.schema.json`) and its hash, and the run's id; per stretch, its
+- The ticket ([`schemas/ticket.schema.json`](../../schemas/ticket.schema.json)) and its hash, and the run's id; per stretch, its
   starting revision, seat and order.
 - Scratch space from the runner, outside the checkout, and the knowledgebase adapter.
 - For the audit: the committed revision, the ticket, the diff, the commits, the receipts
-  (`schemas/verification.schema.json`) and the implementer's report. Never a transcript.
-- The shapes `schemas/trail.schema.json` and `schemas/trail-audit.schema.json`, and
+  ([`schemas/verification.schema.json`](../../schemas/verification.schema.json)) and the implementer's report. Never a transcript.
+- The shapes [`schemas/trail.schema.json`](../../schemas/trail.schema.json) and [`schemas/trail-audit.schema.json`](../../schemas/trail-audit.schema.json), and
   [an example stretch](../../templates/trail.example.json).
 
 An absent input fails closed: nothing is guessed, and nothing stops the build
@@ -132,8 +132,8 @@ Gate: a refused record is reported, and neither repaired nor sent again.
 
 ## Outputs
 
-One `trail` record (`schemas/trail.schema.json`, id `<ticket-id>.<r>.<n>`) per stretch and one
-`trail-audit` record (`schemas/trail-audit.schema.json`, id `<ticket-id>.<r>`) per audited
+One `trail` record ([`schemas/trail.schema.json`](../../schemas/trail.schema.json), id `<ticket-id>.<r>.<n>`) per stretch and one
+`trail-audit` record ([`schemas/trail-audit.schema.json`](../../schemas/trail-audit.schema.json), id `<ticket-id>.<r>`) per audited
 revision, each published through the knowledgebase adapter's `publishArtifact` as a run artifact of
 the run and carried by the ref it returns, with its hash: an account and its audit, never evidence
 and never a file in the project's tree (ruling `work-trail-is-account-not-evidence`).
@@ -154,7 +154,7 @@ one, and an empty list is evidence of nothing (ruling `work-trail-is-account-not
 `scratch-write` for the records the build prepares, and `kb-publish` for the stretches and the
 audit. Each publish's idempotency key is derived from the run id, the operation id, the record's
 knowledgebase identity and its content hash, and the record is read back before and after the
-publish (the Idempotency section of `adapters/runner-contract/CONTRACT.md`). No `workspace-write`,
+publish (the Idempotency section of [`adapters/runner-contract/CONTRACT.md`](../../adapters/runner-contract/CONTRACT.md)). No `workspace-write`,
 `local-commit` or `remote-push`.
 
 ## Stop conditions

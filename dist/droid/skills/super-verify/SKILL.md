@@ -52,15 +52,15 @@ Authority: `model`. A controller or a parent skill starts it when a claim needs 
 command exposes it and no human act is required to start it.
 
 No grant covers delegation, because no phase operation exposes this skill
-(`policies/invocation.yaml`). The implementer may start the skill, but may not fill its verifier seat
-or author gate-eligible receipts. The runner assigns a distinct `verifier` seat, and closure depends
+([`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml)). The implementer may start the skill, but may not fill its verifier seat
+or author gate-eligible receipts. The runner assigns a distinct [`verifier`](../../references/shared/roles/verifier/ROLE.md) seat, and closure depends
 on that seat's receipts plus the applicable policy rule, never on the caller's confidence. A seat
 that cannot be filled independently is `unavailable` and is never backfilled by the implementer,
 author, spec approver or another seated role (ruling `missing-supervisor-never-implementer`).
 
 ## Inputs
 
-The claim, resolved to named acceptance criteria (`schemas/ticket.schema.json` `acceptance_criteria`,
+The claim, resolved to named acceptance criteria ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json) `acceptance_criteria`,
 by AC id). Absent, or phrased so that no command could settle it: stop and report `needs-input` with
 the criterion it would need.
 
@@ -76,7 +76,7 @@ autonomous form. A fresh host context without attestation remains valid in guide
 `host-unattested`; the gate refuses it once the build gate records an implementer seat or the run
 holds any bypass or delegated grant record, for the rest of that run.
 
-The environment the checks run in, identified (`schemas/verification.schema.json`). Test execution
+The environment the checks run in, identified ([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)). Test execution
 belongs in the appropriate isolated environment, and repository test code does not receive production
 credentials by default.
 
@@ -94,7 +94,7 @@ receipt's (`common#/$defs/revision_ref`); an uncommitted edit on the same revisi
    only after the whole path works; never write a host-specific recipe into the application tree.
    Load [verification evidence](../../references/shared/references/verification-evidence/REFERENCE.md) before matching
    a surface to an evidence kind.
-3. Seat `roles/verifier/ROLE.md` outside the implementer lineage. Give it the claim, criteria,
+3. Seat [`roles/verifier/ROLE.md`](../../references/shared/roles/verifier/ROLE.md) outside the implementer lineage. Give it the claim, criteria,
    revision, recipe, permitted commands, environment and required evidence kinds—never the
    implementer's narrative, claimed result or reviewer verdict. An unfillable seat is `unavailable`.
 4. Run each command fresh and complete, at the revision under verification. A partial run, a cached
@@ -190,7 +190,7 @@ is the result; a run that reports nothing because the news was bad has failed at
 
 ## Outputs
 
-One receipt per check (`schemas/verification.schema.json`), each naming the criteria it supports and
+One receipt per check ([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)), each naming the criteria it supports and
 bound to the revision it describes. Each receipt names its recipe digest, evidence kind, evidence
 artifacts and verifier seat. A receipt that supports nothing is not part of the matrix and is not
 evidence for anything.
@@ -206,7 +206,7 @@ Invalidation records against receipts this run supersedes, naming what changed. 
 in place.
 
 All of it is published through the knowledgebase adapter's `publishArtifact` operation with a
-run-artifact placement (`adapters/knowledgebase/CONTRACT.md`); the commands are in
+run-artifact placement ([`adapters/knowledgebase/CONTRACT.md`](../../references/shared/adapters/knowledgebase/CONTRACT.md)); the commands are in
 [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
 This skill names no repository path for project-derived content.
 
@@ -215,7 +215,7 @@ This skill names no repository path for project-derived content.
 `process-exec`, `scratch-write`, `artifact-write`, `kb-publish`.
 
 `kb-publish` is a remote effect: the idempotency key is derived from the content hash of the receipt
-set per `adapters/runner-contract/CONTRACT.md` §5, and the returned record reference is read back
+set per [`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5, and the returned record reference is read back
 before the run reports. Republishing an unchanged set after an interruption is a no-op success rather
 than a second record.
 
@@ -244,7 +244,7 @@ not anyone still wants it.
 
 This skill declares no numeric cap of its own. The runner's elapsed-time budget is the only bound it
 enforces, and a budget the runner did not supply is not enforced and not guessed
-(`policies/limits.yaml`).
+([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).
 
 Receipts per criterion: at least one, always (gate). A criterion may carry several, and none of them
 replaces another.

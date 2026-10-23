@@ -47,7 +47,7 @@ The central knowledgebase owns every project-derived artifact, including decisio
 plans, tickets, reviews and lessons, and this package owns reusable instructions and templates only
 (ruling `central-kb-owns-project-artifacts`). A prose pass over a lesson, a decision or any other
 project-derived document hands the rewritten text back, and the loading skill publishes it through
-its own knowledgebase operation (`adapters/knowledgebase/CONTRACT.md`). The pass never writes that
+its own knowledgebase operation ([`adapters/knowledgebase/CONTRACT.md`](../../adapters/knowledgebase/CONTRACT.md)). The pass never writes that
 text to a path in the working repository and never starts a documentation tree there, under any
 directory name (ruling `central-kb-owns-project-artifacts`).
 

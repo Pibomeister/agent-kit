@@ -33,7 +33,7 @@ substitutes an unmarked summary for authoritative decisions; flags stale evidenc
 
 Authority: `model`. A controller or a parent skill starts it when a handoff is asked for or work is
 passing to another agent; no slash command exposes it. No grant covers delegation here, because no
-phase operation exposes this skill (`policies/invocation.yaml` records model-invoked skills as
+phase operation exposes this skill ([`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as
 exposing none).
 
 ## Inputs
@@ -129,7 +129,7 @@ knowledge, and the central knowledgebase owns it (ruling `central-kb-owns-projec
 draft is composed in the runner's scratch space, not a tracked directory.
 
 `kb-publish` is a remote side effect. Its idempotency key is the one
-`adapters/runner-contract/CONTRACT.md` §5 derives, with the input artifact hash taken over the
+[`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md) §5 derives, with the input artifact hash taken over the
 draft persisted in scratch, which a resumed run reuses. The read-back is the record as the
 knowledgebase returns it. A resumed run reads back first and does not publish a second copy. A
 publish whose read-back cannot be performed is `failed`, never complete.

@@ -37,7 +37,7 @@ Authority: `model`. A controller or a parent skill starts it when the code in ha
 description; no human invocation is required and no slash command exposes it.
 
 No grant covers delegation here, because no phase operation exposes this skill:
-`policies/invocation.yaml` records model-invoked skills as exposing none by construction. It writes
+[`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none by construction. It writes
 only inside the task its caller already scoped, and starts `/ak:research` or `/ak:super-scout`,
 both model-invoked, and no user-invoked skill.
 

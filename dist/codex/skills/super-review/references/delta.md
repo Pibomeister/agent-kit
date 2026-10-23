@@ -1,7 +1,7 @@
 # The delta pass: packet, scope, continuity and the end of the loop
 
-Loaded by `super-review delta`. The authority for every rule here is `policies/review.yaml` and
-`schemas/review.schema.json`; this file is the operating form of them.
+Loaded by `super-review delta`. The authority for every rule here is [`policies/review.yaml`](../../../references/shared/policies/review.yaml) and
+[`schemas/review.schema.json`](../../../references/shared/schemas/review.schema.json); this file is the operating form of them.
 
 ## What the delta is not
 
@@ -18,8 +18,8 @@ A delta invoked with no open review run does not open one. It stops with `needs-
 
 ## The two lanes
 
-`reviewer-spec` — were the accepted findings and the ticket obligations actually addressed.
-`reviewer-standards` — did the fixes introduce relevant regressions or new rule violations.
+[`reviewer-spec`](../../../references/shared/roles/reviewer-spec/ROLE.md) — were the accepted findings and the ticket obligations actually addressed.
+[`reviewer-standards`](../../../references/shared/roles/reviewer-standards/ROLE.md) — did the fixes introduce relevant regressions or new rule violations.
 
 The two run independently and in parallel against the same snapshot. Per-ticket build checks are the
 other ordering: there, spec compliance runs before standards review.

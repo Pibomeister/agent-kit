@@ -50,7 +50,7 @@ request go through no-mistakes with review, document and rebase skipped, and a p
 to the lifecycle rather than being answered in the pipeline. super-ship stays the single creator of
 the pull request: no-mistakes opens it only because super-ship started the push.
 
-Reconcile before every remote effect, per `adapters/runner-contract/CONTRACT.md` §5:
+Reconcile before every remote effect, per [`adapters/runner-contract/CONTRACT.md`](../../../references/shared/adapters/runner-contract/CONTRACT.md) §5:
 
 1. Read the branch's open pull request, deterministically. Unknown is not none (workflow step 9).
 2. Read the active no-mistakes run for the branch, if any.

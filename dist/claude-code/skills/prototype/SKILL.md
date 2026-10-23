@@ -37,7 +37,7 @@ Authority: `model`. A controller or a parent skill starts it when the caller's q
 description; no human invocation is required and no slash command exposes it.
 
 No grant covers delegation here, because no phase operation exposes this skill:
-`policies/invocation.yaml` records model-invoked skills as exposing none by construction, so there
+[`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none by construction, so there
 is no delegated path for a runner to validate. Starting a prototype grants no authority over the
 working tree: the prototype lives in its own workspace and changes nothing a later lane relies on.
 
@@ -111,7 +111,7 @@ it starts no build and changes nothing outside the prototype's workspace.
 ## Outputs
 
 - The prototype, in its workspace, with the question and the evaluator stated at its top.
-- The evaluation record, an `evaluation` (`schemas/evaluation.schema.json`) with `kind:
+- The evaluation record, an `evaluation` ([`schemas/evaluation.schema.json`](../../references/shared/schemas/evaluation.schema.json)) with `kind:
   prototype`: the question, `question_kind` (`technical` or `human-experience`) and the evaluator
   as named. `settled` adds what was built and where, the options shown, the choice and any
   adjustments, the answer, `settled_by`, the acceptance results for a technical question, and what
@@ -130,7 +130,7 @@ its own workspace and never in the working tree.
 
 `kb-publish` is a remote side effect. Its idempotency key derives from the run, the operation, the
 record's identity and its content hash; the read-back is the record `publishArtifact` returns,
-read before the write and confirmed after it (`adapters/runner-contract/CONTRACT.md`,
+read before the write and confirmed after it ([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md),
 "Idempotency"). A write whose read-back cannot be performed is `failed`, never complete.
 
 ## Stop conditions

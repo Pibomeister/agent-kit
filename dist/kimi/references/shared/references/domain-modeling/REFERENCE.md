@@ -26,7 +26,7 @@ documentation tree in the working repository under any name, so there is no path
 | A decision meeting the three-part test below | An `adr` page, published `proposed` |
 | The options and evidence a decision was chosen from | A `decision` run artifact, which the `adr` cites |
 
-`adapters/knowledgebase/CONTRACT.md` carries the operations and their failure modes. Placement is by
+[`adapters/knowledgebase/CONTRACT.md`](../../adapters/knowledgebase/CONTRACT.md) carries the operations and their failure modes. Placement is by
 **scope**, which the KB resolves; the caller supplies no path and invents no tenth document kind.
 
 **Create lazily.** Write a record when there is something to record. Do not open an empty glossary

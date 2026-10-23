@@ -117,7 +117,7 @@ any acknowledgment. Narrative is not a receipt (ruling `closure-requires-indepen
 
 - Returned canvas session data: design URL, design and connection ids, ordered routes, named
   viewports, and the completed pre-handoff checklist. Tokens are excluded.
-- For each applied handoff, a `verification` receipt (`schemas/verification.schema.json`) made from
+- For each applied handoff, a `verification` receipt ([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)) made from
   [the receipt template](assets/receipt.example.json) under [its rules](references/receipt.md):
   probe parameters name route, viewport and the revision or, where the channel returned none, the
   handoff digest and that no acknowledgment channel exists; `artifacts` names every changed source

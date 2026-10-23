@@ -25,7 +25,7 @@ metadata:
 ## Authority
 
 Authority: `explicit`. A human starts it with `/verify`. No phase operation exposes it
-(`policies/invocation.yaml` lists it among the user-invoked skills that expose none), so no controller
+([`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) lists it among the user-invoked skills that expose none), so no controller
 can start it under a grant. Started any other way, it stops at step 1 and names the command.
 
 ## Inputs
@@ -71,7 +71,7 @@ can start it under a grant. Started any other way, it stops at step 1 and names 
    | backend | `dry-run` | command or probe plus complete output digest |
    | backend | `smoke-test` | command or probe plus output digest against the running service |
 
-6. Emit at least one `schemas/verification.schema.json` receipt per criterion: the command or probe,
+6. Emit at least one [`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json) receipt per criterion: the command or probe,
    raw outcome, snapshot, environment, supporting criterion, and the output log under `artifacts[]`
    with the receipt's `output_digest`. A run is opened when `<git-common-dir>/agent-kit/evidence/`
    holds the branch's pointer in `branches/` naming `runs/<run_id>/run.json`; otherwise it never was.
@@ -97,7 +97,7 @@ Gate: a runnable criterion is not passed by tests, type checks or a build alone.
 Gate: an undeclared or unavailable browser, service, trace collector or command is reported by its
 declared evidence kind. No proxy is substituted and the criterion remains uncovered.
 
-Gate: a receipt must validate against `schemas/verification.schema.json`; narrative cannot replace
+Gate: a receipt must validate against [`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json); narrative cannot replace
 its command or probe, outcome, digest, revision, environment or criterion binding (ruling
 `closure-requires-independent-verification`).
 
@@ -117,7 +117,7 @@ runner-enforced path a receipt claiming independence without runner attestation 
 
 ## Outputs
 
-- Verification receipts (`schemas/verification.schema.json`) and a complete criterion matrix,
+- Verification receipts ([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)) and a complete criterion matrix,
   published through `publishArtifact` with run-artifact placement, or returned unpublished.
 - A successful discovered recipe, content-addressed; published as a `sop` KB document where
   `kb-write` exists. Later runs replay it and invalidate it when its hash or declaration changes.

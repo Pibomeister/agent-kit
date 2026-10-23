@@ -51,7 +51,7 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
 - Optional, under the `learning` profile: `ak learn review report` for the repository's active
   review patterns and guardrail drafts, and `ak learn memory show` for its working memory and
   confirmed lessons. A pattern or lesson there is admitted as supporting evidence only where the
-  evidence gate admitted it (protocol `evidence-gate`); a `candidate` pattern or a `hypothesis`
+  evidence gate admitted it (protocol [`evidence-gate`](../../references/shared/protocols/evidence-gate/PROTOCOL.md)); a `candidate` pattern or a `hypothesis`
   lesson is context, not support. These are runtime commands, not skills, and the runtime is an
   optional host adapter; its absence changes nothing below (ruling
   `learning-runtime-is-host-adapter`).
@@ -81,7 +81,7 @@ invocation and the candidate stays a draft (ruling `entrypoint-phase-operation-s
    supports which statement. Load
    [the prose-quality reference pack](../../references/shared/references/prose-quality/REFERENCE.md) before wording it.
 6. **Propose it** through the adapter's `proposeLesson` as a `candidate`
-   (`schemas/lesson.schema.json`).
+   ([`schemas/lesson.schema.json`](../../references/shared/schemas/lesson.schema.json)).
 7. **Publish only on authority.** At the public entrypoint, publish when the human says so in this
    session. At lesson.capture, never. At `lesson.publish`, only under the grant.
 
@@ -107,7 +107,7 @@ Gate: nothing is written into the working repository, whatever the knowledgebase
 
 ## Outputs
 
-- `lesson` (`schemas/lesson.schema.json`), status `candidate`, through `proposeLesson`, with its
+- `lesson` ([`schemas/lesson.schema.json`](../../references/shared/schemas/lesson.schema.json)), status `candidate`, through `proposeLesson`, with its
   trigger, evidence, where it applies and anything it supersedes.
 - On explicit authorization or under the grant, the same lesson published.
 - A report: the trigger, the counterfactual answer, the lesson or the reason there is none, and
@@ -120,7 +120,7 @@ never edits the repository it learned from.
 
 `kb-publish` is a remote side effect. Its idempotency key derives from the run, the operation, the
 lesson's identity and its artifact hash, and the read-back is the lesson as the knowledgebase
-returns it (`adapters/runner-contract/CONTRACT.md`). A publish whose read-back cannot be performed
+returns it ([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md)). A publish whose read-back cannot be performed
 is `failed`, never complete.
 
 ## Stop conditions

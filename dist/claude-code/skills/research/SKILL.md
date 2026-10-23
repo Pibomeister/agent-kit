@@ -38,7 +38,7 @@ Authority: `model`. A controller or a parent skill starts it when the caller's q
 description; no human invocation is required and no slash command exposes it.
 
 No grant covers delegation here, because no phase operation exposes this skill:
-`policies/invocation.yaml` records model-invoked skills as exposing none by construction. The skill
+[`policies/invocation.yaml`](../../references/shared/policies/invocation.yaml) records model-invoked skills as exposing none by construction. The skill
 starts `/ak:super-scout`, which is model-invoked, when a repo-local fact is needed, and no
 user-invoked skill. Handoffs to `super-bound` or `super-build` are recommendations to the caller.
 

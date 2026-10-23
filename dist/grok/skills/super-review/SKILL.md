@@ -29,7 +29,7 @@ a reviewer has not yet read.
 
 ## Not for
 
-Not for producing the fix. Reviewers do not edit the source they review (`policies/review.yaml`);
+Not for producing the fix. Reviewers do not edit the source they review ([`policies/review.yaml`](../../references/shared/policies/review.yaml));
 accepted findings leave this skill and enter the apply-findings protocol, which is where an
 implementer with write authority acts on them.
 
@@ -88,13 +88,13 @@ the spec lane returns `unavailable` rather than inventing an intent to review ag
 
 The project's declared standards, discovered from the project's own record. Where a project declares
 none, the standards seat returns an empty result; absent standards never become invented preferences
-(`policies/review.yaml`).
+([`policies/review.yaml`](../../references/shared/policies/review.yaml)).
 
 The test evidence that exists for the change, and the packs the change earned. Packs are the artifact
 evidence that selects conditional seats; they are read, never guessed at from file names alone.
 
 For `delta` only: the open review run, its persisted finding list with fingerprints and dispositions,
-its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
+its input hashes, and the fix diff ([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json) `packet`).
 
 ## Workflow
 
@@ -127,7 +127,7 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    whoever approved its spec (ruling `missing-supervisor-never-implementer`).
 6. Dispatch the selected seats concurrently within the turn, each in its own isolated review context.
    Every finding quotes the line it is about.
-7. Record each lane's state as `covered`, `skipped` or `unavailable` (`schemas/review.schema.json`);
+7. Record each lane's state as `covered`, `skipped` or `unavailable` ([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json));
    the mapping from a seat's own result is in `./references/panel.md`. A lane that could not run,
    could not be given its required context, or failed, is `unavailable` with the reason named — a
    result, not an absence (ruling `required-lane-failure-is-unavailable`). Store each covered seat's
@@ -165,7 +165,7 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 
 ## Hard gates
 
-Gate: reviewers cannot edit source (`policies/review.yaml` `reviewers_may_edit_source: false`), and
+Gate: reviewers cannot edit source ([`policies/review.yaml`](../../references/shared/policies/review.yaml) `reviewers_may_edit_source: false`), and
 the snapshot is immutable for the length of the run. A reviewer that changed what it was reviewing
 has reviewed nothing.
 
@@ -181,7 +181,7 @@ blocks the checkpoint rather than falling to whoever is still there (ruling
 Gate: an author may never close their own finding, and a finding closes only on independent
 verification evidence plus a policy rule saying that evidence is sufficient for it. A receipt is the
 unit of that evidence: it carries the command or probe, its exit status, the output digest, the
-revision and the environment identity (`schemas/verification.schema.json`). An agent's description of
+revision and the environment identity ([`schemas/verification.schema.json`](../../references/shared/schemas/verification.schema.json)). An agent's description of
 a green run is not a receipt. A classifier's output and a reviewer's confidence are recorded as
 advisory, and a changed patch does not inherit stale receipts (ruling
 `closure-requires-independent-verification`). A receipt or a verdict is stale once the revision or
@@ -201,14 +201,14 @@ never conflated (ruling `delta-baseline-reset-not-third-loop`).
 Gate: a finding whose solution space is still open is never handed to an automatic fixer. A `smell`
 carries a null difficulty, because inventing a difficulty before the solution class is known is the
 error the axis exists to prevent; its action class is never automatic; and its dispatch is to
-sharpen, to diagnose or to escalate, never a fixer ticket (`schemas/finding.schema.json`, ruling
+sharpen, to diagnose or to escalate, never a fixer ticket ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json), ruling
 `safe-auto-restricted-per-seat`). Pressure to hand it over anyway is not a reason it became
 specified.
 
 Gate: a standards finding cites the project rule it rests on, rule by rule, with the file and the
 rule identifier. Where the project declares no standards the seat returns an empty result: absent
 standards never become invented preferences, and a seat that cannot cite a rule returns empty
-(`policies/review.yaml`).
+([`policies/review.yaml`](../../references/shared/policies/review.yaml)).
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -217,7 +217,7 @@ standards never become invented preferences, and a seat that cannot cite a rule 
 | "Only one lane is missing and everything else came back clean, so the verdict is approved with a note." | A required lane's absence is a result, not a footnote; an approval with a note reads downstream as an approval (ruling `required-lane-failure-is-unavailable`). | Set the verdict to `unavailable` or `blocked`, name the lane, and say what would make it runnable. |
 | "It is a one-line change, so spawn the standard panel anyway — it is cheaper than deciding." | A fixed roster is the position this package refused; it spends seats on a typo and teaches readers that panel size means nothing (ruling `panel-composition-by-declared-risk`). | Select from declared risk and attached packs, and record which seats were selected and which signals selected them. |
 | "The fix only touched three lines, so the delta reviews those three lines." | The impact of a fix reaches callers the fix never touched, and a line-based boundary suppresses exactly the class of issue the delta exists to catch (ruling `delta-scope-affected-behavior`). | Bound the delta by affected behavior, and report a serious issue in an untouched affected caller with its novelty evidence. |
-| "Give the reviewer the implementer's summary so it knows what the change was trying to do." | The narrative is the author's account of their own work, and a seat that reads it is judging the account rather than the change (`policies/review.yaml`). | Hand the seat the frozen snapshot and its own requirements, standards and test context, and nothing produced by the author lane. |
+| "Give the reviewer the implementer's summary so it knows what the change was trying to do." | The narrative is the author's account of their own work, and a seat that reads it is judging the account rather than the change ([`policies/review.yaml`](../../references/shared/policies/review.yaml)). | Hand the seat the frozen snapshot and its own requirements, standards and test context, and nothing produced by the author lane. |
 | "The finding is vague, but the fixer is good at this — hand it over and let it work out the details." | A smell is a problem whose solution space is still open, and handing it to an automatic fixer buys a change nobody specified against a difficulty nobody could yet know (ruling `safe-auto-restricted-per-seat`). | Keep the difficulty null, sharpen the finding into a bounded one, diagnose it, or escalate it — and record which of the three the dispatch was. |
 | "The reviewer rated the fix high-confidence, so the finding can be marked resolved." | Confidence is a property of the judge; closure is a property of the evidence (ruling `closure-requires-independent-verification`). | Record the confidence as advisory, and close only on independent verification evidence for the revision the fix is at. |
 | "The base moved and the requirements were rewritten, but the delta loop still has a cycle left." | Continuing a loop whose comparison base no longer means what it meant spends a cycle comparing against a baseline nobody approved, and the approvals it carries forward were given for a different change (ruling `delta-baseline-reset-not-third-loop`). | Invalidate the affected approvals, record what changed materially, and open a new scope at pass 1 rather than spending the remaining cycle. |
@@ -226,12 +226,12 @@ standards never become invented preferences, and a seat that cannot cite a rule 
 
 ## Outputs
 
-The review (`schemas/review.schema.json`): mode, comparison base, reviewed head, the snapshot with
+The review ([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json)): mode, comparison base, reviewed head, the snapshot with
 its hash and exclusions, the authorship record, one entry per lane with its state and verdict, the
 fix-cycle count, the verdict, and — where a baseline was reset — what changed materially, which
 approvals it invalidated and the new comparison base.
 
-The findings (`schemas/finding.schema.json`), each with its evidence quoting the line it is about,
+The findings ([`schemas/finding.schema.json`](../../references/shared/schemas/finding.schema.json)), each with its evidence quoting the line it is about,
 its fingerprint — rule-or-cause plus location-or-symbol plus evidence, never the line number — and
 its action class. No code-review seat emits `safe_auto`: at review time a code edit has no single
 mechanically correct answer, so classification is a proposal and applying it is the caller's decision
@@ -280,10 +280,10 @@ what they are.
 
 ## Limits
 
-Fix cycles: 2 (gate). `policies/limits.yaml` `fix_cycles`. The third stops with an explicit
+Fix cycles: 2 (gate). [`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `fix_cycles`. The third stops with an explicit
 blocked-or-replan decision rather than another pass.
 
-Review rounds: 3 (gate). `policies/limits.yaml` `review_rounds`, counted across the run.
+Review rounds: 3 (gate). [`policies/limits.yaml`](../../references/shared/policies/limits.yaml) `review_rounds`, counted across the run.
 
 Panel size: no cap (guidance). Composition follows declared risk, so the count is an outcome of
 selection and never a target to hit or to trim to.
@@ -292,4 +292,4 @@ Change size and test ratios: not gates (guidance). Carried in [`engineering-prin
 set per project, and never grounds for a finding on their own.
 
 Runner budgets: a cap the runner did not supply is not enforced and not guessed
-(`policies/limits.yaml`).
+([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).

@@ -41,7 +41,7 @@ Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase o
 `wayfind.map`. A human starts the public entrypoint by typing `/wayfind`. A request in prose is
 not a start, even when it names this skill or the command. A delegated controller starts
 `wayfind.map` only under a runner-validated grant covering `ticket-approval`
-(`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate that grant, the operation
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md)). Where the host cannot validate that grant, the operation
 stops for explicit invocation rather than dispatching what it mapped (ruling
 `entrypoint-phase-operation-split`). This skill may start `/ak:research` and `/ak:prototype`, which
 are model-invoked; it may not start a user-invoked skill, which is why a `grilling` ticket is handed
@@ -53,7 +53,7 @@ back rather than resolved here.
 - At working the map: the map's identity. Without one, this skill picks the next frontier ticket;
   the human is not asked to.
 - The system of record for tickets, decided by configuration and never by reachability
-  (`adapters/tracker/CONTRACT.md` §2; ruling `tracker-of-record-falls-back-to-kb`):
+  ([`adapters/tracker/CONTRACT.md`](../../references/shared/adapters/tracker/CONTRACT.md) §2; ruling `tracker-of-record-falls-back-to-kb`):
   - The project folder binds a tracker (`ak.tracker.yaml`) and the project record names the same
     system, or there is no record: that tracker.
   - A bound tracker whose system the project record does not name: `needs-input`. Obeying the
@@ -66,7 +66,7 @@ back rather than resolved here.
     map is never kept in the session or written into the working repository instead.
   The binding and its guarded invocation are in the
   [tracker-of-record reference pack](../../references/shared/references/tracker-of-record/REFERENCE.md).
-- At `wayfind.map` only: a `charter` (`schemas/charter.schema.json`) listing `ticket-approval`.
+- At `wayfind.map` only: a `charter` ([`schemas/charter.schema.json`](../../references/shared/schemas/charter.schema.json)) listing `ticket-approval`.
   Absent: `needs-input`.
 
 ## Workflow
@@ -103,7 +103,7 @@ back rather than resolved here.
    unclaimed. Claim it before any work: the tracker's native assignment where a tracker is the
    system of record, and otherwise by asking the runner for exclusive access to the record, because
    the knowledgebase adapter implements no locking and neither does this body
-   (`adapters/knowledgebase/CONTRACT.md`, "Known limitation").
+   ([`adapters/knowledgebase/CONTRACT.md`](../../references/shared/adapters/knowledgebase/CONTRACT.md), "Known limitation").
 10. Resolve it by its type: `research` alone, `prototype` by dispatching it and linking the
     artifact, `task` by doing the work that unblocks a decision, `grilling` never here.
 11. Record the resolution on the ticket, close it, and append one line to Decisions so far: the gist
@@ -147,11 +147,11 @@ naming `tracker-access` and `kb-write`.
 
 ## Outputs
 
-- `map` (`schemas/map.schema.json`) — the five sections and the ticket set, published through the
+- `map` ([`schemas/map.schema.json`](../../references/shared/schemas/map.schema.json)) — the five sections and the ticket set, published through the
   knowledgebase adapter's `publishArtifact` under a `run-artifact` placement, or written to the
   external tracker where the project has one. No documentation tree in the working repository and
   no hardcoded knowledgebase path (ruling `central-kb-owns-project-artifacts`).
-- `ticket` (`schemas/ticket.schema.json`), `type: decision`, id shape `map-<effort>-<question>` —
+- `ticket` ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), `type: decision`, id shape `map-<effort>-<question>` —
   one per sharp open question, blocked by the tickets it waits on. Every ticket this skill cuts is
   a decision ticket, the `task` kind included: its manual work exists to unblock a decision. A map
   spans both ticket types, because the implementation tickets that come out of `super-bound` once
@@ -169,7 +169,7 @@ this skill decides and never builds.
 `kb-publish` and `tracker-write` are remote side effects. The idempotency key for each derives from
 the run, the operation, the record's stable remote identity and the artifact's hash; the read-back
 is the record the write returns, read before the write and confirmed after it
-(`adapters/runner-contract/CONTRACT.md`, "Idempotency"). A write whose read-back cannot be performed
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md), "Idempotency"). A write whose read-back cannot be performed
 is `failed`, never complete.
 
 ## Stop conditions

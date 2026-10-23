@@ -41,7 +41,7 @@ Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase o
 is not a start, even when it names this skill or the command. A delegated controller starts
 `bound.run` only under a runner-validated grant covering `spec-approval`, and only with a second
 grant covering `ticket-approval` when the operation emits implementation tickets
-(`adapters/runner-contract/CONTRACT.md`). Where the host cannot validate a grant, the operation
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md)). Where the host cannot validate a grant, the operation
 stops for explicit invocation rather than approving on the controller's word (ruling
 `entrypoint-phase-operation-split`). No skill starts this skill directly; it calls `doc-review`,
 which is model-invoked, and that direction is the legal one.
@@ -63,14 +63,14 @@ approves its own specification or tickets.
   a fact; an unreachable knowledgebase returns `failed`. The commands, and what an unconfigured
   knowledgebase obliges, are in
   [the knowledgebase-binding reference pack](../../references/shared/references/knowledgebase-binding/REFERENCE.md).
-- The project record's configured guidance (`schemas/project.schema.json`) for change size and test
+- The project record's configured guidance ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)) for change size and test
   shape. Absent: the starting points below are advisory and nothing enforces them.
 - Delegation guidance on that same project record. Missing it is `needs-input`; scorer inputs are
   never invented.
-- The project's verification recipes and surface declarations (`schemas/project.schema.json`).
+- The project's verification recipes and surface declarations ([`schemas/project.schema.json`](../../references/shared/schemas/project.schema.json)).
   Absent or empty: record the gap; never assume a browser, running service, trace collector or
   command the project did not declare.
-- At `bound.run` only: a `charter` (`schemas/charter.schema.json`) listing `spec-approval`, and
+- At `bound.run` only: a `charter` ([`schemas/charter.schema.json`](../../references/shared/schemas/charter.schema.json)) listing `spec-approval`, and
   `ticket-approval` where tickets will be emitted. Absent: `needs-input`.
 
 ## Workflow
@@ -215,9 +215,9 @@ skill enters, not a skill it starts:
   knowledgebase resolves the location and this skill supplies no path (ruling
   `central-kb-owns-project-artifacts`).
 - Plan record, a run artifact with envelope schema `plan-record`
-  (`schemas/plan-record.schema.json`) — the specification, the seams, the slicing and the dependency
+  ([`schemas/plan-record.schema.json`](../../references/shared/schemas/plan-record.schema.json)) — the specification, the seams, the slicing and the dependency
   graph, published under a `run-artifact` placement and linked from the `prd`.
-- `ticket` (`schemas/ticket.schema.json`), `type: implementation`, id `bound-<spec>-<slice>` — one
+- `ticket` ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), `type: implementation`, id `bound-<spec>-<slice>` — one
   per slice, with interfaces, ownership, edges, criteria, verification, `readiness`, resolved
   `assumptions` and the exact ticket-time `delegation` output.
 - `ticket`, `type: decision` — emitted for an open fork, with the three evidence blocks persisted in
@@ -233,7 +233,7 @@ the change and never makes it.
 `kb-publish` is a remote side effect. Its idempotency key derives from the run, the operation, the
 knowledgebase record identity and the published artifact's hash; the read-back is the record ref and
 stored hash `publishArtifact` returns, read before the write and confirmed after it
-(`adapters/runner-contract/CONTRACT.md`, "Idempotency"). A publication whose read-back cannot be
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md), "Idempotency"). A publication whose read-back cannot be
 performed is `failed`, never complete.
 
 ## Stop conditions
@@ -254,7 +254,7 @@ performed is `failed`, never complete.
 
 ## Limits
 
-- Consensus plan-gate rounds: 5 (gate, `policies/limits.yaml`).
+- Consensus plan-gate rounds: 5 (gate, [`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).
 - Implementation tickets started per run: the runner-supplied `ticket-budget` (gate when supplied).
   A cap the runner did not supply is not enforced and not guessed; the run records that it was
   absent.

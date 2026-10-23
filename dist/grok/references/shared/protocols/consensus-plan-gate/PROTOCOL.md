@@ -11,19 +11,19 @@ breaks one of the two.
 ## When to use
 
 `super-bound` invokes this protocol at its planning checkpoint, and only for the three cases
-`policies/review.yaml` `consensus_plan_gate.invoked_for` names: genuine architectural
+[`policies/review.yaml`](../../policies/review.yaml) `consensus_plan_gate.invoked_for` names: genuine architectural
 disagreement, high-risk planning, or a review-driven replan. Any skill that reaches a plan whose
 direction is contested — rather than whose prose is untidy — reaches it here.
 
 ## Not for
 
 - Not automatic on every `super-bound` invocation. A bounded, low-risk plan does not enter this
-  gate (`policies/review.yaml` `consensus_plan_gate.not_invoked`).
+  gate ([`policies/review.yaml`](../../policies/review.yaml) `consensus_plan_gate.not_invoked`).
 - Not for a plan that is merely sloppy, contradictory or missing test scenarios. That is a
   findings pass over a document that is allowed to live; this gate exists for a plan that must
   be allowed to die.
 - Not for diff quality. `review-delta` judges a change; this judges a plan. The `architect` seat
-  here is `plan-review/architect`, a different seat from any code-review architect lane.
+  here is [`plan-review/architect`](../../roles/plan-review/architect/ROLE.md), a different seat from any code-review architect lane.
 - Not a second planning lifecycle. It produces a verdict on a snapshot `super-bound` owns; it
   never becomes a default step beside it.
 
@@ -31,11 +31,11 @@ direction is contested — rather than whose prose is untidy — reaches it here
 
 `super-bound`, and the `bound.run` phase operation when a controller advances that phase. A
 protocol holds no authority of its own and never widens the authority it was called with (ruling
-`entrypoint-phase-operation-split`; protocol `phase-operations`).
+`entrypoint-phase-operation-split`; protocol [`phase-operations`](../phase-operations/PROTOCOL.md)).
 
 ## Inputs
 
-- A plan snapshot produced by `roles/plan-review/planner`, frozen and bound to its
+- A plan snapshot produced by [`roles/plan-review/planner`](../../roles/plan-review/planner/ROLE.md), frozen and bound to its
   `common#/$defs/hash`. It states the principles in force, the decision drivers, and the viable
   options actually considered — not a single recommendation with supporting prose.
 - The source revision the plan is written against.
@@ -49,10 +49,10 @@ recommendation.
 
 1. Freeze the snapshot: record its artifact hash and source revision. Every seat in this round
    reads that hash, never the live plan file.
-2. Seat `plan-review/architect`. Its input contains the snapshot and nothing produced by the
+2. Seat [`plan-review/architect`](../../roles/plan-review/architect/ROLE.md). Its input contains the snapshot and nothing produced by the
    critic seat — the critic has not run.
 3. Collect the architect's structural judgment against the frozen hash.
-4. Seat `plan-review/critic`. Its input contains the same snapshot hash and **not** the
+4. Seat [`plan-review/critic`](../../roles/plan-review/critic/ROLE.md). Its input contains the same snapshot hash and **not** the
    architect's output.
 5. Collect the critic's pass-or-kill judgment.
 6. Synthesize one whole-plan result — `approve`, `iterate` or `reject` — from the two
@@ -67,7 +67,7 @@ recommendation.
 ## Hard gates
 
 Gate: the architect and the critic never run in parallel, and neither seat's input ever contains
-the other's analysis for the same snapshot (`policies/review.yaml` `consensus_plan_gate.forbidden`).
+the other's analysis for the same snapshot ([`policies/review.yaml`](../../policies/review.yaml) `consensus_plan_gate.forbidden`).
 
 Gate: a snapshot mutated between the architect and the critic invalidates the round. The round
 restarts on the new hash; it does not continue with two seats judging different plans.
@@ -95,7 +95,7 @@ One whole-plan result bound to the snapshot hash: the verdict, the round number,
 judgment, the critic's judgment, and the decision record the synthesis produced. It carries no
 finding buckets. The decision record is published through the knowledgebase adapter's
 `recordDecision` in the proposed state, never written to a path in the working repository
-(ruling `central-kb-owns-project-artifacts`; `adapters/knowledgebase/CONTRACT.md`).
+(ruling `central-kb-owns-project-artifacts`; [`adapters/knowledgebase/CONTRACT.md`](../../adapters/knowledgebase/CONTRACT.md)).
 
 ## Side effects
 
@@ -114,6 +114,6 @@ repository is mutated by this protocol.
 
 ## Limits
 
-- Rounds: 5 (gate, `policies/limits.yaml` `consensus_rounds`).
+- Rounds: 5 (gate, [`policies/limits.yaml`](../../policies/limits.yaml) `consensus_rounds`).
 - Judgments per round: two — one architect, one critic (gate). There is no third seat.
 - Snapshots per round: one (gate). A new snapshot is a new round.

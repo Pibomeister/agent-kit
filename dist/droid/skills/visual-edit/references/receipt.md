@@ -5,7 +5,7 @@ handoff. Start from [the template](../assets/receipt.example.json): keep every m
 every value with what this run observed, and write the result as JSON.
 
 Check the finished receipt against the rules below before any acknowledgment. They restate
-`schemas/verification.schema.json` for the members this skill writes, so the check does not depend
+[`schemas/verification.schema.json`](../../../references/shared/schemas/verification.schema.json) for the members this skill writes, so the check does not depend
 on that file being at hand. A receipt that breaks a rule does not validate, and the run ends `failed`.
 
 | Member | Rule |

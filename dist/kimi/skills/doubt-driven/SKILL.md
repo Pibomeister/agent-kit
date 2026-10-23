@@ -118,7 +118,7 @@ Gate: a recommendation is not authorization. A clean record approves nothing and
   findings open, returned to the owner), `escalated` (cycle limit or doubt theater), or
   `insufficient evidence` (the contract or artifact could not support a judgment), a finished answer
   naming what would settle it.
-- On explicit request only: a `decision` (`schemas/decision.schema.json`) through the knowledgebase
+- On explicit request only: a `decision` ([`schemas/decision.schema.json`](../../references/shared/schemas/decision.schema.json)) through the knowledgebase
   adapter's `recordDecision`. No documentation tree in the working repository (ruling
   `central-kb-owns-project-artifacts`).
 
@@ -130,7 +130,7 @@ skill.
 `kb-publish` is a remote side effect and happens only on request. Its idempotency key derives from
 the run, the operation, the decision's identity and its content hash; the read-back is the record
 `recordDecision` returns, read before the write and confirmed after it
-(`adapters/runner-contract/CONTRACT.md`, "Idempotency"). A write whose read-back cannot be performed
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md), "Idempotency"). A write whose read-back cannot be performed
 is `failed`, never complete.
 
 ## Stop conditions

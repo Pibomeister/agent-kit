@@ -45,7 +45,7 @@ Authority: `explicit` at the public entrypoint, `delegated-grant` at the phase o
 `align.run`. A human starts the public entrypoint by typing `/skill:super-align`. A request in prose
 is not a start, even when it names this skill or the command. A delegated controller starts
 `align.run` only under a runner-validated grant covering `align-answer`
-(`adapters/runner-contract/CONTRACT.md`), and only for a bounded question inside the charter's work
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md)), and only for a bounded question inside the charter's work
 source. Where the host cannot validate that grant, the operation stops for explicit invocation
 rather than answering (ruling `entrypoint-phase-operation-split`). No skill starts this skill
 directly.
@@ -72,7 +72,7 @@ comes from the supervisor through `needs-decision`; the worker never approves it
   through the six-field restatement, then stop before publication with `needs-input` naming both
   `kb-read` and `kb-write` and that setup step. A configured knowledgebase that fails or cannot be
   reached returns `failed`; stop and report it rather than proceeding from memory.
-- At `align.run` only: a `charter` (`schemas/charter.schema.json`) listing the `align-answer`
+- At `align.run` only: a `charter` ([`schemas/charter.schema.json`](../../references/shared/schemas/charter.schema.json)) listing the `align-answer`
   checkpoint category. Absent, or listing a different category: `needs-input`.
 - Facts about the codebase are this skill's own job to find. A fact the agent could look up is
   never a question for the human, and looking it up never blocks a round.
@@ -158,7 +158,7 @@ answer, and no implementation file is written in that operation.
 - `adr` page — the approved direction, published with status `proposed` through `publishArtifact`.
   This skill never accepts one: acceptance happens in review and never by the author
   (`docs/decisions/0001-kb-document-vocabulary.md`, "Authorship separation carries into the KB").
-- `ticket` (`schemas/ticket.schema.json`), `type: decision`, id shape `align-<scope>-<topic>`,
+- `ticket` ([`schemas/ticket.schema.json`](../../references/shared/schemas/ticket.schema.json)), `type: decision`, id shape `align-<scope>-<topic>`,
   published through `publishArtifact` under a `run-artifact` placement when a fork is left open.
 - At `align.run`: the alignment result as a run artifact carrying the approved direction or the
   open decision. That operation writes no knowledgebase page.
@@ -171,7 +171,7 @@ not edit the repository under discussion.
 `kb-publish` is a remote side effect. Its idempotency key derives from the run, the operation, the
 knowledgebase record identity and the published artifact's hash; the read-back is the record ref and
 stored hash `publishArtifact` returns, read before the write and confirmed after it
-(`adapters/runner-contract/CONTRACT.md`, "Idempotency"). A publication whose read-back cannot be
+([`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md), "Idempotency"). A publication whose read-back cannot be
 performed is `failed`, never complete.
 
 ## Stop conditions
@@ -193,7 +193,7 @@ performed is `failed`, never complete.
 
 - Alignment exchanges: the runner-supplied `alignment-budget` (gate when supplied). A cap the runner
   did not supply is not enforced and not guessed; the run records that it was absent
-  (`policies/limits.yaml`).
+  ([`policies/limits.yaml`](../../references/shared/policies/limits.yaml)).
 - Questions per round: the whole frontier, asked once (gate). This skill caps the number of rounds
   at nothing of its own.
 - Approaches offered per fork: two or three (guidance). A fork with one real option is presented as
