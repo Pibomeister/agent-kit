@@ -11,12 +11,13 @@ export interface InputFile {
 export interface HookInput {
   files: InputFile[];
   excluded: Array<{ path: string; reason: string }>;
+  excludedOmitted?: number;
 }
 
 const EXCLUDED_PATH =
   /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 const SECRET_CONTENT =
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:api[_-]?key|access[_-]?token|password|authorization)["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})/i;
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9]*[_-])*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)(?:[_-][A-Za-z0-9]+)*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})/i;
 const TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
 
 function binary(content: string): boolean {
@@ -29,13 +30,17 @@ function binary(content: string): boolean {
 }
 
 export function collectInput(cwd: string): HookInput {
-  const top = run(["git", "rev-parse", "--show-toplevel"], { cwd });
+  const top = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 1_500 });
   if (top.code !== 0) throw new Error("repository");
   const root = realpathSync(top.stdout.trim());
-  const changed = run(["git", "diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR", "--"], { cwd: root });
+  const changed = run(["git", "diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR", "--"], {
+    cwd: root,
+    timeoutMs: 1_500,
+  });
   if (changed.code !== 0) throw new Error("repository");
-  const input: HookInput = { files: [], excluded: [] };
+  const input: HookInput = { files: [], excluded: [], excludedOmitted: 0 };
   let bytes = 0;
+  let excludedBytes = 0;
   for (const path of changed.stdout.split("\0").filter(Boolean).toSorted()) {
     let reason: string | undefined;
     const absolute = resolve(root, path);
@@ -65,7 +70,13 @@ export function collectInput(cwd: string): HookInput {
         reason = "unreadable";
       }
     }
-    if (reason !== undefined) input.excluded.push({ path, reason });
+    if (reason !== undefined) {
+      const pathBytes = Buffer.byteLength(JSON.stringify(path));
+      if (input.excluded.length < 128 && excludedBytes + pathBytes <= 8_192) {
+        input.excluded.push({ path, reason });
+        excludedBytes += pathBytes;
+      } else input.excludedOmitted = (input.excludedOmitted ?? 0) + 1;
+    }
   }
   return input;
 }

@@ -34,6 +34,9 @@ in place, and keeps foreign entries and other settings. The first backup is reta
 Invalid settings are refused. Nothing is wired automatically or through learning setup. No global
 runtime was changed during development.
 
+To remove this sibling without changing foreign hooks, run
+`bun tools/hooks/semantic-lint.ts unwire /absolute/project/settings.json`. Removal is idempotent.
+
 The host runs matching command hooks in parallel ([host contract](https://code.claude.com/docs/en/hooks)).
 Put the existing lint hook under the same event to run both as siblings. The semantic command does
 not run, capture or replace deterministic lint. `package.json`'s `lint` script and the no-mistakes
@@ -44,22 +47,29 @@ Payloads contain eligible changed files only. The [input filter](../src/semantic
 excludes dot directories, known dependency and output directories, provenance, research, fixtures,
 recognized private and credential paths, unsupported file types, binary files, all symlinks,
 and recognizable secret content. Each file is capped at 16 KiB and each batch at 32 files and
-48 KiB of source, paths and record overhead. Files that do not fit are excluded whole and named in diagnostics;
-they are never counted as reviewed. Exclusions reduce context and require human judgment.
+48 KiB of source, paths and record overhead. Files that do not fit are excluded whole and are never
+counted as reviewed. Diagnostics name up to 128 excluded paths within an 8 KiB path budget, then
+report the omitted count. Paths are quoted so control characters cannot create host message lines.
+Exclusions reduce context and require human judgment.
 The payload filter is conservative; it does not promise to detect every secret.
 
 Each batch uses one POST with all file questions and one code/document question when documents
-changed. There is at most one retry, for network failures, throttling or server errors. Each
-attempt has a 10-second deadline through reading the response body. SIGINT and SIGTERM cancel
+changed. There is at most one retry, for network failures, throttling or server errors.
+Git discovery has a 1.5-second limit per command. Each HTTP attempt has a 10-second deadline
+through reading the response body. SIGINT and SIGTERM cancel
 the request or retry wait. Redirects are refused. Auth, network, timeout, cancellation, HTTP,
 unusable-response, input and receipt errors have separate JSON reasons. All hook results exit 0
 and include a non-blocking `systemMessage` with status, findings and exclusions for the host.
 The structured result retains error and skip reasons. The hook never emits a host blocking decision.
+Scores 0–1 describe no visible mismatch; scores 2–3 call for manual inspection because the API
+does not identify the exact claim.
 
 Before each POST, the child writes a private receipt under
 `$XDG_STATE_HOME/agent-kit/semantic-lint/`, or `~/.local/state/agent-kit/semantic-lint/` by default.
 Receipts include the exact filtered request, requested and resolved runtime identity, trace carrier,
-attempt, HTTP status, token usage and estimated cost. Missing usage means unknown cost, not zero.
+attempt, HTTP status, token usage and estimated cost. The host message carries the trace carrier to
+find receipts for that invocation. Missing usage or a resolved runtime different from the pin means
+unknown cost, not zero.
 The key and response error text are never recorded. A receipt write failure prevents a new call.
 A valid `TRACEPARENT` is propagated; otherwise the hook creates one. Retain these receipts as
 private source material. Noul values, ordered scores, probabilities and confidence have distinct
