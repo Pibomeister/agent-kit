@@ -1,0 +1,10 @@
+adaptations:
+  - path: src/semantic-lint/client.ts
+    source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/jev.ts
+    rationale: Adapt the batched systemone wire contract and injectable transport. Replace environment credentials, aliases, pacing and broad retry loops with a pinned optional command child, private attempt receipts, cancellation, short deadlines and one retry.
+  - path: src/semantic-lint/client.ts
+    source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/questions.ts
+    rationale: Adapt score question and answer shapes. Preserve Noul as a distinct measurement, never probability or confidence. All findings remain advisory; no thresholds or independent-verification claims.
+  - path: tools/hooks/semantic-lint.ts
+    source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:.jev-lint/hooks/pre-commit
+    rationale: Adapt explicit missing-key skip to a default-disabled sibling Stop command. Do not adopt the donor's sequential review commands, live environment key, skill entrypoint or global installation. Merge preserves deterministic and foreign hooks.

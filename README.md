@@ -81,6 +81,9 @@ live acceptance remains separate for each served binding, and `ak update` does n
 
 ## Guard hook
 
+The source checkout also has an [optional semantic lint hook](docs/semantic-lint.md).
+It is disabled by default and runs as a sibling of deterministic lint.
+
 The source CLI (`bun run ak`) and the installed `bin/ak` carry the opt-in Claude Code hook:
 
 ```bash

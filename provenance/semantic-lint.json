@@ -1,0 +1,13 @@
+{
+  "donor": "jev-lint",
+  "revision": "af58a3bd20693f828ff6353e3543c0ab5bb7bad4",
+  "source": "https://github.com/mizchi/jev-lint",
+  "background": "https://typesafe.ai/blog/introducing-system-one-models-and-jev",
+  "model": "jev-1.14.0",
+  "key_file": ".config/agent-kit/jev.env",
+  "endpoint": "https://api.typesafe.ai/v1/systemone",
+  "input_usd_per_million": 0.042,
+  "output_usd_per_million": 0,
+  "cost_basis": "Donor src/jev.ts at the revision above; estimate, not an invoice. Missing usage means unknown cost.",
+  "pin_basis": "Authorized pre-hook sample resolved jev-latest to jev-1.14.0. That sample is not hook integration evidence. No live calls were made while building or testing this hook."
+}

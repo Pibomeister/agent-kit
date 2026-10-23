@@ -2226,6 +2226,11 @@
       "bytes": 2442,
       "tokens": 611
     },
+    "hook:semantic-lint-questions": {
+      "file": "src/semantic-lint/client.ts",
+      "bytes": 1359,
+      "tokens": 340
+    },
     "hook:session-start (invented project)": {
       "file": "src/learn/memory/session-context.ts",
       "bytes": 2394,
