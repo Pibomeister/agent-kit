@@ -148,7 +148,7 @@ if (import.meta.main) {
     process.once("SIGTERM", cancel);
     process.once("SIGINT", cancel);
     const result = await runHook({
-      root: process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
+      root: process.cwd(),
       enabled: process.env.AK_JEV_ENABLED === "1",
       keyFile: join(homedir(), pin.key_file),
       receipts: join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "agent-kit", "semantic-lint"),

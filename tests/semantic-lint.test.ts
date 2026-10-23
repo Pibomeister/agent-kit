@@ -180,6 +180,35 @@ describe("optional semantic sibling hook", () => {
     expect(run.stderr).toBe("");
   });
 
+  test.each([".", "nested"])("command collects the active checkout from %s", (directory) => {
+    const original = fixture();
+    const active = fixture();
+    for (const options of [original, active]) git(options.root, "checkout", "--", ".");
+    writeFileSync(join(active.root, "active-only.ts"), Buffer.from([1, 0, 2]));
+    git(active.root, "add", "active-only.ts");
+    const keyFile = join(active.root, pin.key_file);
+    mkdirSync(join(keyFile, ".."), { recursive: true });
+    writeFileSync(keyFile, "TYPESAFE_API_KEY=fixture-private-key\n", { mode: 0o600 });
+    mkdirSync(join(active.root, directory), { recursive: true });
+    const run = spawnSync(process.execPath, [ENTRY, "hook"], {
+      cwd: join(active.root, directory),
+      env: {
+        PATH: process.env.PATH,
+        HOME: active.root,
+        CLAUDE_PROJECT_DIR: original.root,
+        AK_JEV_ENABLED: "1",
+      },
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      status: "skipped",
+      reason: "no-input",
+      excluded: [{ path: "active-only.ts", reason: "binary" }],
+    });
+    expect(run.stderr).toBe("");
+  });
+
   test.each([0, 1, 2, 2.5, 3])("retains score %s for every file and code-doc question", async (score) => {
     const options = fixture();
     writeFileSync(join(options.root, "large.ts"), "x".repeat(16_385));
@@ -277,6 +306,64 @@ describe("optional semantic sibling hook", () => {
       "sensitive-path",
       "symlink",
     ]);
+  });
+
+  test("credential assignments are excluded before batching and recording", async () => {
+    const options = fixture();
+    const fields = [
+      "api_key",
+      "api-key",
+      "apiKey",
+      "access_token",
+      "access-token",
+      "accessToken",
+      "password",
+      "authorization",
+    ];
+    const excluded: Array<{ path: string; reason: string }> = [];
+    for (const [index, field] of fields.entries()) {
+      for (const [style, quote] of ["", "'", '"'].entries()) {
+        for (const separator of [":", "="]) {
+          const path = `config-${index}-${style}-${separator === ":" ? "colon" : "equals"}.txt`;
+          writeFileSync(join(options.root, path), `${quote}${field}${quote} ${separator} "opaque-provider-secret"`);
+          git(options.root, "add", path);
+          if (separator === "=")
+            writeFileSync(join(options.root, path), `${quote}${field}${quote} ${separator} 'opaque-provider-secret'`);
+          excluded.push({ path, reason: "secret-content" });
+        }
+      }
+    }
+    writeFileSync(join(options.root, "config.json"), '{"description":"safe configuration"}');
+    git(options.root, "add", "config.json");
+    let calls = 0;
+    const result = await runHook({
+      ...options,
+      transport: async (_url, init) => {
+        calls += 1;
+        if (!isText(init.body)) throw new Error("non-text request");
+        expect(request(init.body).state.files.map((file) => file.path)).toEqual([
+          "README.md",
+          "cart.ts",
+          "config.json",
+        ]);
+        expect(init.body).not.toContain("opaque-provider-secret");
+        return reply(init.body);
+      },
+    });
+    expect(calls).toBe(1);
+    expect(result.status).toBe("reviewed");
+    expect(result.excluded).toEqual(excluded.toSorted((left, right) => left.path.localeCompare(right.path)));
+    expect(result.findings.map((finding) => finding.file)).toEqual([
+      "README.md",
+      "cart.ts",
+      "config.json",
+      "(batch)",
+    ]);
+    const receipts = readdirSync(options.receipts);
+    expect(receipts).toHaveLength(1);
+    const receipt = receiptAt(join(options.receipts, receipts[0] ?? ""));
+    expect(receipt.request.state.files.map((file) => file.path)).toEqual(["README.md", "cart.ts", "config.json"]);
+    expect(JSON.stringify(receipt)).not.toContain("opaque-provider-secret");
   });
 
   test("empty eligible input is an explicit skip", async () => {
