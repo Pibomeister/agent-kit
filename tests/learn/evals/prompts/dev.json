@@ -36,13 +36,11 @@
   {"id": "dev-super-ship-h2", "skill": "super-ship", "polarity": "negative", "invocation": "U", "expected": [], "forbidden": ["super-ship"],
    "prompt": "Nobody has looked at the parser cleanup yet. Just commit what I have so far so I don't lose it."},
 
-  {"id": "dev-super-review-p1", "skill": "super-review", "polarity": "positive", "invocation": "U", "expected": ["super-review"], "expects": "recommend",
-   "prompt": "Please run /ak:super-review in full mode on the payments refactor branch."},
-  {"id": "dev-super-review-p2", "skill": "super-review", "polarity": "positive", "invocation": "U", "expected": ["super-review"], "expects": "recommend",
-   "prompt": "Use super-review to put the auth changes on this branch in front of a proper panel before I merge."},
-  {"id": "dev-super-review-p3", "skill": "super-review", "polarity": "positive", "invocation": "U", "expected": ["super-review"], "expects": "recommend",
+  {"id": "dev-super-review-p2", "skill": "super-review", "polarity": "positive", "invocation": "M", "expected": ["super-review"], "expects": "load",
+   "prompt": "Put the auth changes on this branch in front of a proper panel before I merge."},
+  {"id": "dev-super-review-p3", "skill": "super-review", "polarity": "positive", "invocation": "M", "expected": ["super-review"], "expects": "load",
    "prompt": "Can you look over the diff on this branch against the ticket and flag anything risky?"},
-  {"id": "dev-super-review-h1", "skill": "super-review", "polarity": "negative", "invocation": "U", "expected": [], "forbidden": ["super-review"],
+  {"id": "dev-super-review-n1", "skill": "super-review", "polarity": "negative", "invocation": "M", "expected": [], "forbidden": ["super-review"],
    "prompt": "In general, what do good reviewers look at first in a diff? No branch in mind, just curious."},
 
   {"id": "dev-compound-p1", "skill": "compound", "polarity": "positive", "invocation": "U", "expected": ["compound"], "expects": "recommend",

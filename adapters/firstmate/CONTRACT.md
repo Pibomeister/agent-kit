@@ -221,7 +221,7 @@ input shape.
 
 ## 6. Deprecated legacy binding delegated authority
 
-super-review `full` and `readiness` and super-ship are `explicit-or-delegated`: a human starts them,
+super-review `full` and `readiness` are model-started: the agent doing the work starts them, and no human act is required (ADR-0013). The phase operations `review.full` and `review.readiness` stay `delegated-grant`. super-ship stays `explicit-or-delegated`: a human starts it,
 or a delegated controller does under a validated grant. Under Firstmate, Firstmate is that controller
 and the binding it wrote is the grant (ADR-0004). `ak firstmate grant --binding <path> --operation
 <op>` validates it and prints a grant record, or refuses with a reason and a `needs-decision` hint.

@@ -473,8 +473,8 @@
     },
     "bundle/claude-code:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20256,
-      "tokens": 5062
+      "bytes": 19921,
+      "tokens": 4979
     },
     "bundle/claude-code:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -1293,8 +1293,8 @@
     },
     "bundle/codex:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20256,
-      "tokens": 5062
+      "bytes": 19921,
+      "tokens": 4979
     },
     "bundle/codex:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -2113,8 +2113,8 @@
     },
     "bundle/droid:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20157,
-      "tokens": 5038
+      "bytes": 19828,
+      "tokens": 4955
     },
     "bundle/droid:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -2933,8 +2933,8 @@
     },
     "bundle/grok:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20157,
-      "tokens": 5038
+      "bytes": 19828,
+      "tokens": 4955
     },
     "bundle/grok:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -3753,8 +3753,8 @@
     },
     "bundle/kimi:skill-listing": {
       "file": "skills/*/SKILL.md (description)",
-      "bytes": 20355,
-      "tokens": 5087
+      "bytes": 20014,
+      "tokens": 5002
     },
     "bundle/kimi:skills/autopilot/SKILL.md": {
       "file": "skills/autopilot/SKILL.md",
@@ -4118,8 +4118,8 @@
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",
-      "bytes": 5567,
-      "tokens": 1392
+      "bytes": 5883,
+      "tokens": 1471
     },
     "firstmate:stock-brief": {
       "file": "src/firstmate/stock.ts",
@@ -4128,13 +4128,13 @@
     },
     "hook:session-start (invented project)": {
       "file": "src/learn/memory/session-context.ts",
-      "bytes": 2394,
-      "tokens": 597
+      "bytes": 2473,
+      "tokens": 617
     },
     "hook:session-start (no repository)": {
       "file": "src/learn/skills/roster.ts",
-      "bytes": 1673,
-      "tokens": 419
+      "bytes": 1752,
+      "tokens": 438
     },
     "judge:consolidator": {
       "file": "src/learn/memory/consolidate.ts",
@@ -4163,8 +4163,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 22650,
-      "tokens": 5649
+      "bytes": 23421,
+      "tokens": 5841
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",

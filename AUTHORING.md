@@ -120,8 +120,8 @@ over-eager description would swallow; they are also the source of the non-trigge
 One line naming the `common#/$defs/authority` value, one line naming who may start it, and — when
 the value is anything other than `explicit` — the grant that covers delegation.
 
-> Authority: `explicit-or-delegated`. A human starts it with `/ak:super-review`; a delegated
-> controller may start it only under a runner-validated grant covering `finding-adjudication`
+> Authority: `explicit-or-delegated`. A human starts it with `/ak:super-ship`; a delegated
+> controller may start it only under a runner-validated grant covering `ship-pr`
 > (`adapters/runner-contract/CONTRACT.md`).
 
 ### `## Inputs`
