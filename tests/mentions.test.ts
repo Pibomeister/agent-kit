@@ -313,6 +313,12 @@ describe("what counts as naming a file", () => {
     expect(link(text)).toEqual({ text, dependencies: [] });
   });
 
+  test("a span inside longer link text is not linked again", () => {
+    const text = "see [`roles/implementer/ROLE.md` §7](../x.md#7) and [a `implementer` b](y.md)";
+    expect(link(text)).toEqual({ text, dependencies: [] });
+    expect(codeSpans(text).map((s) => s.linked)).toEqual([true, true]);
+  });
+
   test("project paths, placeholders and globs are not this package's files", () => {
     for (const span of ["docs/plans/x.md", "AGENTS.md", "schemas/*.schema.json", "roles/<id>/ROLE.md", "roles/"])
       expect(rootPathOf(span)).toBeNull();

@@ -36,6 +36,7 @@ const ROOT_PATH = /^([a-z][a-z0-9-]*\/[A-Za-z0-9._/-]*[A-Za-z0-9_-])(#[A-Za-z0-9
 /** A single-backtick code span, not part of a longer backtick run. */
 const CODE_SPAN = /(?<!`)`([^`\n]+)`(?!`)/g;
 
+const LINK_TEXT = /\[((?:`[^`\n]*`|[^[\]`\n])*)\]\(/g;
 const FENCE = /^\s*(```|~~~)/;
 
 export interface MentionTarget {
@@ -111,7 +112,7 @@ export interface CodeSpan {
   span: string;
   /** 1-based line. */
   line: number;
-  /** Already the text of a markdown link, e.g. [`roles/x/ROLE.md`](../roles/x/ROLE.md). */
+  /** Inside the text of a markdown link, e.g. [`roles/x/ROLE.md` §2](../roles/x/ROLE.md). */
   linked: boolean;
   /** Written as ``protocol `<id>` `` or ``the `<id>` protocol``, so the span is a protocol's catalog id. */
   protocolCited: boolean;
@@ -160,7 +161,11 @@ export function codeSpans(text: string): CodeSpan[] {
 }
 
 function isLinkText(line: string, start: number, end: number): boolean {
-  return line[start - 1] === "[" && line.startsWith("](", end);
+  for (const m of line.matchAll(LINK_TEXT)) {
+    const open = (m.index ?? 0) + 1;
+    if (start >= open && end <= open + (m[1] ?? "").length) return true;
+  }
+  return false;
 }
 
 function isProtocolCited(line: string, start: number, end: number): boolean {
