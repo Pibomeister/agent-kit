@@ -1,6 +1,6 @@
 import { join, posix, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 
 import { DIRECTORY_SECTIONS, entryBodyPath, entryDir } from "../catalog/layout.ts";
 import { isInside, listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
@@ -340,9 +340,9 @@ export interface BundleFile {
   /** Repo-relative source, when the file was copied rather than generated. */
   source?: string;
   /**
-   * Copied with its source bytes to its source path, as a declared role, catalog
-   * or schema is. Its code spans stay as written; the copy under the shared root
-   * that a skill links to is the one whose mentions become links.
+   * Copied with its source bytes to its source path: a declared role, catalog or
+   * schema, or an eval case. Its code spans stay as written, so the bundle check
+   * does not hold it to linking what it names.
    */
   verbatim?: true;
 }
@@ -461,13 +461,16 @@ function catalogMentions(root: string, catalog: CheckContext["catalog"]): Mentio
   }
   const base = resolve(root);
   return mentionResolver({
-    // Confined to the tree as well as refused `..` by rootPathOf, so no mention reaches a file
-    // outside it. Lexical, because a plan may run over a root whose entries are symlinks.
+    // rootPathOf refuses `..`; this also refuses a file whose real location, symlinks
+    // followed, is outside the real location of the tree it is named under (`references/`
+    // for `references/x.md`), so no mention copies a file from outside that tree. The tree
+    // itself may be a link, as it is in a root whose top-level entries link to a checkout.
     isFile: (path) => {
       const full = resolve(base, path);
       if (full === base || !isInside(full, base)) return false;
       try {
-        return statSync(full).isFile();
+        const tree = realpathSync(resolve(base, path.slice(0, path.indexOf("/"))));
+        return statSync(full).isFile() && isInside(realpathSync(full), tree);
       } catch {
         return false;
       }
@@ -923,7 +926,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       for (const file of walkFiles(root, `${EVAL_DIR}/${id}`)) {
         const text = readTextIfPresent(join(root, file));
         if (text === null) continue;
-        files.set(file, { path: file, contents: text, source: file });
+        files.set(file, { path: file, contents: text, source: file, verbatim: true });
         cases += 1;
       }
     }

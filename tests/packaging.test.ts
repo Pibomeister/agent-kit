@@ -562,6 +562,18 @@ describe("bundle planning", () => {
     expect(absent.files.has(path)).toBe(false);
   });
 
+  test("the policies and adapter contracts the skills name travel under the shared root", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    const plan = planBundle({ root: REPO, catalog }, "claude-code", {});
+    const skills = [...plan.files.values()].filter((file) => file.path.endsWith("/SKILL.md"));
+    for (const path of ["policies/review.yaml", "adapters/runner-contract/CONTRACT.md"]) {
+      expect(plan.files.has(`references/shared/${path}`)).toBe(true);
+      const link = `[\`${path}\`](../../references/shared/${path})`;
+      expect(skills.some((file) => file.contents.includes(link))).toBe(true);
+    }
+  });
+
   test("a link between two shared files needs no rewrite because the layout is preserved", () => {
     const plan = planBundle(ctxFor(), "claude-code", {});
     const proto = plan.files.get("references/shared/protocols/tdd/PROTOCOL.md")?.contents ?? "";

@@ -7,6 +7,8 @@
  * and the bundle check to failing when one is left out.
  */
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
 import { planAll } from "../src/packaging/build.ts";
@@ -145,6 +147,63 @@ describe("the packager carries what a skill names", () => {
     ]);
   });
 
+  test("a policy and an adapter contract named by root path travel, and their names become links", () => {
+    const extra = {
+      "policies/limits.yaml": "limits: {}\n",
+      "adapters/runner-contract/CONTRACT.md": "# Runner contract\n",
+    };
+    const body = "Caps in `policies/limits.yaml`; the runner per `adapters/runner-contract/CONTRACT.md`.\n";
+    const bundle = claudeBundle(body, extra);
+    expect(bundle.get("references/shared/policies/limits.yaml")).toBe("limits: {}\n");
+    expect(bundle.get("references/shared/adapters/runner-contract/CONTRACT.md")).toBe("# Runner contract\n");
+    const skill = bundle.get("skills/alpha/SKILL.md");
+    expect(skill).toContain("[`policies/limits.yaml`](../../references/shared/policies/limits.yaml)");
+    expect(skill).toContain(
+      "[`adapters/runner-contract/CONTRACT.md`](../../references/shared/adapters/runner-contract/CONTRACT.md)",
+    );
+    expect(checkBundleLinks(ctxFor(body, extra), {})).toEqual([]);
+  });
+
+  test("a mention that reaches outside the tree through a symlink copies nothing and fails the bundle check", () => {
+    const outside = makeTree({ "secret.md": "OUTSIDE\n" });
+    const body = "Read `references/evil-link.md`.\n";
+    const ctx = ctxFor(body);
+    mkdirSync(join(ctx.root, "references"));
+    symlinkSync(join(outside, "secret.md"), join(ctx.root, "references", "evil-link.md"));
+    const plan = planAll(ctx, { hosts: ["claude-code"] })[0];
+    if (plan === undefined) throw new Error("no plan");
+    expect([...plan.files.values()].some((file) => file.contents.includes("OUTSIDE"))).toBe(false);
+    expect(plan.files.get("skills/alpha/SKILL.md")?.contents).toContain(body.trim());
+    const issues = checkBundleLinks(ctx, { hosts: ["claude-code"] });
+    expect(issues.map((i) => `${i.rule} ${i.message.split("'")[1]}`)).toEqual([
+      "links.mention-not-bundled references/evil-link.md",
+    ]);
+  });
+
+  test("a tree reached through a symlinked root still carries what a skill names", () => {
+    const { root, catalog } = ctxFor("Work `protocols/tdd/PROTOCOL.md`.\n");
+    const link = join(makeTree({}), "linked-root");
+    symlinkSync(root, link);
+    const plan = planAll({ root: link, catalog }, { hosts: ["claude-code"] })[0];
+    expect(plan?.files.has("references/shared/protocols/tdd/PROTOCOL.md")).toBe(true);
+  });
+
+  test("a tree that is itself a link to another checkout's tree still carries what a skill names", () => {
+    const { root, catalog } = ctxFor("Work `protocols/tdd/PROTOCOL.md`.\n");
+    const farm = makeTree({});
+    for (const entry of ["catalog.yaml", "skills", "protocols", "roles", "schemas"])
+      symlinkSync(join(root, entry), join(farm, entry));
+    const plan = planAll({ root: farm, catalog }, { hosts: ["claude-code"] })[0];
+    expect(plan?.files.has("references/shared/protocols/tdd/PROTOCOL.md")).toBe(true);
+  });
+
+  test("an eval case is copied verbatim and is not held to linking what it names", () => {
+    const evalCase = "Prompt: seat `implementer` and fill `schemas/user.json`.\n";
+    const extra = { "evals/alpha/cases/seat.md": evalCase };
+    expect(claudeBundle("Body.\n", extra).get("evals/alpha/cases/seat.md")).toBe(evalCase);
+    expect(checkBundleLinks(ctxFor("Body.\n", extra), { hosts: ["claude-code"] })).toEqual([]);
+  });
+
   test("an absolute path is not a mention and copies nothing", () => {
     const body = "Never `/etc/passwd` nor `/roles/implementer/ROLE.md`.\n";
     const bundle = claudeBundle(body);
@@ -192,6 +251,12 @@ describe("what counts as naming a file", () => {
   });
   const link = (text: string) =>
     linkMentions("skills/a/SKILL.md", "skills/a/SKILL.md", text, resolve, (source) => `references/shared/${source}`);
+
+  test("an anchor that could close the link target is not a mention", () => {
+    const text = "`roles/implementer/ROLE.md#a)[x](javascript:alert(1)`";
+    expect(rootPathOf(text.slice(1, -1))).toBeNull();
+    expect(link(text)).toEqual({ text, dependencies: [] });
+  });
 
   test("an anchor stays on the link", () => {
     expect(link("`schemas/common.schema.json#/$defs/escalation`").text).toBe(

@@ -26,8 +26,12 @@ export const MENTION_TREES = [
   "templates/",
 ] as const;
 
-/** A whole inline code span holding a root path, with an optional anchor. */
-const ROOT_PATH = /^([a-z][a-z0-9-]*\/[A-Za-z0-9._/-]*[A-Za-z0-9_-])(#\S*)?$/;
+/**
+ * A whole inline code span holding a root path, with an optional anchor. The anchor is limited to
+ * the characters a heading slug or JSON pointer uses, because it is written into a link target as is:
+ * a `)`, `[` or `<` there would close the link and start another.
+ */
+const ROOT_PATH = /^([a-z][a-z0-9-]*\/[A-Za-z0-9._/-]*[A-Za-z0-9_-])(#[A-Za-z0-9._~/$-]*)?$/;
 
 /** A single-backtick code span, not part of a longer backtick run. */
 const CODE_SPAN = /(?<!`)`([^`\n]+)`(?!`)/g;

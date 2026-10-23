@@ -2069,10 +2069,10 @@ need it.
 - Three or more eval cases exist, one of each required kind — `evals.too-few-cases`,
   `evals.missing-case-kind`, both blocking.
 - Nothing in the body links to a file the bundle does not carry — `links.broken-bundle`.
-- Every file the body names in inline code by its root path under one of `MENTION_TREES`
-  (`src/packaging/mentions.ts`), read first from the body's own directory, every role named by its
-  catalog id, and every protocol cited as ``protocol `<id>` `` or ``the `<id>` protocol`` is one the packager can carry and link; a root path with a `.` or `..`
-  segment is refused — `links.mention-not-bundled`.
+- Every catalog file, role or protocol the body names in inline code is one the packager carries
+  and links — `links.mention-not-bundled`. What counts as naming one is `mentionResolver` and
+  `rootPathOf` in `src/packaging/mentions.ts`; `unlinkedMentions` in `src/validation/links.ts`
+  applies the same grammar to the planned bundle and skips files copied `verbatim`.
 
 **Not checked by anything. This is the part of the list that is yours**, and each entry says what
 the nearest instrument does instead, so that a clean run is not read as an answer to it. Most are
