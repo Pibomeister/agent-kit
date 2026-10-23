@@ -450,6 +450,23 @@ function rewriteLinks(
   return { text: out, dependencies, issues };
 }
 
+/**
+ * Whether `path` stays inside the tree it is named under once symlinks are followed: its real
+ * location is inside the real location of its top-level entry (`references/` for
+ * `references/x.md`). The entry itself may be a link, as it is in a root whose top-level entries
+ * link to a checkout; what this refuses is a link inside the tree that points out of it.
+ */
+function insideOwnTree(base: string, path: string): boolean {
+  const full = resolve(base, path);
+  if (full === base || !isInside(full, base)) return false;
+  try {
+    const top = path.split("/")[0] ?? path;
+    return isInside(realpathSync(full), realpathSync(resolve(base, top)));
+  } catch {
+    return false;
+  }
+}
+
 /** What a code span in a bundled body may name, read from this tree and its catalog. */
 function catalogMentions(root: string, catalog: CheckContext["catalog"]): MentionResolver {
   const bodies = new Map<string, string>();
@@ -461,16 +478,13 @@ function catalogMentions(root: string, catalog: CheckContext["catalog"]): Mentio
   }
   const base = resolve(root);
   return mentionResolver({
-    // rootPathOf refuses `..`; this also refuses a file whose real location, symlinks
-    // followed, is outside the real location of the tree it is named under (`references/`
-    // for `references/x.md`), so no mention copies a file from outside that tree. The tree
-    // itself may be a link, as it is in a root whose top-level entries link to a checkout.
+    // A root path names a file only inside its own tree (insideOwnTree). A catalog id or
+    // directory names a body by its catalog path; the closure applies the same bound when it
+    // reads that body, as it does to every dependency.
     isFile: (path) => {
-      const full = resolve(base, path);
-      if (full === base || !isInside(full, base)) return false;
+      if (!insideOwnTree(base, path)) return false;
       try {
-        const tree = realpathSync(resolve(base, path.slice(0, path.indexOf("/"))));
-        return statSync(full).isFile() && isInside(realpathSync(full), tree);
+        return statSync(resolve(base, path)).isFile();
       } catch {
         return false;
       }
@@ -878,6 +892,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     if (done.has(next.source) || files.has(next.published)) continue;
     done.add(next.source);
 
+    // A source that leaves its tree through a symlink is not copied, so whatever linked it
+    // dangles and the bundle check fails rather than carrying an outside file.
+    if (!insideOwnTree(resolve(root), next.source)) continue;
     const text = readTextIfPresent(join(root, next.source));
     if (text === null) continue; // checkSourceLinks owns the dangling-source case.
 

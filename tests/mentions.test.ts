@@ -7,7 +7,7 @@
  * and the bundle check to failing when one is left out.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, symlinkSync } from "node:fs";
+import { mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
@@ -178,6 +178,35 @@ describe("the packager carries what a skill names", () => {
     expect(issues.map((i) => `${i.rule} ${i.message.split("'")[1]}`)).toEqual([
       "links.mention-not-bundled references/evil-link.md",
     ]);
+  });
+
+  test("a $ref sibling that leaves its tree through a symlink is not carried, and the bundle check fails", () => {
+    const outside = makeTree({ "secret.json": '{ "OUTSIDE": true }\n' });
+    const ctx = ctxFor("Fill `schemas/x.schema.json`.\n", { "schemas/x.schema.json": '{ "$ref": "evil.json" }\n' });
+    symlinkSync(join(outside, "secret.json"), join(ctx.root, "schemas", "evil.json"));
+    const plan = planAll(ctx, { hosts: ["claude-code"] })[0];
+    if (plan === undefined) throw new Error("no plan");
+    expect(plan.files.has("references/shared/schemas/x.schema.json")).toBe(true);
+    expect([...plan.files.values()].some((file) => file.contents.includes("OUTSIDE"))).toBe(false);
+    const issues = checkBundleLinks(ctx, { hosts: ["claude-code"] });
+    expect(issues.map((i) => `${i.rule} ${i.file}`)).toContain(
+      "links.broken-bundle dist/claude-code/references/shared/schemas/x.schema.json",
+    );
+  });
+
+  test("a protocol body cited by id that leaves its tree through a symlink is not carried, and the bundle check fails", () => {
+    const outside = makeTree({ "secret.md": "OUTSIDE\n" });
+    const ctx = ctxFor("Under protocol `phase-operations`.\n");
+    const body = join(ctx.root, "protocols", "phase-operations", "PROTOCOL.md");
+    rmSync(body);
+    symlinkSync(join(outside, "secret.md"), body);
+    const plan = planAll(ctx, { hosts: ["claude-code"] })[0];
+    if (plan === undefined) throw new Error("no plan");
+    expect([...plan.files.values()].some((file) => file.contents.includes("OUTSIDE"))).toBe(false);
+    const issues = checkBundleLinks(ctx, { hosts: ["claude-code"] });
+    expect(issues.map((i) => `${i.rule} ${i.file}`)).toContain(
+      "links.broken-bundle dist/claude-code/skills/alpha/SKILL.md",
+    );
   });
 
   test("a tree reached through a symlinked root still carries what a skill names", () => {

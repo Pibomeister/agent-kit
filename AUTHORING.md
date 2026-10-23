@@ -2072,7 +2072,8 @@ need it.
 - Every catalog file, role or protocol the body names in inline code is one the packager carries
   and links — `links.mention-not-bundled`. What counts as naming one is `mentionResolver` and
   `rootPathOf` in `src/packaging/mentions.ts`; `unlinkedMentions` in `src/validation/links.ts`
-  applies the same grammar to the planned bundle and skips files copied `verbatim`.
+  applies the same grammar to the planned bundle, and its caller `checkBundleLinks` skips files
+  copied `verbatim`.
 
 **Not checked by anything. This is the part of the list that is yours**, and each entry says what
 the nearest instrument does instead, so that a clean run is not read as an answer to it. Most are

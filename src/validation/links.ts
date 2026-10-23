@@ -4,7 +4,7 @@ import { exists, isDir, readTextIfPresent, walkFiles } from "../util/fs.ts";
 import { extractRelativeLinks, relativeLinkBetween, resolveFromFile } from "../util/links.ts";
 import { entryBodyPath } from "../catalog/layout.ts";
 import { planAll, type BuildOptions } from "../packaging/build.ts";
-import { codeSpans, escapesTree, rootPathOf } from "../packaging/mentions.ts";
+import { codeSpans, escapesTree, rootPathOf, schemaRefs } from "../packaging/mentions.ts";
 import { SHARED_ROOT } from "../packaging/plan.ts";
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
@@ -146,6 +146,19 @@ export function checkBundleLinks(ctx: CheckContext, options: BuildOptions): Issu
     }
 
     for (const file of plan.files.values()) {
+      if (file.path.endsWith(".schema.json")) {
+        for (const ref of schemaRefs(file.path, file.contents)) {
+          if (present.has(ref)) continue;
+          issues.push(
+            error(
+              "links.broken-bundle",
+              `dist/${plan.host}/${file.path}`,
+              `A relative $ref resolves to '${ref}', which is not in the ${plan.host} bundle. The packager carries a schema's relative $ref siblings unless the file is missing or leaves its tree through a symlink.`,
+            ),
+          );
+        }
+        continue;
+      }
       if (!file.path.endsWith(".md")) continue;
       for (const link of extractRelativeLinks(file.contents)) {
         const resolved = resolveFromFile(file.path, link.target);
