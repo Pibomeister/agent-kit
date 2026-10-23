@@ -17,7 +17,7 @@ export interface HookInput {
 const EXCLUDED_PATH =
   /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 const SECRET_CONTENT =
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9]*[_-])*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)(?:[_-][A-Za-z0-9]+)*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})/i;
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,})/i;
 const TEXT_FILE = /\.(?:[cm]?[jt]sx?|py|rb|go|rs|sh|md|txt|ya?ml|json|java|swift|kt|cs|c|h|cpp)$/i;
 
 function binary(content: string): boolean {
