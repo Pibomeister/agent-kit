@@ -1,9 +1,9 @@
-import { join, posix } from "node:path";
+import { join, posix, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 
-import { entryBodyPath } from "../catalog/layout.ts";
-import { listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
+import { DIRECTORY_SECTIONS, entryBodyPath, entryDir } from "../catalog/layout.ts";
+import { isInside, listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
 import { parseFrontmatter } from "../util/frontmatter.ts";
 import { extractRelativeLinks, relativeLinkBetween, resolveFromFile } from "../util/links.ts";
 import type { CheckContext } from "../validation/context.ts";
@@ -13,6 +13,7 @@ import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } 
 import { loadHostCapabilities, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
+import { linkMentions, mentionResolver, schemaRefs, type MentionResolver } from "./mentions.ts";
 import { resolveProfile } from "./profiles.ts";
 
 /** Trees excluded from dependency copying; LICENCE_FILES explicitly ships selected licence texts. */
@@ -338,6 +339,12 @@ export interface BundleFile {
   contents: string;
   /** Repo-relative source, when the file was copied rather than generated. */
   source?: string;
+  /**
+   * Copied with its source bytes to its source path, as a declared role, catalog
+   * or schema is. Its code spans stay as written; the copy under the shared root
+   * that a skill links to is the one whose mentions become links.
+   */
+  verbatim?: true;
 }
 
 /**
@@ -387,12 +394,18 @@ function publishedPathFor(sourcePath: string, includedSkillDirs: ReadonlySet<str
  * Rewrite every relative reference in `text` so it resolves inside the bundle,
  * pulling each referenced file in as a dependency. Returns the rewritten text
  * and the source paths that must also be copied.
+ *
+ * A Markdown file's code spans that name a role, protocol, schema or other
+ * catalog file by its root path, or a role by its catalog id, become links to
+ * the copy the bundle carries (`./mentions.ts`). A JSON Schema's relative
+ * `$ref` siblings travel with it.
  */
 function rewriteLinks(
   sourcePath: string,
   publishedPath: string,
   text: string,
   includedSkillDirs: ReadonlySet<string>,
+  mentions: MentionResolver,
   file: string,
 ): { text: string; dependencies: string[]; issues: Issue[] } {
   const issues: Issue[] = [];
@@ -424,7 +437,43 @@ function rewriteLinks(
     out = out.split(link.raw).join(replacement);
   }
 
+  if (sourcePath.endsWith(".md")) {
+    const linked = linkMentions(publishedPath, out, mentions, (source) => publishedPathFor(source, includedSkillDirs));
+    out = linked.text;
+    dependencies.push(...linked.dependencies);
+  } else if (sourcePath.endsWith(".schema.json")) {
+    dependencies.push(...schemaRefs(sourcePath, text));
+  }
+
   return { text: out, dependencies, issues };
+}
+
+/** What a code span in a bundled body may name, read from this tree and its catalog. */
+function catalogMentions(root: string, catalog: CheckContext["catalog"]): MentionResolver {
+  const bodies = new Map<string, string>();
+  for (const section of DIRECTORY_SECTIONS) {
+    if (section === "skills") continue;
+    for (const entry of catalog.bySection(section)) {
+      if (entry.status === "authored") bodies.set(entryDir(section, entry.id), entryBodyPath(section, entry.id));
+    }
+  }
+  const base = resolve(root);
+  return mentionResolver({
+    // Confined to the tree as well as refused `..` by rootPathOf, so no mention reaches a file
+    // outside it. Lexical, because a plan may run over a root whose entries are symlinks.
+    isFile: (path) => {
+      const full = resolve(base, path);
+      if (full === base || !isInside(full, base)) return false;
+      try {
+        return statSync(full).isFile();
+      } catch {
+        return false;
+      }
+    },
+    bodyOf: (dir) => bodies.get(dir.replace(/\/$/, "")) ?? null,
+    roleBody: (id) => bodies.get(entryDir("roles", id)) ?? null,
+    protocolBody: (id) => bodies.get(entryDir("protocols", id)) ?? null,
+  });
 }
 
 /**
@@ -603,6 +652,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
+  const mentions = catalogMentions(root, catalog);
 
   for (const entry of ordered) {
     const bodyPath = entryBodyPath("skills", entry.id);
@@ -765,7 +815,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     const canonical = parseFrontmatter(body);
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
-    const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, bodyPath);
+    const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, mentions, bodyPath);
     issues.push(...rewritten.issues);
     const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
 
@@ -780,7 +830,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     for (const asset of skillAssets(root, entry.id)) {
       const text = readTextIfPresent(join(root, asset));
       if (text === null) continue;
-      const assetRewrite = rewriteLinks(asset, asset, text, included, asset);
+      const assetRewrite = rewriteLinks(asset, asset, text, included, mentions, asset);
       issues.push(...assetRewrite.issues);
       files.set(asset, { path: asset, contents: renderExplicitStarts(assetRewrite.text), source: asset });
       for (const dep of assetRewrite.dependencies) {
@@ -794,15 +844,16 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   const shipDeclared = (source: string) => {
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
-    files.set(source, { path: source, contents: text, source });
-    // Body bytes stay the source bytes, so a link keeps its source path. Copy a
-    // template that link names; other deps still travel through the shared closure.
-    const linked = rewriteLinks(source, source, text, included, source);
+    files.set(source, { path: source, contents: text, source, verbatim: true });
+    // Body bytes stay the source bytes, so a link keeps its source path and a code
+    // span stays plain. Copy a template that link names; other deps, and the links
+    // a skill follows, travel through the shared closure.
+    const linked = rewriteLinks(source, source, text, included, () => null, source);
     issues.push(...linked.issues);
     for (const dep of linked.dependencies) {
       if (!dep.startsWith("templates/")) continue;
       const depText = readTextIfPresent(join(root, dep));
-      if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep });
+      if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep, verbatim: true });
     }
   };
   for (const entry of catalog.bySection("roles")) {
@@ -825,7 +876,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const text = readTextIfPresent(join(root, next.source));
     if (text === null) continue; // checkSourceLinks owns the dangling-source case.
 
-    const rewritten = rewriteLinks(next.source, next.published, text, included, next.source);
+    const rewritten = rewriteLinks(next.source, next.published, text, included, mentions, next.source);
     issues.push(...rewritten.issues);
     files.set(next.published, {
       path: next.published,

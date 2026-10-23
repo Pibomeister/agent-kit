@@ -3030,7 +3030,9 @@ describe("the executable bit on bin/ programs", () => {
       const commands: string[] = [];
       for (const file of plan.files.values()) {
         if (file.path.startsWith("evals/") || !/\.(md|json|ya?ml)$/.test(file.path)) continue;
-        // A description names `ak-gate.mjs bypass check` for routing; the body runs it with node.
+        // A description names `ak-gate.mjs bypass check` for routing, and so does a policy row;
+        // the bodies that run it run it with node.
+        if (/^(references\/shared\/)?policies\//.test(file.path)) continue;
         const text = file.path.endsWith(".md") ? parseFrontmatter(file.contents).body : file.contents;
         for (const span of text.matchAll(/`([^`\n]+)`/g)) commands.push(span[1] ?? "");
         for (const hook of file.contents.matchAll(/"command"\s*:\s*"([^"]+)"/g)) commands.push(hook[1] ?? "");
