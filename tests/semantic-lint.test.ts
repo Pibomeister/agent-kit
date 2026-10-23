@@ -116,12 +116,21 @@ function git(root: string, ...args: string[]) {
 function fixture() {
   const root = processScratch("semantic-");
   git(root, "init", "-q");
-  git(root, "config", "user.email", "test@example.invalid");
-  git(root, "config", "user.name", "Test");
   writeFileSync(join(root, "cart.ts"), "/** Returns null on absence. */\nexport function cart() { return null; }\n");
   writeFileSync(join(root, "README.md"), "The cart returns null on absence.\n");
   git(root, "add", ".");
-  git(root, "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture");
+  git(
+    root,
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "user.email=test@example.invalid",
+    "-c",
+    "user.name=Test",
+    "commit",
+    "-qm",
+    "fixture",
+  );
   writeFileSync(
     join(root, "cart.ts"),
     '/** Returns null on absence. */\nexport function cart() { throw new Error("absent"); }\n',
