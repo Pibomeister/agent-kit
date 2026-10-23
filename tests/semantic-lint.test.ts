@@ -391,6 +391,19 @@ describe("optional semantic sibling hook", () => {
         }
       }
     }
+    const values = [
+      'const STRIPE = "sk_live_abcdefghijklmnop1234";',
+      'const restricted = "rk_test_abcdefghijklmnop1234";',
+      'slack = "xoxb-1234567890-abcdefghij"',
+      'maps = "AIzaSyAbcdefghijklmnopqrstuvwxyz0123456"',
+      "aws = AKIAABCDEFGHIJKLMNOP",
+      'url = "postgres://u:hunter2@db"',
+    ];
+    for (const [index, value] of values.entries()) {
+      const path = `value-${index}.txt`;
+      writeFileSync(join(options.root, path), value);
+      excluded.push({ path, reason: "secret-content" });
+    }
     git(options.root, "add", ...excluded.map((item) => item.path));
     for (const item of unstaged) writeFileSync(join(options.root, item.path), item.content);
     writeFileSync(join(options.root, "config.json"), '{"description":"safe configuration"}');
@@ -407,6 +420,7 @@ describe("optional semantic sibling hook", () => {
           "config.json",
         ]);
         expect(init.body).not.toContain("opaque-provider-secret");
+        expect(init.body).not.toContain("hunter2");
         return reply(init.body);
       },
     });
