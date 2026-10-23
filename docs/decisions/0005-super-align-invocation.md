@@ -25,8 +25,8 @@ The case for letting the model start it rests on what the skill does before appr
   hard gate forbids any source file, scaffold or implementation skill until the human approves.
 - **The side effects already sit behind a human yes.** `kb-draft` and `kb-publish` happen at step 12,
   and only on an explicit yes to the restated direction. "Sounds good" and silence are not a yes.
-- **Every phase after it stays gated.** super-bound, super-review and super-ship are U. A model that
-  starts alignment cannot move the work past it.
+- **Planning and shipping stay human-started.** See `catalog.yaml` for invocation classes and
+  [ADR-0013](0013-model-starts-super-review.md) for the later review-start decision.
 - **What the model loses today.** When a request arrives unsettled, the model either runs a looser
   interview of its own or asks the human to type a command. The first skips the design tree and the
   six-field restatement. The second costs a round trip on exactly the requests where the human did

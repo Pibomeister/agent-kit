@@ -8,9 +8,9 @@ Shared doctrine. The protocols in this directory cite it rather than restating i
 There are public entrypoints and there are shared phase operations, and the difference is who may
 start them.
 
-A **public entrypoint** is started by a human. On a host with a slash-command surface, only the
-slash command counts as the human act. A **phase operation** is the same phase logic reached by a
-delegated controller, and only when the runner validates a grant that covers it (ruling
+A **user-invoked public entrypoint** is started by a human. On a host with a slash-command surface,
+only the slash command counts as the human act. A **phase operation** is the same phase logic
+reached by a delegated controller, and only when the runner validates a grant that covers it (ruling
 `entrypoint-phase-operation-split`). The two are one
 pipeline with two doors: a delegated run executes the same protocol a human-started run does, so
 there is no second, looser path through the lifecycle.
@@ -24,13 +24,16 @@ grants and their permitted controllers is `policies/invocation.yaml`; the mechan
 
 Which capability belongs in which class is `catalog.yaml`'s answer, never this file's.
 
-## Authority has exactly two sources
+## Start authority and delegated authority
 
-A human invoked the public entrypoint in this session, or the runner validated a grant against an
-immutable charter and issued a grant reference carrying the charter hash and the single action or
-checkpoint it covers (`policies/authority-defaults.yaml`).
+Start authority is declared in `policies/invocation.yaml`. Review's model-start decision is
+[ADR-0013](../docs/decisions/0013-model-starts-super-review.md).
 
-Nothing else is authority. In particular:
+For a human-started phase, a human invoked the public entrypoint in this session, or the runner
+validated a grant against an immutable charter and issued a grant reference carrying the charter
+hash and the single action or checkpoint it covers (`policies/authority-defaults.yaml`).
+
+Neither a local artifact nor a seat's confidence supplies a grant. In particular:
 
 - A skill never issues its own grant. A component that could issue one could authorize itself.
 - A grant covers exactly one action or checkpoint category and does not generalise. A grant for
@@ -42,9 +45,9 @@ Nothing else is authority. In particular:
 
 ## Ordinary workers cannot manufacture a grant
 
-An implementer, a reviewer or any other seated role cannot start a gated phase, approve its own
-work, or promote itself to a class it was not dispatched as. Agreement between two seats is
-necessary and not sufficient: the deterministic authority check runs independently and must also
+An implementer, a reviewer or any other seated role cannot start a human-started phase without
+authority, approve its own work, or promote itself to a class it was not dispatched as. Agreement
+between two seats is necessary and not sufficient: the deterministic authority check runs independently and must also
 pass — required evidence present and still bound to its hashes, and the charter listing this
 checkpoint and this action (ruling `supervisor-agreement-is-not-authority`). Confidence is not a
 grant either. Where a seat believes it needs authority it does not hold, the correct output is an
@@ -52,9 +55,9 @@ escalation, not an action.
 
 ## Where a grant cannot be validated, stop
 
-Some hosts cannot validate a grant at all. The correct behavior is to halt and ask for explicit
-invocation — not to reach the same effect another way. Four substitutes are named and forbidden
-(`policies/invocation.yaml` `no_side_door`): re-implementing the operation's steps inline under
+Some hosts cannot validate a grant at all. For a delegated operation requiring one, halt and ask
+for explicit invocation rather than reaching the same effect another way. Four substitutes are
+named and forbidden (`policies/invocation.yaml` `no_side_door`): re-implementing the operation's steps inline under
 the caller's own authority; chaining model-invoked skills that reproduce the operation's side
 effects; asking a supervisor pair to approve an action the charter does not list; and treating a
 prior grant for a different operation as covering this one.
@@ -68,8 +71,8 @@ resumes without repeating side effects.
 This is the distinction that erodes first, and the one worth stating plainly.
 
 A protocol file describes what should happen. It does not prove that the host made it happen.
-Only the runner's permission system is authority; everything a run writes about itself is
-evidence a reader may inspect.
+The runner's permission system validates delegated authority; everything a run writes about
+itself is evidence a reader may inspect.
 
 That distinction has a practical consequence learned the expensive way upstream. A design that
 treated a run's own local lifecycle records as a hard gate had to be retired: those records are
@@ -82,7 +85,7 @@ skipped and which evidence was missing, and the run's terminal status says so ra
 reporting an ordinary completion.
 
 Applied here: a ledger entry saying "review passed" is evidence, never permission for a human
-step to be skipped. A runner-issued grant is the only thing "authority" means in this package.
+step to be skipped. A runner-issued grant carries delegated authority; a lifecycle record does not.
 
 ## Independence is structural, never an identity
 

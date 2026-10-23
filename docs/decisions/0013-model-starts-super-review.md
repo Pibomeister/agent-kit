@@ -27,7 +27,7 @@ work starts either when a change needs judgment. No slash command and no human a
 `delta` stays `active-review-run` and still refuses to open a review run.
 
 The phase operations `review.full`, `review.delta` and `review.readiness` stay as they are.
-`review.full` and `review.readiness` remain `delegated-grant` for autopilot and babysit-pr. A bypass
+For each operation's authority and permitted callers, see `policies/invocation.yaml`. A bypass
 grant remains a valid start for one task and is not required. Where a host cannot validate a grant,
 a controller still stops. That stop does not apply to the model start: the model start is the
 declared authority, not a side door around the grant.

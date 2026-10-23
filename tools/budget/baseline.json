@@ -13,8 +13,8 @@
     },
     "bundle/claude-code:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 20759,
-      "tokens": 5186
+      "bytes": 20855,
+      "tokens": 5210
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -28,8 +28,8 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33043,
-      "tokens": 8232
+      "bytes": 33153,
+      "tokens": 8259
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -40,6 +40,11 @@
       "file": "adapters/tracker/backends/linear-linearis.md",
       "bytes": 17559,
       "tokens": 4379
+    },
+    "bundle/claude-code:references/shared/docs/decisions/0013-model-starts-super-review.md": {
+      "file": "docs/decisions/0013-model-starts-super-review.md",
+      "bytes": 2749,
+      "tokens": 687
     },
     "bundle/claude-code:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -53,8 +58,8 @@
     },
     "bundle/claude-code:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 22608,
-      "tokens": 5650
+      "bytes": 22746,
+      "tokens": 5685
     },
     "bundle/claude-code:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -93,8 +98,8 @@
     },
     "bundle/claude-code:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
-      "bytes": 9645,
-      "tokens": 2405
+      "bytes": 9579,
+      "tokens": 2389
     },
     "bundle/claude-code:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
@@ -708,8 +713,8 @@
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 24921,
-      "tokens": 6224
+      "bytes": 23896,
+      "tokens": 5967
     },
     "bundle/claude-code:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -833,8 +838,8 @@
     },
     "bundle/codex:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 20759,
-      "tokens": 5186
+      "bytes": 20855,
+      "tokens": 5210
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -848,8 +853,8 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33043,
-      "tokens": 8232
+      "bytes": 33153,
+      "tokens": 8259
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -860,6 +865,11 @@
       "file": "adapters/tracker/backends/linear-linearis.md",
       "bytes": 17559,
       "tokens": 4379
+    },
+    "bundle/codex:references/shared/docs/decisions/0013-model-starts-super-review.md": {
+      "file": "docs/decisions/0013-model-starts-super-review.md",
+      "bytes": 2749,
+      "tokens": 687
     },
     "bundle/codex:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -873,8 +883,8 @@
     },
     "bundle/codex:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 22608,
-      "tokens": 5650
+      "bytes": 22746,
+      "tokens": 5685
     },
     "bundle/codex:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -913,8 +923,8 @@
     },
     "bundle/codex:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
-      "bytes": 9645,
-      "tokens": 2405
+      "bytes": 9579,
+      "tokens": 2389
     },
     "bundle/codex:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
@@ -1528,8 +1538,8 @@
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25069,
-      "tokens": 6260
+      "bytes": 23943,
+      "tokens": 5979
     },
     "bundle/codex:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -1653,8 +1663,8 @@
     },
     "bundle/droid:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 20759,
-      "tokens": 5186
+      "bytes": 20855,
+      "tokens": 5210
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -1668,8 +1678,8 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33043,
-      "tokens": 8232
+      "bytes": 33153,
+      "tokens": 8259
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1680,6 +1690,11 @@
       "file": "adapters/tracker/backends/linear-linearis.md",
       "bytes": 17559,
       "tokens": 4379
+    },
+    "bundle/droid:references/shared/docs/decisions/0013-model-starts-super-review.md": {
+      "file": "docs/decisions/0013-model-starts-super-review.md",
+      "bytes": 2749,
+      "tokens": 687
     },
     "bundle/droid:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -1693,8 +1708,8 @@
     },
     "bundle/droid:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 22608,
-      "tokens": 5650
+      "bytes": 22746,
+      "tokens": 5685
     },
     "bundle/droid:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -1733,8 +1748,8 @@
     },
     "bundle/droid:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
-      "bytes": 9645,
-      "tokens": 2405
+      "bytes": 9579,
+      "tokens": 2389
     },
     "bundle/droid:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
@@ -2348,8 +2363,8 @@
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25052,
-      "tokens": 6256
+      "bytes": 23941,
+      "tokens": 5978
     },
     "bundle/droid:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -2473,8 +2488,8 @@
     },
     "bundle/grok:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 20759,
-      "tokens": 5186
+      "bytes": 20855,
+      "tokens": 5210
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -2488,8 +2503,8 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33043,
-      "tokens": 8232
+      "bytes": 33153,
+      "tokens": 8259
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2500,6 +2515,11 @@
       "file": "adapters/tracker/backends/linear-linearis.md",
       "bytes": 17559,
       "tokens": 4379
+    },
+    "bundle/grok:references/shared/docs/decisions/0013-model-starts-super-review.md": {
+      "file": "docs/decisions/0013-model-starts-super-review.md",
+      "bytes": 2749,
+      "tokens": 687
     },
     "bundle/grok:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -2513,8 +2533,8 @@
     },
     "bundle/grok:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 22608,
-      "tokens": 5650
+      "bytes": 22746,
+      "tokens": 5685
     },
     "bundle/grok:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -2553,8 +2573,8 @@
     },
     "bundle/grok:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
-      "bytes": 9645,
-      "tokens": 2405
+      "bytes": 9579,
+      "tokens": 2389
     },
     "bundle/grok:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
@@ -3168,8 +3188,8 @@
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 24906,
-      "tokens": 6220
+      "bytes": 23896,
+      "tokens": 5967
     },
     "bundle/grok:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",
@@ -3293,8 +3313,8 @@
     },
     "bundle/kimi:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
-      "bytes": 20759,
-      "tokens": 5186
+      "bytes": 20855,
+      "tokens": 5210
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
@@ -3308,8 +3328,8 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33043,
-      "tokens": 8232
+      "bytes": 33153,
+      "tokens": 8259
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3320,6 +3340,11 @@
       "file": "adapters/tracker/backends/linear-linearis.md",
       "bytes": 17559,
       "tokens": 4379
+    },
+    "bundle/kimi:references/shared/docs/decisions/0013-model-starts-super-review.md": {
+      "file": "docs/decisions/0013-model-starts-super-review.md",
+      "bytes": 2749,
+      "tokens": 687
     },
     "bundle/kimi:references/shared/packs/pack-delete/PACK.md": {
       "file": "packs/pack-delete/PACK.md",
@@ -3333,8 +3358,8 @@
     },
     "bundle/kimi:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 22608,
-      "tokens": 5650
+      "bytes": 22746,
+      "tokens": 5685
     },
     "bundle/kimi:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -3373,8 +3398,8 @@
     },
     "bundle/kimi:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
-      "bytes": 9645,
-      "tokens": 2405
+      "bytes": 9579,
+      "tokens": 2389
     },
     "bundle/kimi:references/shared/protocols/review-delta/PROTOCOL.md": {
       "file": "protocols/review-delta/PROTOCOL.md",
@@ -3988,8 +4013,8 @@
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
-      "bytes": 25084,
-      "tokens": 6264
+      "bytes": 23943,
+      "tokens": 5979
     },
     "bundle/kimi:skills/super-review/references/delta.md": {
       "file": "skills/super-review/references/delta.md",

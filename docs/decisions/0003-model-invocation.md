@@ -1,6 +1,7 @@
 # ADR-0003 — Every skill is loadable by the model
 
-**Status:** Accepted.
+**Status:** Accepted. Review-start requirements are superseded by
+[ADR-0013](0013-model-starts-super-review.md).
 **Date:** 2026-09-24.
 **Authority:** the maintainer's decision, 2026-09-24 ("enable all skills", taking the option that drops
 the host flag and keeps the U class). Amends how `AGENTS.md` "The invocation law" is held, not the law.

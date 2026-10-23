@@ -1,6 +1,7 @@
 # ADR-0004 — Under Firstmate, the binding is the delegated grant
 
-**Status:** Accepted.
+**Status:** Accepted. Review-start requirements are superseded by
+[ADR-0013](0013-model-starts-super-review.md).
 **Date:** 2026-09-24.
 **Authority:** the maintainer's decision, 2026-09-24 ("Firstmate acts as the person"). Amends the
 consequence in ADR-0003 that a Firstmate binding is not a grant, and the "Runner" row of ADR-0002's

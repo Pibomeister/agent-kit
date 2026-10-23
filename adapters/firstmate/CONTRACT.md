@@ -221,7 +221,8 @@ input shape.
 
 ## 6. Deprecated legacy binding delegated authority
 
-super-review `full` and `readiness` are model-started: the agent doing the work starts them, and no human act is required (ADR-0013). The phase operations `review.full` and `review.readiness` stay `delegated-grant`. super-ship stays `explicit-or-delegated`: a human starts it,
+For review-start authority, see [ADR-0013](../../docs/decisions/0013-model-starts-super-review.md).
+super-ship stays `explicit-or-delegated`: a human starts it,
 or a delegated controller does under a validated grant. Under Firstmate, Firstmate is that controller
 and the binding it wrote is the grant (ADR-0004). `ak firstmate grant --binding <path> --operation
 <op>` validates it and prints a grant record, or refuses with a reason and a `needs-decision` hint.
@@ -256,7 +257,8 @@ section it prints
 into the brief. Never run it through `bun` or from a project directory: `bun` loads the working
 directory's `bunfig.toml` and `.env` first, which a worker can write (SUPERVISOR.md). The worker runs
 `node <agent-kit bundle>/bin/ak-gate.mjs bypass check --grant <path> --task <id> --phase <phase>` before
-super-align, super-bound, super-review `full` or `readiness`, and super-ship; exit 0 is the start.
+the human-started phases covered by ADR-0008; exit 0 is the start. Review may also use that route,
+but does not require it (ADR-0013).
 The grant is start-only: every approval inside those phases still reaches Firstmate as
 `needs-decision`, and merge and deploy are never on it. The task id must equal the grant's, and the
 check must run from inside the task's worktree the grant names (`--project` cannot stand in for it);
