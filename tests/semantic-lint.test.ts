@@ -236,7 +236,16 @@ describe("optional semantic sibling hook", () => {
       { file: "(batch)", rule: "code-doc", score },
     ]);
     const output = hookOutput(result);
-    const { systemMessage, ...structured } = JSON.parse(JSON.stringify(output));
+    const parsed: unknown = JSON.parse(JSON.stringify(output));
+    const isOutput = ajv.compile<{ systemMessage: string }>({
+      type: "object",
+      required: ["systemMessage"],
+      properties: { systemMessage: { type: "string" } },
+    });
+    if (!isOutput(parsed)) {
+      throw new Error("invalid hook output");
+    }
+    const { systemMessage, ...structured } = parsed;
     expect(structured).toEqual(result);
     expect(systemMessage).toBe(
       [
