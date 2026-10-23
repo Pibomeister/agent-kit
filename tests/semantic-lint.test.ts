@@ -373,12 +373,7 @@ describe("optional semantic sibling hook", () => {
     expect(calls).toBe(1);
     expect(result.status).toBe("reviewed");
     expect(result.excluded).toEqual(excluded.toSorted((left, right) => left.path.localeCompare(right.path)));
-    expect(result.findings.map((finding) => finding.file)).toEqual([
-      "README.md",
-      "cart.ts",
-      "config.json",
-      "(batch)",
-    ]);
+    expect(result.findings.map((finding) => finding.file)).toEqual(["README.md", "cart.ts", "config.json", "(batch)"]);
     const receipts = readdirSync(options.receipts);
     expect(receipts).toHaveLength(1);
     const receipt = receiptAt(join(options.receipts, receipts[0] ?? ""));
