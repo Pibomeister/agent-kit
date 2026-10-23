@@ -78,6 +78,21 @@ export async function runHook(options: HookOptions): Promise<HookResult> {
   return { ...base, ...(await askBatch(input, { ...options, key, traceparent })) };
 }
 
+export function hookOutput(result: HookResult) {
+  const details = result.findings.map(
+    (finding) =>
+      `${finding.file} (${finding.rule}): score ${finding.score}; confidence ${finding.confidence ?? "unknown"}`,
+  );
+  return {
+    ...result,
+    systemMessage: [
+      `JEV lint (advisory): ${result.status}${"reason" in result ? ` (${result.reason})` : ""}.`,
+      ...details,
+      ...result.excluded.map((item) => `${item.path}: excluded (${item.reason})`),
+    ].join("\n"),
+  };
+}
+
 /** Same sibling-entry merge pattern as hostHooks(); foreign commands are untouched. */
 const ajv = new Ajv({ strict: false });
 const isHookDoc = ajv.compile<HookDoc>({
@@ -140,8 +155,7 @@ if (import.meta.main) {
       traceparent: process.env.TRACEPARENT,
       signal: controller.signal,
     });
-    console.log(JSON.stringify(result));
-    process.exitCode = result.status === "error" ? 1 : 0;
+    console.log(JSON.stringify(hookOutput(result)));
   } else {
     console.error("usage: bun tools/hooks/semantic-lint.ts hook | wire <settings.json>");
     process.exitCode = 2;

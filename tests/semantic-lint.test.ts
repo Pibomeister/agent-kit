@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync,
 import { join, resolve } from "node:path";
 import { processScratch } from "./helpers/process-tmp.ts";
 import { collectInput } from "../src/semantic-lint/input.ts";
-import { runHook, wireHook } from "../tools/hooks/semantic-lint.ts";
+import { hookOutput, runHook, wireHook } from "../tools/hooks/semantic-lint.ts";
 import { measurement } from "../src/semantic-lint/client.ts";
 import pin from "../provenance/semantic-lint.json";
 import Ajv from "ajv";
@@ -153,7 +153,64 @@ describe("optional semantic sibling hook", () => {
       encoding: "utf8",
     });
     expect(run.status).toBe(0);
-    expect(JSON.parse(run.stdout)).toMatchObject({ status: "skipped", reason: "disabled" });
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      status: "skipped",
+      reason: "disabled",
+      systemMessage: "JEV lint (advisory): skipped (disabled).",
+    });
+  });
+
+  test("command surfaces auth errors as non-blocking host feedback", () => {
+    const root = processScratch("semantic-auth-output-");
+    const keyFile = join(root, pin.key_file);
+    mkdirSync(join(keyFile, ".."), { recursive: true });
+    writeFileSync(keyFile, "fixture", { mode: 0o644 });
+    const run = spawnSync(process.execPath, [ENTRY, "hook"], {
+      cwd: root,
+      env: { PATH: process.env.PATH, HOME: root, AK_JEV_ENABLED: "1" },
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      status: "error",
+      reason: "auth",
+      findings: [],
+      systemMessage: "JEV lint (advisory): error (auth).",
+    });
+    expect(run.stderr).toBe("");
+  });
+
+  test.each([0, 1, 2, 2.5, 3])("retains score %s for every file and code-doc question", async (score) => {
+    const options = fixture();
+    writeFileSync(join(options.root, "large.ts"), "x".repeat(16_385));
+    git(options.root, "add", "large.ts");
+    const result = await runHook({
+      ...options,
+      transport: async (_url, init) => {
+        if (!isText(init.body)) throw new Error("non-text request");
+        return reply(init.body, score);
+      },
+    });
+    expect(result).toMatchObject({ status: "reviewed" });
+    expect(result.findings.map(({ file, rule, score: value }) => ({ file, rule, score: value }))).toEqual([
+      { file: "README.md", rule: "code-claims", score },
+      { file: "cart.ts", rule: "code-claims", score },
+      { file: "(batch)", rule: "code-doc", score },
+    ]);
+    const output = hookOutput(result);
+    const { systemMessage, ...structured } = JSON.parse(JSON.stringify(output));
+    expect(structured).toEqual(result);
+    expect(systemMessage).toBe(
+      [
+        "JEV lint (advisory): reviewed.",
+        `README.md (code-claims): score ${score}; confidence 0.4`,
+        `cart.ts (code-claims): score ${score}; confidence 0.4`,
+        `(batch) (code-doc): score ${score}; confidence 0.4`,
+        "large.ts: excluded (size-limit)",
+      ].join("\n"),
+    );
+    expect(output).not.toHaveProperty("decision");
+    expect(output).not.toHaveProperty("continue");
   });
 
   test("missing key is a skip and unsafe key permissions are an auth error", async () => {
@@ -340,8 +397,10 @@ describe("optional semantic sibling hook", () => {
         Response.json({ model: "unexpected-runtime", usage: { input_tokens: 100, output_tokens: 5 }, answers: {} }),
     });
     expect(result).toMatchObject({ status: "error", reason: "response", findings: [] });
-    expect(measurement({ type: "score", score: 2 })).toBeNull();
-    expect(measurement({ type: "score", score: 0.5, confidence: -1 })).toBeNull();
+    for (const score of [-0.1, 3.1]) expect(measurement({ type: "score", score })).toBeNull();
+    for (const confidence of [-0.1, 1.1]) expect(measurement({ type: "score", score: 2, confidence })).toBeNull();
+    for (const confidence of [0, 1])
+      expect(measurement({ type: "score", score: 3, confidence })).toMatchObject({ score: 3, confidence });
   });
 
   test("size exclusions remain visible rather than reviewing truncated input", () => {

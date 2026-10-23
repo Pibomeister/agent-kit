@@ -49,8 +49,9 @@ Each batch uses one POST with all file questions and one code/document question 
 changed. There is at most one retry, for network failures, throttling or server errors. Each
 attempt has a 10-second deadline through reading the response body. SIGINT and SIGTERM cancel
 the request or retry wait. Redirects are refused. Auth, network, timeout, cancellation, HTTP,
-unusable-response, input and receipt errors have separate JSON reasons. Errors exit 1; skips and
-advisory results exit 0. The hook never emits a host blocking decision.
+unusable-response, input and receipt errors have separate JSON reasons. All hook results exit 0
+and include a non-blocking `systemMessage` with status, findings and exclusions for the host.
+The structured result retains error and skip reasons. The hook never emits a host blocking decision.
 
 Before each POST, the child writes a private receipt under
 `$XDG_STATE_HOME/agent-kit/semantic-lint/`, or `~/.local/state/agent-kit/semantic-lint/` by default.
