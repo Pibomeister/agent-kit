@@ -1,11 +1,13 @@
 # Optional semantic hook
 
-The source checkout has an optional sibling command hook. It batches tracked staged and unstaged
-changes relative to `HEAD`. It asks about claims in names, comments and changed documents. All
+The source checkout has an optional sibling command hook. It finds tracked staged and unstaged
+changes relative to `HEAD` in the Git repository containing its working directory. It sends each
+eligible file's full working-tree content, not a diff or the staged version. Deleted and untracked
+files are not sent. It asks about claims in names, comments and changed documents. All
 judgments are advisory, including uncertain answers. A reviewed batch is not a verification pass.
 The [donor and runtime pin](../provenance/semantic-lint.json) records its source, revision and
-service configuration. The donor's skill is not installed. Product skills remain slash-only.
-ADR-0005 remains Proposed.
+service configuration. The donor's skill is not installed. Product skill authority remains governed
+by the [invocation law](../AGENTS.md#the-invocation-law).
 
 The command is disabled by default:
 
@@ -38,10 +40,11 @@ not run, capture or replace deterministic lint. `package.json`'s `lint` script a
 lint role remain the required deterministic checks. A semantic skip, finding, or failure cannot
 change their output or result.
 
-Payloads contain eligible changed files only. Untracked files, dot directories, dependencies,
-generated output, provenance, research, fixtures, private material, credential paths, binary files,
-symlinks outside the tree, and recognizable secret content are excluded. Each file is capped at
-16 KiB and each batch at 32 files and 48 KiB of source, paths and record overhead. Files that do not fit are excluded whole and named in diagnostics;
+Payloads contain eligible changed files only. The [input filter](../src/semantic-lint/input.ts)
+excludes dot directories, known dependency and output directories, provenance, research, fixtures,
+recognized private and credential paths, unsupported file types, binary files, all symlinks,
+and recognizable secret content. Each file is capped at 16 KiB and each batch at 32 files and
+48 KiB of source, paths and record overhead. Files that do not fit are excluded whole and named in diagnostics;
 they are never counted as reviewed. Exclusions reduce context and require human judgment.
 The payload filter is conservative; it does not promise to detect every secret.
 
@@ -60,7 +63,11 @@ attempt, HTTP status, token usage and estimated cost. Missing usage means unknow
 The key and response error text are never recorded. A receipt write failure prevents a new call.
 A valid `TRACEPARENT` is propagated; otherwise the hook creates one. Retain these receipts as
 private source material. Noul values, ordered scores, probabilities and confidence have distinct
-fields. The hook currently asks score questions and refuses incomplete or mismatched answers.
+fields. The measurement decoder retains Noul separately. The hook asks only score questions;
+it requires the resolved runtime to match the pin, valid token usage, and a valid score answer for
+every question. Missing identity or usage, incomplete answers, and Noul answers to score questions
+report `error/response` with no findings. Unavailable identity, usage and cost estimates remain
+`null` in their receipt fields.
 
 Development tests use temporary Git repositories, fixture credentials and a mock HTTP transport:
 

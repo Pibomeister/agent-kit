@@ -1,7 +1,7 @@
 agent-kit
 Copyright (c) 2026 Eduardo Picazo
 
-This project adapts material from the following ten donors: nine under
+The installable catalog adapts material from the following ten donors: nine under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
 source and a note of what was changed. Full license texts are in

@@ -330,18 +330,20 @@ describe("optional semantic sibling hook", () => {
       "authorization",
     ];
     const excluded: Array<{ path: string; reason: string }> = [];
+    const unstaged: Array<{ path: string; content: string }> = [];
     for (const [index, field] of fields.entries()) {
       for (const [style, quote] of ["", "'", '"'].entries()) {
         for (const separator of [":", "="]) {
           const path = `config-${index}-${style}-${separator === ":" ? "colon" : "equals"}.txt`;
           writeFileSync(join(options.root, path), `${quote}${field}${quote} ${separator} "opaque-provider-secret"`);
-          git(options.root, "add", path);
           if (separator === "=")
-            writeFileSync(join(options.root, path), `${quote}${field}${quote} ${separator} 'opaque-provider-secret'`);
+            unstaged.push({ path, content: `${quote}${field}${quote} ${separator} 'opaque-provider-secret'` });
           excluded.push({ path, reason: "secret-content" });
         }
       }
     }
+    git(options.root, "add", ...excluded.map((item) => item.path));
+    for (const item of unstaged) writeFileSync(join(options.root, item.path), item.content);
     writeFileSync(join(options.root, "config.json"), '{"description":"safe configuration"}');
     git(options.root, "add", "config.json");
     let calls = 0;

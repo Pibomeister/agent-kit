@@ -82,7 +82,6 @@ live acceptance remains separate for each served binding, and `ak update` does n
 ## Guard hook
 
 The source checkout also has an [optional semantic lint hook](docs/semantic-lint.md).
-It is disabled by default and runs as a sibling of deterministic lint.
 
 The source CLI (`bun run ak`) and the installed `bin/ak` carry the opt-in Claude Code hook:
 
@@ -266,7 +265,6 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 ## Provenance
 
-Ten donors, pinned to exact commits in `provenance/upstream.lock.yaml`: nine MIT and one Apache-2.0.
 For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
 The research-only [`caveman-ai/blocks` pin](research/sources/caveman-blocks-verified-blocks.md) records the procedure-detection donor and its licence and trademark limits; no donor executable is shipped.
 Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
