@@ -179,8 +179,9 @@ function isLinkText(line: string, start: number, end: number): boolean {
  * ``` ``[`` ``` span is masked as well as a single-backtick one.
  */
 function maskCodeSpans(line: string): string {
-  return line.replace(CODE_SPAN, (_whole: string, ticks: string, span: string) =>
-    `${ticks}${"_".repeat(span.length)}${ticks}`,
+  return line.replace(
+    CODE_SPAN,
+    (_whole: string, ticks: string, span: string) => `${ticks}${"_".repeat(span.length)}${ticks}`,
   );
 }
 
