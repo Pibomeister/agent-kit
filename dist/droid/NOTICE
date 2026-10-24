@@ -1,11 +1,16 @@
 agent-kit
 Copyright (c) 2026 Eduardo Picazo
 
-This project adapts material from the following ten donors: nine under
+The installable catalog adapts material from the following ten donors: nine under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
 source and a note of what was changed. Full license texts are in
 provenance/licenses/.
+
+The optional source-checkout semantic hook also adapts client and hook mechanics
+from mizchi, Copyright (c) 2026 mizchi<Kotaro Chikuba>, under the MIT License.
+Its donor pin, exact source paths and full license are recorded in provenance/.
+It is separate from the catalog donors listed below and is not bundled.
 
 - compound-engineering-plugin — Copyright (c) 2025 Every
   https://github.com/EveryInc/compound-engineering-plugin @ 05c42da94fd318fa081f29d17bf947762aa477b1
