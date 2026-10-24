@@ -35,6 +35,7 @@ import { INSTALL_FILE } from "../../src/packaging/install.ts";
 import { planBundle } from "../../src/packaging/plan.ts";
 import { parseFrontmatter } from "../../src/util/frontmatter.ts";
 import { processScratch } from "../../tests/helpers/process-tmp.ts";
+import { requestFor } from "../../src/semantic-lint/client.ts";
 
 export interface Surface {
   /** Stable key in the baseline. */
@@ -220,6 +221,19 @@ export function collectSurfaces(root: string): Surface[] {
     ...hookSurfaces(root),
     ...judgeSurfaces(root),
     DISTILL_SURFACE,
+    {
+      id: "hook:semantic-lint-questions",
+      file: "src/semantic-lint/client.ts",
+      text: JSON.stringify(
+        requestFor({
+          files: [
+            { path: "example.ts", content: "export const ready = true;" },
+            { path: "README.md", content: "The module is ready." },
+          ],
+          excluded: [],
+        }).request.questions,
+      ),
+    },
     ...firstmateSurfaces(root),
   ];
 }

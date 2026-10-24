@@ -3,6 +3,16 @@
 schema_version: 1
 pinned_at: "2026-09-18"
 donors:
+  # Optional semantic hook only. No donor skill or global hook is installed.
+  - id: jev-lint
+    repo: mizchi/jev-lint
+    url: https://github.com/mizchi/jev-lint
+    path: .donors/mizchi_jev-lint
+    commit: af58a3bd20693f828ff6353e3543c0ab5bb7bad4
+    commit_date: "2026-10-02T04:27:16Z"
+    license: MIT
+    copyright: "Copyright (c) 2026 mizchi<Kotaro Chikuba>"
+    license_file: provenance/licenses/mizchi_jev-lint.LICENSE
   - id: compound-engineering
     repo: EveryInc/compound-engineering-plugin
     url: https://github.com/EveryInc/compound-engineering-plugin

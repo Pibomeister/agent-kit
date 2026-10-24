@@ -36,7 +36,9 @@ set --
 while IFS= read -r file; do
   set -- "$@" --path-ignore-patterns "$file"
 done < tools/test/integration-files.txt
-bun test --parallel="${AK_TEST_PARALLEL:-4}" "$@" || status=1
+# The ordinary lane runs files in parallel, so a per-test wall clock stretches with load; the default
+# 5s per-test timeout is the harness default, not a product deadline. Explicit per-test timeouts still win.
+bun test --parallel="${AK_TEST_PARALLEL:-4}" --timeout=30000 "$@" || status=1
 
 while IFS= read -r file; do
   bun test --max-concurrency=1 "./$file" || status=1

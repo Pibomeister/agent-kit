@@ -1325,6 +1325,12 @@ adaptations:
   - path: src/lifecycle/gate.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
     rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
+  - path: src/semantic-lint/client.ts
+    source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/jev.ts
+    rationale: Adapt the batched systemone wire contract and injectable transport. Replace environment credentials, aliases, pacing and broad retry loops with a pinned optional command child, private attempt receipts, cancellation, short deadlines and one retry.
+  - path: src/semantic-lint/client.ts
+    source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/questions.ts
+    rationale: Adapt score question and answer shapes. Adopt only score answers and refuse Noul and every other answer type; probability is never reported and confidence only as the service returns it. All findings remain advisory; no thresholds or independent-verification claims.
   - path: templates/charter.amendment.example.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: The amended charter fixture retains the protected money-movement action in its denied set.
@@ -1391,3 +1397,6 @@ adaptations:
   - path: tests/verification-schemas.test.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L371-427
     rationale: Schema tests exercise the new project, ticket, recipe and receipt records plus invalid evidence and response shapes.
+  - path: tools/hooks/semantic-lint.ts
+    source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:.jev-lint/hooks/pre-commit
+    rationale: Adapt explicit missing-key skip to a default-disabled sibling Stop command. Do not adopt the donor's sequential review commands, live environment key, skill entrypoint or global installation. Merge preserves deterministic and foreign hooks.
