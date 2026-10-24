@@ -1330,7 +1330,7 @@ adaptations:
     rationale: Adapt the batched systemone wire contract and injectable transport. Replace environment credentials, aliases, pacing and broad retry loops with a pinned optional command child, private attempt receipts, cancellation, short deadlines and one retry.
   - path: src/semantic-lint/client.ts
     source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/questions.ts
-    rationale: Adapt score question and answer shapes. Preserve Noul as a distinct measurement, never probability or confidence. All findings remain advisory; no thresholds or independent-verification claims.
+    rationale: Adapt score question and answer shapes. Adopt only score answers and refuse Noul and every other answer type; probability is never reported and confidence only as the service returns it. All findings remain advisory; no thresholds or independent-verification claims.
   - path: templates/charter.amendment.example.json
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L21-34
     rationale: The amended charter fixture retains the protected money-movement action in its denied set.
