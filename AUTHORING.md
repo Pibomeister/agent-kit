@@ -88,9 +88,16 @@ skills/super-review/
 `references/` and `assets/` are omitted when empty rather than left as empty directories.
 Eval cases do **not** live here — see §9.
 
-Every file a skill references must resolve inside this package. `ak validate` closes links in both
+Every file a skill references must be carried by the selected bundle. `ak validate` closes links in both
 the source tree and the built bundle: a reference to a sibling skill's `references/` file that the
 selected profile does not install is a failure.
+
+Skill-local assets, declared roles and schemas, role-linked templates and transitive dependencies
+are omitted if a symlink resolves outside the real directory of their top-level source tree.
+The source root and top-level trees may themselves be symlinks. If an escaping schema is inlined
+into `bin/ak`, the build fails with `packaging.maintenance-build-failed` instead of emitting it;
+existing bundles remain untouched. An unused escaping schema is omitted without that build error.
+The regression cases are in `tests/mentions.test.ts` and `tests/packaging.test.ts`.
 
 ---
 
@@ -2070,8 +2077,10 @@ need it.
 - Three or more eval cases exist, one of each required kind — `evals.too-few-cases`,
   `evals.missing-case-kind`, both blocking.
 - Nothing in the body links to a file the bundle does not carry — `links.broken-bundle`.
-- Every catalog file, role or protocol the body names in inline code is one the packager carries
-  and links — `links.mention-not-bundled`. What counts as naming one is `mentionResolver` and
+- Every catalog file, role or protocol the body names in a single-backtick code span in prose is one
+  the packager carries and links — `links.mention-not-bundled`. Spans delimited by longer backtick
+  runs stay literal, including any single backticks or brackets inside them. What counts as naming
+  one is `codeSpans`, `mentionResolver` and
   `rootPathOf` in `src/packaging/mentions.ts`; `unlinkedMentions` in `src/validation/links.ts`
   applies the same grammar to the planned bundle, and its caller `checkBundleLinks` skips files
   copied `verbatim`.
