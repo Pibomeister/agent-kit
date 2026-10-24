@@ -104,7 +104,7 @@ Extra `##` sections may follow `## Limits`; none may be inserted between them.
 The trigger conditions, phrased as situations a human or caller is actually in — not as a
 restatement of the skill's name.
 
-> Use when a human asks for review of a branch, PR or ticket that already has verification receipts.
+> Use when a branch, PR or ticket is ready for review and already has verification receipts.
 
 ### `## Not for`
 
@@ -117,11 +117,12 @@ over-eager description would swallow; they are also the source of the non-trigge
 
 ### `## Authority`
 
-One line naming the `common#/$defs/authority` value, one line naming who may start it, and — when
-the value is anything other than `explicit` — the grant that covers delegation.
+One line naming the `common#/$defs/authority` value, one line naming who may start it, and,
+where delegation requires a grant, the grant that covers it. For model-started review, refer to
+`skills/super-review/SKILL.md` §Authority.
 
-> Authority: `explicit-or-delegated`. A human starts it with `/ak:super-review`; a delegated
-> controller may start it only under a runner-validated grant covering `finding-adjudication`
+> Authority: `explicit-or-delegated`. A human starts it with `/ak:super-ship`; a delegated
+> controller may start it only under a runner-validated grant covering `ship-pr`
 > (`adapters/runner-contract/CONTRACT.md`).
 
 ### `## Inputs`
@@ -293,7 +294,7 @@ A canonical `SKILL.md` carries **only** Agent Skills spec keys: `name`, `descrip
 name: super-review
 description: >-
   Runs the specialist review panel over an immutable snapshot, or a two-axis delta over a fix.
-  Use when a human asks for review of a branch, PR or ticket that has verification receipts.
+  Use when a branch, PR or ticket is ready for review and has verification receipts.
   Not for an implementer's self-check during build.
 license: MIT
 metadata:
@@ -880,7 +881,7 @@ to skill bodies.)
 **No second lifecycle entrypoint.** There is one `autopilot` and one lifecycle. A skill may not
 introduce a "run everything", "do the whole thing" or "full loop" entrypoint beside it (ruling
 `full-catalog-opt-in-profiles`), and may not reach a forbidden U-to-U call through a wrapper. Where a
-host cannot validate a grant, the skill stops for explicit invocation rather than reproducing the
+host cannot validate a required grant, the delegated operation stops rather than reproducing the
 forbidden command's effect through a side door (ruling `entrypoint-phase-operation-split`;
 `AGENTS.md`, "The invocation law").
 

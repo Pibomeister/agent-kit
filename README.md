@@ -123,6 +123,10 @@ The lifecycle is seven skills, not twenty. Each has one job, one required output
 | `super-review` | Specialist panel (full) or two-axis delta on a fix | Reviewers cannot edit |
 | `super-ship` | Release checks and PR preparation | Merge and deploy are separate capabilities |
 
+The agent starts `super-review` full and readiness as part of the work. No slash command or grant
+is required. See [review authority](skills/super-review/SKILL.md#authority) for start rules and
+the boundary between starting a review and approving it.
+
 Plus `autopilot`: a human-started supervisor pair, or a Firstmate-started one under a
 runner-validated standing grant in a captain-approved charter. It exercises delegated checkpoint
 authority over those same skills and implements nothing itself.
@@ -164,7 +168,7 @@ directory with no entry.
 
 | Group | Members |
 |---|---|
-| **Lifecycle** (7) | `super-align` U · `super-bound` U · `super-scout` M · `super-build` M · `super-verify` M · `super-review` U/M · `super-ship` U |
+| **Lifecycle** (7) | `super-align` U · `super-bound` U · `super-scout` M · `super-build` M · `super-verify` M · [super-review](skills/super-review/SKILL.md#authority) · `super-ship` U |
 | **Supervisor** (1) | `autopilot` U |
 | **Standalone** (22) | `codebase-design` M · `verify` U · `visual-edit` U · `compound` U · `compound-refresh` U · `ideate` U · `pov` U · `bakeoff` U · `doc-review` M · `receiving-review` U · `diagnose` M · `improve-architecture` U · `doubt-driven` U · `simplify` M · `research` M · `source-driven` M · `deprecate` U · `explain` U · `triage` U · `strategy` U · `product-pulse` U · `writing-skills` U |
 | **Primitives** (4) | `prototype` M · `handoff` M · `wait-what` M · `wayfind` U |

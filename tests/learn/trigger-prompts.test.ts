@@ -81,10 +81,10 @@ describe("trigger prompt sets", () => {
     }
   });
 
-  test("101 prompts, 61 dev and 40 holdout", () => {
-    expect(dev.cases).toHaveLength(61);
-    expect(holdout.cases).toHaveLength(40);
-    expect(all).toHaveLength(101);
+  test("99 prompts, 60 dev and 39 holdout", () => {
+    expect(dev.cases).toHaveLength(60);
+    expect(holdout.cases).toHaveLength(39);
+    expect(all).toHaveLength(99);
   });
 
   test("ids and prompts are unique across both sets", () => {
@@ -93,7 +93,7 @@ describe("trigger prompt sets", () => {
   });
 
   test("M skills: 2 load + 1 negative in dev, 1 + 1 in holdout", () => {
-    expect(skillsOf("M")).toHaveLength(5);
+    expect(skillsOf("M")).toHaveLength(6);
     for (const skill of skillsOf("M")) {
       expect([skill, tally(dev.cases, skill)]).toEqual([skill, { load: 2, recommend: 0, proceed: 0, negative: 1 }]);
       expect([skill, tally(holdout.cases, skill)]).toEqual([skill, { load: 1, recommend: 0, proceed: 0, negative: 1 }]);
@@ -101,7 +101,7 @@ describe("trigger prompt sets", () => {
   });
 
   test("U skills: 3 recommend + 1 hard negative in dev (super-ship 2, five also typed), 2 + 1 in holdout", () => {
-    expect(skillsOf("U")).toHaveLength(10);
+    expect(skillsOf("U")).toHaveLength(9);
     for (const skill of skillsOf("U")) {
       const d = tally(dev.cases, skill);
       expect([skill, d.recommend, d.negative, d.load]).toEqual([skill, 3, skill === "super-ship" ? 2 : 1, 0]);

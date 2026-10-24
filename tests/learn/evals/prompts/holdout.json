@@ -24,11 +24,9 @@
   {"id": "ho-super-ship-h1", "skill": "super-ship", "polarity": "negative", "invocation": "U", "expected": [], "forbidden": ["super-ship"],
    "prompt": "What does `git push --force-with-lease` protect against?"},
 
-  {"id": "ho-super-review-p1", "skill": "super-review", "polarity": "positive", "invocation": "U", "expected": ["super-review"], "expects": "recommend",
-   "prompt": "Kick off /ak:super-review readiness for feature/session-store."},
-  {"id": "ho-super-review-p2", "skill": "super-review", "polarity": "positive", "invocation": "U", "expected": ["super-review"], "expects": "recommend",
+  {"id": "ho-super-review-p2", "skill": "super-review", "polarity": "positive", "invocation": "M", "expected": ["super-review"], "expects": "load",
    "prompt": "Take a hard look at the changes in src/billing before I open the PR. Anything that would get rejected?"},
-  {"id": "ho-super-review-h1", "skill": "super-review", "polarity": "negative", "invocation": "U", "expected": [], "forbidden": ["super-review"],
+  {"id": "ho-super-review-n1", "skill": "super-review", "polarity": "negative", "invocation": "M", "expected": [], "forbidden": ["super-review"],
    "prompt": "What is a CODEOWNERS file for?"},
 
   {"id": "ho-compound-p1", "skill": "compound", "polarity": "positive", "invocation": "U", "expected": ["compound"], "expects": "recommend",

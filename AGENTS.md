@@ -43,6 +43,13 @@ writes it from outside the repository for one task, and it stands in for the typ
 super-align, super-bound, super-review `full` and `readiness`, and super-ship. It starts phases
 only: every approval inside them still goes to the supervisor, and merge and deploy are never on it.
 
+**Model start for review** (`docs/decisions/0013-model-starts-super-review.md`): `super-review`
+`full` and `readiness` are model-invoked. The agent doing the work starts them when a change needs
+judgment. No slash command and no human act is required. `delta` stays inside an open review run.
+The phase operations `review.full` and `review.readiness` remain delegated-grant paths for a
+controller that already holds one. Starting the review is not approval: the author does not sit a
+seat and does not close a finding. Align, bound, ship, wayfind and compound stay human-started.
+
 Source: `G:L1672–1676`. The elision in the fourth bullet drops a model-routing illustration that the
 content denylist forbids in this file; the unedited text is at
 `research/sources/grok-transcript.md:1675`. The quote is reproduced exactly; ADR-0007 records the
@@ -71,16 +78,18 @@ skills, which the law forbids. The resolution (ruling `entrypoint-phase-operatio
 
 | Layer | Who may start it | Example |
 |---|---|---|
-| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant | `/ak:super-review` |
+| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant | `/ak:super-ship` |
 | Phase operation | A delegated controller, **only** under a runner-validated grant | `review.delta` |
 
 A human invokes a public entrypoint, or Firstmate starts autopilot under the standing-start amendment.
 A controller invokes a phase operation only when the runner validates a grant that covers it.
-**Ordinary workers cannot manufacture a grant or start a new gated
-phase**, and public wrappers and the supervisor pair run the same protocol, so there is no second
-pipeline. Where a host cannot validate a grant, the skill **stops for explicit invocation** rather
-than reproducing a forbidden command's effect through a side door (ruling
-`entrypoint-phase-operation-split`).
+**Ordinary workers cannot manufacture a grant or start a new human-started
+phase.** `super-review` `full` and `readiness` are not in that set: the agent doing the work starts
+them (`docs/decisions/0013-model-starts-super-review.md`). Public wrappers and the supervisor pair
+run the same protocol, so there is no second pipeline. Where a host cannot validate a grant, a
+controller **stops** rather than reproducing a forbidden command's effect through a side door
+(ruling `entrypoint-phase-operation-split`). An agent start of `super-review` does not need that
+grant.
 
 `authority` values live in `schemas/common.schema.json#/$defs/authority`:
 `explicit`, `explicit-or-standing`, `explicit-or-delegated`, `delegated-grant`, `active-review-run`, `model`.
