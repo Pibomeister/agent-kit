@@ -2,9 +2,9 @@
 # Prose mirror: skills/super-review/SKILL.md (AUTHORING.md §4.1).
 
 id: super-review
-version: 0.1.2
+version: 0.1.3
 kind: lifecycle
-invocation: U
+invocation: M
 summary: >-
   Specialist panel over an immutable snapshot (full), two-axis delta over a fix (delta), or the
   two-lane readiness gate. Reviewers cannot edit. A required-lane failure is unavailable, which
@@ -41,10 +41,10 @@ prerequisites:
 
 entrypoints:
   full:
-    authority: explicit-or-delegated
-    invocation: U
+    authority: model
+    invocation: M
     operation: review.full
-    stops_without_grant: true
+    stops_without_grant: false
     summary: >-
       Pass 1. Freeze the snapshot, select the panel from declared risk, dispatch each seat with its
       own evidence packet, and synthesize a verdict without merging seats.
@@ -59,10 +59,10 @@ entrypoints:
       stops with needs-input naming the full entrypoint.
     side_effects: [artifact-write]
   readiness:
-    authority: explicit-or-delegated
-    invocation: U
+    authority: model
+    invocation: M
     operation: review.readiness
-    stops_without_grant: true
+    stops_without_grant: false
     summary: >-
       The two-lane readiness gate, run over the panel's synthesized verdict rather than in place of
       it. A missing lane is unavailable and a blocking lane result vetoes approval.
@@ -232,9 +232,8 @@ hard_gates:
 stop_conditions:
   - complete when every selected lane has a state, every required lane is covered, the
     verdict is set, and the review and findings are emitted. A blocked verdict is a complete run.
-  - The full and readiness entrypoints stop with needs-input where the run was started by neither
-    the typed command nor a validated grant, naming the command to type (ruling
-    `entrypoint-phase-operation-split`).
+  - The full and readiness entrypoints stop with needs-input where no comparison base or reviewed
+    head was named. An agent start needs no typed command and no grant (ADR-0013).
   - The delta stops with needs-input where no review run is open, naming the full entrypoint as the
     next permitted action (ruling `entrypoint-phase-operation-split`).
   - A third fix cycle stops with cap-reached and the blocked-or-replan decision.
@@ -245,12 +244,11 @@ stop_conditions:
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The full or readiness entrypoint was started by neither the typed command nor a validated
-      grant, no comparison base or reviewed head was named, or the delta was invoked with no open
-      review run. Returns what it would need and no partial verdict.
+      No comparison base or reviewed head was named, or the delta was invoked with no open review
+      run. Returns what it would need and no partial verdict. A missing typed command is not this
+      outcome (ADR-0013).
     next_permitted_action: >-
-      A human types the command, or the run is re-invoked with the base and head named, or the
-      full entrypoint runs first.
+      Re-invoke with the base and head named, or run the full entrypoint before a delta.
   - status: cap-reached
     meaning: >-
       A third fix cycle was requested. The run stops with an explicit blocked-or-replan decision and
@@ -269,20 +267,21 @@ failure_outcomes:
 
 packaging:
   generated_frontmatter:
-    disable-model-invocation: true
+    disable-model-invocation: false
   hosts:
     - adapter: claude-code
       mode: manual
       unsupported:
         - >-
-          suppression of model invocation, which this package no longer requests on this host
-          (docs/decisions/0003-model-invocation.md). The authority step is the gate.
+          suppression of model invocation. This package does not request it
+          (docs/decisions/0003-model-invocation.md). An agent starts full and readiness (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -291,15 +290,15 @@ packaging:
       unsupported:
         - >-
           model invocation is not suppressed on this host: this package emits no suppression
-          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
-          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
-          unrequested start.
+          key (`adapters/codex/CONTRACT.md` §3.1). An agent starts full and readiness when a
+          change needs judgment (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -308,15 +307,15 @@ packaging:
       unsupported:
         - >-
           model invocation is not suppressed on this host: this package emits no suppression
-          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
-          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
-          unrequested start.
+          key (`adapters/codex/CONTRACT.md` §3.1). An agent starts full and readiness when a
+          change needs judgment (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -325,15 +324,15 @@ packaging:
       unsupported:
         - >-
           model invocation is not suppressed on this host: this package emits no suppression
-          key (`adapters/droid/CONTRACT.md` §2). The generated description's non-trigger
-          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
-          unrequested start.
+          key (`adapters/droid/CONTRACT.md` §2). An agent starts full and readiness when a
+          change needs judgment (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.

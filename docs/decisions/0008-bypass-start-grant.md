@@ -1,6 +1,7 @@
 # ADR-0008 — A supervisor-held bypass grant starts the lifecycle phases for one task
 
-**Status:** Accepted.
+**Status:** Accepted. Review-start requirements are superseded by
+[ADR-0013](0013-model-starts-super-review.md); the bypass scope remains unchanged.
 **Date:** 2026-10-01. Amended 2026-10-06: a grant holds in each run of its task while that run is its
 branch's current run, for at most 12 hours (see **Every run of the task**).
 **Authority:** the captain's request for a bypass mode for agent-kit, and the captain's choice of

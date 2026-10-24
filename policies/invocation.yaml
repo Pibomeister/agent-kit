@@ -2,8 +2,8 @@
 #
 # Authority: plan §7.1 (public entrypoint vs shared phase operation), plan §2.1–§2.5
 # (which capability is a public entrypoint at all), the source law at G:L1672-1676,
-# ADR-0007's later standing-start amendment for autopilot alone, and ADR-0008's bypass start
-# for one task.
+# ADR-0007's later standing-start amendment for autopilot alone, ADR-0008's bypass start
+# for one task, and ADR-0013's model start for super-review full and readiness.
 #
 # Machine-read by `ak validate`, which builds the invocation graph from this file and fails on:
 #   - a skill whose `invocation` here disagrees with catalog.yaml
@@ -59,12 +59,11 @@ law:
 # ---------------------------------------------------------------------------
 entrypoints:
   user_invoked:
-    count: 24
+    count: 23
     authority: explicit
     skills:
       - super-align
       - super-bound
-      - super-review        # per-entrypoint authority below overrides this default
       - super-ship
       - verify
       - visual-edit
@@ -88,13 +87,14 @@ entrypoints:
       - ultraqa
 
   model_invoked:
-    count: 12
+    count: 13
     authority: model
     skills:
       - codebase-design
       - super-scout
       - super-build
       - super-verify
+      - super-review
       - doc-review
       - diagnose
       - simplify
@@ -113,14 +113,14 @@ entrypoints:
         authority: explicit-or-standing
     super-review:
       full:
-        invocation: U
-        authority: explicit-or-delegated
+        invocation: M
+        authority: model
       delta:
         invocation: M
         authority: active-review-run
       readiness:
-        invocation: U
-        authority: explicit-or-delegated
+        invocation: M
+        authority: model
 
 # ---------------------------------------------------------------------------
 # Phase operations. The split that satisfies the law (plan §7.1, protocol `phase-operations`).
@@ -372,13 +372,15 @@ no_operation_exposed:
     These user-invoked skills expose no phase operation. No controller, grant or charter entry
     can start them. A controller that needs their effect stops and names the slash command.
   note: >-
-    This list covers user-invoked skills only, and is complete for them. The twelve skills in
+    This list covers user-invoked skills only, and is complete for them. The thirteen skills in
     `entrypoints.model_invoked` are absent by construction rather than by omission: a controller
     already invokes a model-invoked skill directly, which is what the M mode means, so there is
-    no forbidden edge for an operation to open and nothing to withhold. A phase operation exists
-    only where a human entrypoint would otherwise be the only way in. Read together, the two
-    lists account for every skill in catalog.yaml: 24 user-invoked, of which these 15 expose no
-    operation and the rest do, plus 12 model-invoked that need none.
+    no forbidden edge for a closure to withhold. A phase operation on a user-invoked skill exists
+    where a human entrypoint would otherwise be the only way in. super-review is model-invoked and
+    still exposes review.full, review.delta and review.readiness, so a delegated controller keeps
+    a grant-checked path. Read together, the two lists account for every skill in catalog.yaml:
+    23 user-invoked, of which these 15 expose no operation and the rest do, plus 13 model-invoked
+    that this closure does not list.
   skills:
     - autopilot
     - compound-refresh
