@@ -847,6 +847,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     // Skill-local assets travel with the skill, keeping their own links valid.
     for (const asset of skillAssets(root, entry.id)) {
+      if (!insideOwnTree(resolve(root), asset)) continue;
       const text = readTextIfPresent(join(root, asset));
       if (text === null) continue;
       const assetRewrite = rewriteLinks(asset, asset, text, included, mentions, asset);
@@ -860,7 +861,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   // Authored roles, the catalog, and schemas stay at the paths consumers already write.
+  // A declared source or template that leaves its tree through a symlink is not copied.
   const shipDeclared = (source: string) => {
+    if (!insideOwnTree(resolve(root), source)) return;
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
     files.set(source, { path: source, contents: text, source, verbatim: true });
@@ -870,7 +873,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const linked = rewriteLinks(source, source, text, included, () => null, source);
     issues.push(...linked.issues);
     for (const dep of linked.dependencies) {
-      if (!dep.startsWith("templates/")) continue;
+      if (!dep.startsWith("templates/") || !insideOwnTree(resolve(root), dep)) continue;
       const depText = readTextIfPresent(join(root, dep));
       if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep, verbatim: true });
     }
