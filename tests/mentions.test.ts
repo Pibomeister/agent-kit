@@ -130,6 +130,22 @@ describe("the packager carries what a skill names", () => {
     expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
   });
 
+  test("literal mentions inside longer code spans stay intact while following prose mentions travel", () => {
+    for (const length of [2, 3, 4]) {
+      const ticks = "`".repeat(length);
+      const literal = `${ticks}[\`implementer\`](example), protocol \`tdd\`, \`tdd\` protocol, \`schemas/missing.schema.json\` ${ticks}`;
+      const body = `Literal: ${literal}; then protocol \`phase-operations\`.\n`;
+      const bundle = claudeBundle(body);
+      expect(bundle.get("skills/alpha/SKILL.md")).toContain(
+        `Literal: ${literal}; then protocol [\`phase-operations\`](../../references/shared/protocols/phase-operations/PROTOCOL.md).`,
+      );
+      expect(bundle.has("references/shared/roles/implementer/ROLE.md")).toBe(false);
+      expect(bundle.has("references/shared/protocols/tdd/PROTOCOL.md")).toBe(false);
+      expect(bundle.has("references/shared/protocols/phase-operations/PROTOCOL.md")).toBe(true);
+      expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
+    }
+  });
+
   test("a skill's own references/ file is linked where the skill carries it and passes the bundle check", () => {
     const body = "The checklist is in `references/checklist.md`.\n";
     const extra = { "skills/alpha/references/checklist.md": "# Checklist\n" };
@@ -355,6 +371,19 @@ describe("what counts as naming a file", () => {
     const text = "see [`roles/implementer/ROLE.md` §7](../x.md#7) and [a `implementer` b](y.md)";
     expect(link(text)).toEqual({ text, dependencies: [] });
     expect(codeSpans(text).map((s) => s.linked)).toEqual([true, true]);
+  });
+
+  test("mention consumers skip single backticks enclosed by longer code spans", () => {
+    for (const text of [
+      "Literal: ``[`implementer`](example)``",
+      "Literal: ``protocol `tdd` and `roles/implementer/ROLE.md` ``",
+      "Literal: ``the `tdd` protocol``",
+      "Literal: ``` ``[`implementer`](example)`` ```",
+      "Literal: ``implementer``",
+    ]) {
+      expect(link(text)).toEqual({ text, dependencies: [] });
+      expect(codeSpans(text)).toEqual([]);
+    }
   });
 
   test("project paths, placeholders and globs are not this package's files", () => {

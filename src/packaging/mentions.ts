@@ -33,8 +33,7 @@ export const MENTION_TREES = [
  */
 const ROOT_PATH = /^([a-z][a-z0-9-]*\/[A-Za-z0-9._/-]*[A-Za-z0-9_-])(#[A-Za-z0-9._~/$-]*)?$/;
 
-/** A single-backtick code span, not part of a longer backtick run. */
-const CODE_SPAN = /(?<!`)`([^`\n]+)`(?!`)/g;
+const CODE_SPAN = /(?<!`)(`+)(?!`)([^\n]*?)(?<!`)\1(?!`)/g;
 
 const LINK_TEXT = /\[((?:`[^`\n]*`|[^[\]`\n])*)\]\(/g;
 const FENCE = /^\s*(```|~~~)/;
@@ -146,11 +145,11 @@ export function codeSpans(text: string): CodeSpan[] {
   proseLines(text).forEach(({ line, prose }, i) => {
     if (!prose) return;
     for (const m of line.matchAll(CODE_SPAN)) {
-      if (m[1] === undefined) continue;
+      if (m[1] !== "`" || m[2] === undefined) continue;
       const start = m.index ?? 0;
       const end = start + m[0].length;
       out.push({
-        span: m[1],
+        span: m[2],
         line: i + 1,
         linked: isLinkText(line, start, end),
         protocolCited: isProtocolCited(line, start, end),
@@ -180,18 +179,9 @@ function isLinkText(line: string, start: number, end: number): boolean {
  * ``` ``[`` ``` span is masked as well as a single-backtick one.
  */
 function maskCodeSpans(line: string): string {
-  const runs = [...line.matchAll(/`+/g)].map((m) => ({ at: m.index ?? 0, n: m[0].length }));
-  let out = line;
-  for (let i = 0; i < runs.length; i += 1) {
-    const open = runs[i];
-    const j = runs.findIndex((r, k) => k > i && r.n === open?.n);
-    const close = runs[j];
-    if (open === undefined || close === undefined) continue;
-    const from = open.at + open.n;
-    out = `${out.slice(0, from)}${"_".repeat(close.at - from)}${out.slice(close.at)}`;
-    i = j;
-  }
-  return out;
+  return line.replace(CODE_SPAN, (_whole: string, ticks: string, span: string) =>
+    `${ticks}${"_".repeat(span.length)}${ticks}`,
+  );
 }
 
 function isProtocolCited(line: string, start: number, end: number): boolean {
@@ -222,7 +212,8 @@ export function linkMentions(
   const dependencies: string[] = [];
   const lines = proseLines(text).map(({ line, prose }) => {
     if (!prose) return line;
-    return line.replace(CODE_SPAN, (whole: string, span: string, offset: number) => {
+    return line.replace(CODE_SPAN, (whole: string, ticks: string, span: string, offset: number) => {
+      if (ticks !== "`") return whole;
       const end = offset + whole.length;
       if (isLinkText(line, offset, end)) return whole;
       const target = resolve(span, isProtocolCited(line, offset, end), sourcePath);
