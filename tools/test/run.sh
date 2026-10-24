@@ -40,9 +40,7 @@ done < tools/test/integration-files.txt
 # 5s per-test timeout is the harness default, not a product deadline. Explicit per-test timeouts still win.
 bun test --parallel="${AK_TEST_PARALLEL:-4}" --timeout=30000 "$@" || status=1
 
-# Serial files exercise full bundle planning and subprocess fixtures, which can exceed 30s under
-# host contention. Explicit per-test budgets still win over this integration default.
 while IFS= read -r file; do
-  bun test --max-concurrency=1 --timeout=120000 "./$file" || status=1
+  bun test --max-concurrency=1 "./$file" || status=1
 done < tools/test/integration-files.txt
 exit "$status"

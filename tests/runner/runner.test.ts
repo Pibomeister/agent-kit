@@ -29,9 +29,8 @@ import { parseJson } from "../helpers/json.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 // Most tests drive git, the live runner service and separate seat processes. Keep the ordinary
-// cases bounded at 120s: several git-backed fixtures can exceed 30s under host contention.
-// The multi-command live-service tests below declare their larger bounds.
-setDefaultTimeout(120_000);
+// cases bounded at 30s; the multi-command live-service tests below declare their larger bounds.
+setDefaultTimeout(30_000);
 
 const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;

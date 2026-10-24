@@ -70,10 +70,20 @@ describe("project autonomy default", () => {
     expect(select("yes").issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
   });
   test("validate reports an invalid project record instead of passing it", () => {
-    if (catalog === null) throw new Error("real catalog must load");
-    const root = makeTree({ "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}` });
-    const issues = checkBundleLinks({ root: REPO, catalog }, { project: join(root, "project.json") });
+    const ctx = ctxFor({
+      "schemas/common.schema.json": readFileSync(join(REPO, "schemas/common.schema.json"), "utf8"),
+      "schemas/project.schema.json": readFileSync(join(REPO, "schemas/project.schema.json"), "utf8"),
+      "schemas/verification-recipe.schema.json": readFileSync(
+        join(REPO, "schemas/verification-recipe.schema.json"),
+        "utf8",
+      ),
+      "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}`,
+    });
+    const issues = checkBundleLinks(ctx, { project: "project.json" });
     expect(issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+    expect(issues.find((issue) => issue.rule === "packaging.project-invalid")?.message).toContain(
+      '"instancePath":"/autonomy/default"',
+    );
   });
   test("an autonomy install includes the invocation policy its runner reads", () => {
     if (catalog === null) throw new Error("real catalog must load");

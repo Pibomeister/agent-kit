@@ -665,7 +665,6 @@ describe("the hook process", () => {
   }, 30_000);
 });
 
-// Seven entrypoints each run dozens of subprocess probes; each invocation remains bounded at 30s.
 test("source and packaged entrypoints enforce the guard from an isolated install", () => {
   const work = mkdtempSync(join(ROOT, ".guard-bundle-"));
   try {
@@ -736,4 +735,4 @@ test("source and packaged entrypoints enforce the guard from an isolated install
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
-}, 300_000);
+}, 120_000);
