@@ -111,8 +111,21 @@ function buildMaintenanceScript(root: string): MaintenanceScript | null {
       { cwd: root, encoding: "utf8" },
     );
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
+    const metadata = readFileSync(metafile, "utf8");
+    const inputs = parsePackageJson(JSON.stringify(parsePackageJson(metadata)?.["inputs"] ?? null));
+    if (inputs !== null) {
+      // The bundler resolves symlinks before naming inputs. A schema excluded from the loose
+      // copies must not re-enter the distribution as bytes in the executable.
+      const base = realpathSync(root);
+      const inlinedPaths = new Set(Object.keys(inputs).map((path) => realpathSync(resolve(base, path))));
+      for (const schema of walkFiles(root, "schemas", new Set())) {
+        const path = join(root, schema);
+        if (!insideOwnTree(base, schema) && existsSync(path) && inlinedPaths.has(realpathSync(path)))
+          throw new Error(`${schema}: inlined schema leaves its source tree through a symlink`);
+      }
+    }
     const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
-    const inlined = inlinedSetFromMetafile(readFileSync(metafile, "utf8"));
+    const inlined = inlinedSetFromMetafile(metadata);
     return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined };
   } finally {
     rmSync(dir, { recursive: true, force: true });
