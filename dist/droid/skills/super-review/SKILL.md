@@ -1,15 +1,15 @@
 ---
 name: super-review
-description: "Human-started command: it runs only when the human's message begins with `/super-review`, under a validated grant, when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`, or as a delta inside an open review run. On any other request do not load or follow it; tell the human to type that command. When prose asks for this review work, do not inspect the change or its prerequisites; tell the human to type `/super-review` followed by their request. Reviews a change with a panel of independent specialist seats over an immutable snapshot (full), a two-axis delta over an accepted fix (delta), or the two-lane readiness gate (readiness). Use when a change needs judgment against requirements, standards and tests. Reviewers cannot edit source. Not for writing the fix, not for running acceptance checks, and not for repairing a red pipeline."
+description: Convenes an independent specialist panel for a first pass, a bounded second look at an accepted fix, or the readiness gate. The agent doing the work starts the first pass or the readiness gate when a change needs judgment against requirements, the project's declared standards and its tests. No slash command and no human act is required. Reviewers cannot edit source, and the author of the change does not sit a seat or close a finding. Not for writing the fix, not for running acceptance checks, and not for repairing a red pipeline.
 license: MIT
 metadata:
   ak_catalog_id: super-review
   ak:
     mode: manual
     autonomy_unenforceable:
-      - "model invocation is not suppressed on this host: this package emits no suppression key (`adapters/droid/CONTRACT.md` §2). The generated description's non-trigger clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an unrequested start."
+      - "model invocation is not suppressed on this host: this package emits no suppression key (`adapters/droid/CONTRACT.md` §2). An agent starts full and readiness when a change needs judgment (ADR-0013)."
       - seat isolation is not attested by the host. This package assembles one evidence packet per seat and records what it withheld; it cannot prove the host kept two contexts apart.
-      - grant validation is the runner's. Where the host cannot validate a grant, the delegated entrypoints stop for explicit invocation rather than running on an unchecked claim.
+      - grant validation is the runner's. A controller that cannot validate a grant for the delegated operation stops. An agent start of the model entrypoint does not need that grant (ADR-0013).
       - "artifact-write is storage only: the host does not compute or check the artifact hash, so binding a finding to the snapshot hash is this package's own work."
 ---
 
@@ -17,6 +17,7 @@ metadata:
 
 Use `full` when a change is ready for judgment and nothing has reviewed it yet: a panel of seats
 reads one immutable snapshot against requirements, the project's declared standards, and the tests.
+The agent that produced the change starts this itself, as part of the work.
 
 Use `delta` when a finding was accepted, a fix landed, and the fix needs a bounded second look inside
 the review run that is already open.
@@ -53,27 +54,28 @@ their own failure modes, and they enter through `doc-review`.
 
 ## Authority
 
-`full` and `readiness`: authority `explicit-or-delegated`, invocation U. A human starts either by
-typing `/super-review`, or a delegated controller starts the same protocol through the declared
-phase operations `review.full` and `review.readiness` under a runner-validated grant covering
-finding-adjudication. A request in prose is not a start, even when it names this skill or the
-command. `delta`: authority `active-review-run`, invocation M, through `review.delta`.
+`full` and `readiness`: authority `model`, invocation M. The agent doing the work starts either
+when a change needs that judgment. No slash command and no human act is required (ADR-0013). A
+delegated controller may also start the same protocol through `review.full` and `review.readiness`
+under a runner-validated grant covering finding-adjudication. A bypass grant (ADR-0008) remains a
+valid start and is not required. `delta`: authority `active-review-run`, invocation M, through
+`review.delta`.
 
-There is one protocol behind both doors, not a public wrapper and a second pipeline. Where the host
-cannot validate a grant, the entrypoint stops for explicit invocation rather than reproducing the
-delegated effect through a side door (ruling `entrypoint-phase-operation-split`).
+Starting the review is not approval. The author of the change does not sit a seat and does not
+supply the verdict (ruling `missing-supervisor-never-implementer`). The author does not close a
+finding (ruling `closure-requires-independent-verification`).
 
-Under a Firstmate binding, Firstmate is the delegated controller and the host validates the grant with
-`ak firstmate grant --binding <path> --operation review.full` (or `review.readiness`). Exit 0 is the
-grant: cite the record it prints on the review. A refusal means stop and report `needs-decision` to
-Firstmate (ADR-0004).
+There is one protocol. Where the host cannot validate a grant, a controller stops rather than
+inventing a second pipeline (ruling `entrypoint-phase-operation-split`). An agent start does not
+need that grant.
 
-Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
-task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
---phase super-review:full` (or `super-review:readiness`): exit 0 is the start, and a refusal is a stop with
-`needs-decision`. The grant starts the review and nothing else; a decision a human would make inside
-it still goes to the supervisor through `needs-decision`. Record the gate with `--bypass <path> --task <id>`
-so it carries the attribution.
+Under a Firstmate binding, cite `ak firstmate grant --binding <path> --operation review.full` (or
+`review.readiness`) when it exits 0. A refusal means the binding does not cover the delegated
+operation. It does not stop the model start.
+
+Under a bypass grant, `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant
+<path> --task <id> --phase super-review:full` (or `super-review:readiness`) exits 0 as one valid
+start. Record the gate with `--bypass <path> --task <id>` so it carries the attribution.
 
 `review.delta` does not open a review run. Invoked where none is open, it stops with `needs-input`
 naming `super-review full` as the next permitted action.
@@ -98,16 +100,10 @@ its input hashes, and the fix diff ([`schemas/review.schema.json`](../../referen
 
 ## Workflow
 
-1. Check how this run was started, before any other step and before any tool call but the grant
-   check. `full` and `readiness` are started only when the human's message begins with
-   `/super-review`, or when a controller started `review.full` or `review.readiness` under a
-   validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
-   Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
-   in prose is not a start, even when it names this skill or the command, or asks for this work
-   without naming either. With neither, stop before inspecting the change, checking prerequisites
-   or answering the task: the only response is to tell the human to type `/super-review`
-   followed by their request. For `delta`, confirm a review run is open; if not, stop with
-   `needs-input`.
+1. Name the comparison base and the reviewed head before any other work. Absent either, stop with
+   `needs-input` and do not convene a panel. For `delta`, confirm a review run is open; if not, stop
+   with `needs-input` naming `full` as the next action. Do not stop because a person did not type a
+   command, and do not send the caller away to type one.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only
@@ -264,10 +260,9 @@ complete; the block is the result. A delta that ends by establishing a new basel
 the reset closes this scope and the new scope opens at pass 1, which is not a third loop (ruling
 `delta-baseline-reset-not-third-loop`).
 
-`needs-input`: `full` or `readiness` was started by neither the typed command nor a validated
-grant, no comparison base or reviewed head was named, or `delta` was invoked with no open review
-run. Returns what it would need, which for the first is the command to type, and no partial
-verdict.
+`needs-input`: no comparison base or reviewed head was named, or `delta` was invoked with no open
+review run. Returns what it would need, and no partial verdict. A missing typed command is not
+this stop.
 
 `cap-reached`: a third fix cycle was requested. Stops with the blocked-or-replan decision and every
 open finding attached.

@@ -1,19 +1,18 @@
 # phase-operations
 
-The split that satisfies the invocation law. A public entrypoint is started by a human; a phase
-operation is that same phase logic reached by a delegated controller, and only when the runner
-validates a grant covering it (ruling `entrypoint-phase-operation-split`). One pipeline, two
+The split that satisfies the invocation law. A user-invoked public entrypoint is started by a human;
+a phase operation is that same phase logic reached by a delegated controller, and only when the
+runner validates a grant covering it (ruling `entrypoint-phase-operation-split`). One pipeline, two
 doors: a delegated run never takes a path a human-started run does not.
 
 ## When to use
 
-[`policies/invocation.yaml`](../../policies/invocation.yaml) `operations` is the register — thirteen operations, each naming the
-skill that exposes it, the grant it needs and the controllers that may call it. `super-align`,
-`super-bound`, `wayfind`, `super-review`, `super-ship`, `compound`, `receiving-review`,
-`babysit-pr` and `ultraqa` enter this protocol at the point where their phase would otherwise
-wait for a human, and a controller is present instead.
+[`policies/invocation.yaml`](../../policies/invocation.yaml) `operations` is the register. Each entry names the skill that exposes
+it, its authority requirements and the controllers that may call it. A controller enters this
+protocol to run a declared operation. For review's model-started public entrypoints, see
+[ADR-0013](../../docs/decisions/0013-model-starts-super-review.md).
 
-A human invoking the public entrypoint runs the same steps under `authority: explicit`.
+A human invoking a user-invoked public entrypoint runs the same steps under `authority: explicit`.
 
 ## Not for
 
@@ -21,7 +20,7 @@ A human invoking the public entrypoint runs the same steps under `authority: exp
 - Not for the phase's domain work. `tdd`, `apply-findings`, `review-delta`, `consensus-plan-gate`,
   `worktree-ownership` and `attach-pack` each hold one phase's mechanics; this protocol holds
   only what is identical across all of them.
-- Not for the thirteen skills in [`policies/invocation.yaml`](../../policies/invocation.yaml) `no_operation_exposed`. They expose
+- Not for the skills in [`policies/invocation.yaml`](../../policies/invocation.yaml) `no_operation_exposed`. They expose
   no operation; a controller that needs their effect stops and names the slash command.
 - Not a command surface. An operation has no host command, no description a model matches
   against and no path to a human ([`policies/invocation.yaml`](../../policies/invocation.yaml), statement

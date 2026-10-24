@@ -116,9 +116,10 @@ read-only work may continue within budget. Control returns to the runner. No age
 ### With no runner attached
 
 `delegated-grant` operations are unavailable. `explicit-or-delegated` operations install and run in
-their explicit form only. The public entrypoint **stops for explicit invocation** rather than
-reproducing a forbidden command's effect through a side door (`AGENTS.md`, "The invocation law";
+their explicit form only. A human-started public entrypoint **stops for explicit invocation**
+rather than reproducing a forbidden command's effect through a side door (`AGENTS.md`, "The invocation law";
 ruling `entrypoint-phase-operation-split`).
+For model-started review, see [ADR-0013](../../docs/decisions/0013-model-starts-super-review.md).
 
 ### How a runner signals trusted evidence
 
