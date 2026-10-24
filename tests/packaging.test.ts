@@ -2410,8 +2410,8 @@ describe("ak build and --check", () => {
       );
       const built = writeBundles(ctx, {});
       for (const host of HOST_IDS) {
-        const executable = join(ctx.root, "dist", host, "bin/ak");
-        expect(existsSync(executable) && readFileSync(executable, "utf8").includes(marker)).toBe(false);
+        const executablePath = join(ctx.root, "dist", host, "bin/ak");
+        expect(existsSync(executablePath) && readFileSync(executablePath, "utf8").includes(marker)).toBe(false);
       }
       expectError(built.issues, "packaging.maintenance-build-failed", "inlined schema leaves its source tree");
       expect(existsSync(join(ctx.root, "dist"))).toBe(false);
