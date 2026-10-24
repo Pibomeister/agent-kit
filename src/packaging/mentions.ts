@@ -166,12 +166,32 @@ export function codeSpans(text: string): CodeSpan[] {
  * between them off as link text.
  */
 function isLinkText(line: string, start: number, end: number): boolean {
-  const masked = line.replace(CODE_SPAN, (whole: string) => `\`${"_".repeat(whole.length - 2)}\``);
+  const masked = maskCodeSpans(line);
   for (const m of masked.matchAll(LINK_TEXT)) {
     const open = (m.index ?? 0) + 1;
     if (start >= open && end <= open + (m[1] ?? "").length) return true;
   }
   return false;
+}
+
+/**
+ * `line` with every code span's contents blanked, keeping its backticks and length. A span opens on
+ * a backtick run and closes on the next run of the same length, as CommonMark reads it, so a
+ * ``` ``[`` ``` span is masked as well as a single-backtick one.
+ */
+function maskCodeSpans(line: string): string {
+  const runs = [...line.matchAll(/`+/g)].map((m) => ({ at: m.index ?? 0, n: m[0].length }));
+  let out = line;
+  for (let i = 0; i < runs.length; i += 1) {
+    const open = runs[i];
+    const j = runs.findIndex((r, k) => k > i && r.n === open?.n);
+    const close = runs[j];
+    if (open === undefined || close === undefined) continue;
+    const from = open.at + open.n;
+    out = `${out.slice(0, from)}${"_".repeat(close.at - from)}${out.slice(close.at)}`;
+    i = j;
+  }
+  return out;
 }
 
 function isProtocolCited(line: string, start: number, end: number): boolean {
