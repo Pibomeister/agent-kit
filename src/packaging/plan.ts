@@ -111,8 +111,21 @@ function buildMaintenanceScript(root: string): MaintenanceScript | null {
       { cwd: root, encoding: "utf8" },
     );
     if (result.status !== 0) throw new Error(result.stderr || "bun build failed");
+    const metadata = readFileSync(metafile, "utf8");
+    const inputs = parsePackageJson(JSON.stringify(parsePackageJson(metadata)?.["inputs"] ?? null));
+    if (inputs !== null) {
+      // The bundler resolves symlinks before naming inputs. A schema excluded from the loose
+      // copies must not re-enter the distribution as bytes in the executable.
+      const base = realpathSync(root);
+      const inlinedPaths = new Set(Object.keys(inputs).map((path) => realpathSync(resolve(base, path))));
+      for (const schema of walkFiles(root, "schemas", new Set())) {
+        const path = join(root, schema);
+        if (!insideOwnTree(base, schema) && existsSync(path) && inlinedPaths.has(realpathSync(path)))
+          throw new Error(`${schema}: inlined schema leaves its source tree through a symlink`);
+      }
+    }
     const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
-    const inlined = inlinedSetFromMetafile(readFileSync(metafile, "utf8"));
+    const inlined = inlinedSetFromMetafile(metadata);
     return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -847,6 +860,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     // Skill-local assets travel with the skill, keeping their own links valid.
     for (const asset of skillAssets(root, entry.id)) {
+      if (!insideOwnTree(resolve(root), asset)) continue;
       const text = readTextIfPresent(join(root, asset));
       if (text === null) continue;
       const assetRewrite = rewriteLinks(asset, asset, text, included, mentions, asset);
@@ -860,7 +874,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
 
   // Authored roles, the catalog, and schemas stay at the paths consumers already write.
+  // A declared source or template that leaves its tree through a symlink is not copied.
   const shipDeclared = (source: string) => {
+    if (!insideOwnTree(resolve(root), source)) return;
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
     files.set(source, { path: source, contents: text, source, verbatim: true });
@@ -870,7 +886,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const linked = rewriteLinks(source, source, text, included, () => null, source);
     issues.push(...linked.issues);
     for (const dep of linked.dependencies) {
-      if (!dep.startsWith("templates/")) continue;
+      if (!dep.startsWith("templates/") || !insideOwnTree(resolve(root), dep)) continue;
       const depText = readTextIfPresent(join(root, dep));
       if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep, verbatim: true });
     }

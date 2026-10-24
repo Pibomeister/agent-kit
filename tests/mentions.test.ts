@@ -122,6 +122,30 @@ describe("the packager carries what a skill names", () => {
     expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
   });
 
+  test("brackets inside double-backtick code spans do not hide a mention between them as link text", () => {
+    const body = "Brackets: ``[``, then protocol `phase-operations`, then ``](``.\n";
+    expect(claudeBundle(body).get("skills/alpha/SKILL.md")).toContain(
+      "protocol [`phase-operations`](../../references/shared/protocols/phase-operations/PROTOCOL.md), then ``](``.",
+    );
+    expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
+  });
+
+  test("literal mentions inside longer code spans stay intact while following prose mentions travel", () => {
+    for (const length of [2, 3, 4]) {
+      const ticks = "`".repeat(length);
+      const literal = `${ticks}[\`implementer\`](example), protocol \`tdd\`, \`tdd\` protocol, \`schemas/missing.schema.json\` ${ticks}`;
+      const body = `Literal: ${literal}; then protocol \`phase-operations\`.\n`;
+      const bundle = claudeBundle(body);
+      expect(bundle.get("skills/alpha/SKILL.md")).toContain(
+        `Literal: ${literal}; then protocol [\`phase-operations\`](../../references/shared/protocols/phase-operations/PROTOCOL.md).`,
+      );
+      expect(bundle.has("references/shared/roles/implementer/ROLE.md")).toBe(false);
+      expect(bundle.has("references/shared/protocols/tdd/PROTOCOL.md")).toBe(false);
+      expect(bundle.has("references/shared/protocols/phase-operations/PROTOCOL.md")).toBe(true);
+      expect(checkBundleLinks(ctxFor(body), {})).toEqual([]);
+    }
+  });
+
   test("a skill's own references/ file is linked where the skill carries it and passes the bundle check", () => {
     const body = "The checklist is in `references/checklist.md`.\n";
     const extra = { "skills/alpha/references/checklist.md": "# Checklist\n" };
@@ -217,6 +241,26 @@ describe("the packager carries what a skill names", () => {
     expect(issues.map((i) => `${i.rule} ${i.file}`)).toContain(
       "links.broken-bundle dist/claude-code/skills/alpha/SKILL.md",
     );
+  });
+
+  test("a skill asset, declared role, schema or role-linked template that leaves its tree through a symlink is not copied", () => {
+    const outside = makeTree({ "secret.md": "OUTSIDE\n", "secret.json": '{ "OUTSIDE": true }\n' });
+    const ctx = ctxFor("Plain.\n", {
+      "skills/alpha/references/ok.md": "# Ok\n",
+      "roles/implementer/ROLE.md": "# Implementer\n\nFill [the form](../../templates/evil.md).\n",
+    });
+    mkdirSync(join(ctx.root, "templates"));
+    symlinkSync(join(outside, "secret.md"), join(ctx.root, "templates", "evil.md"));
+    symlinkSync(join(outside, "secret.md"), join(ctx.root, "skills", "alpha", "references", "evil.md"));
+    const coherence = join(ctx.root, "roles", "doc-review", "coherence", "ROLE.md");
+    rmSync(coherence);
+    symlinkSync(join(outside, "secret.md"), coherence);
+    symlinkSync(join(outside, "secret.json"), join(ctx.root, "schemas", "evil.schema.json"));
+    const plan = planAll(ctx, { hosts: ["claude-code"] })[0];
+    if (plan === undefined) throw new Error("no plan");
+    expect([...plan.files.values()].some((file) => file.contents.includes("OUTSIDE"))).toBe(false);
+    for (const path of ["skills/alpha/references/ok.md", "roles/implementer/ROLE.md", "schemas/ticket.schema.json"])
+      expect(plan.files.has(path)).toBe(true);
   });
 
   test("a tree reached through a symlinked root still carries what a skill names", () => {
@@ -327,6 +371,19 @@ describe("what counts as naming a file", () => {
     const text = "see [`roles/implementer/ROLE.md` §7](../x.md#7) and [a `implementer` b](y.md)";
     expect(link(text)).toEqual({ text, dependencies: [] });
     expect(codeSpans(text).map((s) => s.linked)).toEqual([true, true]);
+  });
+
+  test("mention consumers skip single backticks enclosed by longer code spans", () => {
+    for (const text of [
+      "Literal: ``[`implementer`](example)``",
+      "Literal: ``protocol `tdd` and `roles/implementer/ROLE.md` ``",
+      "Literal: ``the `tdd` protocol``",
+      "Literal: ``` ``[`implementer`](example)`` ```",
+      "Literal: ``implementer``",
+    ]) {
+      expect(link(text)).toEqual({ text, dependencies: [] });
+      expect(codeSpans(text)).toEqual([]);
+    }
   });
 
   test("project paths, placeholders and globs are not this package's files", () => {

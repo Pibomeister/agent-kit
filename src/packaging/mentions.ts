@@ -33,8 +33,7 @@ export const MENTION_TREES = [
  */
 const ROOT_PATH = /^([a-z][a-z0-9-]*\/[A-Za-z0-9._/-]*[A-Za-z0-9_-])(#[A-Za-z0-9._~/$-]*)?$/;
 
-/** A single-backtick code span, not part of a longer backtick run. */
-const CODE_SPAN = /(?<!`)`([^`\n]+)`(?!`)/g;
+const CODE_SPAN = /(?<!`)(`+)(?!`)([^\n]*?)(?<!`)\1(?!`)/g;
 
 const LINK_TEXT = /\[((?:`[^`\n]*`|[^[\]`\n])*)\]\(/g;
 const FENCE = /^\s*(```|~~~)/;
@@ -146,11 +145,11 @@ export function codeSpans(text: string): CodeSpan[] {
   proseLines(text).forEach(({ line, prose }, i) => {
     if (!prose) return;
     for (const m of line.matchAll(CODE_SPAN)) {
-      if (m[1] === undefined) continue;
+      if (m[1] !== "`" || m[2] === undefined) continue;
       const start = m.index ?? 0;
       const end = start + m[0].length;
       out.push({
-        span: m[1],
+        span: m[2],
         line: i + 1,
         linked: isLinkText(line, start, end),
         protocolCited: isProtocolCited(line, start, end),
@@ -166,12 +165,24 @@ export function codeSpans(text: string): CodeSpan[] {
  * between them off as link text.
  */
 function isLinkText(line: string, start: number, end: number): boolean {
-  const masked = line.replace(CODE_SPAN, (whole: string) => `\`${"_".repeat(whole.length - 2)}\``);
+  const masked = maskCodeSpans(line);
   for (const m of masked.matchAll(LINK_TEXT)) {
     const open = (m.index ?? 0) + 1;
     if (start >= open && end <= open + (m[1] ?? "").length) return true;
   }
   return false;
+}
+
+/**
+ * `line` with every code span's contents blanked, keeping its backticks and length. A span opens on
+ * a backtick run and closes on the next run of the same length, as CommonMark reads it, so a
+ * ``` ``[`` ``` span is masked as well as a single-backtick one.
+ */
+function maskCodeSpans(line: string): string {
+  return line.replace(
+    CODE_SPAN,
+    (_whole: string, ticks: string, span: string) => `${ticks}${"_".repeat(span.length)}${ticks}`,
+  );
 }
 
 function isProtocolCited(line: string, start: number, end: number): boolean {
@@ -202,7 +213,8 @@ export function linkMentions(
   const dependencies: string[] = [];
   const lines = proseLines(text).map(({ line, prose }) => {
     if (!prose) return line;
-    return line.replace(CODE_SPAN, (whole: string, span: string, offset: number) => {
+    return line.replace(CODE_SPAN, (whole: string, ticks: string, span: string, offset: number) => {
+      if (ticks !== "`") return whole;
       const end = offset + whole.length;
       if (isLinkText(line, offset, end)) return whole;
       const target = resolve(span, isProtocolCited(line, offset, end), sourcePath);
