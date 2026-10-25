@@ -93,8 +93,8 @@
     },
     "bundle/claude-code:references/shared/protocols/evidence-gate/PROTOCOL.md": {
       "file": "protocols/evidence-gate/PROTOCOL.md",
-      "bytes": 11229,
-      "tokens": 2808
+      "bytes": 11680,
+      "tokens": 2920
     },
     "bundle/claude-code:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -918,8 +918,8 @@
     },
     "bundle/codex:references/shared/protocols/evidence-gate/PROTOCOL.md": {
       "file": "protocols/evidence-gate/PROTOCOL.md",
-      "bytes": 11229,
-      "tokens": 2808
+      "bytes": 11680,
+      "tokens": 2920
     },
     "bundle/codex:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -1743,8 +1743,8 @@
     },
     "bundle/droid:references/shared/protocols/evidence-gate/PROTOCOL.md": {
       "file": "protocols/evidence-gate/PROTOCOL.md",
-      "bytes": 11229,
-      "tokens": 2808
+      "bytes": 11680,
+      "tokens": 2920
     },
     "bundle/droid:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -2568,8 +2568,8 @@
     },
     "bundle/grok:references/shared/protocols/evidence-gate/PROTOCOL.md": {
       "file": "protocols/evidence-gate/PROTOCOL.md",
-      "bytes": 11229,
-      "tokens": 2808
+      "bytes": 11680,
+      "tokens": 2920
     },
     "bundle/grok:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
@@ -3393,8 +3393,8 @@
     },
     "bundle/kimi:references/shared/protocols/evidence-gate/PROTOCOL.md": {
       "file": "protocols/evidence-gate/PROTOCOL.md",
-      "bytes": 11229,
-      "tokens": 2808
+      "bytes": 11680,
+      "tokens": 2920
     },
     "bundle/kimi:references/shared/protocols/phase-operations/PROTOCOL.md": {
       "file": "protocols/phase-operations/PROTOCOL.md",
