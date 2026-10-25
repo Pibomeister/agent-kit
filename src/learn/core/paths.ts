@@ -111,8 +111,9 @@ export function linkedWorktree(cwd: string): { worktree: string; root: string } 
       if (!stat.isFile()) return null;
       const gitdir = /^gitdir: (.+)$/m.exec(readFileSync(pointer, "utf8"))?.[1];
       if (gitdir === undefined) return null;
-      const root = /^(.+)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/.exec(resolve(worktree, gitdir.trim()))?.[1];
-      return root === undefined ? null : { worktree, root };
+      const administrative = resolve(worktree, gitdir.trim());
+      const common = resolve(administrative, readFileSync(join(administrative, "commondir"), "utf8").trim());
+      return { worktree, root: common.endsWith(`${sep}.git`) ? dirname(common) : common };
     } catch {
       return null;
     }

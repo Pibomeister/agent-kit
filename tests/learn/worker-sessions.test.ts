@@ -10,6 +10,7 @@ import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { readWorktrees, type Registry } from "../../src/learn/memory/registry.ts";
 import {
   WorkerSessionSource,
+  MAX_OBSERVATIONS,
   parseCodexSession,
   parseDroidSession,
   parseGrokSession,
@@ -256,6 +257,69 @@ describe("native token counters", () => {
       usage_basis: "incremental",
     });
   });
+
+  test.each(["grok", "droid"])("resumed %s snapshots add only uncaptured input and output usage", (host) => {
+    const dir = scratch("ak-ws-resumed-usage-");
+    const ledger = ensureMemoryLedger(join(dir, "ledger"));
+    const path = join(dir, host === "grok" ? "chat_history.jsonl" : "session.jsonl");
+    const capture = (turns: number, input: number, output: number) => {
+      const rows: object[] = host === "droid" ? [{ type: "session_start", id: "resume", cwd: "/fixture/worktree" }] : [];
+      for (let i = 0; i < turns; i++) {
+        if (host === "grok") rows.push({ type: "user", content: `prompt ${i}` }, { type: "assistant", content: `reply ${i}` });
+        else rows.push(
+          { type: "message", message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] } },
+          { type: "message", message: { role: "assistant", content: [{ type: "text", text: `reply ${i}` }] } },
+          { type: "agent_turn_outcome" },
+        );
+      }
+      writeJsonl(path, rows);
+      writeFileSync(join(dir, host === "grok" ? "summary.json" : "session.settings.json"), JSON.stringify({
+        info: { id: "resume", cwd: "/fixture/worktree" }, usage: { input_tokens: input, output_tokens: output },
+      }));
+      return requiredSession(host === "grok" ? parseGrokSession(dir) : parseDroidSession(path));
+    };
+    WorkerSessionSource.open(ledger).capture([capture(1, 1000, 100)]);
+    const firstId = storedRows(ledger).at(-1)?.id ?? 0;
+    const resumed = capture(2, 1500, 170);
+    const source = WorkerSessionSource.open(ledger);
+    source.capture([resumed], { dryRun: true });
+    expect(source.newTokensSince("", 0).tokens).toBe(1100);
+    source.capture([resumed]);
+    expect(source.newTokensSince("", firstId).tokens).toBe(570);
+    expect(WorkerSessionSource.open(ledger).newTokensSince("", 0).tokens).toBe(1670);
+    source.capture([resumed]);
+    expect(source.newTokensSince("", 0).tokens).toBe(1670);
+    source.capture([capture(3, 1900, 200)]);
+    expect(WorkerSessionSource.open(ledger).newTokensSince("", 0).tokens).toBe(2100);
+  });
+
+  test("the observation cap retains native usage without recounting a moving omission window", () => {
+    const home = scratch("ak-ws-capped-usage-");
+    const ledger = ensureMemoryLedger(join(home, "ledger"));
+    const capture = (turns: number) => {
+      const rows: object[] = [];
+      for (let i = 0; i < turns; i++) rows.push(
+        codexMessage("user", `prompt ${i}`),
+        tokenCount((i + 1) * 10, (i + 1) * 2),
+        codexMessage("assistant", `reply ${i}`),
+      );
+      rows.push(CODEX_TASK_COMPLETE);
+      return requiredSession(parseCodexSession(writeRollout(home, "capped", "/fixture/worktree", rows)));
+    };
+    const session = capture(1005);
+    expect(session.observations).toHaveLength(MAX_OBSERVATIONS);
+    expect(session.observations.find((row) => row.type === "truncated")).toMatchObject({ tokens_in: 70, tokens_out: 14 });
+    WorkerSessionSource.open(ledger).capture([session]);
+    const firstId = storedRows(ledger).at(-1)?.id ?? 0;
+    expect(WorkerSessionSource.open(ledger).newTokensSince("", 0).tokens).toBe(1005 * 12);
+    const resumed = capture(1006);
+    const source = WorkerSessionSource.open(ledger);
+    source.capture([resumed]);
+    expect(source.newTokensSince("", firstId).tokens).toBe(12);
+    expect(WorkerSessionSource.open(ledger).newTokensSince("", 0).tokens).toBe(1006 * 12);
+    source.capture([resumed]);
+    expect(source.newTokensSince("", 0).tokens).toBe(1006 * 12);
+  });
 });
 
 describe("failure classification", () => {
@@ -267,12 +331,49 @@ describe("failure classification", () => {
     }
   });
 
-  test("a command tool still fails on its wording, and any tool fails on a recorded status or envelope", () => {
+  test("a command tool still fails on its wording, and any tool fails on a recorded status", () => {
     expect(turnWith("shell", "error: preview quota exceeded")?.type).toBe("error");
     expect(turnWith("bash", "3 tests failed")?.type).toBe("error");
     expect(turnWith("read_file", "Process exited with code 2\nnothing")?.type).toBe("error");
-    expect(turnWith("read_file", '{"is_error": true, "message": "denied"}')?.type).toBe("error");
-    expect(turnWith("read_file", '{"status": "error", "message": "denied"}')?.type).toBe("error");
+  });
+
+  test("JSON error fields in returned text are content, while host envelopes are failures", () => {
+    for (const content of ['27: const sample = {"status": "error"};', '{"is_error":true}', '{"status":"error"}']) {
+      for (const failed of [false, true]) {
+        const codex = writeRollout(scratch("ak-ws-json-codex-"), "json", "/fixture/worktree", [
+          codexMessage("user", "search"),
+          { type: "response_item", payload: { type: "function_call", name: "grep", call_id: "a" } },
+          { type: "response_item", payload: { type: "function_call_output", call_id: "a", output: content, is_error: failed } },
+          CODEX_TASK_COMPLETE,
+        ]);
+        const droid = writeJsonl(join(scratch("ak-ws-json-droid-"), "session.jsonl"), [
+          { type: "session_start", id: "json", cwd: "/fixture/worktree" },
+          { type: "message", message: { role: "user", content: [{ type: "text", text: "search" }] } },
+          { type: "message", message: { role: "assistant", content: [{ type: "tool_use", name: "Grep", id: "a" }] } },
+          { type: "message", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content, is_error: failed }] } },
+          { type: "agent_turn_outcome" },
+        ]);
+        const grok = scratch("ak-ws-json-grok-");
+        writeFileSync(join(grok, "summary.json"), JSON.stringify({ info: { id: "json", cwd: "/fixture/worktree" } }));
+        writeJsonl(join(grok, "chat_history.jsonl"), [
+          { type: "user", content: "search" },
+          { type: "assistant", tool_calls: [{ id: "a", function: { name: "grep" } }] },
+          { type: "tool_result", tool_call_id: "a", content, status: failed ? "error" : "success" },
+          { type: "assistant", content: "done" },
+        ]);
+        const kimi = scratch("ak-ws-json-kimi-");
+        writeFileSync(join(kimi, "state.json"), JSON.stringify({ id: "json", cwd: "/fixture/worktree" }));
+        writeJsonl(join(kimi, "agents", "main", "wire.jsonl"), [
+          kimiAppended({ role: "user", content: [{ type: "text", text: "search" }], origin: { kind: "user" } }),
+          kimiAppended({ role: "assistant", content: [], toolCalls: [{ id: "a", name: "grep", arguments: "{}" }] }),
+          { type: "agent.message.appended", message: { message: { role: "tool", toolCallId: "a", content, isError: failed } } },
+          { type: "turn.ended" },
+        ]);
+        for (const session of [parseCodexSession(codex), parseDroidSession(droid), parseGrokSession(grok), parseKimiSession(kimi)]) {
+          expect(requiredSession(session).observations[0]?.type).toBe(failed ? "error" : "turn");
+        }
+      }
+    }
   });
 });
 
@@ -410,28 +511,47 @@ describe("worktree placement", () => {
     expect(readWorktrees(ctx.config)).toEqual({ [linked]: main });
   });
 
-  test("a no-mistakes worktree places at the registered repository that shares its origin", () => {
+  test.each([false, true])("a no-mistakes worktree resolves origin through its common directory (bare: %s)", (bare) => {
     const base = scratch("ak-ws-nm-");
     const parent = join(base, "projects", "shop");
-    const clone = join(base, ".no-mistakes", "repos", "abc123");
+    const clone = join(base, ".no-mistakes", "repos", bare ? "abc123.git" : "abc123");
+    const common = bare ? clone : join(clone, ".git");
     const worktree = join(base, ".no-mistakes", "worktrees", "gate-1");
-    for (const repo of [parent, clone]) {
-      mkdirSync(join(repo, ".git"), { recursive: true });
-      writeFileSync(join(repo, ".git", "config"), '[remote "origin"]\n\turl = https://github.com/owner/shop.git\n');
+    mkdirSync(parent, { recursive: true });
+    expect(run(["git", "init", "-q"], { cwd: parent }).code).toBe(0);
+    mkdirSync(dirname(clone), { recursive: true });
+    expect(run(["git", "clone", "-q", ...(bare ? ["--bare"] : []), parent, clone]).code).toBe(0);
+    for (const dir of [join(parent, ".git"), common]) {
+      writeFileSync(join(dir, "config"), `[remote "upstream"]\n\turl = https://github.com/other/${dir === common ? "gate" : "parent"}.git\n${readFileSync(join(dir, "config"), "utf8")}\n[remote "origin"]\n\turl = https://github.com/owner/shop.git\n`);
     }
-    mkdirSync(join(clone, ".git", "worktrees", "gate-1"), { recursive: true });
+    const administrative = join(common, "worktrees", "gate-1");
+    mkdirSync(administrative, { recursive: true });
+    writeFileSync(join(administrative, "commondir"), "../..\n");
+    writeFileSync(join(administrative, "HEAD"), readFileSync(join(common, "HEAD"), "utf8"));
+    writeFileSync(join(administrative, "gitdir"), `${join(worktree, ".git")}\n`);
     mkdirSync(join(worktree, "src"), { recursive: true });
-    writeFileSync(join(worktree, ".git"), `gitdir: ${join(clone, ".git", "worktrees", "gate-1")}\n`);
+    writeFileSync(join(worktree, ".git"), `gitdir: ${administrative}\n`);
     const registry: Registry = { shop: { root: parent, mem_project: "shop", last_seen: 1 } };
-    expect(workerRootResolver(registry, {}, { home: base })(join(worktree, "src"))).toBe(parent);
+    const ctx = testContext();
+    expect(workerRootResolver(registry, {}, { home: base, config: ctx.config })(join(worktree, "src"))).toBe(parent);
+    rmSync(worktree, { recursive: true });
+    expect(workerRootResolver(registry, readWorktrees(ctx.config), { home: base })(join(worktree, "src"))).toBe(parent);
   });
 
-  test("a deleted worktree path places by its container and project name, and only there", () => {
-    const registry: Registry = { shop: { root: "/code/shop", mem_project: "shop", last_seen: 1 } };
+  test("container names cannot place an unrecorded worktree", () => {
+    const registry: Registry = {
+      shop: { root: "/code/shop", mem_project: "shop", last_seen: 1 },
+      admin: { root: "/code/shop-admin", mem_project: "shop-admin", last_seen: 1 },
+    };
     const rootFor = workerRootResolver(registry, {}, { home: "/home/dev" });
-    expect(rootFor("/Users/dev/orca/workspaces/shop/fix-cart/src")).toBe("/code/shop");
-    expect(rootFor("/Users/dev/.treehouse/shop-a1b2c3/src")).toBe("/code/shop");
+    expect(rootFor("/Users/dev/orca/workspaces/shop/fix-cart/src")).toBeNull();
+    expect(rootFor("/Users/dev/.treehouse/shop-admin-a1b2c3/src")).toBeNull();
+    expect(rootFor("/Users/dev/.treehouse/blog-feature/shop/src")).toBeNull();
     expect(rootFor("/workspaces/shop/other-branch")).toBeNull();
     expect(rootFor("/elsewhere/shop")).toBeNull();
+    const base = projectScratch();
+    const live = join(base, ".treehouse", "shop-feature");
+    mkdirSync(join(live, ".git"), { recursive: true });
+    withGitCeiling(base, () => expect(rootFor(join(live, "shop", "src"))).toBeNull());
   });
 });
