@@ -6,13 +6,13 @@
  * is a resolution, attributed to the PR author or to a third party. Reviewer
  * text is data: it is stored, never executed or interpreted.
  */
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import Ajv from "ajv";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
+import { git as kbGit } from "../../kb/git.ts";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
-import { parsePage, type PageMeta } from "../core/pages.ts";
 import {
   isScreened,
   memoryDir,
@@ -248,16 +248,6 @@ export function eventsFromClaudeMem(
   }
 }
 
-function metaText(meta: PageMeta, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = meta[key];
-    if (value === null || value === undefined || Array.isArray(value)) continue;
-    const text = String(value);
-    if (text !== "") return text;
-  }
-  return null;
-}
-
 interface KbArtifact {
   schema?: string;
   run_id?: string | null;
@@ -325,87 +315,43 @@ function kbArtifact(line: string): StoredKbArtifact | null {
   return kbArtifactValidator(value) ? value : null;
 }
 
-/**
- * Local knowledgebase `finding` artifacts as review events: the `findings/*.md`
- * pages under the knowledgebase root and the `finding` records in a project's
- * `runs/artifacts.jsonl`. A knowledgebase finding is an authored review record
- * (a super-review seat wrote it), not a session echo, so its events carry the
- * authoritative `kb-finding` source. An absent root or file reads as no
- * findings, never as an error.
- */
 export function eventsFromKbFindings(kbRoot: string, project: string | null): ReviewEvent[] {
+  if (project === null) return [];
+  const committed = kbGit(kbRoot, ["show", `HEAD:projects/${project}/runs/artifacts.jsonl`]);
+  if (committed.status !== 0) return [];
   const events: ReviewEvent[] = [];
-  const dir = join(kbRoot, "findings");
-  if (existsSync(dir)) {
-    for (const name of readdirSync(dir)
-      .filter((file) => file.endsWith(".md"))
-      .toSorted()) {
-      const { meta, body } = parsePage(readText(join(dir, name)));
-      const named = metaText(meta, "project");
-      if (named !== null && project !== null && named !== project) continue;
-      const title = metaText(meta, "title") ?? "";
-      const text = [title, body.trim()].filter((part) => part !== "").join("\n");
-      if (text === "") continue;
-      const severity = metaText(meta, "severity");
-      const event = makeEvent(
-        {
-          source: "kb-finding",
-          kind: "finding",
-          project,
-          pr: null,
-          sha: null,
-          author: metaText(meta, "author", "seat", "lane") ?? "kb-finding",
-          severity: severity !== null && /^P[0-3]$/.test(severity) ? severity : parseSeverity(text),
-          path: metaText(meta, "path"),
-          line: null,
-          text,
-          url: null,
-          ts: metaText(meta, "ts", "created_at", "date"),
-        },
-        metaText(meta, "id") ?? `findings/${name}`,
-      );
-      const session = metaText(meta, "session", "run", "run_id");
-      if (session !== null) event.session = session;
-      events.push(event);
-    }
-  }
-  if (project !== null) {
-    const ledgerFile = join(kbRoot, "projects", project, "runs", "artifacts.jsonl");
-    if (existsSync(ledgerFile)) {
-      for (const line of readFileSync(ledgerFile, "utf8").split("\n")) {
-        if (line.trim() === "") continue;
-        const stored = kbArtifact(line);
-        if (stored === null) continue;
-        const { artifact, record } = stored;
-        if (artifact.schema !== "finding" || !artifact.title) continue;
-        const observations = (artifact.evidence ?? []).flatMap((entry) =>
-          entry.observation === undefined || entry.observation === "" ? [] : [entry.observation],
-        );
-        const text = [artifact.title, artifact.detail ?? "", ...observations].filter((part) => part !== "").join("\n");
-        const event = makeEvent(
-          {
-            source: "kb-finding",
-            kind: "finding",
-            project,
-            pr: null,
-            sha: null,
-            author: artifact.lane ?? artifact.created_by?.role ?? "kb-finding",
-            severity:
-              artifact.severity !== undefined && /^P[0-3]$/.test(artifact.severity)
-                ? artifact.severity
-                : parseSeverity(text),
-            path: artifact.evidence?.[0]?.location?.path ?? null,
-            line: null,
-            text,
-            url: null,
-            ts: artifact.created_at ?? null,
-          },
-          record.ref,
-        );
-        if (artifact.run_id) event.session = artifact.run_id;
-        events.push(event);
-      }
-    }
+  for (const line of committed.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    const stored = kbArtifact(line);
+    if (stored === null) continue;
+    const { artifact, record } = stored;
+    if (artifact.schema !== "finding" || !artifact.title) continue;
+    const observations = (artifact.evidence ?? []).flatMap((entry) =>
+      entry.observation === undefined || entry.observation === "" ? [] : [entry.observation],
+    );
+    const text = [artifact.title, artifact.detail ?? "", ...observations].filter((part) => part !== "").join("\n");
+    const event = makeEvent(
+      {
+        source: "kb-finding",
+        kind: "finding",
+        project,
+        pr: null,
+        sha: null,
+        author: artifact.lane ?? artifact.created_by?.role ?? "kb-finding",
+        severity:
+          artifact.severity !== undefined && /^P[0-3]$/.test(artifact.severity)
+            ? artifact.severity
+            : parseSeverity(text),
+        path: artifact.evidence?.[0]?.location?.path ?? null,
+        line: null,
+        text,
+        url: null,
+        ts: artifact.created_at ?? null,
+      },
+      record.ref,
+    );
+    if (artifact.run_id) event.session = artifact.run_id;
+    events.push(event);
   }
   return events;
 }

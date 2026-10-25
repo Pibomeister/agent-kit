@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import findingExample from "../../templates/finding.example.json" with { type: "json" };
 import { publishRunArtifact } from "../../src/kb/local-git.ts";
+import { git as kbGit } from "../../src/kb/git.ts";
 import type { RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
 import { readJson, readJsonl } from "../../src/learn/core/store.ts";
@@ -502,16 +503,6 @@ describe("ingest end to end", () => {
     const base = scratch();
     const repo = gitRepo(join(base, "app"));
     const kb = gitRepo(join(base, "kb"));
-    mkdirSync(join(kb, "findings"), { recursive: true });
-    mkdirSync(join(kb, "projects", "app", "runs"), { recursive: true });
-    writeFileSync(
-      join(kb, "findings", "f-001.md"),
-      "---\ntitle: Unguarded settle path\nseverity: P1\npath: src/orders/settle.ts\nseat: reviewer-standards\nrun: run-1\nts: 2026-09-15T00:00:00Z\n---\nThe settle path trusts its input.\n",
-    );
-    writeFileSync(
-      join(kb, "findings", "f-002.md"),
-      "---\ntitle: Other project finding\nproject: other\n---\nNot for this repo.\n",
-    );
     for (const run of ["run-2", "run-3"]) {
       expect(
         publishRunArtifact(
@@ -548,29 +539,76 @@ describe("ingest end to end", () => {
         "not json",
       ].join("\n") + "\n",
     );
+    expect(kbGit(kb, ["add", "--", "projects/app/runs/artifacts.jsonl"]).status).toBe(0);
+    expect(kbGit(kb, ["commit", "-q", "-m", "record malformed artifacts"]).status).toBe(0);
     const ctx = testContext();
     const ledger = reviewLedger(ctx.config, repo);
     const first = ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true, kbRoot: kb });
     expect(first.events.map((event) => [event.source, event.author, event.severity, event.session])).toEqual([
-      ["kb-finding", "reviewer-standards", "P1", "run-1"],
       ["kb-finding", "code-review/concurrency", "P2", "run-2"],
       ["kb-finding", "code-review/concurrency", "P2", "run-3"],
     ]);
-    expect(first.events.map((event) => event.path)).toEqual([
-      "src/orders/settle.ts",
-      "src/cart/lock.ts",
-      "src/cart/lock.ts",
-    ]);
-    expect(first.events.slice(1).map((event) => event.hash)).toEqual([
+    expect(first.events.map((event) => event.path)).toEqual(["src/cart/lock.ts", "src/cart/lock.ts"]);
+    expect(first.events.map((event) => event.hash)).toEqual([
       eventHash("kb-finding", "run:run-2/finding/f-101"),
       eventHash("kb-finding", "run:run-3/finding/f-101"),
     ]);
-    expect(first.events[1]?.text).toBe(
+    expect(first.events[0]?.text).toBe(
       "Late lock in checkout\nCheckout reads before acquiring the lock.\nthe lock is taken after the read",
     );
-    expect(first.fresh).toBe(3);
+    expect(first.fresh).toBe(2);
     expect(ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true, kbRoot: kb }).fresh).toBe(0);
     expect(eventsFromKbFindings(join(base, "missing"), "app")).toEqual([]);
+  });
+
+  test("only committed KB publications enter the review ledger", () => {
+    const base = scratch();
+    const repo = gitRepo(join(base, "app"));
+    const kb = gitRepo(join(base, "kb"));
+    const file = "projects/app/runs/artifacts.jsonl";
+    const path = join(kb, file);
+    expect(
+      publishRunArtifact(
+        { root: kb, knowledgebase: "kb", binding: { backend: "local-git", project: "app", locator: {} } },
+        JSON.stringify({ ...findingExample, project: { id: "app", repo: "acme/app" } }),
+        findingExample.run_id,
+        [],
+      ).status,
+    ).toBe("complete");
+    const contents = readFileSync(path, "utf8");
+    const published = eventsFromKbFindings(kb, "app");
+    expect(published).toHaveLength(1);
+    const ctx = testContext();
+    const ledger = reviewLedger(ctx.config, repo);
+    const options = { skipGithub: true, skipMem: true, kbRoot: kb };
+
+    expect(kbGit(kb, ["reset", "--mixed", "HEAD^"]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(kbGit(kb, ["add", "--", file]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(kbGit(kb, ["reset", "-q", "--", file]).status).toBe(0);
+    rmSync(path);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(loadEvents(ledger)).toEqual([]);
+
+    writeFileSync(path, contents);
+    expect(kbGit(kb, ["add", "--", file]).status).toBe(0);
+    expect(kbGit(kb, ["commit", "-q", "-m", "publish saved finding"]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).fresh).toBe(1);
+    expect(loadEvents(ledger)).toEqual(published);
+    writeFileSync(path, "uncommitted replacement\n");
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    expect(kbGit(kb, ["add", "--", file]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    rmSync(path);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    expect(kbGit(kb, ["add", "-u", "--", file]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    expect(kbGit(kb, ["commit", "-q", "-m", "remove published finding"]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(loadEvents(ledger)).toEqual(published);
+    expect(eventsFromKbFindings(kb, null)).toEqual([]);
+    expect(eventsFromKbFindings(kb, "other")).toEqual([]);
   });
 
   test("a reflector silent past the staleness window releases deferred observations; a fresh attempt does not", () => {
