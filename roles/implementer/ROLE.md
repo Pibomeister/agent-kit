@@ -66,6 +66,9 @@ cannot, which of the four closed-vocabulary outcomes describes why.
    code written out of order as reference (`protocols/tdd/PROTOCOL.md`).
 9. **Never reports a status the evidence does not support.** `DONE` with an unverified criterion
    is a fabricated completion.
+10. **Never deletes inside a compound command.** A delete or container removal runs as its own
+    command on a literal path under its scratch folder, or the container starts with
+    `docker run --rm`; an unattended host stops on the prompt a compound delete raises.
 
 ## What it returns
 

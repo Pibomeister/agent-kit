@@ -300,6 +300,7 @@ const GATE_SOURCE = "src/lifecycle/gate.ts";
 export const GATE_FILE = "bin/ak-gate.mjs";
 /** The skills whose text runs `../../bin/ak-gate.mjs`; a bundle with any of them carries the gate. */
 const GATE_SKILLS = [
+  "babysit-pr",
   "super-align",
   "super-bound",
   "super-build",

@@ -116,7 +116,10 @@ The project's own release checks, discovered rather than assumed.
 2. Resolve the mode. `dry-run` and `publish` follow the same steps up to the first remote call;
    `dry-run` stops there.
 3. Run the sensitive-data scan over what would be committed. A candidate secret stops the run;
-   where one was already committed, report it for rotation.
+   where one was already committed, report it for rotation. Before any text goes to the forge, run
+   `node <this skill's directory>/../../bin/ak-gate.mjs publish-scan --repo <owner/name> --visibility
+   <v> --title <title> --body-file <file> --commits <base>..<head>` on the pull-request text: a hit
+   on the operator's internal markers stops the run; no markers file is recorded as not run.
 4. Run the dependency-audit triage and the project's release checks. Record each outcome against
    the head, including checks that did not run.
 5. Require build or repair to have committed the named owned paths before verification and review.
@@ -189,6 +192,10 @@ what a wildcard adds is decided by the working directory rather than by this cha
 Gate: a candidate secret in what would be committed stops the run. A secret already in history is
 reported for rotation; removing it from the payload does not un-leak it.
 
+Gate: pull-request text passes `publish-scan` before it reaches a repository that is public or
+outside the configured owners. Title, body and commit messages carry no internal marker and no
+copied instruction text; a hit stops the run until the text is rewritten.
+
 Gate: no project-derived artifact is written to a repository path. Decisions, lessons, reviews and
 sanitized run receipts go through the knowledgebase adapter, and no application-local documentation tree is created
 as a substitute (ruling `central-kb-owns-project-artifacts`).
@@ -259,9 +266,9 @@ verify, readiness or review record also stops here. Returns what it would need, 
 is the command to type, and performs no remote effect. Also when the autonomous form has no trusted
 evidence: the message names trusted evidence as unavailable and says the manual form remains open.
 
-`failed`: a candidate secret was found, a required release check failed, or the pull-request lookup
-returned an outcome that is neither success nor an empty list. The reason is named and the run stays
-resumable.
+`failed`: a candidate secret or an internal marker was found, a required release check failed, or
+the pull-request lookup returned an outcome that is neither success nor an empty list. The reason is
+named and the run stays resumable.
 
 `cancelled`: the caller withdrew mid-run. Effects already performed are reported with their
 idempotency keys so a resumed run recognises them.
