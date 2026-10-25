@@ -62,6 +62,51 @@ function tokenCount(input: number, output: number) {
   };
 }
 
+function kimiUsage(scope: string, other: number, read: number, created: number, output: number) {
+  return {
+    type: "usage.record",
+    usageScope: scope,
+    agentId: "main",
+    model: "private-record-model",
+    usage: {
+      inputOther: other,
+      inputCacheRead: read,
+      inputCacheCreation: created,
+      output,
+      raw: { model: "private-raw-model" },
+    },
+  };
+}
+
+function repeatedCodexUsage(input: number, output: number) {
+  return {
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: { input_tokens: 1200, output_tokens: 300 },
+        total_token_usage: { input_tokens: input, output_tokens: output },
+      },
+    },
+  };
+}
+
+function lastCodexUsage(input: number, output: number) {
+  return {
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: { input_tokens: input, output_tokens: output },
+      },
+    },
+  };
+}
+
+function rejectStoredRewrite(): never {
+  throw new Error("stored evidence must not be distilled again");
+}
+
 /** The first observation of a one-turn rollout whose only tool call, named `name`, returned `output`. */
 function turnWith(name: string, output: string) {
   const path = writeRollout(scratch("ak-ws-fail-"), `${name}-case`, "/fixture/worktree", [
@@ -123,7 +168,14 @@ function gateFixture(base: string, origin: string) {
   return { common, administrative, worktree };
 }
 
-function toolSessions(name: string, content: string, outcome: object = {}) {
+interface ToolOutcome {
+  is_error?: boolean;
+  isError?: boolean;
+  status?: string;
+  exit_code?: number;
+}
+
+function toolSessions(name: string, content: string, outcome: ToolOutcome = {}) {
   const base = scratch("ak-ws-outcome-");
   const codex = writeRollout(join(base, "codex"), "outcome", "/fixture/worktree", [
     codexMessage("user", "check"),
@@ -135,7 +187,10 @@ function toolSessions(name: string, content: string, outcome: object = {}) {
     { type: "session_start", id: "outcome", cwd: "/fixture/worktree" },
     { type: "message", message: { role: "user", content: [{ type: "text", text: "check" }] } },
     { type: "message", message: { role: "assistant", content: [{ type: "tool_use", name, id: "a" }] } },
-    { type: "message", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content, ...outcome }] } },
+    {
+      type: "message",
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content, ...outcome }] },
+    },
     { type: "agent_turn_outcome" },
   ]);
   const grok = join(base, "grok");
@@ -154,36 +209,53 @@ function toolSessions(name: string, content: string, outcome: object = {}) {
     { type: "turn.ended" },
   ]);
   writeFileSync(join(kimi, "state.json"), JSON.stringify({ id: "outcome", cwd: "/fixture/worktree" }));
-  return [parseCodexSession(codex), parseDroidSession(droid), parseGrokSession(grok), parseKimiSession(kimi)]
-    .map(requiredSession);
+  return [parseCodexSession(codex), parseDroidSession(droid), parseGrokSession(grok), parseKimiSession(kimi)].map(
+    requiredSession,
+  );
 }
 
 describe("native token counters", () => {
   test("Kimi durable usage records include cache input and exclude duplicated status counters", () => {
     const dir = scratch("ak-ws-kimi-native-usage-");
     const started = Date.now() - 10_000;
-    writeFileSync(join(dir, "state.json"), JSON.stringify({ id: "native-usage", cwd: "/fixture/worktree", createdAt: started, model: "private-state-model" }));
-    const usage = (scope: string, other: number, read: number, created: number, output: number) => ({
-      type: "usage.record", usageScope: scope, agentId: "main", model: "private-record-model",
-      usage: { inputOther: other, inputCacheRead: read, inputCacheCreation: created, output, raw: { model: "private-raw-model" } },
-    });
+    writeFileSync(
+      join(dir, "state.json"),
+      JSON.stringify({
+        id: "native-usage",
+        cwd: "/fixture/worktree",
+        createdAt: started,
+        model: "private-state-model",
+      }),
+    );
     writeJsonl(join(dir, "agents", "main", "wire.jsonl"), [
-      { ...usage("session", 10, 20, 30, 5), time: started - 1 },
+      { ...kimiUsage("session", 10, 20, 30, 5), time: started - 1 },
       kimiAppended({ role: "user", origin: { kind: "user" }, content: [{ type: "text", text: "first" }] }),
-      usage("turn", 100, 200, 300, 40),
-      usage("session", 10, 20, 30, 4),
+      kimiUsage("turn", 100, 200, 300, 40),
+      kimiUsage("session", 10, 20, 30, 4),
       { type: "StatusUpdate", token_usage: { input_tokens: 720, output_tokens: 49 } },
-      { type: "agent.status.updated", usage: { total: { inputOther: 120, inputCacheRead: 240, inputCacheCreation: 360, output: 49 } } },
+      {
+        type: "agent.status.updated",
+        usage: { total: { inputOther: 120, inputCacheRead: 240, inputCacheCreation: 360, output: 49 } },
+      },
       { ...kimiAppended({ role: "assistant", content: [{ type: "text", text: "one" }] }), time: started + 1 },
       { type: "turn.ended" },
       kimiAppended({ role: "user", origin: { kind: "user" }, content: [{ type: "text", text: "second" }] }),
-      usage("turn", 7, 11, 13, 17), usage("turn", 0, 0, 0, 0), usage("turn", -1, 0, 0, 0),
-      { type: "agent.message.appended", message: { message: { role: "assistant", content: "done", usage: { input_tokens: 99999, output_tokens: 99999 } } } },
+      kimiUsage("turn", 7, 11, 13, 17),
+      kimiUsage("turn", 0, 0, 0, 0),
+      kimiUsage("turn", -1, 0, 0, 0),
+      {
+        type: "agent.message.appended",
+        message: {
+          message: { role: "assistant", content: "done", usage: { input_tokens: 99999, output_tokens: 99999 } },
+        },
+      },
       { type: "turn.ended" },
     ]);
     const parsed = requiredSession(parseKimiSession(dir));
     expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out, row.usage_basis])).toEqual([
-      [60, 5, "incremental"], [660, 44, "incremental"], [31, 17, "incremental"],
+      [60, 5, "incremental"],
+      [660, 44, "incremental"],
+      [31, 17, "incremental"],
     ]);
     expect(parsed.observations.slice(0, 2).map((row) => row.at)).toEqual([started - 1, started + 1]);
     expect([parsed.tokens_in, parsed.tokens_out, parsed.prompt_count]).toEqual([751, 66, 2]);
@@ -196,38 +268,47 @@ describe("native token counters", () => {
     expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 0 });
   });
 
-  test.each([false, true])("ordinary capture preserves repeated occurrences as the excerpt cap moves (timestamps: %s)", (timestamps) => {
-    const home = scratch("ak-ws-ordinary-occurrences-");
-    const started = Date.now() - 2 * 3_600_000;
-    const capture = (count: number) => {
-      const rows: object[] = [{ type: "session_meta", payload: { id: "ordinary", cwd: "/fixture/worktree", timestamp: timestamps ? started : undefined } }];
-      for (let i = 0; i < count; i++) rows.push(
-        { ...codexMessage("user", "continue"), ...(timestamps ? { timestamp: started + i * 1000 } : {}) },
-        tokenCount((i + 1) * (i + 2) / 2, (i + 1) * (i + 2)),
-        { ...codexMessage("assistant", "done"), ...(timestamps ? { timestamp: started + i * 1000 + 9 } : {}) },
-      );
-      rows.push(CODEX_TASK_COMPLETE);
-      const path = writeJsonl(join(home, "rollout.jsonl"), rows);
-      if (!timestamps) {
-        const modified = new Date(started + count * 1000);
-        utimesSync(path, modified, modified);
-      }
-      return requiredSession(parseCodexSession(path));
-    };
-    const ledger = ensureMemoryLedger(join(home, "ledger"));
-    const source = WorkerSessionSource.open(ledger);
-    source.capture([capture(999)]);
-    const previous = source.observationsSince("", 0);
-    const last = previous.at(-1)?.id ?? 0;
-    const after = capture(1000);
-    expect(source.capture([after])).toEqual({ observations: 2, sessions: 1 });
-    expect(source.observationsById(previous.map((row) => row.id))).toEqual(previous);
-    const stored = RawStore.of(ledger.dir).workers<StoredObservation, { memory_session_id: string }>().observations;
-    expect(stored.reduce((sum, row) => sum + (row.tokens_in ?? 0), 0)).toBe(500500);
-    expect(stored.reduce((sum, row) => sum + (row.tokens_out ?? 0), 0)).toBe(1001000);
-    expect(source.newTokensSince("", last).tokens).toBe(3000);
-    expect(source.capture([after])).toEqual({ observations: 0, sessions: 0 });
-  });
+  test.each([false, true])(
+    "ordinary capture preserves repeated occurrences as the excerpt cap moves (timestamps: %s)",
+    (timestamps) => {
+      const home = scratch("ak-ws-ordinary-occurrences-");
+      const started = Date.now() - 2 * 3_600_000;
+      const capture = (count: number) => {
+        const rows: object[] = [
+          {
+            type: "session_meta",
+            payload: { id: "ordinary", cwd: "/fixture/worktree", timestamp: timestamps ? started : undefined },
+          },
+        ];
+        for (let i = 0; i < count; i++)
+          rows.push(
+            { ...codexMessage("user", "continue"), timestamp: timestamps ? started + i * 1000 : undefined },
+            tokenCount(((i + 1) * (i + 2)) / 2, (i + 1) * (i + 2)),
+            { ...codexMessage("assistant", "done"), timestamp: timestamps ? started + i * 1000 + 9 : undefined },
+          );
+        rows.push(CODEX_TASK_COMPLETE);
+        const path = writeJsonl(join(home, "rollout.jsonl"), rows);
+        if (!timestamps) {
+          const modified = new Date(started + count * 1000);
+          utimesSync(path, modified, modified);
+        }
+        return requiredSession(parseCodexSession(path));
+      };
+      const ledger = ensureMemoryLedger(join(home, "ledger"));
+      const source = WorkerSessionSource.open(ledger);
+      source.capture([capture(999)]);
+      const previous = source.observationsSince("", 0);
+      const last = previous.at(-1)?.id ?? 0;
+      const after = capture(1000);
+      expect(source.capture([after])).toEqual({ observations: 2, sessions: 1 });
+      expect(source.observationsById(previous.map((row) => row.id))).toEqual(previous);
+      const stored = RawStore.of(ledger.dir).workers<StoredObservation, { memory_session_id: string }>().observations;
+      expect(stored.reduce((sum, row) => sum + (row.tokens_in ?? 0), 0)).toBe(500500);
+      expect(stored.reduce((sum, row) => sum + (row.tokens_out ?? 0), 0)).toBe(1001000);
+      expect(source.newTokensSince("", last).tokens).toBe(3000);
+      expect(source.capture([after])).toEqual({ observations: 0, sessions: 0 });
+    },
+  );
 
   test("ordinary capture retains identical observations once per occurrence", () => {
     const parsed = toolSessions("read_file", "specimen")[0];
@@ -241,21 +322,22 @@ describe("native token counters", () => {
     expect(source.capture([twice])).toEqual({ observations: 0, sessions: 0 });
   });
   test("Codex repeated last-usage reports do not advance unchanged cumulative totals", () => {
-    const usage = (input: number, output: number) => ({
-      type: "event_msg",
-      payload: { type: "token_count", info: {
-        last_token_usage: { input_tokens: 1200, output_tokens: 300 },
-        total_token_usage: { input_tokens: input, output_tokens: output },
-      } },
-    });
     const path = writeRollout(scratch("ak-ws-repeated-codex-"), "repeated", "/fixture/worktree", [
-      codexMessage("user", "first"), usage(1200, 300), usage(1200, 300),
+      codexMessage("user", "first"),
+      repeatedCodexUsage(1200, 300),
+      repeatedCodexUsage(1200, 300),
       codexMessage("assistant", "one"),
-      codexMessage("user", "second"), usage(1200, 300), usage(1500, 400),
-      codexMessage("assistant", "two"), CODEX_TASK_COMPLETE,
+      codexMessage("user", "second"),
+      repeatedCodexUsage(1200, 300),
+      repeatedCodexUsage(1500, 400),
+      codexMessage("assistant", "two"),
+      CODEX_TASK_COMPLETE,
     ]);
     const parsed = requiredSession(parseCodexSession(path));
-    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out])).toEqual([[1200, 300], [300, 100]]);
+    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out])).toEqual([
+      [1200, 300],
+      [300, 100],
+    ]);
     expect([parsed.tokens_in, parsed.tokens_out]).toEqual([1500, 400]);
     const ledger = ensureMemoryLedger(scratch("ak-ws-repeated-codex-ledger-"));
     const source = WorkerSessionSource.open(ledger);
@@ -265,21 +347,26 @@ describe("native token counters", () => {
   });
 
   test("Codex tracks mixed last-only counters, cumulative totals, and counter resets", () => {
-    const last = (input: number, output: number) => ({
-      type: "event_msg", payload: { type: "token_count", info: {
-        last_token_usage: { input_tokens: input, output_tokens: output },
-      } },
-    });
     const path = writeRollout(scratch("ak-ws-mixed-codex-"), "mixed", "/fixture/worktree", [
-      codexMessage("user", "first"), last(100, 10), tokenCount(150, 15),
+      codexMessage("user", "first"),
+      lastCodexUsage(100, 10),
+      tokenCount(150, 15),
       codexMessage("assistant", "one"),
-      codexMessage("user", "second"), last(20, 2), tokenCount(200, 20),
+      codexMessage("user", "second"),
+      lastCodexUsage(20, 2),
+      tokenCount(200, 20),
       codexMessage("assistant", "two"),
-      codexMessage("user", "reset"), tokenCount(5, 1),
-      codexMessage("assistant", "three"), CODEX_TASK_COMPLETE,
+      codexMessage("user", "reset"),
+      tokenCount(5, 1),
+      codexMessage("assistant", "three"),
+      CODEX_TASK_COMPLETE,
     ]);
     const parsed = requiredSession(parseCodexSession(path));
-    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out])).toEqual([[150, 15], [50, 5], [5, 1]]);
+    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out])).toEqual([
+      [150, 15],
+      [50, 5],
+      [5, 1],
+    ]);
     expect([parsed.tokens_in, parsed.tokens_out]).toEqual([205, 21]);
   });
   test("a Codex token_count row lands in the stored row beside the excerpt size", () => {
@@ -442,19 +529,26 @@ describe("native token counters", () => {
     const ledger = ensureMemoryLedger(join(dir, "ledger"));
     const path = join(dir, host === "grok" ? "chat_history.jsonl" : "session.jsonl");
     const capture = (turns: number, input: number, output: number) => {
-      const rows: object[] = host === "droid" ? [{ type: "session_start", id: "resume", cwd: "/fixture/worktree" }] : [];
+      const rows: object[] =
+        host === "droid" ? [{ type: "session_start", id: "resume", cwd: "/fixture/worktree" }] : [];
       for (let i = 0; i < turns; i++) {
-        if (host === "grok") rows.push({ type: "user", content: `prompt ${i}` }, { type: "assistant", content: `reply ${i}` });
-        else rows.push(
-          { type: "message", message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] } },
-          { type: "message", message: { role: "assistant", content: [{ type: "text", text: `reply ${i}` }] } },
-          { type: "agent_turn_outcome" },
-        );
+        if (host === "grok")
+          rows.push({ type: "user", content: `prompt ${i}` }, { type: "assistant", content: `reply ${i}` });
+        else
+          rows.push(
+            { type: "message", message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] } },
+            { type: "message", message: { role: "assistant", content: [{ type: "text", text: `reply ${i}` }] } },
+            { type: "agent_turn_outcome" },
+          );
       }
       writeJsonl(path, rows);
-      writeFileSync(join(dir, host === "grok" ? "summary.json" : "session.settings.json"), JSON.stringify({
-        info: { id: "resume", cwd: "/fixture/worktree" }, usage: { input_tokens: input, output_tokens: output },
-      }));
+      writeFileSync(
+        join(dir, host === "grok" ? "summary.json" : "session.settings.json"),
+        JSON.stringify({
+          info: { id: "resume", cwd: "/fixture/worktree" },
+          usage: { input_tokens: input, output_tokens: output },
+        }),
+      );
       return requiredSession(host === "grok" ? parseGrokSession(dir) : parseDroidSession(path));
     };
     WorkerSessionSource.open(ledger).capture([capture(1, 1000, 100)]);
@@ -477,17 +571,21 @@ describe("native token counters", () => {
     const ledger = ensureMemoryLedger(join(home, "ledger"));
     const capture = (turns: number) => {
       const rows: object[] = [];
-      for (let i = 0; i < turns; i++) rows.push(
-        codexMessage("user", `prompt ${i}`),
-        tokenCount((i + 1) * 10, (i + 1) * 2),
-        codexMessage("assistant", `reply ${i}`),
-      );
+      for (let i = 0; i < turns; i++)
+        rows.push(
+          codexMessage("user", `prompt ${i}`),
+          tokenCount((i + 1) * 10, (i + 1) * 2),
+          codexMessage("assistant", `reply ${i}`),
+        );
       rows.push(CODEX_TASK_COMPLETE);
       return requiredSession(parseCodexSession(writeRollout(home, "capped", "/fixture/worktree", rows)));
     };
     const session = capture(1005);
     expect(session.observations).toHaveLength(MAX_OBSERVATIONS);
-    expect(session.observations.find((row) => row.type === "truncated")).toMatchObject({ tokens_in: 70, tokens_out: 14 });
+    expect(session.observations.find((row) => row.type === "truncated")).toMatchObject({
+      tokens_in: 70,
+      tokens_out: 14,
+    });
     WorkerSessionSource.open(ledger).capture([session]);
     const firstId = storedRows(ledger).at(-1)?.id ?? 0;
     expect(WorkerSessionSource.open(ledger).newTokensSince("", 0).tokens).toBe(1005 * 12);
@@ -503,8 +601,15 @@ describe("native token counters", () => {
 
 describe("stored evidence refresh", () => {
   test.each([
-    "codex-total", "codex-last", "droid-row", "droid-settings", "grok-row", "grok-summary",
-    "kimi-record", "kimi-status", "kimi-message",
+    "codex-total",
+    "codex-last",
+    "droid-row",
+    "droid-settings",
+    "grok-row",
+    "grok-summary",
+    "kimi-record",
+    "kimi-status",
+    "kimi-message",
   ])("late %s usage refreshes legacy distilled evidence without moving its turn", (format) => {
     const dir = scratch("ak-ws-late-usage-");
     const started = Date.parse("2026-10-04T13:00:00.000Z");
@@ -515,12 +620,29 @@ describe("stored evidence refresh", () => {
         const path = writeJsonl(join(dir, "rollout.jsonl"), [
           { type: "session_meta", payload: { id: "late", cwd: "/fixture/worktree", timestamp: started } },
           { ...codexMessage("user", "check"), timestamp: started },
-          { type: "response_item", timestamp: started + 1, payload: { type: "function_call", name: "read_file", call_id: "a" } },
-          { type: "response_item", timestamp: started + 2, payload: { type: "function_call_output", call_id: "a", output: content } },
+          {
+            type: "response_item",
+            timestamp: started + 1,
+            payload: { type: "function_call", name: "read_file", call_id: "a" },
+          },
+          {
+            type: "response_item",
+            timestamp: started + 2,
+            payload: { type: "function_call_output", call_id: "a", output: content },
+          },
           { ...codexMessage("assistant", "done"), timestamp: started + 3 },
-          { type: "event_msg", timestamp: started + 4, payload: { type: "token_count", info: withUsage ? {
-            [format === "codex-total" ? "total_token_usage" : "last_token_usage"]: usage,
-          } : {} } },
+          {
+            type: "event_msg",
+            timestamp: started + 4,
+            payload: {
+              type: "token_count",
+              info: withUsage
+                ? {
+                    [format === "codex-total" ? "total_token_usage" : "last_token_usage"]: usage,
+                  }
+                : {},
+            },
+          },
           { ...CODEX_TASK_COMPLETE, timestamp: started + 5 },
         ]);
         return requiredSession(parseCodexSession(path));
@@ -528,11 +650,27 @@ describe("stored evidence refresh", () => {
       if (format.startsWith("droid")) {
         const path = writeJsonl(join(dir, "session.jsonl"), [
           { type: "session_start", id: "late", cwd: "/fixture/worktree", timestamp: started },
-          { type: "message", timestamp: started, message: { role: "user", content: [{ type: "text", text: "check" }] } },
-          { type: "message", timestamp: started + 1, message: { role: "assistant", content: [{ type: "tool_use", name: "read_file", id: "a" }] } },
-          { type: "message", timestamp: started + 2, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content }] } },
-          { type: "message", timestamp: started + 3, message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
-          { type: "notice", timestamp: started + 4, ...(withUsage && format === "droid-row" ? { usage } : {}) },
+          {
+            type: "message",
+            timestamp: started,
+            message: { role: "user", content: [{ type: "text", text: "check" }] },
+          },
+          {
+            type: "message",
+            timestamp: started + 1,
+            message: { role: "assistant", content: [{ type: "tool_use", name: "read_file", id: "a" }] },
+          },
+          {
+            type: "message",
+            timestamp: started + 2,
+            message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content }] },
+          },
+          {
+            type: "message",
+            timestamp: started + 3,
+            message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+          },
+          { type: "notice", timestamp: started + 4, usage: withUsage && format === "droid-row" ? usage : undefined },
           { type: "agent_turn_outcome", timestamp: started + 5 },
         ]);
         if (withUsage && format === "droid-settings")
@@ -545,54 +683,110 @@ describe("stored evidence refresh", () => {
           { type: "assistant", tool_calls: [{ id: "a", function: { name: "read_file" } }] },
           { type: "tool_result", tool_call_id: "a", content },
           { type: "assistant", content: "done" },
-          ...(format === "grok-row" ? [{ type: "usage", ...(withUsage ? { usage } : {}) }] : []),
+          ...(format === "grok-row" ? [{ type: "usage", usage: withUsage ? usage : undefined }] : []),
         ]);
-        writeFileSync(join(dir, "summary.json"), JSON.stringify({
-          info: { id: "late", cwd: "/fixture/worktree" }, created_at: started,
-          ...(withUsage && format === "grok-summary" ? { usage } : {}),
-        }));
+        writeFileSync(
+          join(dir, "summary.json"),
+          JSON.stringify({
+            info: { id: "late", cwd: "/fixture/worktree" },
+            created_at: started,
+            usage: withUsage && format === "grok-summary" ? usage : undefined,
+          }),
+        );
         return requiredSession(parseGrokSession(dir));
       }
-      const counter = format === "kimi-record" ? {
-        type: "usage.record", usage: { inputOther: 600, inputCacheRead: 200, inputCacheCreation: 100, output: 90 },
-      } : format === "kimi-status" ? { type: "StatusUpdate", token_usage: usage } : {
-        type: "agent.message.appended", message: { message: { role: "assistant", content: [], usage } },
-      };
+      const counter =
+        format === "kimi-record"
+          ? {
+              type: "usage.record",
+              usage: { inputOther: 600, inputCacheRead: 200, inputCacheCreation: 100, output: 90 },
+            }
+          : format === "kimi-status"
+            ? { type: "StatusUpdate", token_usage: usage }
+            : {
+                type: "agent.message.appended",
+                message: { message: { role: "assistant", content: [], usage } },
+              };
       writeJsonl(join(dir, "agents", "main", "wire.jsonl"), [
-        { ...kimiAppended({ role: "user", content: [{ type: "text", text: "check" }], origin: { kind: "user" } }), time: started },
-        { ...kimiAppended({ role: "assistant", content: [], toolCalls: [{ id: "a", name: "read_file", arguments: "{}" }] }), time: started + 1 },
-        { ...kimiAppended({ role: "tool", toolCallId: "a", content: [{ type: "text", text: content }] }), time: started + 2 },
+        {
+          ...kimiAppended({ role: "user", content: [{ type: "text", text: "check" }], origin: { kind: "user" } }),
+          time: started,
+        },
+        {
+          ...kimiAppended({
+            role: "assistant",
+            content: [],
+            toolCalls: [{ id: "a", name: "read_file", arguments: "{}" }],
+          }),
+          time: started + 1,
+        },
+        {
+          ...kimiAppended({ role: "tool", toolCallId: "a", content: [{ type: "text", text: content }] }),
+          time: started + 2,
+        },
         { ...kimiAppended({ role: "assistant", content: [{ type: "text", text: "done" }] }), time: started + 3 },
         { ...(withUsage ? counter : { type: "notice" }), time: started + 4 },
         { type: "turn.ended", time: started + 5 },
       ]);
-      writeFileSync(join(dir, "state.json"), JSON.stringify({ id: "late", cwd: "/fixture/worktree", createdAt: started }));
+      writeFileSync(
+        join(dir, "state.json"),
+        JSON.stringify({ id: "late", cwd: "/fixture/worktree", createdAt: started }),
+      );
       return requiredSession(parseKimiSession(dir));
     };
     const before = parse(false);
-    const legacy: CapturedSession = { ...before, observations: before.observations.map((row) => ({
-      ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
-    })) };
+    const legacy: CapturedSession = {
+      ...before,
+      observations: before.observations.map((row) => ({
+        ...row,
+        type: "error",
+        text: row.text.replace("tools:", "failed: read_file\ntools:"),
+      })),
+    };
     const ledger = ensureMemoryLedger(join(dir, "ledger"));
-    WorkerSessionSource.open(ledger).capture([legacy], { rewrite: (_item, rows) => rows.map((row) => ({
-      ...row, text: [...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
-        "read_file inspected a specimen -> found documented examples"].join("\n"),
-    })) });
+    WorkerSessionSource.open(ledger).capture([legacy], {
+      rewrite: (_item, rows) =>
+        rows.map((row) => ({
+          ...row,
+          text: [
+            ...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
+            "read_file inspected a specimen -> found documented examples",
+          ].join("\n"),
+        })),
+    });
     const store = RawStore.of(ledger.dir);
     const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
     for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
-    store.addWorkers(old.observations, old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    store.addWorkers(
+      old.observations,
+      old.sessions.map((row) => ({ ...row, capture_version: 1 })),
+      ledger.dir,
+    );
     const current = parse(true);
     const basis = format === "grok-summary" || format === "droid-settings" ? "raw_total" : "incremental";
     expect(before.observations[0]?.at).toBe(started + 3);
-    expect(current.observations[0]).toMatchObject({ at: started + 3, tokens_in: 900, tokens_out: 90, usage_basis: basis });
+    expect(current.observations[0]).toMatchObject({
+      at: started + 3,
+      tokens_in: 900,
+      tokens_out: 90,
+      usage_basis: basis,
+    });
     const source = WorkerSessionSource.open(ledger);
-    expect(source.capture([current], { rewrite: () => { throw new Error("already distilled evidence"); } }))
-      .toEqual({ observations: 0, sessions: 1 });
+    expect(
+      source.capture([current], {
+        rewrite: () => {
+          throw new Error("already distilled evidence");
+        },
+      }),
+    ).toEqual({ observations: 0, sessions: 1 });
     expect(source.observationsSince("", 0)).toHaveLength(1);
     expect(source.observationsSince("", 0)[0]).toMatchObject({
-      id: old.observations[0]?.id, type: "turn", created_at_epoch: started + 3,
-      tokens_in: 900, tokens_out: 90, usage_basis: basis,
+      id: old.observations[0]?.id,
+      type: "turn",
+      created_at_epoch: started + 3,
+      tokens_in: 900,
+      tokens_out: 90,
+      usage_basis: basis,
     });
     expect(source.observationsSince("", 0)[0]?.facts).not.toContain("failed:");
     expect(source.capture([current])).toEqual({ observations: 0, sessions: 0 });
@@ -601,76 +795,153 @@ describe("stored evidence refresh", () => {
   test("legacy distilled evidence refreshes its original id without another rewrite", () => {
     const current = toolSessions("read_file", "error prose in a specimen")[0];
     if (current === undefined) throw new Error("fixture session did not parse");
-    const legacy: CapturedSession = { ...current, observations: current.observations.map((row) => ({
-      ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
-    })) };
+    const legacy: CapturedSession = {
+      ...current,
+      observations: current.observations.map((row) => ({
+        ...row,
+        type: "error",
+        text: row.text.replace("tools:", "failed: read_file\ntools:"),
+      })),
+    };
     const ledger = ensureMemoryLedger(scratch("ak-ws-distilled-legacy-"));
-    WorkerSessionSource.open(ledger).capture([legacy], { rewrite: (_item, rows) => rows.map((row) => ({
-      ...row, text: [...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
-        "read_file inspected a specimen -> found documented examples"].join("\n"),
-    })) });
+    WorkerSessionSource.open(ledger).capture([legacy], {
+      rewrite: (_item, rows) =>
+        rows.map((row) => ({
+          ...row,
+          text: [
+            ...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
+            "read_file inspected a specimen -> found documented examples",
+          ].join("\n"),
+        })),
+    });
     const store = RawStore.of(ledger.dir);
     const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
     for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
-    store.addWorkers(old.observations, old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    store.addWorkers(
+      old.observations,
+      old.sessions.map((row) => ({ ...row, capture_version: 1 })),
+      ledger.dir,
+    );
     const source = WorkerSessionSource.open(ledger);
-    expect(source.capture([current], { rewrite: () => { throw new Error("already distilled evidence"); } }))
-      .toEqual({ observations: 0, sessions: 1 });
+    expect(
+      source.capture([current], {
+        rewrite: () => {
+          throw new Error("already distilled evidence");
+        },
+      }),
+    ).toEqual({ observations: 0, sessions: 1 });
     expect(source.observationsSince("", 0)).toHaveLength(1);
     expect(source.observationsSince("", 0)[0]).toMatchObject({ id: old.observations[0]?.id, type: "turn" });
     expect(source.observationsSince("", 0)[0]?.facts).not.toContain("failed:");
     expect(source.capture([current])).toEqual({ observations: 0, sessions: 0 });
   });
-  test.each([[false, false], [true, false], [false, true], [true, true]] as const)("uncapped refresh preserves repeated occurrences (same calls: %s, distilled: %s)", (sameCalls, distilled) => {
-    const home = scratch("ak-ws-occurrence-refresh-");
-    const started = Date.now() - 3_600_000;
-    const rows: object[] = [];
-    for (let i = 0; i < 1000; i++) {
-      const file = sameCalls ? "same.ts" : `file-${i}.ts`;
-      rows.push(
-        { ...codexMessage("user", "continue"), timestamp: started + i * 1000 },
-        { type: "response_item", payload: { type: "custom_tool_call", call_id: `write-${i}`, name: "apply_patch", input: `*** Update File: ${file}\n@@\n-old\n+new` } },
-        { type: "response_item", payload: { type: "custom_tool_call_output", call_id: `write-${i}`, output: "updated" } },
-        { type: "response_item", payload: { type: "function_call", call_id: `read-${i}`, name: "read_file", arguments: JSON.stringify({ file_path: file }) } },
-        { type: "response_item", payload: { type: "function_call_output", call_id: `read-${i}`, output: `error prose in ${file}` } },
-        tokenCount((i + 1) * (i + 2) / 2, (i + 1) * (i + 2)),
-        { ...codexMessage("assistant", "done"), timestamp: started + i * 1000 + 9 },
-      );
-    }
-    rows.push(CODEX_TASK_COMPLETE);
-    const parsed = requiredSession(parseCodexSession(writeRollout(home, "occurrences", "/fixture/worktree", rows)));
-    const legacy: CapturedSession = { ...parsed, observations: parsed.observations.map((row) => {
-      if (row.type === "truncated") return row;
-      const lines = row.text.replace("tools:", "failed: read_file\ntools:").split("\n");
-      return { ...row, type: "error", text: [...lines.slice(0, -2), ...lines.slice(-2).reverse()].join("\n"),
-        tokens_in: null, tokens_out: null, usage_basis: "estimated" };
-    }) };
-    const ledger = ensureMemoryLedger(join(home, "ledger"));
-    WorkerSessionSource.open(ledger).capture([legacy], { rewrite: distilled ? (_item, observations) => observations.map((row) => ({
-      ...row, text: row.type === "truncated" ? row.text : [
-        ...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
-        "apply_patch changed code -> updated file", "read_file checked a file -> saved specimen",
-      ].join("\n"),
-    })) : undefined });
-    const store = RawStore.of(ledger.dir);
-    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
-    for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
-    store.addWorkers(old.observations, old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
-    const source = WorkerSessionSource.open(ledger);
-    expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 1 });
-    for (let i = 0; i < parsed.observations.length; i++) {
-      const expected = parsed.observations[i];
-      const previous = old.observations[i];
-      if (expected === undefined || previous === undefined || expected.type === "truncated") continue;
-      const actual = source.observationsById([previous.id])[0];
-      expect(actual).toMatchObject({
-        id: previous.id, type: "turn", facts: expected.text,
-        created_at_epoch: expected.at, files_modified: JSON.stringify(expected.files_modified),
-        tokens_in: expected.tokens_in, tokens_out: expected.tokens_out,
+  test.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ] as const)(
+    "uncapped refresh preserves repeated occurrences (same calls: %s, distilled: %s)",
+    (sameCalls, distilled) => {
+      const home = scratch("ak-ws-occurrence-refresh-");
+      const started = Date.now() - 3_600_000;
+      const rows: object[] = [];
+      for (let i = 0; i < 1000; i++) {
+        const file = sameCalls ? "same.ts" : `file-${i}.ts`;
+        rows.push(
+          { ...codexMessage("user", "continue"), timestamp: started + i * 1000 },
+          {
+            type: "response_item",
+            payload: {
+              type: "custom_tool_call",
+              call_id: `write-${i}`,
+              name: "apply_patch",
+              input: `*** Update File: ${file}\n@@\n-old\n+new`,
+            },
+          },
+          {
+            type: "response_item",
+            payload: { type: "custom_tool_call_output", call_id: `write-${i}`, output: "updated" },
+          },
+          {
+            type: "response_item",
+            payload: {
+              type: "function_call",
+              call_id: `read-${i}`,
+              name: "read_file",
+              arguments: JSON.stringify({ file_path: file }),
+            },
+          },
+          {
+            type: "response_item",
+            payload: { type: "function_call_output", call_id: `read-${i}`, output: `error prose in ${file}` },
+          },
+          tokenCount(((i + 1) * (i + 2)) / 2, (i + 1) * (i + 2)),
+          { ...codexMessage("assistant", "done"), timestamp: started + i * 1000 + 9 },
+        );
+      }
+      rows.push(CODEX_TASK_COMPLETE);
+      const parsed = requiredSession(parseCodexSession(writeRollout(home, "occurrences", "/fixture/worktree", rows)));
+      const legacy: CapturedSession = {
+        ...parsed,
+        observations: parsed.observations.map((row) => {
+          if (row.type === "truncated") return row;
+          const lines = row.text.replace("tools:", "failed: read_file\ntools:").split("\n");
+          return {
+            ...row,
+            type: "error",
+            text: [...lines.slice(0, -2), ...lines.slice(-2).toReversed()].join("\n"),
+            tokens_in: null,
+            tokens_out: null,
+            usage_basis: "estimated",
+          };
+        }),
+      };
+      const ledger = ensureMemoryLedger(join(home, "ledger"));
+      WorkerSessionSource.open(ledger).capture([legacy], {
+        rewrite: distilled
+          ? (_item, observations) =>
+              observations.map((row) => ({
+                ...row,
+                text:
+                  row.type === "truncated"
+                    ? row.text
+                    : [
+                        ...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
+                        "apply_patch changed code -> updated file",
+                        "read_file checked a file -> saved specimen",
+                      ].join("\n"),
+              }))
+          : undefined,
       });
-    }
-    expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 0 });
-  });
+      const store = RawStore.of(ledger.dir);
+      const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+      for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
+      store.addWorkers(
+        old.observations,
+        old.sessions.map((row) => ({ ...row, capture_version: 1 })),
+        ledger.dir,
+      );
+      const source = WorkerSessionSource.open(ledger);
+      expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 1 });
+      for (let i = 0; i < parsed.observations.length; i++) {
+        const expected = parsed.observations[i];
+        const previous = old.observations[i];
+        if (expected === undefined || previous === undefined || expected.type === "truncated") continue;
+        const actual = source.observationsById([previous.id])[0];
+        expect(actual).toMatchObject({
+          id: previous.id,
+          type: "turn",
+          facts: expected.text,
+          created_at_epoch: expected.at,
+          files_modified: JSON.stringify(expected.files_modified),
+          tokens_in: expected.tokens_in,
+          tokens_out: expected.tokens_out,
+        });
+      }
+      expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 0 });
+    },
+  );
 
   test("refresh leaves ambiguous occurrences unchanged", () => {
     const parsed = toolSessions("read_file", "error prose")[0];
@@ -679,19 +950,29 @@ describe("stored evidence refresh", () => {
     if (first === undefined) throw new Error("fixture turn did not parse");
     const observations = [first, { ...first }];
     const current: CapturedSession = { ...parsed, observations, observationsForRefresh: () => observations };
-    const legacy: CapturedSession = { ...current, observations: observations.map((row) => ({
-      ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
-    })) };
+    const legacy: CapturedSession = {
+      ...current,
+      observations: observations.map((row) => ({
+        ...row,
+        type: "error",
+        text: row.text.replace("tools:", "failed: read_file\ntools:"),
+      })),
+    };
     const ledger = ensureMemoryLedger(scratch("ak-ws-ambiguous-refresh-"));
     WorkerSessionSource.open(ledger).capture([legacy]);
     const store = RawStore.of(ledger.dir);
     const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
-    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    store.addWorkers(
+      [],
+      old.sessions.map((row) => ({ ...row, capture_version: 1 })),
+      ledger.dir,
+    );
     const source = WorkerSessionSource.open(ledger);
     expect(source.capture([current])).toEqual({ observations: 0, sessions: 1 });
     expect(source.observationsById(old.observations.map((row) => row.id))).toEqual(old.observations);
-    expect(WorkerSessionSource.open(ledger).completedAt(current.memory_session_id, current.modified_at_epoch))
-      .toBe(current.completed_at_epoch);
+    expect(WorkerSessionSource.open(ledger).completedAt(current.memory_session_id, current.modified_at_epoch)).toBe(
+      current.completed_at_epoch,
+    );
   });
   test.each(["grok", "droid"])("a compacted %s session completes its legacy refresh once", (host) => {
     const home = scratch("ak-ws-compacted-refresh-");
@@ -699,30 +980,49 @@ describe("stored evidence refresh", () => {
     const record = join(dir, host === "grok" ? "chat_history.jsonl" : "session.jsonl");
     const quiet = new Date(Date.now() - 2 * 3_600_000);
     const writeHistory = (indices: readonly number[]) => {
-      const rows: object[] = host === "droid" ? [{ type: "session_start", id: "compacted", cwd: "/fixture/worktree" }] : [];
+      const rows: object[] =
+        host === "droid" ? [{ type: "session_start", id: "compacted", cwd: "/fixture/worktree" }] : [];
       for (const i of indices) {
-        if (host === "grok") rows.push(
-          { type: "user", content: `request ${i}` },
-          { type: "assistant", content: `reply ${i}`, usage: { input_tokens: 100, output_tokens: 10 } },
-        );
-        else rows.push(
-          { type: "message", message: { role: "user", content: [{ type: "text", text: `request ${i}` }] } },
-          { type: "message", message: { role: "assistant", content: [{ type: "text", text: `reply ${i}` }], usage: { input_tokens: 100, output_tokens: 10 } } },
-        );
+        if (host === "grok")
+          rows.push(
+            { type: "user", content: `request ${i}` },
+            { type: "assistant", content: `reply ${i}`, usage: { input_tokens: 100, output_tokens: 10 } },
+          );
+        else
+          rows.push(
+            { type: "message", message: { role: "user", content: [{ type: "text", text: `request ${i}` }] } },
+            {
+              type: "message",
+              message: {
+                role: "assistant",
+                content: [{ type: "text", text: `reply ${i}` }],
+                usage: { input_tokens: 100, output_tokens: 10 },
+              },
+            },
+          );
       }
       writeJsonl(record, rows);
       utimesSync(record, quiet, quiet);
     };
     writeHistory([0, 1, 2, 3, 4, 5]);
-    if (host === "grok") writeFileSync(join(dir, "summary.json"), JSON.stringify({
-      info: { id: "compacted", cwd: "/fixture/worktree" }, created_at: quiet.toISOString(),
-    }));
+    if (host === "grok")
+      writeFileSync(
+        join(dir, "summary.json"),
+        JSON.stringify({
+          info: { id: "compacted", cwd: "/fixture/worktree" },
+          created_at: quiet.toISOString(),
+        }),
+      );
     const parsed = requiredSession(host === "grok" ? parseGrokSession(dir) : parseDroidSession(record));
     const ledger = ensureMemoryLedger(join(home, "ledger"));
     WorkerSessionSource.open(ledger).capture([parsed]);
     const store = RawStore.of(ledger.dir);
     const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
-    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    store.addWorkers(
+      [],
+      old.sessions.map((row) => ({ ...row, capture_version: 1 })),
+      ledger.dir,
+    );
     writeHistory([4, 5]);
     const homes = { codex: [], droid: host === "droid" ? [home] : [], grok: host === "grok" ? [home] : [], kimi: [] };
     const source = WorkerSessionSource.open(ledger);
@@ -730,12 +1030,17 @@ describe("stored evidence refresh", () => {
     const changed = scanned.sessions.get("/fixture/worktree") ?? [];
     expect(changed).toHaveLength(1);
     expect(source.capture(changed)).toEqual({ observations: 0, sessions: 1 });
-    expect(source.sessionObservations(parsed.memory_session_id).map((row) => row.id)).toEqual(old.observations.map((row) => row.id));
+    expect(source.sessionObservations(parsed.memory_session_id).map((row) => row.id)).toEqual(
+      old.observations.map((row) => row.id),
+    );
     expect(source.newTokensSince("", 0).tokens).toBe(660);
     expect(source.capture(changed)).toEqual({ observations: 0, sessions: 0 });
-    for (let i = 0; i < 2; i++) expect(scanWorkerSessions(homes, () => "/fixture/worktree", {
-      stored: () => WorkerSessionSource.open(ledger),
-    }).sessions.size).toBe(0);
+    for (let i = 0; i < 2; i++)
+      expect(
+        scanWorkerSessions(homes, () => "/fixture/worktree", {
+          stored: () => WorkerSessionSource.open(ledger),
+        }).sessions.size,
+      ).toBe(0);
   });
   test.each([1000, 2100])("legacy refresh covers stored turns outside the %s-turn session's excerpt cap", (turns) => {
     const home = scratch("ak-ws-legacy-cap-");
@@ -743,26 +1048,40 @@ describe("stored evidence refresh", () => {
       const rows: object[] = [];
       for (let i = 0; i < count; i++) {
         rows.push(codexMessage("user", `request ${i}`));
-        if (i === 1) rows.push(
-          { type: "response_item", payload: { type: "function_call", call_id: "read", name: "read_file" } },
-          { type: "response_item", payload: { type: "function_call_output", call_id: "read", output: "error in saved code" } },
-        );
+        if (i === 1)
+          rows.push(
+            { type: "response_item", payload: { type: "function_call", call_id: "read", name: "read_file" } },
+            {
+              type: "response_item",
+              payload: { type: "function_call_output", call_id: "read", output: "error in saved code" },
+            },
+          );
         rows.push(tokenCount((i + 1) * 10, (i + 1) * 2), codexMessage("assistant", `reply ${i}`));
       }
       rows.push(CODEX_TASK_COMPLETE);
       return requiredSession(parseCodexSession(writeRollout(home, "legacy-cap", "/fixture/worktree", rows)));
     };
     const before = makeSession(999);
-    const legacy: CapturedSession = { ...before, observations: before.observations.map((row, i) => ({
-      ...row, type: i === 1 ? "error" : row.type,
-      text: i === 1 ? row.text.replace("tools:", "failed: read_file\ntools:") : row.text,
-      tokens_in: null, tokens_out: null, usage_basis: "estimated",
-    })) };
+    const legacy: CapturedSession = {
+      ...before,
+      observations: before.observations.map((row, i) => ({
+        ...row,
+        type: i === 1 ? "error" : row.type,
+        text: i === 1 ? row.text.replace("tools:", "failed: read_file\ntools:") : row.text,
+        tokens_in: null,
+        tokens_out: null,
+        usage_basis: "estimated",
+      })),
+    };
     const ledger = ensureMemoryLedger(join(home, "ledger"));
     WorkerSessionSource.open(ledger).capture([legacy]);
     const store = RawStore.of(ledger.dir);
     const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
-    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    store.addWorkers(
+      [],
+      old.sessions.map((row) => ({ ...row, capture_version: 1 })),
+      ledger.dir,
+    );
     const after = makeSession(turns);
     expect(after.observations).toHaveLength(MAX_OBSERVATIONS);
     expect(after.observations.some((row) => row.text.startsWith("prompt: request 1\n"))).toBe(false);
@@ -771,22 +1090,39 @@ describe("stored evidence refresh", () => {
     expect(written.observations).toBeLessThanOrEqual(MAX_OBSERVATIONS);
     const secondId = old.observations[1]?.id ?? 0;
     expect(source.observationsById([secondId])[0]).toMatchObject({
-      id: secondId, type: "turn", tokens_in: 10, tokens_out: 2, usage_basis: "incremental",
+      id: secondId,
+      type: "turn",
+      tokens_in: 10,
+      tokens_out: 2,
+      usage_basis: "incremental",
     });
     expect(source.observationsById([secondId])[0]?.facts).not.toContain("failed:");
     expect(source.newTokensSince("", 0).tokens).toBe(turns * 12);
-    expect(source.capture([{ ...after, observationsForRefresh: () => { throw new Error("already refreshed"); } }]))
-      .toEqual({ observations: 0, sessions: 0 });
-    expect(scanWorkerSessions({ codex: [home], droid: [], grok: [], kimi: [] }, () => "/fixture/worktree", {
-      stored: () => WorkerSessionSource.open(ledger),
-    }).sessions.size).toBe(0);
+    expect(
+      source.capture([
+        {
+          ...after,
+          observationsForRefresh: () => {
+            throw new Error("already refreshed");
+          },
+        },
+      ]),
+    ).toEqual({ observations: 0, sessions: 0 });
+    expect(
+      scanWorkerSessions({ codex: [home], droid: [], grok: [], kimi: [] }, () => "/fixture/worktree", {
+        stored: () => WorkerSessionSource.open(ledger),
+      }).sessions.size,
+    ).toBe(0);
   });
   test("legacy evidence is refreshed once without changing ids or invoking the distiller", () => {
     const home = scratch("ak-ws-legacy-");
     const path = writeRollout(home, "legacy", "/fixture/worktree", [
       codexMessage("user", "inspect the file"),
       { type: "response_item", payload: { type: "function_call", name: "read_file", call_id: "a" } },
-      { type: "response_item", payload: { type: "function_call_output", call_id: "a", output: "error in sample code" } },
+      {
+        type: "response_item",
+        payload: { type: "function_call_output", call_id: "a", output: "error in sample code" },
+      },
       tokenCount(1200, 300),
       codexMessage("assistant", "done"),
       CODEX_TASK_COMPLETE,
@@ -795,8 +1131,12 @@ describe("stored evidence refresh", () => {
     const legacy: CapturedSession = {
       ...parsed,
       observations: parsed.observations.map((row) => ({
-        ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
-        tokens_in: null, tokens_out: null, usage_basis: "estimated",
+        ...row,
+        type: "error",
+        text: row.text.replace("tools:", "failed: read_file\ntools:"),
+        tokens_in: null,
+        tokens_out: null,
+        usage_basis: "estimated",
       })),
     };
     const untouched = { ...legacy, memory_session_id: "not-scanned", native_id: "not-scanned" };
@@ -813,20 +1153,27 @@ describe("stored evidence refresh", () => {
     store.addWorkers(old.observations, old.sessions, ledger.dir);
     const source = WorkerSessionSource.open(ledger);
     const now = Date.now() + 60_000;
-    const initialEpisode = buildEpisodes(source, ledger, "", [], { now, shown: () => ["ls-001"] })
-      .find((episode) => episode.sid === parsed.memory_session_id);
+    const initialEpisode = buildEpisodes(source, ledger, "", [], { now, shown: () => ["ls-001"] }).find(
+      (episode) => episode.sid === parsed.memory_session_id,
+    );
     expect(initialEpisode?.failure_signals).toBe(1);
     const homes = { codex: [home], droid: [], grok: [], kimi: [] };
     const scanned = scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => source });
     const sessions = scanned.sessions.get("/fixture/worktree") ?? [];
     expect(sessions).toHaveLength(1);
-    const rewrite = () => { throw new Error("stored evidence must not be distilled again"); };
-    expect(source.capture(sessions, { dryRun: true, rewrite })).toEqual({ observations: 0, sessions: 1 });
+    expect(source.capture(sessions, { dryRun: true, rewrite: rejectStoredRewrite })).toEqual({
+      observations: 0,
+      sessions: 1,
+    });
     expect(source.sessionObservations(parsed.memory_session_id)[0]?.type).toBe("error");
-    expect(source.capture(sessions, { rewrite })).toEqual({ observations: 0, sessions: 1 });
+    expect(source.capture(sessions, { rewrite: rejectStoredRewrite })).toEqual({ observations: 0, sessions: 1 });
     const refreshed = WorkerSessionSource.open(ledger);
     expect(refreshed.sessionObservations(parsed.memory_session_id)[0]).toMatchObject({
-      id: old.observations[0]?.id, type: "turn", tokens_in: 1200, tokens_out: 300, usage_basis: "incremental",
+      id: old.observations[0]?.id,
+      type: "turn",
+      tokens_in: 1200,
+      tokens_out: 300,
+      usage_basis: "incremental",
     });
     expect(refreshed.sessionObservations(parsed.memory_session_id)[0]?.facts).not.toContain("failed:");
     expect(refreshed.sessionObservations("not-scanned")[0]).toEqual(old.observations[1]);
@@ -839,7 +1186,9 @@ describe("stored evidence refresh", () => {
     expect(episodes).toHaveLength(1);
     expect(episodes[0]).toMatchObject({ sid: parsed.memory_session_id, obs: 1, failure_signals: 0, shown: ["ls-001"] });
     expect(episodes[0]?.priority ?? 1).toBeLessThan(initialEpisode?.priority ?? 0);
-    expect(unconsolidatedEpisodes(ledger).find((episode) => episode.sid === parsed.memory_session_id)?.failure_signals).toBe(0);
+    expect(
+      unconsolidatedEpisodes(ledger).find((episode) => episode.sid === parsed.memory_session_id)?.failure_signals,
+    ).toBe(0);
     expect(buildEpisodes(refreshed, ledger, "", [], { now })).toEqual([]);
     expect(scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => refreshed }).sessions.size).toBe(0);
     expect(refreshed.capture(sessions)).toEqual({ observations: 0, sessions: 0 });
@@ -852,13 +1201,19 @@ describe("stored evidence refresh", () => {
     const counters = join(dir, host === "grok" ? "summary.json" : "session.settings.json");
     const quiet = new Date(Date.now() - 2 * 3_600_000);
     const summary = { info: { id: "late", cwd: "/fixture/worktree" } };
-    writeJsonl(record, host === "grok" ? [
-      { type: "user", content: "work" }, { type: "assistant", content: "done" },
-    ] : [
-      { type: "session_start", id: "late", cwd: "/fixture/worktree" },
-      { type: "message", message: { role: "user", content: [{ type: "text", text: "work" }] } },
-      { type: "message", message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
-    ]);
+    writeJsonl(
+      record,
+      host === "grok"
+        ? [
+            { type: "user", content: "work" },
+            { type: "assistant", content: "done" },
+          ]
+        : [
+            { type: "session_start", id: "late", cwd: "/fixture/worktree" },
+            { type: "message", message: { role: "user", content: [{ type: "text", text: "work" }] } },
+            { type: "message", message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
+          ],
+    );
     utimesSync(record, quiet, quiet);
     if (host === "grok") {
       writeFileSync(counters, JSON.stringify(summary));
@@ -866,14 +1221,18 @@ describe("stored evidence refresh", () => {
     }
     const homes = { codex: [], droid: host === "droid" ? [home] : [], grok: host === "grok" ? [home] : [], kimi: [] };
     const ledger = ensureMemoryLedger(join(home, "ledger"));
-    const scan = (source: WorkerSessionSource) => scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => source });
+    const scan = (source: WorkerSessionSource) =>
+      scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => source });
     let source = WorkerSessionSource.open(ledger);
     source.capture(scan(source).sessions.get("/fixture/worktree") ?? []);
     const original = source.observationsSince("", 0)[0];
     expect(original).toBeDefined();
     expect(scan(source).sessions.size).toBe(0);
     for (const input of [900, 1200]) {
-      writeFileSync(counters, JSON.stringify({ ...summary, usage: { input_tokens: input, output_tokens: input / 10 } }));
+      writeFileSync(
+        counters,
+        JSON.stringify({ ...summary, usage: { input_tokens: input, output_tokens: input / 10 } }),
+      );
       const modified = new Date(quiet.getTime() + 2 * 3_600_000 + input);
       utimesSync(counters, modified, modified);
       source = WorkerSessionSource.open(ledger);
@@ -882,7 +1241,10 @@ describe("stored evidence refresh", () => {
       expect(source.capture(changed)).toEqual({ observations: 0, sessions: 1 });
       expect(source.observationsSince("", 0)).toHaveLength(1);
       expect(source.observationsSince("", 0)[0]).toMatchObject({
-        id: original?.id, tokens_in: input, tokens_out: input / 10, usage_basis: "raw_total",
+        id: original?.id,
+        tokens_in: input,
+        tokens_out: input / 10,
+        usage_basis: "raw_total",
       });
       expect(source.newTokensSince("", 0).tokens).toBe(input + input / 10);
       expect(scan(WorkerSessionSource.open(ledger)).sessions.size).toBe(0);
@@ -892,21 +1254,37 @@ describe("stored evidence refresh", () => {
   test("shortened histories keep the native counters of newly appended incremental turns", () => {
     const home = scratch("ak-ws-shorter-usage-");
     const path = join(home, "session.jsonl");
-    const capture = (indices: readonly number[]) => requiredSession(parseDroidSession(writeJsonl(path, [
-      { type: "session_start", id: "shorter", cwd: "/fixture/worktree" },
-      ...indices.flatMap((i) => [
-        { type: "message", message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] } },
-        { type: "message", message: { role: "assistant", content: [{ type: "text", text: `reply ${i}` }], usage: { input_tokens: 100, output_tokens: 10 } } },
-        { type: "agent_turn_outcome" },
-      ]),
-    ])));
+    const capture = (indices: readonly number[]) =>
+      requiredSession(
+        parseDroidSession(
+          writeJsonl(path, [
+            { type: "session_start", id: "shorter", cwd: "/fixture/worktree" },
+            ...indices.flatMap((i) => [
+              { type: "message", message: { role: "user", content: [{ type: "text", text: `prompt ${i}` }] } },
+              {
+                type: "message",
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: `reply ${i}` }],
+                  usage: { input_tokens: 100, output_tokens: 10 },
+                },
+              },
+              { type: "agent_turn_outcome" },
+            ]),
+          ]),
+        ),
+      );
     const ledger = ensureMemoryLedger(join(home, "ledger"));
     const source = WorkerSessionSource.open(ledger);
     source.capture([capture([0, 1, 2, 3, 4, 5])]);
     const lastId = source.observationsSince("", 0).at(-1)?.id ?? 0;
     const shorter = capture([4, 5, 6]);
     expect(source.capture([shorter])).toEqual({ observations: 1, sessions: 1 });
-    expect(source.observationsSince("", lastId)[0]).toMatchObject({ tokens_in: 100, tokens_out: 10, usage_basis: "incremental" });
+    expect(source.observationsSince("", lastId)[0]).toMatchObject({
+      tokens_in: 100,
+      tokens_out: 10,
+      usage_basis: "incremental",
+    });
     expect(source.newTokensSince("", lastId).tokens).toBe(110);
     expect(source.newTokensSince("", 0).tokens).toBe(770);
     expect(source.capture([shorter])).toEqual({ observations: 0, sessions: 0 });
@@ -915,14 +1293,19 @@ describe("stored evidence refresh", () => {
   test("Droid counters belong only to their session sidecar", () => {
     const dir = scratch("ak-ws-owned-counters-");
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ usage: { input_tokens: 900, output_tokens: 90 } }));
-    const paths = ["one", "two"].map((id) => writeJsonl(join(dir, `${id}.jsonl`), [
-      { type: "session_start", id, cwd: "/fixture/worktree" },
-      { type: "message", message: { role: "user", content: [{ type: "text", text: "work" }] } },
-      { type: "agent_turn_outcome" },
-    ]));
-    for (const path of paths) expect(requiredSession(parseDroidSession(path)).observations[0]).toMatchObject({
-      tokens_in: null, tokens_out: null, usage_basis: "estimated",
-    });
+    const paths = ["one", "two"].map((id) =>
+      writeJsonl(join(dir, `${id}.jsonl`), [
+        { type: "session_start", id, cwd: "/fixture/worktree" },
+        { type: "message", message: { role: "user", content: [{ type: "text", text: "work" }] } },
+        { type: "agent_turn_outcome" },
+      ]),
+    );
+    for (const path of paths)
+      expect(requiredSession(parseDroidSession(path)).observations[0]).toMatchObject({
+        tokens_in: null,
+        tokens_out: null,
+        usage_basis: "estimated",
+      });
     writeFileSync(join(dir, "one.settings.json"), JSON.stringify({ usage: { input_tokens: 700, output_tokens: 70 } }));
     expect(paths.map((path) => requiredSession(parseDroidSession(path)).tokens_in)).toEqual([700, undefined]);
   });
@@ -956,12 +1339,20 @@ describe("failure classification", () => {
   test("recorded outcomes override output wording and command wrappers for every host", () => {
     for (const name of ["shell", "read_file"]) {
       for (const outcome of [{ is_error: false }, { isError: false }, { status: "success" }, { exit_code: 0 }]) {
-        for (const item of toolSessions(name, "Process exited with code 2\nerror budget ok\n[Process exited with code 3]", outcome)) {
+        for (const item of toolSessions(
+          name,
+          "Process exited with code 2\nerror budget ok\n[Process exited with code 3]",
+          outcome,
+        )) {
           expect(item.observations[0]?.type).toBe("turn");
         }
       }
       for (const outcome of [{ is_error: true }, { isError: true }, { status: "error" }, { exit_code: 2 }]) {
-        for (const item of toolSessions(name, "Process exited with code 0\nall fine\n[Process exited with code 0]", outcome)) {
+        for (const item of toolSessions(
+          name,
+          "Process exited with code 0\nall fine\n[Process exited with code 0]",
+          outcome,
+        )) {
           expect(item.observations[0]?.type).toBe("error");
         }
       }
@@ -976,12 +1367,16 @@ describe("failure classification", () => {
         "exit: 2\nsaved log",
         '[{"chunk_id":"a","wall_time_seconds":0.1,"exit_code":2}]',
         "saved log\n[Process exited with code 2]",
-      ]) for (const item of toolSessions(name, content)) {
-        expect(item.observations[0]?.type).toBe("turn");
-      }
+      ])
+        for (const item of toolSessions(name, content)) {
+          expect(item.observations[0]?.type).toBe("turn");
+        }
     }
     for (const status of [0, 2]) {
-      const items = toolSessions("shell", `Process exited with code ${status}\nerror budget\n[Process exited with code ${status}]`);
+      const items = toolSessions(
+        "shell",
+        `Process exited with code ${status}\nerror budget\n[Process exited with code ${status}]`,
+      );
       for (const item of items) expect(item.observations[0]?.type).toBe(status === 0 ? "turn" : "error");
       const footer = toolSessions("Execute", `error budget\n[Process exited with code ${status}]`)[1];
       expect(footer?.observations[0]?.type).toBe(status === 0 ? "turn" : "error");
@@ -992,7 +1387,10 @@ describe("failure classification", () => {
     for (const failed of [false, true]) {
       const path = writeRollout(scratch("ak-ws-empty-outcome-"), "empty-outcome", "/fixture/worktree", [
         codexMessage("user", "check"),
-        { type: "response_item", payload: { type: "function_call_output", call_id: "unknown", output: "", is_error: failed } },
+        {
+          type: "response_item",
+          payload: { type: "function_call_output", call_id: "unknown", output: "", is_error: failed },
+        },
         CODEX_TASK_COMPLETE,
       ]);
       const observation = requiredSession(parseCodexSession(path)).observations[0];
@@ -1007,14 +1405,20 @@ describe("failure classification", () => {
         const codex = writeRollout(scratch("ak-ws-json-codex-"), "json", "/fixture/worktree", [
           codexMessage("user", "search"),
           { type: "response_item", payload: { type: "function_call", name: "grep", call_id: "a" } },
-          { type: "response_item", payload: { type: "function_call_output", call_id: "a", output: content, is_error: failed } },
+          {
+            type: "response_item",
+            payload: { type: "function_call_output", call_id: "a", output: content, is_error: failed },
+          },
           CODEX_TASK_COMPLETE,
         ]);
         const droid = writeJsonl(join(scratch("ak-ws-json-droid-"), "session.jsonl"), [
           { type: "session_start", id: "json", cwd: "/fixture/worktree" },
           { type: "message", message: { role: "user", content: [{ type: "text", text: "search" }] } },
           { type: "message", message: { role: "assistant", content: [{ type: "tool_use", name: "Grep", id: "a" }] } },
-          { type: "message", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content, is_error: failed }] } },
+          {
+            type: "message",
+            message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content, is_error: failed }] },
+          },
           { type: "agent_turn_outcome" },
         ]);
         const grok = scratch("ak-ws-json-grok-");
@@ -1030,10 +1434,18 @@ describe("failure classification", () => {
         writeJsonl(join(kimi, "agents", "main", "wire.jsonl"), [
           kimiAppended({ role: "user", content: [{ type: "text", text: "search" }], origin: { kind: "user" } }),
           kimiAppended({ role: "assistant", content: [], toolCalls: [{ id: "a", name: "grep", arguments: "{}" }] }),
-          { type: "agent.message.appended", message: { message: { role: "tool", toolCallId: "a", content, isError: failed } } },
+          {
+            type: "agent.message.appended",
+            message: { message: { role: "tool", toolCallId: "a", content, isError: failed } },
+          },
           { type: "turn.ended" },
         ]);
-        for (const session of [parseCodexSession(codex), parseDroidSession(droid), parseGrokSession(grok), parseKimiSession(kimi)]) {
+        for (const session of [
+          parseCodexSession(codex),
+          parseDroidSession(droid),
+          parseGrokSession(grok),
+          parseKimiSession(kimi),
+        ]) {
           expect(requiredSession(session).observations[0]?.type).toBe(failed ? "error" : "turn");
         }
       }
@@ -1156,14 +1568,19 @@ describe("worktree placement", () => {
     mkdirSync(dirname(include), { recursive: true });
     writeFileSync(include, "[user]\nname = fixture\n");
     const origin = "https://github.com/team/shop.git";
-    appendFileSync(join(main, ".git", "config"), `\n[remote "origin"]\nurl = ${origin}\n[include]\npath = ${include}\n`);
+    appendFileSync(
+      join(main, ".git", "config"),
+      `\n[remote "origin"]\nurl = ${origin}\n[include]\npath = ${include}\n`,
+    );
     const generated = gate ? gateFixture(home, origin) : null;
     if (generated !== null) appendFileSync(join(generated.common, "config"), `\n[include]\npath = ${include}\n`);
     const worktree = generated?.worktree ?? linked;
     const registry: Registry = { shop: { root: main, mem_project: "shop", last_seen: 1 } };
     const ctx = testContext({ cwd: worktree });
     const dry = testContext({ cwd: worktree });
-    const git = spyOn(proc, "run").mockImplementation(() => { throw new Error("foreground Git invoked"); });
+    const git = spyOn(proc, "run").mockImplementation(() => {
+      throw new Error("foreground Git invoked");
+    });
     const read = spyOn(fs, "readFileSync");
     try {
       const dryConfig = { ...dry.config, dryRun: true };
@@ -1172,9 +1589,11 @@ describe("worktree placement", () => {
       expect(workerRootResolver(registry, {}, { home, platform: "darwin", config: ctx.config })(worktree)).toBe(main);
       expect(readWorktrees(ctx.config)).toEqual({ [worktree]: main });
       expect(git.mock.calls).toHaveLength(0);
-      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      expect(read.mock.calls.some(([path]) => inProtectedFolder(String(path), home, "darwin"))).toBe(false);
       rmSync(worktree, { recursive: true });
-      expect(workerRootResolver(registry, readWorktrees(ctx.config), { home, platform: "darwin" })(worktree)).toBe(main);
+      expect(workerRootResolver(registry, readWorktrees(ctx.config), { home, platform: "darwin" })(worktree)).toBe(
+        main,
+      );
     } finally {
       read.mockRestore();
       git.mockRestore();
@@ -1217,7 +1636,10 @@ describe("worktree placement", () => {
     mkdirSync(dirname(clone), { recursive: true });
     expect(run(["git", "clone", "-q", ...(bare ? ["--bare"] : []), parent, clone]).code).toBe(0);
     for (const dir of [join(parent, ".git"), common]) {
-      writeFileSync(join(dir, "config"), `[remote "upstream"]\n\turl = https://github.com/other/${dir === common ? "gate" : "parent"}.git\n${readFileSync(join(dir, "config"), "utf8")}\n[remote "origin"]\n\turl = https://github.com/owner/shop.git\n`);
+      writeFileSync(
+        join(dir, "config"),
+        `[remote "upstream"]\n\turl = https://github.com/other/${dir === common ? "gate" : "parent"}.git\n${readFileSync(join(dir, "config"), "utf8")}\n[remote "origin"]\n\turl = https://github.com/owner/shop.git\n`,
+      );
     }
     const administrative = join(common, "worktrees", "gate-1");
     mkdirSync(administrative, { recursive: true });
@@ -1257,71 +1679,76 @@ describe("worktree placement", () => {
     expect(rootFor(worktree)).toBe(matches ? root : null);
   });
 
-  test.each(["Documents", "Desktop", "Downloads"])("origin matching skips protected registered configs in %s", (folder) => {
-    const home = projectScratch();
-    const root = join(home, folder, "shop");
-    mkdirSync(join(root, ".git"), { recursive: true });
-    writeFileSync(join(root, ".git", "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
-    const { worktree } = gateFixture(home, "git@github.com:team/shop.git");
-    const registry: Registry = { shop: { root, mem_project: "shop", last_seen: 1 } };
-    const worktrees: Record<string, string> = {};
-    const rootFor = workerRootResolver(registry, worktrees, { home, platform: "darwin" });
-    const read = spyOn(fs, "readFileSync");
-    try {
-      expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
-      expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
-      expect(read.mock.calls.length).toBeGreaterThan(0);
-      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
-      expect(worktrees).toEqual({});
-    } finally {
-      read.mockRestore();
-    }
-    expect(workerRootResolver(registry, {}, { home, platform: "linux" })(worktree)).toBe(root);
-    expect(workerRootResolver(registry, { [worktree]: root }, { home, platform: "darwin" })(worktree)).toBe(root);
-  });
-
-  test.each(["root", "commondir", "common"])("a protected candidate %s cannot hide a readable origin match", (target) => {
-    for (const protectedFirst of [false, true]) {
+  test.each(["Documents", "Desktop", "Downloads"])(
+    "origin matching skips protected registered configs in %s",
+    (folder) => {
       const home = projectScratch();
-      const protectedRoot = target === "root" ? join(home, "Documents", "other") : join(home, "other");
-      const common = target === "root" ? join(protectedRoot, ".git") : join(home, "Documents", "other.git");
-      mkdirSync(common, { recursive: true });
-      writeFileSync(join(common, "config"), '[remote "origin"]\nurl = https://github.com/team/other.git\n');
-      if (target !== "root") {
-        const administrative = target === "commondir"
-          ? join(common, "worktrees", "other")
-          : join(home, "metadata", "other");
-        mkdirSync(administrative, { recursive: true });
-        mkdirSync(protectedRoot, { recursive: true });
-        writeFileSync(join(protectedRoot, ".git"), `gitdir: ${administrative}\n`);
-        writeFileSync(join(administrative, "commondir"), `${common}\n`);
-      }
-      const root = join(home, "readable", "shop");
+      const root = join(home, folder, "shop");
       mkdirSync(join(root, ".git"), { recursive: true });
       writeFileSync(join(root, ".git", "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
-      const protectedEntry = { root: protectedRoot, mem_project: "other", last_seen: 1 };
-      const readableEntry = { root, mem_project: "shop", last_seen: 1 };
-      const registry: Registry = protectedFirst
-        ? { other: protectedEntry, shop: readableEntry }
-        : { shop: readableEntry, other: protectedEntry };
-      const first = gateFixture(join(home, "first"), "git@github.com:team/shop.git");
-      const second = gateFixture(join(home, "second"), "https://github.com/team/shop.git");
+      const { worktree } = gateFixture(home, "git@github.com:team/shop.git");
+      const registry: Registry = { shop: { root, mem_project: "shop", last_seen: 1 } };
       const worktrees: Record<string, string> = {};
       const rootFor = workerRootResolver(registry, worktrees, { home, platform: "darwin" });
       const read = spyOn(fs, "readFileSync");
       try {
-        expect(rootFor(first.worktree)).toBe(root);
-        expect(rootFor(second.worktree)).toBe(root);
+        expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
+        expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
         expect(read.mock.calls.length).toBeGreaterThan(0);
-        expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
-        expect(worktrees).toEqual({ [first.worktree]: root, [second.worktree]: root });
-        rmSync(first.worktree, { recursive: true });
-        expect(rootFor(first.worktree)).toBe(root);
+        expect(read.mock.calls.some(([path]) => inProtectedFolder(String(path), home, "darwin"))).toBe(false);
+        expect(worktrees).toEqual({});
       } finally {
         read.mockRestore();
       }
-    }
-  });
+      expect(workerRootResolver(registry, {}, { home, platform: "linux" })(worktree)).toBe(root);
+      expect(workerRootResolver(registry, { [worktree]: root }, { home, platform: "darwin" })(worktree)).toBe(root);
+    },
+  );
+
+  test.each(["root", "commondir", "common"])(
+    "a protected candidate %s cannot hide a readable origin match",
+    (target) => {
+      for (const protectedFirst of [false, true]) {
+        const home = projectScratch();
+        const protectedRoot = target === "root" ? join(home, "Documents", "other") : join(home, "other");
+        const common = target === "root" ? join(protectedRoot, ".git") : join(home, "Documents", "other.git");
+        mkdirSync(common, { recursive: true });
+        writeFileSync(join(common, "config"), '[remote "origin"]\nurl = https://github.com/team/other.git\n');
+        if (target !== "root") {
+          const administrative =
+            target === "commondir" ? join(common, "worktrees", "other") : join(home, "metadata", "other");
+          mkdirSync(administrative, { recursive: true });
+          mkdirSync(protectedRoot, { recursive: true });
+          writeFileSync(join(protectedRoot, ".git"), `gitdir: ${administrative}\n`);
+          writeFileSync(join(administrative, "commondir"), `${common}\n`);
+        }
+        const root = join(home, "readable", "shop");
+        mkdirSync(join(root, ".git"), { recursive: true });
+        writeFileSync(join(root, ".git", "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
+        const protectedEntry = { root: protectedRoot, mem_project: "other", last_seen: 1 };
+        const readableEntry = { root, mem_project: "shop", last_seen: 1 };
+        const registry: Registry = protectedFirst
+          ? { other: protectedEntry, shop: readableEntry }
+          : { shop: readableEntry, other: protectedEntry };
+        const first = gateFixture(join(home, "first"), "git@github.com:team/shop.git");
+        const second = gateFixture(join(home, "second"), "https://github.com/team/shop.git");
+        const worktrees: Record<string, string> = {};
+        const rootFor = workerRootResolver(registry, worktrees, { home, platform: "darwin" });
+        const read = spyOn(fs, "readFileSync");
+        try {
+          expect(rootFor(first.worktree)).toBe(root);
+          expect(rootFor(second.worktree)).toBe(root);
+          expect(read.mock.calls.length).toBeGreaterThan(0);
+          expect(read.mock.calls.some(([path]) => inProtectedFolder(String(path), home, "darwin"))).toBe(false);
+          expect(worktrees).toEqual({ [first.worktree]: root, [second.worktree]: root });
+          rmSync(first.worktree, { recursive: true });
+          expect(rootFor(first.worktree)).toBe(root);
+        } finally {
+          read.mockRestore();
+        }
+      }
+    },
+  );
 
   test.each(["commondir", "common"])("linked worktree discovery guards the resolved %s target", (target) => {
     const home = projectScratch();
@@ -1333,12 +1760,15 @@ describe("worktree placement", () => {
     writeFileSync(join(gitdir, "commondir"), `${common}\n`);
     writeFileSync(join(worktree, ".git"), `gitdir: ${gitdir}\n`);
     const worktrees: Record<string, string> = {};
-    const rootFor = workerRootResolver({ shop: { root, mem_project: "shop", last_seen: 1 } }, worktrees, { home, platform: "darwin" });
+    const rootFor = workerRootResolver({ shop: { root, mem_project: "shop", last_seen: 1 } }, worktrees, {
+      home,
+      platform: "darwin",
+    });
     const read = spyOn(fs, "readFileSync");
     try {
       expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
       expect(read.mock.calls.length).toBeGreaterThan(0);
-      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      expect(read.mock.calls.some(([path]) => inProtectedFolder(String(path), home, "darwin"))).toBe(false);
       expect(worktrees).toEqual({});
     } finally {
       read.mockRestore();
@@ -1357,12 +1787,15 @@ describe("worktree placement", () => {
     writeFileSync(join(common, "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
     const { worktree } = gateFixture(home, "https://github.com/team/shop.git");
     const worktrees: Record<string, string> = {};
-    const rootFor = workerRootResolver({ shop: { root, mem_project: "shop", last_seen: 1 } }, worktrees, { home, platform: "darwin" });
+    const rootFor = workerRootResolver({ shop: { root, mem_project: "shop", last_seen: 1 } }, worktrees, {
+      home,
+      platform: "darwin",
+    });
     const read = spyOn(fs, "readFileSync");
     try {
       expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
       expect(read.mock.calls.length).toBeGreaterThan(0);
-      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      expect(read.mock.calls.some(([path]) => inProtectedFolder(String(path), home, "darwin"))).toBe(false);
       expect(worktrees).toEqual({});
     } finally {
       read.mockRestore();

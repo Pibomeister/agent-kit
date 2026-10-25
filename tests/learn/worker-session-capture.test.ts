@@ -326,7 +326,9 @@ describe("worker session parsers", () => {
     ];
     const path = writeRollout(scratch("ak-codex-rollout-"), "clean", "/fixture/worktree", [
       ...outputs.flatMap((output, index) => [
-        codexMessage("user", `check ${index}`), codexToolCall("shell", "bun test"), codexToolOutput(output),
+        codexMessage("user", `check ${index}`),
+        codexToolCall("shell", "bun test"),
+        codexToolOutput(output),
       ]),
       CODEX_TASK_COMPLETE,
     ]);
@@ -994,11 +996,15 @@ describe("memory tick worker capture", () => {
     rmSync(linked, { recursive: true });
     expect(workerRootResolver(readRegistry(ctx.config), readWorktrees(ctx.config))(join(linked, "src"))).toBe(main);
     writeRollout(join(homes, "codex"), "after-deletion", join(linked, "src"), [
-      codexMessage("user", "finish after deletion"), CODEX_TASK_COMPLETE,
+      codexMessage("user", "finish after deletion"),
+      CODEX_TASK_COMPLETE,
     ]);
     expect(tick(ctx, { only: main, job: "reflect" })).toBe(0);
-    expect(WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, main))).observationsSince("", 0)
-      .some((row) => row.facts?.includes("finish after deletion"))).toBe(true);
+    expect(
+      WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, main)))
+        .observationsSince("", 0)
+        .some((row) => row.facts?.includes("finish after deletion")),
+    ).toBe(true);
   });
 
   test("a worktree pointer naming an unregistered root places nothing", () => {

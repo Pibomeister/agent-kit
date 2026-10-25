@@ -762,12 +762,7 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
       if (total !== null) {
         const inDelta = total.tokensIn - (codexTotal?.tokensIn ?? 0);
         const outDelta = total.tokensOut - (codexTotal?.tokensOut ?? 0);
-        log.usage(
-          inDelta < 0 ? total.tokensIn : inDelta,
-          outDelta < 0 ? total.tokensOut : outDelta,
-          "incremental",
-          at,
-        );
+        log.usage(inDelta < 0 ? total.tokensIn : inDelta, outDelta < 0 ? total.tokensOut : outDelta, "incremental", at);
         codexTotal = total;
       } else {
         const last = nativeUsage(object(info.last_token_usage) ?? undefined) ?? findUsage(event);
@@ -805,7 +800,11 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
       continue;
     }
     if (event.type === "custom_tool_call_output" || event.type === "function_call_output") {
-      log.output(toolOutput(event.output, event), at, string(event.call_id) ?? string(event.callId) ?? string(event.id));
+      log.output(
+        toolOutput(event.output, event),
+        at,
+        string(event.call_id) ?? string(event.callId) ?? string(event.id),
+      );
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
@@ -865,8 +864,11 @@ export function parseDroidSession(path: string, now = Date.now()): CapturedSessi
     if (settingsUsage !== null) log.usage(settingsUsage.tokensIn, settingsUsage.tokensOut, "raw_total", at);
   }
   return session(
-    "droid", nativeId, cwd,
-    { started, ended, modified, now, bytes, freshness: workerModified("droid", path) }, log.turns,
+    "droid",
+    nativeId,
+    cwd,
+    { started, ended, modified, now, bytes, freshness: workerModified("droid", path) },
+    log.turns,
   );
 }
 
@@ -932,8 +934,11 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
   )
     ended = epoch(summary?.last_active_at ?? summary?.updated_at, modified);
   return session(
-    "grok", nativeId, cwd,
-    { started, ended, modified, now, freshness: workerModified("grok", historyPath) }, log.turns,
+    "grok",
+    nativeId,
+    cwd,
+    { started, ended, modified, now, freshness: workerModified("grok", historyPath) },
+    log.turns,
   );
 }
 
@@ -943,8 +948,17 @@ function kimiUsage(value: JsonValue | undefined): { tokensIn: number; tokensOut:
   const read = number(usage?.inputCacheRead);
   const created = number(usage?.inputCacheCreation);
   const output = number(usage?.output);
-  if (other === null || read === null || created === null || output === null ||
-    other < 0 || read < 0 || created < 0 || output < 0) return null;
+  if (
+    other === null ||
+    read === null ||
+    created === null ||
+    output === null ||
+    other < 0 ||
+    read < 0 ||
+    created < 0 ||
+    output < 0
+  )
+    return null;
   return { tokensIn: Math.round(other + read + created), tokensOut: Math.round(output) };
 }
 
@@ -976,9 +990,10 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     }
     // Kimi reports counters on StatusUpdate rows beside the message flow; they are cumulative, so each turn takes the delta.
     const rowType = string(row.type);
-    const statusUsage = recordedUsage ? null :
-      findUsage(row.token_usage ?? row.tokenUsage ?? object(row.payload)?.token_usage) ??
-      (rowType !== null && rowType.toLowerCase().includes("status") ? findUsage(row) : null);
+    const statusUsage = recordedUsage
+      ? null
+      : (findUsage(row.token_usage ?? row.tokenUsage ?? object(row.payload)?.token_usage) ??
+        (rowType !== null && rowType.toLowerCase().includes("status") ? findUsage(row) : null));
     if (statusUsage !== null) {
       const inDelta = statusUsage.tokensIn - (kimiTotal?.tokensIn ?? 0);
       const outDelta = statusUsage.tokensOut - (kimiTotal?.tokensOut ?? 0);
@@ -1104,9 +1119,7 @@ function repoOrigin(root: string, canRead: (path: string) => boolean): string | 
       else if (origin) url = /^\s*url\s*=\s*(.+)$/i.exec(line)?.[1]?.trim() ?? url;
     }
     if (url === undefined || url === "") return null;
-    const remote = new URL(
-      url.includes("://") ? url : url.replace(/^((?:[^/@:]+@)?[^/:]+):(.+)$/, "ssh://$1/$2"),
-    );
+    const remote = new URL(url.includes("://") ? url : url.replace(/^((?:[^/@:]+@)?[^/:]+):(.+)$/, "ssh://$1/$2"));
     if (!["https:", "http:", "ssh:", "git:"].includes(remote.protocol) || remote.hostname === "") return null;
     const path = remote.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
     if (path === "" || path === "/") return null;
@@ -1391,9 +1404,13 @@ function leadKey(title: string, text: string): string {
 }
 
 function incrementalKey(row: Pick<CapturedObservation, "usage_basis" | "tokens_in" | "tokens_out">): string | null {
-  return row.usage_basis === "incremental" && row.tokens_in !== undefined && row.tokens_in !== null &&
-    row.tokens_out !== undefined && row.tokens_out !== null
-    ? `usage:${row.tokens_in}:${row.tokens_out}` : null;
+  return row.usage_basis === "incremental" &&
+    row.tokens_in !== undefined &&
+    row.tokens_in !== null &&
+    row.tokens_out !== undefined &&
+    row.tokens_out !== null
+    ? `usage:${row.tokens_in}:${row.tokens_out}`
+    : null;
 }
 
 function storedObservation(
@@ -1521,8 +1538,8 @@ export class WorkerSessionSource implements MemoryObservationSource {
     const revisions: StoredSession[] = [];
     for (const item of sessions) {
       const stored = this.bySession.get(item.memory_session_id) ?? [];
-      const row = this.sessionRows.get(item.memory_session_id);
-      const refresh = row !== undefined && row.capture_version !== CAPTURE_VERSION;
+      const sessionRow = this.sessionRows.get(item.memory_session_id);
+      const refresh = sessionRow !== undefined && sessionRow.capture_version !== CAPTURE_VERSION;
       const used = new Set<number>();
       const identities = new Map<number, string>(
         stored.map((entry) => [entry.id, entry.identity_key ?? refreshKey(entry.title ?? "", entry.facts ?? "")]),
@@ -1531,14 +1548,18 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const occurrences = new Map<string, number>();
       {
         const known = new Set([...stored.map((entry) => entry.key), ...identities.values(), ...leads.values()]);
-        const observations = refresh ? item.observationsForRefresh?.() ?? item.observations : item.observations;
+        const observations = refresh ? (item.observationsForRefresh?.() ?? item.observations) : item.observations;
         for (const observation of observations) {
           const identity = refreshKey(observation.title, observation.text);
           const lead = leadKey(observation.title, observation.text);
           if (!known.has(identity) && !known.has(rowKey(observation)) && !known.has(lead)) continue;
           const usage = incrementalKey(observation);
-          for (const key of [identity, `${identity}:${observation.at}`, `lead:${lead}:${observation.at}`,
-            ...(usage === null ? [] : [`${identity}:${usage}`])])
+          for (const key of [
+            identity,
+            `${identity}:${observation.at}`,
+            `lead:${lead}:${observation.at}`,
+            ...(usage === null ? [] : [`${identity}:${usage}`]),
+          ])
             occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
         }
       }
@@ -1550,32 +1571,48 @@ export class WorkerSessionSource implements MemoryObservationSource {
         const key = `${rowKey(observation)}:${observation.at}`;
         eligible.set(key, (eligible.get(key) ?? 0) + 1);
       }
-      const observations = refresh ? item.observationsForRefresh?.() ?? item.observations : item.observations;
+      const observations = refresh ? (item.observationsForRefresh?.() ?? item.observations) : item.observations;
       for (const row of observations) {
         const key = rowKey(row);
         const eligibility = `${key}:${row.at}`;
         const available = eligible.get(eligibility) ?? 0;
         if (available > 0) eligible.set(eligibility, available - 1);
         const identity = refreshKey(row.title, row.text);
-        const candidates = stored.filter((entry) => !used.has(entry.id) &&
-          (entry.key === key || identities.get(entry.id) === identity));
+        const candidates = stored.filter(
+          (entry) => !used.has(entry.id) && (entry.key === key || identities.get(entry.id) === identity),
+        );
         const timed = candidates.filter((entry) => entry.created_at_epoch === row.at);
         const usage = incrementalKey(row);
         const counted = !refresh && usage !== null ? candidates.filter((entry) => incrementalKey(entry) === usage) : [];
         const lead = leadKey(row.title, row.text);
-        const rewritten = refresh && candidates.length === 0 ? stored.filter((entry) => !used.has(entry.id) &&
-          entry.created_at_epoch === row.at && leads.get(entry.id) === lead) : [];
+        const rewritten =
+          refresh && candidates.length === 0
+            ? stored.filter(
+                (entry) => !used.has(entry.id) && entry.created_at_epoch === row.at && leads.get(entry.id) === lead,
+              )
+            : [];
         const previous =
           (timed.length === 1 && occurrences.get(`${identity}:${row.at}`) === 1 ? timed[0] : undefined) ??
           (counted.length === 1 && occurrences.get(`${identity}:${usage}`) === 1 ? counted[0] : undefined) ??
           (candidates.length === 1 && occurrences.get(identity) === 1 ? candidates[0] : undefined) ??
-          (!refresh ? timed.find((entry) => entry.key === key && entry.type === row.type &&
-            entry.tokens_in === (row.tokens_in ?? null) && entry.tokens_out === (row.tokens_out ?? null) &&
-            entry.files_modified === JSON.stringify(row.files_modified)) : undefined) ??
+          (!refresh
+            ? timed.find(
+                (entry) =>
+                  entry.key === key &&
+                  entry.type === row.type &&
+                  entry.tokens_in === (row.tokens_in ?? null) &&
+                  entry.tokens_out === (row.tokens_out ?? null) &&
+                  entry.files_modified === JSON.stringify(row.files_modified),
+              )
+            : undefined) ??
           (rewritten.length === 1 && occurrences.get(`lead:${lead}:${row.at}`) === 1 ? rewritten[0] : undefined);
         if (previous === undefined) {
-          if (available > 0 && rewritten.length === 0 && (candidates.length === 0 ||
-            (timed.length === 0 && occurrences.get(`${identity}:${row.at}`) === 1))) pending.push({ row, key });
+          if (
+            available > 0 &&
+            rewritten.length === 0 &&
+            (candidates.length === 0 || (timed.length === 0 && occurrences.get(`${identity}:${row.at}`) === 1))
+          )
+            pending.push({ row, key });
           continue;
         }
         used.add(previous.id);
@@ -1623,11 +1660,11 @@ export class WorkerSessionSource implements MemoryObservationSource {
         !refresh &&
         !stored.some((entry) => updates.has(entry.id)) &&
         appended.length === 0 &&
-        (row === undefined ||
+        (sessionRow === undefined ||
           (item.completed_at_epoch === null && item.quiet_bytes === undefined) ||
-          (row.modified_at_epoch === item.modified_at_epoch &&
-            row.completed_at_epoch === item.completed_at_epoch &&
-            row.quiet_bytes === item.quiet_bytes))
+          (sessionRow.modified_at_epoch === item.modified_at_epoch &&
+            sessionRow.completed_at_epoch === item.completed_at_epoch &&
+            sessionRow.quiet_bytes === item.quiet_bytes))
       )
         continue;
       fresh.push(...appended);
@@ -1657,7 +1694,8 @@ export class WorkerSessionSource implements MemoryObservationSource {
   completedAt(memorySessionId: string, modifiedMs: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
     return row !== undefined && row.capture_version === CAPTURE_VERSION && row.modified_at_epoch === modifiedMs
-      ? row.completed_at_epoch : null;
+      ? row.completed_at_epoch
+      : null;
   }
 
   /**
@@ -1667,9 +1705,12 @@ export class WorkerSessionSource implements MemoryObservationSource {
   quietAt(memorySessionId: string, modifiedMs: number, bytes: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
     if (
-      row === undefined || row.capture_version !== CAPTURE_VERSION ||
-      row.modified_at_epoch !== modifiedMs || row.quiet_bytes !== bytes
-    ) return null;
+      row === undefined ||
+      row.capture_version !== CAPTURE_VERSION ||
+      row.modified_at_epoch !== modifiedMs ||
+      row.quiet_bytes !== bytes
+    )
+      return null;
     return this.sessionObservations(memorySessionId).reduce(
       (latest, item) => Math.max(latest, item.created_at_epoch),
       row.started_at_epoch,

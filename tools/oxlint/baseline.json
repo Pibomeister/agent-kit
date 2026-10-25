@@ -152,7 +152,7 @@
   "src/learn/memory/episodes.ts": {
     "anti-slop(no-runtime-typeof)": 2,
     "typescript(no-non-null-assertion)": 1,
-    "unicorn(no-array-sort)": 3
+    "unicorn(no-array-sort)": 2
   },
   "src/learn/memory/ledger.ts": {
     "anti-slop(no-known-value-widening)": 2,

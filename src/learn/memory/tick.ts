@@ -425,7 +425,8 @@ function tickRun(ctx: LearnContext, options: { only?: string; job?: Job | "all";
         return stores.get(root) ?? null;
       };
       const rootFor = workerRootResolver(registry, readWorktrees(ctx.config), {
-        home: userHome(ctx.env), config: ctx.config,
+        home: userHome(ctx.env),
+        config: ctx.config,
       });
       const scan = scanWorkerSessions(workerHomes(ctx.env), rootFor, {
         sinceMs: capturedSince,
