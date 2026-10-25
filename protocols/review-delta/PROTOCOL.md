@@ -55,7 +55,9 @@ lane's findings (`policies/review.yaml` `pass_1.seat_context.never_receives`).
    lane is seated.
 2. Freeze the snapshot and record its hashes in the `schemas/review.schema.json` record.
 3. Seat `reviewer-spec` and `reviewer-standards` in parallel on that snapshot, each with the
-   packet and neither with the other's output.
+   packet and neither with the other's output. The packet carries the shell rule: deletes and
+   container removals run standalone on literal scratch paths, or as `docker run --rm`, never
+   inside a compound command or script.
 4. Collect each lane's result as `complete`, `empty` or `unavailable`.
 5. For each prior finding, record `ADDRESSED` or `NOT ADDRESSED` with a `file:line` reference in
    the fix diff. This is a closure check, not a re-litigation of whether the finding was valid.
