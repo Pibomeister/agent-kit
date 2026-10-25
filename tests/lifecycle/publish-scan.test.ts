@@ -11,8 +11,16 @@ import { main } from "../../src/lifecycle/gate.ts";
 import { defaultMarkersPath, loadMarkers, scanApplies, scanText } from "../../src/lifecycle/publish-scan.ts";
 import { makeTree } from "../helpers/tree.ts";
 
-const BRIEF =
-  "Keep scratch files in the ignored work folder and never paste this brief into a pull request description.\n";
+const BRIEF = [
+  "Keep scratch files in the ignored work folder and never paste this brief into a pull request description.",
+  "End every commit message with: Co-Authored-By: Example Assistant <assistant@vendor.example>",
+  "End pull request descriptions with: Generated with [Example Tool](https://tool.example/agent)",
+  "Note that every change was checked against the shared release checklist before review.",
+  "",
+].join("\n");
+
+const TRAILER = "Co-Authored-By: Example Assistant <assistant@vendor.example>";
+const FOOTER = "Generated with [Example Tool](https://tool.example/agent)";
 
 const MARKERS = [
   "# internal markers",
@@ -103,6 +111,61 @@ describe("publish-scan", () => {
     const r = run(["--repo", "someone/tool", "--body-file", body, "--markers", f.markers], f.repo);
     expect(r.code).toBe(1);
     expect(r.err).toContain("body repeats instruction text from brief.md");
+  });
+
+  test("a trailer and a footer copied from the instructions pass; other copied instruction text refuses", () => {
+    const f = fixture([]);
+    git(f.repo, "commit", "-q", "--allow-empty", "-m", "fix: bound the cache", "-m", TRAILER);
+    const body = join(f.root, "body.md");
+    writeFileSync(body, `Bounds the cache.\n\n${FOOTER}\n`);
+    const clean = run(
+      ["--repo", "someone/tool", "--body-file", body, "--commits", "main~1..main", "--markers", f.markers],
+      f.repo,
+    );
+    expect(clean.code, clean.err).toBe(0);
+    writeFileSync(body, `Keep scratch files in the ignored work folder, as usual.\n\n${FOOTER}\n`);
+    const copied = run(["--repo", "someone/tool", "--body-file", body, "--markers", f.markers], f.repo);
+    expect(copied.code).toBe(1);
+    expect(copied.err).toContain("body repeats instruction text from brief.md");
+  });
+
+  test("a trailer-shaped line that does not end the commit message is still matched", () => {
+    const f = fixture([]);
+    git(f.repo, "commit", "-q", "--allow-empty", "-m", "fix: bound the cache", "-m", `${TRAILER}\n\nMore notes.`);
+    const r = run(["--repo", "someone/tool", "--commits", "main~1..main", "--markers", f.markers], f.repo);
+    expect(r.code).toBe(1);
+    expect(r.err).toMatch(/commit [0-9a-f]{12} repeats instruction text/);
+  });
+
+  test("an allow entry exempts operator boilerplate from instruction matching, not from markers", () => {
+    const boilerplate = "Every change was checked against the shared release checklist before review.";
+    const f = fixture([], `${MARKERS}allow: ${boilerplate}\n`);
+    const allowed = run(["--repo", "someone/tool", "--title", boilerplate, "--markers", f.markers], f.repo);
+    expect(allowed.code, allowed.err).toBe(0);
+    const unlisted = fixture([]);
+    const refused = run(
+      ["--repo", "someone/tool", "--title", boilerplate, "--markers", unlisted.markers],
+      unlisted.repo,
+    );
+    expect(refused.code).toBe(1);
+    const marked = run(
+      ["--repo", "someone/tool", "--title", `${boilerplate} See build.example.internal`, "--markers", f.markers],
+      f.repo,
+    );
+    expect(marked.code).toBe(1);
+    expect(marked.err).toContain('"build.example.internal"');
+  });
+
+  test("a repair range scans only the commits not yet pushed", () => {
+    const f = fixture(["fix: first pass"]);
+    git(f.repo, "branch", "pushed");
+    git(f.repo, "commit", "-q", "--allow-empty", "-m", "fix: lint, verified on build.example.internal");
+    const r = run(["--repo", "someone/tool", "--commits", "pushed..main", "--markers", f.markers], f.repo);
+    expect(r.code).toBe(1);
+    expect(r.err).toMatch(/commit [0-9a-f]{12} contains the internal marker "build.example.internal"/);
+    expect(r.err).toContain("1 hit(s)");
+    const pushed = run(["--repo", "someone/tool", "--commits", "main~2..pushed", "--markers", f.markers], f.repo);
+    expect(pushed.code, pushed.err).toBe(0);
   });
 
   test("a private repository of a configured owner is not scanned", () => {

@@ -1731,7 +1731,7 @@ export const LIFECYCLE_USAGE = [
   "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
   "  publish-scan checks pull-request text for internal markers unless the repository is private or internal and its",
   "  owner is configured; --visibility defaults to public, --markers to $AK_PUBLISH_MARKERS, else",
-  "  ~/.agent-kit/publish-markers: one `owner:`, `marker:` or `instructions: <file>` entry per line.",
+  "  ~/.agent-kit/publish-markers: one `owner:`, `marker:`, `instructions: <file>` or `allow:` entry per line.",
   "",
   "Exit 0 when the record was written, every gate is current or the text is clean, 1 when refused, 2 on bad usage.",
 ];

@@ -493,8 +493,8 @@
     },
     "bundle/claude-code:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
-      "bytes": 15679,
-      "tokens": 3915
+      "bytes": 16220,
+      "tokens": 4050
     },
     "bundle/claude-code:skills/bakeoff/SKILL.md": {
       "file": "skills/bakeoff/SKILL.md",
@@ -1318,8 +1318,8 @@
     },
     "bundle/codex:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
-      "bytes": 15836,
-      "tokens": 3954
+      "bytes": 16377,
+      "tokens": 4089
     },
     "bundle/codex:skills/bakeoff/SKILL.md": {
       "file": "skills/bakeoff/SKILL.md",
@@ -2143,8 +2143,8 @@
     },
     "bundle/droid:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
-      "bytes": 15822,
-      "tokens": 3950
+      "bytes": 16363,
+      "tokens": 4086
     },
     "bundle/droid:skills/bakeoff/SKILL.md": {
       "file": "skills/bakeoff/SKILL.md",
@@ -2968,8 +2968,8 @@
     },
     "bundle/grok:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
-      "bytes": 15667,
-      "tokens": 3912
+      "bytes": 16208,
+      "tokens": 4047
     },
     "bundle/grok:skills/bakeoff/SKILL.md": {
       "file": "skills/bakeoff/SKILL.md",
@@ -3793,8 +3793,8 @@
     },
     "bundle/kimi:skills/babysit-pr/SKILL.md": {
       "file": "skills/babysit-pr/SKILL.md",
-      "bytes": 15848,
-      "tokens": 3957
+      "bytes": 16389,
+      "tokens": 4092
     },
     "bundle/kimi:skills/bakeoff/SKILL.md": {
       "file": "skills/bakeoff/SKILL.md",

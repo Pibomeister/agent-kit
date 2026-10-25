@@ -13,12 +13,16 @@
  *   marker: build.example.internal
  *   marker: @example.com
  *   instructions: ~/.config/agents/brief.md
+ *   allow: Reviewed-in: the team review channel
  *
  * An `owner` is a forge owner whose private repositories are internal. A `marker` matches
  * case-insensitively anywhere in the text: organization and people names, internal hostnames, work
  * e-mail domains. `instructions` names one of the operator's own agent instruction files, relative to
  * the markers file or under `~`; any run of INSTRUCTION_WORDS consecutive words from it, repeated in
- * the text, is a hit.
+ * the text, is a hit. Before that match, the trailer lines that end a commit message, standard
+ * generated-by footer lines and every `allow` text are set aside, because operators keep exactly that
+ * boilerplate in their instruction files and every commit or pull request repeats it; markers still
+ * apply to them.
  *
  * The scan applies unless the target is private or internal AND its owner is configured. An
  * unstated visibility is treated as public. With no markers file the scan has nothing to check and
@@ -39,6 +43,8 @@ export interface PublishMarkers {
   markers: string[];
   /** Word runs of each instruction file, keyed by the run, valued by the file it came from. */
   instructions: Map<string, string>;
+  /** Operator boilerplate set aside before instruction matching, as lowercase word sequences. */
+  allow: string[];
 }
 
 export interface PublishText {
@@ -69,10 +75,28 @@ function wordRuns(text: string): string[] {
   return runs;
 }
 
+const TRAILER = /^[A-Za-z][A-Za-z0-9-]*: \S/;
+const FOOTER = /^\W*generated (with|by) /i;
+
+/** The text left for instruction matching, split wherever a trailer block, footer line or `allow` text was set aside. */
+function matchable(text: string, commit: boolean, allow: readonly string[]): string[] {
+  const lines = text.split("\n");
+  if (commit) {
+    let end = lines.length;
+    while (end > 0 && lines[end - 1]?.trim() === "") end -= 1;
+    let start = end;
+    while (start > 0 && TRAILER.test(lines[start - 1] ?? "")) start -= 1;
+    if (start < end && start > 0 && lines[start - 1]?.trim() === "") lines.splice(start, end - start);
+  }
+  let kept = ` ${lines.map((line) => (FOOTER.test(line) ? "\n" : words(line).join(" "))).join(" ")} `;
+  for (const phrase of allow) while (kept.includes(` ${phrase} `)) kept = kept.replace(` ${phrase} `, " \n ");
+  return kept.split("\n");
+}
+
 /** Read the markers file. Undefined when it does not exist; throws when it exists and cannot be used. */
 export function loadMarkers(path: string): PublishMarkers | undefined {
   if (!existsSync(path)) return undefined;
-  const markers: PublishMarkers = { owners: [], markers: [], instructions: new Map() };
+  const markers: PublishMarkers = { owners: [], markers: [], instructions: new Map(), allow: [] };
   for (const [i, raw] of readFileSync(path, "utf8").split("\n").entries()) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
@@ -82,11 +106,14 @@ export function loadMarkers(path: string): PublishMarkers | undefined {
     if (colon < 0 || value === "") throw new Error(`line ${i + 1} is not \`kind: value\``);
     if (kind === "owner") markers.owners.push(value.toLowerCase());
     else if (kind === "marker") markers.markers.push(value);
-    else if (kind === "instructions") {
+    else if (kind === "allow") {
+      if (words(value).length === 0) throw new Error(`line ${i + 1}: allow text has no words`);
+      markers.allow.push(words(value).join(" "));
+    } else if (kind === "instructions") {
       const home = value === "~" || value.startsWith("~/") ? join(userInfo().homedir, value.slice(1)) : value;
       const text = readFileSync(isAbsolute(home) ? home : resolve(dirname(path), home), "utf8");
       for (const run of wordRuns(text)) if (!markers.instructions.has(run)) markers.instructions.set(run, value);
-    } else throw new Error(`line ${i + 1}: unknown kind "${kind}"; use owner, marker or instructions`);
+    } else throw new Error(`line ${i + 1}: unknown kind "${kind}"; use owner, marker, instructions or allow`);
   }
   return markers;
 }
@@ -105,7 +132,7 @@ export function scanText(markers: PublishMarkers, texts: readonly PublishText[])
     for (const marker of markers.markers)
       if (lower.includes(marker.toLowerCase())) hits.push({ source, kind: "marker", match: marker });
     const seen = new Set<string>();
-    for (const run of wordRuns(text)) {
+    for (const run of matchable(text, source.startsWith("commit "), markers.allow).flatMap(wordRuns)) {
       const file = markers.instructions.get(run);
       if (file === undefined || seen.has(file)) continue;
       seen.add(file);
