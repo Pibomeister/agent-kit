@@ -32,6 +32,15 @@ panel the design preserves and a documentation typo does not (ruling
 `code-review/correctness` and `code-review/project-standards` are required lanes. `code-review/security`
 and `code-review/adversarial` are required once activated.
 
+The lean panel is what a pass-1 change within the project's configured size guidance seats:
+correctness, the standards gate, testing when the change adds or alters behavior,
+and the conditional seats the change's own risk evidence or packs activate. Maintainability,
+agent-native and learnings sit only above the size guidance; below it, correctness covers their
+axes. Leaner never drops a risk seat the evidence activated (`policies/review.yaml`
+`proportionality.lean_panel`). A delta seats its two core lanes, plus a specialist seat only when
+an unresolved prior finding of that seat's type exists or the delta diff itself triggers that
+seat's risk evidence; it never seats the pass-1 panel or the lean panel.
+
 Discovery uncertainty runs the standards gate rather than skipping it, so that a failed lookup never
 becomes a silent pass.
 
@@ -47,6 +56,13 @@ to the reviewed head; the dependency context the seat needs to judge impact.
 
 Never receives: the implementer's narrative, rationale or self-assessment; another reviewer's
 findings, judgments or dispositions; any approval context produced by the author lane.
+
+Every packet also carries the shell rule. An unattended host stops on a permission prompt that no
+one is there to answer, and a delete inside a compound command is what raises one. So a delete or a
+container removal runs as its own standalone command on a literal path under the seat's scratch
+folder (`rm -rf .work/<seat>/probe`, `docker rm -f <literal-name>`), or the container starts with
+`docker run --rm`. Never `rm` on a variable path, and never `rm` or `docker rm -f` inside a compound
+command, a loop or a multi-line script. Leaving scratch files for cleanup is always allowed.
 
 Independence comes from isolated evidence packets, not from scheduling. Two seats that share a
 scratchpad are one seat, and a seat that cannot be filled independently of the author is unavailable

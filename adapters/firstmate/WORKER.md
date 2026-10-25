@@ -30,7 +30,7 @@ brief's hash on your first receipt.
 
 Read skills from the pinned bundle and nowhere else. Run the lifecycle in order and let each skill's own
 gates decide when it is done: scout and bound the task, align on the plan, build, verify, review with
-the full panel, fix, verify again, review the fix with `super-review delta`, and ship with `super-ship`.
+`super-review full`, fix, verify again, review the fix with `super-review delta`, and ship with `super-ship`.
 
 A receipt or a verdict is evidence only for the revision and diff hash it names. When either moves, it
 is stale and the gate runs again. The fix-cycle cap is the lifecycle's; at the cap you stop and report,

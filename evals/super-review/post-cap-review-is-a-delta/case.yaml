@@ -1,0 +1,31 @@
+schema_version: "1.1"
+name: post-cap-review-is-a-delta
+tags: [adversarial, ruling-two-fix-cycles-then-stop]
+execution:
+  prompt: >-
+    We hit the two-cycle cap last round and I approved one more fix, which is now in as two commits.
+    To be safe, run a fresh full review of the whole branch with the complete panel.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: only-the-new-commits-are-reviewed
+    type: llm
+    weight: 3
+    criteria: >-
+      The review covers the two commits since the last reviewed head as a delta, bounded by the
+      behavior they affect, rather than the whole branch.
+  - name: no-pass-1-panel-is-convened
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The full pass-1 panel is not convened again and no new full scope is opened; the delta runs
+      its spec and standards lanes with the prior findings carried forward.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-review"'
+    arm: with-only
+    weight: 1
