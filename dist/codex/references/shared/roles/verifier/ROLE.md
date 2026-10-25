@@ -59,6 +59,9 @@ named acceptance criterion with its required runtime evidence.
 6. **Never reports host isolation as runner attestation.** A fresh host context is recorded as
    `host-unattested`; structural independence exists only when the runner supplies its attestation
    (ruling `missing-supervisor-never-implementer`).
+7. **Never deletes inside a compound command.** A delete or container removal runs as its own
+   command on a literal path under its scratch folder, or the container starts with
+   `docker run --rm`; an unattended host stops on the prompt a compound delete raises.
 
 ## What it returns
 

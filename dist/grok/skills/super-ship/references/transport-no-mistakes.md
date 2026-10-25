@@ -17,6 +17,12 @@ reference, include the adopted substance in the captain's terms. Do not add a se
 decision, Firstmate's specification, the lifecycle plan or a worker summary. If no captain words
 are available, stop for the supervisor rather than inventing intent.
 
+no-mistakes turns `--intent` and the commit messages into the pull-request text. Before the handoff,
+run `publish-scan` (workflow step 3) for the repository the pipeline publishes to, with
+`--commits <base>..<handoff head>` and the `--intent` text as `--body-file`. A hit in a commit
+message returns the head to build or repair, and the new head needs fresh gates; a hit in the
+intent goes to the supervisor as needs-decision, because the intent is not the worker's to reword.
+
 ## Pipeline gates and adoption
 
 Answer a parked gate inside the pipeline under the task's delivery contract. An `ask-user` finding,

@@ -94,6 +94,13 @@ have gone.
 4. The assignee and the body shape: a required assignee, and the template the body must follow — the
    repository's own pull-request template, or the shape the conventions give. Where the conventions
    require no assignee, nothing is assigned. Nothing here is a package default.
+5. The publish scan of workflow step 3, once per repository the text reaches: the base, and the
+   head repository where it differs. Prepare the title and body file first. In `publish`, read
+   `<v>` with `gh repo view <forge-host>/<owner>/<repo> --json visibility --jq .visibility`; in
+   `dry-run`, or when that lookup fails, omit `--visibility`, which scans as public. Run
+   `node <skill directory>/../../bin/ak-gate.mjs publish-scan --repo <owner>/<repo> --visibility <v>
+   --title <title> --body-file <body-file> --commits <base-remote>/<base>..<shipped-commit>`.
+   A hit is `failed` before any push. A rewritten commit message is a new head and a new run.
 
 ## The commit
 

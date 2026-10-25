@@ -4,7 +4,7 @@
     "name": "agent-kit maintainers"
   },
   "metadata": {
-    "version": "0.1.60",
+    "version": "0.1.61",
     "description": "One engineering lifecycle, amalgamated from ten donors: nine MIT, one Apache-2.0."
   },
   "plugins": [

@@ -117,7 +117,8 @@ its input hashes, and the fix diff ([`schemas/review.schema.json`](../../referen
 4. Assemble one context packet per seat: the frozen snapshot plus that seat's own requirements,
    standards and test context. No packet carries the implementer's narrative, rationale or
    self-assessment, another reviewer's findings or dispositions, or any approval context produced by
-   the author lane. Two seats sharing a scratchpad are one seat.
+   the author lane. Every packet carries the shell rule in `./references/panel.md`. Two seats
+   sharing a scratchpad are one seat.
 5. Check the exclusions before dispatch. A seat that cannot be filled independently of the author is
    `unavailable`, and the security seat is filled by neither the implementer of the change nor
    whoever approved its spec (ruling `missing-supervisor-never-implementer`).

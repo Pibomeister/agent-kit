@@ -78,8 +78,9 @@ authority to apply a correction rides on the caller's authorization, recorded on
    [`doc-review/adversarial-document`](../../references/shared/roles/doc-review/adversarial-document/ROLE.md) run rather than being skipped (ruling
    `low-confidence-security-adjudicated`). Record every lane in the lane table, including the ones
    that did not activate and why.
-5. Dispatch each selected lane into its own independent context with the snapshot and its own
-   relevant context. A lane's suppressed sections come from that lane's own rules — a plan with a
+5. Dispatch each selected lane into its own independent context with the snapshot, its own
+   relevant context and the shell rule: deletes and container removals run standalone on literal
+   scratch paths, or as `docker run --rm`, never inside a compound command or script. A lane's suppressed sections come from that lane's own rules — a plan with a
    validated origin suppresses different sections in each seat, and they are not flattened into
    one shared rule.
 6. Collect results. A lane that returned no finding is `covered` with no finding. A lane that could
