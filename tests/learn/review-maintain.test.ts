@@ -628,7 +628,7 @@ describe("independence gate", () => {
       text: "same finding", evidence: ["obs:7", "obs:8", "Ssession-b"],
     }], valid, "night-4", sessions);
     expect(multiple.map((event) => event.session)).toEqual(["session-a", "session-b"]);
-    expect(multiple.map((event) => event.hash)).toEqual([first[0]?.hash, later[0]?.hash]);
+    expect(multiple.map((event) => event.hash)).toEqual([...first, ...later].map((event) => event.hash));
     expect(multiple.map((event) => event.obs_id)).toEqual([7, 8]);
   });
 });

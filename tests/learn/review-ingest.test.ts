@@ -188,7 +188,7 @@ describe("raw layer", () => {
 });
 
 describe("claude-mem observations", () => {
-  test("an empty screening ledger releases native observations but retains quarantine", () => {
+  test("an empty screening ledger waits until the reflector is stale and retains quarantine", () => {
     const base = scratch();
     const repo = gitRepo(join(base, "app"));
     const memDb = join(base, "mem.db");
@@ -200,6 +200,13 @@ describe("claude-mem observations", () => {
     const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
     appendRun(memory, { job: "reflect", status: "rejected", quarantined: ["obs:2"] });
     const ledger = reviewLedger(ctx.config, repo);
+    // The test-phase decision keeps never-screened rows deferred until screening or stale failure.
+    const waiting = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect(waiting.events).toEqual([]);
+    expect(waiting.deferred).toBe(1);
+    saveState(memory, { reflect_failures: 1, last_reflect_attempt: Date.now() });
+    expect(ingest(ctx, ledger, repo, { skipGithub: true }).deferred).toBe(1);
+    saveState(memory, { reflect_failures: 1, reflect_stalled_since: 1 });
     const result = ingest(ctx, ledger, repo, { skipGithub: true });
     expect(result.events.map((event) => event.obs_id)).toEqual([1]);
     expect(result.deferred).toBe(0);

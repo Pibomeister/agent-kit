@@ -214,7 +214,7 @@ export function eventsFromClaudeMem(
   const state = readState(memory);
   const attempted = state.reflect_stalled_since ?? state.last_reflect ?? state.last_reflect_attempt;
   const stale = attempted !== undefined && (options.now ?? nowMs()) - attempted >= staleWindowMs(ctx, options.staleMs);
-  const release = ranges.length === 0 || (stale && (state.reflect_failures ?? 0) > 0);
+  const release = stale && (state.reflect_failures ?? 0) > 0;
   try {
     let maxId = minId;
     const events: ReviewEvent[] = [];
