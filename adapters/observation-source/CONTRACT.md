@@ -70,7 +70,7 @@ nothing between two runs is skipped.
 
 Each accepted reflect run records the exact observation ids it was shown (`obs_ids` in
 `schemas/memory-run.schema.json`; older native-only runs retain their lowest/highest range).
-Downstream judges receive only those screened observations. Nightly holds an episode back while any
+Nightly receives only those screened observations. It holds an episode back while any
 of its observations at or below its source watermark is outside them, so a session the first window
 cut in two is shown whole once the backfill has screened the rest, and never consumed in part. Its
 mark counts the session's observations through the consumed id, matching `episode.obs`.
@@ -85,8 +85,11 @@ never sent to the judge, and with nothing waiting the backfill is not due. It re
 (`observationsById`), newest first, one batch per idle tick. A backfill run calls the same judge
 under the same input cap, applies the same quarantine and the same acceptance gates, and records
 the exact ids it was shown (`obs_ids`), so an id between two of them is not counted as screened. A
-reply reflect would reject is a rejected backfill: it screens nothing and backs off as a rejected
-reflect does. A backfill writes neither the memory nor the watermark, and a muted project is
+reply reflect would reject is a rejected backfill: it screens nothing. Backfill outcomes do not
+change reflector retry or progress marks. Only a judge authentication failure or timeout holds
+backfill back, using the latest reflect/backfill run time and the reflector's failure count for
+the retry delay (at least one hour, doubling to at most 24 hours). Formatting failures do not hold
+it back. A backfill writes neither the memory nor the watermark, and a muted project is
 scheduled none; a forced run still runs one. The scheduler counts an unconsolidated episode toward
 nightly only once nightly would show it, so an episode waiting on the backfill never makes nightly
 due.
@@ -96,6 +99,13 @@ observation's id in the watermark file's `deferred` list. Each ingest re-reads o
 (`observationsById`) beside the rows after the watermark, so pre-window review history is deferred
 rather than dropped and the replay stays as small as the list. The count still waiting is reported
 by the ingest and by `setup seed`'s dry ingest.
+
+An unscreened review observation is also released when reflection has a recorded failure and has
+stalled for `AK_LEARN_CLAUDE_MEM_STALE_MS` milliseconds (default 24 hours). The clock starts at the
+first failed or rejected reflection, so retries do not renew it; older state falls back to its last
+successful reflection or last attempt. Empty screened ranges alone do not release observations:
+a fresh ledger still waits for screening or a stale failure. Quarantined ids remain excluded on
+either path. Released events are derived from native rows read by id, not from stored event text.
 
 ### `sessions`
 

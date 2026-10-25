@@ -15,7 +15,7 @@ import { EVENTS_FILE } from "./ledger.ts";
 export type EventKind = "finding" | "resolution" | "correction";
 
 export interface ReviewEvent {
-  /** `github`, `github-reply`, `author-reply`, `review-report`, `claude-mem`, `kb-finding` or `correction`. */
+  /** The collector or authored record that supplied this event. */
   source: string;
   kind: EventKind;
   project: string | null;

@@ -140,7 +140,8 @@ export class GitHubReviewSource {
   /**
    * The PRs to ingest: the given numbers; else PRs updated on or after `since`
    * (`YYYY-MM-DD`); else the current branch's PR. Unknown numbers are skipped.
-   * When the working directory has no PR of its own (`main`, a detached HEAD),
+   * If current-branch lookup fails, use the repository-list fallback defined in
+   * adapters/review-source/CONTRACT.md §1.
    */
   pullRequests(repo: string, numbers: readonly number[], since?: string, watermark?: string): PullRequestRef[] {
     this.unavailable = false;

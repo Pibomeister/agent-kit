@@ -107,9 +107,9 @@ function backfillHeld(state: MemoryState, attempted: number | undefined, now: nu
  * | weekly | idle and a week since the last |
  *
  * A failed or rejected reflect, and a failed nightly, hold that job back for
- * 1h, doubling per consecutive failure up to 24h. The backfill shares the
- * reflect backoff only while the judge process itself is failing; a reply the
- * gates rejected over its formatting does not hold the backfill back, or one
+ * 1h, doubling per consecutive failure up to 24h. Backfill holds only after
+ * judge auth failures or timeouts, timed from the latest reflect/backfill run;
+ * a reply rejected over its formatting does not hold backfill back, or one
  * oversized reflection would starve the screen the review loop waits on. A
  * forced job ignores it.
  */
