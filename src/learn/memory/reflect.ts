@@ -232,13 +232,14 @@ export function trimToCap(text: string, cap: number, reserve = 0): string {
 }
 
 /** Record an attempt for scheduling without advancing the observation watermark. */
-function markAttempt(ledger: Ledger): void {
+function markAttempt(ledger: Ledger, failure: "auth" | "timeout" | null = null): void {
   const state = readState(ledger);
   const attempted = nowMs();
   saveState(ledger, {
     ...state,
-    last_reflect: attempted,
     last_reflect_attempt: attempted,
+    reflect_stalled_since: state.reflect_stalled_since ?? attempted,
+    reflect_process_failure: failure ?? undefined,
     reflect_failures: (state.reflect_failures ?? 0) + 1,
   });
 }
@@ -310,17 +311,17 @@ function screenReply(
   let keptLines = red.kept;
   let written = `${keptLines.join("\n").trim()}\n`;
   let reason = degenerate(written, previous, inputTokens, cap, reserve);
-  // A reply that is valid apart from its size, between the cap and half as
-  // much again, is trimmed into the cap instead of discarding the judge call.
-  if (reason === "over cap") {
-    const total = tokens(written) + reserve;
-    if (total > cap && total <= 1.5 * cap) {
-      const trimmed = trimToCap(written, cap, reserve);
-      if (degenerate(trimmed, previous, inputTokens, cap, reserve) === null) {
-        keptLines = splitLines(trimmed.trim());
-        written = trimmed;
-        reason = null;
-      }
+  const total = tokens(written) + reserve;
+  if (
+    total > cap &&
+    total <= 1.5 * cap &&
+    degenerate(written, previous, inputTokens, Number.POSITIVE_INFINITY, reserve) === null
+  ) {
+    const trimmed = trimToCap(written, cap, reserve);
+    if (degenerate(trimmed, previous, inputTokens, cap, reserve) === null) {
+      keptLines = splitLines(trimmed.trim());
+      written = trimmed;
+      reason = null;
     }
   }
   // A gutted memory is worse than a stale one.
@@ -336,12 +337,23 @@ function screenReply(
   return { red, record, reason, outcome, kept: keptLines };
 }
 
-/** The reflector's reply, or null when it carries no memory text. */
-function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectReply | null {
-  const reply = ctx.judge(prompt, { ...runOf(ctx), loop: "memory", role: "reflector", project: memProject });
+function askReflector(ctx: LearnContext, prompt: string, memProject: string): {
+  reply: ReflectReply | null;
+  failure: "auth" | "timeout" | null;
+} {
+  let failure: "auth" | "timeout" | null = null;
+  const reply = ctx.judge(prompt, {
+    ...runOf(ctx),
+    loop: "memory",
+    role: "reflector",
+    project: memProject,
+    onProcessResult: (outcome) => {
+      failure = outcome;
+    },
+  });
   const memory = reply?.memory;
-  if (typeof memory !== "string" || memory.trim() === "") return null;
-  return { memory, security_notes: reply?.security_notes };
+  if (typeof memory !== "string" || memory.trim() === "") return { reply: null, failure };
+  return { reply: { memory, security_notes: reply?.security_notes }, failure };
 }
 
 /** Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit. */
@@ -378,7 +390,13 @@ export function applyReflection(
   }
   writeGated(ledger.dir, memoryPath, text);
   const state = readState(ledger);
-  const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
+  const {
+    last_reflect_attempt: _attempt,
+    reflect_failures: _failures,
+    reflect_stalled_since: _stalled,
+    reflect_process_failure: _process,
+    ...withoutBackoff
+  } = state;
   const nextState: MemoryState = {
     ...withoutBackoff,
     last_obs_id_reflected: Math.max(withoutBackoff.last_obs_id_reflected ?? 0, maxObsId),
@@ -424,9 +442,9 @@ export function reflect(
     ctx.io.out(prompt);
     return `reflect: dry run (${observations.length} observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = askReflector(ctx, prompt, memProject);
+  const { reply, failure } = askReflector(ctx, prompt, memProject);
   if (reply === null) {
-    markAttempt(ledger);
+    markAttempt(ledger, failure);
     appendRun(ledger, { job: "reflect", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "reflect failed: no judge output");
     return "reflect: judge call failed";
@@ -486,9 +504,9 @@ export function backfill(
     ctx.io.out(prompt);
     return `backfill: dry run (${observations.length} of ${pending.length} unscreened observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = askReflector(ctx, prompt, memProject);
+  const { reply, failure } = askReflector(ctx, prompt, memProject);
   if (reply === null) {
-    markAttempt(ledger);
+    markAttempt(ledger, failure);
     appendRun(ledger, { job: "backfill", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "backfill failed: no judge output");
     return "backfill: judge call failed";
@@ -505,6 +523,14 @@ export function backfill(
     logLine(ledger, `backfill rejected: ${reason}`);
     return `backfill: rejected: ${reason}`;
   }
+  const {
+    reflect_stalled_since: _stalled,
+    reflect_process_failure: _process,
+    last_reflect_attempt: _attempt,
+    reflect_failures: _failures,
+    ...screenedState
+  } = readState(ledger);
+  saveState(ledger, screenedState);
   appendRun(ledger, {
     job: "backfill",
     status: "ok",

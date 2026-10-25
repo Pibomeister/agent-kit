@@ -72,14 +72,6 @@ export interface DecideInput {
   unconsolidated: number;
   /** `all` or one job forces it, even on a muted project. */
   force?: Job | "all" | null;
-  /**
-   * How the most recent reflect or backfill attempt ended, when the caller
-   * knows: `judge` is the judge process itself failing (no output, auth or
-   * timeout), `format` is a reply the gates rejected. Absent, the caller knows
-   * only the failure count in `state`, and the backfill keeps sharing the
-   * reflect backoff as it always did.
-   */
-  reflectFailure?: "judge" | "format";
 }
 
 export interface Thresholds {
@@ -126,10 +118,7 @@ export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
       (input.newObs > 0 && now - lastReflect >= REFLECT_MAX_GAP_MS))
   )
     due.push("reflect");
-  const backfillHeld =
-    input.reflectFailure === undefined
-      ? !backoffElapsed(input.state, "reflect", now)
-      : input.reflectFailure === "judge" && !backoffElapsed(input.state, "reflect", now);
+  const backfillHeld = input.state.reflect_process_failure !== undefined && !backoffElapsed(input.state, "reflect", now);
   if (idle && input.unscreened > 0 && !backfillHeld) due.push("backfill");
   const today = todayLocal(input.now);
   if (
@@ -349,11 +338,8 @@ export function runProject(
     const unscreened = unscreenedIds(source, ledger, deferred).length;
     const unconsolidated = readyEpisodes(source, ledger, unconsolidatedEpisodes(ledger)).size;
     const force = options.force === true ? (options.job ?? "all") : null;
-    const lastScreen = runLog(ledger).findLast((row) => row.job === "reflect" || row.job === "backfill");
-    const reflectFailure: DecideInput["reflectFailure"] =
-      lastScreen === undefined ? undefined : lastScreen.status === "failed" ? "judge" : "format";
     let due = decide(
-      { state, now: new Date(), idleS, newTokens, newObs, unscreened, unconsolidated, force, reflectFailure },
+      { state, now: new Date(), idleS, newTokens, newObs, unscreened, unconsolidated, force },
       ctx.config,
     );
     if (options.job !== undefined && options.force !== true)
@@ -364,7 +350,12 @@ export function runProject(
     );
     const runners: Record<Job, (ctx: LearnContext) => string> = {
       reflect: (job) => reflect(job, source, ledger, memProject, trigger),
-      backfill: (job) => backfill(job, source, ledger, memProject, deferred, trigger),
+      backfill: (job) => {
+        const current = readState(ledger);
+        return current.reflect_process_failure !== undefined && !backoffElapsed(current, "reflect", nowMs())
+          ? `backfill: held after judge ${current.reflect_process_failure}`
+          : backfill(job, source, ledger, memProject, deferred, trigger);
+      },
       // Forwarding findings seeds the review ledger when it is missing; compaction only touches one that exists.
       nightly: (job) => consolidate(job, source, ledger, root, dryRun ? null : reviewLedger(job.config, root), trigger),
       weekly: (job) => deep(job, ledger, root, existingReview.initialized ? existingReview : null, trigger),

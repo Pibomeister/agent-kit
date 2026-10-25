@@ -3,7 +3,7 @@
  * collapse, missing sections and gutted evidence keep the old memory; a valid
  * reply replaces it and bumps the watermark.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJsonl, tokens } from "../../src/learn/core/store.ts";
@@ -195,7 +195,8 @@ describe("reflect apply", () => {
     const commits = ledger.git(["rev-list", "--count", "HEAD"]).stdout.trim();
     applyReflection(ledger, "not a memory at all", new Set(["obs:20"]), 20_000, 20, CAP);
     const state = readState(ledger);
-    expect(state.last_reflect).toBeGreaterThan(0);
+    expect(state.last_reflect).toBeUndefined();
+    expect(state.last_reflect_attempt).toBeGreaterThan(0);
     expect(state.reflect_failures).toBe(1);
     expect(state.last_obs_id_reflected).toBeUndefined();
     expect(readJsonl<{ status: string }>(ledger.path("runs.jsonl")).at(-1)?.status).toBe("rejected");
@@ -221,11 +222,11 @@ describe("reflect apply", () => {
     expect(trimToCap(text, 100)).toBe(trimmed);
   });
 
-  test("a valid reply between the cap and half as much again is trimmed in, not discarded", () => {
+  test.each([280, 340])("a valid %i-bullet reply above the cap is trimmed in, not discarded", (count) => {
     const { ledger, memory } = setup();
-    const bullets = Array.from({ length: 340 }, (_, n) => `- distinct fact ${n} recorded here [obs:20]`);
+    const bullets = Array.from({ length: count }, (_, n) => `- distinct fact ${n} recorded here [obs:20]`);
     const reply = `${SECTIONS[0]}\n${bullets.join("\n")}\n${SECTIONS.slice(1).join("\n")}\n`;
-    expect(tokens(reply)).toBeGreaterThan(1.3 * CAP);
+    expect(tokens(reply)).toBeGreaterThan(CAP);
     expect(tokens(reply)).toBeLessThanOrEqual(1.5 * CAP);
     const result = applyReflection(ledger, reply, new Set(["obs:20"]), 20_000, 20, CAP);
     expect(result.ok).toBe(true);
@@ -249,6 +250,23 @@ describe("reflect apply", () => {
       ledger.path("runs.jsonl"),
     ).at(-1)!;
     expect([last.job, last.status, last.dropped_by_provenance]).toEqual(["reflect", "ok", 1]);
+  });
+
+  test("failed retries retain the first stalled time and acceptance clears it", () => {
+    const { ledger } = setup();
+    try {
+      setSystemTime(new Date("2026-09-01T00:00:00Z"));
+      applyReflection(ledger, "invalid", new Set(["obs:20"]), 20_000, 20, CAP);
+      const first = readState(ledger).reflect_stalled_since;
+      setSystemTime(new Date("2026-09-03T00:00:00Z"));
+      applyReflection(ledger, "invalid again", new Set(["obs:20"]), 20_000, 20, CAP);
+      expect(readState(ledger).reflect_stalled_since).toBe(first);
+      expect(readState(ledger).last_reflect_attempt).toBeGreaterThan(first ?? 0);
+      expect(applyReflection(ledger, VALID, new Set(["obs:20"]), 20_000, 20, CAP).ok).toBe(true);
+      expect(readState(ledger).reflect_stalled_since).toBeUndefined();
+    } finally {
+      setSystemTime();
+    }
   });
 });
 

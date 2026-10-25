@@ -11,6 +11,8 @@ import Ajv from "ajv";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { git as kbGit } from "../../kb/git.ts";
+import { checkRunArtifact } from "../../kb/artifacts.ts";
+import { registryPath as kbRegistryPath, resolveKnowledgebase } from "../../kb/binding.ts";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import {
@@ -185,15 +187,6 @@ export function deferredObservationIds(ledger: Ledger): number[] {
   return readJson<{ deferred?: number[] }>(ledger.path(WATERMARK_FILE), {}).deferred ?? [];
 }
 
-/**
- * Review observations after the ledger's watermark, and the ones an earlier
- * run deferred. A review-shaped row becomes an event once an accepted reflect
- * or backfill run screened it, and is dropped once a run quarantined it. Until
- * then its id rides in the watermark file's `deferred` list, so the watermark
- * moves on and each run replays only those rows. Once the reflector has
- * attempted and stayed silent past the staleness window, unscreened rows are
- * released from the native store instead of waiting forever.
- */
 /** How long the reflector may stay silent before unscreened rows stop waiting on it. */
 export const CLAUDE_MEM_STALE_MS = 24 * 3600 * 1000;
 
@@ -218,15 +211,10 @@ export function eventsFromClaudeMem(
   if (source === null) return { events: [], maxId: minId, deferred: waiting };
   const ranges = screenedObservationRanges(memory);
   const quarantined = quarantinedObservationIds(memory);
-  // Screening is a security gate, not a liveness gate: a reflector that has
-  // attempted and then stayed silent past the staleness window no longer holds
-  // rows back, or one stuck reflector starves the review loop forever. Rows a
-  // run quarantined stay dropped either way. A ledger the reflector has never
-  // attempted on still defers: nothing has had the chance to screen yet.
   const state = readState(memory);
-  const attempted = state.last_reflect_attempt ?? state.last_reflect;
+  const attempted = state.reflect_stalled_since ?? state.last_reflect ?? state.last_reflect_attempt;
   const stale = attempted !== undefined && (options.now ?? nowMs()) - attempted >= staleWindowMs(ctx, options.staleMs);
-  const release = stale && (ranges.length === 0 || (state.reflect_failures ?? 0) > 0);
+  const release = ranges.length === 0 || (stale && (state.reflect_failures ?? 0) > 0);
   try {
     let maxId = minId;
     const events: ReviewEvent[] = [];
@@ -249,47 +237,20 @@ export function eventsFromClaudeMem(
 }
 
 interface KbArtifact {
-  schema?: string;
-  run_id?: string | null;
-  created_at?: string;
-  title?: string;
+  project: { id: string };
+  run_id: string | null;
+  created_at: string;
+  title: string;
   detail?: string;
-  lane?: string;
-  severity?: string;
-  created_by?: { role?: string };
-  evidence?: Array<{ location?: { path?: string }; observation?: string }>;
+  lane: string;
+  severity: string;
+  evidence: Array<{ location: { path?: string }; observation: string }>;
 }
 
 interface StoredKbArtifact {
   record: { ref: string };
   artifact: KbArtifact;
 }
-
-const KB_ARTIFACT_SCHEMA = {
-  type: "object",
-  properties: {
-    schema: { type: "string" },
-    run_id: { type: ["string", "null"] },
-    created_at: { type: "string" },
-    title: { type: "string" },
-    detail: { type: "string" },
-    lane: { type: "string" },
-    severity: { type: "string" },
-    created_by: { type: "object", properties: { role: { type: "string" } }, additionalProperties: true },
-    evidence: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          location: { type: "object", properties: { path: { type: "string" } }, additionalProperties: true },
-          observation: { type: "string" },
-        },
-        additionalProperties: true,
-      },
-    },
-  },
-  additionalProperties: true,
-};
 
 let kbArtifactValidator: ((value: unknown) => value is StoredKbArtifact) | undefined;
 
@@ -303,7 +264,7 @@ function kbArtifact(line: string): StoredKbArtifact | null {
         required: ["ref"],
         properties: { ref: { type: "string", minLength: 1 } },
       },
-      artifact: KB_ARTIFACT_SCHEMA,
+      artifact: { type: "object" },
     },
   });
   let value: unknown;
@@ -312,7 +273,8 @@ function kbArtifact(line: string): StoredKbArtifact | null {
   } catch {
     return null;
   }
-  return kbArtifactValidator(value) ? value : null;
+  if (!kbArtifactValidator(value)) return null;
+  return checkRunArtifact(JSON.stringify(value.artifact)).artifact?.schema === "finding" ? value : null;
 }
 
 export function eventsFromKbFindings(kbRoot: string, project: string | null): ReviewEvent[] {
@@ -325,10 +287,8 @@ export function eventsFromKbFindings(kbRoot: string, project: string | null): Re
     const stored = kbArtifact(line);
     if (stored === null) continue;
     const { artifact, record } = stored;
-    if (artifact.schema !== "finding" || !artifact.title) continue;
-    const observations = (artifact.evidence ?? []).flatMap((entry) =>
-      entry.observation === undefined || entry.observation === "" ? [] : [entry.observation],
-    );
+    if (artifact.project.id !== project) continue;
+    const observations = artifact.evidence.map((entry) => entry.observation);
     const text = [artifact.title, artifact.detail ?? "", ...observations].filter((part) => part !== "").join("\n");
     const event = makeEvent(
       {
@@ -337,16 +297,13 @@ export function eventsFromKbFindings(kbRoot: string, project: string | null): Re
         project,
         pr: null,
         sha: null,
-        author: artifact.lane ?? artifact.created_by?.role ?? "kb-finding",
-        severity:
-          artifact.severity !== undefined && /^P[0-3]$/.test(artifact.severity)
-            ? artifact.severity
-            : parseSeverity(text),
-        path: artifact.evidence?.[0]?.location?.path ?? null,
+        author: artifact.lane,
+        severity: artifact.severity,
+        path: artifact.evidence[0]?.location.path ?? null,
         line: null,
         text,
         url: null,
-        ts: artifact.created_at ?? null,
+        ts: artifact.created_at,
       },
       record.ref,
     );
@@ -431,8 +388,6 @@ export interface IngestOptions {
   github?: GitHubReviewSource;
   skipGithub?: boolean;
   skipMem?: boolean;
-  /** Local knowledgebase root holding `findings/*.md` and `projects/<p>/runs/artifacts.jsonl`; `AK_LEARN_KB_ROOT` when absent. */
-  kbRoot?: string;
   /** Override for the claude-mem staleness window (`AK_LEARN_CLAUDE_MEM_STALE_MS`). */
   claudeMemStaleMs?: number;
 }
@@ -465,6 +420,12 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
   if (Number.isNaN(sinceMs)) throw new Error(`--since wants YYYY-MM-DD, got ${options.since}`);
   const events: ReviewEvent[] = [];
   const unavailable: string[] = [];
+  const started = nowIso();
+  const watermark = readJson<{ claude_mem_max_id?: number; deferred?: number[]; github_since?: string }>(
+    ledger.path(WATERMARK_FILE),
+    {},
+  );
+  let githubSince = watermark.github_since;
 
   if (options.skipGithub !== true) {
     const github = options.github ?? new GitHubReviewSource(options.cwd ?? root);
@@ -477,8 +438,13 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
       );
     } else {
       events.push(
-        ...eventsFromGithub(github, repo, github.pullRequests(repo, options.prs ?? [], options.since), project),
+        ...eventsFromGithub(github, repo, github.pullRequests(repo, options.prs ?? [], options.since, githubSince), project),
       );
+      if (!github.unavailable && github.fallbackSelected) githubSince = `${started.slice(0, 19)}Z`;
+      if (github.unavailable) {
+        unavailable.push("github");
+        ctx.io.err("ak learn review: review source github unavailable; selection watermark retained");
+      }
     }
   }
   let maxId = 0;
@@ -491,13 +457,25 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
     maxId = mem.maxId;
     deferred = mem.deferred;
   }
-  const kbRoot = options.kbRoot ?? ctx.env.AK_LEARN_KB_ROOT;
-  if (kbRoot !== undefined && kbRoot !== "") events.push(...eventsFromKbFindings(kbRoot, project));
+  const kb = resolveKnowledgebase(root, kbRegistryPath(ctx.env));
+  if (kb.resolved !== null) events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
+  else if (kb.state === "failed" || kb.issues.some((issue) => issue.rule === "kb.unregistered")) {
+    unavailable.push("kb-finding");
+    ctx.io.err(
+      `ak learn review: review source kb-finding unavailable: ${kb.issues.map((issue) => issue.message).join("; ")}`,
+    );
+  }
   if (options.source !== "codex") events.push(...eventsFromReflectQueue(ctx, root, project));
 
   if (ctx.config.dryRun) return { events, fresh: 0, unavailable, deferred: deferred.length };
   const fresh = appendEvents(ledger, events);
-  if (maxId > 0) writeJson(ledger.path(WATERMARK_FILE), { claude_mem_max_id: maxId, deferred, ts: nowIso() });
+  if (maxId > 0 || githubSince !== watermark.github_since)
+    writeJson(ledger.path(WATERMARK_FILE), {
+      ...watermark,
+      ...(maxId > 0 ? { claude_mem_max_id: maxId, deferred } : {}),
+      github_since: githubSince,
+      ts: started,
+    });
   if (fresh > 0) ledger.commit(`ingest: +${fresh} events`);
   return { events, fresh, unavailable, deferred: deferred.length };
 }

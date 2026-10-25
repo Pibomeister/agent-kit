@@ -103,6 +103,8 @@ export function paginatedArray<T>(text: string): T[] {
 }
 
 export class GitHubReviewSource {
+  unavailable = false;
+  fallbackSelected = false;
   constructor(
     private readonly cwd: string,
     private readonly runner: GhRunner = ghRunner,
@@ -110,16 +112,21 @@ export class GitHubReviewSource {
 
   private json<T>(args: readonly string[]): T | null {
     const result = this.runner(args, this.cwd);
-    if (result.code !== 0) return null;
+    if (result.code !== 0) {
+      if (args[1] === "list") this.unavailable = true;
+      return null;
+    }
     try {
       return JSON.parse(result.stdout) as T;
     } catch {
+      if (args[1] === "list") this.unavailable = true;
       return null;
     }
   }
 
   private api<T>(path: string): T[] {
     const result = this.runner(["api", "--paginate", path], this.cwd);
+    if (result.code !== 0) this.unavailable = true;
     return result.code === 0 ? paginatedArray<T>(result.stdout) : [];
   }
 
@@ -134,11 +141,10 @@ export class GitHubReviewSource {
    * The PRs to ingest: the given numbers; else PRs updated on or after `since`
    * (`YYYY-MM-DD`); else the current branch's PR. Unknown numbers are skipped.
    * When the working directory has no PR of its own (`main`, a detached HEAD),
-   * `gh pr view` finds nothing and the newest 20 PRs in any state stand in;
-   * re-ingesting one is a no-op, because the raw layer deduplicates by event
-   * hash, so the list needs no watermark of its own.
    */
-  pullRequests(repo: string, numbers: readonly number[], since?: string): PullRequestRef[] {
+  pullRequests(repo: string, numbers: readonly number[], since?: string, watermark?: string): PullRequestRef[] {
+    this.unavailable = false;
+    this.fallbackSelected = false;
     const fields = ["--json", "number,headRefOid,author"];
     if (numbers.length > 0) {
       return numbers.flatMap(
@@ -163,6 +169,7 @@ export class GitHubReviewSource {
     }
     const current = this.json<PullRequestRef>(["pr", "view", ...fields]);
     if (current !== null) return [current];
+    this.fallbackSelected = true;
     const listed = this.json<PullRequestRef[]>([
       "pr",
       "list",
@@ -172,6 +179,7 @@ export class GitHubReviewSource {
       "all",
       "--limit",
       "20",
+      ...(watermark === undefined ? [] : ["--search", `updated:>=${watermark}`]),
       ...fields,
     ]);
     return listed ?? [];

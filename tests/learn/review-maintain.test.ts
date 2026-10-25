@@ -602,6 +602,27 @@ describe("independence gate", () => {
     expect(run(buildReviewEvents("shop", judged, valid, "nightly-1", distinct)).page.meta.status).toBe("active");
     expect(statusFor({ status: "active", count: 3, sessions: ["obs:7", "obs:8", "obs:9"] }, 2)).toBe("candidate");
   });
+
+  test("identical findings retain each cited session and deduplicate within that session", () => {
+    const valid = new Set(["obs:7", "obs:8", "obs:9", "Ssession-b"]);
+    const sessions = new Map([
+      ["obs:7", "session-a"], ["obs:8", "session-b"], ["obs:9", "session-a"], ["Ssession-b", "session-b"],
+    ]);
+    const first = buildReviewEvents("shop", [{ text: "same finding", evidence: ["obs:7"] }], valid, "night-1", sessions);
+    const later = buildReviewEvents("shop", [{ text: "same finding", evidence: ["obs:8"] }], valid, "night-2", sessions);
+    const repeat = buildReviewEvents("shop", [{ text: "same finding", evidence: ["obs:9"] }], valid, "night-3", sessions);
+    expect(first[0]?.hash).toBe(repeat[0]?.hash);
+    expect(first[0]?.hash).not.toBe(later[0]?.hash);
+    const { ledger, page } = run([...first, ...later, ...repeat]);
+    expect(loadEvents(ledger)).toHaveLength(2);
+    expect(page.meta.status).toBe("active");
+    const multiple = buildReviewEvents("shop", [{
+      text: "same finding", evidence: ["obs:7", "obs:8", "Ssession-b"],
+    }], valid, "night-4", sessions);
+    expect(multiple.map((event) => event.session)).toEqual(["session-a", "session-b"]);
+    expect(multiple.map((event) => event.hash)).toEqual([first[0]?.hash, later[0]?.hash]);
+    expect(multiple.map((event) => event.obs_id)).toEqual([7, 8]);
+  });
 });
 
 describe("maintain", () => {
