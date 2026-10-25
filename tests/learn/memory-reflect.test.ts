@@ -108,6 +108,16 @@ function largeTailMemory(id: number): string {
   return `${SECTIONS[0]}\n- short ${"kept ".repeat(130)}[obs:${id}]\n- tail ${"word ".repeat(2000)}[obs:${id}]\n${SECTIONS.slice(1).join("\n")}\n`;
 }
 
+function paddedMemory(padding: string, tail = false): string {
+  return [
+    SECTIONS[0],
+    "- stable fact [obs:20]",
+    `- retained ${padding} [obs:20]`,
+    ...(tail ? [`- tail ${"tail ".repeat(400)}[obs:20]`] : []),
+    ...SECTIONS.slice(1),
+  ].join("\n");
+}
+
 describe("reflect apply", () => {
   function expectRejected(text: string, inputTokens: number, reason: string) {
     const { ledger, memory } = setup();
@@ -258,19 +268,11 @@ describe("reflect apply", () => {
     const { ledger, memory } = setup();
     const notes: SecurityNote[] = flagged ? [{ obs: "obs:21", kind: "remote-code" }] : [];
     const record = securityRecord(notes, () => null);
-    const body = (padding: string, tail = false) =>
-      [
-        SECTIONS[0],
-        "- stable fact [obs:20]",
-        `- retained ${padding} [obs:20]`,
-        ...(tail ? [`- tail ${"tail ".repeat(400)}[obs:20]`] : []),
-        ...SECTIONS.slice(1),
-      ].join("\n");
     const serialized = (text: string) => `${withSecurityRecord(text.split("\n"), record).join("\n").trim()}\n`;
-    const size = 10004 - serialized(body("")).length;
+    const size = 10004 - serialized(paddedMemory("")).length;
     const padding = "word ".repeat(Math.floor(size / 5)) + "x".repeat(size % 5);
-    expect(serialized(body(padding))).toHaveLength(10004);
-    const reply = body(padding, true);
+    expect(serialized(paddedMemory(padding))).toHaveLength(10004);
+    const reply = paddedMemory(padding, true);
     expect(tokens(serialized(reply))).toBeGreaterThan(CAP);
     expect(tokens(serialized(reply))).toBeLessThanOrEqual(1.5 * CAP);
     const result = applyReflection(

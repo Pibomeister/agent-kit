@@ -482,7 +482,9 @@ export function buildReviewEvents(
           url: runId === null ? null : `${MEMORY_SOURCE}:run/${runId}`,
           ts: nowIso(),
         },
-        createHash("sha1").update(JSON.stringify([project, kind, text, session ?? ids.toSorted()])).digest("hex"),
+        createHash("sha1")
+          .update(JSON.stringify([project, kind, text, session ?? ids.toSorted()]))
+          .digest("hex"),
       );
       const obs = ids.find((id) => id.startsWith("obs:"));
       if (obs !== undefined) forwarded.obs_id = Number(obs.slice(4));
@@ -659,8 +661,7 @@ export function consolidate(
   for (const episode of included) {
     if (included.filter((other) => sid8(other.sid) === sid8(episode.sid)).length === 1)
       reviewSessions.set(sid8(episode.sid), episode.sid);
-    for (const row of obsBySid.get(episode.sid) ?? [])
-      reviewSessions.set(`obs:${row.id}`, row.memory_session_id);
+    for (const row of obsBySid.get(episode.sid) ?? []) reviewSessions.set(`obs:${row.id}`, row.memory_session_id);
   }
   const summary = applyConsolidation(ledger, reply, valid, obsSession, {
     review: review === null ? undefined : { ledger: review, project: basename(root), sessions: reviewSessions },

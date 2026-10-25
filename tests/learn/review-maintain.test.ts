@@ -597,10 +597,8 @@ describe("independence gate", () => {
     const forwarded = buildReviewEvents("shop", judged, valid, "nightly-1", sameSession);
     expect(forwarded.map((event) => event.session)).toEqual(Array(3).fill("session-a-full-id"));
     expect(
-      run([
-        sighting("native", { source: "claude-mem", session: "session-a-full-id", obs_id: 6 }),
-        ...forwarded,
-      ]).page.meta.status,
+      run([sighting("native", { source: "claude-mem", session: "session-a-full-id", obs_id: 6 }), ...forwarded]).page
+        .meta.status,
     ).toBe("candidate");
     const distinct = new Map([
       ["obs:7", "session-a-full-id"],
@@ -614,19 +612,49 @@ describe("independence gate", () => {
   test("identical findings retain each cited session and deduplicate within that session", () => {
     const valid = new Set(["obs:7", "obs:8", "obs:9", "Ssession-b"]);
     const sessions = new Map([
-      ["obs:7", "session-a"], ["obs:8", "session-b"], ["obs:9", "session-a"], ["Ssession-b", "session-b"],
+      ["obs:7", "session-a"],
+      ["obs:8", "session-b"],
+      ["obs:9", "session-a"],
+      ["Ssession-b", "session-b"],
     ]);
-    const first = buildReviewEvents("shop", [{ text: "same finding", evidence: ["obs:7"] }], valid, "night-1", sessions);
-    const later = buildReviewEvents("shop", [{ text: "same finding", evidence: ["obs:8"] }], valid, "night-2", sessions);
-    const repeat = buildReviewEvents("shop", [{ text: "same finding", evidence: ["obs:9"] }], valid, "night-3", sessions);
+    const first = buildReviewEvents(
+      "shop",
+      [{ text: "same finding", evidence: ["obs:7"] }],
+      valid,
+      "night-1",
+      sessions,
+    );
+    const later = buildReviewEvents(
+      "shop",
+      [{ text: "same finding", evidence: ["obs:8"] }],
+      valid,
+      "night-2",
+      sessions,
+    );
+    const repeat = buildReviewEvents(
+      "shop",
+      [{ text: "same finding", evidence: ["obs:9"] }],
+      valid,
+      "night-3",
+      sessions,
+    );
     expect(first[0]?.hash).toBe(repeat[0]?.hash);
     expect(first[0]?.hash).not.toBe(later[0]?.hash);
     const { ledger, page } = run([...first, ...later, ...repeat]);
     expect(loadEvents(ledger)).toHaveLength(2);
     expect(page.meta.status).toBe("active");
-    const multiple = buildReviewEvents("shop", [{
-      text: "same finding", evidence: ["obs:7", "obs:8", "Ssession-b"],
-    }], valid, "night-4", sessions);
+    const multiple = buildReviewEvents(
+      "shop",
+      [
+        {
+          text: "same finding",
+          evidence: ["obs:7", "obs:8", "Ssession-b"],
+        },
+      ],
+      valid,
+      "night-4",
+      sessions,
+    );
     expect(multiple.map((event) => event.session)).toEqual(["session-a", "session-b"]);
     expect(multiple.map((event) => event.hash)).toEqual([...first, ...later].map((event) => event.hash));
     expect(multiple.map((event) => event.obs_id)).toEqual([7, 8]);

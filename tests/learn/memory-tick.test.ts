@@ -191,11 +191,16 @@ describe("tick", () => {
     const { root, reflected, ctx } = fixtureProject();
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     const started = Date.now();
-    seedReflected(ledger, reflected + 1, {
+    const state: MemoryState = {
       last_reflect: started,
       last_weekly: started,
-      ...(expired ? { last_reflect_attempt: 1, reflect_failures: 2, reflect_stalled_since: 2 } : {}),
-    });
+    };
+    if (expired) {
+      state.last_reflect_attempt = 1;
+      state.reflect_failures = 2;
+      state.reflect_stalled_since = 2;
+    }
+    seedReflected(ledger, reflected + 1, state);
     const before = readState(ledger);
     ctx.judge = commandJudge({
       ...ctx.config,
@@ -230,7 +235,7 @@ describe("tick", () => {
   test.each([
     { name: "malformed JSON", script: "echo malformed", blocked: false },
     { name: "empty output", script: "true", blocked: false },
-    { name: "empty memory", script: "echo '{\"memory\":\"\"}'", blocked: false },
+    { name: "empty memory", script: 'echo \'{"memory":""}\'', blocked: false },
     { name: "ordinary process error", script: "echo failure >&2; exit 1", blocked: false },
     { name: "auth failure", script: "echo Unauthorized >&2; exit 1", blocked: true },
     {

@@ -140,7 +140,9 @@ describe("consolidate apply", () => {
     ]);
     expect(events[0]!.text.startsWith("PR body claimed 15 files, the diff had 16")).toBe(true);
     expect([events[0]!.author, events[0]!.url]).toEqual(["learn-memory", "learn-memory:run/nightly-test"]);
-    expect(events[0]!.session).toBe("sa");
+    const event = events[0];
+    expect(event).toBeDefined();
+    expect(event?.session).toBe("sa");
     expect(review.git(["status", "--porcelain"]).stdout.trim()).toBe("");
     // The same text hashes the same, so a repeat forwards nothing.
     expect(forwardReviewEvents(review, ledger, "repo", REPLY.review_events, VALID, "again", OBS_SESSION)).toEqual({

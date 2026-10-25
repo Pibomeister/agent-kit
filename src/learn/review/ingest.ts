@@ -6,7 +6,6 @@
  * is a resolution, attributed to the PR author or to a third party. Reviewer
  * text is data: it is stored, never executed or interpreted.
  */
-import { existsSync } from "node:fs";
 import Ajv from "ajv";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
@@ -23,7 +22,7 @@ import {
   screenedObservationRanges,
 } from "../memory/ledger.ts";
 import { projectFolderName, reflectFolderName, registryPath } from "../core/paths.ts";
-import { nowIso, nowMs, readJson, readText, writeJson } from "../core/store.ts";
+import { nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
 import { ClaudeMemSource, jsonList, type ObservationRow } from "../sources/claude-mem.ts";
 import {
   authorLabel,
@@ -292,7 +291,8 @@ export function eventsFromKbFindings(kbRoot: string, project: string | null): Re
   if (listed.status !== 0) throw new Error(`knowledgebase findings: cannot locate ${path}: ${listed.stderr.trim()}`);
   if (listed.stdout === "") return [];
   const committed = kbGit(kbRoot, ["cat-file", "blob", `${snapshot}:${path}`]);
-  if (committed.status !== 0) throw new Error(`knowledgebase findings: cannot read ${path}: ${committed.stderr.trim()}`);
+  if (committed.status !== 0)
+    throw new Error(`knowledgebase findings: cannot read ${path}: ${committed.stderr.trim()}`);
   const events: ReviewEvent[] = [];
   for (const line of committed.stdout.split("\n")) {
     if (line.trim() === "") continue;
@@ -450,7 +450,12 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
       );
     } else {
       events.push(
-        ...eventsFromGithub(github, repo, github.pullRequests(repo, options.prs ?? [], options.since, githubSince), project),
+        ...eventsFromGithub(
+          github,
+          repo,
+          github.pullRequests(repo, options.prs ?? [], options.since, githubSince),
+          project,
+        ),
       );
       if (!github.unavailable && github.fallbackComplete) githubSince = `${started.slice(0, 19)}Z`;
       if (github.unavailable) {
@@ -483,13 +488,18 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
 
   if (ctx.config.dryRun) return { events, fresh: 0, unavailable, deferred: deferred.length };
   const fresh = appendEvents(ledger, events);
-  if (maxId > 0 || githubSince !== watermark.github_since)
-    writeJson(ledger.path(WATERMARK_FILE), {
+  if (maxId > 0 || githubSince !== watermark.github_since) {
+    const nextWatermark = {
       ...watermark,
-      ...(maxId > 0 ? { claude_mem_max_id: maxId, deferred } : {}),
       github_since: githubSince,
       ts: started,
-    });
+    };
+    if (maxId > 0) {
+      nextWatermark.claude_mem_max_id = maxId;
+      nextWatermark.deferred = deferred;
+    }
+    writeJson(ledger.path(WATERMARK_FILE), nextWatermark);
+  }
   if (fresh > 0) ledger.commit(`ingest: +${fresh} events`);
   return { events, fresh, unavailable, deferred: deferred.length };
 }

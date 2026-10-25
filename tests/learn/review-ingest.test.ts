@@ -495,8 +495,18 @@ describe("ingest end to end", () => {
     ingest(ctx, ledger, repo, { skipGithub: true });
     ingest(ctx, ledger, repo, options);
     expect(calls.filter((args) => args[1] === "list").at(-1)).toEqual([
-      "pr", "list", "--repo", "acme/app", "--state", "all", "--limit", "20",
-      "--search", `updated:>=${first.github_since}`, "--json", "number,headRefOid,author",
+      "pr",
+      "list",
+      "--repo",
+      "acme/app",
+      "--state",
+      "all",
+      "--limit",
+      "20",
+      "--search",
+      `updated:>=${first.github_since}`,
+      "--json",
+      "number,headRefOid,author",
     ]);
     const before = readJson(ledger.path("raw/.watermark.json"), {});
     const narrow = new GitHubReviewSource(repo, (args) =>
@@ -562,8 +572,7 @@ describe("ingest end to end", () => {
       );
     });
     expect(source.pullRequests("acme/app", [], undefined, "2026-09-16T12:00:00Z").map((pr) => pr.number)).toEqual([
-      9,
-      7,
+      9, 7,
     ]);
     expect(calls[1]).toEqual([
       "pr",

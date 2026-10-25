@@ -321,10 +321,12 @@ function screenReply(
   return { red, record, reason, outcome, kept: keptLines };
 }
 
-function askReflector(ctx: LearnContext, prompt: string, memProject: string): {
+interface ReflectorResult {
   reply: ReflectReply | null;
   failure: "auth" | "timeout" | null;
-} {
+}
+
+function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectorResult {
   let failure: "auth" | "timeout" | null = null;
   const reply = ctx.judge(prompt, {
     ...runOf(ctx),
