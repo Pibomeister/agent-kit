@@ -421,6 +421,72 @@ describe("native token counters", () => {
 });
 
 describe("stored evidence refresh", () => {
+  test.each([false, true])("uncapped refresh preserves evidence occurrences with repeated prompts (same calls: %s)", (sameCalls) => {
+    const home = scratch("ak-ws-occurrence-refresh-");
+    const started = Date.now() - 3_600_000;
+    const rows: object[] = [];
+    for (let i = 0; i < 1000; i++) {
+      const file = sameCalls ? "same.ts" : `file-${i}.ts`;
+      rows.push(
+        { ...codexMessage("user", "continue"), timestamp: started + i * 1000 },
+        { type: "response_item", payload: { type: "custom_tool_call", call_id: `write-${i}`, name: "apply_patch", input: `*** Update File: ${file}\n@@\n-old\n+new` } },
+        { type: "response_item", payload: { type: "custom_tool_call_output", call_id: `write-${i}`, output: "updated" } },
+        { type: "response_item", payload: { type: "function_call", call_id: `read-${i}`, name: "read_file", arguments: JSON.stringify({ file_path: file }) } },
+        { type: "response_item", payload: { type: "function_call_output", call_id: `read-${i}`, output: `error prose in ${file}` } },
+        tokenCount((i + 1) * (i + 2) / 2, (i + 1) * (i + 2)),
+        { ...codexMessage("assistant", "done"), timestamp: started + i * 1000 + 9 },
+      );
+    }
+    rows.push(CODEX_TASK_COMPLETE);
+    const parsed = requiredSession(parseCodexSession(writeRollout(home, "occurrences", "/fixture/worktree", rows)));
+    const legacy: CapturedSession = { ...parsed, observations: parsed.observations.map((row) => {
+      if (row.type === "truncated") return row;
+      const lines = row.text.replace("tools:", "failed: read_file\ntools:").split("\n");
+      return { ...row, type: "error", text: [...lines.slice(0, -2), ...lines.slice(-2).reverse()].join("\n"),
+        tokens_in: null, tokens_out: null, usage_basis: "estimated" };
+    }) };
+    const ledger = ensureMemoryLedger(join(home, "ledger"));
+    WorkerSessionSource.open(ledger).capture([legacy]);
+    const store = RawStore.of(ledger.dir);
+    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    const source = WorkerSessionSource.open(ledger);
+    expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 1 });
+    for (let i = 0; i < parsed.observations.length; i++) {
+      const expected = parsed.observations[i];
+      const previous = old.observations[i];
+      if (expected === undefined || previous === undefined || expected.type === "truncated") continue;
+      const actual = source.observationsById([previous.id])[0];
+      expect(actual).toMatchObject({
+        id: previous.id, type: "turn", facts: expected.text,
+        created_at_epoch: expected.at, files_modified: JSON.stringify(expected.files_modified),
+        tokens_in: expected.tokens_in, tokens_out: expected.tokens_out,
+      });
+    }
+    expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 0 });
+  });
+
+  test("refresh leaves ambiguous occurrences unchanged", () => {
+    const parsed = toolSessions("read_file", "error prose")[0];
+    if (parsed === undefined) throw new Error("fixture session did not parse");
+    const first = parsed.observations[0];
+    if (first === undefined) throw new Error("fixture turn did not parse");
+    const observations = [first, { ...first }];
+    const current: CapturedSession = { ...parsed, observations, observationsForRefresh: () => observations };
+    const legacy: CapturedSession = { ...current, observations: observations.map((row) => ({
+      ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
+    })) };
+    const ledger = ensureMemoryLedger(scratch("ak-ws-ambiguous-refresh-"));
+    WorkerSessionSource.open(ledger).capture([legacy]);
+    const store = RawStore.of(ledger.dir);
+    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    const source = WorkerSessionSource.open(ledger);
+    expect(source.capture([current])).toEqual({ observations: 0, sessions: 1 });
+    expect(source.observationsById(old.observations.map((row) => row.id))).toEqual(old.observations);
+    expect(WorkerSessionSource.open(ledger).completedAt(current.memory_session_id, current.modified_at_epoch))
+      .toBe(current.completed_at_epoch);
+  });
   test.each(["grok", "droid"])("a compacted %s session completes its legacy refresh once", (host) => {
     const home = scratch("ak-ws-compacted-refresh-");
     const dir = join(home, "sessions", "fixture");

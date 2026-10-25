@@ -1366,8 +1366,8 @@ function rowKey(row: Pick<CapturedObservation, "title" | "text">): string {
 }
 
 function refreshKey(title: string, text: string): string {
-  const lead = text.split("\n").filter((line) => /^(?:prompt:|reply:|tools:)/.test(line));
-  return rowKey({ title, text: lead.length === 0 ? text : lead.join("\n") });
+  const lines = text.split("\n").filter((line) => !line.startsWith("failed:"));
+  return rowKey({ title, text: lines.toSorted().join("\n") });
 }
 
 /** The parser's row in a rewrite's wording. Its type, title, time and files stay the parser's. */
@@ -1502,6 +1502,16 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const identities = new Map<number, string>(
         refresh ? stored.map((entry) => [entry.id, refreshKey(entry.title ?? "", entry.facts ?? "")]) : [],
       );
+      const occurrences = new Map<string, number>();
+      if (refresh) {
+        const known = new Set([...stored.map((entry) => entry.key), ...identities.values()]);
+        for (const observation of item.observationsForRefresh?.() ?? item.observations) {
+          const identity = refreshKey(observation.title, observation.text);
+          if (!known.has(identity) && !known.has(rowKey(observation))) continue;
+          for (const key of [identity, `${identity}:${observation.at}`])
+            occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
+        }
+      }
       const matched = new Map<number, StoredObservation>();
       const aggregates: StoredObservation[] = [];
       const pending: Array<{ row: CapturedObservation; key: string }> = [];
@@ -1516,11 +1526,15 @@ export class WorkerSessionSource implements MemoryObservationSource {
         const available = eligible.get(key) ?? 0;
         if (available > 0) eligible.set(key, available - 1);
         const identity = refresh ? refreshKey(row.title, row.text) : null;
-        const previous =
-          stored.find((entry) => !used.has(entry.id) && entry.key === key) ??
-          (refresh ? stored.find((entry) => !used.has(entry.id) && identities.get(entry.id) === identity) : undefined);
+        const candidates = stored.filter((entry) => !used.has(entry.id) &&
+          (entry.key === key || (refresh && identities.get(entry.id) === identity)));
+        const timed = refresh ? candidates.filter((entry) => entry.created_at_epoch === row.at) : [];
+        const previous = !refresh ? candidates[0]
+          : timed.length === 1 && occurrences.get(`${identity}:${row.at}`) === 1 ? timed[0]
+          : candidates.length === 1 && occurrences.get(identity ?? "") === 1 ? candidates[0]
+          : undefined;
         if (previous === undefined) {
-          if (available > 0) pending.push({ row, key });
+          if (available > 0 && candidates.length === 0) pending.push({ row, key });
           continue;
         }
         used.add(previous.id);

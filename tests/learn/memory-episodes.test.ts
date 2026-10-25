@@ -220,6 +220,38 @@ describe("episodes", () => {
     }
   });
 
+  test.each([false, true])("refresh preserves chronological novelty (equal starts: %s)", (equalStarts) => {
+    const dir = scratch("ak-episode-refresh-novelty-");
+    const mem = new MemFixture(join(dir, "mem.db"));
+    mem.session({ sid: "earlier", project: "app", started: NOW - 4 * H, completed: NOW - H });
+    mem.session({ sid: "later", project: "app", started: equalStarts ? NOW - 4 * H : NOW - 2 * H, completed: NOW - H });
+    const firstId = mem.observation({ sid: "earlier", project: "app", type: "error", title: "worker turn", tokens: 100, filesModified: ["x.ts"], at: NOW - H });
+    const secondId = mem.observation({ sid: "later", project: "app", type: "turn", title: "worker turn", tokens: 100, filesModified: ["x.ts"], at: NOW - H });
+    const ledger = ensureMemoryLedger(join(dir, "memory"));
+    const source = ClaudeMemSource.open(mem.path);
+    if (source === null) throw new Error("fixture source did not open");
+    try {
+      const before = buildEpisodes(source, ledger, "app", [], { now: NOW });
+      const first = before.find((episode) => episode.sid === "earlier");
+      const second = before.find((episode) => episode.sid === "later");
+      expect((first?.priority ?? 0) - (second?.priority ?? 0)).toBeCloseTo(equalStarts ? 0.04 : 0.14, 4);
+      mem.db.query("UPDATE observations SET type = 'turn' WHERE id = ?").run(firstId);
+      const corrected = buildEpisodes(source, ledger, "app", [], { now: NOW });
+      expect(corrected).toHaveLength(1);
+      expect(corrected[0]).toMatchObject({ sid: "earlier", failure_signals: 0, files_modified: ["x.ts"] });
+      expect((first?.priority ?? 0) - (corrected[0]?.priority ?? 0)).toBeCloseTo(0.04, 4);
+      mem.db.query("UPDATE observations SET type = 'error' WHERE id = ?").run(secondId);
+      const later = buildEpisodes(source, ledger, "app", [], { now: NOW });
+      expect(later).toHaveLength(1);
+      expect(later[0]).toMatchObject({ sid: "later", failure_signals: 1 });
+      expect((later[0]?.priority ?? 0) - (second?.priority ?? 0)).toBeCloseTo(0.04, 4);
+      expect(buildEpisodes(source, ledger, "app", [], { now: NOW })).toEqual([]);
+    } finally {
+      source.close();
+      mem.close();
+    }
+  });
+
   test("bugfix observations and failure wording in titles fill the failure signal", () => {
     const dir = scratch();
     const dbPath = join(dir, "mem.db");

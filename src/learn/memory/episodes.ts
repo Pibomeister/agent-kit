@@ -148,14 +148,16 @@ export function score(
 ): Episode[] {
   const inWindow = [...existing.filter((episode) => now - episode.ended <= WINDOW_MS), ...fresh];
   const maxTokens = Math.max(...inWindow.map((episode) => episode.tokens), 0) || 1;
-  const seen = new Set<string>();
-  for (const episode of existing) for (const path of episode.files_modified) seen.add(stored(path));
   const scored = new Map<string, number>();
-  for (const episode of [...fresh].sort((a, b) => a.started - b.started)) {
+  for (const episode of fresh) {
+    const seen = new Set(
+      [...existing, ...fresh]
+        .filter((previous) => previous.started < episode.started)
+        .flatMap((previous) => previous.files_modified.map(stored)),
+    );
     const files = episode.files_modified.map(stored);
     const novel = files.filter((path) => !seen.has(path)).length;
     const n = files.length > 0 ? novel / files.length : 0;
-    for (const path of files) seen.add(path);
     const ageDays = Math.max(0, (now - episode.ended) / DAY_MS);
     scored.set(
       episode.sid,
