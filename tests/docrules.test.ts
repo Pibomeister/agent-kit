@@ -1182,7 +1182,9 @@ describe("review rules", () => {
   test("review.third-fix-cycle-stops refuses a merge past an open P2", () => {
     const docs = [finding({ severity: "P2" }), finding({ id: "finding-2", severity: "P3" })];
     expect(messagesOf(run(mergeAtCap(["finding-1", "finding-2"]), docs))).toContainEqual(
-      expect.stringContaining("approves past finding(s) finding-1 that are not P3 findings listed in follow_ups"),
+      expect.stringContaining(
+        "recommends merge past finding(s) finding-1 that are not P3 findings listed in follow_ups",
+      ),
     );
   });
 
@@ -1196,14 +1198,29 @@ describe("review rules", () => {
     };
     const docs = [finding({ severity: "P2" }), finding({ id: "finding-2", severity: "P3" })];
     expect(messagesOf(run(doc, docs))).toContainEqual(
-      expect.stringContaining("approves past finding(s) finding-1 that are not P3 findings listed in follow_ups"),
+      expect.stringContaining(
+        "recommends merge past finding(s) finding-1 that are not P3 findings listed in follow_ups",
+      ),
+    );
+  });
+
+  test("review.third-fix-cycle-stops refuses a merge recommendation past an open P1 without approving", () => {
+    const doc = mergeAtCap(["finding-2"]);
+    doc["verdict"] = "changes-requested";
+    const docs = [finding({ severity: "P1" }), finding({ id: "finding-2", severity: "P3" })];
+    expect(messagesOf(run(doc, docs))).toContainEqual(
+      expect.stringContaining(
+        "recommends merge past finding(s) finding-1 that are not P3 findings listed in follow_ups",
+      ),
     );
   });
 
   test("review.third-fix-cycle-stops refuses a merge past a P3 not listed as a follow-up", () => {
     const docs = [finding({ severity: "P3" }), finding({ id: "finding-2", severity: "P3" })];
     expect(messagesOf(run(mergeAtCap(["finding-1"]), docs))).toContainEqual(
-      expect.stringContaining("approves past finding(s) finding-2 that are not P3 findings listed in follow_ups"),
+      expect.stringContaining(
+        "recommends merge past finding(s) finding-2 that are not P3 findings listed in follow_ups",
+      ),
     );
   });
 

@@ -1126,13 +1126,11 @@ function reviewRules(rc: RuleContext): void {
       return status === null || str(found?.doc["severity"]) !== "P3" || !followUps.has(id);
     });
     if (allowed !== null && used !== null && used >= allowed) {
-      if (verdict === "approved" && !extended && !(mergesPastP3 && notFollowUps.length === 0)) {
+      if (verdict === "approved" && !extended && !mergesPastP3) {
         fail(
           rc,
           RULE_CYCLES,
-          mergesPastP3
-            ? `exhausted_action merge-with-follow-ups approves past finding(s) ${notFollowUps.join(", ")} that are not P3 findings listed in follow_ups`
-            : `the fix cycle budget is exhausted (${used}/${allowed}) and the run still approves without an extension or a merge past P3 follow-ups`,
+          `the fix cycle budget is exhausted (${used}/${allowed}) and the run still approves without an extension or a merge past P3 follow-ups`,
         );
       }
       if (str(cycles["exhausted_action"]) === null) {
@@ -1143,11 +1141,18 @@ function reviewRules(rc: RuleContext): void {
         );
       }
     }
-    if (str(cycles["exhausted_action"]) === "merge-with-follow-ups" && arr(cycles["follow_ups"]).length === 0) {
+    if (mergesPastP3 && arr(cycles["follow_ups"]).length === 0) {
       fail(
         rc,
         RULE_CYCLES,
         "exhausted_action merge-with-follow-ups lists no follow_ups; the open P3 findings it merges past",
+      );
+    }
+    if (mergesPastP3 && notFollowUps.length > 0) {
+      fail(
+        rc,
+        RULE_CYCLES,
+        `exhausted_action merge-with-follow-ups recommends merge past finding(s) ${notFollowUps.join(", ")} that are not P3 findings listed in follow_ups`,
       );
     }
   }
