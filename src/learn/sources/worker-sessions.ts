@@ -19,11 +19,15 @@ import { inProtectedFolder, linkedWorktree } from "../core/paths.ts";
 import { sid8 } from "../memory/ledger.ts";
 import { RawStore } from "../memory/raw-store.ts";
 import { scrubCaptured } from "../memory/redact.ts";
-import type { Registry, Worktrees } from "../memory/registry.ts";
+import type { LearnConfig } from "../core/config.ts";
+import { recordWorktree, type Registry, type Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
 
 export type WorkerHost = "codex" | "droid" | "grok" | "kimi";
+
+/** How a stored token count was obtained: a host-reported session total, a host-reported per-turn increment, or no host counter at all. */
+export type UsageBasis = "raw_total" | "incremental" | "estimated";
 
 export interface WorkerHomes {
   codex: string[];
@@ -57,6 +61,11 @@ export interface CapturedObservation {
   text: string;
   at: number;
   files_modified: string[];
+  /** Native host token counters for this turn, when the host reported them; null when it reported none. */
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  /** How `tokens_in` and `tokens_out` were obtained; `estimated` when the host reported no counter. */
+  usage_basis?: UsageBasis;
   /** In memory only, never stored: what the distillation stage rewrites the row from. */
   detail?: TurnDetail;
 }
@@ -78,6 +87,10 @@ export interface CapturedSession {
   next_steps: string | null;
   files_modified: string[];
   observations: CapturedObservation[];
+  /** Session totals of the native counters in `observations`, when the host reported any. */
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  usage_basis?: UsageBasis;
 }
 
 interface StoredSession extends SessionRow {
@@ -91,12 +104,18 @@ interface StoredSession extends SessionRow {
   files_modified: string[];
 }
 
-interface StoredObservation extends ObservationRow {
+export interface StoredObservation extends ObservationRow {
   /**
    * Digest of the row's title and its excerpt-form text, which is how a later scan recognizes it.
    * A distilled row keeps the digest of the excerpt form it replaced, since that is what a scan rebuilds.
    */
   key: string;
+  /** Native host input tokens for this turn, or null when the host reported no counter. `discovery_tokens` stays the excerpt size and is never this. */
+  tokens_in: number | null;
+  /** Native host output tokens for this turn, or null when the host reported no counter. */
+  tokens_out: number | null;
+  /** How the native counters were obtained; `estimated` when the host reported none, as claude-mem's rows are. */
+  usage_basis: UsageBasis;
 }
 
 type JsonScalar = string | number | boolean | null;
@@ -113,6 +132,8 @@ interface ParsedToolInput {
 interface ToolOutput {
   text: string;
   failed: boolean;
+  /** How `failed` was decided: a recorded status or error envelope, or the output's wording. */
+  fidelity: "observed" | "inferred" | "none";
 }
 
 /** One user prompt and everything the worker did until the next one. */
@@ -122,6 +143,9 @@ interface Turn {
   calls: CapturedCall[];
   files: string[];
   at: number;
+  tokensIn: number;
+  tokensOut: number;
+  tokenBasis: UsageBasis | null;
 }
 
 export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
@@ -336,18 +360,132 @@ function reportsFailure(text: string): boolean {
   return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, ""));
 }
 
+/** Read-only file and search tools: their output's wording is content, never failure evidence. */
+const READ_TOOLS = new Set([
+  "read",
+  "read_file",
+  "readfile",
+  "grep",
+  "glob",
+  "ls",
+  "list_dir",
+  "listdir",
+  "view",
+  "search",
+  "find",
+  "cat",
+]);
+
+/** Command-execution tools, whose output wording may carry an inferred failure. */
+const COMMAND_TOOLS = new Set([
+  "bash",
+  "shell",
+  "execute",
+  "exec",
+  "exec_command",
+  "run_terminal_command",
+  "run_command",
+  "terminal",
+  "execute_command",
+  "shell_command",
+]);
+
+function normalizedTool(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+export function isReadTool(name: string): boolean {
+  return READ_TOOLS.has(normalizedTool(name));
+}
+
+export function isCommandTool(name: string): boolean {
+  const tool = normalizedTool(name);
+  return COMMAND_TOOLS.has(tool) || tool.endsWith("_bash") || tool.endsWith("_shell") || tool.endsWith("_exec");
+}
+
+/** Whether a value carries an explicit host error envelope: an `is_error` flag or an error status. */
+function hasErrorEnvelope(value: JsonValue | undefined, raw: string): boolean {
+  const record = object(value);
+  if (record !== null && (record.is_error === true || record.isError === true || record.status === "error"))
+    return true;
+  return /"is_error"\s*:\s*true/.test(raw) || /"status"\s*:\s*"error"/.test(raw);
+}
+
+const USAGE_IN_KEYS = ["input_tokens", "prompt_tokens", "inputTokens", "promptTokens", "tokens_in", "input", "prompt"];
+const USAGE_OUT_KEYS = [
+  "output_tokens",
+  "completion_tokens",
+  "outputTokens",
+  "completionTokens",
+  "tokens_out",
+  "output",
+  "completion",
+];
+const USAGE_TOTAL_KEYS = ["total_tokens", "totalTokens", "total"];
+
+/** Native token counters in a host usage record, keeping only the integers and never a model name. */
+export function nativeUsage(value: JsonValue | undefined): { tokensIn: number; tokensOut: number } | null {
+  const record = object(value);
+  if (record === null) return null;
+  const pick = (keys: readonly string[]): number | null => {
+    for (const key of keys) {
+      const found = number(record[key]);
+      if (found !== null && found >= 0) return Math.round(found);
+    }
+    return null;
+  };
+  const tokensIn = pick(USAGE_IN_KEYS);
+  const tokensOut = pick(USAGE_OUT_KEYS);
+  if (tokensIn !== null || tokensOut !== null) return { tokensIn: tokensIn ?? 0, tokensOut: tokensOut ?? 0 };
+  const total = pick(USAGE_TOTAL_KEYS);
+  return total === null ? null : { tokensIn: total, tokensOut: 0 };
+}
+
+/** The first native usage record nested under the keys hosts use for one, at most three levels down. */
+export function findUsage(value: JsonValue | undefined, depth = 0): { tokensIn: number; tokensOut: number } | null {
+  const direct = nativeUsage(value);
+  if (direct !== null) return direct;
+  if (depth >= 3) return null;
+  const record = object(value);
+  if (record === null) return null;
+  for (const key of [
+    "usage",
+    "token_usage",
+    "tokenUsage",
+    "total_token_usage",
+    "last_token_usage",
+    "info",
+    "data",
+    "payload",
+  ]) {
+    const found = findUsage(record[key], depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
 /** The exit statuses the host recorded in a tool output: a header line, or a Codex exec result's `exit_code`. */
 function exitStatuses(raw: string): number[] {
   const headers = raw.split("\n", 4).flatMap((line) => EXIT_HEADER.exec(line.trim())?.[1] ?? []);
   return [...headers, ...[...raw.matchAll(EXIT_FIELD)].flatMap((match) => match[1] ?? [])].map(Number);
 }
 
-/** A tool output as stored, failing by its recorded exit status and by its wording only where the host recorded none. */
+/**
+ * A tool output as stored. It fails on a recorded non-zero exit status or an explicit error
+ * envelope (`fidelity: "observed"`); only where the host recorded neither does its wording
+ * carry an inferred failure, and `turnLog` never lets that wording fail a read/search tool.
+ */
 function toolOutput(value: JsonValue | undefined): ToolOutput {
   const raw = rawPublicText(value);
   const text = clipped(raw);
   const statuses = exitStatuses(raw);
-  return { text, failed: statuses.length > 0 ? statuses.some((status) => status !== 0) : reportsFailure(text) };
+  if (statuses.length > 0) return { text, failed: statuses.some((status) => status !== 0), fidelity: "observed" };
+  if (hasErrorEnvelope(value, raw)) return { text, failed: true, fidelity: "observed" };
+  if (reportsFailure(text)) return { text, failed: true, fidelity: "inferred" };
+  return { text, failed: false, fidelity: "none" };
 }
 
 function normalizedFile(path: string, cwd: string): string | null {
@@ -398,7 +536,7 @@ function turnLog() {
   const turns: Turn[] = [];
   const named = new Map<string, CapturedCall>();
   const start = (prompt: string, at: number): Turn => {
-    const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
+    const turn: Turn = { prompt, reply: "", calls: [], files: [], at, tokensIn: 0, tokensOut: 0, tokenBasis: null };
     turns.push(turn);
     return turn;
   };
@@ -428,22 +566,34 @@ function turnLog() {
       if (host.id !== undefined && host.id !== null) named.set(host.id, call);
       if (host.writes === true || WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
     },
+    /** Record native counters the host reported, against the turn they belong to. */
+    usage(tokensIn: number, tokensOut: number, basis: UsageBasis, at: number): void {
+      const turn = current(at);
+      turn.tokensIn += tokensIn;
+      turn.tokensOut += tokensOut;
+      turn.tokenBasis = basis;
+    },
     output(output: ToolOutput, at: number, id: string | null = null): void {
+      const settle = (call: CapturedCall): void => {
+        call.output = output.text === "" ? "[empty]" : output.text;
+        // A read/search tool's wording is content: only a recorded status or envelope fails it.
+        call.failed = isReadTool(call.name) && output.fidelity === "inferred" ? false : output.failed;
+      };
       const answered = id === null ? undefined : named.get(id);
       if (answered !== undefined) {
-        answered.output = output.text;
-        answered.failed = output.failed;
+        settle(answered);
+        return;
+      }
+      const turn = current(at);
+      const waiting = turn.calls.find((call) => call.output === "");
+      if (waiting !== undefined) {
+        settle(waiting);
         return;
       }
       if (output.text === "") return;
-      const turn = current(at);
-      const waiting = turn.calls.find((call) => call.output === "");
-      if (waiting === undefined)
-        turn.calls.push({ name: "tool", input: "", output: output.text, failed: output.failed });
-      else {
-        waiting.output = output.text;
-        waiting.failed = output.failed;
-      }
+      const call: CapturedCall = { name: "tool", input: "", output: "", failed: false };
+      settle(call);
+      turn.calls.push(call);
     },
   };
 }
@@ -474,6 +624,9 @@ function turnObservation(turn: Turn): CapturedObservation {
     ),
     at: turn.at,
     files_modified: [...new Set(turn.files)].toSorted(),
+    tokens_in: turn.tokenBasis === null ? null : turn.tokensIn,
+    tokens_out: turn.tokenBasis === null ? null : turn.tokensOut,
+    usage_basis: turn.tokenBasis ?? "estimated",
   };
   const detail = turnDetail(lead, calls);
   if (detail.calls.length > 0) row.detail = detail;
@@ -528,6 +681,12 @@ function session(
     files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
     observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)],
   };
+  const nativeTurns = turns.filter((turn) => turn.tokenBasis !== null);
+  if (nativeTurns.length > 0) {
+    captured.tokens_in = nativeTurns.reduce((sum, turn) => sum + turn.tokensIn, 0);
+    captured.tokens_out = nativeTurns.reduce((sum, turn) => sum + turn.tokensOut, 0);
+    captured.usage_basis = nativeTurns.some((turn) => turn.tokenBasis === "raw_total") ? "raw_total" : "incremental";
+  }
   if (times.ended === null && settled && times.bytes !== undefined) captured.quiet_bytes = times.bytes;
   return captured;
 }
@@ -568,9 +727,10 @@ function droidText(parts: readonly JsonObject[], injected?: RegExp): string {
  */
 function droidOutput(part: JsonObject): ToolOutput {
   const output = toolOutput(part.content);
-  if (part.is_error === true || part.is_error === false) return { text: output.text, failed: part.is_error };
+  if (part.is_error === true || part.is_error === false)
+    return { text: output.text, failed: part.is_error, fidelity: "observed" };
   const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
-  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0 };
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "observed" };
 }
 
 function grokNativeId(dir: string, summary: JsonObject | null): string {
@@ -598,10 +758,37 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
     return event?.type === "message" && event.role === "user" && publicText(codexUserContent(event.content)) !== "";
   });
   let offset = 0;
+  let codexTotal: { tokensIn: number; tokensOut: number } | null = null;
   for (const row of rows) {
     const event = object(row.payload);
     if (event === null) continue;
     const at = epoch(row.timestamp ?? event.timestamp, started + offset++);
+    if (event.type === "token_count") {
+      const info = object(event.info) ?? event;
+      const last = nativeUsage(object(info.last_token_usage) ?? undefined);
+      if (last !== null) {
+        log.usage(last.tokensIn, last.tokensOut, "incremental", at);
+        if (codexTotal !== null)
+          codexTotal = {
+            tokensIn: codexTotal.tokensIn + last.tokensIn,
+            tokensOut: codexTotal.tokensOut + last.tokensOut,
+          };
+      } else {
+        const total = nativeUsage(object(info.total_token_usage) ?? undefined) ?? findUsage(event);
+        if (total !== null) {
+          const inDelta = total.tokensIn - (codexTotal?.tokensIn ?? 0);
+          const outDelta = total.tokensOut - (codexTotal?.tokensOut ?? 0);
+          log.usage(
+            inDelta < 0 ? total.tokensIn : inDelta,
+            outDelta < 0 ? total.tokensOut : outDelta,
+            "incremental",
+            at,
+          );
+          codexTotal = total;
+        }
+      }
+      continue;
+    }
     if (!briefed && agentPath !== null && event.type === "agent_message" && event.recipient === agentPath) {
       const parts = Array.isArray(event.content) ? event.content : [];
       const text = publicText(parts.filter((part) => object(part)?.type === "input_text"));
@@ -620,11 +807,13 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
       continue;
     }
     if (event.type === "custom_tool_call" || event.type === "function_call") {
-      log.call(string(event.name) ?? "tool", toolInput(event.input ?? event.arguments), cwd, at);
+      log.call(string(event.name) ?? "tool", toolInput(event.input ?? event.arguments), cwd, at, {
+        id: string(event.call_id) ?? string(event.callId) ?? string(event.id),
+      });
       continue;
     }
     if (event.type === "custom_tool_call_output" || event.type === "function_call_output") {
-      log.output(toolOutput(event.output), at);
+      log.output(toolOutput(event.output), at, string(event.call_id) ?? string(event.callId) ?? string(event.id));
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
@@ -654,6 +843,8 @@ export function parseDroidSession(path: string, now = Date.now()): CapturedSessi
       ended = Math.max(ended ?? 0, at);
       continue;
     }
+    const rowUsage = findUsage(row.usage ?? object(row.message)?.usage ?? row.token_usage);
+    if (rowUsage !== null) log.usage(rowUsage.tokensIn, rowUsage.tokensOut, "incremental", at);
     const message = row.type === "message" ? object(row.message) : null;
     if (message === null || message.visibility !== undefined) continue;
     const parts = (Array.isArray(message.content) ? message.content : []).flatMap((part) => {
@@ -674,6 +865,16 @@ export function parseDroidSession(path: string, now = Date.now()): CapturedSessi
         if (part.type !== "tool_use") continue;
         const name = string(part.name) ?? "tool";
         log.call(name, toolInput(part.input), cwd, at, { id: string(part.id), writes: name === "Create" });
+      }
+    }
+  }
+  if (!log.turns.some((turn) => turn.tokenBasis !== null)) {
+    // Only the counters are read from the settings beside the record, never its provider fields.
+    for (const candidate of [`${path.replace(/\.jsonl$/, "")}.settings.json`, join(dirname(path), "settings.json")]) {
+      const settingsUsage = findUsage(readObject(candidate) ?? undefined);
+      if (settingsUsage !== null) {
+        log.usage(settingsUsage.tokensIn, settingsUsage.tokensOut, "raw_total", at);
+        break;
       }
     }
   }
@@ -705,6 +906,8 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
   const history = readJsonLines(historyPath);
   for (const row of history) {
     const at = started + offset++;
+    const rowUsage = findUsage(row.usage ?? row.token_usage);
+    if (rowUsage !== null) log.usage(rowUsage.tokensIn, rowUsage.tokensOut, "incremental", at);
     if (row.type === "user" && row.synthetic_reason === undefined) {
       const text = publicText(row.content);
       if (text !== "") log.prompt(text, at);
@@ -714,11 +917,21 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
       for (const call of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
         const tool = object(call);
         const fn = object(tool?.function);
-        log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at);
+        log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at, {
+          id: string(tool?.id) ?? string(tool?.tool_call_id) ?? string(tool?.call_id),
+        });
       }
     } else if (row.type === "tool_result") {
-      log.output(toolOutput(row.content), at);
+      log.output(
+        toolOutput(row.content),
+        at,
+        string(row.tool_call_id) ?? string(row.call_id) ?? string(row.id) ?? string(row.name),
+      );
     }
+  }
+  if (!log.turns.some((turn) => turn.tokenBasis !== null)) {
+    const summaryUsage = summary === null ? null : findUsage(summary);
+    if (summaryUsage !== null) log.usage(summaryUsage.tokensIn, summaryUsage.tokensOut, "raw_total", started + offset);
   }
   const lastPublic = history.findLast(
     (row) => row.type === "user" || row.type === "assistant" || row.type === "tool_result",
@@ -743,12 +956,30 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
   const started = epoch(state.createdAt, modified);
   let ended: number | null = null;
   const log = turnLog();
+  let kimiTotal: { tokensIn: number; tokensOut: number } | null = null;
   for (const row of readJsonLines(path)) {
     const at = epoch(row.time, started);
     if (row.type === "turn.prompt" || row.type === "agent.turn.started" || row.type === "turn.steer") ended = null;
     if (row.type === "turn.ended" || row.type === "agent.turn.ended") {
       ended = Math.max(ended ?? 0, at);
       continue;
+    }
+    // Kimi reports counters on StatusUpdate rows beside the message flow; they are cumulative, so each turn takes the delta.
+    const rowType = string(row.type);
+    const statusUsage =
+      findUsage(row.token_usage ?? row.tokenUsage ?? object(row.payload)?.token_usage) ??
+      (rowType !== null && rowType.toLowerCase().includes("status") ? findUsage(row) : null);
+    if (statusUsage !== null) {
+      const inDelta = statusUsage.tokensIn - (kimiTotal?.tokensIn ?? 0);
+      const outDelta = statusUsage.tokensOut - (kimiTotal?.tokensOut ?? 0);
+      log.usage(
+        inDelta < 0 ? statusUsage.tokensIn : inDelta,
+        outDelta < 0 ? statusUsage.tokensOut : outDelta,
+        "incremental",
+        at,
+      );
+      kimiTotal = statusUsage;
+      if (row.type !== "agent.message.appended") continue;
     }
     if (row.type !== "agent.message.appended") continue;
     const envelope = object(row.message);
@@ -757,8 +988,18 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     const role = string(message.role);
     const origin = object(message.origin) ?? object(object(envelope?.meta)?.origin);
     if (role === "user" && origin?.kind !== "user") continue;
+    const messageUsage = findUsage(message.usage ?? message.token_usage);
+    if (messageUsage !== null) log.usage(messageUsage.tokensIn, messageUsage.tokensOut, "incremental", at);
     const text = publicText(message.content);
-    if (role === "tool") log.output(toolOutput(message.content), at);
+    if (role === "tool")
+      log.output(
+        toolOutput(message.content),
+        at,
+        string(message.toolCallId) ??
+          string(message.tool_call_id) ??
+          string(message.call_id) ??
+          string(object(envelope?.meta)?.toolCallId),
+      );
     else if (text !== "") {
       if (role === "user") log.prompt(text, at);
       else if (role === "assistant") log.reply(text, at);
@@ -766,7 +1007,10 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     if (role !== "assistant") continue;
     for (const call of Array.isArray(message.toolCalls) ? message.toolCalls : []) {
       const tool = object(call);
-      if (tool !== null) log.call(string(tool.name) ?? "tool", toolInput(tool.arguments), cwd, at);
+      if (tool !== null)
+        log.call(string(tool.name) ?? "tool", toolInput(tool.arguments), cwd, at, {
+          id: string(tool.id) ?? string(tool.tool_call_id) ?? string(tool.call_id) ?? string(tool.toolCallId),
+        });
     }
   }
   const parsed = session("kimi", nativeId, cwd, { started, ended, modified, now }, log.turns);
@@ -839,24 +1083,101 @@ export type WorkerPlace = string | typeof PROTECTED_FOLDER | null;
  * Downloads under `home`: the scheduler's read would block on the privacy prompt while the tick
  * holds the runtime lock. Such a cwd answers `PROTECTED_FOLDER`.
  */
+/** The `owner/repo` slug a repository's origin remote names, read from its `.git/config` as text. */
+function repoSlug(root: string): string | null {
+  try {
+    const url = /^\s*url\s*=\s*(.+)$/m.exec(readFileSync(join(root, ".git", "config"), "utf8"))?.[1]?.trim();
+    if (url === undefined || url === "") return null;
+    const parts = url
+      .replace(/\.git\/?$/, "")
+      .split(/[:/]/)
+      .filter((part) => part !== "");
+    return parts.length >= 2 ? parts.slice(-2).join("/").toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+function isNoMistakesPath(path: string): boolean {
+  return `${path}${sep}`.includes(`${sep}.no-mistakes${sep}`);
+}
+
 export function workerRootResolver(
   registry: Registry,
   worktrees: Worktrees,
-  guard: { home?: string; platform?: NodeJS.Platform } = {},
+  guard: {
+    home?: string;
+    platform?: NodeJS.Platform;
+    /** When set, a newly resolved linked worktree is persisted through `recordWorktree` for later ticks. */
+    config?: LearnConfig;
+    /** Persistence seam for tests and hosts that own the worktree record themselves. */
+    persist?: (worktree: string, root: string) => void;
+  } = {},
 ): (cwd: string) => WorkerPlace {
-  const roots = new Set(Object.values(registry).map((entry) => entry.root));
-  const places = [
+  const entries = Object.values(registry);
+  const roots = new Set(entries.map((entry) => entry.root));
+  const places: Array<[string, string]> = [
     ...[...roots].map((root): [string, string] => [root, root]),
     ...Object.entries(worktrees).filter(([, root]) => roots.has(root)),
   ].toSorted((a, b) => b[0].length - a[0].length);
   const home = guard.home ?? userHome();
+  const slugs = new Map<string, string | null>();
+  const slugOf = (root: string): string | null => {
+    if (!slugs.has(root)) slugs.set(root, repoSlug(root));
+    return slugs.get(root) ?? null;
+  };
+  const persist = (worktree: string, root: string): void => {
+    if (worktrees[worktree] !== root) {
+      worktrees[worktree] = root;
+      const place: [string, string] = [worktree, root];
+      const at = places.findIndex(([known]) => known.length < worktree.length);
+      if (at === -1) places.push(place);
+      else places.splice(at, 0, place);
+    }
+    try {
+      if (guard.persist !== undefined) guard.persist(worktree, root);
+      else if (guard.config !== undefined) recordWorktree(guard.config, worktree, root);
+    } catch {
+      // Persistence is a hint for later scans; placing this session never depends on it.
+    }
+  };
+  /** A deleted worktree's path still names its project in the container that held it: `orca/workspaces/<project>/…` or `.treehouse/<project>-…`. */
+  const deletedMatch = (path: string): string | null => {
+    const segments = path.split(sep);
+    for (const entry of entries) {
+      for (const name of new Set([basename(entry.root), entry.mem_project])) {
+        const hosted = segments.indexOf("workspaces");
+        if (hosted > 0 && segments[hosted - 1] === "orca" && segments[hosted + 1] === name) return entry.root;
+        if (
+          segments.includes(".treehouse") &&
+          segments.some((segment) => segment === name || segment.startsWith(`${name}-`))
+        )
+          return entry.root;
+      }
+    }
+    return null;
+  };
   return (cwd) => {
     const path = resolve(cwd);
     const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1];
     if (placed !== undefined) return placed;
     if (inProtectedFolder(path, home, guard.platform)) return PROTECTED_FOLDER;
-    const root = linkedWorktree(path)?.root;
-    return root !== undefined && roots.has(root) ? root : null;
+    const linked = linkedWorktree(path);
+    if (linked !== null && roots.has(linked.root)) {
+      persist(linked.worktree, linked.root);
+      return linked.root;
+    }
+    if (isNoMistakesPath(path) || (linked !== null && isNoMistakesPath(linked.root))) {
+      // A gate worktree of a registered repository, matched by the origin both clones name.
+      const slug = linked === null ? null : slugOf(linked.root);
+      const parent = slug === null ? undefined : entries.find((entry) => slugOf(entry.root) === slug);
+      if (parent !== undefined) {
+        if (linked !== null) persist(linked.worktree, parent.root);
+        return parent.root;
+      }
+      return deletedMatch(path);
+    }
+    return deletedMatch(path);
   };
 }
 
@@ -1055,6 +1376,9 @@ function storedObservation(
     files_read: JSON.stringify([]),
     files_modified: JSON.stringify(row.files_modified),
     discovery_tokens: Math.ceil(row.text.length / 4),
+    tokens_in: row.tokens_in ?? null,
+    tokens_out: row.tokens_out ?? null,
+    usage_basis: row.usage_basis ?? "estimated",
     created_at: new Date(row.at).toISOString(),
     created_at_epoch: row.at,
     platform_source: item.platform,
@@ -1223,7 +1547,12 @@ export class WorkerSessionSource implements MemoryObservationSource {
 
   newTokensSince(_project: string, afterId: number) {
     const rows = this.observations.filter((row) => row.id > afterId);
-    return { tokens: rows.reduce((sum, row) => sum + (row.discovery_tokens ?? 0), 0), count: rows.length };
+    // Native counters only: `discovery_tokens` is the excerpt size, never consumption.
+    const tokens = rows.reduce(
+      (sum, row) => sum + (row.usage_basis === "estimated" ? 0 : (row.tokens_in ?? 0) + (row.tokens_out ?? 0)),
+      0,
+    );
+    return { tokens, count: rows.length };
   }
 
   observationsSince(
