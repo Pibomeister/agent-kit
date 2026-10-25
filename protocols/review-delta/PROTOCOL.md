@@ -104,9 +104,10 @@ as a verification gate.
 
 Gate: at most two fix cycles. The third stops with an explicit blocked-or-replan decision
 (ruling `two-fix-cycles-then-stop`). A cycle a human authorizes after that decision is recorded in
-`fix_cycles.extensions` with who authorized it and when, and is reviewed by this protocol over the
-commits since the last reviewed head; it may approve, and it never opens a new full scope. A cycle
-past the cap with no such entry is refused.
+`fix_cycles.extensions` with who authorized it and when (someone independent of the implementer,
+the spec approver and the review seats), and is reviewed by this protocol over the commits since
+the last reviewed head; it may approve, and it never opens a new full scope. A cycle past the cap
+with no such entry is refused.
 
 Gate: when architecture, requirements, the comparison base or the affected surface changes
 materially, affected approvals are invalidated and a new baseline is deliberately established.

@@ -80,8 +80,9 @@ The decision takes one of four values in `fix_cycles.exhausted_action`:
 
 The theme is the cause the findings share, not their fingerprints: two cycles that each tighten a
 different bound on the same input are one theme. A cycle a human authorizes after the decision is
-recorded in `fix_cycles.extensions` with who authorized it and when, and reviewed here, as a delta
-over the commits since the last reviewed head. That delta may approve. It never opens a new full
+recorded in `fix_cycles.extensions` with who authorized it and when. The authorizer is independent
+of the implementer, the spec approver and the review seats. The cycle is reviewed here, as a delta
+over the commits since the last reviewed head, and that delta may approve. It never opens a new full
 scope over the whole change, and a cycle past the cap with no extension entry is refused.
 
 ## Baseline reset

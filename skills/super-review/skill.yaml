@@ -210,8 +210,8 @@ hard_gates:
     blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`). With
     only P3 findings open it recommends merge with them as follow-ups; when two consecutive cycles
     reopened the same theme it is a design decision. A cycle a human authorizes after it is recorded
-    in fix_cycles.extensions and reviewed as a delta that may approve, never a new full; an
-    unrecorded one is refused.
+    in fix_cycles.extensions by a party independent of the implementer, spec approver and seats,
+    and reviewed as a delta that may approve, never a new full; an unrecorded one is refused.
   - A material change to architecture, requirements, the comparison base or the affected surface
     invalidates the affected approvals (ruling `delta-baseline-reset-not-third-loop`) and
     establishes a new baseline with its own pass 1, never an unbounded third delta loop.

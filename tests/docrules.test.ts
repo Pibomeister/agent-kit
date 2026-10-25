@@ -1189,6 +1189,23 @@ describe("review rules", () => {
     expect(rulesOf(run(doc)).filter((r) => r.startsWith("review."))).toEqual([]);
   });
 
+  test.each([
+    ["the implementer", "builder"],
+    ["the spec approver", "planner"],
+    ["a review seat", "reviewer-a"],
+  ])("review.third-fix-cycle-stops refuses a post-cap extension authorized by %s", (_who, by) => {
+    const doc = postCapDelta([{ authorized_by: by, authorized_at: "2026-01-01T00:00:00Z" }]);
+    const messages = messagesOf(run(doc));
+    expect(messages).toContainEqual(expect.stringContaining(`a fix_cycles extension is authorized by ${by}`));
+    expect(messages).toContainEqual(expect.stringContaining("the run still approves"));
+  });
+
+  test("review.third-fix-cycle-stops refuses a post-cap extension with no authorized_at", () => {
+    expect(messagesOf(run(postCapDelta([{ authorized_by: "maintainer" }])))).toContainEqual(
+      expect.stringContaining("a fix_cycles extension names no authorized_by or no authorized_at"),
+    );
+  });
+
   test("review.third-fix-cycle-stops refuses a post-cap delta no human authorized", () => {
     expect(messagesOf(run(postCapDelta([])))).toContainEqual(
       expect.stringContaining("fix_cycles.used 3 exceeds allowed 2 with 0 authorized extension(s)"),

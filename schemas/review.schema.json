@@ -207,7 +207,7 @@
           "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
         },
         "extensions": {
-          "description": "One entry per cycle a human authorized after the cap decision. Each is reviewed as a delta and may approve; a cycle above 'allowed' with no entry here is refused.",
+          "description": "One entry per cycle a human authorized after the cap decision. Each is reviewed as a delta and may approve; a cycle above 'allowed' with no entry here is refused. 'authorized_by' must be independent of the implementer, the spec approver and every seat of this review.",
           "type": "array",
           "items": {
             "type": "object",

@@ -39,7 +39,8 @@ enforced:
       At most two fix-and-verify cycles follow a review's first pass. The third stops with an
       explicit blocked-or-replan decision; anything still open is reported, not looped. A
       cycle a human authorizes after that decision is recorded in the review's
-      `fix_cycles.extensions` with who authorized it and when, and is reviewed as a delta over
+      `fix_cycles.extensions` with who authorized it and when, by someone independent of the
+      implementer, the spec approver and the review seats, and is reviewed as a delta over
       the new commits that may approve, never as a new full scope. A cycle past the cap with no
       extension entry is refused.
     on_reach:
