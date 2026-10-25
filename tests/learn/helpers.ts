@@ -55,14 +55,19 @@ export async function inOutsideRepoAsync<T>(probe: (cwd: string) => Promise<T>):
 }
 
 const projectScratches: string[] = [];
+const projectScratchBase =
+  process.platform === "darwin"
+    ? run(["getconf", "DARWIN_USER_TEMP_DIR"]).stdout.trim()
+    : join(import.meta.dir, "..", "..", ".work");
 
 /**
- * A fresh directory for a fixture project that discovery must find. It sits
- * under the repository's `.work/`, not `tmpdir()`: on Linux that is `/tmp`,
- * which discovery skips as scratch space. Remove with `removeProjectScratch`.
+ * A fixture project that discovery must find. On macOS use the native user
+ * temporary directory, outside managed gate paths even when TMPDIR is /tmp.
+ * Elsewhere use `.work/`: discovery skips Linux's /tmp. Remove with
+ * `removeProjectScratch`.
  */
 export function projectScratch(): string {
-  const base = join(import.meta.dir, "..", "..", ".work");
+  const base = projectScratchBase;
   mkdirSync(base, { recursive: true });
   const dir = realpathSync(mkdtempSync(join(base, "ak-learn-")));
   projectScratches.push(dir);
