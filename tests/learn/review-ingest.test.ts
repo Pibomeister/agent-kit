@@ -4,7 +4,7 @@ import { join } from "node:path";
 import findingExample from "../../templates/finding.example.json" with { type: "json" };
 import { publishRunArtifact } from "../../src/kb/local-git.ts";
 import { git as kbGit } from "../../src/kb/git.ts";
-import { run, type RunResult } from "../../src/learn/core/proc.ts";
+import { run as runProcess, type RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
 import { readJson, readJsonl } from "../../src/learn/core/store.ts";
 import { GitHubReviewSource, paginatedArray, type ReviewComment } from "../../src/learn/sources/github.ts";
@@ -453,7 +453,7 @@ describe("ingest end to end", () => {
     writeFileSync(join(repo, "finding.json"), "{}\n");
     expect(kbGit(repo, ["add", "--", "finding.json"]).status).toBe(0);
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-    const committed = run(
+    const committed = runProcess(
       ["git", "-c", "user.useConfigOnly=true", "commit", "-qm", "publish finding", "--no-gpg-sign"],
       { cwd: repo, env: { ...env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } },
     );
