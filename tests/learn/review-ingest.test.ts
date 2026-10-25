@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import findingExample from "../../templates/finding.example.json" with { type: "json" };
+import { publishRunArtifact } from "../../src/kb/local-git.ts";
 import type { RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
 import { readJson, readJsonl } from "../../src/learn/core/store.ts";
@@ -499,7 +501,7 @@ describe("ingest end to end", () => {
   test("knowledgebase findings become kb-finding events, once", () => {
     const base = scratch();
     const repo = gitRepo(join(base, "app"));
-    const kb = join(base, "kb");
+    const kb = gitRepo(join(base, "kb"));
     mkdirSync(join(kb, "findings"), { recursive: true });
     mkdirSync(join(kb, "projects", "app", "runs"), { recursive: true });
     writeFileSync(
@@ -510,20 +512,39 @@ describe("ingest end to end", () => {
       join(kb, "findings", "f-002.md"),
       "---\ntitle: Other project finding\nproject: other\n---\nNot for this repo.\n",
     );
-    writeFileSync(
+    for (const run of ["run-2", "run-3"]) {
+      expect(
+        publishRunArtifact(
+          { root: kb, knowledgebase: "kb", binding: { backend: "local-git", project: "app", locator: {} } },
+          JSON.stringify({
+            ...findingExample,
+            id: "f-101",
+            project: { id: "app", repo: "acme/app" },
+            run_id: run,
+            created_at: "2026-09-16T00:00:00Z",
+            title: "Late lock in checkout",
+            detail: "Checkout reads before acquiring the lock.",
+            severity: "P2",
+            lane: "code-review/concurrency",
+            evidence: findingExample.evidence.slice(0, 1).map((entry) => ({
+              location: { ...entry.location, path: "src/cart/lock.ts" },
+              observation: "the lock is taken after the read",
+            })),
+          }),
+          run,
+          [],
+        ).status,
+      ).toBe("complete");
+    }
+    appendFileSync(
       join(kb, "projects", "app", "runs", "artifacts.jsonl"),
       [
         JSON.stringify({
-          schema: "finding",
-          id: "f-101",
-          run_id: "run-2",
-          created_at: "2026-09-16T00:00:00Z",
-          title: "Late lock in checkout",
-          severity: "P2",
-          lane: "code-review/concurrency",
-          evidence: [{ location: { path: "src/cart/lock.ts" }, observation: "the lock is taken after the read" }],
+          record: { ref: "run:run-2/decision/d-1" },
+          artifact: { schema: "decision", title: "not a finding" },
         }),
-        JSON.stringify({ schema: "decision", id: "d-1", title: "not a finding" }),
+        JSON.stringify({ schema: "finding", id: "flat", title: "not a stored artifact" }),
+        JSON.stringify({ record: {}, artifact: { schema: "finding", title: "no identity" } }),
         "not json",
       ].join("\n") + "\n",
     );
@@ -533,9 +554,21 @@ describe("ingest end to end", () => {
     expect(first.events.map((event) => [event.source, event.author, event.severity, event.session])).toEqual([
       ["kb-finding", "reviewer-standards", "P1", "run-1"],
       ["kb-finding", "code-review/concurrency", "P2", "run-2"],
+      ["kb-finding", "code-review/concurrency", "P2", "run-3"],
     ]);
-    expect(first.events.map((event) => event.path)).toEqual(["src/orders/settle.ts", "src/cart/lock.ts"]);
-    expect(first.fresh).toBe(2);
+    expect(first.events.map((event) => event.path)).toEqual([
+      "src/orders/settle.ts",
+      "src/cart/lock.ts",
+      "src/cart/lock.ts",
+    ]);
+    expect(first.events.slice(1).map((event) => event.hash)).toEqual([
+      eventHash("kb-finding", "run:run-2/finding/f-101"),
+      eventHash("kb-finding", "run:run-3/finding/f-101"),
+    ]);
+    expect(first.events[1]?.text).toBe(
+      "Late lock in checkout\nCheckout reads before acquiring the lock.\nthe lock is taken after the read",
+    );
+    expect(first.fresh).toBe(3);
     expect(ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true, kbRoot: kb }).fresh).toBe(0);
     expect(eventsFromKbFindings(join(base, "missing"), "app")).toEqual([]);
   });

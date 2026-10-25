@@ -327,7 +327,7 @@ export function applyConsolidation(
   valid: ReadonlySet<string>,
   obsSession: ReadonlyMap<string, string>,
   options: {
-    review?: { ledger: Ledger; project: string };
+    review?: { ledger: Ledger; project: string; sessions: ReadonlyMap<string, string> };
     runId?: string;
     today?: string;
     sessionOf?: ReadonlyMap<string, string>;
@@ -429,6 +429,7 @@ export function applyConsolidation(
       events,
       valid,
       options.runId ?? null,
+      options.review.sessions,
     );
     summary.review_events = delivered.forwarded;
     summary.review_events_parked = delivered.parked;
@@ -446,6 +447,7 @@ export function buildReviewEvents(
   events: readonly JudgedEvent[],
   valid: ReadonlySet<string>,
   runId: string | null,
+  sessions: ReadonlyMap<string, string>,
 ): ReviewEvent[] {
   const out: ReviewEvent[] = [];
   for (const event of events) {
@@ -476,6 +478,9 @@ export function buildReviewEvents(
       createHash("sha1").update(text).digest("hex"),
     );
     if (obsIds[0] !== undefined) forwarded.obs_id = obsIds[0];
+    const sessionKey = obsIds[0] === undefined ? evidence.find((id) => id.startsWith("S")) : `obs:${obsIds[0]}`;
+    const session = sessionKey === undefined ? undefined : sessions.get(sessionKey);
+    if (session) forwarded.session = session;
     out.push(forwarded);
   }
   return out;
@@ -520,8 +525,9 @@ export function forwardReviewEvents(
   events: readonly JudgedEvent[],
   valid: ReadonlySet<string>,
   runId: string | null,
+  sessions: ReadonlyMap<string, string>,
 ): { forwarded: number; parked: number } {
-  return deliverReviewEvents(review, memory, buildReviewEvents(project, events, valid, runId));
+  return deliverReviewEvents(review, memory, buildReviewEvents(project, events, valid, runId, sessions));
 }
 
 /** The lesson's origin as a knowledgebase trigger: a stated preference or a corrected session is a correction. */
@@ -642,8 +648,15 @@ export function consolidate(
   const shown = new Set(included.map((episode) => sid8(episode.sid).slice(1)));
   const obsSession = new Map([...obsSessionAll].filter(([, sid]) => shown.has(sid)));
   const valid = new Set([...obsSession.keys(), ...included.map((episode) => sid8(episode.sid))]);
+  const reviewSessions = new Map<string, string>();
+  for (const episode of included) {
+    if (included.filter((other) => sid8(other.sid) === sid8(episode.sid)).length === 1)
+      reviewSessions.set(sid8(episode.sid), episode.sid);
+    for (const row of obsBySid.get(episode.sid) ?? [])
+      reviewSessions.set(`obs:${row.id}`, row.memory_session_id);
+  }
   const summary = applyConsolidation(ledger, reply, valid, obsSession, {
-    review: review === null ? undefined : { ledger: review, project: basename(root) },
+    review: review === null ? undefined : { ledger: review, project: basename(root), sessions: reviewSessions },
     runId,
     sessionOf: citedObsSessions(source, ledger),
   });

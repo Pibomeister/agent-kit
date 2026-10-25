@@ -260,7 +260,6 @@ function metaText(meta: PageMeta, ...keys: string[]): string | null {
 
 interface KbArtifact {
   schema?: string;
-  id?: string;
   run_id?: string | null;
   created_at?: string;
   title?: string;
@@ -268,15 +267,18 @@ interface KbArtifact {
   lane?: string;
   severity?: string;
   created_by?: { role?: string };
-  fingerprint?: { value?: string };
   evidence?: Array<{ location?: { path?: string }; observation?: string }>;
+}
+
+interface StoredKbArtifact {
+  record: { ref: string };
+  artifact: KbArtifact;
 }
 
 const KB_ARTIFACT_SCHEMA = {
   type: "object",
   properties: {
     schema: { type: "string" },
-    id: { type: "string" },
     run_id: { type: ["string", "null"] },
     created_at: { type: "string" },
     title: { type: "string" },
@@ -284,7 +286,6 @@ const KB_ARTIFACT_SCHEMA = {
     lane: { type: "string" },
     severity: { type: "string" },
     created_by: { type: "object", properties: { role: { type: "string" } }, additionalProperties: true },
-    fingerprint: { type: "object", properties: { value: { type: "string" } }, additionalProperties: true },
     evidence: {
       type: "array",
       items: {
@@ -300,11 +301,21 @@ const KB_ARTIFACT_SCHEMA = {
   additionalProperties: true,
 };
 
-let kbArtifactValidator: ((value: unknown) => value is KbArtifact) | undefined;
+let kbArtifactValidator: ((value: unknown) => value is StoredKbArtifact) | undefined;
 
-/** One `artifacts.jsonl` line as a KbArtifact, or null when it does not parse as one. */
-function kbArtifact(line: string): KbArtifact | null {
-  kbArtifactValidator ??= new Ajv({ strict: false }).compile<KbArtifact>(KB_ARTIFACT_SCHEMA);
+function kbArtifact(line: string): StoredKbArtifact | null {
+  kbArtifactValidator ??= new Ajv({ strict: false }).compile<StoredKbArtifact>({
+    type: "object",
+    required: ["record", "artifact"],
+    properties: {
+      record: {
+        type: "object",
+        required: ["ref"],
+        properties: { ref: { type: "string", minLength: 1 } },
+      },
+      artifact: KB_ARTIFACT_SCHEMA,
+    },
+  });
   let value: unknown;
   try {
     value = JSON.parse(line);
@@ -363,8 +374,10 @@ export function eventsFromKbFindings(kbRoot: string, project: string | null): Re
     if (existsSync(ledgerFile)) {
       for (const line of readFileSync(ledgerFile, "utf8").split("\n")) {
         if (line.trim() === "") continue;
-        const artifact = kbArtifact(line);
-        if (artifact === null || artifact.schema !== "finding" || !artifact.title) continue;
+        const stored = kbArtifact(line);
+        if (stored === null) continue;
+        const { artifact, record } = stored;
+        if (artifact.schema !== "finding" || !artifact.title) continue;
         const observations = (artifact.evidence ?? []).flatMap((entry) =>
           entry.observation === undefined || entry.observation === "" ? [] : [entry.observation],
         );
@@ -387,7 +400,7 @@ export function eventsFromKbFindings(kbRoot: string, project: string | null): Re
             url: null,
             ts: artifact.created_at ?? null,
           },
-          artifact.id ?? artifact.fingerprint?.value ?? artifact.title,
+          record.ref,
         );
         if (artifact.run_id) event.session = artifact.run_id;
         events.push(event);

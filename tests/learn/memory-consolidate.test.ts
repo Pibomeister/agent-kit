@@ -98,7 +98,7 @@ describe("consolidate apply", () => {
     const ledger = ensureMemoryLedger(join(scratch(), "memory"));
     const review = reviewLedger(ctx.config, gitRepo(join(scratch(), "repo")));
     const summary = applyConsolidation(ledger, REPLY, VALID, OBS_SESSION, {
-      review: { ledger: review, project: "repo" },
+      review: { ledger: review, project: "repo", sessions: OBS_SESSION },
       runId: "nightly-test",
     });
     expect(summary).toEqual({
@@ -140,9 +140,10 @@ describe("consolidate apply", () => {
     ]);
     expect(events[0]!.text.startsWith("PR body claimed 15 files, the diff had 16")).toBe(true);
     expect([events[0]!.author, events[0]!.url]).toEqual(["learn-memory", "learn-memory:run/nightly-test"]);
+    expect(events[0]!.session).toBe("sa");
     expect(review.git(["status", "--porcelain"]).stdout.trim()).toBe("");
     // The same text hashes the same, so a repeat forwards nothing.
-    expect(forwardReviewEvents(review, ledger, "repo", REPLY.review_events, VALID, "again")).toEqual({
+    expect(forwardReviewEvents(review, ledger, "repo", REPLY.review_events, VALID, "again", OBS_SESSION)).toEqual({
       forwarded: 0,
       parked: 0,
     });
@@ -508,6 +509,26 @@ function growingFixture() {
 }
 
 describe("nightly", () => {
+  test.each(["observation", "session"])("forwarded %s evidence retains full originating session ids", (kind) => {
+    const { ctx, root, ledger, review, source } = nightlyFixture((o1, o2) => [
+      {
+        review_events: [o1, o2].map((id, index) => ({
+          text: `review finding ${index}`,
+          evidence: [kind === "observation" ? `obs:${id}` : ["Saaaa1111", "Sbbbb2222"][index]],
+        })),
+      },
+    ]);
+    try {
+      consolidate(ctx, source, ledger, root, review);
+      expect(readJsonl<ReviewEvent>(review.path(EVENTS_FILE)).map((event) => event.session)).toEqual([
+        "aaaa1111-0000",
+        "bbbb2222-0000",
+      ]);
+    } finally {
+      source.close();
+    }
+  });
+
   test("quarantined observations never reach the consolidator prompt", () => {
     const { ctx, root, ledger, review, source, o1 } = nightlyFixture(() => [{ lessons: [], review_events: [] }]);
     appendRun(ledger, { job: "reflect", status: "ok", quarantined: [`obs:${o1}`] });
@@ -734,11 +755,13 @@ describe("nightly", () => {
     expect(readJsonl<ReviewEvent>(review.path(EVENTS_FILE))).toEqual([]);
     const parked = readJsonl<ReviewEvent>(ledger.path(PENDING_REVIEW_FILE));
     expect(parked.map((event) => [event.kind, event.source])).toEqual([["correction", "learn-memory"]]);
+    expect(parked[0]?.session).toBe("aaaa1111-0000");
     expect(readJsonl<{ review_events_parked: number }>(ledger.path("runs.jsonl")).at(-1)!.review_events_parked).toBe(1);
 
     try {
       expect(consolidate(ctx, source, ledger, root, review)).toBe("nightly: no unconsolidated episodes");
       expect(readJsonl<ReviewEvent>(review.path(EVENTS_FILE)).map((event) => event.text)).toEqual([parked[0]!.text]);
+      expect(readJsonl<ReviewEvent>(review.path(EVENTS_FILE))[0]?.session).toBe("aaaa1111-0000");
       expect(existsSync(ledger.path(PENDING_REVIEW_FILE))).toBe(false);
       // Exactly once: a further run and a replay of the parked batch add nothing.
       consolidate(ctx, source, ledger, root, review);

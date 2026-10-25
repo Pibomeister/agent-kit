@@ -141,7 +141,7 @@ export function sessionWitnesses(tokens: readonly string[]): number {
     for (const id of ids) if (!parent.has(id)) parent.set(id, id);
     for (const id of ids.slice(1)) parent.set(find(id), find(first));
   }
-  return new Set([...parent.keys()].map(find)).size;
+  return new Set([...parent.keys()].filter((id) => id.startsWith("s:") && id.length > 2).map(find)).size;
 }
 
 /**

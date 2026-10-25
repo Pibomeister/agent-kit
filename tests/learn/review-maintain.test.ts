@@ -14,6 +14,7 @@ import {
 } from "../../src/learn/review/maintain.ts";
 import { addEvidence, loadPatterns, sourceFamily, statusFor, str } from "../../src/learn/review/patterns.ts";
 import { propose } from "../../src/learn/review/propose.ts";
+import { buildReviewEvents } from "../../src/learn/memory/consolidate.ts";
 import { scratch, testContext } from "./helpers.ts";
 
 const PAGE = `---
@@ -571,6 +572,35 @@ describe("independence gate", () => {
       2,
     );
     expect(twoRuns.meta.status).toBe("active");
+  });
+
+  test("forwarded observations require known distinct sessions before activation and promotion", () => {
+    const judged = [7, 8, 9].map((id) => ({ text: `finding ${id}`, evidence: [`obs:${id}`] }));
+    const valid = new Set(["obs:7", "obs:8", "obs:9"]);
+    const sameSession = new Map([...valid].map((id) => [id, "session-a-full-id"]));
+    for (const sessions of [new Map<string, string>(), sameSession]) {
+      const events = buildReviewEvents("shop", judged, valid, "nightly-1", sessions);
+      const { ctx, ledger, page } = run(events);
+      expect(page.meta.count).toBe(3);
+      expect(page.meta.status).toBe("candidate");
+      expect(propose(ctx, ledger, scratch(), 3)).toBe("nothing to promote");
+      expect(readFileSync(ledger.path("guardrails.md"), "utf8")).toBe("");
+    }
+    const forwarded = buildReviewEvents("shop", judged, valid, "nightly-1", sameSession);
+    expect(forwarded.map((event) => event.session)).toEqual(Array(3).fill("session-a-full-id"));
+    expect(
+      run([
+        sighting("native", { source: "claude-mem", session: "session-a-full-id", obs_id: 6 }),
+        ...forwarded,
+      ]).page.meta.status,
+    ).toBe("candidate");
+    const distinct = new Map([
+      ["obs:7", "session-a-full-id"],
+      ["obs:8", "session-b-full-id"],
+      ["obs:9", "session-b-full-id"],
+    ]);
+    expect(run(buildReviewEvents("shop", judged, valid, "nightly-1", distinct)).page.meta.status).toBe("active");
+    expect(statusFor({ status: "active", count: 3, sessions: ["obs:7", "obs:8", "obs:9"] }, 2)).toBe("candidate");
   });
 });
 
