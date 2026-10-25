@@ -6,7 +6,7 @@ import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import { dirname, join } from "node:path";
 import { inProtectedFolder } from "../../src/learn/core/paths.ts";
-import { run } from "../../src/learn/core/proc.ts";
+import * as proc from "../../src/learn/core/proc.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { readWorktrees, type Registry } from "../../src/learn/memory/registry.ts";
 import { RawStore } from "../../src/learn/memory/raw-store.ts";
@@ -27,7 +27,8 @@ import { projectScratch, removeProjectScratch, scratch, testContext, withGitCeil
 
 afterAll(removeProjectScratch);
 
-const { mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } = fs;
+const { appendFileSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } = fs;
+const { run } = proc;
 
 function requiredSession(value: CapturedSession | null): CapturedSession {
   if (value === null) throw new Error("fixture session did not parse");
@@ -157,6 +158,48 @@ function toolSessions(name: string, content: string, outcome: object = {}) {
 }
 
 describe("native token counters", () => {
+  test("Codex repeated last-usage reports do not advance unchanged cumulative totals", () => {
+    const usage = (input: number, output: number) => ({
+      type: "event_msg",
+      payload: { type: "token_count", info: {
+        last_token_usage: { input_tokens: 1200, output_tokens: 300 },
+        total_token_usage: { input_tokens: input, output_tokens: output },
+      } },
+    });
+    const path = writeRollout(scratch("ak-ws-repeated-codex-"), "repeated", "/fixture/worktree", [
+      codexMessage("user", "first"), usage(1200, 300), usage(1200, 300),
+      codexMessage("assistant", "one"),
+      codexMessage("user", "second"), usage(1200, 300), usage(1500, 400),
+      codexMessage("assistant", "two"), CODEX_TASK_COMPLETE,
+    ]);
+    const parsed = requiredSession(parseCodexSession(path));
+    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out])).toEqual([[1200, 300], [300, 100]]);
+    expect([parsed.tokens_in, parsed.tokens_out]).toEqual([1500, 400]);
+    const ledger = ensureMemoryLedger(scratch("ak-ws-repeated-codex-ledger-"));
+    const source = WorkerSessionSource.open(ledger);
+    source.capture([parsed]);
+    expect(source.newTokensSince("", 0).tokens).toBe(1900);
+    expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 0 });
+  });
+
+  test("Codex tracks mixed last-only counters, cumulative totals, and counter resets", () => {
+    const last = (input: number, output: number) => ({
+      type: "event_msg", payload: { type: "token_count", info: {
+        last_token_usage: { input_tokens: input, output_tokens: output },
+      } },
+    });
+    const path = writeRollout(scratch("ak-ws-mixed-codex-"), "mixed", "/fixture/worktree", [
+      codexMessage("user", "first"), last(100, 10), tokenCount(150, 15),
+      codexMessage("assistant", "one"),
+      codexMessage("user", "second"), last(20, 2), tokenCount(200, 20),
+      codexMessage("assistant", "two"),
+      codexMessage("user", "reset"), tokenCount(5, 1),
+      codexMessage("assistant", "three"), CODEX_TASK_COMPLETE,
+    ]);
+    const parsed = requiredSession(parseCodexSession(path));
+    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out])).toEqual([[150, 15], [50, 5], [5, 1]]);
+    expect([parsed.tokens_in, parsed.tokens_out]).toEqual([205, 21]);
+  });
   test("a Codex token_count row lands in the stored row beside the excerpt size", () => {
     const path = writeRollout(scratch("ak-ws-codex-tokens-"), "tok", "/fixture/worktree", [
       codexMessage("user", "Run the checks."),
@@ -377,6 +420,50 @@ describe("native token counters", () => {
 });
 
 describe("stored evidence refresh", () => {
+  test.each([1000, 2100])("legacy refresh covers stored turns outside the %s-turn session's excerpt cap", (turns) => {
+    const home = scratch("ak-ws-legacy-cap-");
+    const makeSession = (count: number) => {
+      const rows: object[] = [];
+      for (let i = 0; i < count; i++) {
+        rows.push(codexMessage("user", `request ${i}`));
+        if (i === 1) rows.push(
+          { type: "response_item", payload: { type: "function_call", call_id: "read", name: "read_file" } },
+          { type: "response_item", payload: { type: "function_call_output", call_id: "read", output: "error in saved code" } },
+        );
+        rows.push(tokenCount((i + 1) * 10, (i + 1) * 2), codexMessage("assistant", `reply ${i}`));
+      }
+      rows.push(CODEX_TASK_COMPLETE);
+      return requiredSession(parseCodexSession(writeRollout(home, "legacy-cap", "/fixture/worktree", rows)));
+    };
+    const before = makeSession(999);
+    const legacy: CapturedSession = { ...before, observations: before.observations.map((row, i) => ({
+      ...row, type: i === 1 ? "error" : row.type,
+      text: i === 1 ? row.text.replace("tools:", "failed: read_file\ntools:") : row.text,
+      tokens_in: null, tokens_out: null, usage_basis: "estimated",
+    })) };
+    const ledger = ensureMemoryLedger(join(home, "ledger"));
+    WorkerSessionSource.open(ledger).capture([legacy]);
+    const store = RawStore.of(ledger.dir);
+    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    const after = makeSession(turns);
+    expect(after.observations).toHaveLength(MAX_OBSERVATIONS);
+    expect(after.observations.some((row) => row.text.startsWith("prompt: request 1\n"))).toBe(false);
+    const source = WorkerSessionSource.open(ledger);
+    const written = source.capture([after]);
+    expect(written.observations).toBeLessThanOrEqual(MAX_OBSERVATIONS);
+    const secondId = old.observations[1]?.id ?? 0;
+    expect(source.observationsById([secondId])[0]).toMatchObject({
+      id: secondId, type: "turn", tokens_in: 10, tokens_out: 2, usage_basis: "incremental",
+    });
+    expect(source.observationsById([secondId])[0]?.facts).not.toContain("failed:");
+    expect(source.newTokensSince("", 0).tokens).toBe(turns * 12);
+    expect(source.capture([{ ...after, observationsForRefresh: () => { throw new Error("already refreshed"); } }]))
+      .toEqual({ observations: 0, sessions: 0 });
+    expect(scanWorkerSessions({ codex: [home], droid: [], grok: [], kimi: [] }, () => "/fixture/worktree", {
+      stored: () => WorkerSessionSource.open(ledger),
+    }).sessions.size).toBe(0);
+  });
   test("legacy evidence is refreshed once without changing ids or invoking the distiller", () => {
     const home = scratch("ak-ws-legacy-");
     const path = writeRollout(home, "legacy", "/fixture/worktree", [
@@ -731,6 +818,37 @@ describe("tool-call pairing", () => {
 });
 
 describe("worktree placement", () => {
+  test.each([false, true])("resolved worktree persistence never invokes foreground Git (gate: %s)", (gate) => {
+    const { main, linked } = linkedRepo();
+    const home = projectScratch();
+    const include = join(home, "Documents", "git.inc");
+    mkdirSync(dirname(include), { recursive: true });
+    writeFileSync(include, "[user]\nname = fixture\n");
+    const origin = "https://github.com/team/shop.git";
+    appendFileSync(join(main, ".git", "config"), `\n[remote "origin"]\nurl = ${origin}\n[include]\npath = ${include}\n`);
+    const generated = gate ? gateFixture(home, origin) : null;
+    if (generated !== null) appendFileSync(join(generated.common, "config"), `\n[include]\npath = ${include}\n`);
+    const worktree = generated?.worktree ?? linked;
+    const registry: Registry = { shop: { root: main, mem_project: "shop", last_seen: 1 } };
+    const ctx = testContext({ cwd: worktree });
+    const dry = testContext({ cwd: worktree });
+    const git = spyOn(proc, "run").mockImplementation(() => { throw new Error("foreground Git invoked"); });
+    const read = spyOn(fs, "readFileSync");
+    try {
+      const dryConfig = { ...dry.config, dryRun: true };
+      expect(workerRootResolver(registry, {}, { home, platform: "darwin", config: dryConfig })(worktree)).toBe(main);
+      expect(readWorktrees(dryConfig)).toEqual({});
+      expect(workerRootResolver(registry, {}, { home, platform: "darwin", config: ctx.config })(worktree)).toBe(main);
+      expect(readWorktrees(ctx.config)).toEqual({ [worktree]: main });
+      expect(git.mock.calls).toHaveLength(0);
+      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      rmSync(worktree, { recursive: true });
+      expect(workerRootResolver(registry, readWorktrees(ctx.config), { home, platform: "darwin" })(worktree)).toBe(main);
+    } finally {
+      read.mockRestore();
+      git.mockRestore();
+    }
+  });
   test("resolving a linked worktree persists it, so its sessions still place after it is removed", () => {
     const { main, linked } = linkedRepo();
     const registry: Registry = { registered: { root: main, mem_project: "registered", last_seen: 1 } };

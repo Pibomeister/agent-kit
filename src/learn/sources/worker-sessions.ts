@@ -20,7 +20,7 @@ import { sid8 } from "../memory/ledger.ts";
 import { RawStore } from "../memory/raw-store.ts";
 import { scrubCaptured } from "../memory/redact.ts";
 import type { LearnConfig } from "../core/config.ts";
-import { recordWorktree, type Registry, type Worktrees } from "../memory/registry.ts";
+import { recordResolvedWorktree, type Registry, type Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
 
@@ -87,6 +87,7 @@ export interface CapturedSession {
   next_steps: string | null;
   files_modified: string[];
   observations: CapturedObservation[];
+  observationsForRefresh?: () => Iterable<CapturedObservation>;
   /** Session totals of the native counters in `observations`, when the host reported any. */
   tokens_in?: number | null;
   tokens_out?: number | null;
@@ -153,7 +154,7 @@ export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
 /** How far back the scan reads host records, and how long the ledger keeps a session its host stopped writing. */
 export const CAPTURE_WINDOW_MS = 30 * 86_400_000;
 export const MAX_OBSERVATIONS = 999;
-const CAPTURE_VERSION = 1;
+const CAPTURE_VERSION = 2;
 /** A turn nobody ended counts as over once its record has been quiet this long. */
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
@@ -669,6 +670,10 @@ function session(
     next_steps: null,
     files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
     observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)],
+    observationsForRefresh: function* () {
+      for (const turn of turns) yield turnObservation(turn);
+      yield* marker;
+    },
   };
   const nativeTurns = turns.filter((turn) => turn.tokenBasis !== null);
   if (nativeTurns.length > 0) {
@@ -753,26 +758,25 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
     const at = epoch(row.timestamp ?? event.timestamp, started + offset++);
     if (event.type === "token_count") {
       const info = object(event.info) ?? event;
-      const last = nativeUsage(object(info.last_token_usage) ?? undefined);
-      if (last !== null) {
-        log.usage(last.tokensIn, last.tokensOut, "incremental", at);
-        if (codexTotal !== null)
-          codexTotal = {
-            tokensIn: codexTotal.tokensIn + last.tokensIn,
-            tokensOut: codexTotal.tokensOut + last.tokensOut,
-          };
+      const total = nativeUsage(object(info.total_token_usage) ?? undefined);
+      if (total !== null) {
+        const inDelta = total.tokensIn - (codexTotal?.tokensIn ?? 0);
+        const outDelta = total.tokensOut - (codexTotal?.tokensOut ?? 0);
+        log.usage(
+          inDelta < 0 ? total.tokensIn : inDelta,
+          outDelta < 0 ? total.tokensOut : outDelta,
+          "incremental",
+          at,
+        );
+        codexTotal = total;
       } else {
-        const total = nativeUsage(object(info.total_token_usage) ?? undefined) ?? findUsage(event);
-        if (total !== null) {
-          const inDelta = total.tokensIn - (codexTotal?.tokensIn ?? 0);
-          const outDelta = total.tokensOut - (codexTotal?.tokensOut ?? 0);
-          log.usage(
-            inDelta < 0 ? total.tokensIn : inDelta,
-            outDelta < 0 ? total.tokensOut : outDelta,
-            "incremental",
-            at,
-          );
-          codexTotal = total;
+        const last = nativeUsage(object(info.last_token_usage) ?? undefined) ?? findUsage(event);
+        if (last !== null) {
+          log.usage(last.tokensIn, last.tokensOut, "incremental", at);
+          codexTotal = {
+            tokensIn: (codexTotal?.tokensIn ?? 0) + last.tokensIn,
+            tokensOut: (codexTotal?.tokensOut ?? 0) + last.tokensOut,
+          };
         }
       }
       continue;
@@ -1116,7 +1120,7 @@ export function workerRootResolver(
   guard: {
     home?: string;
     platform?: NodeJS.Platform;
-    /** When set, a newly resolved linked worktree is persisted through `recordWorktree` for later ticks. */
+    /** When set, a newly resolved linked worktree is persisted for later ticks. */
     config?: LearnConfig;
   } = {},
 ): (cwd: string) => WorkerPlace {
@@ -1137,7 +1141,7 @@ export function workerRootResolver(
       else places.splice(at, 0, place);
     }
     try {
-      if (guard.config !== undefined) recordWorktree(guard.config, worktree, root);
+      if (guard.config !== undefined) recordResolvedWorktree(guard.config, worktree, root);
     } catch {
       // Persistence is a hint for later scans; placing this session never depends on it.
     }
@@ -1501,14 +1505,22 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const matched = new Map<number, StoredObservation>();
       const aggregates: StoredObservation[] = [];
       const pending: Array<{ row: CapturedObservation; key: string }> = [];
-      for (const row of item.observations) {
+      const eligible = new Map<string, number>();
+      for (const observation of item.observations) {
+        const key = rowKey(observation);
+        eligible.set(key, (eligible.get(key) ?? 0) + 1);
+      }
+      const observations = refresh ? item.observationsForRefresh?.() ?? item.observations : item.observations;
+      for (const row of observations) {
         const key = rowKey(row);
+        const available = eligible.get(key) ?? 0;
+        if (available > 0) eligible.set(key, available - 1);
         const identity = refresh ? refreshKey(row.title, row.text) : null;
         const previous =
           stored.find((entry) => !used.has(entry.id) && entry.key === key) ??
           (refresh ? stored.find((entry) => !used.has(entry.id) && identities.get(entry.id) === identity) : undefined);
         if (previous === undefined) {
-          pending.push({ row, key });
+          if (available > 0) pending.push({ row, key });
           continue;
         }
         used.add(previous.id);
@@ -1562,7 +1574,10 @@ export class WorkerSessionSource implements MemoryObservationSource {
       )
         continue;
       fresh.push(...appended);
-      revisions.push(storedSession(item, stored.length + appended.length));
+      const revision = storedSession(item, stored.length + appended.length);
+      if (refresh && stored.some((entry) => entry.type !== "truncated" && !used.has(entry.id)))
+        revision.capture_version = row?.capture_version;
+      revisions.push(revision);
     }
     const written = { observations: fresh.length, sessions: revisions.length };
     if (options.dryRun === true) return written;

@@ -75,6 +75,11 @@ export function recordWorktree(config: LearnConfig, cwd: string, root: string): 
   if (config.dryRun || rootOf(cwd) !== null) return;
   const worktree = worktreeRoot(cwd);
   if (worktree === null || worktree === root) return;
+  recordResolvedWorktree(config, worktree, root);
+}
+
+export function recordResolvedWorktree(config: LearnConfig, worktree: string, root: string): void {
+  if (config.dryRun || worktree === root) return;
   const worktrees = readWorktrees(config);
   if (worktrees[worktree] === root) return;
   writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
