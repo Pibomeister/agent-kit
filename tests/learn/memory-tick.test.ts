@@ -220,6 +220,15 @@ describe("tick", () => {
       const jobs = readJsonl<{ job: string }>(ledger.path("runs.jsonl")).map((row) => row.job);
       expect(jobs.includes("backfill")).toBe(!blocked);
       expect(readState(ledger).reflect_process_failure !== undefined).toBe(blocked);
+      if (blocked) {
+        ctx.judge = (prompt) => reflectorReply(prompt);
+        const recovered = runProject(ctx, source, root, "shop", { force: true, job: "backfill" });
+        expect(recovered.some((line) => line.startsWith("backfill: ok"))).toBe(true);
+        expect(readJsonl<{ job: string; status: string }>(ledger.path("runs.jsonl")).at(-1)).toMatchObject({
+          job: "backfill",
+          status: "ok",
+        });
+      }
     } finally {
       source.close();
     }

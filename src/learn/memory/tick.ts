@@ -352,7 +352,9 @@ export function runProject(
       reflect: (job) => reflect(job, source, ledger, memProject, trigger),
       backfill: (job) => {
         const current = readState(ledger);
-        return current.reflect_process_failure !== undefined && !backoffElapsed(current, "reflect", nowMs())
+        return options.force !== true &&
+          current.reflect_process_failure !== undefined &&
+          !backoffElapsed(current, "reflect", nowMs())
           ? `backfill: held after judge ${current.reflect_process_failure}`
           : backfill(job, source, ledger, memProject, deferred, trigger);
       },
