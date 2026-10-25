@@ -38,8 +38,10 @@ enforced:
     meaning: >-
       At most two fix-and-verify cycles follow a review's first pass. The third stops with an
       explicit blocked-or-replan decision; anything still open is reported, not looped. A
-      cycle a human authorizes after that decision is reviewed as a delta over the new commits,
-      never as a new full scope.
+      cycle a human authorizes after that decision is recorded in the review's
+      `fix_cycles.extensions` with who authorized it and when, and is reviewed as a delta over
+      the new commits that may approve, never as a new full scope. A cycle past the cap with no
+      extension entry is refused.
     on_reach:
       status: cap-reached
       cap: {limit: fix-cycles, value: 2}
@@ -61,9 +63,10 @@ enforced:
     meaning: >-
       A review run reviews at most three heads: the first snapshot and the head produced by each
       permitted fix cycle. A materially changed comparison base, requirement set or affected
-      surface is a new review scope with its own baseline, not a fourth round. A cycle a human
-      authorizes after the fix-cycles decision is reviewed as a delta, never as a new first
-      snapshot.
+      surface is a new review scope with its own baseline, not a fourth round. Each cycle a human
+      authorizes after the fix-cycles decision, recorded in `fix_cycles.extensions`, adds one delta
+      head beyond the three, never a new first snapshot; no head beyond them is reviewed without
+      that entry.
     ruling: delta-baseline-reset-not-third-loop
     scenario: 10
     source: plan §6.3

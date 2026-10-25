@@ -192,7 +192,8 @@ explicit blocked-or-replan decision and the open findings attached; repeated fai
 about the plan, not an invitation to a third loop (ruling `two-fix-cycles-then-stop`). With only P3
 findings open the decision is `merge-with-follow-ups`, listing them in `fix_cycles.follow_ups`. When
 two consecutive cycles reopened the same finding theme it is `design-decision`, naming the theme.
-A cycle authorized after the decision is reviewed as a `delta`, never as a new `full`.
+A cycle a human authorizes after the decision is recorded in `fix_cycles.extensions` (who, when) and
+reviewed as a `delta` that may approve, never as a new `full`; without that entry it is refused.
 
 Gate: where architecture, requirements, the comparison base or the affected surface changes
 materially, the affected approvals are invalidated and a new baseline is deliberately established —

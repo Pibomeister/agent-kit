@@ -1084,13 +1084,22 @@ function reviewRules(rc: RuleContext): void {
   if (cycles !== null) {
     const allowed = num(cycles["allowed"]);
     const used = num(cycles["used"]);
+    const extensions = arr(cycles["extensions"]).length;
     if (allowed !== null && allowed > 2)
       fail(rc, RULE_CYCLES, `fix_cycles.allowed is ${allowed}; plan 6.3 caps it at two`);
-    if (allowed !== null && used !== null && used > allowed) {
-      fail(rc, RULE_CYCLES, `fix_cycles.used ${used} exceeds allowed ${allowed}; the third cycle stops`);
+    if (allowed !== null && used !== null && used > allowed + extensions) {
+      fail(
+        rc,
+        RULE_CYCLES,
+        `fix_cycles.used ${used} exceeds allowed ${allowed} with ${extensions} authorized extension(s); the third cycle stops`,
+      );
+    }
+    const extended = allowed !== null && used !== null && used > allowed && used <= allowed + extensions;
+    if (extended && str(doc["mode"]) !== "delta") {
+      fail(rc, RULE_CYCLES, "a cycle authorized past the cap is reviewed as a delta, never as a new full scope");
     }
     if (allowed !== null && used !== null && used >= allowed) {
-      if (verdict === "approved") {
+      if (verdict === "approved" && !extended) {
         fail(
           rc,
           RULE_CYCLES,

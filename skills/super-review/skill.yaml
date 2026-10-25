@@ -209,7 +209,9 @@ hard_gates:
   - At most two fix-and-verify cycles follow the first pass; the third stops with an explicit
     blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`). With
     only P3 findings open it recommends merge with them as follow-ups; when two consecutive cycles
-    reopened the same theme it is a design decision. Every later review is a delta, never a new full.
+    reopened the same theme it is a design decision. A cycle a human authorizes after it is recorded
+    in fix_cycles.extensions and reviewed as a delta that may approve, never a new full; an
+    unrecorded one is refused.
   - A material change to architecture, requirements, the comparison base or the affected surface
     invalidates the affected approvals (ruling `delta-baseline-reset-not-third-loop`) and
     establishes a new baseline with its own pass 1, never an unbounded third delta loop.
@@ -257,8 +259,8 @@ failure_outcomes:
       A third fix cycle was requested. The run stops with an explicit blocked-or-replan decision and
       every open finding attached.
     next_permitted_action: >-
-      Take the cap decision, or establish a new baseline. A cycle authorized after it is reviewed
-      as a delta over the new commits.
+      Take the cap decision, or establish a new baseline. A cycle a human authorizes after it is
+      recorded in fix_cycles.extensions and reviewed as a delta over the new commits.
   - status: failed
     meaning: >-
       A required lane returned unavailable and the run cannot proceed, or the snapshot could not be

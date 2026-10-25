@@ -1176,6 +1176,33 @@ describe("review rules", () => {
     expect(rulesOf(run(doc))).toContain("review.third-fix-cycle-stops");
   });
 
+  const postCapDelta = (extensions: unknown[]): Record<string, unknown> =>
+    review({
+      mode: "delta",
+      last_head_verified: { repo: "app", revision: "c".repeat(40) },
+      delta_scope: { boundary: "affected-behavior", affected_behavior: ["login"] },
+      fix_cycles: { allowed: 2, used: 3, exhausted_action: "replan", extensions },
+    });
+
+  test("review.third-fix-cycle-stops lets a human-authorized post-cap delta approve", () => {
+    const doc = postCapDelta([{ authorized_by: "maintainer", authorized_at: "2026-01-01T00:00:00Z" }]);
+    expect(rulesOf(run(doc)).filter((r) => r.startsWith("review."))).toEqual([]);
+  });
+
+  test("review.third-fix-cycle-stops refuses a post-cap delta no human authorized", () => {
+    expect(messagesOf(run(postCapDelta([])))).toContainEqual(
+      expect.stringContaining("fix_cycles.used 3 exceeds allowed 2 with 0 authorized extension(s)"),
+    );
+  });
+
+  test("review.third-fix-cycle-stops refuses an authorized post-cap cycle reviewed as a new full scope", () => {
+    const doc = postCapDelta([{ authorized_by: "maintainer", authorized_at: "2026-01-01T00:00:00Z" }]);
+    doc["mode"] = "full";
+    expect(messagesOf(run(doc))).toContainEqual(
+      expect.stringContaining("a cycle authorized past the cap is reviewed as a delta, never as a new full scope"),
+    );
+  });
+
   test("review.delta-scope-bounded-by-affected-behavior catches a delta with no affected behavior", () => {
     const doc = review({ mode: "delta", verdict: "changes-requested" });
     expect(rulesOf(run(doc))).toContain("review.delta-scope-bounded-by-affected-behavior");
@@ -1244,7 +1271,7 @@ describe("review rules, one defect per row", () => {
     [
       "more cycles used than allowed",
       () => review({ fix_cycles: { allowed: 2, used: 3, exhausted_action: "blocked" }, verdict: "blocked" }),
-      "fix_cycles.used 3 exceeds allowed 2; the third cycle stops",
+      "fix_cycles.used 3 exceeds allowed 2 with 0 authorized extension(s); the third cycle stops",
     ],
     [
       "an exhausted budget that still approves",
