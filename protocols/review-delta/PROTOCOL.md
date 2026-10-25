@@ -65,12 +65,13 @@ lane's findings (`policies/review.yaml` `pass_1.seat_context.never_receives`).
 7. Admit a new finding only with novelty evidence: what changed, or what regressed, that makes
    this finding new. Unrelated low-priority discovery is ledgered as an out-of-scope
    observation, never looped into another round (ruling `delta-scope-affected-behavior`).
-8. Route unresolved security, data or API findings back to that specialist seat alone. Do not
-   trigger another full fan-out.
+8. Route an unresolved prior finding of a specialist type back to that seat alone, and seat a
+   specialist the delta diff's own risk evidence triggers. Do not trigger another full fan-out.
 9. Synthesize the verdict: a required lane `unavailable` yields `blocked` (ruling
    `required-lane-failure-is-unavailable`); else a lane requesting changes yields
    `changes-requested`; `approved` requires every required lane `complete` or `empty` and every
-   prior finding independently closed (ruling `closure-requires-independent-verification`).
+   prior finding independently closed (ruling `closure-requires-independent-verification`), or,
+   at the cap with `merge-with-follow-ups`, open only as a P3 listed in `fix_cycles.follow_ups`.
 10. If findings remain open, hand control back for the next fix cycle — at most twice — and
     record `fix_cycles`. At the cap, record the decision in `fix_cycles.exhausted_action`:
     `merge-with-follow-ups` when only P3 findings are open, listing them in `follow_ups`;
@@ -170,7 +171,7 @@ Anything published as project knowledge goes through the knowledgebase adapter (
 - Heads reviewed per run: 3 (gate, `policies/limits.yaml` `review_rounds`) — the first snapshot
   plus the head from each permitted fix cycle.
 - Lanes: 2, both required (gate). A third lane is a new scope, not a tiebreak. The pass-1 panel is
-  never re-seated here; only the specialist seat of an unresolved security, data or API finding
-  joins.
+  never re-seated here. A specialist seat joins only when an unresolved prior finding of that
+  seat's type exists or the delta diff itself triggers that seat's risk evidence.
 - Per-lane output length is capped by the invoking skill so aggregation stays comparable; that
   number is a configurable starting point (guidance).

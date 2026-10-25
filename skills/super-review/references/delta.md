@@ -74,7 +74,7 @@ The decision takes one of four values in `fix_cycles.exhausted_action`:
 
 | Open at the cap | Decision |
 |---|---|
-| Only P3 findings | `merge-with-follow-ups`: recommend merge, each P3 listed in `fix_cycles.follow_ups` |
+| Only P3 findings | `merge-with-follow-ups`: recommend merge, each P3 listed in `fix_cycles.follow_ups`; the verdict may be `approved` |
 | A finding theme the last two cycles both reopened | `design-decision`: name the theme and the design question behind it; no further patch is proposed |
 | Anything else | `blocked` or `replan` |
 

@@ -632,8 +632,9 @@ conflicts:
       maintainability, agent-native and learnings fire when the diff earns them; security,
       adversarial and the remaining conditional and stack seats are selected from artifact
       evidence, in practice from the attached packs. A substantive feature lands at the
-      six-ish panel the design preserves. A documentation typo does not. A small diff and every
-      delta get a lean panel of the essential lanes. Security, API and data facts are never
+      six-ish panel the design preserves. A documentation typo does not. A small pass-1 diff gets a
+      lean panel of the essential lanes; a delta gets its two core lanes plus only the specialist
+      seats a prior finding or its own diff triggers. Security, API and data facts are never
       dropped because a classifier was uncertain.
     discharged_in: [inputs, workflow]
     binds:

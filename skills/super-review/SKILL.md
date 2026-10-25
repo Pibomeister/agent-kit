@@ -188,14 +188,14 @@ advisory, and a changed patch does not inherit stale receipts (ruling
 the working-tree diff hash it names differs from the snapshot being judged; either one moving is
 enough.
 
-Gate: at most two fix-and-verify cycles after the first pass. The third request stops with an
-explicit blocked-or-replan decision and the open findings attached; repeated failure is a signal
-about the plan, not an invitation to a third loop (ruling `two-fix-cycles-then-stop`). With only P3
-findings open the decision is `merge-with-follow-ups`, listing them in `fix_cycles.follow_ups`. When
-two consecutive cycles reopened the same finding theme it is `design-decision`, naming the theme.
-A cycle a human authorizes after the decision is recorded in `fix_cycles.extensions`
-(`authorized_by: human`, operator-attested, and when) and reviewed as a `delta` that may approve,
-never as a new `full`; without that entry it is refused.
+Gate: at most two fix-and-verify cycles after the first pass. The third request stops with the cap
+decision and the open findings attached; repeated failure is a signal about the plan, not an
+invitation to a third loop (ruling `two-fix-cycles-then-stop`). With only P3 findings open it is
+`merge-with-follow-ups`, listing them in `fix_cycles.follow_ups`, and the verdict may be `approved`.
+When two consecutive cycles reopened the same finding theme it is `design-decision`, naming it. A
+cycle a human authorizes after the decision is recorded in `fix_cycles.extensions` (`authorized_by:
+human`, operator-attested, and when) and reviewed as a `delta` that may approve, never as a new
+`full`; without that entry it is refused.
 
 Gate: where architecture, requirements, the comparison base or the affected surface changes
 materially, the affected approvals are invalidated and a new baseline is deliberately established —
@@ -227,7 +227,7 @@ standards never become invented preferences, and a seat that cannot cite a rule 
 | "The reviewer rated the fix high-confidence, so the finding can be marked resolved." | Confidence is a property of the judge; closure is a property of the evidence (ruling `closure-requires-independent-verification`). | Record the confidence as advisory, and close only on independent verification evidence for the revision the fix is at. |
 | "The base moved and the requirements were rewritten, but the delta loop still has a cycle left." | Continuing a loop whose comparison base no longer means what it meant spends a cycle comparing against a baseline nobody approved, and the approvals it carries forward were given for a different change (ruling `delta-baseline-reset-not-third-loop`). | Invalidate the affected approvals, record what changed materially, and open a new scope at pass 1 rather than spending the remaining cycle. |
 | "The cap is reached, so replan and open a new full scope over the whole change." | A full pass over a change already reviewed re-litigates settled code and finds new nits each round, so the loop never ends (ruling `two-fix-cycles-then-stop`). | Review the new commits as a `delta` against the last reviewed head. |
-| "The third cycle is nearly there — one more round and it is clean." | Two cycles that did not converge are evidence about the plan, and a third loop spends the budget that the blocked-or-replan decision exists to protect (ruling `two-fix-cycles-then-stop`). | Stop, emit the explicit blocked-or-replan decision, attach every open finding, and report what is unresolved. |
+| "The third cycle is nearly there — one more round and it is clean." | Two cycles that did not converge are evidence about the plan, and a third loop spends the budget that the cap decision exists to protect (ruling `two-fix-cycles-then-stop`). | Stop, emit the cap decision, attach every open finding, and report what is unresolved. |
 | "The diff is 400 lines, which the engineering principles call too large, so that is a finding." | Size targets and test ratios are configurable starting points, and a finding written from one is a finding about a number nobody agreed to (ruling `numeric-heuristics-are-guidance`). | Review what the change does. Raise size only where it names a concrete review or maintenance consequence in this change. |
 
 ## Outputs
@@ -285,13 +285,13 @@ what they are.
 
 ## Limits
 
-Fix cycles: 2 (gate). `policies/limits.yaml` `fix_cycles`. The third stops with an explicit
-blocked-or-replan decision rather than another pass.
+Fix cycles: 2 (gate). `policies/limits.yaml` `fix_cycles`. The third stops with the cap decision
+rather than another pass.
 
 Review rounds: 3 (gate). `policies/limits.yaml` `review_rounds`, counted across the run.
 
-Panel size: no cap (guidance). Composition follows declared risk, so the count is an outcome of
-selection and never a target to hit or to trim to. Small diffs and deltas seat the lean panel.
+Panel size: no cap (guidance); the count follows declared risk. Small pass-1 diffs seat the lean
+panel; a delta seats its two core lanes plus only the specialist seats a prior finding or its diff triggers.
 
 Change size and test ratios: not gates (guidance). Carried in [`engineering-principles`](../../references/engineering-principles/REFERENCE.md),
 set per project, and never grounds for a finding on their own.

@@ -208,7 +208,7 @@ hard_gates:
     evidence plus a policy rule saying that evidence suffices for it; confidence stays advisory.
   - At most two fix-and-verify cycles follow the first pass; the third stops with an explicit
     blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`). With
-    only P3 findings open it recommends merge with them as follow-ups; when two consecutive cycles
+    only P3 findings open it recommends merge with them as follow-ups and may approve; when two consecutive cycles
     reopened the same theme it is a design decision. A cycle a human authorizes after it is recorded
     in fix_cycles.extensions as authorized by human (operator-attested) and reviewed as a delta that may approve, never a new full; an unrecorded one is refused.
   - A material change to architecture, requirements, the comparison base or the affected surface
@@ -216,7 +216,8 @@ hard_gates:
     establishes a new baseline with its own pass 1, never an unbounded third delta loop.
   - The panel is selected from declared risk and artifact evidence, never from a fixed roster, and
     security, API and data facts are never dropped because a classifier was uncertain
-    (ruling `panel-composition-by-declared-risk`). Small diffs and deltas seat the lean panel.
+    (ruling `panel-composition-by-declared-risk`). Small pass-1 diffs seat the lean panel;
+    a delta seats its two core lanes plus only the specialist seats a prior finding or its diff triggers.
   - The delta is bounded by affected behavior rather than changed lines, and a new finding carries
     novelty evidence (ruling `delta-scope-affected-behavior`).
   - A continuing seat keeps its prior finding context or a replacement receives the durable
@@ -255,8 +256,8 @@ failure_outcomes:
       Re-invoke with the base and head named, or run the full entrypoint before a delta.
   - status: cap-reached
     meaning: >-
-      A third fix cycle was requested. The run stops with an explicit blocked-or-replan decision and
-      every open finding attached.
+      A third fix cycle was requested. The run stops with the cap decision (blocked, replan,
+      merge-with-follow-ups or design-decision) and every open finding attached.
     next_permitted_action: >-
       Take the cap decision, or establish a new baseline. A cycle a human authorizes after it is
       recorded in fix_cycles.extensions and reviewed as a delta over the new commits.
@@ -508,6 +509,14 @@ tests:
     expect: >-
       No further patch is proposed. The decision is a design decision that names the repeated theme
       and the design question behind it, with the open findings attached.
+  - id: delta-seats-only-its-lanes-and-triggered-specialists
+    kind: positive
+    given: >-
+      A delta follows a fix whose diff touches only formatting code, with one unresolved P2 data
+      finding carried from the first pass and no prior security finding.
+    expect: >-
+      The delta runs its two core lanes plus the data seat for the unresolved data finding, and no
+      other seat: not the security seat, not testing and not the lean or pass-1 panel.
   - id: post-cap-review-is-a-delta
     kind: adversarial
     given: >-

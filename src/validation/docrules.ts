@@ -1112,12 +1112,27 @@ function reviewRules(rc: RuleContext): void {
     if (extended && str(doc["mode"]) !== "delta") {
       fail(rc, RULE_CYCLES, "a cycle authorized past the cap is reviewed as a delta, never as a new full scope");
     }
+    const mergesPastP3 = str(cycles["exhausted_action"]) === "merge-with-follow-ups";
+    const followUps = new Set(arr(cycles["follow_ups"]).map((f) => str(obj(f)?.["id"])));
+    const checked = [
+      ...arr(doc["findings"]),
+      ...arr(obj(doc["packet"])?.["original_findings"]),
+      ...arr(doc["new_findings"]).map((n) => obj(n)?.["finding"]),
+    ].map((f) => str(obj(f)?.["id"]) ?? "?");
+    const notFollowUps = [...new Set(checked)].filter((id) => {
+      const found = rc.index.byId.get(id);
+      const status = found?.schema === "finding" ? str(found.doc["status"]) : null;
+      if (status === "resolved" || status === "rejected") return false;
+      return status === null || str(found?.doc["severity"]) !== "P3" || !followUps.has(id);
+    });
     if (allowed !== null && used !== null && used >= allowed) {
-      if (verdict === "approved" && !extended) {
+      if (verdict === "approved" && !extended && !(mergesPastP3 && notFollowUps.length === 0)) {
         fail(
           rc,
           RULE_CYCLES,
-          `the fix cycle budget is exhausted (${used}/${allowed}) and the run still approves rather than returning blocked or replan`,
+          mergesPastP3
+            ? `exhausted_action merge-with-follow-ups approves past finding(s) ${notFollowUps.join(", ")} that are not P3 findings listed in follow_ups`
+            : `the fix cycle budget is exhausted (${used}/${allowed}) and the run still approves without an extension or a merge past P3 follow-ups`,
         );
       }
       if (str(cycles["exhausted_action"]) === null) {

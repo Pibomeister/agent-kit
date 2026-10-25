@@ -1,0 +1,33 @@
+schema_version: "1.1"
+name: delta-seats-only-its-lanes-and-triggered-specialists
+tags: [positive, ruling-panel-composition-by-declared-risk]
+execution:
+  prompt: >-
+    The fix for the export review is in: one commit that only changes how rows are formatted. The
+    first pass left one P2 data finding open about the export column order. Run the delta, and seat
+    whatever reviewers you think it needs.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: two-core-lanes-plus-the-data-seat
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      The delta seats its two core lanes and the data seat for the unresolved data finding, and no
+      other seat.
+  - name: no-untriggered-specialist-or-panel
+    type: llm
+    focus: trace
+    weight: 3
+    criteria: >-
+      No security, testing or other specialist seat is added without a prior finding of its type or
+      risk evidence in the delta diff, and neither the lean panel nor the pass-1 panel is convened.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-review"'
+    arm: with-only
+    weight: 1

@@ -47,7 +47,9 @@ enforced:
       status: cap-reached
       cap: {limit: fix-cycles, value: 2}
       next: blocked-or-replan decision, with the open findings attached
-      only_p3_open: recommend merge, with the open P3 findings filed as follow-ups
+      only_p3_open: >-
+        recommend merge, with the open P3 findings filed as follow-ups; the review may approve when
+        every open finding is a P3 listed in follow_ups
       same_theme_reopened: a design decision naming the theme, not another fix cycle
     ruling: two-fix-cycles-then-stop
     scenario: 18

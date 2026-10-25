@@ -141,16 +141,17 @@ pass_1:
       Seat count follows artifact evidence, not ceremony. A documentation typo runs the
       always-on seat and the standards gate if standards exist, and nothing else.
     lean_panel:
-      applies_to: a change within the project's configured size guidance, and every delta
+      applies_to: a pass-1 change within the project's configured size guidance
       seats: >-
         Correctness, the standards gate, testing when the change adds or alters behavior, and
         the conditional seats the change's own risk evidence or attached packs activate.
         Maintainability, agent-native and learnings sit only when the change exceeds the size
         guidance; below it, correctness covers their axes.
       rule: >-
-        Seat count scales with the diff and the mode. A delta never convenes the pass-1 panel:
-        it runs its two lanes, plus the specialist seat of an unresolved security, data or API
-        finding. Leaner never drops a risk seat the evidence activated.
+        Seat count scales with the diff and the mode. A delta never convenes the pass-1 panel or
+        the lean panel: it runs its two core lanes, plus a specialist seat only when an unresolved
+        prior finding of that seat's type exists or the delta diff itself triggers that seat's
+        risk evidence. Leaner never drops a risk seat the evidence activated.
     forbidden:
       - spawning the full catalog on a small low-risk change
       - hardcoding a fixed six seats regardless of the artifact

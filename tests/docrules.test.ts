@@ -1150,7 +1150,63 @@ function postCapDelta(extensions: JsonValue[]): Doc {
   });
 }
 
+function findingRef(id: string) {
+  return { id, hash: `sha256:${"a".repeat(64)}` };
+}
+
+function mergeAtCap(followUps: string[]): Doc {
+  return review({
+    findings: [findingRef("finding-1"), findingRef("finding-2")],
+    fix_cycles: {
+      allowed: 2,
+      used: 2,
+      exhausted_action: "merge-with-follow-ups",
+      follow_ups: followUps.map(findingRef),
+    },
+  });
+}
+
 describe("review rules", () => {
+  test("review.third-fix-cycle-stops lets a cap with only listed P3 follow-ups open approve", () => {
+    const docs = [finding({ severity: "P3" }), finding({ id: "finding-2", severity: "P3" })];
+    const issues = run(mergeAtCap(["finding-1", "finding-2"]), docs);
+    expect(messagesOf(issues).filter((m) => m.includes("fix_cycles") || m.includes("fix cycle"))).toEqual([]);
+    expect(rulesOf(issues)).not.toContain("review.third-fix-cycle-stops");
+  });
+
+  test("review.third-fix-cycle-stops ignores a closed finding at the cap", () => {
+    const docs = [finding({ severity: "P1", status: "resolved" }), finding({ id: "finding-2", severity: "P3" })];
+    expect(rulesOf(run(mergeAtCap(["finding-2"]), docs))).not.toContain("review.third-fix-cycle-stops");
+  });
+
+  test("review.third-fix-cycle-stops refuses a merge past an open P2", () => {
+    const docs = [finding({ severity: "P2" }), finding({ id: "finding-2", severity: "P3" })];
+    expect(messagesOf(run(mergeAtCap(["finding-1", "finding-2"]), docs))).toContainEqual(
+      expect.stringContaining("approves past finding(s) finding-1 that are not P3 findings listed in follow_ups"),
+    );
+  });
+
+  test("review.third-fix-cycle-stops refuses a merge past an open P2 carried only in the delta packet", () => {
+    const doc = mergeAtCap(["finding-2"]);
+    doc["findings"] = [findingRef("finding-2")];
+    doc["packet"] = {
+      prior_review: findingRef("review-0"),
+      original_findings: [findingRef("finding-1")],
+      fix_diff: `sha256:${"b".repeat(64)}`,
+    };
+    const docs = [finding({ severity: "P2" }), finding({ id: "finding-2", severity: "P3" })];
+    expect(messagesOf(run(doc, docs))).toContainEqual(
+      expect.stringContaining("approves past finding(s) finding-1 that are not P3 findings listed in follow_ups"),
+    );
+  });
+
+  test("review.third-fix-cycle-stops refuses a merge past a P3 not listed as a follow-up", () => {
+    const docs = [finding({ severity: "P3" }), finding({ id: "finding-2", severity: "P3" })];
+    expect(messagesOf(run(mergeAtCap(["finding-1"]), docs))).toContainEqual(
+      expect.stringContaining("approves past finding(s) finding-2 that are not P3 findings listed in follow_ups"),
+    );
+  });
+
   test("a well-formed review produces no review issues", () => {
     expect(rulesOf(run(review())).filter((r) => r.startsWith("review."))).toEqual([]);
   });
@@ -1293,7 +1349,7 @@ describe("review rules, one defect per row", () => {
     [
       "an exhausted budget that still approves",
       () => review({ fix_cycles: { allowed: 2, used: 2, exhausted_action: "blocked" } }),
-      "the fix cycle budget is exhausted (2/2) and the run still approves",
+      "the fix cycle budget is exhausted (2/2) and the run still approves without an extension",
     ],
     [
       "an exhausted budget with no exhausted_action",
