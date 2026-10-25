@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { inProtectedFolder } from "../../src/learn/core/paths.ts";
 import * as proc from "../../src/learn/core/proc.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
+import { buildEpisodes, loadEpisodes, unconsolidatedEpisodes } from "../../src/learn/memory/episodes.ts";
 import { readWorktrees, type Registry } from "../../src/learn/memory/registry.ts";
 import { RawStore } from "../../src/learn/memory/raw-store.ts";
 import {
@@ -420,6 +421,50 @@ describe("native token counters", () => {
 });
 
 describe("stored evidence refresh", () => {
+  test.each(["grok", "droid"])("a compacted %s session completes its legacy refresh once", (host) => {
+    const home = scratch("ak-ws-compacted-refresh-");
+    const dir = join(home, "sessions", "fixture");
+    const record = join(dir, host === "grok" ? "chat_history.jsonl" : "session.jsonl");
+    const quiet = new Date(Date.now() - 2 * 3_600_000);
+    const writeHistory = (indices: readonly number[]) => {
+      const rows: object[] = host === "droid" ? [{ type: "session_start", id: "compacted", cwd: "/fixture/worktree" }] : [];
+      for (const i of indices) {
+        if (host === "grok") rows.push(
+          { type: "user", content: `request ${i}` },
+          { type: "assistant", content: `reply ${i}`, usage: { input_tokens: 100, output_tokens: 10 } },
+        );
+        else rows.push(
+          { type: "message", message: { role: "user", content: [{ type: "text", text: `request ${i}` }] } },
+          { type: "message", message: { role: "assistant", content: [{ type: "text", text: `reply ${i}` }], usage: { input_tokens: 100, output_tokens: 10 } } },
+        );
+      }
+      writeJsonl(record, rows);
+      utimesSync(record, quiet, quiet);
+    };
+    writeHistory([0, 1, 2, 3, 4, 5]);
+    if (host === "grok") writeFileSync(join(dir, "summary.json"), JSON.stringify({
+      info: { id: "compacted", cwd: "/fixture/worktree" }, created_at: quiet.toISOString(),
+    }));
+    const parsed = requiredSession(host === "grok" ? parseGrokSession(dir) : parseDroidSession(record));
+    const ledger = ensureMemoryLedger(join(home, "ledger"));
+    WorkerSessionSource.open(ledger).capture([parsed]);
+    const store = RawStore.of(ledger.dir);
+    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    writeHistory([4, 5]);
+    const homes = { codex: [], droid: host === "droid" ? [home] : [], grok: host === "grok" ? [home] : [], kimi: [] };
+    const source = WorkerSessionSource.open(ledger);
+    const scanned = scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => source });
+    const changed = scanned.sessions.get("/fixture/worktree") ?? [];
+    expect(changed).toHaveLength(1);
+    expect(source.capture(changed)).toEqual({ observations: 0, sessions: 1 });
+    expect(source.sessionObservations(parsed.memory_session_id).map((row) => row.id)).toEqual(old.observations.map((row) => row.id));
+    expect(source.newTokensSince("", 0).tokens).toBe(660);
+    expect(source.capture(changed)).toEqual({ observations: 0, sessions: 0 });
+    for (let i = 0; i < 2; i++) expect(scanWorkerSessions(homes, () => "/fixture/worktree", {
+      stored: () => WorkerSessionSource.open(ledger),
+    }).sessions.size).toBe(0);
+  });
   test.each([1000, 2100])("legacy refresh covers stored turns outside the %s-turn session's excerpt cap", (turns) => {
     const home = scratch("ak-ws-legacy-cap-");
     const makeSession = (count: number) => {
@@ -495,6 +540,10 @@ describe("stored evidence refresh", () => {
     for (const row of old.sessions) Reflect.deleteProperty(row, "capture_version");
     store.addWorkers(old.observations, old.sessions, ledger.dir);
     const source = WorkerSessionSource.open(ledger);
+    const now = Date.now() + 60_000;
+    const initialEpisode = buildEpisodes(source, ledger, "", [], { now, shown: () => ["ls-001"] })
+      .find((episode) => episode.sid === parsed.memory_session_id);
+    expect(initialEpisode?.failure_signals).toBe(1);
     const homes = { codex: [home], droid: [], grok: [], kimi: [] };
     const scanned = scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => source });
     const sessions = scanned.sessions.get("/fixture/worktree") ?? [];
@@ -510,6 +559,16 @@ describe("stored evidence refresh", () => {
     expect(refreshed.sessionObservations(parsed.memory_session_id)[0]?.facts).not.toContain("failed:");
     expect(refreshed.sessionObservations("not-scanned")[0]).toEqual(old.observations[1]);
     expect(refreshed.newTokensSince("", 0).tokens).toBe(1500);
+    const dryEpisodes = buildEpisodes(refreshed, ledger, "", [], { now, dryRun: true });
+    expect(dryEpisodes).toHaveLength(1);
+    expect(dryEpisodes[0]?.failure_signals).toBe(0);
+    expect(loadEpisodes(ledger).find((episode) => episode.sid === parsed.memory_session_id)?.failure_signals).toBe(1);
+    const episodes = buildEpisodes(refreshed, ledger, "", [], { now });
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]).toMatchObject({ sid: parsed.memory_session_id, obs: 1, failure_signals: 0, shown: ["ls-001"] });
+    expect(episodes[0]?.priority ?? 1).toBeLessThan(initialEpisode?.priority ?? 0);
+    expect(unconsolidatedEpisodes(ledger).find((episode) => episode.sid === parsed.memory_session_id)?.failure_signals).toBe(0);
+    expect(buildEpisodes(refreshed, ledger, "", [], { now })).toEqual([]);
     expect(scanWorkerSessions(homes, () => "/fixture/worktree", { stored: () => refreshed }).sessions.size).toBe(0);
     expect(refreshed.capture(sessions)).toEqual({ observations: 0, sessions: 0 });
   });

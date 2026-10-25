@@ -1574,10 +1574,7 @@ export class WorkerSessionSource implements MemoryObservationSource {
       )
         continue;
       fresh.push(...appended);
-      const revision = storedSession(item, stored.length + appended.length);
-      if (refresh && stored.some((entry) => entry.type !== "truncated" && !used.has(entry.id)))
-        revision.capture_version = row?.capture_version;
-      revisions.push(revision);
+      revisions.push(storedSession(item, stored.length + appended.length));
     }
     const written = { observations: fresh.length, sessions: revisions.length };
     if (options.dryRun === true) return written;

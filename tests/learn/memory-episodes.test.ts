@@ -185,6 +185,41 @@ describe("episodes", () => {
     expect(unconsolidatedEpisodes(ledger).map((episode) => episode.sid)).toEqual(["growing"]);
   });
 
+  test("same-count failure label changes refresh episode counts and priority in either direction", () => {
+    const dir = scratch("ak-episode-label-refresh-");
+    const mem = new MemFixture(join(dir, "mem.db"));
+    mem.session({ sid: "relabeled", project: "app", started: NOW - 2 * H, completed: NOW - H });
+    const id = mem.observation({ sid: "relabeled", project: "app", type: "error", title: "worker turn", tokens: 100, at: NOW - H });
+    const ledger = ensureMemoryLedger(join(dir, "memory"));
+    const source = ClaudeMemSource.open(mem.path);
+    if (source === null) throw new Error("fixture source did not open");
+    try {
+      let previous = buildEpisodes(source, ledger, "app", [], { now: NOW })[0];
+      expect(previous?.failure_signals).toBe(1);
+      for (const [type, title, failures] of [
+        ["turn", "worker turn", 0],
+        ["error", "worker turn", 1],
+        ["turn", "worker turn", 0],
+        ["turn", "tests failed in CI", 1],
+        ["turn", "worker turn", 0],
+      ] as const) {
+        mem.db.query("UPDATE observations SET type = ?, title = ? WHERE id = ?").run(type, title, id);
+        const fresh = buildEpisodes(source, ledger, "app", [], { now: NOW });
+        expect(fresh).toHaveLength(1);
+        const current = fresh[0];
+        expect(current).toMatchObject({ sid: "relabeled", obs: 1, failure_signals: failures });
+        expect((current?.priority ?? 0) - (previous?.priority ?? 0))
+          .toBeCloseTo(0.04 * (failures - (previous?.failure_signals ?? 0)), 4);
+        expect(loadEpisodes(ledger)).toHaveLength(1);
+        expect(buildEpisodes(source, ledger, "app", [], { now: NOW })).toEqual([]);
+        previous = current;
+      }
+    } finally {
+      source.close();
+      mem.close();
+    }
+  });
+
   test("bugfix observations and failure wording in titles fill the failure signal", () => {
     const dir = scratch();
     const dbPath = join(dir, "mem.db");

@@ -265,10 +265,10 @@ export function buildEpisodes(
   const raw: Array<Omit<Episode, "priority">> = [];
   for (const session of source.sessions(memProject, now - (options.days ?? 30) * DAY_MS, now - STALE_ACTIVE_MS)) {
     const previous = known.get(session.memory_session_id);
-    if (previous !== undefined && session.observation_count <= previous.obs) continue;
     const episode = rawEpisode(source, session, events);
     if (episode === null) continue;
-    if (previous !== undefined && episode.obs <= previous.obs) continue;
+    if (previous !== undefined && episode.obs <= previous.obs && episode.failure_signals === previous.failure_signals)
+      continue;
     const shown = shownIds(previous, session, options.shown);
     raw.push(shown === null ? episode : { ...episode, shown });
   }
