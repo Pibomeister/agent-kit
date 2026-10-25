@@ -104,7 +104,7 @@ export function paginatedArray<T>(text: string): T[] {
 
 export class GitHubReviewSource {
   unavailable = false;
-  fallbackSelected = false;
+  fallbackComplete = false;
   constructor(
     private readonly cwd: string,
     private readonly runner: GhRunner = ghRunner,
@@ -144,7 +144,7 @@ export class GitHubReviewSource {
    */
   pullRequests(repo: string, numbers: readonly number[], since?: string, watermark?: string): PullRequestRef[] {
     this.unavailable = false;
-    this.fallbackSelected = false;
+    this.fallbackComplete = false;
     const fields = ["--json", "number,headRefOid,author"];
     if (numbers.length > 0) {
       return numbers.flatMap(
@@ -169,7 +169,6 @@ export class GitHubReviewSource {
     }
     const current = this.json<PullRequestRef>(["pr", "view", ...fields]);
     if (current !== null) return [current];
-    this.fallbackSelected = true;
     const listed = this.json<PullRequestRef[]>([
       "pr",
       "list",
@@ -182,6 +181,7 @@ export class GitHubReviewSource {
       ...(watermark === undefined ? [] : ["--search", `updated:>=${watermark}`]),
       ...fields,
     ]);
+    this.fallbackComplete = listed !== null && listed.length < 20;
     return listed ?? [];
   }
 

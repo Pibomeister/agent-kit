@@ -221,6 +221,9 @@ describe("tick", () => {
       expect(jobs.includes("backfill")).toBe(!blocked);
       expect(readState(ledger).reflect_process_failure !== undefined).toBe(blocked);
       if (blocked) {
+        const failed = readState(ledger);
+        runProject(ctx, source, root, "shop", { force: true, job: "backfill" });
+        expect(readState(ledger)).toEqual(failed);
         ctx.judge = (prompt) => reflectorReply(prompt);
         const recovered = runProject(ctx, source, root, "shop", { force: true, job: "backfill" });
         expect(recovered.some((line) => line.startsWith("backfill: ok"))).toBe(true);
@@ -228,6 +231,8 @@ describe("tick", () => {
           job: "backfill",
           status: "ok",
         });
+        const { reflect_process_failure: _process, ...priorReflection } = failed;
+        expect(readState(ledger)).toEqual(priorReflection);
       }
     } finally {
       source.close();

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { readJsonl, tokens } from "../../src/learn/core/store.ts";
 import {
   citedIds,
+  appendRun,
   ensureMemoryLedger,
   provenanceGate,
   readState,
@@ -17,6 +18,7 @@ import {
 } from "../../src/learn/memory/ledger.ts";
 import {
   applyReflection,
+  backfill,
   fetchNew,
   formatObservation,
   formatSummaries,
@@ -28,7 +30,7 @@ import {
   trimToCap,
 } from "../../src/learn/memory/reflect.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
-import { MemFixture, scratch, testContext } from "./helpers.ts";
+import { MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 describe("provenance", () => {
   test("a bullet needs a known id; blank lines and headings pass through", () => {
@@ -271,6 +273,48 @@ describe("reflect apply", () => {
 });
 
 describe("reflect", () => {
+  test.each(["empty", "malformed", "rejected", "accepted"])(
+    "backfill %s output preserves reflector retry and progress state",
+    (outcome) => {
+      const { ledger } = setup();
+      const dbPath = join(scratch(), "mem.db");
+      const mem = new MemFixture(dbPath);
+      for (const title of ["unscreened", "screened"])
+        mem.observation({ sid: "session", project: "app", type: "discovery", title, at: Date.now() });
+      mem.close();
+      appendRun(ledger, { job: "reflect", status: "ok", obs_ids: [2] });
+      saveState(ledger, {
+        last_obs_id_reflected: 2,
+        last_reflect: 1,
+        last_reflect_attempt: Date.now() - 30 * 60_000,
+        reflect_failures: 3,
+        reflect_stalled_since: 2,
+      });
+      const before = readState(ledger);
+      const ctx = testContext();
+      ctx.judge = (prompt) => {
+        if (outcome === "empty") return null;
+        if (outcome === "malformed") return { memory: "" };
+        return outcome === "accepted" ? reflectorReply(prompt) : { memory: "invalid" };
+      };
+      const source = ClaudeMemSource.open(dbPath);
+      if (source === null) throw new Error("fixture database unavailable");
+      try {
+        const result = backfill(ctx, source, ledger, "app", [1]);
+        expect(result).toStartWith(outcome === "accepted" ? "backfill: ok" : "backfill:");
+        expect(readState(ledger)).toEqual(before);
+        backfill(ctx, source, ledger, "app", [1]);
+        expect(readState(ledger)).toEqual(before);
+        const runs = readJsonl<{ job: string; status: string }>(ledger.path("runs.jsonl"));
+        expect(runs.find((row) => row.job === "backfill")?.status).toBe(
+          outcome === "accepted" ? "ok" : outcome === "rejected" ? "rejected" : "failed",
+        );
+      } finally {
+        source.close();
+      }
+    },
+  );
+
   test("two hundred summaries keep the newest inside the documented summary cap, oldest first", () => {
     const summaries = Array.from({ length: 200 }, (_, index) => ({
       memory_session_id: index.toString(16).padStart(8, "0"),

@@ -440,7 +440,7 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
       events.push(
         ...eventsFromGithub(github, repo, github.pullRequests(repo, options.prs ?? [], options.since, githubSince), project),
       );
-      if (!github.unavailable && github.fallbackSelected) githubSince = `${started.slice(0, 19)}Z`;
+      if (!github.unavailable && github.fallbackComplete) githubSince = `${started.slice(0, 19)}Z`;
       if (github.unavailable) {
         unavailable.push("github");
         ctx.io.err("ak learn review: review source github unavailable; selection watermark retained");

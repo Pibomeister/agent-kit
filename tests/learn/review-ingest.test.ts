@@ -425,7 +425,7 @@ describe("quarantine", () => {
       );
       expect(rejected.map((row) => [row.status, row.obs_ids])).toEqual([["rejected", undefined]]);
       expect(unscreenedIds(source, memory, deferredObservationIds(ledger))).toEqual(waiting);
-      expect(readState(memory).reflect_failures).toBe(1);
+      expect(readState(memory).reflect_failures).toBeUndefined();
       expect(readFileSync(memory.path("memory.md"), "utf8")).toBe(written);
 
       expect(readyEpisodes(source, memory, unconsolidatedEpisodes(memory)).size).toBe(0);
@@ -441,6 +441,37 @@ describe("quarantine", () => {
 });
 
 describe("ingest end to end", () => {
+  test("a full fallback page preserves the unconsumed GitHub interval", () => {
+    const repo = gitRepo(join(scratch(), "app"));
+    const ctx = testContext();
+    const ledger = reviewLedger(ctx.config, repo);
+    const since = "2026-09-01T00:00:00Z";
+    writeFileSync(ledger.path("raw/.watermark.json"), JSON.stringify({ github_since: since }));
+    const changed = Array.from({ length: 21 }, (_, index) => ({ number: index + 1, headRefOid: "abc" }));
+    const searches: string[] = [];
+    const github = new GitHubReviewSource(repo, (args) => {
+      if (args[1] === "view") return { code: 1, stdout: "", stderr: "no PR", timedOut: false };
+      if (args[1] === "list") {
+        searches.push(args[args.indexOf("--search") + 1] ?? "");
+        return ok(JSON.stringify(changed.slice(0, 20)));
+      }
+      const match = /\/pulls\/(\d+)\/comments$/.exec(args[2] ?? "");
+      return ok(
+        match === null
+          ? "[]"
+          : JSON.stringify([{ ...FINDING, html_url: `https://example.test/pr/${match[1]}/finding` }]),
+      );
+    });
+    const options = { repo: "acme/app", github, skipMem: true };
+    expect(ingest(ctx, ledger, repo, options).fresh).toBe(20);
+    expect(
+      readJson<{ github_since: string }>(ledger.path("raw/.watermark.json"), { github_since: "" }).github_since,
+    ).toBe(since);
+    expect(ingest(ctx, ledger, repo, options).fresh).toBe(0);
+    expect(searches).toEqual([`updated:>=${since}`, `updated:>=${since}`]);
+    expect(loadEvents(ledger)).toHaveLength(20);
+  });
+
   test("fallback selection uses the persisted GitHub watermark without losing it on a memory-only run", () => {
     const repo = gitRepo(join(scratch(), "app"));
     const ctx = testContext();

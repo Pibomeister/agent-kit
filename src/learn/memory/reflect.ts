@@ -505,8 +505,8 @@ export function backfill(
     return `backfill: dry run (${observations.length} of ${pending.length} unscreened observations, ${tokens(prompt)} prompt tokens)`;
   }
   const { reply, failure } = askReflector(ctx, prompt, memProject);
+  saveState(ledger, { ...readState(ledger), reflect_process_failure: failure ?? undefined });
   if (reply === null) {
-    markAttempt(ledger, failure);
     appendRun(ledger, { job: "backfill", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "backfill failed: no judge output");
     return "backfill: judge call failed";
@@ -518,19 +518,10 @@ export function backfill(
     summaries,
   });
   if (reason !== null) {
-    markAttempt(ledger);
     appendRun(ledger, { job: "backfill", status: "rejected", reason, ...outcome, trigger });
     logLine(ledger, `backfill rejected: ${reason}`);
     return `backfill: rejected: ${reason}`;
   }
-  const {
-    reflect_stalled_since: _stalled,
-    reflect_process_failure: _process,
-    last_reflect_attempt: _attempt,
-    reflect_failures: _failures,
-    ...screenedState
-  } = readState(ledger);
-  saveState(ledger, screenedState);
   appendRun(ledger, {
     job: "backfill",
     status: "ok",
