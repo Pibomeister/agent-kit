@@ -102,6 +102,10 @@ function setup() {
   return { ledger, memory };
 }
 
+function largeTailMemory(id: number): string {
+  return `${SECTIONS[0]}\n- short ${"kept ".repeat(130)}[obs:${id}]\n- tail ${"word ".repeat(2000)}[obs:${id}]\n${SECTIONS.slice(1).join("\n")}\n`;
+}
+
 describe("reflect apply", () => {
   function expectRejected(text: string, inputTokens: number, reason: string) {
     const { ledger, memory } = setup();
@@ -131,6 +135,19 @@ describe("reflect apply", () => {
     );
     expect([result.ok, result.reason]).toEqual([false, "collapsed"]);
     expect(memory()).toBe(before);
+  });
+
+  test("trimming that collapses memory rejects the oversized original", () => {
+    const { ledger, memory } = setup();
+    const previous = `${PREV}- prior ${"old ".repeat(1200)}[obs:10]\n`;
+    writeFileSync(ledger.path("memory.md"), previous);
+    const reply = largeTailMemory(20);
+    expect(tokens(reply)).toBeGreaterThan(CAP);
+    expect(tokens(reply)).toBeLessThan(1.3 * CAP);
+    const result = applyReflection(ledger, reply, new Set(["obs:20"]), 2000, 20, CAP);
+    expect([result.ok, result.reason]).toEqual([false, "collapsed"]);
+    expect(memory()).toBe(previous);
+    expect(readState(ledger).last_obs_id_reflected).toBeUndefined();
   });
 
   test("a missing section is rejected", () =>
@@ -273,10 +290,13 @@ describe("reflect apply", () => {
 });
 
 describe("reflect", () => {
-  test.each(["empty", "malformed", "rejected", "accepted"])(
+  test.each(["empty", "malformed", "rejected", "accepted", "trim-collapse"])(
     "backfill %s output preserves reflector retry and progress state",
     (outcome) => {
-      const { ledger } = setup();
+      const { ledger, memory } = setup();
+      if (outcome === "trim-collapse")
+        writeFileSync(ledger.path("memory.md"), `${PREV}- prior ${"old ".repeat(1200)}[obs:10]\n`);
+      const previous = memory();
       const dbPath = join(scratch(), "mem.db");
       const mem = new MemFixture(dbPath);
       for (const title of ["unscreened", "screened"])
@@ -292,9 +312,11 @@ describe("reflect", () => {
       });
       const before = readState(ledger);
       const ctx = testContext();
+      ctx.config.memoryTokens = CAP;
       ctx.judge = (prompt) => {
         if (outcome === "empty") return null;
         if (outcome === "malformed") return { memory: "" };
+        if (outcome === "trim-collapse") return { memory: largeTailMemory(1) };
         return outcome === "accepted" ? reflectorReply(prompt) : { memory: "invalid" };
       };
       const source = ClaudeMemSource.open(dbPath);
@@ -303,11 +325,13 @@ describe("reflect", () => {
         const result = backfill(ctx, source, ledger, "app", [1]);
         expect(result).toStartWith(outcome === "accepted" ? "backfill: ok" : "backfill:");
         expect(readState(ledger)).toEqual(before);
+        expect(memory()).toBe(previous);
+        if (outcome === "trim-collapse") expect(result).toBe("backfill: rejected: collapsed");
         backfill(ctx, source, ledger, "app", [1]);
         expect(readState(ledger)).toEqual(before);
         const runs = readJsonl<{ job: string; status: string }>(ledger.path("runs.jsonl"));
         expect(runs.find((row) => row.job === "backfill")?.status).toBe(
-          outcome === "accepted" ? "ok" : outcome === "rejected" ? "rejected" : "failed",
+          outcome === "accepted" ? "ok" : outcome === "rejected" || outcome === "trim-collapse" ? "rejected" : "failed",
         );
       } finally {
         source.close();

@@ -651,7 +651,12 @@ describe("ingest end to end", () => {
     );
     expect(first.fresh).toBe(2);
     expect(ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true }).fresh).toBe(0);
-    expect(eventsFromKbFindings(join(base, "missing"), "app")).toEqual([]);
+    expect(() => eventsFromKbFindings(join(base, "missing"), "app")).toThrow("knowledgebase findings:");
+    expect(eventsFromKbFindings(gitRepo(join(base, "empty-kb")), "app")).toEqual([]);
+    const unborn = join(base, "unborn-kb");
+    mkdirSync(unborn);
+    expect(kbGit(unborn, ["init", "-q"]).status).toBe(0);
+    expect(eventsFromKbFindings(unborn, "app")).toEqual([]);
   });
 
   test("only committed KB publications enter the review ledger", () => {

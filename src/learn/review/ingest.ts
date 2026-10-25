@@ -279,8 +279,20 @@ function kbArtifact(line: string): StoredKbArtifact | null {
 
 export function eventsFromKbFindings(kbRoot: string, project: string | null): ReviewEvent[] {
   if (project === null) return [];
-  const committed = kbGit(kbRoot, ["show", `HEAD:projects/${project}/runs/artifacts.jsonl`]);
-  if (committed.status !== 0) return [];
+  const head = kbGit(kbRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  if (head.status !== 0) {
+    const branch = kbGit(kbRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (branch.status === 0 && kbGit(kbRoot, ["show-ref", "--verify", "--quiet", branch.stdout.trim()]).status === 1)
+      return [];
+    throw new Error(`knowledgebase findings: cannot read committed HEAD at ${kbRoot}`);
+  }
+  const snapshot = head.stdout.trim();
+  const path = `projects/${project}/runs/artifacts.jsonl`;
+  const listed = kbGit(kbRoot, ["ls-tree", "-z", snapshot, "--", path]);
+  if (listed.status !== 0) throw new Error(`knowledgebase findings: cannot locate ${path}: ${listed.stderr.trim()}`);
+  if (listed.stdout === "") return [];
+  const committed = kbGit(kbRoot, ["cat-file", "blob", `${snapshot}:${path}`]);
+  if (committed.status !== 0) throw new Error(`knowledgebase findings: cannot read ${path}: ${committed.stderr.trim()}`);
   const events: ReviewEvent[] = [];
   for (const line of committed.stdout.split("\n")) {
     if (line.trim() === "") continue;
@@ -458,8 +470,10 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
     deferred = mem.deferred;
   }
   const kb = resolveKnowledgebase(root, kbRegistryPath(ctx.env));
+  if (kb.state === "failed")
+    throw new Error(`knowledgebase findings: ${kb.issues.map((issue) => issue.message).join("; ")}`);
   if (kb.resolved !== null) events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
-  else if (kb.state === "failed" || kb.issues.some((issue) => issue.rule === "kb.unregistered")) {
+  else if (kb.issues.some((issue) => issue.rule === "kb.unregistered")) {
     unavailable.push("kb-finding");
     ctx.io.err(
       `ak learn review: review source kb-finding unavailable: ${kb.issues.map((issue) => issue.message).join("; ")}`,

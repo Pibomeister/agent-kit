@@ -311,18 +311,16 @@ function screenReply(
   let keptLines = red.kept;
   let written = `${keptLines.join("\n").trim()}\n`;
   let reason = degenerate(written, previous, inputTokens, cap, reserve);
-  const total = tokens(written) + reserve;
+  const total = tokens(`${withSecurityRecord(keptLines, record).join("\n").trim()}\n`);
   if (
     total > cap &&
     total <= 1.5 * cap &&
     degenerate(written, previous, inputTokens, Number.POSITIVE_INFINITY, reserve) === null
   ) {
-    const trimmed = trimToCap(written, cap, reserve);
-    if (degenerate(trimmed, previous, inputTokens, cap, reserve) === null) {
-      keptLines = splitLines(trimmed.trim());
-      written = trimmed;
-      reason = null;
-    }
+    keptLines = splitLines(trimToCap(written, cap, reserve).trim());
+    written = `${keptLines.join("\n")}\n`;
+    const trimmedTokens = tokens(`${withSecurityRecord(keptLines, record).join("\n").trim()}\n`);
+    reason = trimmedTokens > cap ? "over cap" : degenerate(written, previous, inputTokens, cap, reserve);
   }
   // A gutted memory is worse than a stale one.
   const meant = candidates - red.flagged;
