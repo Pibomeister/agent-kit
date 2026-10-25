@@ -109,8 +109,10 @@ arriving.
    an assertion, lowers a threshold or removes coverage (ruling
    `ci-repair-restricts-purpose-not-permission`). Before an attempt pushes, run
    `node <this skill's directory>/../../bin/ak-gate.mjs publish-scan --repo <owner/name> --visibility
-   <v> --commits <pushed head>..<repair head>` on its commit messages: a hit stops the attempt with
-   nothing pushed until the message is rewritten.
+   <v> --commits <pushed head>..<repair head>` on its commit messages, reading `<v>` with
+   `gh repo view <owner/name> --json visibility --jq .visibility` and omitting `--visibility`, which
+   scans as public, when that lookup fails. A hit stops the attempt with nothing pushed until the
+   message is rewritten.
 10. Leave `ci.repair` the moment the fix requires a product-code change. What follows is diagnosis,
     a bounded patch, new verification and affected delta review — not a wider repair.
 11. Route a base-branch change to the review lane where the affected surface moved, using the delta
