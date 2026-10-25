@@ -207,14 +207,14 @@
           "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
         },
         "extensions": {
-          "description": "One entry per cycle a human authorized after the cap decision. Each is reviewed as a delta and may approve; a cycle above 'allowed' with no entry here is refused. 'authorized_by' must be independent of the implementer, the spec approver and every seat of this review.",
+          "description": "One entry per cycle a human authorized after the cap decision. Each is reviewed as a delta and may approve; a cycle above 'allowed' with no entry here is refused. 'authorized_by' must be the reserved actor 'human'; the operator attests that, and the record does not prove it.",
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["authorized_by", "authorized_at"],
             "properties": {
-              "authorized_by": { "$ref": "common.schema.json#/$defs/nonempty_string" },
+              "authorized_by": { "$ref": "common.schema.json#/$defs/actor_role" },
               "authorized_at": { "$ref": "common.schema.json#/$defs/timestamp" }
             }
           }

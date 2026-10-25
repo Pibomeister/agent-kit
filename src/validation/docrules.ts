@@ -1084,21 +1084,16 @@ function reviewRules(rc: RuleContext): void {
   if (cycles !== null) {
     const allowed = num(cycles["allowed"]);
     const used = num(cycles["used"]);
-    const dependent = new Set(
-      [implementer, specApprover, ...lanes.map((l) => str(obj(l?.["seat"])?.["filled_by"]))].filter(
-        (x): x is string => x !== null,
-      ),
-    );
     let extensions = 0;
     for (const ext of arr(cycles["extensions"]).map(obj)) {
       const by = ext === null ? null : str(ext["authorized_by"]);
       if (by === null || str(ext?.["authorized_at"]) === null) {
         fail(rc, RULE_CYCLES, "a fix_cycles extension names no authorized_by or no authorized_at");
-      } else if (dependent.has(by)) {
+      } else if (by !== "human") {
         fail(
           rc,
           RULE_CYCLES,
-          `a fix_cycles extension is authorized by ${by}, the implementer, spec approver or a seat of this review; the authorizing party must be independent of them`,
+          `a fix_cycles extension is authorized by ${by}; only a human authorizes a cycle past the cap`,
         );
       } else {
         extensions += 1;

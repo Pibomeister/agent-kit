@@ -1185,23 +1185,22 @@ describe("review rules", () => {
     });
 
   test("review.third-fix-cycle-stops lets a human-authorized post-cap delta approve", () => {
-    const doc = postCapDelta([{ authorized_by: "maintainer", authorized_at: "2026-01-01T00:00:00Z" }]);
+    const doc = postCapDelta([{ authorized_by: "human", authorized_at: "2026-01-01T00:00:00Z" }]);
     expect(rulesOf(run(doc)).filter((r) => r.startsWith("review."))).toEqual([]);
   });
 
-  test.each([
-    ["the implementer", "builder"],
-    ["the spec approver", "planner"],
-    ["a review seat", "reviewer-a"],
-  ])("review.third-fix-cycle-stops refuses a post-cap extension authorized by %s", (_who, by) => {
-    const doc = postCapDelta([{ authorized_by: by, authorized_at: "2026-01-01T00:00:00Z" }]);
-    const messages = messagesOf(run(doc));
-    expect(messages).toContainEqual(expect.stringContaining(`a fix_cycles extension is authorized by ${by}`));
-    expect(messages).toContainEqual(expect.stringContaining("the run still approves"));
-  });
+  test.each(["runner", "orchestrator", "reviewer-spec"])(
+    "review.third-fix-cycle-stops refuses a post-cap extension authorized by %s",
+    (by) => {
+      const doc = postCapDelta([{ authorized_by: by, authorized_at: "2026-01-01T00:00:00Z" }]);
+      const messages = messagesOf(run(doc));
+      expect(messages).toContainEqual(expect.stringContaining(`a fix_cycles extension is authorized by ${by}`));
+      expect(messages).toContainEqual(expect.stringContaining("the run still approves"));
+    },
+  );
 
   test("review.third-fix-cycle-stops refuses a post-cap extension with no authorized_at", () => {
-    expect(messagesOf(run(postCapDelta([{ authorized_by: "maintainer" }])))).toContainEqual(
+    expect(messagesOf(run(postCapDelta([{ authorized_by: "human" }])))).toContainEqual(
       expect.stringContaining("a fix_cycles extension names no authorized_by or no authorized_at"),
     );
   });
@@ -1213,7 +1212,7 @@ describe("review rules", () => {
   });
 
   test("review.third-fix-cycle-stops refuses an authorized post-cap cycle reviewed as a new full scope", () => {
-    const doc = postCapDelta([{ authorized_by: "maintainer", authorized_at: "2026-01-01T00:00:00Z" }]);
+    const doc = postCapDelta([{ authorized_by: "human", authorized_at: "2026-01-01T00:00:00Z" }]);
     doc["mode"] = "full";
     expect(messagesOf(run(doc))).toContainEqual(
       expect.stringContaining("a cycle authorized past the cap is reviewed as a delta, never as a new full scope"),
