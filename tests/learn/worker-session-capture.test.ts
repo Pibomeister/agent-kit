@@ -27,7 +27,7 @@ import { ensureMemoryLedger, writeLesson } from "../../src/learn/memory/ledger.t
 import { memoryDir, readState } from "../../src/learn/memory/ledger.ts";
 import { loadEpisodes } from "../../src/learn/memory/episodes.ts";
 import { RawStore } from "../../src/learn/memory/raw-store.ts";
-import { type Registry, readWorktrees, registerRoot } from "../../src/learn/memory/registry.ts";
+import { type Registry, readRegistry, readWorktrees, registerRoot } from "../../src/learn/memory/registry.ts";
 import { fetchNew, formatObservation } from "../../src/learn/memory/reflect.ts";
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
 import { tick } from "../../src/learn/memory/tick.ts";
@@ -979,6 +979,15 @@ describe("memory tick worker capture", () => {
         .toSorted(),
     ).toEqual(["grok", "kimi"]);
     expect(ctx.out.some((line) => line.includes("worker sessions skipped"))).toBe(false);
+    expect(readWorktrees(ctx.config)).toEqual({ [linked]: main });
+    rmSync(linked, { recursive: true });
+    expect(workerRootResolver(readRegistry(ctx.config), readWorktrees(ctx.config))(join(linked, "src"))).toBe(main);
+    writeRollout(join(homes, "codex"), "after-deletion", join(linked, "src"), [
+      codexMessage("user", "finish after deletion"), CODEX_TASK_COMPLETE,
+    ]);
+    expect(tick(ctx, { only: main, job: "reflect" })).toBe(0);
+    expect(WorkerSessionSource.open(new Ledger(memoryDir(ctx.config, main))).observationsSince("", 0)
+      .some((row) => row.facts?.includes("finish after deletion"))).toBe(true);
   });
 
   test("a worktree pointer naming an unregistered root places nothing", () => {

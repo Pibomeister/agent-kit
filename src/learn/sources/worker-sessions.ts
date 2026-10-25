@@ -94,6 +94,7 @@ export interface CapturedSession {
 }
 
 interface StoredSession extends SessionRow {
+  capture_version?: number;
   native_id: string;
   modified_at_epoch: number;
   quiet_bytes?: number;
@@ -133,7 +134,7 @@ interface ToolOutput {
   text: string;
   failed: boolean;
   /** How `failed` was decided: a recorded status or error envelope, or the output's wording. */
-  fidelity: "observed" | "command" | "inferred" | "none";
+  fidelity: "observed" | "inferred" | "none";
 }
 
 /** One user prompt and everything the worker did until the next one. */
@@ -152,6 +153,7 @@ export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
 /** How far back the scan reads host records, and how long the ledger keeps a session its host stopped writing. */
 export const CAPTURE_WINDOW_MS = 30 * 86_400_000;
 export const MAX_OBSERVATIONS = 999;
+const CAPTURE_VERSION = 1;
 /** A turn nobody ended counts as over once its record has been quiet this long. */
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
@@ -360,22 +362,6 @@ function reportsFailure(text: string): boolean {
   return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, ""));
 }
 
-/** Read-only file and search tools: their output's wording is content, never failure evidence. */
-const READ_TOOLS = new Set([
-  "read",
-  "read_file",
-  "readfile",
-  "grep",
-  "glob",
-  "ls",
-  "list_dir",
-  "listdir",
-  "view",
-  "search",
-  "find",
-  "cat",
-]);
-
 /** Command-execution tools, whose output wording may carry an inferred failure. */
 const COMMAND_TOOLS = new Set([
   "bash",
@@ -395,10 +381,6 @@ function normalizedTool(name: string): string {
     .trim()
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
-}
-
-export function isReadTool(name: string): boolean {
-  return READ_TOOLS.has(normalizedTool(name));
 }
 
 export function isCommandTool(name: string): boolean {
@@ -486,7 +468,7 @@ function toolOutput(value: JsonValue | undefined, envelope: JsonObject): ToolOut
   const failed = recordedFailure(envelope) ?? recordedFailure(value);
   if (failed !== null) return { text, failed, fidelity: "observed" };
   const statuses = exitStatuses(raw);
-  if (statuses.length > 0) return { text, failed: statuses.some((status) => status !== 0), fidelity: "command" };
+  if (statuses.length > 0) return { text, failed: statuses.some((status) => status !== 0), fidelity: "inferred" };
   if (reportsFailure(text)) return { text, failed: true, fidelity: "inferred" };
   return { text, failed: false, fidelity: "none" };
 }
@@ -579,13 +561,7 @@ function turnLog() {
     output(output: ToolOutput, at: number, id: string | null = null): void {
       const settle = (call: CapturedCall): void => {
         call.output = output.text === "" ? "[empty]" : output.text;
-        // A read/search tool's wording is content: only a recorded status or envelope fails it.
-        call.failed =
-          output.fidelity === "command"
-            ? isCommandTool(call.name) && output.failed
-            : isReadTool(call.name) && output.fidelity === "inferred"
-              ? false
-              : output.failed;
+        call.failed = output.failed && (output.fidelity === "observed" || isCommandTool(call.name));
       };
       const answered = id === null ? undefined : named.get(id);
       if (answered !== undefined) {
@@ -650,7 +626,7 @@ function session(
   host: WorkerHost,
   nativeId: string,
   cwd: string,
-  times: { started: number; ended: number | null; modified: number; now: number; bytes?: number },
+  times: { started: number; ended: number | null; modified: number; now: number; bytes?: number; freshness?: number },
   log: readonly Turn[],
 ): CapturedSession | null {
   const settled = times.ended !== null || times.now - times.modified > IDLE_MS;
@@ -686,7 +662,7 @@ function session(
     cwd,
     started_at_epoch: times.started,
     completed_at_epoch: times.ended === null ? null : Math.max(times.started, times.ended),
-    modified_at_epoch: times.modified,
+    modified_at_epoch: times.freshness ?? times.modified,
     prompt_count: prompts.length,
     request: prompts[0]?.prompt ?? null,
     completed: turns.findLast((turn) => turn.reply !== "")?.reply ?? null,
@@ -742,7 +718,7 @@ function droidOutput(part: JsonObject): ToolOutput {
   const output = toolOutput(part.content, part);
   if (output.fidelity === "observed") return output;
   const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
-  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "command" };
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "inferred" };
 }
 
 function grokNativeId(dir: string, summary: JsonObject | null): string {
@@ -881,16 +857,13 @@ export function parseDroidSession(path: string, now = Date.now()): CapturedSessi
     }
   }
   if (!log.turns.some((turn) => turn.tokenBasis !== null)) {
-    // Only the counters are read from the settings beside the record, never its provider fields.
-    for (const candidate of [`${path.replace(/\.jsonl$/, "")}.settings.json`, join(dirname(path), "settings.json")]) {
-      const settingsUsage = findUsage(readObject(candidate) ?? undefined);
-      if (settingsUsage !== null) {
-        log.usage(settingsUsage.tokensIn, settingsUsage.tokensOut, "raw_total", at);
-        break;
-      }
-    }
+    const settingsUsage = findUsage(readObject(droidSettingsPath(path)) ?? undefined);
+    if (settingsUsage !== null) log.usage(settingsUsage.tokensIn, settingsUsage.tokensOut, "raw_total", at);
   }
-  return session("droid", nativeId, cwd, { started, ended, modified, now, bytes }, log.turns);
+  return session(
+    "droid", nativeId, cwd,
+    { started, ended, modified, now, bytes, freshness: workerModified("droid", path) }, log.turns,
+  );
 }
 
 function grokCwd(dir: string, summary: JsonObject | null): string | null {
@@ -954,7 +927,10 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
     (!Array.isArray(lastPublic.tool_calls) || lastPublic.tool_calls.length === 0)
   )
     ended = epoch(summary?.last_active_at ?? summary?.updated_at, modified);
-  return session("grok", nativeId, cwd, { started, ended, modified, now }, log.turns);
+  return session(
+    "grok", nativeId, cwd,
+    { started, ended, modified, now, freshness: workerModified("grok", historyPath) }, log.turns,
+  );
 }
 
 export function parseKimiSession(dir: string, now = Date.now()): CapturedSession | null {
@@ -1142,8 +1118,6 @@ export function workerRootResolver(
     platform?: NodeJS.Platform;
     /** When set, a newly resolved linked worktree is persisted through `recordWorktree` for later ticks. */
     config?: LearnConfig;
-    /** Persistence seam for tests and hosts that own the worktree record themselves. */
-    persist?: (worktree: string, root: string) => void;
   } = {},
 ): (cwd: string) => WorkerPlace {
   const entries = Object.values(registry);
@@ -1163,8 +1137,7 @@ export function workerRootResolver(
       else places.splice(at, 0, place);
     }
     try {
-      if (guard.persist !== undefined) guard.persist(worktree, root);
-      else if (guard.config !== undefined) recordWorktree(guard.config, worktree, root);
+      if (guard.config !== undefined) recordWorktree(guard.config, worktree, root);
     } catch {
       // Persistence is a hint for later scans; placing this session never depends on it.
     }
@@ -1213,6 +1186,16 @@ function writtenAt(path: string): number {
   } catch {
     return 0;
   }
+}
+
+function droidSettingsPath(path: string): string {
+  return `${path.replace(/\.jsonl$/, "")}.settings.json`;
+}
+
+function workerModified(host: WorkerHost, record: string): number {
+  const counters =
+    host === "droid" ? droidSettingsPath(record) : host === "grok" ? join(dirname(record), "summary.json") : null;
+  return Math.max(writtenAt(record), counters === null ? 0 : writtenAt(counters));
 }
 
 export interface WorkerScan {
@@ -1264,7 +1247,7 @@ export function scanWorkerSessions(
     identify: () => { cwd: string | null; nativeId: string | null },
     parse: () => CapturedSession | null,
   ) => {
-    const touched = writtenAt(path);
+    const touched = Math.max(writtenAt(path), workerModified(host, record));
     if (touched < sinceMs) return;
     guarded(path, () => {
       const { cwd, nativeId } = identify();
@@ -1279,7 +1262,8 @@ export function scanWorkerSessions(
         scan.unmatched += 1;
         return;
       }
-      const { mtimeMs: modified, size } = statSync(record);
+      const { size } = statSync(record);
+      const modified = workerModified(host, record);
       const place = placed.get(root) ?? { newest: 0, read: [] };
       placed.set(root, place);
       place.newest = Math.max(place.newest, touched, modified);
@@ -1373,8 +1357,13 @@ export function scanWorkerSessions(
   return scan;
 }
 
-function rowKey(row: CapturedObservation): string {
+function rowKey(row: Pick<CapturedObservation, "title" | "text">): string {
   return createHash("sha256").update(`${row.title}\n${row.text}`).digest("hex").slice(0, 16);
+}
+
+function refreshKey(title: string, text: string): string {
+  const lead = text.split("\n").filter((line) => /^(?:prompt:|reply:|tools:)/.test(line));
+  return rowKey({ title, text: lead.length === 0 ? text : lead.join("\n") });
 }
 
 /** The parser's row in a rewrite's wording. Its type, title, time and files stay the parser's. */
@@ -1413,6 +1402,7 @@ function storedObservation(
 
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
   const stored: StoredSession = {
+    capture_version: CAPTURE_VERSION,
     id: 0,
     memory_session_id: item.memory_session_id,
     platform_source: item.platform,
@@ -1498,37 +1488,71 @@ export class WorkerSessionSource implements MemoryObservationSource {
     const newestId = held.at(-1)?.id ?? CAPTURE_ID_BASE - 1;
     let nextId = newestId;
     const fresh: StoredObservation[] = [];
+    const updates = new Map<number, StoredObservation>();
     const revisions: StoredSession[] = [];
     for (const item of sessions) {
       const stored = this.bySession.get(item.memory_session_id) ?? [];
-      const unseen = new Map<string, number>();
-      for (const row of stored) unseen.set(row.key, (unseen.get(row.key) ?? 0) + 1);
+      const row = this.sessionRows.get(item.memory_session_id);
+      const refresh = row !== undefined && row.capture_version !== CAPTURE_VERSION;
+      const used = new Set<number>();
+      const identities = new Map<number, string>(
+        refresh ? stored.map((entry) => [entry.id, refreshKey(entry.title ?? "", entry.facts ?? "")]) : [],
+      );
+      const matched = new Map<number, StoredObservation>();
+      const aggregates: StoredObservation[] = [];
       const pending: Array<{ row: CapturedObservation; key: string }> = [];
       for (const row of item.observations) {
         const key = rowKey(row);
-        const count = unseen.get(key) ?? 0;
-        if (count > 0) unseen.set(key, count - 1);
-        else pending.push({ row, key });
+        const identity = refresh ? refreshKey(row.title, row.text) : null;
+        const previous =
+          stored.find((entry) => !used.has(entry.id) && entry.key === key) ??
+          (refresh ? stored.find((entry) => !used.has(entry.id) && identities.get(entry.id) === identity) : undefined);
+        if (previous === undefined) {
+          pending.push({ row, key });
+          continue;
+        }
+        used.add(previous.id);
+        const current = storedObservation(item, row, previous.id, key);
+        if (key === previous.key) {
+          current.facts = previous.facts;
+          current.discovery_tokens = previous.discovery_tokens;
+        }
+        if (!refresh && current.usage_basis === "estimated" && previous.usage_basis !== "estimated") {
+          current.tokens_in = previous.tokens_in;
+          current.tokens_out = previous.tokens_out;
+          current.usage_basis = previous.usage_basis;
+        }
+        matched.set(previous.id, current);
+        if (row.usage_basis === "raw_total" || row.type === "truncated") aggregates.push(current);
       }
       const rows = pending.map((entry) => entry.row);
       const rewritten = pending.length > 0 && options.rewrite !== undefined ? options.rewrite(item, rows) : rows;
       const appended = pending.map((entry, index) =>
         storedObservation(item, reworded(entry.row, rewritten[index]), ++nextId, entry.key),
       );
+      aggregates.push(...appended.filter((row) => row.usage_basis === "raw_total" || row.type === "truncated"));
+      const aggregateIds = new Set(aggregates.map((row) => row.id));
       for (const field of ["tokens_in", "tokens_out"] as const) {
         const total = item[field];
         if (total === undefined || total === null) continue;
-        let remaining = Math.max(0, total - stored.reduce((sum, row) => sum + (row[field] ?? 0), 0));
-        const exact = appended.filter((row) => row.usage_basis === "incremental" && row.type !== "truncated");
-        const aggregate = appended.filter((row) => row.usage_basis === "raw_total" || row.type === "truncated");
-        for (const row of [...exact.toReversed(), ...aggregate]) {
+        const counted = [...stored.map((row) => matched.get(row.id) ?? row), ...appended]
+          .filter((row) => !aggregateIds.has(row.id))
+          .reduce((sum, row) => sum + (row[field] ?? 0), 0);
+        let remaining = Math.max(0, total - counted);
+        for (const row of aggregates) {
           if (row[field] === null) continue;
           row[field] = Math.min(row[field], remaining);
           remaining -= row[field];
         }
       }
-      const row = this.sessionRows.get(item.memory_session_id);
+      for (const previous of stored) {
+        const current = matched.get(previous.id);
+        if (current !== undefined && JSON.stringify(current) !== JSON.stringify(previous))
+          updates.set(current.id, current);
+      }
       if (
+        !refresh &&
+        !stored.some((entry) => updates.has(entry.id)) &&
         appended.length === 0 &&
         (row === undefined ||
           (item.completed_at_epoch === null && item.quiet_bytes === undefined) ||
@@ -1542,7 +1566,9 @@ export class WorkerSessionSource implements MemoryObservationSource {
     }
     const written = { observations: fresh.length, sessions: revisions.length };
     if (options.dryRun === true) return written;
-    const kept = held.filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId));
+    const kept = held
+      .filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId))
+      .map((row) => updates.get(row.id) ?? row);
     const pruned = kept.length < held.length;
     const latest = [...this.sessionRows.values(), ...revisions].filter(
       (row) => !pruned || !expired(row.memory_session_id),
@@ -1553,7 +1579,7 @@ export class WorkerSessionSource implements MemoryObservationSource {
         [...new Map(latest.map((row) => [row.memory_session_id, row])).values()],
         this.gate,
       );
-    else this.store.addWorkers(fresh, revisions, this.gate);
+    else this.store.addWorkers([...updates.values(), ...fresh], revisions, this.gate);
     this.hold([...kept, ...fresh], latest);
     return written;
   }
@@ -1561,7 +1587,8 @@ export class WorkerSessionSource implements MemoryObservationSource {
   /** When the stored session ended, if the ledger holds it complete as its host record stood at `modifiedMs`. */
   completedAt(memorySessionId: string, modifiedMs: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
-    return row !== undefined && row.modified_at_epoch === modifiedMs ? row.completed_at_epoch : null;
+    return row !== undefined && row.capture_version === CAPTURE_VERSION && row.modified_at_epoch === modifiedMs
+      ? row.completed_at_epoch : null;
   }
 
   /**
@@ -1570,7 +1597,10 @@ export class WorkerSessionSource implements MemoryObservationSource {
    */
   quietAt(memorySessionId: string, modifiedMs: number, bytes: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
-    if (row === undefined || row.modified_at_epoch !== modifiedMs || row.quiet_bytes !== bytes) return null;
+    if (
+      row === undefined || row.capture_version !== CAPTURE_VERSION ||
+      row.modified_at_epoch !== modifiedMs || row.quiet_bytes !== bytes
+    ) return null;
     return this.sessionObservations(memorySessionId).reduce(
       (latest, item) => Math.max(latest, item.created_at_epoch),
       row.started_at_epoch,
