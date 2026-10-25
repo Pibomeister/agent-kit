@@ -168,13 +168,13 @@ describe("native token counters", () => {
       usage: { inputOther: other, inputCacheRead: read, inputCacheCreation: created, output, raw: { model: "private-raw-model" } },
     });
     writeJsonl(join(dir, "agents", "main", "wire.jsonl"), [
-      usage("session", 10, 20, 30, 5),
+      { ...usage("session", 10, 20, 30, 5), time: started - 1 },
       kimiAppended({ role: "user", origin: { kind: "user" }, content: [{ type: "text", text: "first" }] }),
       usage("turn", 100, 200, 300, 40),
       usage("session", 10, 20, 30, 4),
       { type: "StatusUpdate", token_usage: { input_tokens: 720, output_tokens: 49 } },
       { type: "agent.status.updated", usage: { total: { inputOther: 120, inputCacheRead: 240, inputCacheCreation: 360, output: 49 } } },
-      kimiAppended({ role: "assistant", content: [{ type: "text", text: "one" }] }),
+      { ...kimiAppended({ role: "assistant", content: [{ type: "text", text: "one" }] }), time: started + 1 },
       { type: "turn.ended" },
       kimiAppended({ role: "user", origin: { kind: "user" }, content: [{ type: "text", text: "second" }] }),
       usage("turn", 7, 11, 13, 17), usage("turn", 0, 0, 0, 0), usage("turn", -1, 0, 0, 0),
@@ -185,6 +185,7 @@ describe("native token counters", () => {
     expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out, row.usage_basis])).toEqual([
       [60, 5, "incremental"], [660, 44, "incremental"], [31, 17, "incremental"],
     ]);
+    expect(parsed.observations.slice(0, 2).map((row) => row.at)).toEqual([started - 1, started + 1]);
     expect([parsed.tokens_in, parsed.tokens_out, parsed.prompt_count]).toEqual([751, 66, 2]);
     expect(JSON.stringify(parsed)).not.toContain("private-");
     const ledger = ensureMemoryLedger(scratch("ak-ws-kimi-native-ledger-"));
@@ -501,6 +502,102 @@ describe("native token counters", () => {
 });
 
 describe("stored evidence refresh", () => {
+  test.each([
+    "codex-total", "codex-last", "droid-row", "droid-settings", "grok-row", "grok-summary",
+    "kimi-record", "kimi-status", "kimi-message",
+  ])("late %s usage refreshes legacy distilled evidence without moving its turn", (format) => {
+    const dir = scratch("ak-ws-late-usage-");
+    const started = Date.parse("2026-10-04T13:00:00.000Z");
+    const usage = { input_tokens: 900, output_tokens: 90 };
+    const content = "error prose in a specimen";
+    const parse = (withUsage: boolean) => {
+      if (format.startsWith("codex")) {
+        const path = writeJsonl(join(dir, "rollout.jsonl"), [
+          { type: "session_meta", payload: { id: "late", cwd: "/fixture/worktree", timestamp: started } },
+          { ...codexMessage("user", "check"), timestamp: started },
+          { type: "response_item", timestamp: started + 1, payload: { type: "function_call", name: "read_file", call_id: "a" } },
+          { type: "response_item", timestamp: started + 2, payload: { type: "function_call_output", call_id: "a", output: content } },
+          { ...codexMessage("assistant", "done"), timestamp: started + 3 },
+          { type: "event_msg", timestamp: started + 4, payload: { type: "token_count", info: withUsage ? {
+            [format === "codex-total" ? "total_token_usage" : "last_token_usage"]: usage,
+          } : {} } },
+          { ...CODEX_TASK_COMPLETE, timestamp: started + 5 },
+        ]);
+        return requiredSession(parseCodexSession(path));
+      }
+      if (format.startsWith("droid")) {
+        const path = writeJsonl(join(dir, "session.jsonl"), [
+          { type: "session_start", id: "late", cwd: "/fixture/worktree", timestamp: started },
+          { type: "message", timestamp: started, message: { role: "user", content: [{ type: "text", text: "check" }] } },
+          { type: "message", timestamp: started + 1, message: { role: "assistant", content: [{ type: "tool_use", name: "read_file", id: "a" }] } },
+          { type: "message", timestamp: started + 2, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content }] } },
+          { type: "message", timestamp: started + 3, message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
+          { type: "notice", timestamp: started + 4, ...(withUsage && format === "droid-row" ? { usage } : {}) },
+          { type: "agent_turn_outcome", timestamp: started + 5 },
+        ]);
+        if (withUsage && format === "droid-settings")
+          writeFileSync(join(dir, "session.settings.json"), JSON.stringify({ usage }));
+        return requiredSession(parseDroidSession(path));
+      }
+      if (format.startsWith("grok")) {
+        writeJsonl(join(dir, "chat_history.jsonl"), [
+          { type: "user", content: "check" },
+          { type: "assistant", tool_calls: [{ id: "a", function: { name: "read_file" } }] },
+          { type: "tool_result", tool_call_id: "a", content },
+          { type: "assistant", content: "done" },
+          ...(format === "grok-row" ? [{ type: "usage", ...(withUsage ? { usage } : {}) }] : []),
+        ]);
+        writeFileSync(join(dir, "summary.json"), JSON.stringify({
+          info: { id: "late", cwd: "/fixture/worktree" }, created_at: started,
+          ...(withUsage && format === "grok-summary" ? { usage } : {}),
+        }));
+        return requiredSession(parseGrokSession(dir));
+      }
+      const counter = format === "kimi-record" ? {
+        type: "usage.record", usage: { inputOther: 600, inputCacheRead: 200, inputCacheCreation: 100, output: 90 },
+      } : format === "kimi-status" ? { type: "StatusUpdate", token_usage: usage } : {
+        type: "agent.message.appended", message: { message: { role: "assistant", content: [], usage } },
+      };
+      writeJsonl(join(dir, "agents", "main", "wire.jsonl"), [
+        { ...kimiAppended({ role: "user", content: [{ type: "text", text: "check" }], origin: { kind: "user" } }), time: started },
+        { ...kimiAppended({ role: "assistant", content: [], toolCalls: [{ id: "a", name: "read_file", arguments: "{}" }] }), time: started + 1 },
+        { ...kimiAppended({ role: "tool", toolCallId: "a", content: [{ type: "text", text: content }] }), time: started + 2 },
+        { ...kimiAppended({ role: "assistant", content: [{ type: "text", text: "done" }] }), time: started + 3 },
+        { ...(withUsage ? counter : { type: "notice" }), time: started + 4 },
+        { type: "turn.ended", time: started + 5 },
+      ]);
+      writeFileSync(join(dir, "state.json"), JSON.stringify({ id: "late", cwd: "/fixture/worktree", createdAt: started }));
+      return requiredSession(parseKimiSession(dir));
+    };
+    const before = parse(false);
+    const legacy: CapturedSession = { ...before, observations: before.observations.map((row) => ({
+      ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
+    })) };
+    const ledger = ensureMemoryLedger(join(dir, "ledger"));
+    WorkerSessionSource.open(ledger).capture([legacy], { rewrite: (_item, rows) => rows.map((row) => ({
+      ...row, text: [...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
+        "read_file inspected a specimen -> found documented examples"].join("\n"),
+    })) });
+    const store = RawStore.of(ledger.dir);
+    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+    for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
+    store.addWorkers(old.observations, old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    const current = parse(true);
+    const basis = format === "grok-summary" || format === "droid-settings" ? "raw_total" : "incremental";
+    expect(before.observations[0]?.at).toBe(started + 3);
+    expect(current.observations[0]).toMatchObject({ at: started + 3, tokens_in: 900, tokens_out: 90, usage_basis: basis });
+    const source = WorkerSessionSource.open(ledger);
+    expect(source.capture([current], { rewrite: () => { throw new Error("already distilled evidence"); } }))
+      .toEqual({ observations: 0, sessions: 1 });
+    expect(source.observationsSince("", 0)).toHaveLength(1);
+    expect(source.observationsSince("", 0)[0]).toMatchObject({
+      id: old.observations[0]?.id, type: "turn", created_at_epoch: started + 3,
+      tokens_in: 900, tokens_out: 90, usage_basis: basis,
+    });
+    expect(source.observationsSince("", 0)[0]?.facts).not.toContain("failed:");
+    expect(source.capture([current])).toEqual({ observations: 0, sessions: 0 });
+  });
+
   test("legacy distilled evidence refreshes its original id without another rewrite", () => {
     const current = toolSessions("read_file", "error prose in a specimen")[0];
     if (current === undefined) throw new Error("fixture session did not parse");

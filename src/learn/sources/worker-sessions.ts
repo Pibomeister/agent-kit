@@ -555,7 +555,7 @@ function turnLog() {
     },
     /** Record native counters the host reported, against the turn they belong to. */
     usage(tokensIn: number, tokensOut: number, basis: UsageBasis, at: number): void {
-      const turn = current(at);
+      const turn = turns.at(-1) ?? start("", at);
       turn.tokensIn += tokensIn;
       turn.tokensOut += tokensOut;
       turn.tokenBasis = basis;
