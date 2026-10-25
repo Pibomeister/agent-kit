@@ -19,6 +19,7 @@ import {
 import {
   applyReflection,
   backfill,
+  degenerate,
   fetchNew,
   formatObservation,
   formatSummaries,
@@ -29,6 +30,7 @@ import {
   SUMMARY_CHARS,
   trimToCap,
 } from "../../src/learn/memory/reflect.ts";
+import { securityRecord, withSecurityRecord, type SecurityNote } from "../../src/learn/memory/redact.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
 import { MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
 
@@ -117,6 +119,17 @@ describe("reflect apply", () => {
   }
 
   test("over cap is rejected", () => expectRejected(VALID + "- filler [obs:20]\n".repeat(900), 20_000, "over cap"));
+
+  test("otherwise-valid output still fails the independent hard cap", () => {
+    const { ledger, memory } = setup();
+    const bullets = Array.from({ length: 400 }, (_, n) => `- distinct fact ${n} recorded here [obs:20]`);
+    const reply = `${SECTIONS[0]}\n${bullets.join("\n")}\n${SECTIONS.slice(1).join("\n")}\n`;
+    expect(tokens(reply)).toBeGreaterThan(1.5 * CAP);
+    expect(degenerate(reply, PREV, 20_000)).toBeNull();
+    const result = applyReflection(ledger, reply, new Set(["obs:20"]), 20_000, 20, CAP);
+    expect([result.ok, result.reason]).toEqual([false, "over cap"]);
+    expect(memory()).toBe(PREV);
+  });
 
   test("repeated lines are rejected", () =>
     expectRejected(VALID + "- same line [obs:20]\n".repeat(3), 20_000, "repeated lines"));
@@ -239,6 +252,39 @@ describe("reflect apply", () => {
     expect(tokens(trimmed)).toBeLessThanOrEqual(100);
     for (const heading of SECTIONS) expect(trimmed).toContain(heading);
     expect(trimToCap(text, 100)).toBe(trimmed);
+  });
+
+  test.each([false, true])("trimming measures the final newline and security insertion: %s", (flagged) => {
+    const { ledger, memory } = setup();
+    const notes: SecurityNote[] = flagged ? [{ obs: "obs:21", kind: "remote-code" }] : [];
+    const record = securityRecord(notes, () => null);
+    const body = (padding: string, tail = false) =>
+      [
+        SECTIONS[0],
+        "- stable fact [obs:20]",
+        `- retained ${padding} [obs:20]`,
+        ...(tail ? [`- tail ${"tail ".repeat(400)}[obs:20]`] : []),
+        ...SECTIONS.slice(1),
+      ].join("\n");
+    const serialized = (text: string) => `${withSecurityRecord(text.split("\n"), record).join("\n").trim()}\n`;
+    const size = 10004 - serialized(body("")).length;
+    const padding = "word ".repeat(Math.floor(size / 5)) + "x".repeat(size % 5);
+    expect(serialized(body(padding))).toHaveLength(10004);
+    const reply = body(padding, true);
+    expect(tokens(serialized(reply))).toBeGreaterThan(CAP);
+    expect(tokens(serialized(reply))).toBeLessThanOrEqual(1.5 * CAP);
+    const result = applyReflection(
+      ledger,
+      { memory: reply, security_notes: notes },
+      new Set(["obs:20", "obs:21"]),
+      20_000,
+      21,
+      CAP,
+    );
+    expect([result.ok, result.reason]).toEqual([true, null]);
+    expect(tokens(memory())).toBeLessThanOrEqual(CAP);
+    expect(memory().endsWith("\n")).toBe(true);
+    if (record !== null) expect(memory()).toContain(record);
   });
 
   test.each([280, 340])("a valid %i-bullet reply above the cap is trimmed in, not discarded", (count) => {

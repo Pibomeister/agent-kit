@@ -170,15 +170,7 @@ export function reflectPrompt(
   );
 }
 
-/** Why a reflected memory is unusable, or null. `reserve` is room kept for text the runtime adds after this check. */
-export function degenerate(
-  text: string,
-  previous: string,
-  inputTokens: number,
-  cap: number,
-  reserve = 0,
-): string | null {
-  if (tokens(text) + reserve > 1.3 * cap) return "over cap";
+export function degenerate(text: string, previous: string, inputTokens: number): string | null {
   const lines = splitLines(text)
     .filter((line) => line.trim() !== "" && !line.startsWith("#"))
     .map((line) => line.trim());
@@ -191,17 +183,15 @@ export function degenerate(
   return null;
 }
 
-/**
- * Deterministically shrink a reflected memory to `cap` tokens (plus `reserve`)
- * without touching its shape: every section heading stays, and bullets are
- * dropped from the end of the fullest section (the later section on a tie)
- * until the text fits. Returns the input unchanged when nothing can be dropped.
- */
 const SECTION_HEADINGS: ReadonlySet<string> = new Set(SECTIONS);
 
-export function trimToCap(text: string, cap: number, reserve = 0): string {
+function memoryText(lines: readonly string[], record: string | null = null): string {
+  return `${withSecurityRecord(lines, record).join("\n").trim()}\n`;
+}
+
+export function trimToCap(text: string, cap: number, record: string | null = null): string {
   const lines = splitLines(text);
-  const fits = () => tokens(lines.join("\n")) + reserve <= cap;
+  const fits = () => tokens(memoryText(lines, record)) <= cap;
   while (!fits()) {
     const starts: number[] = [];
     lines.forEach((line, index) => {
@@ -228,7 +218,7 @@ export function trimToCap(text: string, cap: number, reserve = 0): string {
     if (victim < 0) break;
     lines.splice(victim, 1);
   }
-  return lines.join("\n");
+  return memoryText(lines);
 }
 
 /** Record an attempt for scheduling without advancing the observation watermark. */
@@ -307,21 +297,17 @@ function screenReply(
     return row === undefined ? null : sid8(row.memory_session_id);
   };
   const record = securityRecord(red.quarantine, sessionOf);
-  const reserve = record === null ? 0 : tokens(record);
   let keptLines = red.kept;
-  let written = `${keptLines.join("\n").trim()}\n`;
-  let reason = degenerate(written, previous, inputTokens, cap, reserve);
-  const total = tokens(`${withSecurityRecord(keptLines, record).join("\n").trim()}\n`);
-  if (
-    total > cap &&
-    total <= 1.5 * cap &&
-    degenerate(written, previous, inputTokens, Number.POSITIVE_INFINITY, reserve) === null
-  ) {
-    keptLines = splitLines(trimToCap(written, cap, reserve).trim());
-    written = `${keptLines.join("\n")}\n`;
-    const trimmedTokens = tokens(`${withSecurityRecord(keptLines, record).join("\n").trim()}\n`);
-    reason = trimmedTokens > cap ? "over cap" : degenerate(written, previous, inputTokens, cap, reserve);
+  let written = memoryText(keptLines);
+  let reason = degenerate(written, previous, inputTokens);
+  let total = tokens(memoryText(keptLines, record));
+  if (reason === null && total > cap && total <= 1.5 * cap) {
+    keptLines = splitLines(trimToCap(written, cap, record).trim());
+    written = memoryText(keptLines);
+    total = tokens(memoryText(keptLines, record));
+    reason = total > cap ? "over cap" : degenerate(written, previous, inputTokens);
   }
+  if (total > 1.3 * cap) reason = "over cap";
   // A gutted memory is worse than a stale one.
   const meant = candidates - red.flagged;
   const lost = dropped + red.tokens;
@@ -379,7 +365,7 @@ export function applyReflection(
   );
   const dropped = outcome.dropped_by_provenance;
   const redacted = outcome.dropped_by_redaction;
-  const text = `${withSecurityRecord(kept, record).join("\n").trim()}\n`;
+  const text = memoryText(kept, record);
   if (reason !== null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "rejected", reason, ...outcome, ...meta });
