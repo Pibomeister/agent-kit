@@ -205,6 +205,9 @@ hard_gates:
     `entrypoint-phase-operation-split`).
   - Oscillation between two states parks the run for a human; a progressive migration of distinct
     failures, each closed in turn, is progress and is not parked.
+  - A repair commit passes publish-scan before it is pushed to a repository that is public or outside
+    the configured owners. A commit message carrying an internal marker or copied instruction text is
+    never pushed.
 
 stop_conditions:
   - complete when the pull request reached a terminal state or the grant was withdrawn, and the watch
@@ -231,8 +234,9 @@ failure_outcomes:
     next_permitted_action: Hand the failure to a human, or replan the change rather than re-invoking.
   - status: failed
     meaning: >-
-      An event could not be read, or a remote call was refused after its read-back. The reason is
-      named and the run stays resumable from the last handled event.
+      An event could not be read, a remote call was refused after its read-back, or a repair commit
+      hit an internal marker. The reason is named and the run stays resumable from the last handled
+      event.
     next_permitted_action: Re-invoke; already-handled events are recognised by their idempotency keys.
   - status: cancelled
     meaning: >-
@@ -406,6 +410,14 @@ tests:
     expect: >-
       The run stops with cap-reached, reports every attempt with its outcome, and hands the failure
       to a human or a replan rather than starting a fourth attempt.
+  - id: repair-commit-with-internal-marker-is-not-pushed
+    kind: adversarial
+    given: >-
+      A repair attempt on a public repository's pull request has committed a fix whose message names
+      an internal hostname from the operator's markers file, and the caller asks to push it now.
+    expect: >-
+      The publish scan runs on the repair commits before the push. The hit stops the attempt with the
+      commit named; nothing is pushed until the message is rewritten and scanned again.
   - id: progressive-failure-migration-is-not-parked
     kind: adversarial
     given: >-

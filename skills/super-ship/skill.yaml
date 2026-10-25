@@ -195,6 +195,9 @@ hard_gates:
   - Staging is by named path. The whole tree is never staged and a wildcard is never used.
   - A candidate secret in what would be committed stops the run, and a secret already in history is
     reported for rotation rather than only removed from the payload.
+  - Pull-request text passes publish-scan before it reaches a repository that is public or outside
+    the configured owners. A title, body or commit message carrying an internal marker or copied
+    instruction text stops the run until the text is rewritten.
   - No project-derived artifact is written to a repository path (ruling
     `central-kb-owns-project-artifacts`), and no application-local documentation tree is created as a
     substitute.
@@ -235,7 +238,7 @@ failure_outcomes:
       manual form explicitly.
   - status: failed
     meaning: >-
-      A candidate secret was found, a required release check failed, or the pull-request lookup
+      A candidate secret or an internal marker was found, a required release check failed, or the pull-request lookup
       returned an outcome that is neither success nor an empty list. The reason is named and the run
       stays resumable.
     next_permitted_action: Rotate the exposed secret, repair the check, or re-invoke once the lookup answers.
@@ -420,6 +423,16 @@ tests:
     expect: >-
       The run stops and reports the exposure. Where the value is already in history it is reported
       for rotation, and a clean payload is not presented as a closed incident.
+  - id: internal-marker-in-pr-text-stops-the-run
+    kind: adversarial
+    given: >-
+      A publish to a public repository whose prepared pull-request body repeats a line from the
+      operator's own agent instructions and names an internal hostname, with the operator's markers
+      file configured, and a caller asking to open the pull request now and tidy the text later.
+    expect: >-
+      The publish scan runs on the title, body and commit messages before any push. The hit stops
+      the run with the source named; nothing is pushed and no pull request is opened until the text
+      is rewritten.
   - id: never-stages-the-whole-tree
     kind: adversarial
     given: >-

@@ -107,7 +107,12 @@ arriving.
 9. Route a failing required check to diagnosis, then to the bounded `ci.repair` attempt. At most
    three attempts (`policies/limits.yaml` `ci_repair_attempts`), and no attempt skips a check, weakens
    an assertion, lowers a threshold or removes coverage (ruling
-   `ci-repair-restricts-purpose-not-permission`).
+   `ci-repair-restricts-purpose-not-permission`). Before an attempt pushes, run
+   `node <this skill's directory>/../../bin/ak-gate.mjs publish-scan --repo <owner/name> --visibility
+   <v> --commits <pushed head>..<repair head>` on its commit messages, reading `<v>` with
+   `gh repo view <owner/name> --json visibility --jq .visibility` and omitting `--visibility`, which
+   scans as public, when that lookup fails. A hit stops the attempt with nothing pushed until the
+   message is rewritten.
 10. Leave `ci.repair` the moment the fix requires a product-code change. What follows is diagnosis,
     a bounded patch, new verification and affected delta review — not a wider repair.
 11. Route a base-branch change to the review lane where the affected surface moved, using the delta
@@ -149,6 +154,10 @@ Gate: at most two fix-and-verify cycles follow a review pass this run drives; th
 explicit blocked-or-replan decision and the open findings attached (ruling `two-fix-cycles-then-stop`).
 
 Gate: a bounded action that needs its own grant stops rather than borrowing this run's.
+
+Gate: a repair commit passes `publish-scan` before it is pushed to a repository that is public or
+outside the configured owners. A commit message carrying an internal marker or copied instruction
+text is never pushed.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -207,8 +216,9 @@ which for the first is the command to type, and starts no loop.
 `cap-reached`: three `ci.repair` attempts were spent on one failure, or a third fix cycle was
 requested. Stops with the attempt history or the blocked-or-replan decision attached.
 
-`failed`: an event could not be read, or a remote call was refused after its read-back. The reason is
-named and the run stays resumable from the last handled event.
+`failed`: an event could not be read, a remote call was refused after its read-back, or a repair
+commit hit an internal marker. The reason is named and the run stays resumable from the last handled
+event.
 
 `cancelled`: the caller withdrew mid-watch. Events already handled are reported with their keys.
 

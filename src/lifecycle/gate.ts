@@ -48,6 +48,7 @@ import {
 import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { defaultMarkersPath, runPublishScan } from "./publish-scan.ts";
 import { verificationValidator } from "./verification-schema.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
@@ -1717,6 +1718,7 @@ export const LIFECYCLE_USAGE = [
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
+  "  ak lifecycle publish-scan --repo <owner/name> [--visibility <v>] [--title <text>] [--body-file <file>] [--commits <range>] [--markers <file>] [--project <dir>]",
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
@@ -1727,8 +1729,11 @@ export const LIFECYCLE_USAGE = [
   "  runs check before each phase and passes --bypass <file> --task <id> to record, from the",
   "  task's worktree the grant names. Start only: approvals still stop.",
   "  A receipt's captured output is read from its artifacts entry with that digest, relative to the receipt, else the project.",
+  "  publish-scan checks pull-request text for internal markers unless the repository is private or internal and its",
+  "  owner is configured; --visibility defaults to public, --markers to $AK_PUBLISH_MARKERS, else",
+  "  ~/.agent-kit/publish-markers: one `owner:`, `marker:`, `instructions: <file>` or `allow:` entry per line.",
   "",
-  "Exit 0 when the record was written or every gate is current, 1 when refused, 2 on bad usage.",
+  "Exit 0 when the record was written, every gate is current or the text is clean, 1 when refused, 2 on bad usage.",
 ];
 
 const FLAGS: Record<string, readonly string[]> = {
@@ -1737,6 +1742,7 @@ const FLAGS: Record<string, readonly string[]> = {
   check: ["evidence", "gates", "run", "dir", "project", "json"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
+  "publish-scan": ["repo", "visibility", "title", "body-file", "commits", "markers", "project"],
 };
 
 export function main(
@@ -1783,6 +1789,24 @@ export function main(
   };
 
   const project = resolve(cwd, str("project") ?? ".");
+  if (sub === "publish-scan") {
+    const repo = str("repo");
+    if (repo === undefined || !/^[^/\s]+\/[^/\s]+$/.test(repo)) {
+      io.err("ak lifecycle publish-scan: --repo <owner/name> is required");
+      return 2;
+    }
+    const markers = str("markers");
+    return runPublishScan({
+      repo,
+      visibility: str("visibility"),
+      title: str("title"),
+      bodyFile: str("body-file"),
+      commits: str("commits"),
+      markersPath: markers === undefined ? defaultMarkersPath() : resolve(cwd, markers),
+      project,
+      io,
+    });
+  }
   let dir: string;
   try {
     dir =
