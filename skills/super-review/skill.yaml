@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-review/SKILL.md (AUTHORING.md §4.1).
 
 id: super-review
-version: 0.1.3
+version: 0.1.4
 kind: lifecycle
 invocation: M
 summary: >-
@@ -207,13 +207,15 @@ hard_gates:
     `closure-requires-independent-verification`). A finding closes only on independent verification
     evidence plus a policy rule saying that evidence suffices for it; confidence stays advisory.
   - At most two fix-and-verify cycles follow the first pass; the third stops with an explicit
-    blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`).
+    blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`). With
+    only P3 findings open it recommends merge with them as follow-ups; when two consecutive cycles
+    reopened the same theme it is a design decision. Every later review is a delta, never a new full.
   - A material change to architecture, requirements, the comparison base or the affected surface
     invalidates the affected approvals (ruling `delta-baseline-reset-not-third-loop`) and
     establishes a new baseline with its own pass 1, never an unbounded third delta loop.
   - The panel is selected from declared risk and artifact evidence, never from a fixed roster, and
     security, API and data facts are never dropped because a classifier was uncertain
-    (ruling `panel-composition-by-declared-risk`).
+    (ruling `panel-composition-by-declared-risk`). Small diffs and deltas seat the lean panel.
   - The delta is bounded by affected behavior rather than changed lines, and a new finding carries
     novelty evidence (ruling `delta-scope-affected-behavior`).
   - A continuing seat keeps its prior finding context or a replacement receives the durable
@@ -236,7 +238,8 @@ stop_conditions:
     head was named. An agent start needs no typed command and no grant (ADR-0013).
   - The delta stops with needs-input where no review run is open, naming the full entrypoint as the
     next permitted action (ruling `entrypoint-phase-operation-split`).
-  - A third fix cycle stops with cap-reached and the blocked-or-replan decision.
+  - A third fix cycle stops with cap-reached and the cap decision, which is one of blocked, replan,
+    merge-with-follow-ups or design-decision.
   - A delta that ends by establishing a new baseline stops with complete (ruling `delta-baseline-reset-not-third-loop`).
     The reset closes that scope, records what changed materially and the new comparison base, and the
     new scope opens at pass 1 rather than continuing the loop.
@@ -253,7 +256,9 @@ failure_outcomes:
     meaning: >-
       A third fix cycle was requested. The run stops with an explicit blocked-or-replan decision and
       every open finding attached.
-    next_permitted_action: Take the blocked-or-replan decision, or establish a new baseline.
+    next_permitted_action: >-
+      Take the cap decision, or establish a new baseline. A cycle authorized after it is reviewed
+      as a delta over the new commits.
   - status: failed
     meaning: >-
       A required lane returned unavailable and the run cannot proceed, or the snapshot could not be
@@ -486,6 +491,31 @@ tests:
     expect: >-
       No third cycle runs. The run returns an explicit blocked-or-replan decision with every open
       finding attached, and reports the cycles already spent.
+  - id: cap-with-only-p3-open-recommends-merge
+    kind: positive
+    given: >-
+      Two fix cycles are spent and the only findings still open are three P3 findings, with the
+      caller asking whether the change can merge.
+    expect: >-
+      The cap decision is merge-with-follow-ups: merge is recommended and each open P3 is listed as a
+      follow-up. No further fix cycle is proposed and the P3s are not dropped.
+  - id: same-theme-twice-surfaces-a-design-decision
+    kind: adversarial
+    given: >-
+      The first and second fix cycles each patched a different size bound on the same untrusted
+      input, and the latest delta reopens that theme again; the caller asks for one more patch.
+    expect: >-
+      No further patch is proposed. The decision is a design decision that names the repeated theme
+      and the design question behind it, with the open findings attached.
+  - id: post-cap-review-is-a-delta
+    kind: adversarial
+    given: >-
+      After the cap decision a human authorized one more fix, which landed as two commits, and the
+      caller asks for a fresh full review of the whole change to be safe.
+    expect: >-
+      The run reviews only the commits since the last reviewed head as a delta, with the two
+      delta lanes and the prior-finding packet. No pass-1 panel is convened and no new full scope
+      opens.
   - id: confidence-does-not-close-a-finding
     kind: adversarial
     given: >-

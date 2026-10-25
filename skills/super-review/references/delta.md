@@ -70,12 +70,27 @@ At most two fix-and-verify cycles after the first pass. The third stops with an 
 blocked-or-replan decision, and anything still open is reported rather than looped (ruling
 `two-fix-cycles-then-stop`).
 
+The decision takes one of four values in `fix_cycles.exhausted_action`:
+
+| Open at the cap | Decision |
+|---|---|
+| Only P3 findings | `merge-with-follow-ups`: recommend merge, each P3 listed in `fix_cycles.follow_ups` |
+| A finding theme the last two cycles both reopened | `design-decision`: name the theme and the design question behind it; no further patch is proposed |
+| Anything else | `blocked` or `replan` |
+
+The theme is the cause the findings share, not their fingerprints: two cycles that each tighten a
+different bound on the same input are one theme. A cycle a human authorizes after the decision is
+reviewed here, as a delta over the commits since the last reviewed head. It never opens a new full
+scope over the whole change.
+
 ## Baseline reset
 
 Where architecture, requirements, the comparison base or the affected surface changes materially, the
 affected approvals are invalidated and a new baseline is deliberately established. That is a new
 review scope with its own pass 1, not an unbounded third delta loop, and it is not the third cycle
-the cap forbids wearing a different name (ruling `delta-baseline-reset-not-third-loop`).
+the cap forbids wearing a different name (ruling `delta-baseline-reset-not-third-loop`). The fix
+commits, a reached cap, a replan, and a rebase that leaves the patch and the requirements unchanged
+are not material changes: each continues as a delta.
 
 The run records its comparison base, its reviewed head and the last head verified in the delta loop,
 so the three are never conflated (ruling `delta-baseline-reset-not-third-loop`). A verification

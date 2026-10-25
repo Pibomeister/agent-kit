@@ -1257,6 +1257,15 @@ describe("review rules, one defect per row", () => {
       "the fix cycle budget is exhausted (2/2) with no exhausted_action recorded",
     ],
     [
+      "a merge recommendation at the cap with no follow-ups",
+      () =>
+        review({
+          fix_cycles: { allowed: 2, used: 2, exhausted_action: "merge-with-follow-ups" },
+          verdict: "changes-requested",
+        }),
+      "exhausted_action merge-with-follow-ups lists no follow_ups",
+    ],
+    [
       "a delta scope bounded by changed lines",
       () => review({ delta_scope: { boundary: "changed-lines", affected_behavior: ["login"] } }),
       "delta_scope.boundary is changed-lines; a changed-lines boundary would suppress an issue in an untouched caller",

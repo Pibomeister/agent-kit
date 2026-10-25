@@ -190,14 +190,18 @@
       ]
     },
     "fix_cycles": {
-      "description": "Plan 6.3: at most two fix/verify cycles. The third stops and the run returns an explicit blocked or replan result rather than looping (release scenario 18). 'allowed' cannot exceed two, so no configuration buys a third pass.",
+      "description": "Plan 6.3: at most two fix/verify cycles. The third stops and the run returns an explicit blocked or replan result rather than looping (release scenario 18). 'allowed' cannot exceed two, so no configuration buys a third pass. 'merge-with-follow-ups' is the recommendation when only P3 findings remain, listed in 'follow_ups'; 'design-decision' is the result when two consecutive cycles reopened the same finding theme (ruling `two-fix-cycles-then-stop`).",
       "type": "object",
       "additionalProperties": false,
       "required": ["allowed", "used"],
       "properties": {
         "allowed": { "type": "integer", "minimum": 0, "maximum": 2 },
         "used": { "type": "integer", "minimum": 0, "maximum": 2 },
-        "exhausted_action": { "enum": ["blocked", "replan"] }
+        "exhausted_action": { "enum": ["blocked", "replan", "merge-with-follow-ups", "design-decision"] },
+        "follow_ups": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        }
       },
       "x-validator-rule": "review.third-fix-cycle-stops"
     },

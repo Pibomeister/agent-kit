@@ -37,11 +37,15 @@ enforced:
       operations: [review.delta]
     meaning: >-
       At most two fix-and-verify cycles follow a review's first pass. The third stops with an
-      explicit blocked-or-replan decision; anything still open is reported, not looped.
+      explicit blocked-or-replan decision; anything still open is reported, not looped. A
+      cycle a human authorizes after that decision is reviewed as a delta over the new commits,
+      never as a new full scope.
     on_reach:
       status: cap-reached
       cap: {limit: fix-cycles, value: 2}
       next: blocked-or-replan decision, with the open findings attached
+      only_p3_open: recommend merge, with the open P3 findings filed as follow-ups
+      same_theme_reopened: a design decision naming the theme, not another fix cycle
     ruling: two-fix-cycles-then-stop
     scenario: 18
     source: plan §6.3; G:L1041; G:L1915
@@ -57,7 +61,9 @@ enforced:
     meaning: >-
       A review run reviews at most three heads: the first snapshot and the head produced by each
       permitted fix cycle. A materially changed comparison base, requirement set or affected
-      surface is a new review scope with its own baseline, not a fourth round.
+      surface is a new review scope with its own baseline, not a fourth round. A cycle a human
+      authorizes after the fix-cycles decision is reviewed as a delta, never as a new first
+      snapshot.
     ruling: delta-baseline-reset-not-third-loop
     scenario: 10
     source: plan §6.3
@@ -202,6 +208,8 @@ not_gates:
       used_by:
         - policies/review.yaml pass_1 seats, as one input to activating the adversarial seat
           when the project's own configured guidance was exceeded and the exception recorded
+        - policies/review.yaml proportionality.lean_panel, as the line below which a pass-1
+          review seats the lean panel
     - id: test-pyramid
       guidance: a rough 80 / 15 / 5 split across unit, integration and end-to-end tests
       lives_in:

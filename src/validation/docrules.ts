@@ -1105,6 +1105,13 @@ function reviewRules(rc: RuleContext): void {
         );
       }
     }
+    if (str(cycles["exhausted_action"]) === "merge-with-follow-ups" && arr(cycles["follow_ups"]).length === 0) {
+      fail(
+        rc,
+        RULE_CYCLES,
+        "exhausted_action merge-with-follow-ups lists no follow_ups; the open P3 findings it merges past",
+      );
+    }
   }
 
   const RULE_DELTA = "review.delta-scope-bounded-by-affected-behavior";

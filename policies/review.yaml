@@ -140,6 +140,17 @@ pass_1:
     rule: >-
       Seat count follows artifact evidence, not ceremony. A documentation typo runs the
       always-on seat and the standards gate if standards exist, and nothing else.
+    lean_panel:
+      applies_to: a change within the project's configured size guidance, and every delta
+      seats: >-
+        Correctness, the standards gate, testing when the change adds or alters behavior, and
+        the conditional seats the change's own risk evidence or attached packs activate.
+        Maintainability, agent-native and learnings sit only when the change exceeds the size
+        guidance; below it, correctness covers their axes.
+      rule: >-
+        Seat count scales with the diff and the mode. A delta never convenes the pass-1 panel:
+        it runs its two lanes, plus the specialist seat of an unresolved security, data or API
+        finding. Leaner never drops a risk seat the evidence activated.
     forbidden:
       - spawning the full catalog on a small low-risk change
       - hardcoding a fixed six seats regardless of the artifact
@@ -405,11 +416,24 @@ delta:
     third_cycle: >-
       Stops with an explicit blocked-or-replan decision. Anything still open is reported, not
       looped.
+    after_the_first_pass: >-
+      Every later review in the run is a delta over the commits since the last reviewed head,
+      including a review that follows the cap or a replan. Reaching the cap never opens a new
+      full scope.
+    only_p3_open_at_cap: >-
+      The decision recommends merge, with each open P3 listed as a follow-up rather than
+      blocking.
+    same_theme_reopened: >-
+      When two consecutive cycles reopen the same finding theme, the decision is a design
+      decision naming the theme, not another fix cycle.
     ruling: two-fix-cycles-then-stop
     scenario: 18
   baseline_reset:
     trigger: >-
       Architecture, requirements, comparison base or the affected surface changes materially.
+    not_a_trigger: >-
+      The fix commits themselves, a reached cap, a replan, or a rebase that leaves the patch
+      and the requirements unchanged. Those continue as a delta.
     effect:
       - affected approvals are invalidated
       - a new baseline is deliberately established

@@ -70,7 +70,10 @@ lane's findings (`policies/review.yaml` `pass_1.seat_context.never_receives`).
    `changes-requested`; `approved` requires every required lane `complete` or `empty` and every
    prior finding independently closed (ruling `closure-requires-independent-verification`).
 10. If findings remain open, hand control back for the next fix cycle — at most twice — and
-    record `fix_cycles`.
+    record `fix_cycles`. At the cap, record the decision in `fix_cycles.exhausted_action`:
+    `merge-with-follow-ups` when only P3 findings are open, listing them in `follow_ups`;
+    `design-decision` when the last two cycles reopened the same finding theme; otherwise
+    `blocked` or `replan` (ruling `two-fix-cycles-then-stop`).
 
 ## Hard gates
 
@@ -100,12 +103,14 @@ self-referential rejection is not a rejection; it becomes `unresolved`, which st
 as a verification gate.
 
 Gate: at most two fix cycles. The third stops with an explicit blocked-or-replan decision
-(ruling `two-fix-cycles-then-stop`).
+(ruling `two-fix-cycles-then-stop`). A cycle authorized after that decision is reviewed by this
+protocol over the commits since the last reviewed head; it never opens a new full scope.
 
 Gate: when architecture, requirements, the comparison base or the affected surface changes
 materially, affected approvals are invalidated and a new baseline is deliberately established.
 That is a new review scope with its own pass 1, not an unbounded third delta loop (ruling
-`delta-baseline-reset-not-third-loop`).
+`delta-baseline-reset-not-third-loop`). The fix commits, a reached cap, a replan, and a rebase that
+leaves the patch and the requirements unchanged are not material changes.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -114,6 +119,8 @@ That is a new review scope with its own pass 1, not an unbounded third delta loo
 | "Both axes agree, so one combined verdict is clearer." | Merging hides the case the split exists for: code that is clean but does not do what was asked, or does what was asked while violating every convention. | Report a summary line per axis under its own heading, and let the verdict be derived, not blended. |
 | "The implementer's note says this is already handled elsewhere." | A claim in the diff is the author's confidence. Clearing a protected finding needs one of the four cited evidence kinds. | Route it to `unresolved` and request the citation. |
 | "Line numbers moved, so this looks like a new finding." | The fingerprint is rule-or-cause plus location-or-symbol plus evidence, deliberately not the line number, so moving a line neither duplicates nor suppresses a finding. | Match on fingerprint against the prior-finding packet and continue the existing finding. |
+| "The cap is reached, so replan and review the whole change again." | A full pass over code already reviewed finds new low-priority issues every round, so the loop never converges (ruling `two-fix-cycles-then-stop`). | Review only the new commits, here, against the last reviewed head. |
+| "Two cycles have now patched the same bound; a third patch will hold." | A theme that reopens twice is a design problem the patches keep relocating. | Record `design-decision`, name the theme, and stop proposing patches. |
 | "The architecture changed under us, but one more cycle would land it." | Continuing would review a snapshot nobody approved (ruling `delta-baseline-reset-not-third-loop`). | Invalidate the affected approvals and establish a new baseline with its own pass 1. |
 | "Give the closing reviewer a clean context so it judges the fix on its merits." | Fresh means independent of the author, never ignorant of prior findings; amnesia is the forbidden reading (ruling `reviewer-continuity-not-amnesia`). | Hand it the prior-finding packet plus the new revision. |
 
@@ -148,7 +155,7 @@ Anything published as project knowledge goes through the knowledgebase adapter (
 - `needs-input`: no review run is open, the comparison base does not resolve, the fix diff is
   empty, or a required lane's context could not be assembled.
 - `cap-reached`: the second fix cycle ended with findings open. Returns the cap object, the open
-  findings and the blocked-or-replan decision.
+  findings and the decision: `blocked`, `replan`, `merge-with-follow-ups` or `design-decision`.
 - `failed`: the snapshot could not be frozen, so no lane can be seated on a stable hash.
 - `cancelled`: the runner cancelled the run.
 
@@ -157,6 +164,8 @@ Anything published as project knowledge goes through the knowledgebase adapter (
 - Fix cycles: 2 (gate, `policies/limits.yaml` `fix_cycles`).
 - Heads reviewed per run: 3 (gate, `policies/limits.yaml` `review_rounds`) — the first snapshot
   plus the head from each permitted fix cycle.
-- Lanes: 2, both required (gate). A third lane is a new scope, not a tiebreak.
+- Lanes: 2, both required (gate). A third lane is a new scope, not a tiebreak. The pass-1 panel is
+  never re-seated here; only the specialist seat of an unresolved security, data or API finding
+  joins.
 - Per-lane output length is capped by the invoking skill so aggregation stays comparable; that
   number is a configurable starting point (guidance).

@@ -568,7 +568,12 @@ conflicts:
     ruling: >-
       At most two fix-and-verify cycles after the first pass. The third stops with an explicit
       blocked-or-replan decision and the open findings attached. Repeated failure is a signal
-      about the plan, not an invitation to a third loop. Anything still open is reported.
+      about the plan, not an invitation to a third loop. Anything still open is reported. After
+      the first full pass every later review in the run, past the cap or a replan included, is a
+      delta over the new commits; the cap never opens a new full scope. Where only P3 findings
+      remain at the cap, the decision recommends merge with them filed as follow-ups. Where two
+      consecutive cycles reopen the same finding theme, the decision is a design decision, not
+      another patch.
     discharged_in: [limits, stop-conditions]
     binds:
       skills: [super-review, ultraqa, autopilot, babysit-pr]
@@ -596,7 +601,9 @@ conflicts:
       materially, affected approvals are invalidated and a new baseline is deliberately
       established. That is a new review scope with its own pass 1, not an unbounded third delta
       loop. A review run records its comparison base, its reviewed head and the last head
-      verified in the delta loop, so the three are never conflated.
+      verified in the delta loop, so the three are never conflated. The fix commits, a reached
+      cap, a replan, or a rebase that leaves the patch and the requirements unchanged are not a
+      material change.
     discharged_in: [workflow, outputs]
     binds:
       skills: [super-review, super-verify]
@@ -625,8 +632,9 @@ conflicts:
       maintainability, agent-native and learnings fire when the diff earns them; security,
       adversarial and the remaining conditional and stack seats are selected from artifact
       evidence, in practice from the attached packs. A substantive feature lands at the
-      six-ish panel the design preserves. A documentation typo does not. Security, API and data
-      facts are never dropped because a classifier was uncertain.
+      six-ish panel the design preserves. A documentation typo does not. A small diff and every
+      delta get a lean panel of the essential lanes. Security, API and data facts are never
+      dropped because a classifier was uncertain.
     discharged_in: [inputs, workflow]
     binds:
       skills: [super-review, doc-review]
