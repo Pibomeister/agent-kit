@@ -8,7 +8,7 @@
   "required": ["source", "kind", "text", "platform", "hash"],
   "properties": {
     "source": {
-      "description": "Where the event came from: 'github' for a review comment, 'github-reply' or 'author-reply' for a reply in its thread, 'review-report' for a finding from a local review run, 'claude-mem' for an observation typed as a review finding, 'correction' for a user correction captured at the prompt.",
+      "description": "The collector or authored record that supplied the event. Source contracts are defined in adapters/review-source/CONTRACT.md and adapters/observation-source/CONTRACT.md.",
       "$ref": "common.schema.json#/$defs/nonempty_string"
     },
     "kind": {
@@ -46,6 +46,10 @@
       "description": "For an observation-source event: the observation id.",
       "type": "integer",
       "minimum": 1
+    },
+    "session": {
+      "description": "The native session or knowledgebase review run that witnessed the event, when known. Witness rules are defined in protocols/evidence-gate/PROTOCOL.md, step 4.",
+      "type": "string"
     },
     "patterns": { "description": "For a correction: the detector's matched pattern names.", "type": "string" },
     "confidence": {
