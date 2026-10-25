@@ -1141,6 +1141,15 @@ function review(extra: Record<string, unknown> = {}): Record<string, unknown> {
   });
 }
 
+function postCapDelta(extensions: JsonValue[]): Doc {
+  return review({
+    mode: "delta",
+    last_head_verified: { repo: "app", revision: "c".repeat(40) },
+    delta_scope: { boundary: "affected-behavior", affected_behavior: ["login"] },
+    fix_cycles: { allowed: 2, used: 3, exhausted_action: "replan", extensions },
+  });
+}
+
 describe("review rules", () => {
   test("a well-formed review produces no review issues", () => {
     expect(rulesOf(run(review())).filter((r) => r.startsWith("review."))).toEqual([]);
@@ -1175,14 +1184,6 @@ describe("review rules", () => {
     const doc = review({ fix_cycles: { allowed: 2, used: 2 } });
     expect(rulesOf(run(doc))).toContain("review.third-fix-cycle-stops");
   });
-
-  const postCapDelta = (extensions: unknown[]): Record<string, unknown> =>
-    review({
-      mode: "delta",
-      last_head_verified: { repo: "app", revision: "c".repeat(40) },
-      delta_scope: { boundary: "affected-behavior", affected_behavior: ["login"] },
-      fix_cycles: { allowed: 2, used: 3, exhausted_action: "replan", extensions },
-    });
 
   test("review.third-fix-cycle-stops lets a human-authorized post-cap delta approve", () => {
     const doc = postCapDelta([{ authorized_by: "human", authorized_at: "2026-01-01T00:00:00Z" }]);
