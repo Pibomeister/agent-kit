@@ -2,15 +2,17 @@
  * Regressions for the worker-session evidence repairs: native host token
  * counters, failure classification, tool-call pairing, and worktree placement.
  */
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
 import { dirname, join } from "node:path";
+import { inProtectedFolder } from "../../src/learn/core/paths.ts";
 import { run } from "../../src/learn/core/proc.ts";
 import { ensureMemoryLedger } from "../../src/learn/memory/ledger.ts";
 import { readWorktrees, type Registry } from "../../src/learn/memory/registry.ts";
 import {
   WorkerSessionSource,
   MAX_OBSERVATIONS,
+  PROTECTED_FOLDER,
   parseCodexSession,
   parseDroidSession,
   parseGrokSession,
@@ -21,6 +23,8 @@ import {
 import { projectScratch, removeProjectScratch, scratch, testContext, withGitCeiling } from "./helpers.ts";
 
 afterAll(removeProjectScratch);
+
+const { mkdirSync, readFileSync, rmSync, writeFileSync } = fs;
 
 function requiredSession(value: CapturedSession | null): CapturedSession {
   if (value === null) throw new Error("fixture session did not parse");
@@ -100,6 +104,53 @@ function linkedRepo() {
 
 function storedRows(ledger: ReturnType<typeof ensureMemoryLedger>) {
   return WorkerSessionSource.open(ledger).observationsSince("", 0);
+}
+
+function gateFixture(base: string, origin: string) {
+  const common = join(base, ".no-mistakes", "repos", "gate.git");
+  const administrative = join(common, "worktrees", "gate");
+  const worktree = join(base, ".no-mistakes", "worktrees", "gate");
+  mkdirSync(administrative, { recursive: true });
+  mkdirSync(worktree, { recursive: true });
+  writeFileSync(join(common, "config"), `[remote "origin"]\nurl = ${origin}\n`);
+  writeFileSync(join(administrative, "commondir"), "../..\n");
+  writeFileSync(join(worktree, ".git"), `gitdir: ${administrative}\n`);
+  return { common, administrative, worktree };
+}
+
+function toolSessions(name: string, content: string, outcome: object = {}) {
+  const base = scratch("ak-ws-outcome-");
+  const codex = writeRollout(join(base, "codex"), "outcome", "/fixture/worktree", [
+    codexMessage("user", "check"),
+    { type: "response_item", payload: { type: "function_call", name, call_id: "a" } },
+    { type: "response_item", payload: { type: "function_call_output", call_id: "a", output: content, ...outcome } },
+    CODEX_TASK_COMPLETE,
+  ]);
+  const droid = writeJsonl(join(base, "droid", "session.jsonl"), [
+    { type: "session_start", id: "outcome", cwd: "/fixture/worktree" },
+    { type: "message", message: { role: "user", content: [{ type: "text", text: "check" }] } },
+    { type: "message", message: { role: "assistant", content: [{ type: "tool_use", name, id: "a" }] } },
+    { type: "message", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "a", content, ...outcome }] } },
+    { type: "agent_turn_outcome" },
+  ]);
+  const grok = join(base, "grok");
+  writeJsonl(join(grok, "chat_history.jsonl"), [
+    { type: "user", content: "check" },
+    { type: "assistant", tool_calls: [{ id: "a", function: { name } }] },
+    { type: "tool_result", tool_call_id: "a", content, ...outcome },
+    { type: "assistant", content: "done" },
+  ]);
+  writeFileSync(join(grok, "summary.json"), JSON.stringify({ info: { id: "outcome", cwd: "/fixture/worktree" } }));
+  const kimi = join(base, "kimi");
+  writeJsonl(join(kimi, "agents", "main", "wire.jsonl"), [
+    kimiAppended({ role: "user", content: [{ type: "text", text: "check" }], origin: { kind: "user" } }),
+    kimiAppended({ role: "assistant", content: [], toolCalls: [{ id: "a", name, arguments: "{}" }] }),
+    { type: "agent.message.appended", message: { message: { role: "tool", toolCallId: "a", content, ...outcome } } },
+    { type: "turn.ended" },
+  ]);
+  writeFileSync(join(kimi, "state.json"), JSON.stringify({ id: "outcome", cwd: "/fixture/worktree" }));
+  return [parseCodexSession(codex), parseDroidSession(droid), parseGrokSession(grok), parseKimiSession(kimi)]
+    .map(requiredSession);
 }
 
 describe("native token counters", () => {
@@ -331,10 +382,58 @@ describe("failure classification", () => {
     }
   });
 
-  test("a command tool still fails on its wording, and any tool fails on a recorded status", () => {
+  test("a command tool still fails on its wording and exit wrapper", () => {
     expect(turnWith("shell", "error: preview quota exceeded")?.type).toBe("error");
     expect(turnWith("bash", "3 tests failed")?.type).toBe("error");
-    expect(turnWith("read_file", "Process exited with code 2\nnothing")?.type).toBe("error");
+    expect(turnWith("shell", "Process exited with code 2\nnothing")?.type).toBe("error");
+  });
+
+  test("recorded outcomes override output wording and command wrappers for every host", () => {
+    for (const name of ["shell", "read_file"]) {
+      for (const outcome of [{ is_error: false }, { isError: false }, { status: "success" }, { exit_code: 0 }]) {
+        for (const item of toolSessions(name, "Process exited with code 2\nerror budget ok\n[Process exited with code 3]", outcome)) {
+          expect(item.observations[0]?.type).toBe("turn");
+        }
+      }
+      for (const outcome of [{ is_error: true }, { isError: true }, { status: "error" }, { exit_code: 2 }]) {
+        for (const item of toolSessions(name, "Process exited with code 0\nall fine\n[Process exited with code 0]", outcome)) {
+          expect(item.observations[0]?.type).toBe("error");
+        }
+      }
+    }
+  });
+
+  test("read payloads cannot become exit statuses, while command wrappers retain their outcomes", () => {
+    for (const name of ["read_file", "Grep", "Glob", "LS"]) {
+      for (const content of [
+        "Process exited with code 2\nsaved log",
+        "Exit code: 2\nsaved log",
+        "exit: 2\nsaved log",
+        '[{"chunk_id":"a","wall_time_seconds":0.1,"exit_code":2}]',
+        "saved log\n[Process exited with code 2]",
+      ]) for (const item of toolSessions(name, content)) {
+        expect(item.observations[0]?.type).toBe("turn");
+      }
+    }
+    for (const status of [0, 2]) {
+      const items = toolSessions("shell", `Process exited with code ${status}\nerror budget\n[Process exited with code ${status}]`);
+      for (const item of items) expect(item.observations[0]?.type).toBe(status === 0 ? "turn" : "error");
+      const footer = toolSessions("Execute", `error budget\n[Process exited with code ${status}]`)[1];
+      expect(footer?.observations[0]?.type).toBe(status === 0 ? "turn" : "error");
+    }
+  });
+
+  test("empty unmatched outputs retain recorded success and failure", () => {
+    for (const failed of [false, true]) {
+      const path = writeRollout(scratch("ak-ws-empty-outcome-"), "empty-outcome", "/fixture/worktree", [
+        codexMessage("user", "check"),
+        { type: "response_item", payload: { type: "function_call_output", call_id: "unknown", output: "", is_error: failed } },
+        CODEX_TASK_COMPLETE,
+      ]);
+      const observation = requiredSession(parseCodexSession(path)).observations[0];
+      expect(observation?.type).toBe(failed ? "error" : "turn");
+      expect(observation?.detail?.calls[0]).toMatchObject({ output: "[empty]", failed });
+    }
   });
 
   test("JSON error fields in returned text are content, while host envelopes are failures", () => {
@@ -536,6 +635,99 @@ describe("worktree placement", () => {
     expect(workerRootResolver(registry, {}, { home: base, config: ctx.config })(join(worktree, "src"))).toBe(parent);
     rmSync(worktree, { recursive: true });
     expect(workerRootResolver(registry, readWorktrees(ctx.config), { home: base })(join(worktree, "src"))).toBe(parent);
+  });
+
+  test.each([
+    ["https://git.company.example/team/shop.git", false],
+    ["https://github.com/another/team/shop.git", false],
+    ["ssh://git@github.com:2222/team/shop.git", false],
+    ["https://github.com/Team/shop.git", false],
+    ["/code/team/shop.git", false],
+    ["git@github.com:team/shop.git", true],
+    ["ssh://git@github.com:22/team/shop.git", true],
+    ["https://GITHUB.com/team/shop.git/", true],
+  ] as const)("origin matching preserves host and complete repository path: %s", (origin, matches) => {
+    const base = projectScratch();
+    const root = join(base, "registered");
+    mkdirSync(join(root, ".git"), { recursive: true });
+    writeFileSync(join(root, ".git", "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
+    const { worktree } = gateFixture(base, origin);
+    const registry: Registry = { shop: { root, mem_project: "shop", last_seen: 1 } };
+    const worktrees: Record<string, string> = {};
+    const rootFor = workerRootResolver(registry, worktrees, { home: base });
+    expect(rootFor(worktree)).toBe(matches ? root : null);
+    expect(worktrees).toEqual(matches ? { [worktree]: root } : {});
+    rmSync(worktree, { recursive: true });
+    expect(rootFor(worktree)).toBe(matches ? root : null);
+  });
+
+  test.each(["Documents", "Desktop", "Downloads"])("origin matching skips protected registered configs in %s", (folder) => {
+    const home = projectScratch();
+    const root = join(home, folder, "shop");
+    mkdirSync(join(root, ".git"), { recursive: true });
+    writeFileSync(join(root, ".git", "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
+    const { worktree } = gateFixture(home, "git@github.com:team/shop.git");
+    const registry: Registry = { shop: { root, mem_project: "shop", last_seen: 1 } };
+    const worktrees: Record<string, string> = {};
+    const rootFor = workerRootResolver(registry, worktrees, { home, platform: "darwin" });
+    const read = spyOn(fs, "readFileSync");
+    try {
+      expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
+      expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
+      expect(read.mock.calls.length).toBeGreaterThan(0);
+      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      expect(worktrees).toEqual({});
+    } finally {
+      read.mockRestore();
+    }
+    expect(workerRootResolver(registry, {}, { home, platform: "linux" })(worktree)).toBe(root);
+    expect(workerRootResolver(registry, { [worktree]: root }, { home, platform: "darwin" })(worktree)).toBe(root);
+  });
+
+  test.each(["commondir", "common"])("linked worktree discovery guards the resolved %s target", (target) => {
+    const home = projectScratch();
+    const root = join(home, "Documents", "shop");
+    const common = join(root, ".git");
+    const { worktree, administrative } = gateFixture(home, "https://github.com/team/shop.git");
+    const gitdir = target === "commondir" ? join(common, "worktrees", "external") : administrative;
+    mkdirSync(gitdir, { recursive: true });
+    writeFileSync(join(gitdir, "commondir"), `${common}\n`);
+    writeFileSync(join(worktree, ".git"), `gitdir: ${gitdir}\n`);
+    const worktrees: Record<string, string> = {};
+    const rootFor = workerRootResolver({ shop: { root, mem_project: "shop", last_seen: 1 } }, worktrees, { home, platform: "darwin" });
+    const read = spyOn(fs, "readFileSync");
+    try {
+      expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
+      expect(read.mock.calls.length).toBeGreaterThan(0);
+      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      expect(worktrees).toEqual({});
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  test("origin matching guards pointers in candidate registered worktrees", () => {
+    const home = projectScratch();
+    const root = join(home, "registered");
+    const common = join(home, "Downloads", "shop.git");
+    const administrative = join(common, "worktrees", "registered");
+    mkdirSync(administrative, { recursive: true });
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, ".git"), `gitdir: ${administrative}\n`);
+    writeFileSync(join(administrative, "commondir"), "../..\n");
+    writeFileSync(join(common, "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
+    const { worktree } = gateFixture(home, "https://github.com/team/shop.git");
+    const worktrees: Record<string, string> = {};
+    const rootFor = workerRootResolver({ shop: { root, mem_project: "shop", last_seen: 1 } }, worktrees, { home, platform: "darwin" });
+    const read = spyOn(fs, "readFileSync");
+    try {
+      expect(rootFor(worktree)).toBe(PROTECTED_FOLDER);
+      expect(read.mock.calls.length).toBeGreaterThan(0);
+      expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+      expect(worktrees).toEqual({});
+    } finally {
+      read.mockRestore();
+    }
   });
 
   test("container names cannot place an unrecorded worktree", () => {

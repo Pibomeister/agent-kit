@@ -133,7 +133,7 @@ interface ToolOutput {
   text: string;
   failed: boolean;
   /** How `failed` was decided: a recorded status or error envelope, or the output's wording. */
-  fidelity: "observed" | "inferred" | "none";
+  fidelity: "observed" | "command" | "inferred" | "none";
 }
 
 /** One user prompt and everything the worker did until the next one. */
@@ -407,9 +407,13 @@ export function isCommandTool(name: string): boolean {
 }
 
 /** Whether a value carries an explicit host error envelope: an `is_error` flag or an error status. */
-function hasErrorEnvelope(value: JsonValue | undefined): boolean {
+function recordedFailure(value: JsonValue | undefined): boolean | null {
   const record = object(value);
-  return record !== null && (record.is_error === true || record.isError === true || record.status === "error");
+  if (record === null) return null;
+  if (record.is_error === true || record.isError === true || record.status === "error") return true;
+  if (record.is_error === false || record.isError === false || record.status === "success") return false;
+  const status = number(record.exit_code);
+  return status === null ? null : status !== 0;
 }
 
 const USAGE_IN_KEYS = ["input_tokens", "prompt_tokens", "inputTokens", "promptTokens", "tokens_in", "input", "prompt"];
@@ -479,9 +483,10 @@ function exitStatuses(raw: string): number[] {
 function toolOutput(value: JsonValue | undefined, envelope: JsonObject): ToolOutput {
   const raw = rawPublicText(value);
   const text = clipped(raw);
+  const failed = recordedFailure(envelope) ?? recordedFailure(value);
+  if (failed !== null) return { text, failed, fidelity: "observed" };
   const statuses = exitStatuses(raw);
-  if (hasErrorEnvelope(envelope) || hasErrorEnvelope(value)) return { text, failed: true, fidelity: "observed" };
-  if (statuses.length > 0) return { text, failed: statuses.some((status) => status !== 0), fidelity: "observed" };
+  if (statuses.length > 0) return { text, failed: statuses.some((status) => status !== 0), fidelity: "command" };
   if (reportsFailure(text)) return { text, failed: true, fidelity: "inferred" };
   return { text, failed: false, fidelity: "none" };
 }
@@ -575,7 +580,12 @@ function turnLog() {
       const settle = (call: CapturedCall): void => {
         call.output = output.text === "" ? "[empty]" : output.text;
         // A read/search tool's wording is content: only a recorded status or envelope fails it.
-        call.failed = isReadTool(call.name) && output.fidelity === "inferred" ? false : output.failed;
+        call.failed =
+          output.fidelity === "command"
+            ? isCommandTool(call.name) && output.failed
+            : isReadTool(call.name) && output.fidelity === "inferred"
+              ? false
+              : output.failed;
       };
       const answered = id === null ? undefined : named.get(id);
       if (answered !== undefined) {
@@ -588,7 +598,7 @@ function turnLog() {
         settle(waiting);
         return;
       }
-      if (output.text === "") return;
+      if (output.text === "" && output.fidelity !== "observed") return;
       const call: CapturedCall = { name: "tool", input: "", output: "", failed: false };
       settle(call);
       turn.calls.push(call);
@@ -730,10 +740,9 @@ function droidText(parts: readonly JsonObject[], injected?: RegExp): string {
  */
 function droidOutput(part: JsonObject): ToolOutput {
   const output = toolOutput(part.content, part);
-  if (part.is_error === true || part.is_error === false)
-    return { text: output.text, failed: part.is_error, fidelity: "observed" };
+  if (output.fidelity === "observed") return output;
   const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
-  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "observed" };
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "command" };
 }
 
 function grokNativeId(dir: string, summary: JsonObject | null): string {
@@ -1087,13 +1096,17 @@ export type WorkerPlace = string | typeof PROTECTED_FOLDER | null;
  * holds the runtime lock. Such a cwd answers `PROTECTED_FOLDER`.
  */
 /** The `owner/repo` slug a repository's origin remote names, read from its `.git/config` as text. */
-function repoSlug(root: string): string | null {
+function repoOrigin(root: string, canRead: (path: string) => boolean): string | null {
   try {
+    if (!canRead(root)) return null;
     const marker = statSync(join(root, ".git"), { throwIfNoEntry: false });
-    const main = marker?.isFile() === true ? linkedWorktree(root)?.root : root;
+    const main = marker?.isFile() === true ? linkedWorktree(root, canRead)?.root : root;
     if (main === undefined) return null;
-    const config = statSync(join(main, ".git"), { throwIfNoEntry: false })?.isDirectory() === true
-      ? join(main, ".git", "config") : join(main, "config");
+    const config =
+      statSync(join(main, ".git"), { throwIfNoEntry: false })?.isDirectory() === true
+        ? join(main, ".git", "config")
+        : join(main, "config");
+    if (!canRead(config)) return null;
     let origin = false;
     let url: string | undefined;
     for (const line of readFileSync(config, "utf8").split("\n")) {
@@ -1101,11 +1114,17 @@ function repoSlug(root: string): string | null {
       else if (origin) url = /^\s*url\s*=\s*(.+)$/i.exec(line)?.[1]?.trim() ?? url;
     }
     if (url === undefined || url === "") return null;
-    const parts = url
-      .replace(/\.git\/?$/, "")
-      .split(/[:/]/)
-      .filter((part) => part !== "");
-    return parts.length >= 2 ? parts.slice(-2).join("/").toLowerCase() : null;
+    const remote = new URL(
+      url.includes("://") ? url : url.replace(/^((?:[^/@:]+@)?[^/:]+):(.+)$/, "ssh://$1/$2"),
+    );
+    if (!["https:", "http:", "ssh:", "git:"].includes(remote.protocol) || remote.hostname === "") return null;
+    const path = remote.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
+    if (path === "" || path === "/") return null;
+    const port =
+      (remote.protocol === "ssh:" && remote.port === "22") || (remote.protocol === "git:" && remote.port === "9418")
+        ? ""
+        : remote.port;
+    return `${remote.hostname.toLowerCase()}${port === "" ? "" : `:${port}`}${path}`;
   } catch {
     return null;
   }
@@ -1134,11 +1153,7 @@ export function workerRootResolver(
     ...Object.entries(worktrees).filter(([, root]) => roots.has(root)),
   ].toSorted((a, b) => b[0].length - a[0].length);
   const home = guard.home ?? userHome();
-  const slugs = new Map<string, string | null>();
-  const slugOf = (root: string): string | null => {
-    if (!slugs.has(root)) slugs.set(root, repoSlug(root));
-    return slugs.get(root) ?? null;
-  };
+  const origins = new Map<string, string | null>();
   const persist = (worktree: string, root: string): void => {
     if (worktrees[worktree] !== root) {
       worktrees[worktree] = root;
@@ -1158,16 +1173,31 @@ export function workerRootResolver(
     const path = resolve(cwd);
     const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1];
     if (placed !== undefined) return placed;
-    if (inProtectedFolder(path, home, guard.platform)) return PROTECTED_FOLDER;
-    const linked = linkedWorktree(path);
+    let protectedRead = false;
+    const canRead = (target: string): boolean => {
+      if (!inProtectedFolder(target, home, guard.platform)) return true;
+      protectedRead = true;
+      return false;
+    };
+    const originOf = (root: string): string | null => {
+      if (origins.has(root)) return origins.get(root) ?? null;
+      const origin = repoOrigin(root, canRead);
+      if (!protectedRead) origins.set(root, origin);
+      return origin;
+    };
+    if (!canRead(path)) return PROTECTED_FOLDER;
+    const linked = linkedWorktree(path, canRead);
+    if (protectedRead) return PROTECTED_FOLDER;
     if (linked !== null && roots.has(linked.root)) {
       persist(linked.worktree, linked.root);
       return linked.root;
     }
     if (linked !== null && (isNoMistakesPath(path) || isNoMistakesPath(linked.root))) {
       // A gate worktree of a registered repository, matched by the origin both clones name.
-      const slug = slugOf(linked.root);
-      const parent = slug === null ? undefined : entries.find((entry) => slugOf(entry.root) === slug);
+      const origin = originOf(linked.root);
+      if (protectedRead) return PROTECTED_FOLDER;
+      const parent = origin === null ? undefined : entries.find((entry) => originOf(entry.root) === origin);
+      if (protectedRead) return PROTECTED_FOLDER;
       if (parent !== undefined) {
         persist(linked.worktree, parent.root);
         return parent.root;
