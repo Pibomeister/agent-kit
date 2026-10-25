@@ -97,6 +97,16 @@ describe("decide", () => {
     expect(run({}, NOON, { force: "nightly" })).toEqual(["nightly"]);
   });
 
+  test("a formatting rejection does not hold the backfill; a failing judge does, until its backoff elapses", () => {
+    const failed = { ...fresh(), last_reflect_attempt: NOON.getTime(), reflect_failures: 3 };
+    const due = { idleS: 600, unscreened: 5 };
+    expect(run(failed, NOON, { ...due, reflectFailure: "format" })).toEqual(["backfill"]);
+    expect(run(failed, NOON, { ...due, reflectFailure: "judge" })).toEqual([]);
+    expect(run(failed, new Date(NOON.getTime() + 4 * 3_600_000), { ...due, reflectFailure: "judge" })).toEqual([
+      "backfill",
+    ]);
+  });
+
   test("failed jobs back off exponentially and the reflect token clause respects it", () => {
     const failed = {
       ...fresh(),

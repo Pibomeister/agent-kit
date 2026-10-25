@@ -4183,7 +4183,7 @@
     },
     "judge:reflector": {
       "file": "src/learn/memory/reflect.ts",
-      "bytes": 8990,
+      "bytes": 8989,
       "tokens": 2246
     },
     "judge:skill-scout": {

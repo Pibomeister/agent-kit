@@ -9,6 +9,7 @@ import { appendEvents, eventHash, loadEvents, makeEvent, parseSeverity } from ".
 import {
   correctionEvent,
   deferredObservationIds,
+  eventsFromKbFindings,
   githubCommentEvent,
   ingest,
   observationEvent,
@@ -21,6 +22,7 @@ import {
   memoryDir,
   quarantinedObservationIds,
   readState,
+  saveState,
 } from "../../src/learn/memory/ledger.ts";
 import { readyEpisodes } from "../../src/learn/memory/consolidate.ts";
 import { buildEpisodes, unconsolidatedEpisodes } from "../../src/learn/memory/episodes.ts";
@@ -455,6 +457,112 @@ describe("ingest end to end", () => {
     expect(ingest(ctx, ledger, repo, { repo: "acme/app", prs: [42], github, skipMem: true }).fresh).toBe(0);
     const codex = ingest(ctx, ledger, repo, { repo: "acme/app", prs: [42], github, skipMem: true, source: "codex" });
     expect(codex.events.some((event) => event.kind === "correction")).toBe(false);
+  });
+
+  test("with no branch PR of its own, pullRequests falls back to the newest twenty PRs", () => {
+    const calls: string[][] = [];
+    const source = new GitHubReviewSource("/work", (args) => {
+      calls.push([...args]);
+      if (args[1] === "view") return { code: 1, stdout: "", stderr: "no pull requests found", timedOut: false };
+      return ok(
+        JSON.stringify([
+          { number: 9, headRefOid: "s9", author: { login: "alice" } },
+          { number: 7, headRefOid: "s7", author: { login: "bob" } },
+        ]),
+      );
+    });
+    expect(source.pullRequests("acme/app", []).map((pr) => pr.number)).toEqual([9, 7]);
+    expect(calls[1]).toEqual([
+      "pr",
+      "list",
+      "--repo",
+      "acme/app",
+      "--state",
+      "all",
+      "--limit",
+      "20",
+      "--json",
+      "number,headRefOid,author",
+    ]);
+  });
+
+  test("a branch PR of its own means the list fallback never runs", () => {
+    const calls: string[][] = [];
+    const source = new GitHubReviewSource("/work", (args) => {
+      calls.push([...args]);
+      return ok(JSON.stringify({ number: 42, headRefOid: "abc", author: { login: "alice" } }));
+    });
+    expect(source.pullRequests("acme/app", []).map((pr) => pr.number)).toEqual([42]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("knowledgebase findings become kb-finding events, once", () => {
+    const base = scratch();
+    const repo = gitRepo(join(base, "app"));
+    const kb = join(base, "kb");
+    mkdirSync(join(kb, "findings"), { recursive: true });
+    mkdirSync(join(kb, "projects", "app", "runs"), { recursive: true });
+    writeFileSync(
+      join(kb, "findings", "f-001.md"),
+      "---\ntitle: Unguarded settle path\nseverity: P1\npath: src/orders/settle.ts\nseat: reviewer-standards\nrun: run-1\nts: 2026-09-15T00:00:00Z\n---\nThe settle path trusts its input.\n",
+    );
+    writeFileSync(
+      join(kb, "findings", "f-002.md"),
+      "---\ntitle: Other project finding\nproject: other\n---\nNot for this repo.\n",
+    );
+    writeFileSync(
+      join(kb, "projects", "app", "runs", "artifacts.jsonl"),
+      [
+        JSON.stringify({
+          schema: "finding",
+          id: "f-101",
+          run_id: "run-2",
+          created_at: "2026-09-16T00:00:00Z",
+          title: "Late lock in checkout",
+          severity: "P2",
+          lane: "code-review/concurrency",
+          evidence: [{ location: { path: "src/cart/lock.ts" }, observation: "the lock is taken after the read" }],
+        }),
+        JSON.stringify({ schema: "decision", id: "d-1", title: "not a finding" }),
+        "not json",
+      ].join("\n") + "\n",
+    );
+    const ctx = testContext();
+    const ledger = reviewLedger(ctx.config, repo);
+    const first = ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true, kbRoot: kb });
+    expect(first.events.map((event) => [event.source, event.author, event.severity, event.session])).toEqual([
+      ["kb-finding", "reviewer-standards", "P1", "run-1"],
+      ["kb-finding", "code-review/concurrency", "P2", "run-2"],
+    ]);
+    expect(first.events.map((event) => event.path)).toEqual(["src/orders/settle.ts", "src/cart/lock.ts"]);
+    expect(first.fresh).toBe(2);
+    expect(ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true, kbRoot: kb }).fresh).toBe(0);
+    expect(eventsFromKbFindings(join(base, "missing"), "app")).toEqual([]);
+  });
+
+  test("a reflector silent past the staleness window releases deferred observations; a fresh attempt does not", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.parse("2026-09-10T00:00:00Z");
+    mem.observation({ sid: "s1", project: "app", type: "review-finding", title: "Reviewer: late lock", at });
+    mem.observation({ sid: "s2", project: "app", type: "review-finding", title: "Reviewer: early return", at });
+    mem.close();
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    const ledger = reviewLedger(ctx.config, repo);
+
+    saveState(memory, { reflect_failures: 2, last_reflect_attempt: Date.now() });
+    const waiting = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect([waiting.events, waiting.deferred]).toEqual([[], 2]);
+
+    saveState(memory, { reflect_failures: 2, last_reflect_attempt: 1 });
+    const released = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect(released.events.map((event) => event.obs_id)).toEqual([1, 2]);
+    expect(released.events.map((event) => event.session)).toEqual(["s1", "s2"]);
+    expect(released.deferred).toBe(0);
+    expect(loadEvents(ledger)).toHaveLength(2);
   });
 
   test("a GitHub source that cannot be read is reported unavailable, not taken as no findings", () => {

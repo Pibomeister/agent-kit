@@ -86,6 +86,11 @@ function ev(hash: string, fields: Partial<ReviewEvent>): ReviewEvent {
   };
 }
 
+/** A session-collected sighting: no PR, a runtime author label, plus whatever session evidence it carries. */
+function sighting(hash: string, fields: Partial<ReviewEvent>): ReviewEvent {
+  return ev(hash, { pr: null, url: null, author: "observer:review-finding", ...fields });
+}
+
 const E1 = ev("h1", { url: "https://x.test/1", text: "toBeNull on a value that is always null" });
 const E2 = ev("h2", {
   url: "https://x.test/2",
@@ -519,6 +524,53 @@ describe("independence gate", () => {
     ]);
     expect(sourceFamily("correction")).toBe("correction");
     expect(["claude-mem", "learn-memory", "something-new"].map(sourceFamily)).toEqual([null, null, null]);
+  });
+
+  test("knowledgebase findings are a primary family", () => {
+    expect(sourceFamily("kb-finding")).toBe("kb-finding");
+  });
+
+  test("sightings from two distinct sessions activate; two collectors of one session do not", () => {
+    const start = { status: "candidate", count: 0, sources: [], prs: [], reviewers: [], sessions: [] };
+    const body = "\n## Evidence\n";
+
+    const twoSessions = addEvidence(
+      addEvidence({ ...start }, body, sighting("s1", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
+      body,
+      sighting("s2", { source: "claude-mem", session: "sess-b", obs_id: 8 }),
+      2,
+    );
+    expect(twoSessions.meta.status).toBe("active");
+    expect(twoSessions.meta.sessions).toEqual(["s:sess-a~obs:7", "s:sess-b~obs:8"]);
+
+    const oneSession = addEvidence(
+      addEvidence({ ...start }, body, sighting("s3", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
+      body,
+      sighting("s4", { source: "claude-mem", session: "sess-a", obs_id: 8 }),
+      2,
+    );
+    expect(oneSession.meta.status).toBe("candidate");
+
+    const twoCollectors = addEvidence(
+      addEvidence({ ...start }, body, sighting("s5", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
+      body,
+      sighting("s6", { source: "learn-memory", author: "learn-memory", obs_id: 7 }),
+      2,
+    );
+    expect(twoCollectors.meta.status).toBe("candidate");
+
+    const twoRuns = addEvidence(
+      addEvidence(
+        { ...start },
+        body,
+        sighting("s7", { source: "kb-finding", author: "reviewer-standards", session: "run-1" }),
+        2,
+      ).meta,
+      body,
+      sighting("s8", { source: "kb-finding", author: "reviewer-spec", session: "run-2" }),
+      2,
+    );
+    expect(twoRuns.meta.status).toBe("active");
   });
 });
 

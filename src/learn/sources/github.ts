@@ -133,6 +133,10 @@ export class GitHubReviewSource {
   /**
    * The PRs to ingest: the given numbers; else PRs updated on or after `since`
    * (`YYYY-MM-DD`); else the current branch's PR. Unknown numbers are skipped.
+   * When the working directory has no PR of its own (`main`, a detached HEAD),
+   * `gh pr view` finds nothing and the newest 20 PRs in any state stand in;
+   * re-ingesting one is a no-op, because the raw layer deduplicates by event
+   * hash, so the list needs no watermark of its own.
    */
   pullRequests(repo: string, numbers: readonly number[], since?: string): PullRequestRef[] {
     const fields = ["--json", "number,headRefOid,author"];
@@ -158,7 +162,19 @@ export class GitHubReviewSource {
       return listed ?? [];
     }
     const current = this.json<PullRequestRef>(["pr", "view", ...fields]);
-    return current === null ? [] : [current];
+    if (current !== null) return [current];
+    const listed = this.json<PullRequestRef[]>([
+      "pr",
+      "list",
+      "--repo",
+      repo,
+      "--state",
+      "all",
+      "--limit",
+      "20",
+      ...fields,
+    ]);
+    return listed ?? [];
   }
 
   reviewComments(repo: string, pr: number): ReviewComment[] {

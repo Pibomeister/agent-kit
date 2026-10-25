@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readJsonl } from "../../src/learn/core/store.ts";
+import { readJsonl, tokens } from "../../src/learn/core/store.ts";
 import {
   citedIds,
   ensureMemoryLedger,
@@ -21,9 +21,11 @@ import {
   formatObservation,
   formatSummaries,
   INPUT_CHARS,
+  outputContract,
   reflect,
   reflectPrompt,
   SUMMARY_CHARS,
+  trimToCap,
 } from "../../src/learn/memory/reflect.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
 import { MemFixture, scratch, testContext } from "./helpers.ts";
@@ -198,6 +200,38 @@ describe("reflect apply", () => {
     expect(state.last_obs_id_reflected).toBeUndefined();
     expect(readJsonl<{ status: string }>(ledger.path("runs.jsonl")).at(-1)?.status).toBe("rejected");
     expect(ledger.git(["rev-list", "--count", "HEAD"]).stdout.trim()).toBe(commits);
+  });
+
+  test("the prompt targets three quarters of the cap while the hard gate stays at 1.3x", () => {
+    const contract = outputContract(CAP, "2026-09-18");
+    expect(contract).toContain(`at most ${Math.floor(CAP * 0.75)} tokens`);
+    expect(contract).toContain(`over ${Math.floor(CAP * 1.3)} tokens is rejected`);
+  });
+
+  test("the trimmer keeps every section, fits the cap, and is deterministic", () => {
+    const text = [
+      SECTIONS[0],
+      ...Array.from({ length: 30 }, (_, n) => `- state fact number ${n} with some length to it [obs:20]`),
+      ...SECTIONS.slice(1).flatMap((heading) => [heading, "- noted [obs:20]"]),
+      "",
+    ].join("\n");
+    const trimmed = trimToCap(text, 100);
+    expect(tokens(trimmed)).toBeLessThanOrEqual(100);
+    for (const heading of SECTIONS) expect(trimmed).toContain(heading);
+    expect(trimToCap(text, 100)).toBe(trimmed);
+  });
+
+  test("a valid reply between the cap and half as much again is trimmed in, not discarded", () => {
+    const { ledger, memory } = setup();
+    const bullets = Array.from({ length: 340 }, (_, n) => `- distinct fact ${n} recorded here [obs:20]`);
+    const reply = `${SECTIONS[0]}\n${bullets.join("\n")}\n${SECTIONS.slice(1).join("\n")}\n`;
+    expect(tokens(reply)).toBeGreaterThan(1.3 * CAP);
+    expect(tokens(reply)).toBeLessThanOrEqual(1.5 * CAP);
+    const result = applyReflection(ledger, reply, new Set(["obs:20"]), 20_000, 20, CAP);
+    expect(result.ok).toBe(true);
+    expect(tokens(memory())).toBeLessThanOrEqual(CAP);
+    for (const heading of SECTIONS) expect(memory()).toContain(heading);
+    expect(readState(ledger).last_obs_id_reflected).toBe(20);
   });
 
   test("a valid reply replaces memory and bumps the watermark", () => {

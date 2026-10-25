@@ -72,6 +72,14 @@ export interface DecideInput {
   unconsolidated: number;
   /** `all` or one job forces it, even on a muted project. */
   force?: Job | "all" | null;
+  /**
+   * How the most recent reflect or backfill attempt ended, when the caller
+   * knows: `judge` is the judge process itself failing (no output, auth or
+   * timeout), `format` is a reply the gates rejected. Absent, the caller knows
+   * only the failure count in `state`, and the backfill keeps sharing the
+   * reflect backoff as it always did.
+   */
+  reflectFailure?: "judge" | "format";
 }
 
 export interface Thresholds {
@@ -100,7 +108,10 @@ function backoffElapsed(state: MemoryState, job: "reflect" | "nightly", now: num
  *
  * A failed or rejected reflect, and a failed nightly, hold that job back for
  * 1h, doubling per consecutive failure up to 24h. The backfill shares the
- * reflect backoff. A forced job ignores it.
+ * reflect backoff only while the judge process itself is failing; a reply the
+ * gates rejected over its formatting does not hold the backfill back, or one
+ * oversized reflection would starve the screen the review loop waits on. A
+ * forced job ignores it.
  */
 export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
   if (input.force) return input.force === "all" ? [...JOBS] : [input.force];
@@ -115,7 +126,11 @@ export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
       (input.newObs > 0 && now - lastReflect >= REFLECT_MAX_GAP_MS))
   )
     due.push("reflect");
-  if (idle && input.unscreened > 0 && backoffElapsed(input.state, "reflect", now)) due.push("backfill");
+  const backfillHeld =
+    input.reflectFailure === undefined
+      ? !backoffElapsed(input.state, "reflect", now)
+      : input.reflectFailure === "judge" && !backoffElapsed(input.state, "reflect", now);
+  if (idle && input.unscreened > 0 && !backfillHeld) due.push("backfill");
   const today = todayLocal(input.now);
   if (
     backoffElapsed(input.state, "nightly", now) &&
@@ -135,6 +150,7 @@ export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
  * and lesson lists are arrays of ids). The log itself stays open.
  */
 interface RunRow {
+  job?: string;
   status: "ok" | "rejected" | "failed";
   reason?: string;
   dropped_by_provenance?: number;
@@ -164,6 +180,7 @@ const RUN_ROW_SCHEMA = {
   type: "object",
   required: ["status"],
   properties: {
+    job: { type: "string" },
     status: { enum: ["ok", "rejected", "failed"] },
     reason: { type: "string" },
     dropped_by_provenance: COUNT,
@@ -332,8 +349,11 @@ export function runProject(
     const unscreened = unscreenedIds(source, ledger, deferred).length;
     const unconsolidated = readyEpisodes(source, ledger, unconsolidatedEpisodes(ledger)).size;
     const force = options.force === true ? (options.job ?? "all") : null;
+    const lastScreen = runLog(ledger).findLast((row) => row.job === "reflect" || row.job === "backfill");
+    const reflectFailure: DecideInput["reflectFailure"] =
+      lastScreen === undefined ? undefined : lastScreen.status === "failed" ? "judge" : "format";
     let due = decide(
-      { state, now: new Date(), idleS, newTokens, newObs, unscreened, unconsolidated, force },
+      { state, now: new Date(), idleS, newTokens, newObs, unscreened, unconsolidated, force, reflectFailure },
       ctx.config,
     );
     if (options.job !== undefined && options.force !== true)

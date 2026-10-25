@@ -145,7 +145,7 @@ export function outputContract(cap: number, today: string): string {
     "Every bullet ends with its evidence ids in brackets, copied verbatim from the inputs: [obs:123, obs:456] or [S1a2b3c4d].",
     "Any other line is deleted, as is a bullet citing no id or any id not in the inputs or the previous memory; a reply that loses more than half its lines that way is rejected.",
     "A value set once and then undone goes under Completed or is left out. A superseded value appears only as old → new, or is replaced in place, citing the new value's id.",
-    `Today is ${today}. Total output at most ${cap} tokens (about ${cap * 4} characters); a reply that, with the runtime's security bullet, is over ${Math.floor(cap * 1.3)} tokens is rejected.`,
+    `Today is ${today}. Total output at most ${Math.floor(cap * 0.75)} tokens (about ${Math.floor(cap * 0.75) * 4} characters); a reply that, with the runtime's security bullet, is over ${Math.floor(cap * 1.3)} tokens is rejected.`,
   ].join("\n");
 }
 
@@ -189,6 +189,46 @@ export function degenerate(
   const missing = SECTIONS.filter((section) => !text.includes(section));
   if (missing.length > 0) return `missing sections [${missing.map((section) => `'${section}'`).join(", ")}]`;
   return null;
+}
+
+/**
+ * Deterministically shrink a reflected memory to `cap` tokens (plus `reserve`)
+ * without touching its shape: every section heading stays, and bullets are
+ * dropped from the end of the fullest section (the later section on a tie)
+ * until the text fits. Returns the input unchanged when nothing can be dropped.
+ */
+const SECTION_HEADINGS: ReadonlySet<string> = new Set(SECTIONS);
+
+export function trimToCap(text: string, cap: number, reserve = 0): string {
+  const lines = splitLines(text);
+  const fits = () => tokens(lines.join("\n")) + reserve <= cap;
+  while (!fits()) {
+    const starts: number[] = [];
+    lines.forEach((line, index) => {
+      if (SECTION_HEADINGS.has(line.trimEnd())) starts.push(index);
+    });
+    let victim = -1;
+    let fullest = 0;
+    for (let s = 0; s < starts.length; s += 1) {
+      const start = starts[s];
+      if (start === undefined) continue;
+      const following = starts[s + 1];
+      const end = following === undefined ? lines.length : following;
+      const bullets: number[] = [];
+      for (let i = start + 1; i < end; i += 1) {
+        const line = lines[i];
+        if (line !== undefined && line.trimStart().startsWith("- ")) bullets.push(i);
+      }
+      const last = bullets[bullets.length - 1];
+      if (last !== undefined && bullets.length >= fullest) {
+        fullest = bullets.length;
+        victim = last;
+      }
+    }
+    if (victim < 0) break;
+    lines.splice(victim, 1);
+  }
+  return lines.join("\n");
 }
 
 /** Record an attempt for scheduling without advancing the observation watermark. */
@@ -266,8 +306,23 @@ function screenReply(
     return row === undefined ? null : sid8(row.memory_session_id);
   };
   const record = securityRecord(red.quarantine, sessionOf);
-  const written = `${red.kept.join("\n").trim()}\n`;
-  let reason = degenerate(written, previous, inputTokens, cap, record === null ? 0 : tokens(record));
+  const reserve = record === null ? 0 : tokens(record);
+  let keptLines = red.kept;
+  let written = `${keptLines.join("\n").trim()}\n`;
+  let reason = degenerate(written, previous, inputTokens, cap, reserve);
+  // A reply that is valid apart from its size, between the cap and half as
+  // much again, is trimmed into the cap instead of discarding the judge call.
+  if (reason === "over cap") {
+    const total = tokens(written) + reserve;
+    if (total > cap && total <= 1.5 * cap) {
+      const trimmed = trimToCap(written, cap, reserve);
+      if (degenerate(trimmed, previous, inputTokens, cap, reserve) === null) {
+        keptLines = splitLines(trimmed.trim());
+        written = trimmed;
+        reason = null;
+      }
+    }
+  }
   // A gutted memory is worse than a stale one.
   const meant = candidates - red.flagged;
   const lost = dropped + red.tokens;
@@ -278,7 +333,7 @@ function screenReply(
         : `gates dropped ${lost}/${meant} lines (${dropped} provenance, ${red.tokens} redaction)`;
   }
   const outcome = { dropped_by_provenance: dropped, dropped_by_redaction: red.flagged + red.tokens, ...security };
-  return { red, record, reason, outcome };
+  return { red, record, reason, outcome, kept: keptLines };
 }
 
 /** The reflector's reply, or null when it carries no memory text. */
@@ -303,7 +358,7 @@ export function applyReflection(
 ): ReflectResult {
   const memoryPath = ledger.path("memory.md");
   const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
-  const { red, record, reason, outcome } = screenReply(
+  const { record, reason, outcome, kept } = screenReply(
     ledger,
     typeof reply === "string" ? { memory: reply } : reply,
     valid,
@@ -314,7 +369,7 @@ export function applyReflection(
   );
   const dropped = outcome.dropped_by_provenance;
   const redacted = outcome.dropped_by_redaction;
-  const text = `${withSecurityRecord(red.kept, record).join("\n").trim()}\n`;
+  const text = `${withSecurityRecord(kept, record).join("\n").trim()}\n`;
   if (reason !== null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "rejected", reason, ...outcome, ...meta });
