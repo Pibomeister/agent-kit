@@ -190,14 +190,35 @@
       ]
     },
     "fix_cycles": {
-      "description": "Plan 6.3: at most two fix/verify cycles. The third stops and the run returns an explicit blocked or replan result rather than looping (release scenario 18). 'allowed' cannot exceed two, so no configuration buys a third pass.",
+      "description": "Plan 6.3: at most two fix/verify cycles. The third stops and the run returns an explicit blocked or replan result rather than looping (release scenario 18). 'allowed' cannot exceed two, so no configuration buys a third pass; only a human-authorized entry in 'extensions' does. 'merge-with-follow-ups' is the recommendation when only P3 findings remain, listed in 'follow_ups', and it may carry an approved verdict when every open finding is such a P3; 'design-decision' is the result when two consecutive cycles reopened the same finding theme (ruling `two-fix-cycles-then-stop`).",
       "type": "object",
       "additionalProperties": false,
       "required": ["allowed", "used"],
       "properties": {
         "allowed": { "type": "integer", "minimum": 0, "maximum": 2 },
-        "used": { "type": "integer", "minimum": 0, "maximum": 2 },
-        "exhausted_action": { "enum": ["blocked", "replan"] }
+        "used": {
+          "description": "Cycles taken. Above 'allowed' only by the cycles in 'extensions'.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "exhausted_action": { "enum": ["blocked", "replan", "merge-with-follow-ups", "design-decision"] },
+        "follow_ups": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
+        },
+        "extensions": {
+          "description": "One entry per cycle a human authorized after the cap decision. Each is reviewed as a delta and may approve; a cycle above 'allowed' with no entry here is refused. 'authorized_by' must be the reserved actor 'human'; the operator attests that, and the record does not prove it.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["authorized_by", "authorized_at"],
+            "properties": {
+              "authorized_by": { "$ref": "common.schema.json#/$defs/actor_role" },
+              "authorized_at": { "$ref": "common.schema.json#/$defs/timestamp" }
+            }
+          }
+        }
       },
       "x-validator-rule": "review.third-fix-cycle-stops"
     },

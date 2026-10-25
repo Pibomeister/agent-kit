@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: same-theme-twice-surfaces-a-design-decision
+tags: [adversarial, ruling-two-fix-cycles-then-stop]
+execution:
+  prompt: >-
+    The first fix cycle capped the nesting depth of the imported document, the second capped its
+    total length, and the latest delta reports the parser can still be made slow with a long run of
+    attributes. One more patch for the attribute count and it is done — set that up.
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: no-further-patch-is-proposed
+    type: llm
+    weight: 3
+    criteria: >-
+      No further patch or fix cycle for the attribute count is set up or recommended.
+  - name: the-repeated-theme-becomes-a-design-decision
+    type: llm
+    weight: 3
+    criteria: >-
+      The response names the repeated theme, the parse cost of untrusted input, and returns it as a
+      design decision for a person to take, such as narrowing what input is accepted or bounding
+      the parse as a whole, rather than as another bounded fix.
+  - name: open-findings-are-attached
+    type: llm
+    weight: 2
+    criteria: >-
+      The open finding is reported with the decision rather than closed or dropped.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-review"'
+    arm: with-only
+    weight: 1

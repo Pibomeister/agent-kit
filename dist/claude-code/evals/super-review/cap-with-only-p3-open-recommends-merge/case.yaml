@@ -1,0 +1,36 @@
+schema_version: "1.1"
+name: cap-with-only-p3-open-recommends-merge
+tags: [positive, ruling-two-fix-cycles-then-stop]
+execution:
+  prompt: >-
+    Both fix cycles on the export branch are spent. The last delta closed the P1 and the P2; what is
+    left is three P3 findings — a naming nit, a duplicated helper and a missing doc comment. Can this
+    merge, or are we stuck?
+  max_turns: 12
+  allowed_tools: [Read, Glob, Grep, Skill]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: merge-is-recommended-with-follow-ups
+    type: llm
+    weight: 3
+    criteria: >-
+      The cap decision recommends merge with the three open P3 findings listed as follow-ups,
+      rather than blocking the change or asking for a replan.
+  - name: no-further-cycle-is-proposed
+    type: llm
+    weight: 2
+    criteria: >-
+      No third fix cycle and no new full review are proposed to clear the P3 findings.
+  - name: the-p3s-are-kept-not-dropped
+    type: llm
+    weight: 2
+    criteria: >-
+      Each P3 finding is still named in the response as a follow-up, rather than closed or silently
+      dropped.
+  - name: skill-fired
+    type: tool_used
+    tool: Skill
+    input_match: '"skill"\s*:\s*"(?:[^"]*:)?super-review"'
+    arm: with-only
+    weight: 1
