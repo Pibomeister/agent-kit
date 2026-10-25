@@ -107,41 +107,12 @@ export function sourceFamily(source: string): "github" | "correction" | "kb-find
 /** Sources that collect what a session saw or a review run recorded, so their events can name a session. */
 const SESSION_SOURCES: ReadonlySet<string> = new Set(["claude-mem", "learn-memory", "kb-finding"]);
 
-/**
- * The session token an event contributes, or null when it names no session.
- * The session id and the observation id ride in one token joined by `~` when
- * both are known: they name the same witness, so a claude-mem sighting of an
- * observation and learn-memory forwarding that same observation land in one
- * witness group instead of counting as two sessions.
- */
 export function sessionToken(event: ReviewEvent): string | null {
-  if (!SESSION_SOURCES.has(event.source)) return null;
-  const parts: string[] = [];
-  if (event.session) parts.push(`s:${event.session}`);
-  if (event.obs_id !== undefined) parts.push(`obs:${event.obs_id}`);
-  return parts.length > 0 ? parts.join("~") : null;
+  return SESSION_SOURCES.has(event.source) && event.session ? `s:${event.session}` : null;
 }
 
-/** Distinct witness groups in session tokens: ids joined by `~` in one token are one witness. */
 export function sessionWitnesses(tokens: readonly string[]): number {
-  const parent = new Map<string, string>();
-  const find = (id: string): string => {
-    let root = id;
-    let next = parent.get(root);
-    while (next !== undefined && next !== root) {
-      root = next;
-      next = parent.get(root);
-    }
-    return root;
-  };
-  for (const token of tokens) {
-    const ids = token.split("~").filter((part) => part !== "");
-    const first = ids[0];
-    if (first === undefined) continue;
-    for (const id of ids) if (!parent.has(id)) parent.set(id, id);
-    for (const id of ids.slice(1)) parent.set(find(id), find(first));
-  }
-  return new Set([...parent.keys()].filter((id) => id.startsWith("s:") && id.length > 2).map(find)).size;
+  return new Set(tokens.flatMap((token) => token.split("~").filter((id) => id.startsWith("s:") && id.length > 2))).size;
 }
 
 /**

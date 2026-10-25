@@ -542,7 +542,7 @@ describe("independence gate", () => {
       2,
     );
     expect(twoSessions.meta.status).toBe("active");
-    expect(twoSessions.meta.sessions).toEqual(["s:sess-a~obs:7", "s:sess-b~obs:8"]);
+    expect(twoSessions.meta.sessions).toEqual(["s:sess-a", "s:sess-b"]);
 
     const oneSession = addEvidence(
       addEvidence({ ...start }, body, sighting("s3", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
@@ -555,10 +555,11 @@ describe("independence gate", () => {
     const twoCollectors = addEvidence(
       addEvidence({ ...start }, body, sighting("s5", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
       body,
-      sighting("s6", { source: "learn-memory", author: "learn-memory", obs_id: 7 }),
+      sighting("s6", { source: "learn-memory", author: "learn-memory", session: "sess-a", obs_id: 7 }),
       2,
     );
     expect(twoCollectors.meta.status).toBe("candidate");
+    expect(twoCollectors.meta.sessions).toEqual(["s:sess-a"]);
 
     const twoRuns = addEvidence(
       addEvidence(
@@ -572,6 +573,13 @@ describe("independence gate", () => {
       2,
     );
     expect(twoRuns.meta.status).toBe("active");
+  });
+
+  test("existing compound tokens count known sessions without observation alias matching", () => {
+    const meta = { status: "candidate", count: 3, sources: ["claude-mem", "learn-memory"], prs: [], reviewers: [] };
+    expect(statusFor({ ...meta, sessions: ["s:sess-a~obs:7", "obs:8~s:sess-a", "s:sess-a"] }, 2)).toBe("candidate");
+    expect(statusFor({ ...meta, sessions: ["s:sess-a~obs:7", "s:sess-b~obs:7"] }, 2)).toBe("active");
+    expect(statusFor({ ...meta, sessions: ["obs:7", "obs:8", "s:"] }, 2)).toBe("candidate");
   });
 
   test("forwarded observations require known distinct sessions before activation and promotion", () => {

@@ -100,7 +100,7 @@ describe("decide", () => {
 
   test("a formatting rejection does not hold the backfill; a failing judge does, until its backoff elapses", () => {
     const failed = { ...fresh(), last_reflect_attempt: NOON.getTime(), reflect_failures: 3 };
-    const due = { idleS: 600, unscreened: 5 };
+    const due = { idleS: 600, unscreened: 5, screenAttemptAt: NOON.getTime() };
     expect(run(failed, NOON, due)).toEqual(["backfill"]);
     for (const failure of ["auth", "timeout"] as const) {
       const held = { ...failed, reflect_process_failure: failure };
@@ -182,6 +182,51 @@ function seedReflected(ledger: Ledger, reflected: number, state: MemoryState = {
 afterAll(removeProjectScratch);
 
 describe("tick", () => {
+  test.each([
+    { failure: "auth", expired: false },
+    { failure: "auth", expired: true },
+    { failure: "timeout", expired: false },
+    { failure: "timeout", expired: true },
+  ])("backfill-only $failure uses its run timestamp with expired reflector state: $expired", ({ failure, expired }) => {
+    const { root, reflected, ctx } = fixtureProject();
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    const started = Date.now();
+    seedReflected(ledger, reflected + 1, {
+      last_reflect: started,
+      last_weekly: started,
+      ...(expired ? { last_reflect_attempt: 1, reflect_failures: 2, reflect_stalled_since: 2 } : {}),
+    });
+    const before = readState(ledger);
+    ctx.judge = commandJudge({
+      ...ctx.config,
+      judgeCommand: ["sh", "-c", failure === "auth" ? "echo Unauthorized >&2; exit 1" : "sleep 1"],
+      judgeTimeoutMs: 100,
+    });
+    const source = ClaudeMemSource.open(ctx.config.memDb);
+    if (source === null) throw new Error("fixture database unavailable");
+    const attempts = () =>
+      readJsonl<{ job: string }>(ledger.path("runs.jsonl")).filter((row) => row.job === "backfill").length;
+    try {
+      setSystemTime(new Date(started));
+      runProject(ctx, source, root, "shop", { job: "backfill" });
+      expect(attempts()).toBe(1);
+      expect(readState(ledger).reflect_process_failure).toBe(failure);
+      const { reflect_process_failure: _process, ...reflection } = readState(ledger);
+      expect(reflection).toEqual(before);
+      setSystemTime(new Date(started + 30 * 60_000));
+      runProject(ctx, source, root, "shop", { job: "backfill" });
+      expect(attempts()).toBe(1);
+      setSystemTime(new Date(started + 4 * 3_600_000));
+      runProject(ctx, source, root, "shop", { job: "backfill" });
+      expect(attempts()).toBe(2);
+      const { reflect_process_failure: _again, ...afterRetry } = readState(ledger);
+      expect(afterRetry).toEqual(before);
+    } finally {
+      source.close();
+      setSystemTime();
+    }
+  });
+
   test.each([
     { name: "malformed JSON", script: "echo malformed", blocked: false },
     { name: "empty output", script: "true", blocked: false },
