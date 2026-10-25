@@ -159,6 +159,86 @@ function toolSessions(name: string, content: string, outcome: object = {}) {
 }
 
 describe("native token counters", () => {
+  test("Kimi durable usage records include cache input and exclude duplicated status counters", () => {
+    const dir = scratch("ak-ws-kimi-native-usage-");
+    const started = Date.now() - 10_000;
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ id: "native-usage", cwd: "/fixture/worktree", createdAt: started, model: "private-state-model" }));
+    const usage = (scope: string, other: number, read: number, created: number, output: number) => ({
+      type: "usage.record", usageScope: scope, agentId: "main", model: "private-record-model",
+      usage: { inputOther: other, inputCacheRead: read, inputCacheCreation: created, output, raw: { model: "private-raw-model" } },
+    });
+    writeJsonl(join(dir, "agents", "main", "wire.jsonl"), [
+      usage("session", 10, 20, 30, 5),
+      kimiAppended({ role: "user", origin: { kind: "user" }, content: [{ type: "text", text: "first" }] }),
+      usage("turn", 100, 200, 300, 40),
+      usage("session", 10, 20, 30, 4),
+      { type: "StatusUpdate", token_usage: { input_tokens: 720, output_tokens: 49 } },
+      { type: "agent.status.updated", usage: { total: { inputOther: 120, inputCacheRead: 240, inputCacheCreation: 360, output: 49 } } },
+      kimiAppended({ role: "assistant", content: [{ type: "text", text: "one" }] }),
+      { type: "turn.ended" },
+      kimiAppended({ role: "user", origin: { kind: "user" }, content: [{ type: "text", text: "second" }] }),
+      usage("turn", 7, 11, 13, 17), usage("turn", 0, 0, 0, 0), usage("turn", -1, 0, 0, 0),
+      { type: "agent.message.appended", message: { message: { role: "assistant", content: "done", usage: { input_tokens: 99999, output_tokens: 99999 } } } },
+      { type: "turn.ended" },
+    ]);
+    const parsed = requiredSession(parseKimiSession(dir));
+    expect(parsed.observations.map((row) => [row.tokens_in, row.tokens_out, row.usage_basis])).toEqual([
+      [60, 5, "incremental"], [660, 44, "incremental"], [31, 17, "incremental"],
+    ]);
+    expect([parsed.tokens_in, parsed.tokens_out, parsed.prompt_count]).toEqual([751, 66, 2]);
+    expect(JSON.stringify(parsed)).not.toContain("private-");
+    const ledger = ensureMemoryLedger(scratch("ak-ws-kimi-native-ledger-"));
+    const source = WorkerSessionSource.open(ledger);
+    source.capture([parsed]);
+    expect(source.newTokensSince("", 0)).toEqual({ tokens: 817, count: 3 });
+    expect(JSON.stringify(RawStore.of(ledger.dir).workers())).not.toContain("private-");
+    expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 0 });
+  });
+
+  test.each([false, true])("ordinary capture preserves repeated occurrences as the excerpt cap moves (timestamps: %s)", (timestamps) => {
+    const home = scratch("ak-ws-ordinary-occurrences-");
+    const started = Date.now() - 2 * 3_600_000;
+    const capture = (count: number) => {
+      const rows: object[] = [{ type: "session_meta", payload: { id: "ordinary", cwd: "/fixture/worktree", timestamp: timestamps ? started : undefined } }];
+      for (let i = 0; i < count; i++) rows.push(
+        { ...codexMessage("user", "continue"), ...(timestamps ? { timestamp: started + i * 1000 } : {}) },
+        tokenCount((i + 1) * (i + 2) / 2, (i + 1) * (i + 2)),
+        { ...codexMessage("assistant", "done"), ...(timestamps ? { timestamp: started + i * 1000 + 9 } : {}) },
+      );
+      rows.push(CODEX_TASK_COMPLETE);
+      const path = writeJsonl(join(home, "rollout.jsonl"), rows);
+      if (!timestamps) {
+        const modified = new Date(started + count * 1000);
+        utimesSync(path, modified, modified);
+      }
+      return requiredSession(parseCodexSession(path));
+    };
+    const ledger = ensureMemoryLedger(join(home, "ledger"));
+    const source = WorkerSessionSource.open(ledger);
+    source.capture([capture(999)]);
+    const previous = source.observationsSince("", 0);
+    const last = previous.at(-1)?.id ?? 0;
+    const after = capture(1000);
+    expect(source.capture([after])).toEqual({ observations: 2, sessions: 1 });
+    expect(source.observationsById(previous.map((row) => row.id))).toEqual(previous);
+    const stored = RawStore.of(ledger.dir).workers<StoredObservation, { memory_session_id: string }>().observations;
+    expect(stored.reduce((sum, row) => sum + (row.tokens_in ?? 0), 0)).toBe(500500);
+    expect(stored.reduce((sum, row) => sum + (row.tokens_out ?? 0), 0)).toBe(1001000);
+    expect(source.newTokensSince("", last).tokens).toBe(3000);
+    expect(source.capture([after])).toEqual({ observations: 0, sessions: 0 });
+  });
+
+  test("ordinary capture retains identical observations once per occurrence", () => {
+    const parsed = toolSessions("read_file", "specimen")[0];
+    if (parsed === undefined) throw new Error("fixture session did not parse");
+    const ledger = ensureMemoryLedger(scratch("ak-ws-identical-occurrences-"));
+    const source = WorkerSessionSource.open(ledger);
+    expect(source.capture([parsed])).toEqual({ observations: 1, sessions: 1 });
+    const twice = { ...parsed, observations: [...parsed.observations, ...parsed.observations] };
+    expect(source.capture([twice])).toEqual({ observations: 1, sessions: 1 });
+    expect(source.observationsSince("", 0)).toHaveLength(2);
+    expect(source.capture([twice])).toEqual({ observations: 0, sessions: 0 });
+  });
   test("Codex repeated last-usage reports do not advance unchanged cumulative totals", () => {
     const usage = (input: number, output: number) => ({
       type: "event_msg",
@@ -421,7 +501,30 @@ describe("native token counters", () => {
 });
 
 describe("stored evidence refresh", () => {
-  test.each([false, true])("uncapped refresh preserves evidence occurrences with repeated prompts (same calls: %s)", (sameCalls) => {
+  test("legacy distilled evidence refreshes its original id without another rewrite", () => {
+    const current = toolSessions("read_file", "error prose in a specimen")[0];
+    if (current === undefined) throw new Error("fixture session did not parse");
+    const legacy: CapturedSession = { ...current, observations: current.observations.map((row) => ({
+      ...row, type: "error", text: row.text.replace("tools:", "failed: read_file\ntools:"),
+    })) };
+    const ledger = ensureMemoryLedger(scratch("ak-ws-distilled-legacy-"));
+    WorkerSessionSource.open(ledger).capture([legacy], { rewrite: (_item, rows) => rows.map((row) => ({
+      ...row, text: [...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
+        "read_file inspected a specimen -> found documented examples"].join("\n"),
+    })) });
+    const store = RawStore.of(ledger.dir);
+    const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
+    for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
+    store.addWorkers(old.observations, old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    const source = WorkerSessionSource.open(ledger);
+    expect(source.capture([current], { rewrite: () => { throw new Error("already distilled evidence"); } }))
+      .toEqual({ observations: 0, sessions: 1 });
+    expect(source.observationsSince("", 0)).toHaveLength(1);
+    expect(source.observationsSince("", 0)[0]).toMatchObject({ id: old.observations[0]?.id, type: "turn" });
+    expect(source.observationsSince("", 0)[0]?.facts).not.toContain("failed:");
+    expect(source.capture([current])).toEqual({ observations: 0, sessions: 0 });
+  });
+  test.each([[false, false], [true, false], [false, true], [true, true]] as const)("uncapped refresh preserves repeated occurrences (same calls: %s, distilled: %s)", (sameCalls, distilled) => {
     const home = scratch("ak-ws-occurrence-refresh-");
     const started = Date.now() - 3_600_000;
     const rows: object[] = [];
@@ -446,10 +549,16 @@ describe("stored evidence refresh", () => {
         tokens_in: null, tokens_out: null, usage_basis: "estimated" };
     }) };
     const ledger = ensureMemoryLedger(join(home, "ledger"));
-    WorkerSessionSource.open(ledger).capture([legacy]);
+    WorkerSessionSource.open(ledger).capture([legacy], { rewrite: distilled ? (_item, observations) => observations.map((row) => ({
+      ...row, text: row.type === "truncated" ? row.text : [
+        ...row.text.split("\n").filter((line) => /^(?:prompt:|reply:|failed:|tools:)/.test(line)),
+        "apply_patch changed code -> updated file", "read_file checked a file -> saved specimen",
+      ].join("\n"),
+    })) : undefined });
     const store = RawStore.of(ledger.dir);
     const old = store.workers<StoredObservation, { memory_session_id: string; capture_version?: number }>();
-    store.addWorkers([], old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
+    for (const row of old.observations) Reflect.deleteProperty(row, "identity_key");
+    store.addWorkers(old.observations, old.sessions.map((row) => ({ ...row, capture_version: 1 })), ledger.dir);
     const source = WorkerSessionSource.open(ledger);
     expect(source.capture([parsed])).toEqual({ observations: 0, sessions: 1 });
     for (let i = 0; i < parsed.observations.length; i++) {

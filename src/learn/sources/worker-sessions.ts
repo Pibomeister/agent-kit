@@ -112,6 +112,7 @@ export interface StoredObservation extends ObservationRow {
    * A distilled row keeps the digest of the excerpt form it replaced, since that is what a scan rebuilds.
    */
   key: string;
+  identity_key?: string;
   /** Native host input tokens for this turn, or null when the host reported no counter. `discovery_tokens` stays the excerpt size and is never this. */
   tokens_in: number | null;
   /** Native host output tokens for this turn, or null when the host reported no counter. */
@@ -154,7 +155,7 @@ export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
 /** How far back the scan reads host records, and how long the ledger keeps a session its host stopped writing. */
 export const CAPTURE_WINDOW_MS = 30 * 86_400_000;
 export const MAX_OBSERVATIONS = 999;
-const CAPTURE_VERSION = 2;
+const CAPTURE_VERSION = 3;
 /** A turn nobody ended counts as over once its record has been quiet this long. */
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
@@ -632,7 +633,7 @@ function session(
 ): CapturedSession | null {
   const settled = times.ended !== null || times.now - times.modified > IDLE_MS;
   const turns = (settled ? log : log.slice(0, -1)).filter(
-    (turn) => turn.prompt !== "" || turn.reply !== "" || turn.calls.length > 0,
+    (turn) => turn.prompt !== "" || turn.reply !== "" || turn.calls.length > 0 || turn.tokenBasis !== null,
   );
   if (turns.length === 0) return null;
   const prompts = turns.filter((turn) => turn.prompt !== "");
@@ -937,6 +938,17 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
   );
 }
 
+function kimiUsage(value: JsonValue | undefined): { tokensIn: number; tokensOut: number } | null {
+  const usage = object(value);
+  const other = number(usage?.inputOther);
+  const read = number(usage?.inputCacheRead);
+  const created = number(usage?.inputCacheCreation);
+  const output = number(usage?.output);
+  if (other === null || read === null || created === null || output === null ||
+    other < 0 || read < 0 || created < 0 || output < 0) return null;
+  return { tokensIn: Math.round(other + read + created), tokensOut: Math.round(output) };
+}
+
 export function parseKimiSession(dir: string, now = Date.now()): CapturedSession | null {
   const state = readObject(join(dir, "state.json"));
   const path = join(dir, "agents", "main", "wire.jsonl");
@@ -949,16 +961,23 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
   let ended: number | null = null;
   const log = turnLog();
   let kimiTotal: { tokensIn: number; tokensOut: number } | null = null;
-  for (const row of readJsonLines(path)) {
+  const rows = readJsonLines(path);
+  const recordedUsage = rows.some((row) => row.type === "usage.record" && kimiUsage(row.usage) !== null);
+  for (const row of rows) {
     const at = epoch(row.time, started);
     if (row.type === "turn.prompt" || row.type === "agent.turn.started" || row.type === "turn.steer") ended = null;
     if (row.type === "turn.ended" || row.type === "agent.turn.ended") {
       ended = Math.max(ended ?? 0, at);
       continue;
     }
+    if (row.type === "usage.record") {
+      const usage = kimiUsage(row.usage);
+      if (usage !== null) log.usage(usage.tokensIn, usage.tokensOut, "incremental", at);
+      continue;
+    }
     // Kimi reports counters on StatusUpdate rows beside the message flow; they are cumulative, so each turn takes the delta.
     const rowType = string(row.type);
-    const statusUsage =
+    const statusUsage = recordedUsage ? null :
       findUsage(row.token_usage ?? row.tokenUsage ?? object(row.payload)?.token_usage) ??
       (rowType !== null && rowType.toLowerCase().includes("status") ? findUsage(row) : null);
     if (statusUsage !== null) {
@@ -980,7 +999,7 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     const role = string(message.role);
     const origin = object(message.origin) ?? object(object(envelope?.meta)?.origin);
     if (role === "user" && origin?.kind !== "user") continue;
-    const messageUsage = findUsage(message.usage ?? message.token_usage);
+    const messageUsage = recordedUsage ? null : findUsage(message.usage ?? message.token_usage);
     if (messageUsage !== null) log.usage(messageUsage.tokensIn, messageUsage.tokensOut, "incremental", at);
     const text = publicText(message.content);
     if (role === "tool")
@@ -1370,9 +1389,15 @@ function refreshKey(title: string, text: string): string {
   return rowKey({ title, text: lines.toSorted().join("\n") });
 }
 
-/** The parser's row in a rewrite's wording. Its type, title, time and files stay the parser's. */
-function reworded(row: CapturedObservation, rewrite: CapturedObservation | undefined): CapturedObservation {
-  return rewrite === undefined ? row : { ...row, text: rewrite.text.slice(0, MAX_TEXT) };
+function leadKey(title: string, text: string): string {
+  const lines = text.split("\n").filter((line) => /^(?:prompt:|reply:|tools:)/.test(line));
+  return rowKey({ title, text: lines.toSorted().join("\n") });
+}
+
+function incrementalKey(row: Pick<CapturedObservation, "usage_basis" | "tokens_in" | "tokens_out">): string | null {
+  return row.usage_basis === "incremental" && row.tokens_in !== undefined && row.tokens_in !== null &&
+    row.tokens_out !== undefined && row.tokens_out !== null
+    ? `usage:${row.tokens_in}:${row.tokens_out}` : null;
 }
 
 function storedObservation(
@@ -1380,21 +1405,24 @@ function storedObservation(
   row: CapturedObservation,
   id: number,
   key: string,
+  rewrite?: CapturedObservation,
 ): StoredObservation {
+  const text = rewrite === undefined ? row.text : rewrite.text.slice(0, MAX_TEXT);
   return {
     id,
     key,
+    identity_key: refreshKey(row.title, row.text),
     memory_session_id: item.memory_session_id,
     project: "",
     type: row.type,
     title: row.title,
     subtitle: null,
     narrative: null,
-    facts: row.text,
+    facts: text,
     concepts: JSON.stringify([]),
     files_read: JSON.stringify([]),
     files_modified: JSON.stringify(row.files_modified),
-    discovery_tokens: Math.ceil(row.text.length / 4),
+    discovery_tokens: Math.ceil(text.length / 4),
     tokens_in: row.tokens_in ?? null,
     tokens_out: row.tokens_out ?? null,
     usage_basis: row.usage_basis ?? "estimated",
@@ -1500,15 +1528,20 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const refresh = row !== undefined && row.capture_version !== CAPTURE_VERSION;
       const used = new Set<number>();
       const identities = new Map<number, string>(
-        refresh ? stored.map((entry) => [entry.id, refreshKey(entry.title ?? "", entry.facts ?? "")]) : [],
+        stored.map((entry) => [entry.id, entry.identity_key ?? refreshKey(entry.title ?? "", entry.facts ?? "")]),
       );
+      const leads = new Map(stored.map((entry) => [entry.id, leadKey(entry.title ?? "", entry.facts ?? "")]));
       const occurrences = new Map<string, number>();
-      if (refresh) {
-        const known = new Set([...stored.map((entry) => entry.key), ...identities.values()]);
-        for (const observation of item.observationsForRefresh?.() ?? item.observations) {
+      {
+        const known = new Set([...stored.map((entry) => entry.key), ...identities.values(), ...leads.values()]);
+        const observations = refresh ? item.observationsForRefresh?.() ?? item.observations : item.observations;
+        for (const observation of observations) {
           const identity = refreshKey(observation.title, observation.text);
-          if (!known.has(identity) && !known.has(rowKey(observation))) continue;
-          for (const key of [identity, `${identity}:${observation.at}`])
+          const lead = leadKey(observation.title, observation.text);
+          if (!known.has(identity) && !known.has(rowKey(observation)) && !known.has(lead)) continue;
+          const usage = incrementalKey(observation);
+          for (const key of [identity, `${identity}:${observation.at}`, `lead:${lead}:${observation.at}`,
+            ...(usage === null ? [] : [`${identity}:${usage}`])])
             occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
         }
       }
@@ -1517,24 +1550,35 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const pending: Array<{ row: CapturedObservation; key: string }> = [];
       const eligible = new Map<string, number>();
       for (const observation of item.observations) {
-        const key = rowKey(observation);
+        const key = `${rowKey(observation)}:${observation.at}`;
         eligible.set(key, (eligible.get(key) ?? 0) + 1);
       }
       const observations = refresh ? item.observationsForRefresh?.() ?? item.observations : item.observations;
       for (const row of observations) {
         const key = rowKey(row);
-        const available = eligible.get(key) ?? 0;
-        if (available > 0) eligible.set(key, available - 1);
-        const identity = refresh ? refreshKey(row.title, row.text) : null;
+        const eligibility = `${key}:${row.at}`;
+        const available = eligible.get(eligibility) ?? 0;
+        if (available > 0) eligible.set(eligibility, available - 1);
+        const identity = refreshKey(row.title, row.text);
         const candidates = stored.filter((entry) => !used.has(entry.id) &&
-          (entry.key === key || (refresh && identities.get(entry.id) === identity)));
-        const timed = refresh ? candidates.filter((entry) => entry.created_at_epoch === row.at) : [];
-        const previous = !refresh ? candidates[0]
-          : timed.length === 1 && occurrences.get(`${identity}:${row.at}`) === 1 ? timed[0]
-          : candidates.length === 1 && occurrences.get(identity ?? "") === 1 ? candidates[0]
-          : undefined;
+          (entry.key === key || identities.get(entry.id) === identity));
+        const timed = candidates.filter((entry) => entry.created_at_epoch === row.at);
+        const usage = incrementalKey(row);
+        const counted = !refresh && usage !== null ? candidates.filter((entry) => incrementalKey(entry) === usage) : [];
+        const lead = leadKey(row.title, row.text);
+        const rewritten = refresh && candidates.length === 0 ? stored.filter((entry) => !used.has(entry.id) &&
+          entry.created_at_epoch === row.at && leads.get(entry.id) === lead) : [];
+        const previous =
+          (timed.length === 1 && occurrences.get(`${identity}:${row.at}`) === 1 ? timed[0] : undefined) ??
+          (counted.length === 1 && occurrences.get(`${identity}:${usage}`) === 1 ? counted[0] : undefined) ??
+          (candidates.length === 1 && occurrences.get(identity) === 1 ? candidates[0] : undefined) ??
+          (!refresh ? timed.find((entry) => entry.key === key && entry.type === row.type &&
+            entry.tokens_in === (row.tokens_in ?? null) && entry.tokens_out === (row.tokens_out ?? null) &&
+            entry.files_modified === JSON.stringify(row.files_modified)) : undefined) ??
+          (rewritten.length === 1 && occurrences.get(`lead:${lead}:${row.at}`) === 1 ? rewritten[0] : undefined);
         if (previous === undefined) {
-          if (available > 0 && candidates.length === 0) pending.push({ row, key });
+          if (available > 0 && rewritten.length === 0 && (candidates.length === 0 ||
+            (timed.length === 0 && occurrences.get(`${identity}:${row.at}`) === 1))) pending.push({ row, key });
           continue;
         }
         used.add(previous.id);
@@ -1542,6 +1586,8 @@ export class WorkerSessionSource implements MemoryObservationSource {
         if (key === previous.key) {
           current.facts = previous.facts;
           current.discovery_tokens = previous.discovery_tokens;
+          current.created_at = previous.created_at;
+          current.created_at_epoch = previous.created_at_epoch;
         }
         if (!refresh && current.usage_basis === "estimated" && previous.usage_basis !== "estimated") {
           current.tokens_in = previous.tokens_in;
@@ -1554,7 +1600,7 @@ export class WorkerSessionSource implements MemoryObservationSource {
       const rows = pending.map((entry) => entry.row);
       const rewritten = pending.length > 0 && options.rewrite !== undefined ? options.rewrite(item, rows) : rows;
       const appended = pending.map((entry, index) =>
-        storedObservation(item, reworded(entry.row, rewritten[index]), ++nextId, entry.key),
+        storedObservation(item, entry.row, ++nextId, entry.key, rewritten[index]),
       );
       aggregates.push(...appended.filter((row) => row.usage_basis === "raw_total" || row.type === "truncated"));
       const aggregateIds = new Set(aggregates.map((row) => row.id));
