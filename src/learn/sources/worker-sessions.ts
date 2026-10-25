@@ -751,7 +751,7 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
     return event?.type === "message" && event.role === "user" && publicText(codexUserContent(event.content)) !== "";
   });
   let offset = 0;
-  let codexTotal: { tokensIn: number; tokensOut: number } | null = null;
+  let codexTotal = { tokensIn: 0, tokensOut: 0 };
   for (const row of rows) {
     const event = object(row.payload);
     if (event === null) continue;
@@ -760,8 +760,8 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
       const info = object(event.info) ?? event;
       const total = nativeUsage(object(info.total_token_usage) ?? undefined);
       if (total !== null) {
-        const inDelta = total.tokensIn - (codexTotal?.tokensIn ?? 0);
-        const outDelta = total.tokensOut - (codexTotal?.tokensOut ?? 0);
+        const inDelta = total.tokensIn - codexTotal.tokensIn;
+        const outDelta = total.tokensOut - codexTotal.tokensOut;
         log.usage(inDelta < 0 ? total.tokensIn : inDelta, outDelta < 0 ? total.tokensOut : outDelta, "incremental", at);
         codexTotal = total;
       } else {
@@ -769,8 +769,8 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
         if (last !== null) {
           log.usage(last.tokensIn, last.tokensOut, "incremental", at);
           codexTotal = {
-            tokensIn: (codexTotal?.tokensIn ?? 0) + last.tokensIn,
-            tokensOut: (codexTotal?.tokensOut ?? 0) + last.tokensOut,
+            tokensIn: codexTotal.tokensIn + last.tokensIn,
+            tokensOut: codexTotal.tokensOut + last.tokensOut,
           };
         }
       }
