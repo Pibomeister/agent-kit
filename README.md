@@ -151,8 +151,8 @@ title, body and commit messages, and `babysit-pr` runs it on the commits a CI re
 `~/.agent-kit/publish-markers` (or the file `AK_PUBLISH_MARKERS` names), one entry per line:
 `owner: <forge owner>` for the owners whose private repositories are internal, `marker: <text>` for
 organization names, internal hostnames and work e-mail domains, and `instructions: <file>` for your
-own agent instructions, which must not be copied into a public pull request. Commit trailers and
-generated-by footer lines are not matched against those instructions; `allow: <text>` exempts other
+own agent instructions, which must not be copied into a public pull request. Standard commit trailers
+and a generated-by footer naming only its tool are not matched against those instructions; `allow: <text>` exempts other
 boilerplate they share with every pull request. The scan stops on a hit
 unless the target is private or internal and its owner is listed. Without the file it scans nothing
 and says so.

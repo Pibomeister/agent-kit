@@ -19,8 +19,9 @@
  * case-insensitively anywhere in the text: organization and people names, internal hostnames, work
  * e-mail domains. `instructions` names one of the operator's own agent instruction files, relative to
  * the markers file or under `~`; any run of INSTRUCTION_WORDS consecutive words from it, repeated in
- * the text, is a hit. Before that match, the trailer lines that end a commit message, standard
- * generated-by footer lines and every `allow` text are set aside, because operators keep exactly that
+ * the text, is a hit. Before that match, the standard git trailers that end a commit message (a known
+ * key and a value under TRAILER_VALUE_MAX characters), a generated-by footer naming only a tool or one
+ * link, and every `allow` text are set aside, because operators keep exactly that
  * boilerplate in their instruction files and every commit or pull request repeats it; markers still
  * apply to them.
  *
@@ -75,8 +76,30 @@ function wordRuns(text: string): string[] {
   return runs;
 }
 
-const TRAILER = /^[A-Za-z][A-Za-z0-9-]*: \S/;
-const FOOTER = /^\W*generated (with|by) /i;
+/** The longest trailer value set aside; a longer one is matched like any other line. */
+export const TRAILER_VALUE_MAX = 120;
+const TRAILER_KEYS = new Set([
+  "co-authored-by",
+  "signed-off-by",
+  "reviewed-by",
+  "acked-by",
+  "tested-by",
+  "reported-by",
+  "suggested-by",
+  "helped-by",
+]);
+const FOOTER = /^\W*generated (with|by) (\[[^\]]+\]\([^)\s]+\)|\S+( \S+)?)\s*$/i;
+
+function isTrailer(line: string): boolean {
+  const colon = line.indexOf(": ");
+  const value = line.slice(colon + 2).trim();
+  return (
+    colon > 0 &&
+    TRAILER_KEYS.has(line.slice(0, colon).toLowerCase()) &&
+    value !== "" &&
+    value.length < TRAILER_VALUE_MAX
+  );
+}
 
 /** The text left for instruction matching, split wherever a trailer block, footer line or `allow` text was set aside. */
 function matchable(text: string, commit: boolean, allow: readonly string[]): string[] {
@@ -85,7 +108,7 @@ function matchable(text: string, commit: boolean, allow: readonly string[]): str
     let end = lines.length;
     while (end > 0 && lines[end - 1]?.trim() === "") end -= 1;
     let start = end;
-    while (start > 0 && TRAILER.test(lines[start - 1] ?? "")) start -= 1;
+    while (start > 0 && isTrailer(lines[start - 1] ?? "")) start -= 1;
     if (start < end && start > 0 && lines[start - 1]?.trim() === "") lines.splice(start, end - start);
   }
   let kept = ` ${lines.map((line) => (FOOTER.test(line) ? "\n" : words(line).join(" "))).join(" ")} `;
