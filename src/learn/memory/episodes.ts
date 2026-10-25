@@ -1,8 +1,8 @@
 /**
  * Episode memory: ended observed sessions become rows of the ledger's raw
  * store (`raw-store.ts`), deterministically, each with a priority. A session
- * has one row; when a resumed session gains observations, its newer row
- * replaces the older one. Consolidation is recorded beside them in `raw/consolidated.jsonl` as
+ * has one row; when its observation count grows or failure count changes, its
+ * newer row replaces the older one. Consolidation is recorded beside them in `raw/consolidated.jsonl` as
  * `{sid, run, obs, obs_id}`, also append-only; a rollback appends the runs it
  * undid to `raw/undone-runs.jsonl`, and their marks stop counting.
  *

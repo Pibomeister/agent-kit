@@ -460,9 +460,8 @@ function exitStatuses(raw: string): number[] {
 }
 
 /**
- * A tool output as stored. It fails on a recorded non-zero exit status or an explicit error
- * envelope (`fidelity: "observed"`); only where the host recorded neither does its wording
- * carry an inferred failure, and `turnLog` never lets that wording fail a read/search tool.
+ * Structured exit codes and error envelopes are observed evidence. Textual exit lines and error
+ * wording are inferred evidence, which `turnLog` accepts only for command-execution tools.
  */
 function toolOutput(value: JsonValue | undefined, envelope: JsonObject): ToolOutput {
   const raw = rawPublicText(value);
@@ -814,8 +813,8 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
 
 /**
  * A message row is public when it carries no `visibility`: Droid marks its hook runs, its notices
- * and the context it injects with one. Only a public message's role and content are read, never
- * the provider fields beside them nor the `.settings.json` next to the record. A turn ends where
+ * and the context it injects with one. Provider fields are excluded except for native usage;
+ * the settings sidecar supplies fallback usage only. A turn ends where
  * the record holds its outcome or the session's end, and any later public message reopens it.
  * `Create` writes a file under a name the shared write-tool pattern does not cover.
  */
@@ -1086,15 +1085,7 @@ export const PROTECTED_FOLDER = Symbol("protected-folder");
 
 export type WorkerPlace = string | typeof PROTECTED_FOLDER | null;
 
-/**
- * Where a recorded cwd belongs: the deepest registered root, or worktree recorded for one, that
- * contains it, compared as text. A cwd none of them contains is placed by the `.git` pointer of
- * the linked worktree it sits in, when that names a registered root. On macOS that pointer is not
- * read, and nothing above the cwd is touched, when the cwd is inside Documents, Desktop or
- * Downloads under `home`: the scheduler's read would block on the privacy prompt while the tick
- * holds the runtime lock. Such a cwd answers `PROTECTED_FOLDER`.
- */
-/** The `owner/repo` slug a repository's origin remote names, read from its `.git/config` as text. */
+/** Origin identity from Git config text, without following includes that could trigger protected-folder reads. */
 function repoOrigin(root: string, canRead: (path: string) => boolean): string | null {
   try {
     if (!canRead(root)) return null;
@@ -1133,6 +1124,11 @@ function isNoMistakesPath(path: string): boolean {
   return `${path}${sep}`.includes(`${sep}.no-mistakes${sep}`);
 }
 
+/**
+ * Place by the deepest recorded path, then linked-worktree metadata or a gate repository's origin.
+ * Metadata reads under macOS protected folders are refused to avoid a privacy prompt while the
+ * tick holds its lock. See `adapters/observation-source/CONTRACT.md` §3 for placement and persistence.
+ */
 export function workerRootResolver(
   registry: Registry,
   worktrees: Worktrees,
@@ -1490,8 +1486,9 @@ export class WorkerSessionSource implements MemoryObservationSource {
   }
 
   /**
-   * Append the rows of each host session the ledger does not hold yet, matched by a digest of title
-   * and text rather than position, since a host may rewrite its record. A stored session that is not
+   * Append unseen turns and update identifiable stored turns, matching raw digests and occurrence
+   * evidence rather than position, since a host may rewrite its record. Older capture versions
+   * refresh available stored turns before the excerpt cap. A stored session that is not
    * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the store holds the same
    * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
    * A finished session whose record changed without a new row has its session row rewritten, so the

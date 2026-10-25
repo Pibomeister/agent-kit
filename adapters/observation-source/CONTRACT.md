@@ -147,25 +147,29 @@ is that root or a path under it, or when it is a recorded linked worktree of tha
 under one. The deepest match wins.
 
 A cwd none of them contains is placed by its worktree: the tick walks up from the cwd to the first
-`.git`, and when that is a file whose `gitdir:` line reads `<root>/.git/worktrees/<name>` for a
-registered root, the session belongs to that root. That pointer is the only file the scheduled tick
-opens inside a repository; a `.git` directory ends the walk. This is what places a Grok or Kimi
-session, since those hosts run no hooks.
+`.git` file or directory. A directory ends the walk. A file's `gitdir:` line names the worktree's
+administrative directory; its `commondir` file resolves the common repository, including a bare
+repository. If that repository is registered, the session belongs to it. For a no-mistakes path,
+the tick can also match the common repository to a registered root by their origin remotes. It
+reads their Git config files as text, without running Git or following config includes. Matching
+uses the remote host, non-default port and repository path, so SSH and HTTPS forms can match.
 
 On macOS the walk is skipped when the cwd is `~/Documents`, `~/Desktop` or `~/Downloads` or lies
 inside one, decided from the paths as text: a scheduled read there can block on the privacy prompt
-while the tick holds the runtime lock. Such a cwd is placed only by the registered and recorded
-paths above. Otherwise its sessions are not parsed, and the tick logs one line counting those
-working directories, separately from the unplaced count below.
+while the tick holds the runtime lock. The same guard applies to the pointer, common directory and
+config paths reached during resolution. Registered and recorded path matches need no such reads.
+Sessions blocked by the guard are not parsed, and the tick logs one line counting those working
+directories, separately from the unplaced count below.
 
 The worktree record is `<runtimeDir>/worktrees.json`, linked worktree path -> registered root. It is
-written in the foreground, where git may run: the session-start, stop and prompt hooks record the
-worktree their own session runs in. The record outlives the worktree and its pointer, so a session
-of a worktree since removed still reaches its project. A worktree's path never becomes a registry
-root.
+written by the foreground session-start, stop and prompt hooks, where Git may run, and by the tick
+when it resolves a linked worktree. Tick persistence runs no Git and is skipped on a dry run; a
+write failure does not prevent placement in the current scan. The record outlives the worktree and
+its pointer, so later sessions from that path still reach their project. Gate repositories under
+`.no-mistakes/repos/` and worktrees under `.no-mistakes/worktrees/` cannot become registry roots.
 
 A recent session whose cwd is placed by none of these is not parsed. The tick counts these and logs
-one line with the count. A removed worktree no hooked host ran in is among them.
+one line with the count. A removed worktree with no saved mapping is among them.
 
 ## 4. Offline worker-session binding
 
@@ -174,7 +178,7 @@ The scheduled tick reads these shipped host records when present:
 | Host | Default record | Captured public fields |
 |---|---|---|
 | Codex | `~/.codex/sessions/**/rollout-*.jsonl` | user/assistant text, tool calls and tool results; for a sub-agent thread with no user message, the plain text of the first `agent_message` addressed to it is the prompt |
-| Droid | `~/.factory/sessions/<cwd>/<session>.jsonl` | user text outside the blocks the host injects, assistant text, tool calls and tool results; a sub-agent session's prompt is the brief it was started with |
+| Droid | `~/.factory/sessions/<cwd>/<session>.jsonl` plus `<session>.settings.json` for fallback usage | user text outside the blocks the host injects, assistant text, tool calls and tool results; a sub-agent session's prompt is the brief it was started with |
 | Grok | `~/.grok/sessions/<encoded-cwd>/<session>/chat_history.jsonl` plus `summary.json` | non-synthetic user text, assistant text, tool calls and results |
 | Kimi | `~/.kimi-code/sessions/<cwd>/<session>/state.json` plus `agents/main/wire.jsonl` | user-origin messages, assistant public text, tool calls and results |
 
@@ -189,14 +193,16 @@ parsed in full only when section 3 places that cwd under a root this tick will r
 does not already hold the session finished as its record now stands. A Droid session with no end
 recorded is likewise left unparsed once the ledger holds every turn of it, until its record changes
 in size or time. A session left unparsed for
-either of those reasons still counts as worker activity for its project.
+either of those reasons still counts as worker activity for its project. These shortcuts apply only
+to the current capture version. Droid's settings sidecar and Grok's summary modification times also
+invalidate them when native counters arrive after the transcript.
 
 Encrypted content, reasoning/`think` parts, the instruction and environment blocks Codex injects as
 user messages, synthetic Grok context and non-user Kimi injections are not observations. Neither are
 Droid's `thinking` parts, the messages it marks with a `visibility` (hook runs, host notices and
 injected context) or the `system-reminder` and `system-notification` blocks inside a user message.
-The settings file Droid keeps beside each record is never opened. A host record that cannot be read
-is skipped and logged; it never stops the tick.
+Only native usage counters are extracted from Droid's settings sidecar; its other settings are not
+captured. A host record that cannot be read is skipped and logged; it never stops the tick.
 
 ### What is stored
 
@@ -222,24 +228,43 @@ repository paths the session's write tools named. Every stored string is scrubbe
 and before anything is written or sent to a judge or a distiller: private keys, cloud and service
 tokens, bearer tokens, URL credentials, secret-named assignments and home directories become
 `[redacted:<kind>]`.
-A turn with a failing call is typed `error`: a call fails by the exit status its host recorded in the
-output, nonzero failing and zero not, and by the output's wording only where no status was recorded.
-Droid's status is the error flag on each tool result; a result without the flag fails by the exit
-line that closes its output.
+A turn with a failing call is typed `error`. A structured exit code or explicit error flag/status
+decides success or failure for any tool. Without one, only command-execution tools can fail from
+textual exit lines or error wording. Read/search prose never supplies an inferred failure.
+Results match calls by the host's call id when it resolves; otherwise they fill the first waiting
+call. An empty result settles its call as `[empty]`, so a later result cannot shift onto that call.
+
+Native consumption is stored separately from the text: `tokens_in`, `tokens_out` and `usage_basis`.
+The basis is `incremental` for per-turn usage (including deltas from cumulative counters),
+`raw_total` for a session-total fallback, or `estimated` with null counters when no native usage is
+available. `discovery_tokens` remains the stored text's size estimate, characters divided by four
+and rounded up. The worker source's `newTokensSince` sums native input and output counters only;
+episode priority still uses `discovery_tokens` for its token component.
+
+Codex uses cumulative `total_token_usage` deltas when available, with `last_token_usage` as a
+fallback. Droid and Grok use transcript usage, or their settings sidecar and summary respectively
+when no transcript counter exists. Kimi prefers `usage.record`, summing ordinary, cache-read and
+cache-creation input usage; older status counters supply cumulative deltas when those records are
+absent. Session-total fallbacks attach to the last turn without changing its transcript time.
 
 A turn still running is left for a later scan: the last turn is stored once its host records the
 turn's end, or once the record has been quiet for an hour. A session past 999 turns keeps its first
-prompt and its most recent turns, with a `truncated` row counting the turns left out between them.
+prompt and its most recent turns, with a `truncated` row counting the turns left out between them
+and carrying their native usage. Capture reconciles session-total and omission rows against usage
+already held, so aggregate rows do not count the same usage again.
 
 Worker storage and legacy-file migration are described in
 [`adapters/claude-code/CONTRACT.md` §7](../claude-code/CONTRACT.md#7-the-learning-runtimes-hooks).
-Observations are append-only within the retained scan window, with a separate numeric id range.
-A row is new when the ledger holds no row of
-that session with the same digest of title and excerpt-form text, so a record its host rewrites
-(Grok compaction) still appends only what was not captured. A distilled row keeps the digest of the
-excerpt form it replaced, which is the form every later scan rebuilds. A session its host last wrote
-more than 30 days ago, the same window the scan reads, is dropped from the store. The rows pass
-through the same reflection, evidence and quarantine gates as claude-mem rows.
+Observations have a separate numeric id range. Capture matches a session's rows by their raw text
+digests and occurrence evidence, including time and incremental usage, rather than array position.
+A distilled row retains its raw digest and identity. Matched rows can receive updated counters;
+new turns append. Sessions captured by an older parser version are reparsed when scanned. Refresh
+considers all available turns before the excerpt cap and updates identifiable stored rows in place,
+including failure labels and native usage. Ambiguous matches are left unchanged. If an episode's
+failure count changes, episode building replaces its derived row even without new observations.
+A session its host last wrote more than 30 days ago, the same window the scan reads, is dropped
+from the store; the newest observation stays until a newer one exists to keep ids increasing.
+The rows pass through the same reflection, evidence and quarantine gates as claude-mem rows.
 
 ### Tool-call distillation
 

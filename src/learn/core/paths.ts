@@ -97,10 +97,10 @@ export function inProtectedFolder(path: string, home: string, platform: NodeJS.P
 }
 
 /**
- * The linked worktree holding `cwd` and the main root it belongs to, without git: the first `.git`
- * above `cwd` is a file whose `gitdir: <root>/.git/worktrees/<name>` line names the root. That
- * pointer is the one file read, and nothing else in the worktree is opened. Null in a main
- * worktree, outside a repository, and once the worktree is removed.
+ * Resolve a linked worktree through its `.git` pointer and administrative `commondir`, without
+ * running Git. `root` is the main worktree or bare common repository. The read guard covers each
+ * target before its contents are opened. Null for a main worktree, a missing pointer or an
+ * unreadable target.
  */
 export function linkedWorktree(
   cwd: string,
