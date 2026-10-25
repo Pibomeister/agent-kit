@@ -684,6 +684,49 @@ describe("worktree placement", () => {
     expect(workerRootResolver(registry, { [worktree]: root }, { home, platform: "darwin" })(worktree)).toBe(root);
   });
 
+  test.each(["root", "commondir", "common"])("a protected candidate %s cannot hide a readable origin match", (target) => {
+    for (const protectedFirst of [false, true]) {
+      const home = projectScratch();
+      const protectedRoot = target === "root" ? join(home, "Documents", "other") : join(home, "other");
+      const common = target === "root" ? join(protectedRoot, ".git") : join(home, "Documents", "other.git");
+      mkdirSync(common, { recursive: true });
+      writeFileSync(join(common, "config"), '[remote "origin"]\nurl = https://github.com/team/other.git\n');
+      if (target !== "root") {
+        const administrative = target === "commondir"
+          ? join(common, "worktrees", "other")
+          : join(home, "metadata", "other");
+        mkdirSync(administrative, { recursive: true });
+        mkdirSync(protectedRoot, { recursive: true });
+        writeFileSync(join(protectedRoot, ".git"), `gitdir: ${administrative}\n`);
+        writeFileSync(join(administrative, "commondir"), `${common}\n`);
+      }
+      const root = join(home, "readable", "shop");
+      mkdirSync(join(root, ".git"), { recursive: true });
+      writeFileSync(join(root, ".git", "config"), '[remote "origin"]\nurl = https://github.com/team/shop.git\n');
+      const protectedEntry = { root: protectedRoot, mem_project: "other", last_seen: 1 };
+      const readableEntry = { root, mem_project: "shop", last_seen: 1 };
+      const registry: Registry = protectedFirst
+        ? { other: protectedEntry, shop: readableEntry }
+        : { shop: readableEntry, other: protectedEntry };
+      const first = gateFixture(join(home, "first"), "git@github.com:team/shop.git");
+      const second = gateFixture(join(home, "second"), "https://github.com/team/shop.git");
+      const worktrees: Record<string, string> = {};
+      const rootFor = workerRootResolver(registry, worktrees, { home, platform: "darwin" });
+      const read = spyOn(fs, "readFileSync");
+      try {
+        expect(rootFor(first.worktree)).toBe(root);
+        expect(rootFor(second.worktree)).toBe(root);
+        expect(read.mock.calls.length).toBeGreaterThan(0);
+        expect(read.mock.calls.some(([path]) => typeof path === "string" && inProtectedFolder(path, home, "darwin"))).toBe(false);
+        expect(worktrees).toEqual({ [first.worktree]: root, [second.worktree]: root });
+        rmSync(first.worktree, { recursive: true });
+        expect(rootFor(first.worktree)).toBe(root);
+      } finally {
+        read.mockRestore();
+      }
+    }
+  });
+
   test.each(["commondir", "common"])("linked worktree discovery guards the resolved %s target", (target) => {
     const home = projectScratch();
     const root = join(home, "Documents", "shop");

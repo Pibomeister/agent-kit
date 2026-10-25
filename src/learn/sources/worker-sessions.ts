@@ -1197,11 +1197,11 @@ export function workerRootResolver(
       const origin = originOf(linked.root);
       if (protectedRead) return PROTECTED_FOLDER;
       const parent = origin === null ? undefined : entries.find((entry) => originOf(entry.root) === origin);
-      if (protectedRead) return PROTECTED_FOLDER;
       if (parent !== undefined) {
         persist(linked.worktree, parent.root);
         return parent.root;
       }
+      if (protectedRead) return PROTECTED_FOLDER;
     }
     return null;
   };
