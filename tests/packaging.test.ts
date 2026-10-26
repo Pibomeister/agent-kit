@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  mkdirSync,
+  symlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
@@ -60,10 +70,20 @@ describe("project autonomy default", () => {
     expect(select("yes").issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
   });
   test("validate reports an invalid project record instead of passing it", () => {
-    if (catalog === null) throw new Error("real catalog must load");
-    const root = makeTree({ "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}` });
-    const issues = checkBundleLinks({ root: REPO, catalog }, { project: join(root, "project.json") });
+    const ctx = ctxFor({
+      "schemas/common.schema.json": readFileSync(join(REPO, "schemas/common.schema.json"), "utf8"),
+      "schemas/project.schema.json": readFileSync(join(REPO, "schemas/project.schema.json"), "utf8"),
+      "schemas/verification-recipe.schema.json": readFileSync(
+        join(REPO, "schemas/verification-recipe.schema.json"),
+        "utf8",
+      ),
+      "project.json": `${source.slice(0, -1)}, "autonomy":{"default":"yes"}}`,
+    });
+    const issues = checkBundleLinks(ctx, { project: "project.json" });
     expect(issues.some((issue) => issue.rule === "packaging.project-invalid")).toBe(true);
+    expect(issues.find((issue) => issue.rule === "packaging.project-invalid")?.message).toContain(
+      '"instancePath":"/autonomy/default"',
+    );
   });
   test("an autonomy install includes the invocation policy its runner reads", () => {
     if (catalog === null) throw new Error("real catalog must load");
@@ -560,6 +580,18 @@ describe("bundle planning", () => {
     expect(plan.files.has("schemas/verification-recipe.schema.json")).toBe(true);
     const absent = planBundle(ctxFor({}, [path]), "claude-code", {});
     expect(absent.files.has(path)).toBe(false);
+  });
+
+  test("the policies and adapter contracts the skills name travel under the shared root", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repository has no catalog");
+    const plan = planBundle({ root: REPO, catalog }, "claude-code", {});
+    const skills = [...plan.files.values()].filter((file) => file.path.endsWith("/SKILL.md"));
+    for (const path of ["policies/review.yaml", "adapters/runner-contract/CONTRACT.md"]) {
+      expect(plan.files.has(`references/shared/${path}`)).toBe(true);
+      const link = `[\`${path}\`](../../references/shared/${path})`;
+      expect(skills.some((file) => file.contents.includes(link))).toBe(true);
+    }
   });
 
   test("a link between two shared files needs no rewrite because the layout is preserved", () => {
@@ -2359,6 +2391,67 @@ describe("a U skill on a host that does not suppress model invocation", () => {
 });
 
 describe("ak build and --check", () => {
+  test.each(["file", "directory"])(
+    "an executable cannot inline a schema symlink outside its source tree (%s)",
+    (kind) => {
+      const ctx = withMaintenance();
+      const marker = "EXTERNAL_SCHEMA_INLINE_SECRET";
+      const outside = makeTree({ "secret.json": JSON.stringify({ $comment: marker }) });
+      mkdirSync(join(ctx.root, "schemas"), { recursive: true });
+      const schema = kind === "file" ? "schemas/handoff-record.schema.json" : "schemas/.work/secret.json";
+      symlinkSync(
+        kind === "file" ? join(outside, "secret.json") : outside,
+        join(ctx.root, kind === "file" ? schema : "schemas/.work"),
+      );
+      writeFileSync(join(ctx.root, "src/maintenance/schema.ts"), `export { default } from "../../${schema}";\n`);
+      writeFileSync(
+        join(ctx.root, "src/maintenance/cli.ts"),
+        'import { parse } from "yaml";\nimport schema from "./schema.ts";\nconsole.log(parse("a: 1"), schema);\n',
+      );
+      const built = writeBundles(ctx, {});
+      for (const host of HOST_IDS) {
+        const executablePath = join(ctx.root, "dist", host, "bin/ak");
+        expect(existsSync(executablePath) && readFileSync(executablePath, "utf8").includes(marker)).toBe(false);
+      }
+      expectError(built.issues, "packaging.maintenance-build-failed", "inlined schema leaves its source tree");
+      expect(existsSync(join(ctx.root, "dist"))).toBe(false);
+    },
+  );
+
+  test.each(["regular", "linked schema", "linked source"])(
+    "an executable can inline an in-tree schema under a %s root",
+    (kind) => {
+      const ctx = withMaintenance();
+      if (kind === "linked source") {
+        const link = join(makeTree({}), "source");
+        symlinkSync(ctx.root, link);
+        ctx.root = link;
+      }
+      const marker = "IN_TREE_SCHEMA_INLINE";
+      const schemas = makeTree({ "local.schema.json": JSON.stringify({ $comment: marker }) });
+      if (kind !== "regular") symlinkSync(schemas, join(ctx.root, "schemas"));
+      else {
+        mkdirSync(join(ctx.root, "schemas"));
+        writeFileSync(join(ctx.root, "schemas/local.schema.json"), JSON.stringify({ $comment: marker }));
+      }
+      symlinkSync("local.schema.json", join(ctx.root, "schemas/alias.schema.json"));
+      const outside = makeTree({ "unused.json": '{"$comment":"UNUSED_EXTERNAL_SCHEMA"}' });
+      symlinkSync(join(outside, "unused.json"), join(ctx.root, "schemas/unused.schema.json"));
+      writeFileSync(
+        join(ctx.root, "src/maintenance/cli.ts"),
+        'import { parse } from "yaml";\nimport schema from "../../schemas/alias.schema.json";\nconsole.log(parse("a: 1"), schema);\n',
+      );
+      const built = writeBundles(ctx, {});
+      expect(built.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+      for (const host of HOST_IDS) {
+        const script = readFileSync(join(ctx.root, "dist", host, "bin/ak"), "utf8");
+        expect(script).toContain(marker);
+        expect(script).not.toContain("UNUSED_EXTERNAL_SCHEMA");
+        expect(existsSync(join(ctx.root, "dist", host, "schemas/unused.schema.json"))).toBe(false);
+      }
+    },
+  );
+
   test("a gate-build failure is reported and leaves every existing host bundle untouched", () => {
     const ctx = gateFixture("{ invalid JSON");
     for (const host of HOST_IDS) {
@@ -3030,7 +3123,9 @@ describe("the executable bit on bin/ programs", () => {
       const commands: string[] = [];
       for (const file of plan.files.values()) {
         if (file.path.startsWith("evals/") || !/\.(md|json|ya?ml)$/.test(file.path)) continue;
-        // A description names `ak-gate.mjs bypass check` for routing; the body runs it with node.
+        // A description names `ak-gate.mjs bypass check` for routing, and so does a policy row;
+        // the bodies that run it run it with node.
+        if (/^(references\/shared\/)?policies\//.test(file.path)) continue;
         const text = file.path.endsWith(".md") ? parseFrontmatter(file.contents).body : file.contents;
         for (const span of text.matchAll(/`([^`\n]+)`/g)) commands.push(span[1] ?? "");
         for (const hook of file.contents.matchAll(/"command"\s*:\s*"([^"]+)"/g)) commands.push(hook[1] ?? "");

@@ -55,14 +55,19 @@ export async function inOutsideRepoAsync<T>(probe: (cwd: string) => Promise<T>):
 }
 
 const projectScratches: string[] = [];
+const projectScratchBase =
+  process.platform === "darwin"
+    ? run(["getconf", "DARWIN_USER_TEMP_DIR"]).stdout.trim()
+    : join(import.meta.dir, "..", "..", ".work");
 
 /**
- * A fresh directory for a fixture project that discovery must find. It sits
- * under the repository's `.work/`, not `tmpdir()`: on Linux that is `/tmp`,
- * which discovery skips as scratch space. Remove with `removeProjectScratch`.
+ * A fixture project that discovery must find. On macOS use the native user
+ * temporary directory, outside managed gate paths even when TMPDIR is /tmp.
+ * Elsewhere use `.work/`: discovery skips Linux's /tmp. Remove with
+ * `removeProjectScratch`.
  */
 export function projectScratch(): string {
-  const base = join(import.meta.dir, "..", "..", ".work");
+  const base = projectScratchBase;
   mkdirSync(base, { recursive: true });
   const dir = realpathSync(mkdtempSync(join(base, "ak-learn-")));
   projectScratches.push(dir);
@@ -106,9 +111,11 @@ function projectTemplate(): string {
   const dir = scratch("ak-learn-template-");
   mkdirSync(dir, { recursive: true });
   run(["git", "init", "-q"], { cwd: dir });
+  run(["git", "config", "user.name", "t"], { cwd: dir });
+  run(["git", "config", "user.email", "t@t"], { cwd: dir });
   writeFileSync(join(dir, "README.md"), "fixture\n");
   run(["git", "add", "-A"], { cwd: dir });
-  run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init", "--no-gpg-sign"], { cwd: dir });
+  run(["git", "commit", "-qm", "init", "--no-gpg-sign"], { cwd: dir });
   return dir;
 }
 

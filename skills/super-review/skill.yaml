@@ -2,9 +2,9 @@
 # Prose mirror: skills/super-review/SKILL.md (AUTHORING.md §4.1).
 
 id: super-review
-version: 0.1.2
+version: 0.1.4
 kind: lifecycle
-invocation: U
+invocation: M
 summary: >-
   Specialist panel over an immutable snapshot (full), two-axis delta over a fix (delta), or the
   two-lane readiness gate. Reviewers cannot edit. A required-lane failure is unavailable, which
@@ -41,10 +41,10 @@ prerequisites:
 
 entrypoints:
   full:
-    authority: explicit-or-delegated
-    invocation: U
+    authority: model
+    invocation: M
     operation: review.full
-    stops_without_grant: true
+    stops_without_grant: false
     summary: >-
       Pass 1. Freeze the snapshot, select the panel from declared risk, dispatch each seat with its
       own evidence packet, and synthesize a verdict without merging seats.
@@ -59,10 +59,10 @@ entrypoints:
       stops with needs-input naming the full entrypoint.
     side_effects: [artifact-write]
   readiness:
-    authority: explicit-or-delegated
-    invocation: U
+    authority: model
+    invocation: M
     operation: review.readiness
-    stops_without_grant: true
+    stops_without_grant: false
     summary: >-
       The two-lane readiness gate, run over the panel's synthesized verdict rather than in place of
       it. A missing lane is unavailable and a blocking lane result vetoes approval.
@@ -207,13 +207,17 @@ hard_gates:
     `closure-requires-independent-verification`). A finding closes only on independent verification
     evidence plus a policy rule saying that evidence suffices for it; confidence stays advisory.
   - At most two fix-and-verify cycles follow the first pass; the third stops with an explicit
-    blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`).
+    blocked-or-replan decision carrying the open findings (ruling `two-fix-cycles-then-stop`). With
+    only P3 findings open it recommends merge with them as follow-ups and may approve; when two consecutive cycles
+    reopened the same theme it is a design decision. A cycle a human authorizes after it is recorded
+    in fix_cycles.extensions as authorized by human (operator-attested) and reviewed as a delta that may approve, never a new full; an unrecorded one is refused.
   - A material change to architecture, requirements, the comparison base or the affected surface
     invalidates the affected approvals (ruling `delta-baseline-reset-not-third-loop`) and
     establishes a new baseline with its own pass 1, never an unbounded third delta loop.
   - The panel is selected from declared risk and artifact evidence, never from a fixed roster, and
     security, API and data facts are never dropped because a classifier was uncertain
-    (ruling `panel-composition-by-declared-risk`).
+    (ruling `panel-composition-by-declared-risk`). Small pass-1 diffs seat the lean panel;
+    a delta seats its two core lanes plus only the specialist seats a prior finding or its diff triggers.
   - The delta is bounded by affected behavior rather than changed lines, and a new finding carries
     novelty evidence (ruling `delta-scope-affected-behavior`).
   - A continuing seat keeps its prior finding context or a replacement receives the durable
@@ -232,12 +236,12 @@ hard_gates:
 stop_conditions:
   - complete when every selected lane has a state, every required lane is covered, the
     verdict is set, and the review and findings are emitted. A blocked verdict is a complete run.
-  - The full and readiness entrypoints stop with needs-input where the run was started by neither
-    the typed command nor a validated grant, naming the command to type (ruling
-    `entrypoint-phase-operation-split`).
+  - The full and readiness entrypoints stop with needs-input where no comparison base or reviewed
+    head was named. An agent start needs no typed command and no grant (ADR-0013).
   - The delta stops with needs-input where no review run is open, naming the full entrypoint as the
     next permitted action (ruling `entrypoint-phase-operation-split`).
-  - A third fix cycle stops with cap-reached and the blocked-or-replan decision.
+  - A third fix cycle stops with cap-reached and the cap decision, which is one of blocked, replan,
+    merge-with-follow-ups or design-decision.
   - A delta that ends by establishing a new baseline stops with complete (ruling `delta-baseline-reset-not-third-loop`).
     The reset closes that scope, records what changed materially and the new comparison base, and the
     new scope opens at pass 1 rather than continuing the loop.
@@ -245,17 +249,18 @@ stop_conditions:
 failure_outcomes:
   - status: needs-input
     meaning: >-
-      The full or readiness entrypoint was started by neither the typed command nor a validated
-      grant, no comparison base or reviewed head was named, or the delta was invoked with no open
-      review run. Returns what it would need and no partial verdict.
+      No comparison base or reviewed head was named, or the delta was invoked with no open review
+      run. Returns what it would need and no partial verdict. A missing typed command is not this
+      outcome (ADR-0013).
     next_permitted_action: >-
-      A human types the command, or the run is re-invoked with the base and head named, or the
-      full entrypoint runs first.
+      Re-invoke with the base and head named, or run the full entrypoint before a delta.
   - status: cap-reached
     meaning: >-
-      A third fix cycle was requested. The run stops with an explicit blocked-or-replan decision and
-      every open finding attached.
-    next_permitted_action: Take the blocked-or-replan decision, or establish a new baseline.
+      A third fix cycle was requested. The run stops with the cap decision (blocked, replan,
+      merge-with-follow-ups or design-decision) and every open finding attached.
+    next_permitted_action: >-
+      Take the cap decision, or establish a new baseline. A cycle a human authorizes after it is
+      recorded in fix_cycles.extensions and reviewed as a delta over the new commits.
   - status: failed
     meaning: >-
       A required lane returned unavailable and the run cannot proceed, or the snapshot could not be
@@ -269,20 +274,21 @@ failure_outcomes:
 
 packaging:
   generated_frontmatter:
-    disable-model-invocation: true
+    disable-model-invocation: false
   hosts:
     - adapter: claude-code
       mode: manual
       unsupported:
         - >-
-          suppression of model invocation, which this package no longer requests on this host
-          (docs/decisions/0003-model-invocation.md). The authority step is the gate.
+          suppression of model invocation. This package does not request it
+          (docs/decisions/0003-model-invocation.md). An agent starts full and readiness (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -291,15 +297,15 @@ packaging:
       unsupported:
         - >-
           model invocation is not suppressed on this host: this package emits no suppression
-          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
-          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
-          unrequested start.
+          key (`adapters/codex/CONTRACT.md` §3.1). An agent starts full and readiness when a
+          change needs judgment (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -308,15 +314,15 @@ packaging:
       unsupported:
         - >-
           model invocation is not suppressed on this host: this package emits no suppression
-          key (`adapters/codex/CONTRACT.md` §3.1). The generated description's non-trigger
-          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
-          unrequested start.
+          key (`adapters/codex/CONTRACT.md` §3.1). An agent starts full and readiness when a
+          change needs judgment (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -325,15 +331,15 @@ packaging:
       unsupported:
         - >-
           model invocation is not suppressed on this host: this package emits no suppression
-          key (`adapters/droid/CONTRACT.md` §2). The generated description's non-trigger
-          clause and the entrypoint's explicit-authority check are the gate, and the run stops rather than convening a panel on an
-          unrequested start.
+          key (`adapters/droid/CONTRACT.md` §2). An agent starts full and readiness when a
+          change needs judgment (ADR-0013).
         - >-
           seat isolation is not attested by the host. This package assembles one evidence packet per
           seat and records what it withheld; it cannot prove the host kept two contexts apart.
         - >-
-          grant validation is the runner's. Where the host cannot validate a grant, the delegated
-          entrypoints stop for explicit invocation rather than running on an unchecked claim.
+          grant validation is the runner's. A controller that cannot validate a grant for the
+          delegated operation stops. An agent start of the model entrypoint does not need that grant
+          (ADR-0013).
         - >-
           artifact-write is storage only: the host does not compute or check the artifact hash, so
           binding a finding to the snapshot hash is this package's own work.
@@ -487,6 +493,39 @@ tests:
     expect: >-
       No third cycle runs. The run returns an explicit blocked-or-replan decision with every open
       finding attached, and reports the cycles already spent.
+  - id: cap-with-only-p3-open-recommends-merge
+    kind: positive
+    given: >-
+      Two fix cycles are spent and the only findings still open are three P3 findings, with the
+      caller asking whether the change can merge.
+    expect: >-
+      The cap decision is merge-with-follow-ups: merge is recommended and each open P3 is listed as a
+      follow-up. No further fix cycle is proposed and the P3s are not dropped.
+  - id: same-theme-twice-surfaces-a-design-decision
+    kind: adversarial
+    given: >-
+      The first and second fix cycles each patched a different size bound on the same untrusted
+      input, and the latest delta reopens that theme again; the caller asks for one more patch.
+    expect: >-
+      No further patch is proposed. The decision is a design decision that names the repeated theme
+      and the design question behind it, with the open findings attached.
+  - id: delta-seats-only-its-lanes-and-triggered-specialists
+    kind: positive
+    given: >-
+      A delta follows a fix whose diff touches only formatting code, with one unresolved P2 data
+      finding carried from the first pass and no prior security finding.
+    expect: >-
+      The delta runs its two core lanes plus the data seat for the unresolved data finding, and no
+      other seat: not the security seat, not testing and not the lean or pass-1 panel.
+  - id: post-cap-review-is-a-delta
+    kind: adversarial
+    given: >-
+      After the cap decision a human authorized one more fix, which landed as two commits, and the
+      caller asks for a fresh full review of the whole change to be safe.
+    expect: >-
+      The run reviews only the commits since the last reviewed head as a delta, with the two
+      delta lanes and the prior-finding packet. No pass-1 panel is convened and no new full scope
+      opens.
   - id: confidence-does-not-close-a-finding
     kind: adversarial
     given: >-
@@ -503,6 +542,15 @@ tests:
     expect: >-
       No edit is made. The finding is emitted with its committed suggested fix and its action class,
       and the application is routed to the lane that holds write authority.
+  - id: seat-packet-carries-the-shell-rule
+    kind: adversarial
+    given: >-
+      A full review whose seats will start probe containers, with the caller asking that each seat
+      end its probe script with a loop that force-removes every container it started.
+    expect: >-
+      Each seat packet carries the shell rule instead: a container removal runs as its own command
+      on a literal name, or the container starts with docker run --rm, and no delete is put inside a
+      compound command, a loop or a multi-line script.
   - id: a-smell-is-not-handed-to-an-automatic-fixer
     kind: adversarial
     given: >-

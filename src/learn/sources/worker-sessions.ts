@@ -19,11 +19,15 @@ import { inProtectedFolder, linkedWorktree } from "../core/paths.ts";
 import { sid8 } from "../memory/ledger.ts";
 import { RawStore } from "../memory/raw-store.ts";
 import { scrubCaptured } from "../memory/redact.ts";
-import type { Registry, Worktrees } from "../memory/registry.ts";
+import type { LearnConfig } from "../core/config.ts";
+import { recordResolvedWorktree, type Registry, type Worktrees } from "../memory/registry.ts";
 import type { MemoryObservationSource, ObservationRow, SessionRow, SummaryRow } from "./claude-mem.ts";
 import { ClaudeMemSource } from "./claude-mem.ts";
 
 export type WorkerHost = "codex" | "droid" | "grok" | "kimi";
+
+/** How a stored token count was obtained: a host-reported session total, a host-reported per-turn increment, or no host counter at all. */
+export type UsageBasis = "raw_total" | "incremental" | "estimated";
 
 export interface WorkerHomes {
   codex: string[];
@@ -57,6 +61,11 @@ export interface CapturedObservation {
   text: string;
   at: number;
   files_modified: string[];
+  /** Native host token counters for this turn, when the host reported them; null when it reported none. */
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  /** How `tokens_in` and `tokens_out` were obtained; `estimated` when the host reported no counter. */
+  usage_basis?: UsageBasis;
   /** In memory only, never stored: what the distillation stage rewrites the row from. */
   detail?: TurnDetail;
 }
@@ -78,9 +87,15 @@ export interface CapturedSession {
   next_steps: string | null;
   files_modified: string[];
   observations: CapturedObservation[];
+  observationsForRefresh?: () => Iterable<CapturedObservation>;
+  /** Session totals of the native counters in `observations`, when the host reported any. */
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  usage_basis?: UsageBasis;
 }
 
 interface StoredSession extends SessionRow {
+  capture_version?: number;
   native_id: string;
   modified_at_epoch: number;
   quiet_bytes?: number;
@@ -91,12 +106,19 @@ interface StoredSession extends SessionRow {
   files_modified: string[];
 }
 
-interface StoredObservation extends ObservationRow {
+export interface StoredObservation extends ObservationRow {
   /**
    * Digest of the row's title and its excerpt-form text, which is how a later scan recognizes it.
    * A distilled row keeps the digest of the excerpt form it replaced, since that is what a scan rebuilds.
    */
   key: string;
+  identity_key?: string;
+  /** Native host input tokens for this turn, or null when the host reported no counter. `discovery_tokens` stays the excerpt size and is never this. */
+  tokens_in: number | null;
+  /** Native host output tokens for this turn, or null when the host reported no counter. */
+  tokens_out: number | null;
+  /** How the native counters were obtained; `estimated` when the host reported none, as claude-mem's rows are. */
+  usage_basis: UsageBasis;
 }
 
 type JsonScalar = string | number | boolean | null;
@@ -113,6 +135,8 @@ interface ParsedToolInput {
 interface ToolOutput {
   text: string;
   failed: boolean;
+  /** How `failed` was decided: a recorded status or error envelope, or the output's wording. */
+  fidelity: "observed" | "inferred" | "none";
 }
 
 /** One user prompt and everything the worker did until the next one. */
@@ -122,12 +146,16 @@ interface Turn {
   calls: CapturedCall[];
   files: string[];
   at: number;
+  tokensIn: number;
+  tokensOut: number;
+  tokenBasis: UsageBasis | null;
 }
 
 export const CAPTURE_ID_BASE = 4_000_000_000_000_000;
 /** How far back the scan reads host records, and how long the ledger keeps a session its host stopped writing. */
 export const CAPTURE_WINDOW_MS = 30 * 86_400_000;
 export const MAX_OBSERVATIONS = 999;
+const CAPTURE_VERSION = 3;
 /** A turn nobody ended counts as over once its record has been quiet this long. */
 const IDLE_MS = 3_600_000;
 const READ_TEXT = 8_000;
@@ -336,18 +364,114 @@ function reportsFailure(text: string): boolean {
   return FAILURE_TEXT.test(text.replace(ZERO_FAILURES, ""));
 }
 
+/** Command-execution tools, whose output wording may carry an inferred failure. */
+const COMMAND_TOOLS = new Set([
+  "bash",
+  "shell",
+  "execute",
+  "exec",
+  "exec_command",
+  "run_terminal_command",
+  "run_command",
+  "terminal",
+  "execute_command",
+  "shell_command",
+]);
+
+function normalizedTool(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+export function isCommandTool(name: string): boolean {
+  const tool = normalizedTool(name);
+  return COMMAND_TOOLS.has(tool) || tool.endsWith("_bash") || tool.endsWith("_shell") || tool.endsWith("_exec");
+}
+
+/** Whether a value carries an explicit host error envelope: an `is_error` flag or an error status. */
+function recordedFailure(value: JsonValue | undefined): boolean | null {
+  const record = object(value);
+  if (record === null) return null;
+  if (record.is_error === true || record.isError === true || record.status === "error") return true;
+  if (record.is_error === false || record.isError === false || record.status === "success") return false;
+  const status = number(record.exit_code);
+  return status === null ? null : status !== 0;
+}
+
+const USAGE_IN_KEYS = ["input_tokens", "prompt_tokens", "inputTokens", "promptTokens", "tokens_in", "input", "prompt"];
+const USAGE_OUT_KEYS = [
+  "output_tokens",
+  "completion_tokens",
+  "outputTokens",
+  "completionTokens",
+  "tokens_out",
+  "output",
+  "completion",
+];
+const USAGE_TOTAL_KEYS = ["total_tokens", "totalTokens", "total"];
+
+/** Native token counters in a host usage record, keeping only the integers and never a model name. */
+export function nativeUsage(value: JsonValue | undefined): { tokensIn: number; tokensOut: number } | null {
+  const record = object(value);
+  if (record === null) return null;
+  const pick = (keys: readonly string[]): number | null => {
+    for (const key of keys) {
+      const found = number(record[key]);
+      if (found !== null && found >= 0) return Math.round(found);
+    }
+    return null;
+  };
+  const tokensIn = pick(USAGE_IN_KEYS);
+  const tokensOut = pick(USAGE_OUT_KEYS);
+  if (tokensIn !== null || tokensOut !== null) return { tokensIn: tokensIn ?? 0, tokensOut: tokensOut ?? 0 };
+  const total = pick(USAGE_TOTAL_KEYS);
+  return total === null ? null : { tokensIn: total, tokensOut: 0 };
+}
+
+/** The first native usage record nested under the keys hosts use for one, at most three levels down. */
+export function findUsage(value: JsonValue | undefined, depth = 0): { tokensIn: number; tokensOut: number } | null {
+  const direct = nativeUsage(value);
+  if (direct !== null) return direct;
+  if (depth >= 3) return null;
+  const record = object(value);
+  if (record === null) return null;
+  for (const key of [
+    "usage",
+    "token_usage",
+    "tokenUsage",
+    "total_token_usage",
+    "last_token_usage",
+    "info",
+    "data",
+    "payload",
+  ]) {
+    const found = findUsage(record[key], depth + 1);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
 /** The exit statuses the host recorded in a tool output: a header line, or a Codex exec result's `exit_code`. */
 function exitStatuses(raw: string): number[] {
   const headers = raw.split("\n", 4).flatMap((line) => EXIT_HEADER.exec(line.trim())?.[1] ?? []);
   return [...headers, ...[...raw.matchAll(EXIT_FIELD)].flatMap((match) => match[1] ?? [])].map(Number);
 }
 
-/** A tool output as stored, failing by its recorded exit status and by its wording only where the host recorded none. */
-function toolOutput(value: JsonValue | undefined): ToolOutput {
+/**
+ * Structured exit codes and error envelopes are observed evidence. Textual exit lines and error
+ * wording are inferred evidence, which `turnLog` accepts only for command-execution tools.
+ */
+function toolOutput(value: JsonValue | undefined, envelope: JsonObject): ToolOutput {
   const raw = rawPublicText(value);
   const text = clipped(raw);
+  const failed = recordedFailure(envelope) ?? recordedFailure(value);
+  if (failed !== null) return { text, failed, fidelity: "observed" };
   const statuses = exitStatuses(raw);
-  return { text, failed: statuses.length > 0 ? statuses.some((status) => status !== 0) : reportsFailure(text) };
+  if (statuses.length > 0) return { text, failed: statuses.some((status) => status !== 0), fidelity: "inferred" };
+  if (reportsFailure(text)) return { text, failed: true, fidelity: "inferred" };
+  return { text, failed: false, fidelity: "none" };
 }
 
 function normalizedFile(path: string, cwd: string): string | null {
@@ -398,7 +522,7 @@ function turnLog() {
   const turns: Turn[] = [];
   const named = new Map<string, CapturedCall>();
   const start = (prompt: string, at: number): Turn => {
-    const turn: Turn = { prompt, reply: "", calls: [], files: [], at };
+    const turn: Turn = { prompt, reply: "", calls: [], files: [], at, tokensIn: 0, tokensOut: 0, tokenBasis: null };
     turns.push(turn);
     return turn;
   };
@@ -428,22 +552,33 @@ function turnLog() {
       if (host.id !== undefined && host.id !== null) named.set(host.id, call);
       if (host.writes === true || WRITE_TOOLS.test(name)) turn.files.push(...filesFromValue(input.parsed, cwd));
     },
+    /** Record native counters the host reported, against the turn they belong to. */
+    usage(tokensIn: number, tokensOut: number, basis: UsageBasis, at: number): void {
+      const turn = turns.at(-1) ?? start("", at);
+      turn.tokensIn += tokensIn;
+      turn.tokensOut += tokensOut;
+      turn.tokenBasis = basis;
+    },
     output(output: ToolOutput, at: number, id: string | null = null): void {
+      const settle = (call: CapturedCall): void => {
+        call.output = output.text === "" ? "[empty]" : output.text;
+        call.failed = output.failed && (output.fidelity === "observed" || isCommandTool(call.name));
+      };
       const answered = id === null ? undefined : named.get(id);
       if (answered !== undefined) {
-        answered.output = output.text;
-        answered.failed = output.failed;
+        settle(answered);
         return;
       }
-      if (output.text === "") return;
       const turn = current(at);
       const waiting = turn.calls.find((call) => call.output === "");
-      if (waiting === undefined)
-        turn.calls.push({ name: "tool", input: "", output: output.text, failed: output.failed });
-      else {
-        waiting.output = output.text;
-        waiting.failed = output.failed;
+      if (waiting !== undefined) {
+        settle(waiting);
+        return;
       }
+      if (output.text === "" && output.fidelity !== "observed") return;
+      const call: CapturedCall = { name: "tool", input: "", output: "", failed: false };
+      settle(call);
+      turn.calls.push(call);
     },
   };
 }
@@ -474,6 +609,9 @@ function turnObservation(turn: Turn): CapturedObservation {
     ),
     at: turn.at,
     files_modified: [...new Set(turn.files)].toSorted(),
+    tokens_in: turn.tokenBasis === null ? null : turn.tokensIn,
+    tokens_out: turn.tokenBasis === null ? null : turn.tokensOut,
+    usage_basis: turn.tokenBasis ?? "estimated",
   };
   const detail = turnDetail(lead, calls);
   if (detail.calls.length > 0) row.detail = detail;
@@ -489,18 +627,20 @@ function session(
   host: WorkerHost,
   nativeId: string,
   cwd: string,
-  times: { started: number; ended: number | null; modified: number; now: number; bytes?: number },
+  times: { started: number; ended: number | null; modified: number; now: number; bytes?: number; freshness?: number },
   log: readonly Turn[],
 ): CapturedSession | null {
   const settled = times.ended !== null || times.now - times.modified > IDLE_MS;
   const turns = (settled ? log : log.slice(0, -1)).filter(
-    (turn) => turn.prompt !== "" || turn.reply !== "" || turn.calls.length > 0,
+    (turn) => turn.prompt !== "" || turn.reply !== "" || turn.calls.length > 0 || turn.tokenBasis !== null,
   );
   if (turns.length === 0) return null;
   const prompts = turns.filter((turn) => turn.prompt !== "");
   const tail = turns.length > MAX_OBSERVATIONS ? turns.slice(2 - MAX_OBSERVATIONS) : turns;
   const head = prompts.slice(0, 1).filter((turn) => !tail.includes(turn));
   const dropped = turns.length - tail.length - head.length;
+  const retained = new Set([...head, ...tail]);
+  const omitted = turns.filter((turn) => !retained.has(turn) && turn.tokenBasis !== null);
   const marker: CapturedObservation[] =
     dropped > 0
       ? [
@@ -510,6 +650,9 @@ function session(
             text: `${dropped} earlier turns of this session were left out`,
             at: tail[0]?.at ?? times.started,
             files_modified: [],
+            tokens_in: omitted.length === 0 ? null : omitted.reduce((sum, turn) => sum + turn.tokensIn, 0),
+            tokens_out: omitted.length === 0 ? null : omitted.reduce((sum, turn) => sum + turn.tokensOut, 0),
+            usage_basis: omitted.length === 0 ? "estimated" : "incremental",
           },
         ]
       : [];
@@ -520,14 +663,24 @@ function session(
     cwd,
     started_at_epoch: times.started,
     completed_at_epoch: times.ended === null ? null : Math.max(times.started, times.ended),
-    modified_at_epoch: times.modified,
+    modified_at_epoch: times.freshness ?? times.modified,
     prompt_count: prompts.length,
     request: prompts[0]?.prompt ?? null,
     completed: turns.findLast((turn) => turn.reply !== "")?.reply ?? null,
     next_steps: null,
     files_modified: [...new Set(turns.flatMap((turn) => turn.files))].toSorted(),
     observations: [...head.map(turnObservation), ...marker, ...tail.map(turnObservation)],
+    observationsForRefresh: function* () {
+      for (const turn of turns) yield turnObservation(turn);
+      yield* marker;
+    },
   };
+  const nativeTurns = turns.filter((turn) => turn.tokenBasis !== null);
+  if (nativeTurns.length > 0) {
+    captured.tokens_in = nativeTurns.reduce((sum, turn) => sum + turn.tokensIn, 0);
+    captured.tokens_out = nativeTurns.reduce((sum, turn) => sum + turn.tokensOut, 0);
+    captured.usage_basis = nativeTurns.some((turn) => turn.tokenBasis === "raw_total") ? "raw_total" : "incremental";
+  }
   if (times.ended === null && settled && times.bytes !== undefined) captured.quiet_bytes = times.bytes;
   return captured;
 }
@@ -567,10 +720,10 @@ function droidText(parts: readonly JsonObject[], injected?: RegExp): string {
  * fails by the exit line that closes its output, and by its wording where it has neither.
  */
 function droidOutput(part: JsonObject): ToolOutput {
-  const output = toolOutput(part.content);
-  if (part.is_error === true || part.is_error === false) return { text: output.text, failed: part.is_error };
+  const output = toolOutput(part.content, part);
+  if (output.fidelity === "observed") return output;
   const status = DROID_EXIT.exec(rawPublicText(part.content))?.[1];
-  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0 };
+  return status === undefined ? output : { text: output.text, failed: Number(status) !== 0, fidelity: "inferred" };
 }
 
 function grokNativeId(dir: string, summary: JsonObject | null): string {
@@ -598,10 +751,31 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
     return event?.type === "message" && event.role === "user" && publicText(codexUserContent(event.content)) !== "";
   });
   let offset = 0;
+  let codexTotal = { tokensIn: 0, tokensOut: 0 };
   for (const row of rows) {
     const event = object(row.payload);
     if (event === null) continue;
     const at = epoch(row.timestamp ?? event.timestamp, started + offset++);
+    if (event.type === "token_count") {
+      const info = object(event.info) ?? event;
+      const total = nativeUsage(object(info.total_token_usage) ?? undefined);
+      if (total !== null) {
+        const inDelta = total.tokensIn - codexTotal.tokensIn;
+        const outDelta = total.tokensOut - codexTotal.tokensOut;
+        log.usage(inDelta < 0 ? total.tokensIn : inDelta, outDelta < 0 ? total.tokensOut : outDelta, "incremental", at);
+        codexTotal = total;
+      } else {
+        const last = nativeUsage(object(info.last_token_usage) ?? undefined) ?? findUsage(event);
+        if (last !== null) {
+          log.usage(last.tokensIn, last.tokensOut, "incremental", at);
+          codexTotal = {
+            tokensIn: codexTotal.tokensIn + last.tokensIn,
+            tokensOut: codexTotal.tokensOut + last.tokensOut,
+          };
+        }
+      }
+      continue;
+    }
     if (!briefed && agentPath !== null && event.type === "agent_message" && event.recipient === agentPath) {
       const parts = Array.isArray(event.content) ? event.content : [];
       const text = publicText(parts.filter((part) => object(part)?.type === "input_text"));
@@ -620,11 +794,17 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
       continue;
     }
     if (event.type === "custom_tool_call" || event.type === "function_call") {
-      log.call(string(event.name) ?? "tool", toolInput(event.input ?? event.arguments), cwd, at);
+      log.call(string(event.name) ?? "tool", toolInput(event.input ?? event.arguments), cwd, at, {
+        id: string(event.call_id) ?? string(event.callId) ?? string(event.id),
+      });
       continue;
     }
     if (event.type === "custom_tool_call_output" || event.type === "function_call_output") {
-      log.output(toolOutput(event.output), at);
+      log.output(
+        toolOutput(event.output, event),
+        at,
+        string(event.call_id) ?? string(event.callId) ?? string(event.id),
+      );
     }
   }
   return session("codex", nativeId, cwd, { started, ended, modified, now }, log.turns);
@@ -632,8 +812,8 @@ export function parseCodexSession(path: string, now = Date.now()): CapturedSessi
 
 /**
  * A message row is public when it carries no `visibility`: Droid marks its hook runs, its notices
- * and the context it injects with one. Only a public message's role and content are read, never
- * the provider fields beside them nor the `.settings.json` next to the record. A turn ends where
+ * and the context it injects with one. Provider fields are excluded except for native usage;
+ * the settings sidecar supplies fallback usage only. A turn ends where
  * the record holds its outcome or the session's end, and any later public message reopens it.
  * `Create` writes a file under a name the shared write-tool pattern does not cover.
  */
@@ -654,6 +834,8 @@ export function parseDroidSession(path: string, now = Date.now()): CapturedSessi
       ended = Math.max(ended ?? 0, at);
       continue;
     }
+    const rowUsage = findUsage(row.usage ?? object(row.message)?.usage ?? row.token_usage);
+    if (rowUsage !== null) log.usage(rowUsage.tokensIn, rowUsage.tokensOut, "incremental", at);
     const message = row.type === "message" ? object(row.message) : null;
     if (message === null || message.visibility !== undefined) continue;
     const parts = (Array.isArray(message.content) ? message.content : []).flatMap((part) => {
@@ -677,7 +859,17 @@ export function parseDroidSession(path: string, now = Date.now()): CapturedSessi
       }
     }
   }
-  return session("droid", nativeId, cwd, { started, ended, modified, now, bytes }, log.turns);
+  if (!log.turns.some((turn) => turn.tokenBasis !== null)) {
+    const settingsUsage = findUsage(readObject(droidSettingsPath(path)) ?? undefined);
+    if (settingsUsage !== null) log.usage(settingsUsage.tokensIn, settingsUsage.tokensOut, "raw_total", at);
+  }
+  return session(
+    "droid",
+    nativeId,
+    cwd,
+    { started, ended, modified, now, bytes, freshness: workerModified("droid", path) },
+    log.turns,
+  );
 }
 
 function grokCwd(dir: string, summary: JsonObject | null): string | null {
@@ -705,6 +897,8 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
   const history = readJsonLines(historyPath);
   for (const row of history) {
     const at = started + offset++;
+    const rowUsage = findUsage(row.usage ?? row.token_usage);
+    if (rowUsage !== null) log.usage(rowUsage.tokensIn, rowUsage.tokensOut, "incremental", at);
     if (row.type === "user" && row.synthetic_reason === undefined) {
       const text = publicText(row.content);
       if (text !== "") log.prompt(text, at);
@@ -714,11 +908,21 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
       for (const call of Array.isArray(row.tool_calls) ? row.tool_calls : []) {
         const tool = object(call);
         const fn = object(tool?.function);
-        log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at);
+        log.call(string(fn?.name ?? tool?.name) ?? "tool", toolInput(fn?.arguments ?? tool?.arguments), cwd, at, {
+          id: string(tool?.id) ?? string(tool?.tool_call_id) ?? string(tool?.call_id),
+        });
       }
     } else if (row.type === "tool_result") {
-      log.output(toolOutput(row.content), at);
+      log.output(
+        toolOutput(row.content, row),
+        at,
+        string(row.tool_call_id) ?? string(row.call_id) ?? string(row.id) ?? string(row.name),
+      );
     }
+  }
+  if (!log.turns.some((turn) => turn.tokenBasis !== null)) {
+    const summaryUsage = summary === null ? null : findUsage(summary);
+    if (summaryUsage !== null) log.usage(summaryUsage.tokensIn, summaryUsage.tokensOut, "raw_total", started + offset);
   }
   const lastPublic = history.findLast(
     (row) => row.type === "user" || row.type === "assistant" || row.type === "tool_result",
@@ -729,7 +933,33 @@ export function parseGrokSession(dir: string, now = Date.now()): CapturedSession
     (!Array.isArray(lastPublic.tool_calls) || lastPublic.tool_calls.length === 0)
   )
     ended = epoch(summary?.last_active_at ?? summary?.updated_at, modified);
-  return session("grok", nativeId, cwd, { started, ended, modified, now }, log.turns);
+  return session(
+    "grok",
+    nativeId,
+    cwd,
+    { started, ended, modified, now, freshness: workerModified("grok", historyPath) },
+    log.turns,
+  );
+}
+
+function kimiUsage(value: JsonValue | undefined): { tokensIn: number; tokensOut: number } | null {
+  const usage = object(value);
+  const other = number(usage?.inputOther);
+  const read = number(usage?.inputCacheRead);
+  const created = number(usage?.inputCacheCreation);
+  const output = number(usage?.output);
+  if (
+    other === null ||
+    read === null ||
+    created === null ||
+    output === null ||
+    other < 0 ||
+    read < 0 ||
+    created < 0 ||
+    output < 0
+  )
+    return null;
+  return { tokensIn: Math.round(other + read + created), tokensOut: Math.round(output) };
 }
 
 export function parseKimiSession(dir: string, now = Date.now()): CapturedSession | null {
@@ -743,12 +973,38 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
   const started = epoch(state.createdAt, modified);
   let ended: number | null = null;
   const log = turnLog();
-  for (const row of readJsonLines(path)) {
+  let kimiTotal: { tokensIn: number; tokensOut: number } | null = null;
+  const rows = readJsonLines(path);
+  const recordedUsage = rows.some((row) => row.type === "usage.record" && kimiUsage(row.usage) !== null);
+  for (const row of rows) {
     const at = epoch(row.time, started);
     if (row.type === "turn.prompt" || row.type === "agent.turn.started" || row.type === "turn.steer") ended = null;
     if (row.type === "turn.ended" || row.type === "agent.turn.ended") {
       ended = Math.max(ended ?? 0, at);
       continue;
+    }
+    if (row.type === "usage.record") {
+      const usage = kimiUsage(row.usage);
+      if (usage !== null) log.usage(usage.tokensIn, usage.tokensOut, "incremental", at);
+      continue;
+    }
+    // Kimi reports counters on StatusUpdate rows beside the message flow; they are cumulative, so each turn takes the delta.
+    const rowType = string(row.type);
+    const statusUsage = recordedUsage
+      ? null
+      : (findUsage(row.token_usage ?? row.tokenUsage ?? object(row.payload)?.token_usage) ??
+        (rowType !== null && rowType.toLowerCase().includes("status") ? findUsage(row) : null));
+    if (statusUsage !== null) {
+      const inDelta = statusUsage.tokensIn - (kimiTotal?.tokensIn ?? 0);
+      const outDelta = statusUsage.tokensOut - (kimiTotal?.tokensOut ?? 0);
+      log.usage(
+        inDelta < 0 ? statusUsage.tokensIn : inDelta,
+        outDelta < 0 ? statusUsage.tokensOut : outDelta,
+        "incremental",
+        at,
+      );
+      kimiTotal = statusUsage;
+      if (row.type !== "agent.message.appended") continue;
     }
     if (row.type !== "agent.message.appended") continue;
     const envelope = object(row.message);
@@ -757,8 +1013,18 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     const role = string(message.role);
     const origin = object(message.origin) ?? object(object(envelope?.meta)?.origin);
     if (role === "user" && origin?.kind !== "user") continue;
+    const messageUsage = recordedUsage ? null : findUsage(message.usage ?? message.token_usage);
+    if (messageUsage !== null) log.usage(messageUsage.tokensIn, messageUsage.tokensOut, "incremental", at);
     const text = publicText(message.content);
-    if (role === "tool") log.output(toolOutput(message.content), at);
+    if (role === "tool")
+      log.output(
+        toolOutput(message.content, message),
+        at,
+        string(message.toolCallId) ??
+          string(message.tool_call_id) ??
+          string(message.call_id) ??
+          string(object(envelope?.meta)?.toolCallId),
+      );
     else if (text !== "") {
       if (role === "user") log.prompt(text, at);
       else if (role === "assistant") log.reply(text, at);
@@ -766,7 +1032,10 @@ export function parseKimiSession(dir: string, now = Date.now()): CapturedSession
     if (role !== "assistant") continue;
     for (const call of Array.isArray(message.toolCalls) ? message.toolCalls : []) {
       const tool = object(call);
-      if (tool !== null) log.call(string(tool.name) ?? "tool", toolInput(tool.arguments), cwd, at);
+      if (tool !== null)
+        log.call(string(tool.name) ?? "tool", toolInput(tool.arguments), cwd, at, {
+          id: string(tool.id) ?? string(tool.tool_call_id) ?? string(tool.call_id) ?? string(tool.toolCallId),
+        });
     }
   }
   const parsed = session("kimi", nativeId, cwd, { started, ended, modified, now }, log.turns);
@@ -831,32 +1100,115 @@ export const PROTECTED_FOLDER = Symbol("protected-folder");
 
 export type WorkerPlace = string | typeof PROTECTED_FOLDER | null;
 
+/** Origin identity from Git config text, without following includes that could trigger protected-folder reads. */
+function repoOrigin(root: string, canRead: (path: string) => boolean): string | null {
+  try {
+    if (!canRead(root)) return null;
+    const marker = statSync(join(root, ".git"), { throwIfNoEntry: false });
+    const main = marker?.isFile() === true ? linkedWorktree(root, canRead)?.root : root;
+    if (main === undefined) return null;
+    const config =
+      statSync(join(main, ".git"), { throwIfNoEntry: false })?.isDirectory() === true
+        ? join(main, ".git", "config")
+        : join(main, "config");
+    if (!canRead(config)) return null;
+    let origin = false;
+    let url: string | undefined;
+    for (const line of readFileSync(config, "utf8").split("\n")) {
+      if (/^\s*\[/.test(line)) origin = /^\s*\[remote\s+"origin"\]\s*$/i.test(line);
+      else if (origin) url = /^\s*url\s*=\s*(.+)$/i.exec(line)?.[1]?.trim() ?? url;
+    }
+    if (url === undefined || url === "") return null;
+    const remote = new URL(url.includes("://") ? url : url.replace(/^((?:[^/@:]+@)?[^/:]+):(.+)$/, "ssh://$1/$2"));
+    if (!["https:", "http:", "ssh:", "git:"].includes(remote.protocol) || remote.hostname === "") return null;
+    const path = remote.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
+    if (path === "" || path === "/") return null;
+    const port =
+      (remote.protocol === "ssh:" && remote.port === "22") || (remote.protocol === "git:" && remote.port === "9418")
+        ? ""
+        : remote.port;
+    return `${remote.hostname.toLowerCase()}${port === "" ? "" : `:${port}`}${path}`;
+  } catch {
+    return null;
+  }
+}
+
+function isNoMistakesPath(path: string): boolean {
+  return `${path}${sep}`.includes(`${sep}.no-mistakes${sep}`);
+}
+
 /**
- * Where a recorded cwd belongs: the deepest registered root, or worktree recorded for one, that
- * contains it, compared as text. A cwd none of them contains is placed by the `.git` pointer of
- * the linked worktree it sits in, when that names a registered root. On macOS that pointer is not
- * read, and nothing above the cwd is touched, when the cwd is inside Documents, Desktop or
- * Downloads under `home`: the scheduler's read would block on the privacy prompt while the tick
- * holds the runtime lock. Such a cwd answers `PROTECTED_FOLDER`.
+ * Place by the deepest recorded path, then linked-worktree metadata or a gate repository's origin.
+ * Metadata reads under macOS protected folders are refused to avoid a privacy prompt while the
+ * tick holds its lock. See `adapters/observation-source/CONTRACT.md` §3 for placement and persistence.
  */
 export function workerRootResolver(
   registry: Registry,
   worktrees: Worktrees,
-  guard: { home?: string; platform?: NodeJS.Platform } = {},
+  guard: {
+    home?: string;
+    platform?: NodeJS.Platform;
+    /** When set, a newly resolved linked worktree is persisted for later ticks. */
+    config?: LearnConfig;
+  } = {},
 ): (cwd: string) => WorkerPlace {
-  const roots = new Set(Object.values(registry).map((entry) => entry.root));
-  const places = [
+  const entries = Object.values(registry);
+  const roots = new Set(entries.map((entry) => entry.root));
+  const places: Array<[string, string]> = [
     ...[...roots].map((root): [string, string] => [root, root]),
     ...Object.entries(worktrees).filter(([, root]) => roots.has(root)),
   ].toSorted((a, b) => b[0].length - a[0].length);
   const home = guard.home ?? userHome();
+  const origins = new Map<string, string | null>();
+  const persist = (worktree: string, root: string): void => {
+    if (worktrees[worktree] !== root) {
+      worktrees[worktree] = root;
+      const place: [string, string] = [worktree, root];
+      const at = places.findIndex(([known]) => known.length < worktree.length);
+      if (at === -1) places.push(place);
+      else places.splice(at, 0, place);
+    }
+    try {
+      if (guard.config !== undefined) recordResolvedWorktree(guard.config, worktree, root);
+    } catch {
+      // Persistence is a hint for later scans; placing this session never depends on it.
+    }
+  };
   return (cwd) => {
     const path = resolve(cwd);
     const placed = places.find(([place]) => path === place || path.startsWith(`${place}${sep}`))?.[1];
     if (placed !== undefined) return placed;
-    if (inProtectedFolder(path, home, guard.platform)) return PROTECTED_FOLDER;
-    const root = linkedWorktree(path)?.root;
-    return root !== undefined && roots.has(root) ? root : null;
+    let protectedRead = false;
+    const canRead = (target: string): boolean => {
+      if (!inProtectedFolder(target, home, guard.platform)) return true;
+      protectedRead = true;
+      return false;
+    };
+    const originOf = (root: string): string | null => {
+      if (origins.has(root)) return origins.get(root) ?? null;
+      const origin = repoOrigin(root, canRead);
+      if (!protectedRead) origins.set(root, origin);
+      return origin;
+    };
+    if (!canRead(path)) return PROTECTED_FOLDER;
+    const linked = linkedWorktree(path, canRead);
+    if (protectedRead) return PROTECTED_FOLDER;
+    if (linked !== null && roots.has(linked.root)) {
+      persist(linked.worktree, linked.root);
+      return linked.root;
+    }
+    if (linked !== null && (isNoMistakesPath(path) || isNoMistakesPath(linked.root))) {
+      // A gate worktree of a registered repository, matched by the origin both clones name.
+      const origin = originOf(linked.root);
+      if (protectedRead) return PROTECTED_FOLDER;
+      const parent = origin === null ? undefined : entries.find((entry) => originOf(entry.root) === origin);
+      if (parent !== undefined) {
+        persist(linked.worktree, parent.root);
+        return parent.root;
+      }
+      if (protectedRead) return PROTECTED_FOLDER;
+    }
+    return null;
   };
 }
 
@@ -866,6 +1218,16 @@ function writtenAt(path: string): number {
   } catch {
     return 0;
   }
+}
+
+function droidSettingsPath(path: string): string {
+  return `${path.replace(/\.jsonl$/, "")}.settings.json`;
+}
+
+function workerModified(host: WorkerHost, record: string): number {
+  const counters =
+    host === "droid" ? droidSettingsPath(record) : host === "grok" ? join(dirname(record), "summary.json") : null;
+  return Math.max(writtenAt(record), counters === null ? 0 : writtenAt(counters));
 }
 
 export interface WorkerScan {
@@ -917,7 +1279,7 @@ export function scanWorkerSessions(
     identify: () => { cwd: string | null; nativeId: string | null },
     parse: () => CapturedSession | null,
   ) => {
-    const touched = writtenAt(path);
+    const touched = Math.max(writtenAt(path), workerModified(host, record));
     if (touched < sinceMs) return;
     guarded(path, () => {
       const { cwd, nativeId } = identify();
@@ -932,7 +1294,8 @@ export function scanWorkerSessions(
         scan.unmatched += 1;
         return;
       }
-      const { mtimeMs: modified, size } = statSync(record);
+      const { size } = statSync(record);
+      const modified = workerModified(host, record);
       const place = placed.get(root) ?? { newest: 0, read: [] };
       placed.set(root, place);
       place.newest = Math.max(place.newest, touched, modified);
@@ -1026,13 +1389,28 @@ export function scanWorkerSessions(
   return scan;
 }
 
-function rowKey(row: CapturedObservation): string {
+function rowKey(row: Pick<CapturedObservation, "title" | "text">): string {
   return createHash("sha256").update(`${row.title}\n${row.text}`).digest("hex").slice(0, 16);
 }
 
-/** The parser's row in a rewrite's wording. Its type, title, time and files stay the parser's. */
-function reworded(row: CapturedObservation, rewrite: CapturedObservation | undefined): CapturedObservation {
-  return rewrite === undefined ? row : { ...row, text: rewrite.text.slice(0, MAX_TEXT) };
+function refreshKey(title: string, text: string): string {
+  const lines = text.split("\n").filter((line) => !line.startsWith("failed:"));
+  return rowKey({ title, text: lines.toSorted().join("\n") });
+}
+
+function leadKey(title: string, text: string): string {
+  const lines = text.split("\n").filter((line) => /^(?:prompt:|reply:|tools:)/.test(line));
+  return rowKey({ title, text: lines.toSorted().join("\n") });
+}
+
+function incrementalKey(row: Pick<CapturedObservation, "usage_basis" | "tokens_in" | "tokens_out">): string | null {
+  return row.usage_basis === "incremental" &&
+    row.tokens_in !== undefined &&
+    row.tokens_in !== null &&
+    row.tokens_out !== undefined &&
+    row.tokens_out !== null
+    ? `usage:${row.tokens_in}:${row.tokens_out}`
+    : null;
 }
 
 function storedObservation(
@@ -1040,21 +1418,27 @@ function storedObservation(
   row: CapturedObservation,
   id: number,
   key: string,
+  rewrite?: CapturedObservation,
 ): StoredObservation {
+  const text = rewrite === undefined ? row.text : rewrite.text.slice(0, MAX_TEXT);
   return {
     id,
     key,
+    identity_key: refreshKey(row.title, row.text),
     memory_session_id: item.memory_session_id,
     project: "",
     type: row.type,
     title: row.title,
     subtitle: null,
     narrative: null,
-    facts: row.text,
+    facts: text,
     concepts: JSON.stringify([]),
     files_read: JSON.stringify([]),
     files_modified: JSON.stringify(row.files_modified),
-    discovery_tokens: Math.ceil(row.text.length / 4),
+    discovery_tokens: Math.ceil(text.length / 4),
+    tokens_in: row.tokens_in ?? null,
+    tokens_out: row.tokens_out ?? null,
+    usage_basis: row.usage_basis ?? "estimated",
     created_at: new Date(row.at).toISOString(),
     created_at_epoch: row.at,
     platform_source: item.platform,
@@ -1063,6 +1447,7 @@ function storedObservation(
 
 function storedSession(item: CapturedSession, observationCount: number): StoredSession {
   const stored: StoredSession = {
+    capture_version: CAPTURE_VERSION,
     id: 0,
     memory_session_id: item.memory_session_id,
     platform_source: item.platform,
@@ -1118,8 +1503,9 @@ export class WorkerSessionSource implements MemoryObservationSource {
   }
 
   /**
-   * Append the rows of each host session the ledger does not hold yet, matched by a digest of title
-   * and text rather than position, since a host may rewrite its record. A stored session that is not
+   * Append unseen turns and update identifiable stored turns, matching raw digests and occurrence
+   * evidence rather than position, since a host may rewrite its record. Older capture versions
+   * refresh available stored turns before the excerpt cap. A stored session that is not
    * in `sessions` and whose host last wrote it before `sinceMs` is dropped, so the store holds the same
    * window the scan reads; the newest row stays until a newer one is appended, which keeps ids rising.
    * A finished session whose record changed without a new row has its session row rewritten, so the
@@ -1148,31 +1534,137 @@ export class WorkerSessionSource implements MemoryObservationSource {
     const newestId = held.at(-1)?.id ?? CAPTURE_ID_BASE - 1;
     let nextId = newestId;
     const fresh: StoredObservation[] = [];
+    const updates = new Map<number, StoredObservation>();
     const revisions: StoredSession[] = [];
     for (const item of sessions) {
       const stored = this.bySession.get(item.memory_session_id) ?? [];
-      const unseen = new Map<string, number>();
-      for (const row of stored) unseen.set(row.key, (unseen.get(row.key) ?? 0) + 1);
+      const sessionRow = this.sessionRows.get(item.memory_session_id);
+      const refresh = sessionRow !== undefined && sessionRow.capture_version !== CAPTURE_VERSION;
+      const used = new Set<number>();
+      const identities = new Map<number, string>(
+        stored.map((entry) => [entry.id, entry.identity_key ?? refreshKey(entry.title ?? "", entry.facts ?? "")]),
+      );
+      const leads = new Map(stored.map((entry) => [entry.id, leadKey(entry.title ?? "", entry.facts ?? "")]));
+      const occurrences = new Map<string, number>();
+      {
+        const known = new Set([...stored.map((entry) => entry.key), ...identities.values(), ...leads.values()]);
+        const observations = refresh ? (item.observationsForRefresh?.() ?? item.observations) : item.observations;
+        for (const observation of observations) {
+          const identity = refreshKey(observation.title, observation.text);
+          const lead = leadKey(observation.title, observation.text);
+          if (!known.has(identity) && !known.has(rowKey(observation)) && !known.has(lead)) continue;
+          const usage = incrementalKey(observation);
+          for (const key of [
+            identity,
+            `${identity}:${observation.at}`,
+            `lead:${lead}:${observation.at}`,
+            ...(usage === null ? [] : [`${identity}:${usage}`]),
+          ])
+            occurrences.set(key, (occurrences.get(key) ?? 0) + 1);
+        }
+      }
+      const matched = new Map<number, StoredObservation>();
+      const aggregates: StoredObservation[] = [];
       const pending: Array<{ row: CapturedObservation; key: string }> = [];
-      for (const row of item.observations) {
+      const eligible = new Map<string, number>();
+      for (const observation of item.observations) {
+        const key = `${rowKey(observation)}:${observation.at}`;
+        eligible.set(key, (eligible.get(key) ?? 0) + 1);
+      }
+      const observations = refresh ? (item.observationsForRefresh?.() ?? item.observations) : item.observations;
+      for (const row of observations) {
         const key = rowKey(row);
-        const count = unseen.get(key) ?? 0;
-        if (count > 0) unseen.set(key, count - 1);
-        else pending.push({ row, key });
+        const eligibility = `${key}:${row.at}`;
+        const available = eligible.get(eligibility) ?? 0;
+        if (available > 0) eligible.set(eligibility, available - 1);
+        const identity = refreshKey(row.title, row.text);
+        const candidates = stored.filter(
+          (entry) => !used.has(entry.id) && (entry.key === key || identities.get(entry.id) === identity),
+        );
+        const timed = candidates.filter((entry) => entry.created_at_epoch === row.at);
+        const usage = incrementalKey(row);
+        const counted = !refresh && usage !== null ? candidates.filter((entry) => incrementalKey(entry) === usage) : [];
+        const lead = leadKey(row.title, row.text);
+        const rewritten =
+          refresh && candidates.length === 0
+            ? stored.filter(
+                (entry) => !used.has(entry.id) && entry.created_at_epoch === row.at && leads.get(entry.id) === lead,
+              )
+            : [];
+        const previous =
+          (timed.length === 1 && occurrences.get(`${identity}:${row.at}`) === 1 ? timed[0] : undefined) ??
+          (counted.length === 1 && occurrences.get(`${identity}:${usage}`) === 1 ? counted[0] : undefined) ??
+          (candidates.length === 1 && occurrences.get(identity) === 1 ? candidates[0] : undefined) ??
+          (!refresh
+            ? timed.find(
+                (entry) =>
+                  entry.key === key &&
+                  entry.type === row.type &&
+                  entry.tokens_in === (row.tokens_in ?? null) &&
+                  entry.tokens_out === (row.tokens_out ?? null) &&
+                  entry.files_modified === JSON.stringify(row.files_modified),
+              )
+            : undefined) ??
+          (rewritten.length === 1 && occurrences.get(`lead:${lead}:${row.at}`) === 1 ? rewritten[0] : undefined);
+        if (previous === undefined) {
+          if (
+            available > 0 &&
+            rewritten.length === 0 &&
+            (candidates.length === 0 || (timed.length === 0 && occurrences.get(`${identity}:${row.at}`) === 1))
+          )
+            pending.push({ row, key });
+          continue;
+        }
+        used.add(previous.id);
+        const current = storedObservation(item, row, previous.id, key);
+        if (key === previous.key) {
+          current.facts = previous.facts;
+          current.discovery_tokens = previous.discovery_tokens;
+          current.created_at = previous.created_at;
+          current.created_at_epoch = previous.created_at_epoch;
+        }
+        if (!refresh && current.usage_basis === "estimated" && previous.usage_basis !== "estimated") {
+          current.tokens_in = previous.tokens_in;
+          current.tokens_out = previous.tokens_out;
+          current.usage_basis = previous.usage_basis;
+        }
+        matched.set(previous.id, current);
+        if (row.usage_basis === "raw_total" || row.type === "truncated") aggregates.push(current);
       }
       const rows = pending.map((entry) => entry.row);
       const rewritten = pending.length > 0 && options.rewrite !== undefined ? options.rewrite(item, rows) : rows;
       const appended = pending.map((entry, index) =>
-        storedObservation(item, reworded(entry.row, rewritten[index]), ++nextId, entry.key),
+        storedObservation(item, entry.row, ++nextId, entry.key, rewritten[index]),
       );
-      const row = this.sessionRows.get(item.memory_session_id);
+      aggregates.push(...appended.filter((row) => row.usage_basis === "raw_total" || row.type === "truncated"));
+      const aggregateIds = new Set(aggregates.map((row) => row.id));
+      for (const field of ["tokens_in", "tokens_out"] as const) {
+        const total = item[field];
+        if (total === undefined || total === null) continue;
+        const counted = [...stored.map((row) => matched.get(row.id) ?? row), ...appended]
+          .filter((row) => !aggregateIds.has(row.id))
+          .reduce((sum, row) => sum + (row[field] ?? 0), 0);
+        let remaining = Math.max(0, total - counted);
+        for (const row of aggregates) {
+          if (row[field] === null) continue;
+          row[field] = Math.min(row[field], remaining);
+          remaining -= row[field];
+        }
+      }
+      for (const previous of stored) {
+        const current = matched.get(previous.id);
+        if (current !== undefined && JSON.stringify(current) !== JSON.stringify(previous))
+          updates.set(current.id, current);
+      }
       if (
+        !refresh &&
+        !stored.some((entry) => updates.has(entry.id)) &&
         appended.length === 0 &&
-        (row === undefined ||
+        (sessionRow === undefined ||
           (item.completed_at_epoch === null && item.quiet_bytes === undefined) ||
-          (row.modified_at_epoch === item.modified_at_epoch &&
-            row.completed_at_epoch === item.completed_at_epoch &&
-            row.quiet_bytes === item.quiet_bytes))
+          (sessionRow.modified_at_epoch === item.modified_at_epoch &&
+            sessionRow.completed_at_epoch === item.completed_at_epoch &&
+            sessionRow.quiet_bytes === item.quiet_bytes))
       )
         continue;
       fresh.push(...appended);
@@ -1180,7 +1672,9 @@ export class WorkerSessionSource implements MemoryObservationSource {
     }
     const written = { observations: fresh.length, sessions: revisions.length };
     if (options.dryRun === true) return written;
-    const kept = held.filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId));
+    const kept = held
+      .filter((row) => !expired(row.memory_session_id) || (fresh.length === 0 && row.id === newestId))
+      .map((row) => updates.get(row.id) ?? row);
     const pruned = kept.length < held.length;
     const latest = [...this.sessionRows.values(), ...revisions].filter(
       (row) => !pruned || !expired(row.memory_session_id),
@@ -1191,7 +1685,7 @@ export class WorkerSessionSource implements MemoryObservationSource {
         [...new Map(latest.map((row) => [row.memory_session_id, row])).values()],
         this.gate,
       );
-    else this.store.addWorkers(fresh, revisions, this.gate);
+    else this.store.addWorkers([...updates.values(), ...fresh], revisions, this.gate);
     this.hold([...kept, ...fresh], latest);
     return written;
   }
@@ -1199,7 +1693,9 @@ export class WorkerSessionSource implements MemoryObservationSource {
   /** When the stored session ended, if the ledger holds it complete as its host record stood at `modifiedMs`. */
   completedAt(memorySessionId: string, modifiedMs: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
-    return row !== undefined && row.modified_at_epoch === modifiedMs ? row.completed_at_epoch : null;
+    return row !== undefined && row.capture_version === CAPTURE_VERSION && row.modified_at_epoch === modifiedMs
+      ? row.completed_at_epoch
+      : null;
   }
 
   /**
@@ -1208,7 +1704,13 @@ export class WorkerSessionSource implements MemoryObservationSource {
    */
   quietAt(memorySessionId: string, modifiedMs: number, bytes: number): number | null {
     const row = this.sessionRows.get(memorySessionId);
-    if (row === undefined || row.modified_at_epoch !== modifiedMs || row.quiet_bytes !== bytes) return null;
+    if (
+      row === undefined ||
+      row.capture_version !== CAPTURE_VERSION ||
+      row.modified_at_epoch !== modifiedMs ||
+      row.quiet_bytes !== bytes
+    )
+      return null;
     return this.sessionObservations(memorySessionId).reduce(
       (latest, item) => Math.max(latest, item.created_at_epoch),
       row.started_at_epoch,
@@ -1223,7 +1725,12 @@ export class WorkerSessionSource implements MemoryObservationSource {
 
   newTokensSince(_project: string, afterId: number) {
     const rows = this.observations.filter((row) => row.id > afterId);
-    return { tokens: rows.reduce((sum, row) => sum + (row.discovery_tokens ?? 0), 0), count: rows.length };
+    // Native counters only: `discovery_tokens` is the excerpt size, never consumption.
+    const tokens = rows.reduce(
+      (sum, row) => sum + (row.usage_basis === "estimated" ? 0 : (row.tokens_in ?? 0) + (row.tokens_out ?? 0)),
+      0,
+    );
+    return { tokens, count: rows.length };
   }
 
   observationsSince(

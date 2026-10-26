@@ -97,22 +97,30 @@ export function inProtectedFolder(path: string, home: string, platform: NodeJS.P
 }
 
 /**
- * The linked worktree holding `cwd` and the main root it belongs to, without git: the first `.git`
- * above `cwd` is a file whose `gitdir: <root>/.git/worktrees/<name>` line names the root. That
- * pointer is the one file read, and nothing else in the worktree is opened. Null in a main
- * worktree, outside a repository, and once the worktree is removed.
+ * Resolve a linked worktree through its `.git` pointer and administrative `commondir`, without
+ * running Git. `root` is the main worktree or bare common repository. The read guard covers each
+ * target before its contents are opened. Null for a main worktree, a missing pointer or an
+ * unreadable target.
  */
-export function linkedWorktree(cwd: string): { worktree: string; root: string } | null {
+export function linkedWorktree(
+  cwd: string,
+  canRead: (path: string) => boolean = () => true,
+): { worktree: string; root: string } | null {
   for (const worktree of searched(cwd)) {
     const pointer = join(worktree, ".git");
     try {
       const stat = statSync(pointer, { throwIfNoEntry: false });
       if (stat === undefined) continue;
       if (!stat.isFile()) return null;
+      if (!canRead(pointer)) return null;
       const gitdir = /^gitdir: (.+)$/m.exec(readFileSync(pointer, "utf8"))?.[1];
       if (gitdir === undefined) return null;
-      const root = /^(.+)[\\/]\.git[\\/]worktrees[\\/][^\\/]+$/.exec(resolve(worktree, gitdir.trim()))?.[1];
-      return root === undefined ? null : { worktree, root };
+      const administrative = resolve(worktree, gitdir.trim());
+      const commonPath = join(administrative, "commondir");
+      if (!canRead(commonPath)) return null;
+      const common = resolve(administrative, readFileSync(commonPath, "utf8").trim());
+      if (!canRead(common)) return null;
+      return { worktree, root: common.endsWith(`${sep}.git`) ? dirname(common) : common };
     } catch {
       return null;
     }

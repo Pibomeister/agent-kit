@@ -59,6 +59,7 @@ describe("this tree's agent-facing text", () => {
       "firstmate:stock-brief",
       ...["pattern-maintainer", "reflector", "consolidator", "lesson-merger", "skill-scout"].map((r) => `judge:${r}`),
       "distill:tool-calls",
+      "hook:semantic-lint-questions",
       ...catalog
         .bySection("roles")
         .filter((entry) => entry.status === "authored")

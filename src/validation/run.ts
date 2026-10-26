@@ -16,6 +16,7 @@ import { checkBudget } from "./budget.ts";
 import { checkCompleteness } from "./completeness.ts";
 import { checkCatalogRules, checkPackManifests, checkProfileCapabilities, checkSkillManifests } from "./configrules.ts";
 import type { CheckContext } from "./context.ts";
+import { checkConstitution } from "./constitution.ts";
 import { checkContent } from "./content.ts";
 import { checkContractDefects } from "./defects.ts";
 import { checkDocumentRules } from "./docrules.ts";
@@ -47,7 +48,10 @@ export interface RunOptions {
   readonly only?: readonly string[];
   /** Extra checks, for tests and for callers that extend the run. */
   readonly extraChecks?: readonly Check[];
-  /** Passed to the packaging-dependent checks. */
+  /**
+   * Passed to the packaging-dependent checks. Its `project` record is also the
+   * one the constitution check reads.
+   */
   readonly build?: BuildOptions;
 }
 
@@ -94,6 +98,8 @@ export const CHECKS: readonly Check[] = [
   { name: "grader-surfaces", run: checkGraderSurfaces },
   { name: "fired-indicators", run: checkFiredIndicators },
   { name: "case-names", run: checkCaseNames },
+  // Inert unless a project record names a registry (ADR-0009 decision 4).
+  { name: "constitution", run: checkConstitution },
 ];
 
 export function runValidation(root: string, options: RunOptions = {}): ValidationRun {
@@ -103,8 +109,10 @@ export function runValidation(root: string, options: RunOptions = {}): Validatio
     return { catalog: null, issues: sortIssues(issues), ok: false };
   }
 
-  const ctx: CheckContext = { root, catalog: loaded.catalog };
   const build = options.build ?? DEFAULT_BUILD;
+  // The record `--project` names is one record for the whole run: the packager
+  // reads its profile opt-in, the constitution check the registry it names.
+  const ctx: CheckContext = { root, catalog: loaded.catalog, project: build.project };
   const checks = [...CHECKS, ...(options.extraChecks ?? [])].map((check) =>
     check.name === "links-bundle" ? { name: check.name, run: (c: CheckContext) => checkBundleLinks(c, build) } : check,
   );

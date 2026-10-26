@@ -75,6 +75,11 @@ export function recordWorktree(config: LearnConfig, cwd: string, root: string): 
   if (config.dryRun || rootOf(cwd) !== null) return;
   const worktree = worktreeRoot(cwd);
   if (worktree === null || worktree === root) return;
+  recordResolvedWorktree(config, worktree, root);
+}
+
+export function recordResolvedWorktree(config: LearnConfig, worktree: string, root: string): void {
+  if (config.dryRun || worktree === root) return;
   const worktrees = readWorktrees(config);
   if (worktrees[worktree] === root) return;
   writeJson(worktreesPath(config), { ...worktrees, [worktree]: root });
@@ -82,7 +87,11 @@ export function recordWorktree(config: LearnConfig, cwd: string, root: string): 
 
 /** Why a root may never hold a ledger, or null. Stat only, and a root that cannot be read is not judged. */
 function ineligible(root: string): string | null {
-  if (`${root}${sep}`.includes(`${sep}.no-mistakes${sep}repos${sep}`)) return "managed by no-mistakes";
+  if (
+    `${root}${sep}`.includes(`${sep}.no-mistakes${sep}repos${sep}`) ||
+    `${root}${sep}`.includes(`${sep}.no-mistakes${sep}worktrees${sep}`)
+  )
+    return "managed by no-mistakes";
   try {
     const bare =
       statSync(join(root, ".git"), { throwIfNoEntry: false }) === undefined &&

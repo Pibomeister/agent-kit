@@ -1,16 +1,13 @@
 ---
 name: super-review
 description: >-
-  Human-started command: it runs only when the human's message begins with `/ak:super-review`,
-  under a validated grant, when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
-  bypass check`, or as a delta inside an open review run. On any other request do not load or
-  follow it; tell the human to type that command. When prose asks for this review work, do not
-  inspect the change or its prerequisites; tell the human to type `/ak:super-review` followed by
-  their request. Reviews a change with a panel of independent specialist seats over an immutable
-  snapshot (full), a two-axis delta over an accepted fix (delta), or the two-lane readiness gate
-  (readiness). Use when a change needs judgment against requirements, standards and tests.
-  Reviewers cannot edit source. Not for writing the fix, not for running acceptance checks, and not
-  for repairing a red pipeline.
+  Convenes an independent specialist panel for a first pass, a bounded second look at an
+  accepted fix, or the readiness gate. The agent doing the work starts the first pass or
+  the readiness gate when a change needs judgment against requirements, the project's
+  declared standards and its tests. No slash command and no human act is required.
+  Reviewers cannot edit source, and the author of the change does not sit a seat or close
+  a finding. Not for writing the fix, not for running acceptance checks, and not for
+  repairing a red pipeline.
 license: MIT
 metadata:
   ak_catalog_id: super-review
@@ -20,9 +17,11 @@ metadata:
 
 Use `full` when a change is ready for judgment and nothing has reviewed it yet: a panel of seats
 reads one immutable snapshot against requirements, the project's declared standards, and the tests.
+The agent that produced the change starts this itself, as part of the work.
 
 Use `delta` when a finding was accepted, a fix landed, and the fix needs a bounded second look inside
-the review run that is already open.
+the review run that is already open. After the first `full`, every later review of the change is a
+`delta` over the commits since the last reviewed head, past the fix-cycle cap included.
 
 Use `readiness` when a change is otherwise ready to ship and the question is whether the evidence
 behind it holds up — not what is wrong with the diff, but whether anything required is missing.
@@ -56,27 +55,28 @@ their own failure modes, and they enter through `doc-review`.
 
 ## Authority
 
-`full` and `readiness`: authority `explicit-or-delegated`, invocation U. A human starts either by
-typing `/ak:super-review`, or a delegated controller starts the same protocol through the declared
-phase operations `review.full` and `review.readiness` under a runner-validated grant covering
-finding-adjudication. A request in prose is not a start, even when it names this skill or the
-command. `delta`: authority `active-review-run`, invocation M, through `review.delta`.
+`full` and `readiness`: authority `model`, invocation M. The agent doing the work starts either
+when a change needs that judgment. No slash command and no human act is required (ADR-0013). A
+delegated controller may also start the same protocol through `review.full` and `review.readiness`
+under a runner-validated grant covering finding-adjudication. A bypass grant (ADR-0008) remains a
+valid start and is not required. `delta`: authority `active-review-run`, invocation M, through
+`review.delta`.
 
-There is one protocol behind both doors, not a public wrapper and a second pipeline. Where the host
-cannot validate a grant, the entrypoint stops for explicit invocation rather than reproducing the
-delegated effect through a side door (ruling `entrypoint-phase-operation-split`).
+Starting the review is not approval. The author of the change does not sit a seat and does not
+supply the verdict (ruling `missing-supervisor-never-implementer`). The author does not close a
+finding (ruling `closure-requires-independent-verification`).
 
-Under a Firstmate binding, Firstmate is the delegated controller and the host validates the grant with
-`ak firstmate grant --binding <path> --operation review.full` (or `review.readiness`). Exit 0 is the
-grant: cite the record it prints on the review. A refusal means stop and report `needs-decision` to
-Firstmate (ADR-0004).
+There is one protocol. Where the host cannot validate a grant, a controller stops rather than
+inventing a second pipeline (ruling `entrypoint-phase-operation-split`). An agent start does not
+need that grant.
 
-Under a bypass grant (ADR-0008), a supervisor-held file stands in for the typed command for one
-task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant <path> --task <id>
---phase super-review:full` (or `super-review:readiness`): exit 0 is the start, and a refusal is a stop with
-`needs-decision`. The grant starts the review and nothing else; a decision a human would make inside
-it still goes to the supervisor through `needs-decision`. Record the gate with `--bypass <path> --task <id>`
-so it carries the attribution.
+Under a Firstmate binding, cite `ak firstmate grant --binding <path> --operation review.full` (or
+`review.readiness`) when it exits 0. A refusal means the binding does not cover the delegated
+operation. It does not stop the model start.
+
+Under a bypass grant, `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant
+<path> --task <id> --phase super-review:full` (or `super-review:readiness`) exits 0 as one valid
+start. Record the gate with `--bypass <path> --task <id>` so it carries the attribution.
 
 `review.delta` does not open a review run. Invoked where none is open, it stops with `needs-input`
 naming `super-review full` as the next permitted action.
@@ -101,16 +101,10 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 
 ## Workflow
 
-1. Check how this run was started, before any other step and before any tool call but the grant
-   check. `full` and `readiness` are started only when the human's message begins with
-   `/ak:super-review`, or when a controller started `review.full` or `review.readiness` under a
-   validated grant; under a Firstmate binding the grant check is the `ak firstmate grant` call in
-   Authority, and under a bypass grant it is the bypass check there; a refusal is a stop. A request
-   in prose is not a start, even when it names this skill or the command, or asks for this work
-   without naming either. With neither, stop before inspecting the change, checking prerequisites
-   or answering the task: the only response is to tell the human to type `/ak:super-review`
-   followed by their request. For `delta`, confirm a review run is open; if not, stop with
-   `needs-input`.
+1. Name the comparison base and the reviewed head before any other work. Absent either, stop with
+   `needs-input` and do not convene a panel. For `delta`, confirm a review run is open; if not, stop
+   with `needs-input` naming `full` as the next action. Do not stop because a person did not type a
+   command, and do not send the caller away to type one.
 2. Build the snapshot and freeze it: its hash, the comparison base, the reviewed head, the source
    revision and the input hashes. Every seat reads this one object and no seat may edit it.
 3. Select the panel from declared risk rather than from a fixed roster. Correctness is the only
@@ -119,12 +113,14 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
    security, adversarial and the remaining conditional and stack seats are selected from artifact
    evidence, in practice from the attached packs. A substantive feature lands at the six-ish panel;
    a documentation typo does not; and security, API and data facts are never dropped because a
-   classifier was uncertain (ruling `panel-composition-by-declared-risk`). The catalog of seats and
-   their selection signals is in `./references/panel.md`.
+   classifier was uncertain (ruling `panel-composition-by-declared-risk`). A change within the
+   project's size guidance seats the lean panel. The catalog of seats, their selection signals and
+   the lean panel are in `./references/panel.md`.
 4. Assemble one context packet per seat: the frozen snapshot plus that seat's own requirements,
    standards and test context. No packet carries the implementer's narrative, rationale or
    self-assessment, another reviewer's findings or dispositions, or any approval context produced by
-   the author lane. Two seats sharing a scratchpad are one seat.
+   the author lane. Every packet carries the shell rule in `./references/panel.md`. Two seats
+   sharing a scratchpad are one seat.
 5. Check the exclusions before dispatch. A seat that cannot be filled independently of the author is
    `unavailable`, and the security seat is filled by neither the implementer of the change nor
    whoever approved its spec (ruling `missing-supervisor-never-implementer`).
@@ -141,7 +137,8 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
 9. For `delta`: first test whether architecture, requirements, the comparison base or the affected
    surface changed materially. Where any did, invalidate the affected approvals and establish a new
    baseline — a new scope with its own pass 1 — instead of continuing this loop (ruling
-   `delta-baseline-reset-not-third-loop`). Otherwise build the packet, run the spec and standards
+   `delta-baseline-reset-not-third-loop`). Fix commits, a reached cap, a replan and a rebase that
+   leaves the patch unchanged are not material. Otherwise build the packet, run the spec and standards
    lanes over the fix, and bound the scope by affected behavior rather than by changed lines (ruling
    `delta-scope-affected-behavior`). A
    continuing seat keeps its earlier finding context, or a replacement receives the durable
@@ -191,9 +188,14 @@ advisory, and a changed patch does not inherit stale receipts (ruling
 the working-tree diff hash it names differs from the snapshot being judged; either one moving is
 enough.
 
-Gate: at most two fix-and-verify cycles after the first pass. The third request stops with an
-explicit blocked-or-replan decision and the open findings attached; repeated failure is a signal
-about the plan, not an invitation to a third loop (ruling `two-fix-cycles-then-stop`).
+Gate: at most two fix-and-verify cycles after the first pass. The third request stops with the cap
+decision and the open findings attached; repeated failure is a signal about the plan, not an
+invitation to a third loop (ruling `two-fix-cycles-then-stop`). With only P3 findings open it is
+`merge-with-follow-ups`, listing them in `fix_cycles.follow_ups`, and the verdict may be `approved`.
+When two consecutive cycles reopened the same finding theme it is `design-decision`, naming it. A
+cycle a human authorizes after the decision is recorded in `fix_cycles.extensions` (`authorized_by:
+human`, operator-attested, and when) and reviewed as a `delta` that may approve, never as a new
+`full`; without that entry it is refused.
 
 Gate: where architecture, requirements, the comparison base or the affected surface changes
 materially, the affected approvals are invalidated and a new baseline is deliberately established —
@@ -224,7 +226,8 @@ standards never become invented preferences, and a seat that cannot cite a rule 
 | "The finding is vague, but the fixer is good at this — hand it over and let it work out the details." | A smell is a problem whose solution space is still open, and handing it to an automatic fixer buys a change nobody specified against a difficulty nobody could yet know (ruling `safe-auto-restricted-per-seat`). | Keep the difficulty null, sharpen the finding into a bounded one, diagnose it, or escalate it — and record which of the three the dispatch was. |
 | "The reviewer rated the fix high-confidence, so the finding can be marked resolved." | Confidence is a property of the judge; closure is a property of the evidence (ruling `closure-requires-independent-verification`). | Record the confidence as advisory, and close only on independent verification evidence for the revision the fix is at. |
 | "The base moved and the requirements were rewritten, but the delta loop still has a cycle left." | Continuing a loop whose comparison base no longer means what it meant spends a cycle comparing against a baseline nobody approved, and the approvals it carries forward were given for a different change (ruling `delta-baseline-reset-not-third-loop`). | Invalidate the affected approvals, record what changed materially, and open a new scope at pass 1 rather than spending the remaining cycle. |
-| "The third cycle is nearly there — one more round and it is clean." | Two cycles that did not converge are evidence about the plan, and a third loop spends the budget that the blocked-or-replan decision exists to protect (ruling `two-fix-cycles-then-stop`). | Stop, emit the explicit blocked-or-replan decision, attach every open finding, and report what is unresolved. |
+| "The cap is reached, so replan and open a new full scope over the whole change." | A full pass over a change already reviewed re-litigates settled code and finds new nits each round, so the loop never ends (ruling `two-fix-cycles-then-stop`). | Review the new commits as a `delta` against the last reviewed head. |
+| "The third cycle is nearly there — one more round and it is clean." | Two cycles that did not converge are evidence about the plan, and a third loop spends the budget that the cap decision exists to protect (ruling `two-fix-cycles-then-stop`). | Stop, emit the cap decision, attach every open finding, and report what is unresolved. |
 | "The diff is 400 lines, which the engineering principles call too large, so that is a finding." | Size targets and test ratios are configurable starting points, and a finding written from one is a finding about a number nobody agreed to (ruling `numeric-heuristics-are-guidance`). | Review what the change does. Raise size only where it names a concrete review or maintenance consequence in this change. |
 
 ## Outputs
@@ -267,13 +270,12 @@ complete; the block is the result. A delta that ends by establishing a new basel
 the reset closes this scope and the new scope opens at pass 1, which is not a third loop (ruling
 `delta-baseline-reset-not-third-loop`).
 
-`needs-input`: `full` or `readiness` was started by neither the typed command nor a validated
-grant, no comparison base or reviewed head was named, or `delta` was invoked with no open review
-run. Returns what it would need, which for the first is the command to type, and no partial
-verdict.
+`needs-input`: no comparison base or reviewed head was named, or `delta` was invoked with no open
+review run. Returns what it would need, and no partial verdict. A missing typed command is not
+this stop.
 
-`cap-reached`: a third fix cycle was requested. Stops with the blocked-or-replan decision and every
-open finding attached.
+`cap-reached`: a third fix cycle was requested. Stops with the cap decision (blocked, replan,
+merge-with-follow-ups or design-decision) and every open finding attached.
 
 `failed`: a required lane returned `unavailable` and the run cannot proceed, or the snapshot could
 not be frozen. The lane and the reason are named, and the run stays resumable.
@@ -283,13 +285,13 @@ what they are.
 
 ## Limits
 
-Fix cycles: 2 (gate). `policies/limits.yaml` `fix_cycles`. The third stops with an explicit
-blocked-or-replan decision rather than another pass.
+Fix cycles: 2 (gate). `policies/limits.yaml` `fix_cycles`. The third stops with the cap decision
+rather than another pass.
 
 Review rounds: 3 (gate). `policies/limits.yaml` `review_rounds`, counted across the run.
 
-Panel size: no cap (guidance). Composition follows declared risk, so the count is an outcome of
-selection and never a target to hit or to trim to.
+Panel size: no cap (guidance); the count follows declared risk. Small pass-1 diffs seat the lean
+panel; a delta seats its two core lanes plus only the specialist seats a prior finding or its diff triggers.
 
 Change size and test ratios: not gates (guidance). Carried in [`engineering-principles`](../../references/engineering-principles/REFERENCE.md),
 set per project, and never grounds for a finding on their own.

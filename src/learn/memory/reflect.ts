@@ -145,7 +145,7 @@ export function outputContract(cap: number, today: string): string {
     "Every bullet ends with its evidence ids in brackets, copied verbatim from the inputs: [obs:123, obs:456] or [S1a2b3c4d].",
     "Any other line is deleted, as is a bullet citing no id or any id not in the inputs or the previous memory; a reply that loses more than half its lines that way is rejected.",
     "A value set once and then undone goes under Completed or is left out. A superseded value appears only as old → new, or is replaced in place, citing the new value's id.",
-    `Today is ${today}. Total output at most ${cap} tokens (about ${cap * 4} characters); a reply that, with the runtime's security bullet, is over ${Math.floor(cap * 1.3)} tokens is rejected.`,
+    `Today is ${today}. Total output at most ${Math.floor(cap * 0.75)} tokens (about ${Math.floor(cap * 0.75) * 4} characters); a reply that, with the runtime's security bullet, is over ${Math.floor(cap * 1.3)} tokens is rejected.`,
   ].join("\n");
 }
 
@@ -170,15 +170,7 @@ export function reflectPrompt(
   );
 }
 
-/** Why a reflected memory is unusable, or null. `reserve` is room kept for text the runtime adds after this check. */
-export function degenerate(
-  text: string,
-  previous: string,
-  inputTokens: number,
-  cap: number,
-  reserve = 0,
-): string | null {
-  if (tokens(text) + reserve > 1.3 * cap) return "over cap";
+export function degenerate(text: string, previous: string, inputTokens: number): string | null {
   const lines = splitLines(text)
     .filter((line) => line.trim() !== "" && !line.startsWith("#"))
     .map((line) => line.trim());
@@ -191,14 +183,53 @@ export function degenerate(
   return null;
 }
 
+const SECTION_HEADINGS: ReadonlySet<string> = new Set(SECTIONS);
+
+function memoryText(lines: readonly string[], record: string | null = null): string {
+  return `${withSecurityRecord(lines, record).join("\n").trim()}\n`;
+}
+
+export function trimToCap(text: string, cap: number, record: string | null = null): string {
+  const lines = splitLines(text);
+  const fits = () => tokens(memoryText(lines, record)) <= cap;
+  while (!fits()) {
+    const starts: number[] = [];
+    lines.forEach((line, index) => {
+      if (SECTION_HEADINGS.has(line.trimEnd())) starts.push(index);
+    });
+    let victim = -1;
+    let fullest = 0;
+    for (let s = 0; s < starts.length; s += 1) {
+      const start = starts[s];
+      if (start === undefined) continue;
+      const following = starts[s + 1];
+      const end = following === undefined ? lines.length : following;
+      const bullets: number[] = [];
+      for (let i = start + 1; i < end; i += 1) {
+        const line = lines[i];
+        if (line !== undefined && line.trimStart().startsWith("- ")) bullets.push(i);
+      }
+      const last = bullets[bullets.length - 1];
+      if (last !== undefined && bullets.length >= fullest) {
+        fullest = bullets.length;
+        victim = last;
+      }
+    }
+    if (victim < 0) break;
+    lines.splice(victim, 1);
+  }
+  return memoryText(lines);
+}
+
 /** Record an attempt for scheduling without advancing the observation watermark. */
-function markAttempt(ledger: Ledger): void {
+function markAttempt(ledger: Ledger, failure: "auth" | "timeout" | null = null): void {
   const state = readState(ledger);
   const attempted = nowMs();
   saveState(ledger, {
     ...state,
-    last_reflect: attempted,
     last_reflect_attempt: attempted,
+    reflect_stalled_since: state.reflect_stalled_since ?? attempted,
+    reflect_process_failure: failure ?? undefined,
     reflect_failures: (state.reflect_failures ?? 0) + 1,
   });
 }
@@ -266,8 +297,17 @@ function screenReply(
     return row === undefined ? null : sid8(row.memory_session_id);
   };
   const record = securityRecord(red.quarantine, sessionOf);
-  const written = `${red.kept.join("\n").trim()}\n`;
-  let reason = degenerate(written, previous, inputTokens, cap, record === null ? 0 : tokens(record));
+  let keptLines = red.kept;
+  let written = memoryText(keptLines);
+  let reason = degenerate(written, previous, inputTokens);
+  let total = tokens(memoryText(keptLines, record));
+  if (reason === null && total > cap && total <= 1.5 * cap) {
+    keptLines = splitLines(trimToCap(written, cap, record).trim());
+    written = memoryText(keptLines);
+    total = tokens(memoryText(keptLines, record));
+    reason = total > cap ? "over cap" : degenerate(written, previous, inputTokens);
+  }
+  if (total > 1.3 * cap) reason = "over cap";
   // A gutted memory is worse than a stale one.
   const meant = candidates - red.flagged;
   const lost = dropped + red.tokens;
@@ -278,15 +318,28 @@ function screenReply(
         : `gates dropped ${lost}/${meant} lines (${dropped} provenance, ${red.tokens} redaction)`;
   }
   const outcome = { dropped_by_provenance: dropped, dropped_by_redaction: red.flagged + red.tokens, ...security };
-  return { red, record, reason, outcome };
+  return { red, record, reason, outcome, kept: keptLines };
 }
 
-/** The reflector's reply, or null when it carries no memory text. */
-function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectReply | null {
-  const reply = ctx.judge(prompt, { ...runOf(ctx), loop: "memory", role: "reflector", project: memProject });
+interface ReflectorResult {
+  reply: ReflectReply | null;
+  failure: "auth" | "timeout" | null;
+}
+
+function askReflector(ctx: LearnContext, prompt: string, memProject: string): ReflectorResult {
+  let failure: "auth" | "timeout" | null = null;
+  const reply = ctx.judge(prompt, {
+    ...runOf(ctx),
+    loop: "memory",
+    role: "reflector",
+    project: memProject,
+    onProcessResult: (outcome) => {
+      failure = outcome;
+    },
+  });
   const memory = reply?.memory;
-  if (typeof memory !== "string" || memory.trim() === "") return null;
-  return { memory, security_notes: reply?.security_notes };
+  if (typeof memory !== "string" || memory.trim() === "") return { reply: null, failure };
+  return { reply: { memory, security_notes: reply?.security_notes }, failure };
 }
 
 /** Gate, sanitize, guard, then write `memory.md`, bump the watermark and commit. */
@@ -303,7 +356,7 @@ export function applyReflection(
 ): ReflectResult {
   const memoryPath = ledger.path("memory.md");
   const previous = existsSync(memoryPath) ? readText(memoryPath) : "";
-  const { red, record, reason, outcome } = screenReply(
+  const { record, reason, outcome, kept } = screenReply(
     ledger,
     typeof reply === "string" ? { memory: reply } : reply,
     valid,
@@ -314,7 +367,7 @@ export function applyReflection(
   );
   const dropped = outcome.dropped_by_provenance;
   const redacted = outcome.dropped_by_redaction;
-  const text = `${withSecurityRecord(red.kept, record).join("\n").trim()}\n`;
+  const text = memoryText(kept, record);
   if (reason !== null) {
     markAttempt(ledger);
     appendRun(ledger, { job: "reflect", status: "rejected", reason, ...outcome, ...meta });
@@ -323,7 +376,13 @@ export function applyReflection(
   }
   writeGated(ledger.dir, memoryPath, text);
   const state = readState(ledger);
-  const { last_reflect_attempt: _attempt, reflect_failures: _failures, ...withoutBackoff } = state;
+  const {
+    last_reflect_attempt: _attempt,
+    reflect_failures: _failures,
+    reflect_stalled_since: _stalled,
+    reflect_process_failure: _process,
+    ...withoutBackoff
+  } = state;
   const nextState: MemoryState = {
     ...withoutBackoff,
     last_obs_id_reflected: Math.max(withoutBackoff.last_obs_id_reflected ?? 0, maxObsId),
@@ -369,9 +428,9 @@ export function reflect(
     ctx.io.out(prompt);
     return `reflect: dry run (${observations.length} observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = askReflector(ctx, prompt, memProject);
+  const { reply, failure } = askReflector(ctx, prompt, memProject);
   if (reply === null) {
-    markAttempt(ledger);
+    markAttempt(ledger, failure);
     appendRun(ledger, { job: "reflect", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "reflect failed: no judge output");
     return "reflect: judge call failed";
@@ -431,9 +490,9 @@ export function backfill(
     ctx.io.out(prompt);
     return `backfill: dry run (${observations.length} of ${pending.length} unscreened observations, ${tokens(prompt)} prompt tokens)`;
   }
-  const reply = askReflector(ctx, prompt, memProject);
+  const { reply, failure } = askReflector(ctx, prompt, memProject);
+  saveState(ledger, { ...readState(ledger), reflect_process_failure: failure ?? undefined });
   if (reply === null) {
-    markAttempt(ledger);
     appendRun(ledger, { job: "backfill", status: "failed", reason: "no judge output", trigger });
     logLine(ledger, "backfill failed: no judge output");
     return "backfill: judge call failed";
@@ -445,7 +504,6 @@ export function backfill(
     summaries,
   });
   if (reason !== null) {
-    markAttempt(ledger);
     appendRun(ledger, { job: "backfill", status: "rejected", reason, ...outcome, trigger });
     logLine(ledger, `backfill rejected: ${reason}`);
     return `backfill: rejected: ${reason}`;

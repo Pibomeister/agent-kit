@@ -4,6 +4,7 @@ import { exists, isDir, readTextIfPresent, walkFiles } from "../util/fs.ts";
 import { extractRelativeLinks, relativeLinkBetween, resolveFromFile } from "../util/links.ts";
 import { entryBodyPath } from "../catalog/layout.ts";
 import { planAll, type BuildOptions } from "../packaging/build.ts";
+import { codeSpans, escapesTree, rootPathOf, schemaRefs } from "../packaging/mentions.ts";
 import { SHARED_ROOT } from "../packaging/plan.ts";
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
@@ -122,6 +123,14 @@ export function checkLoaderLinks(ctx: CheckContext): Issue[] {
  */
 export function checkBundleLinks(ctx: CheckContext, options: BuildOptions): Issue[] {
   const issues: Issue[] = [];
+  const authored = (section: "roles" | "protocols") =>
+    new Set(
+      ctx.catalog
+        .bySection(section)
+        .filter((entry) => entry.status === "authored")
+        .map((entry) => entry.id),
+    );
+  const ids = { roles: authored("roles"), protocols: authored("protocols") };
 
   for (const plan of planAll(ctx, options)) {
     issues.push(
@@ -137,6 +146,19 @@ export function checkBundleLinks(ctx: CheckContext, options: BuildOptions): Issu
     }
 
     for (const file of plan.files.values()) {
+      if (file.path.endsWith(".schema.json")) {
+        for (const ref of schemaRefs(file.path, file.contents)) {
+          if (present.has(ref)) continue;
+          issues.push(
+            error(
+              "links.broken-bundle",
+              `dist/${plan.host}/${file.path}`,
+              `A relative $ref resolves to '${ref}', which is not in the ${plan.host} bundle.`,
+            ),
+          );
+        }
+        continue;
+      }
       if (!file.path.endsWith(".md")) continue;
       for (const link of extractRelativeLinks(file.contents)) {
         const resolved = resolveFromFile(file.path, link.target);
@@ -157,8 +179,39 @@ export function checkBundleLinks(ctx: CheckContext, options: BuildOptions): Issu
           ),
         );
       }
+      if (file.verbatim !== true) issues.push(...unlinkedMentions(plan.host, file.path, file.contents, ids));
     }
   }
 
+  return issues;
+}
+
+/**
+ * A seat, protocol or schema a bundled body names by root path, role id or ``protocol `<id>` ``
+ * must arrive as a link, because the packager links every one it can carry
+ * (`src/packaging/mentions.ts`). A span still plain in the bundle names a file the source tree does
+ * not have, or the packager stopped carrying it; either way the installed skill would stop
+ * `unavailable` when it reached for it. A path that climbs out of its tree is refused outright.
+ */
+export function unlinkedMentions(
+  host: string,
+  path: string,
+  text: string,
+  ids: { roles: ReadonlySet<string>; protocols: ReadonlySet<string> },
+): Issue[] {
+  const issues: Issue[] = [];
+  const where = `dist/${host}/${path}`;
+  for (const { span, line, linked, protocolCited } of codeSpans(text)) {
+    if (linked) continue;
+    const root = rootPathOf(span);
+    let message: string | null = null;
+    if (escapesTree(span))
+      message = `'${span}' leaves its tree through a '.', '..' or empty segment, so the packager does not follow it. Name the file by its path from the repository root.`;
+    else if (root !== null)
+      message = `'${root.path}' is named here, and the ${host} bundle does not carry it. The packager copies every file or catalog entry a bundled body names by root path into ${SHARED_ROOT}/ and links it; write a path that exists in the source tree, or name it without a root path.`;
+    else if (protocolCited ? ids.protocols.has(span) : ids.roles.has(span))
+      message = `${protocolCited ? "Protocol" : "Role"} '${span}' is named here, and the ${host} bundle does not carry its body as a link. The packager links every authored ${protocolCited ? "protocol cited as protocol `<id>` or the `<id>` protocol" : "role"} a bundled body names; check that it is authored.`;
+    if (message !== null) issues.push(error("links.mention-not-bundled", where, message, line));
+  }
   return issues;
 }

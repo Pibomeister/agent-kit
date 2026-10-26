@@ -1,12 +1,13 @@
 /**
  * `ak firstmate grant`: the Firstmate binding as the delegated grant (ADR-0004).
  *
- * super-review full/readiness and super-ship are `explicit-or-delegated`: a
- * delegated controller may start them under a validated grant. Under Firstmate
- * the controller is Firstmate, and the grant is the binding it wrote before the
- * task, outside anything the worker can write. This checks that it still is that
- * binding and that it covers the operation asked for. It grants nothing the
- * binding does not name; merge and scope changes are never on it.
+ * The review.full and review.readiness operations stay `delegated-grant`. The public
+ * super-review full and readiness entrypoints are model-started (ADR-0013). super-ship
+ * stays `explicit-or-delegated`: a delegated controller may start it under a validated
+ * grant. Under Firstmate the controller is Firstmate, and the grant is the binding
+ * it wrote before the task, outside anything the worker can write. This checks that
+ * it still is that binding and that it covers the operation asked for. It grants
+ * nothing the binding does not name; merge and scope changes are never on it.
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";

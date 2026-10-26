@@ -88,9 +88,16 @@ skills/super-review/
 `references/` and `assets/` are omitted when empty rather than left as empty directories.
 Eval cases do **not** live here — see §9.
 
-Every file a skill references must resolve inside this package. `ak validate` closes links in both
+Every file a skill references must be carried by the selected bundle. `ak validate` closes links in both
 the source tree and the built bundle: a reference to a sibling skill's `references/` file that the
 selected profile does not install is a failure.
+
+Skill-local assets, declared roles and schemas, role-linked templates and transitive dependencies
+are omitted if a symlink resolves outside the real directory of their top-level source tree.
+The source root and top-level trees may themselves be symlinks. If an escaping schema is inlined
+into `bin/ak`, the build fails with `packaging.maintenance-build-failed` instead of emitting it;
+existing bundles remain untouched. An unused escaping schema is omitted without that build error.
+The regression cases are in `tests/mentions.test.ts` and `tests/packaging.test.ts`.
 
 ---
 
@@ -104,7 +111,7 @@ Extra `##` sections may follow `## Limits`; none may be inserted between them.
 The trigger conditions, phrased as situations a human or caller is actually in — not as a
 restatement of the skill's name.
 
-> Use when a human asks for review of a branch, PR or ticket that already has verification receipts.
+> Use when a branch, PR or ticket is ready for review and already has verification receipts.
 
 ### `## Not for`
 
@@ -117,11 +124,12 @@ over-eager description would swallow; they are also the source of the non-trigge
 
 ### `## Authority`
 
-One line naming the `common#/$defs/authority` value, one line naming who may start it, and — when
-the value is anything other than `explicit` — the grant that covers delegation.
+One line naming the `common#/$defs/authority` value, one line naming who may start it, and,
+where delegation requires a grant, the grant that covers it. For model-started review, refer to
+`skills/super-review/SKILL.md` §Authority.
 
-> Authority: `explicit-or-delegated`. A human starts it with `/ak:super-review`; a delegated
-> controller may start it only under a runner-validated grant covering `finding-adjudication`
+> Authority: `explicit-or-delegated`. A human starts it with `/ak:super-ship`; a delegated
+> controller may start it only under a runner-validated grant covering `ship-pr`
 > (`adapters/runner-contract/CONTRACT.md`).
 
 ### `## Inputs`
@@ -293,7 +301,7 @@ A canonical `SKILL.md` carries **only** Agent Skills spec keys: `name`, `descrip
 name: super-review
 description: >-
   Runs the specialist review panel over an immutable snapshot, or a two-axis delta over a fix.
-  Use when a human asks for review of a branch, PR or ticket that has verification receipts.
+  Use when a branch, PR or ticket is ready for review and has verification receipts.
   Not for an implementer's self-check during build.
 license: MIT
 metadata:
@@ -880,7 +888,7 @@ to skill bodies.)
 **No second lifecycle entrypoint.** There is one `autopilot` and one lifecycle. A skill may not
 introduce a "run everything", "do the whole thing" or "full loop" entrypoint beside it (ruling
 `full-catalog-opt-in-profiles`), and may not reach a forbidden U-to-U call through a wrapper. Where a
-host cannot validate a grant, the skill stops for explicit invocation rather than reproducing the
+host cannot validate a required grant, the delegated operation stops rather than reproducing the
 forbidden command's effect through a side door (ruling `entrypoint-phase-operation-split`;
 `AGENTS.md`, "The invocation law").
 
@@ -2069,6 +2077,13 @@ need it.
 - Three or more eval cases exist, one of each required kind — `evals.too-few-cases`,
   `evals.missing-case-kind`, both blocking.
 - Nothing in the body links to a file the bundle does not carry — `links.broken-bundle`.
+- Every catalog file, role or protocol the body names in a single-backtick code span in prose is one
+  the packager carries and links — `links.mention-not-bundled`. Spans delimited by longer backtick
+  runs stay literal, including any single backticks or brackets inside them. What counts as naming
+  one is `codeSpans`, `mentionResolver` and
+  `rootPathOf` in `src/packaging/mentions.ts`; `unlinkedMentions` in `src/validation/links.ts`
+  applies the same grammar to the planned bundle, and its caller `checkBundleLinks` skips files
+  copied `verbatim`.
 
 **Not checked by anything. This is the part of the list that is yours**, and each entry says what
 the nearest instrument does instead, so that a clean run is not read as an answer to it. Most are

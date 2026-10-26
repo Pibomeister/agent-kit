@@ -1084,17 +1084,53 @@ function reviewRules(rc: RuleContext): void {
   if (cycles !== null) {
     const allowed = num(cycles["allowed"]);
     const used = num(cycles["used"]);
-    if (allowed !== null && allowed > 2)
-      fail(rc, RULE_CYCLES, `fix_cycles.allowed is ${allowed}; plan 6.3 caps it at two`);
-    if (allowed !== null && used !== null && used > allowed) {
-      fail(rc, RULE_CYCLES, `fix_cycles.used ${used} exceeds allowed ${allowed}; the third cycle stops`);
-    }
-    if (allowed !== null && used !== null && used >= allowed) {
-      if (verdict === "approved") {
+    let extensions = 0;
+    for (const ext of arr(cycles["extensions"]).map(obj)) {
+      const by = ext === null ? null : str(ext["authorized_by"]);
+      if (by === null || str(ext?.["authorized_at"]) === null) {
+        fail(rc, RULE_CYCLES, "a fix_cycles extension names no authorized_by or no authorized_at");
+      } else if (by !== "human") {
         fail(
           rc,
           RULE_CYCLES,
-          `the fix cycle budget is exhausted (${used}/${allowed}) and the run still approves rather than returning blocked or replan`,
+          `a fix_cycles extension is authorized by ${by}; only a human authorizes a cycle past the cap`,
+        );
+      } else {
+        extensions += 1;
+      }
+    }
+    if (allowed !== null && allowed > 2)
+      fail(rc, RULE_CYCLES, `fix_cycles.allowed is ${allowed}; plan 6.3 caps it at two`);
+    if (allowed !== null && used !== null && used > allowed + extensions) {
+      fail(
+        rc,
+        RULE_CYCLES,
+        `fix_cycles.used ${used} exceeds allowed ${allowed} with ${extensions} authorized extension(s); the third cycle stops`,
+      );
+    }
+    const extended = allowed !== null && used !== null && used > allowed && used <= allowed + extensions;
+    if (extended && str(doc["mode"]) !== "delta") {
+      fail(rc, RULE_CYCLES, "a cycle authorized past the cap is reviewed as a delta, never as a new full scope");
+    }
+    const mergesPastP3 = str(cycles["exhausted_action"]) === "merge-with-follow-ups";
+    const followUps = new Set(arr(cycles["follow_ups"]).map((f) => str(obj(f)?.["id"])));
+    const checked = [
+      ...arr(doc["findings"]),
+      ...arr(obj(doc["packet"])?.["original_findings"]),
+      ...arr(doc["new_findings"]).map((n) => obj(n)?.["finding"]),
+    ].map((f) => str(obj(f)?.["id"]) ?? "?");
+    const notFollowUps = [...new Set(checked)].filter((id) => {
+      const found = rc.index.byId.get(id);
+      const status = found?.schema === "finding" ? str(found.doc["status"]) : null;
+      if (status === "resolved" || status === "rejected") return false;
+      return status === null || str(found?.doc["severity"]) !== "P3" || !followUps.has(id);
+    });
+    if (allowed !== null && used !== null && used >= allowed) {
+      if (verdict === "approved" && !extended && !mergesPastP3) {
+        fail(
+          rc,
+          RULE_CYCLES,
+          `the fix cycle budget is exhausted (${used}/${allowed}) and the run still approves without an extension or a merge past P3 follow-ups`,
         );
       }
       if (str(cycles["exhausted_action"]) === null) {
@@ -1104,6 +1140,20 @@ function reviewRules(rc: RuleContext): void {
           `the fix cycle budget is exhausted (${used}/${allowed}) with no exhausted_action recorded`,
         );
       }
+    }
+    if (mergesPastP3 && arr(cycles["follow_ups"]).length === 0) {
+      fail(
+        rc,
+        RULE_CYCLES,
+        "exhausted_action merge-with-follow-ups lists no follow_ups; the open P3 findings it merges past",
+      );
+    }
+    if (mergesPastP3 && notFollowUps.length > 0) {
+      fail(
+        rc,
+        RULE_CYCLES,
+        `exhausted_action merge-with-follow-ups recommends merge past finding(s) ${notFollowUps.join(", ")} that are not P3 findings listed in follow_ups`,
+      );
     }
   }
 

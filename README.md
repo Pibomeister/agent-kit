@@ -81,6 +81,8 @@ live acceptance remains separate for each served binding, and `ak update` does n
 
 ## Guard hook
 
+The source checkout also has an [optional semantic lint hook](docs/semantic-lint.md).
+
 The source CLI (`bun run ak`) and the installed `bin/ak` carry the opt-in Claude Code hook:
 
 ```bash
@@ -123,6 +125,10 @@ The lifecycle is seven skills, not twenty. Each has one job, one required output
 | `super-review` | Specialist panel (full) or two-axis delta on a fix | Reviewers cannot edit |
 | `super-ship` | Release checks and PR preparation | Merge and deploy are separate capabilities |
 
+The agent starts `super-review` full and readiness as part of the work. No slash command or grant
+is required. See [review authority](skills/super-review/SKILL.md#authority) for start rules and
+the boundary between starting a review and approving it.
+
 Plus `autopilot`: a human-started supervisor pair, or a Firstmate-started one under a
 runner-validated standing grant in a captain-approved charter. It exercises delegated checkpoint
 authority over those same skills and implements nothing itself.
@@ -139,6 +145,17 @@ For publication, name a transport in the delivery contract, project conventions 
 See [super-ship](skills/super-ship/SKILL.md) for its inputs and
 [direct transport](skills/super-ship/references/transport-direct.md) for selection and publication
 instructions when using `git` and `gh` without a gate.
+
+Before pull-request text leaves the machine, `super-ship` runs `ak-gate.mjs publish-scan` on its
+title, body and commit messages, and `babysit-pr` runs it on the commits a CI repair pushes. To use it, list your internal markers in
+`~/.agent-kit/publish-markers` (or the file `AK_PUBLISH_MARKERS` names), one entry per line:
+`owner: <forge owner>` for the owners whose private repositories are internal, `marker: <text>` for
+organization names, internal hostnames and work e-mail domains, and `instructions: <file>` for your
+own agent instructions, which must not be copied into a public pull request. Standard commit trailers
+and a generated-by footer naming only its tool are not matched against those instructions; `allow: <text>` exempts other
+boilerplate they share with every pull request. The scan stops on a hit
+unless the target is private or internal and its owner is listed. Without the file it scans nothing
+and says so.
 
 **Firstmate is optional**, for people who want one supervisor running several agents at once.
 On an unmodified Firstmate home, run `ak firstmate preflight`, start the task-scoped `ak runner`
@@ -164,7 +181,7 @@ directory with no entry.
 
 | Group | Members |
 |---|---|
-| **Lifecycle** (7) | `super-align` U · `super-bound` U · `super-scout` M · `super-build` M · `super-verify` M · `super-review` U/M · `super-ship` U |
+| **Lifecycle** (7) | `super-align` U · `super-bound` U · `super-scout` M · `super-build` M · `super-verify` M · [super-review](skills/super-review/SKILL.md#authority) · `super-ship` U |
 | **Supervisor** (1) | `autopilot` U |
 | **Standalone** (22) | `codebase-design` M · `verify` U · `visual-edit` U · `compound` U · `compound-refresh` U · `ideate` U · `pov` U · `bakeoff` U · `doc-review` M · `receiving-review` U · `diagnose` M · `improve-architecture` U · `doubt-driven` U · `simplify` M · `research` M · `source-driven` M · `deprecate` U · `explain` U · `triage` U · `strategy` U · `product-pulse` U · `writing-skills` U |
 | **Primitives** (4) | `prototype` M · `handoff` M · `wait-what` M · `wayfind` U |
@@ -263,7 +280,6 @@ and the release scenario that tests it; the ids below are the lookup keys.
 
 ## Provenance
 
-Ten donors, pinned to exact commits in `provenance/upstream.lock.yaml`: nine MIT and one Apache-2.0.
 For adopted and research-only upstream pins, see [`provenance/upstream.lock.yaml`](provenance/upstream.lock.yaml).
 The research-only [`caveman-ai/blocks` pin](research/sources/caveman-blocks-verified-blocks.md) records the procedure-detection donor and its licence and trademark limits; no donor executable is shipped.
 Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):

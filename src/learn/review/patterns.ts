@@ -88,22 +88,37 @@ const GITHUB_FAMILY: ReadonlySet<string> = new Set(["github", "github-reply", "a
 /**
  * The independence family of a source label, or null for a corroborating source.
  *
- * Two families are independent witnesses: `github` (every review-thread label folded into one) and
- * `correction` (the user correcting the agent). Every other source, `claude-mem` and `learn-memory`
- * included, observed or forwarded something a witness already said: a session reading a bot comment
- * records it as an observation, and the nightly consolidation forwards it again. Such an event
- * corroborates. It leaves evidence and raises the count, but it adds no family and no PR, and an
- * unknown label is treated the same way.
+ * Three families are independent witnesses: `github` (every review-thread label folded into one),
+ * `correction` (the user correcting the agent) and `kb-finding` (a knowledgebase finding artifact,
+ * an authored review record rather than a session echo). Every other source, `claude-mem` and
+ * `learn-memory` included, observed or forwarded something a witness already said: a session reading
+ * a bot comment records it as an observation, and the nightly consolidation forwards it again. Such
+ * an event corroborates. It leaves evidence and raises the count, but it adds no family and no PR,
+ * and an unknown label is treated the same way. Corroboration is not worthless, though: sightings
+ * from two distinct sessions are two witnesses however they were collected, which `statusFor`
+ * counts through the `sessions` bookkeeping below.
  */
-export function sourceFamily(source: string): "github" | "correction" | null {
+export function sourceFamily(source: string): "github" | "correction" | "kb-finding" | null {
   if (GITHUB_FAMILY.has(source)) return "github";
-  return source === "correction" ? "correction" : null;
+  if (source === "correction") return "correction";
+  return source === "kb-finding" ? "kb-finding" : null;
+}
+
+/** Sources that collect what a session saw or a review run recorded, so their events can name a session. */
+const SESSION_SOURCES: ReadonlySet<string> = new Set(["claude-mem", "learn-memory", "kb-finding"]);
+
+export function sessionToken(event: ReviewEvent): string | null {
+  return SESSION_SOURCES.has(event.source) && event.session ? `s:${event.session}` : null;
+}
+
+export function sessionWitnesses(tokens: readonly string[]): number {
+  return new Set(tokens.flatMap((token) => token.split("~").filter((id) => id.startsWith("s:") && id.length > 2))).size;
 }
 
 /**
- * Active at `activeAt` events backed by either a direct user correction or two
- * distinct non-bot reviewers across independent PRs or source families;
- * candidate otherwise. A bot comment, its summary
+ * Active at `activeAt` events backed by either a direct user correction, two
+ * distinct non-bot reviewers across independent PRs or source families, or
+ * sightings from two distinct sessions; candidate otherwise. A bot comment, its summary
  * report, the author's reply and any observation of them are one opinion, so
  * they never activate a pattern alone. Promotion requires `active`, so count
  * raised by corroborating events never promotes a pattern this gate has not
@@ -115,7 +130,8 @@ export function statusFor(meta: PageMeta, activeAt: number): PatternStatus {
   const families = new Set(sources.flatMap((source) => sourceFamily(source) ?? [])).size;
   const distinct = Math.max(families, list(meta, "prs").length);
   const reviewers = new Set(list(meta, "reviewers").filter(isIndependentReviewer)).size;
-  const trusted = sources.includes("correction") || (distinct >= 2 && reviewers >= 2);
+  const witnessed = sessionWitnesses(list(meta, "sessions")) >= 2;
+  const trusted = sources.includes("correction") || (distinct >= 2 && reviewers >= 2) || witnessed;
   return num(meta, "count") >= activeAt && trusted ? "active" : "candidate";
 }
 
@@ -166,6 +182,8 @@ export function addEvidence(
   next.count = num(meta, "count") + 1;
   next.last_seen = (event.ts ?? nowIso()).slice(0, 10);
   next.sources = union(list(meta, "sources"), event.source);
+  const token = sessionToken(event);
+  if (token !== null) next.sessions = union(list(meta, "sessions"), token);
   // Only a witness adds a PR: a corroborating event's PR number is hearsay about a thread it did not read.
   if (event.pr && sourceFamily(event.source) !== null)
     next.prs = union(list(meta, "prs").map(String), String(event.pr));
@@ -195,6 +213,7 @@ export function newPattern(ledger: Ledger, id: string, spec: PatternSpec, first:
     sources: [],
     prs: [],
     reviewers: [],
+    sessions: [],
     promoted_to: "",
     team_target: spec.team_target ?? "",
   };

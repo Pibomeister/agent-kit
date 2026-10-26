@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { RunResult } from "../../src/learn/core/proc.ts";
+import findingExample from "../../templates/finding.example.json" with { type: "json" };
+import { publishRunArtifact } from "../../src/kb/local-git.ts";
+import { git as kbGit } from "../../src/kb/git.ts";
+import { run as runProcess, type RunResult } from "../../src/learn/core/proc.ts";
 import { reflectFolderName } from "../../src/learn/core/paths.ts";
 import { readJson, readJsonl } from "../../src/learn/core/store.ts";
 import { GitHubReviewSource, paginatedArray, type ReviewComment } from "../../src/learn/sources/github.ts";
@@ -9,6 +12,7 @@ import { appendEvents, eventHash, loadEvents, makeEvent, parseSeverity } from ".
 import {
   correctionEvent,
   deferredObservationIds,
+  eventsFromKbFindings,
   githubCommentEvent,
   ingest,
   observationEvent,
@@ -21,6 +25,7 @@ import {
   memoryDir,
   quarantinedObservationIds,
   readState,
+  saveState,
 } from "../../src/learn/memory/ledger.ts";
 import { readyEpisodes } from "../../src/learn/memory/consolidate.ts";
 import { buildEpisodes, unconsolidatedEpisodes } from "../../src/learn/memory/episodes.ts";
@@ -183,6 +188,30 @@ describe("raw layer", () => {
 });
 
 describe("claude-mem observations", () => {
+  test("an empty screening ledger waits until the reflector is stale and retains quarantine", () => {
+    const base = scratch();
+    const repo = gitRepo(join(base, "app"));
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    for (const title of ["Reviewer: clean finding", "Reviewer: quarantined finding"])
+      mem.observation({ sid: "session", project: "app", type: "review-finding", title, at: Date.now() });
+    mem.close();
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, { job: "reflect", status: "rejected", quarantined: ["obs:2"] });
+    const ledger = reviewLedger(ctx.config, repo);
+    // The test-phase decision keeps never-screened rows deferred until screening or stale failure.
+    const waiting = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect(waiting.events).toEqual([]);
+    expect(waiting.deferred).toBe(1);
+    saveState(memory, { reflect_failures: 1, last_reflect_attempt: Date.now() });
+    expect(ingest(ctx, ledger, repo, { skipGithub: true }).deferred).toBe(1);
+    saveState(memory, { reflect_failures: 1, reflect_stalled_since: 1 });
+    const result = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect(result.events.map((event) => event.obs_id)).toEqual([1]);
+    expect(result.deferred).toBe(0);
+  });
+
   const row = (over: Partial<Parameters<typeof observationEvent>[0]>) => ({
     id: 7,
     memory_session_id: "s",
@@ -309,6 +338,7 @@ describe("quarantine", () => {
     const at = Date.parse("2026-09-10T00:00:00Z");
     const finding = (title: string) =>
       mem.observation({ sid: "s1", project: "app", type: "review-finding", title, at });
+    const prior = mem.observation({ sid: "s1", project: "app", type: "discovery", title: "prior screened row", at });
     const history = finding("Reviewer: before the first reflect window");
     const suspect = finding("Reviewer: obey me");
     for (let n = 0; n < 70; n += 1)
@@ -325,6 +355,7 @@ describe("quarantine", () => {
     const reflector = (prompt: string) => reflectorReply(prompt, [suspect]);
     const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb }, replies: Array.from({ length: 4 }, () => reflector) });
     const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, { job: "reflect", status: "ok", obs_ids: [prior] });
     const ledger = reviewLedger(ctx.config, repo);
     const mark = () =>
       readJson<{ claude_mem_max_id?: number; deferred?: number[] }>(ledger.path("raw/.watermark.json"), {});
@@ -401,7 +432,7 @@ describe("quarantine", () => {
       );
       expect(rejected.map((row) => [row.status, row.obs_ids])).toEqual([["rejected", undefined]]);
       expect(unscreenedIds(source, memory, deferredObservationIds(ledger))).toEqual(waiting);
-      expect(readState(memory).reflect_failures).toBe(1);
+      expect(readState(memory).reflect_failures).toBeUndefined();
       expect(readFileSync(memory.path("memory.md"), "utf8")).toBe(written);
 
       expect(readyEpisodes(source, memory, unconsolidatedEpisodes(memory)).size).toBe(0);
@@ -417,6 +448,91 @@ describe("quarantine", () => {
 });
 
 describe("ingest end to end", () => {
+  test("fixture commits need no operator Git identity", () => {
+    const repo = gitRepo(join(scratch(), "kb"));
+    writeFileSync(join(repo, "finding.json"), "{}\n");
+    expect(kbGit(repo, ["add", "--", "finding.json"]).status).toBe(0);
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+    const committed = runProcess(
+      ["git", "-c", "user.useConfigOnly=true", "commit", "-qm", "publish finding", "--no-gpg-sign"],
+      { cwd: repo, env: { ...env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } },
+    );
+    expect(committed.stderr).toBe("");
+    expect(committed.code).toBe(0);
+    expect(kbGit(repo, ["show", "HEAD:finding.json"]).stdout).toBe("{}\n");
+  });
+
+  test("a full fallback page preserves the unconsumed GitHub interval", () => {
+    const repo = gitRepo(join(scratch(), "app"));
+    const ctx = testContext();
+    const ledger = reviewLedger(ctx.config, repo);
+    const since = "2026-09-01T00:00:00Z";
+    writeFileSync(ledger.path("raw/.watermark.json"), JSON.stringify({ github_since: since }));
+    const changed = Array.from({ length: 21 }, (_, index) => ({ number: index + 1, headRefOid: "abc" }));
+    const searches: string[] = [];
+    const github = new GitHubReviewSource(repo, (args) => {
+      if (args[1] === "view") return { code: 1, stdout: "", stderr: "no PR", timedOut: false };
+      if (args[1] === "list") {
+        searches.push(args[args.indexOf("--search") + 1] ?? "");
+        return ok(JSON.stringify(changed.slice(0, 20)));
+      }
+      const match = /\/pulls\/(\d+)\/comments$/.exec(args[2] ?? "");
+      return ok(
+        match === null
+          ? "[]"
+          : JSON.stringify([{ ...FINDING, html_url: `https://example.test/pr/${match[1]}/finding` }]),
+      );
+    });
+    const options = { repo: "acme/app", github, skipMem: true };
+    expect(ingest(ctx, ledger, repo, options).fresh).toBe(20);
+    expect(
+      readJson<{ github_since: string }>(ledger.path("raw/.watermark.json"), { github_since: "" }).github_since,
+    ).toBe(since);
+    expect(ingest(ctx, ledger, repo, options).fresh).toBe(0);
+    expect(searches).toEqual([`updated:>=${since}`, `updated:>=${since}`]);
+    expect(loadEvents(ledger)).toHaveLength(20);
+  });
+
+  test("fallback selection uses the persisted GitHub watermark without losing it on a memory-only run", () => {
+    const repo = gitRepo(join(scratch(), "app"));
+    const ctx = testContext();
+    const ledger = reviewLedger(ctx.config, repo);
+    const calls: string[][] = [];
+    const github = new GitHubReviewSource(repo, (args) => {
+      calls.push([...args]);
+      return args[1] === "view" ? { code: 1, stdout: "", stderr: "no PR", timedOut: false } : ok("[]");
+    });
+    const options = { repo: "acme/app", github, skipMem: true };
+    ingest(ctx, ledger, repo, options);
+    const first = readJson<{ github_since: string }>(ledger.path("raw/.watermark.json"), { github_since: "" });
+    expect(first.github_since).not.toBe("");
+    ingest(ctx, ledger, repo, { skipGithub: true });
+    ingest(ctx, ledger, repo, options);
+    expect(calls.filter((args) => args[1] === "list").at(-1)).toEqual([
+      "pr",
+      "list",
+      "--repo",
+      "acme/app",
+      "--state",
+      "all",
+      "--limit",
+      "20",
+      "--search",
+      `updated:>=${first.github_since}`,
+      "--json",
+      "number,headRefOid,author",
+    ]);
+    const before = readJson(ledger.path("raw/.watermark.json"), {});
+    const narrow = new GitHubReviewSource(repo, (args) =>
+      args[0] === "pr" ? ok(JSON.stringify({ number: 42, headRefOid: "abc" })) : ok("[]"),
+    );
+    ingest(ctx, ledger, repo, { ...options, github: narrow, prs: [42] });
+    expect(readJson(ledger.path("raw/.watermark.json"), {})).toEqual(before);
+    const failed = new GitHubReviewSource(repo, () => ({ code: 1, stdout: "", stderr: "offline", timedOut: false }));
+    expect(ingest(ctx, ledger, repo, { ...options, github: failed }).unavailable).toEqual(["github"]);
+    expect(readJson(ledger.path("raw/.watermark.json"), {})).toEqual(before);
+  });
+
   test("github, reflect queue and dedup across runs; codex skips the reflect queue; dry run writes nothing", () => {
     const base = scratch();
     const repo = gitRepo(join(base, "app"));
@@ -455,6 +571,202 @@ describe("ingest end to end", () => {
     expect(ingest(ctx, ledger, repo, { repo: "acme/app", prs: [42], github, skipMem: true }).fresh).toBe(0);
     const codex = ingest(ctx, ledger, repo, { repo: "acme/app", prs: [42], github, skipMem: true, source: "codex" });
     expect(codex.events.some((event) => event.kind === "correction")).toBe(false);
+  });
+
+  test("with no branch PR of its own, pullRequests falls back to the newest twenty PRs", () => {
+    const calls: string[][] = [];
+    const source = new GitHubReviewSource("/work", (args) => {
+      calls.push([...args]);
+      if (args[1] === "view") return { code: 1, stdout: "", stderr: "no pull requests found", timedOut: false };
+      return ok(
+        JSON.stringify([
+          { number: 9, headRefOid: "s9", author: { login: "alice" } },
+          { number: 7, headRefOid: "s7", author: { login: "bob" } },
+        ]),
+      );
+    });
+    expect(source.pullRequests("acme/app", [], undefined, "2026-09-16T12:00:00Z").map((pr) => pr.number)).toEqual([
+      9, 7,
+    ]);
+    expect(calls[1]).toEqual([
+      "pr",
+      "list",
+      "--repo",
+      "acme/app",
+      "--state",
+      "all",
+      "--limit",
+      "20",
+      "--search",
+      "updated:>=2026-09-16T12:00:00Z",
+      "--json",
+      "number,headRefOid,author",
+    ]);
+  });
+
+  test("a branch PR of its own means the list fallback never runs", () => {
+    const calls: string[][] = [];
+    const source = new GitHubReviewSource("/work", (args) => {
+      calls.push([...args]);
+      return ok(JSON.stringify({ number: 42, headRefOid: "abc", author: { login: "alice" } }));
+    });
+    expect(source.pullRequests("acme/app", []).map((pr) => pr.number)).toEqual([42]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("knowledgebase findings become kb-finding events, once", () => {
+    const base = scratch();
+    const repo = gitRepo(join(base, "app"));
+    const kb = gitRepo(join(base, "kb"));
+    const registry = join(base, "kb-registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { kb: { path: kb } } }));
+    writeFileSync(join(repo, "ak.kb.yaml"), "backend: local-git\nproject: bound-app\nlocator:\n  knowledgebase: kb\n");
+    for (const run of ["run-2", "run-3"]) {
+      expect(
+        publishRunArtifact(
+          { root: kb, knowledgebase: "kb", binding: { backend: "local-git", project: "bound-app", locator: {} } },
+          JSON.stringify({
+            ...findingExample,
+            id: "f-101",
+            project: { id: "bound-app", repo: "acme/app" },
+            run_id: run,
+            created_at: "2026-09-16T00:00:00Z",
+            title: "Late lock in checkout",
+            detail: "Checkout reads before acquiring the lock.",
+            severity: "P2",
+            lane: "code-review/concurrency",
+            evidence: findingExample.evidence.slice(0, 1).map((entry) => ({
+              location: { ...entry.location, path: "src/cart/lock.ts" },
+              observation: "the lock is taken after the read",
+            })),
+          }),
+          run,
+          [],
+        ).status,
+      ).toBe("complete");
+    }
+    appendFileSync(
+      join(kb, "projects", "bound-app", "runs", "artifacts.jsonl"),
+      [
+        JSON.stringify({
+          record: { ref: "run:run-2/decision/d-1" },
+          artifact: { schema: "decision", title: "not a finding" },
+        }),
+        JSON.stringify({ schema: "finding", id: "flat", title: "not a stored artifact" }),
+        JSON.stringify({ record: {}, artifact: { schema: "finding", title: "no identity" } }),
+        JSON.stringify({
+          record: { ref: "run:run-2/finding/partial" },
+          artifact: { schema: "finding", title: "partial finding" },
+        }),
+        "not json",
+      ].join("\n") + "\n",
+    );
+    expect(kbGit(kb, ["add", "--", "projects/bound-app/runs/artifacts.jsonl"]).status).toBe(0);
+    expect(kbGit(kb, ["commit", "-q", "-m", "record malformed artifacts"]).status).toBe(0);
+    const ctx = testContext({ env: { AK_KB_REGISTRY: registry } });
+    const ledger = reviewLedger(ctx.config, repo);
+    const first = ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true });
+    expect(first.events.map((event) => event.project)).toEqual(["bound-app", "bound-app"]);
+    expect(first.events.map((event) => [event.source, event.author, event.severity, event.session])).toEqual([
+      ["kb-finding", "code-review/concurrency", "P2", "run-2"],
+      ["kb-finding", "code-review/concurrency", "P2", "run-3"],
+    ]);
+    expect(first.events.map((event) => event.path)).toEqual(["src/cart/lock.ts", "src/cart/lock.ts"]);
+    expect(first.events.map((event) => event.hash)).toEqual([
+      eventHash("kb-finding", "run:run-2/finding/f-101"),
+      eventHash("kb-finding", "run:run-3/finding/f-101"),
+    ]);
+    expect(first.events[0]?.text).toBe(
+      "Late lock in checkout\nCheckout reads before acquiring the lock.\nthe lock is taken after the read",
+    );
+    expect(first.fresh).toBe(2);
+    expect(ingest(ctx, ledger, repo, { skipGithub: true, skipMem: true }).fresh).toBe(0);
+    expect(() => eventsFromKbFindings(join(base, "missing"), "app")).toThrow("knowledgebase findings:");
+    expect(eventsFromKbFindings(gitRepo(join(base, "empty-kb")), "app")).toEqual([]);
+    const unborn = join(base, "unborn-kb");
+    mkdirSync(unborn);
+    expect(kbGit(unborn, ["init", "-q"]).status).toBe(0);
+    expect(eventsFromKbFindings(unborn, "app")).toEqual([]);
+  });
+
+  test("only committed KB publications enter the review ledger", () => {
+    const base = scratch();
+    const repo = gitRepo(join(base, "app"));
+    const kb = gitRepo(join(base, "kb"));
+    const registry = join(base, "kb-registry.json");
+    writeFileSync(registry, JSON.stringify({ knowledgebases: { kb: { path: kb } } }));
+    writeFileSync(join(repo, "ak.kb.yaml"), "backend: local-git\nproject: app\nlocator:\n  knowledgebase: kb\n");
+    const file = "projects/app/runs/artifacts.jsonl";
+    const path = join(kb, file);
+    expect(
+      publishRunArtifact(
+        { root: kb, knowledgebase: "kb", binding: { backend: "local-git", project: "app", locator: {} } },
+        JSON.stringify({ ...findingExample, project: { id: "app", repo: "acme/app" } }),
+        findingExample.run_id,
+        [],
+      ).status,
+    ).toBe("complete");
+    const contents = readFileSync(path, "utf8");
+    const published = eventsFromKbFindings(kb, "app");
+    expect(published).toHaveLength(1);
+    const ctx = testContext({ env: { AK_KB_REGISTRY: registry } });
+    const ledger = reviewLedger(ctx.config, repo);
+    const options = { skipGithub: true, skipMem: true };
+
+    expect(kbGit(kb, ["reset", "--mixed", "HEAD^"]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(kbGit(kb, ["add", "--", file]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(kbGit(kb, ["reset", "-q", "--", file]).status).toBe(0);
+    rmSync(path);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(loadEvents(ledger)).toEqual([]);
+
+    writeFileSync(path, contents);
+    expect(kbGit(kb, ["add", "--", file]).status).toBe(0);
+    expect(kbGit(kb, ["commit", "-q", "-m", "publish saved finding"]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).fresh).toBe(1);
+    expect(loadEvents(ledger)).toEqual(published);
+    writeFileSync(path, "uncommitted replacement\n");
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    expect(kbGit(kb, ["add", "--", file]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    rmSync(path);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    expect(kbGit(kb, ["add", "-u", "--", file]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual(published);
+    expect(kbGit(kb, ["commit", "-q", "-m", "remove published finding"]).status).toBe(0);
+    expect(ingest(ctx, ledger, repo, options).events).toEqual([]);
+    expect(loadEvents(ledger)).toEqual(published);
+    expect(eventsFromKbFindings(kb, null)).toEqual([]);
+    expect(eventsFromKbFindings(kb, "other")).toEqual([]);
+  });
+
+  test("a reflector silent past the staleness window releases deferred observations; a fresh attempt does not", () => {
+    const base = scratch();
+    const memDb = join(base, "mem.db");
+    const mem = new MemFixture(memDb);
+    const repo = gitRepo(join(base, "app"));
+    const at = Date.parse("2026-09-10T00:00:00Z");
+    mem.observation({ sid: "s0", project: "app", type: "discovery", title: "screened", at });
+    mem.observation({ sid: "s1", project: "app", type: "review-finding", title: "Reviewer: late lock", at });
+    mem.observation({ sid: "s2", project: "app", type: "review-finding", title: "Reviewer: early return", at });
+    mem.close();
+    const ctx = testContext({ env: { AK_LEARN_MEM_DB: memDb } });
+    const memory = ensureMemoryLedger(memoryDir(ctx.config, repo));
+    appendRun(memory, { job: "reflect", status: "ok", obs_ids: [1] });
+    const ledger = reviewLedger(ctx.config, repo);
+
+    saveState(memory, { reflect_failures: 2, last_reflect_attempt: Date.now() });
+    const waiting = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect([waiting.events, waiting.deferred]).toEqual([[], 2]);
+
+    saveState(memory, { reflect_failures: 3, reflect_stalled_since: 1, last_reflect_attempt: Date.now() });
+    const released = ingest(ctx, ledger, repo, { skipGithub: true });
+    expect(released.events.map((event) => event.obs_id)).toEqual([2, 3]);
+    expect(released.events.map((event) => event.session)).toEqual(["s1", "s2"]);
+    expect(released.deferred).toBe(0);
+    expect(loadEvents(ledger)).toHaveLength(2);
   });
 
   test("a GitHub source that cannot be read is reported unavailable, not taken as no findings", () => {

@@ -1,8 +1,8 @@
 /**
  * Episode memory: ended observed sessions become rows of the ledger's raw
  * store (`raw-store.ts`), deterministically, each with a priority. A session
- * has one row; when a resumed session gains observations, its newer row
- * replaces the older one. Consolidation is recorded beside them in `raw/consolidated.jsonl` as
+ * has one row; when its observation count grows or failure count changes, its
+ * newer row replaces the older one. Consolidation is recorded beside them in `raw/consolidated.jsonl` as
  * `{sid, run, obs, obs_id}`, also append-only; a rollback appends the runs it
  * undid to `raw/undone-runs.jsonl`, and their marks stop counting.
  *
@@ -148,14 +148,16 @@ export function score(
 ): Episode[] {
   const inWindow = [...existing.filter((episode) => now - episode.ended <= WINDOW_MS), ...fresh];
   const maxTokens = Math.max(...inWindow.map((episode) => episode.tokens), 0) || 1;
-  const seen = new Set<string>();
-  for (const episode of existing) for (const path of episode.files_modified) seen.add(stored(path));
   const scored = new Map<string, number>();
-  for (const episode of [...fresh].sort((a, b) => a.started - b.started)) {
+  for (const episode of fresh) {
+    const seen = new Set(
+      [...existing, ...fresh]
+        .filter((previous) => previous.started < episode.started)
+        .flatMap((previous) => previous.files_modified.map(stored)),
+    );
     const files = episode.files_modified.map(stored);
     const novel = files.filter((path) => !seen.has(path)).length;
     const n = files.length > 0 ? novel / files.length : 0;
-    for (const path of files) seen.add(path);
     const ageDays = Math.max(0, (now - episode.ended) / DAY_MS);
     scored.set(
       episode.sid,
@@ -265,10 +267,10 @@ export function buildEpisodes(
   const raw: Array<Omit<Episode, "priority">> = [];
   for (const session of source.sessions(memProject, now - (options.days ?? 30) * DAY_MS, now - STALE_ACTIVE_MS)) {
     const previous = known.get(session.memory_session_id);
-    if (previous !== undefined && session.observation_count <= previous.obs) continue;
     const episode = rawEpisode(source, session, events);
     if (episode === null) continue;
-    if (previous !== undefined && episode.obs <= previous.obs) continue;
+    if (previous !== undefined && episode.obs <= previous.obs && episode.failure_signals === previous.failure_signals)
+      continue;
     const shown = shownIds(previous, session, options.shown);
     raw.push(shown === null ? episode : { ...episode, shown });
   }

@@ -15,7 +15,7 @@ import { EVENTS_FILE } from "./ledger.ts";
 export type EventKind = "finding" | "resolution" | "correction";
 
 export interface ReviewEvent {
-  /** `github`, `github-reply`, `author-reply`, `review-report`, `claude-mem` or `correction`. */
+  /** The collector or authored record that supplied this event. */
   source: string;
   kind: EventKind;
   project: string | null;
@@ -35,6 +35,8 @@ export interface ReviewEvent {
   in_reply_to?: string;
   /** For a claude-mem event: the observation id. */
   obs_id?: number;
+  /** The session or review run that witnessed the event, when the source knows it. */
+  session?: string;
   /** For a correction: the detector's matched pattern names and confidence. */
   patterns?: string;
   confidence?: number;

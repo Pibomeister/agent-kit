@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
+import { reflectFolderName } from "../../src/learn/core/paths.ts";
+import { git as kbGit } from "../../src/kb/git.ts";
+import { publishRunArtifact } from "../../src/kb/local-git.ts";
+import findingExample from "../../templates/finding.example.json" with { type: "json" };
 import type { Ledger } from "../../src/learn/core/ledger.ts";
-import { appendEvents, makeEvent } from "../../src/learn/review/events.ts";
+import { appendEvents, makeEvent, rawSnapshot } from "../../src/learn/review/events.ts";
+import { correctionEvent } from "../../src/learn/review/ingest.ts";
 import { DEFAULT_SHOWN, guardrailsSection, topRecent } from "../../src/learn/review/guardrails.ts";
 import { registerRoot } from "../../src/learn/memory/registry.ts";
 import { ingestOptions, reviewArea } from "../../src/learn/review/cli.ts";
@@ -78,6 +83,60 @@ describe("guardrails section", () => {
 });
 
 describe("ak learn review", () => {
+  for (const verb of ["ingest", "run"]) {
+    test.each(["malformed binding", "missing checkout", "unreadable artifact"])(
+      `${verb} stops on configured KB failure: %s`,
+      (failure) => {
+        const base = scratch();
+        const repo = gitRepo(join(base, "app"));
+        const kb = failure === "missing checkout" ? join(base, "missing") : gitRepo(join(base, "kb"));
+        const registry = join(base, "kb-registry.json");
+        writeFileSync(registry, JSON.stringify({ knowledgebases: { kb: { path: kb } } }));
+        writeFileSync(
+          join(repo, "ak.kb.yaml"),
+          failure === "malformed binding"
+            ? "backend: ["
+            : "backend: local-git\nproject: app\nlocator:\n  knowledgebase: kb\n",
+        );
+        if (failure === "unreadable artifact") {
+          expect(
+            publishRunArtifact(
+              { root: kb, knowledgebase: "kb", binding: { backend: "local-git", project: "app", locator: {} } },
+              JSON.stringify({ ...findingExample, project: { id: "app", repo: "acme/app" } }),
+              findingExample.run_id,
+              [],
+            ).status,
+          ).toBe("complete");
+          const blob = kbGit(kb, ["rev-parse", "HEAD:projects/app/runs/artifacts.jsonl"]);
+          expect(blob.status).toBe(0);
+          const id = blob.stdout.trim();
+          rmSync(join(kb, ".git", "objects", id.slice(0, 2), id.slice(2)));
+        }
+        const ctx = testContext({ cwd: repo, env: { AK_KB_REGISTRY: registry } });
+        const ledger = reviewLedger(ctx.config, repo);
+        appendEvents(ledger, [correctionEvent("old correction", "2026-09-01T00:00:00Z", "app", "claude")]);
+        const before = rawSnapshot(ledger);
+        const watermark = JSON.stringify({
+          claude_mem_max_id: 17,
+          deferred: [12],
+          github_since: "2026-09-01T00:00:00Z",
+        });
+        writeFileSync(ledger.path("raw/.watermark.json"), watermark);
+        const queue = join(ctx.config.configDir, "projects", reflectFolderName(repo));
+        mkdirSync(queue, { recursive: true });
+        writeFileSync(
+          join(queue, "learnings-queue.json"),
+          JSON.stringify([{ sentiment: "correction", message: "new correction", timestamp: "2026-09-02T00:00:00Z" }]),
+        );
+        expect(run(verb, ["--repo", repo, "--no-github", "--no-mem"], ctx)).toBe(1);
+        expect(ctx.prompts).toEqual([]);
+        expect(rawSnapshot(ledger)).toEqual(before);
+        expect(readFileSync(ledger.path("raw/.watermark.json"), "utf8")).toBe(watermark);
+        expect(ctx.err.join("\n")).toContain("knowledgebase findings:");
+      },
+    );
+  }
+
   const FINDING_REPLY = (hash: string) => ({
     create_patterns: [
       {

@@ -103,6 +103,8 @@ export function paginatedArray<T>(text: string): T[] {
 }
 
 export class GitHubReviewSource {
+  unavailable = false;
+  fallbackComplete = false;
   constructor(
     private readonly cwd: string,
     private readonly runner: GhRunner = ghRunner,
@@ -110,16 +112,21 @@ export class GitHubReviewSource {
 
   private json<T>(args: readonly string[]): T | null {
     const result = this.runner(args, this.cwd);
-    if (result.code !== 0) return null;
+    if (result.code !== 0) {
+      if (args[1] === "list") this.unavailable = true;
+      return null;
+    }
     try {
       return JSON.parse(result.stdout) as T;
     } catch {
+      if (args[1] === "list") this.unavailable = true;
       return null;
     }
   }
 
   private api<T>(path: string): T[] {
     const result = this.runner(["api", "--paginate", path], this.cwd);
+    if (result.code !== 0) this.unavailable = true;
     return result.code === 0 ? paginatedArray<T>(result.stdout) : [];
   }
 
@@ -133,8 +140,12 @@ export class GitHubReviewSource {
   /**
    * The PRs to ingest: the given numbers; else PRs updated on or after `since`
    * (`YYYY-MM-DD`); else the current branch's PR. Unknown numbers are skipped.
+   * If current-branch lookup fails, use the repository-list fallback defined in
+   * adapters/review-source/CONTRACT.md §1.
    */
-  pullRequests(repo: string, numbers: readonly number[], since?: string): PullRequestRef[] {
+  pullRequests(repo: string, numbers: readonly number[], since?: string, watermark?: string): PullRequestRef[] {
+    this.unavailable = false;
+    this.fallbackComplete = false;
     const fields = ["--json", "number,headRefOid,author"];
     if (numbers.length > 0) {
       return numbers.flatMap(
@@ -158,7 +169,21 @@ export class GitHubReviewSource {
       return listed ?? [];
     }
     const current = this.json<PullRequestRef>(["pr", "view", ...fields]);
-    return current === null ? [] : [current];
+    if (current !== null) return [current];
+    const listed = this.json<PullRequestRef[]>([
+      "pr",
+      "list",
+      "--repo",
+      repo,
+      "--state",
+      "all",
+      "--limit",
+      "20",
+      ...(watermark === undefined ? [] : ["--search", `updated:>=${watermark}`]),
+      ...fields,
+    ]);
+    this.fallbackComplete = listed !== null && listed.length < 20;
+    return listed ?? [];
   }
 
   reviewComments(repo: string, pr: number): ReviewComment[] {
