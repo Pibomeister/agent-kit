@@ -56,24 +56,26 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol [`phase-ope
    case, punctuation, spacing and Unicode are normalized and across bullet boundaries. The runtime
    writes one fixed `## Unresolved` bullet covering every quarantined observation, from the ids,
    their sessions and the kinds. These drops are counted apart from the id check's.
-3. **Count in the runtime.** Pattern counts, sources, pull requests and reviewers are recomputed
-   from the events the gate kept, never read from the reply. An event counted once against a page
-   is not counted again on replay.
+3. **Count in the runtime.** Pattern counts, sources, pull requests, reviewers and sessions are
+   recomputed from the events the gate kept, never read from the reply. An event counted once
+   against a page is not counted again on replay.
 4. **Set status in the runtime.**
    - A pattern is `active` when its count reaches the active threshold and its events include
-     either a direct user correction or two distinct reviewers, bots and the runtime's own author
-     labels not counted, across at least two distinct pull requests or two distinct source
-     families; `candidate` otherwise. One account repeating a comment on several pull requests is
-     one reviewer. There are two families: review threads (the inline comment, the reply, the author's reply and
-     the summary report are one family) and user corrections. Every other source, the session
-     observer and the nightly consolidation included, only corroborates: it leaves evidence and
-     raises the count, but adds no family, no pull request and no reviewer, because it recorded or forwarded what
-     a review thread already said. One bot comment seen three ways is still one opinion.
+     a direct user correction; two distinct reviewers across at least two distinct pull requests
+     or two distinct source families; or sightings from at least two distinct sessions.
+     Otherwise it is `candidate`. Bots and the runtime's own author labels do not count as
+     reviewers. One account repeating a comment on several pull requests is one reviewer.
+     The three primary families are review threads (`github`, including replies and reports),
+     user corrections (`correction`) and committed knowledgebase findings (`kb-finding`). Other
+     sources add no family, pull request or reviewer. Session witnesses come only from
+     `claude-mem`, `learn-memory` and `kb-finding`; two collectors of the same session still
+     supply one witness. Nightly findings carry their evidence's native session ids, split into
+     one event per session; a knowledgebase finding uses its review run id. Missing session ids
+     supply no session witness.
    - A resolution event leaves an evidence line and nothing else. It changes no count, source, pull
      request or status, because a reply saying a finding was handled is not a second sighting.
    - An active pattern is promoted to a guardrail draft when its count reaches the promote
-     threshold. Only an active pattern promotes, so a count raised by corroboration alone never
-     does.
+     threshold. Only an active pattern promotes; event count alone is insufficient.
    - A lesson is `confirmed` when its surviving evidence spans at least two sessions, and
      `hypothesis` otherwise.
    - A lesson equal to a live lesson in statement and scope, or a pattern equal to another in
@@ -89,18 +91,23 @@ was called with (ruling `entrypoint-phase-operation-split`; protocol [`phase-ope
      in `supersedes` leaves both `conflict`, with neither superseded. A target in any other
      status is left as it is.
    - `retired` is sticky: only a human, through `compound-refresh`, retires or revives.
-5. **Reject a degenerate working-memory rewrite whole** when any one of these holds. Each is
-   checked on the judge's text after step 2, before the runtime's security bullet is added, so that
-   bullet can neither hide a gutted rewrite nor push a near-cap one over:
-   - it, plus room for the runtime's security bullet, exceeds 1.3 times the token cap;
+5. **Screen and, where possible, trim the working-memory rewrite.** The prompt targets
+   `floor(cap * 0.75)` tokens. After step 2, an otherwise valid rewrite above the cap and at or
+   below 1.5 times the cap is trimmed deterministically. The trimmer removes the last bullet
+   from the section with the most bullets, choosing the later section on a tie, until it fits.
+   It preserves all six headings. Size includes the exact serialized text, its final newline
+   and the runtime's security bullet. Reject a trim that cannot fit or fails a validity gate;
+   there is no fallback to the untrimmed reply. After this rescue, text above 1.3 times the cap
+   is rejected. Reject the rewrite whole when any validity gate fails:
    - any non-heading line appears three or more times;
    - it collapsed below 0.3 of the previous memory's length from under 5,000 input tokens;
    - any of the six required sections is missing;
    - the id check and the quarantine's text scan together dropped more than half of the bullets
      the judge meant as memory. Bullets citing a quarantined observation are left out of both
      counts, since the runtime's bullet replaces them.
-   A rejected rewrite leaves the previous memory in place, does not advance the watermark, and is
-   recorded with its reason.
+   Repetition and collapse checks use the judge's kept text without the runtime's security bullet,
+   so that bullet cannot hide a gutted rewrite. A rejected rewrite leaves the previous memory
+   in place, does not advance the watermark, and is recorded with its reason.
 6. **Hand promotions on as drafts.** A promoted guardrail and a newly confirmed lesson go to the
    knowledgebase as `proposeLesson` candidates (ruling `learning-drafts-not-publishes`).
 
@@ -112,15 +119,15 @@ claim, never repaired, guessed or matched to the nearest real id.
 Gate: the judge never sets a count, a status, an id or a rate (ruling
 `learning-judge-is-runner-bound`). A value of that kind in a reply is ignored, not trusted.
 
-Gate: nothing is promoted below its threshold, and nothing becomes active from one reviewer, or from
-automation alone, however often it repeats.
+Gate: activation requires the count and witness conditions in step 4; promotion also requires its
+own count threshold.
 
 Gate: a degenerate rewrite is rejected whole. A gutted memory is worse than a stale one.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
 | "The judge cited `obs:1204` and the input had `obs:1240`; it obviously meant that one." | Repairing an id is inventing evidence with extra steps, and the gate cannot tell a typo from a fabrication. | Drop the bullet. The next run can cite it correctly. |
-| "Five events all say the same thing; that is plenty to make the pattern active." | Five events from one source are one opinion repeated, and a bot's comment, its summary and the author's "done" on one pull request are one source. A second independent reviewer on another pull request, or a user correction, is what makes it a pattern (step 4). | Keep it a candidate until step 4's condition holds. |
+| "Five events all say the same thing; that is plenty to make the pattern active." | Event count alone does not establish independent witnesses (step 4). | Keep it a candidate until step 4's condition holds. |
 | "The reply already says count 4 and status active; recomputing is redundant." | A count the judge set is a count nobody checked. | Recompute from the kept events and ignore the reply's value. |
 | "The rewrite is only missing one section; keeping the rest is better than nothing." | A partial memory silently loses whatever that section held, and the next rewrite builds on the loss. | Reject it, keep the previous memory, record the reason. |
 | "This lesson is clearly right; it only has one session behind it." | One session is a hypothesis however confident it reads. | Record it as `hypothesis`. It is confirmed when a second session supports it. |
