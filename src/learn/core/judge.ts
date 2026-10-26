@@ -33,6 +33,7 @@ export interface JudgeCallContext {
   loop: Loop;
   role: LearnRole;
   project: string;
+  onProcessResult?: (failure: "auth" | "timeout" | null) => void;
 }
 
 export type JudgeFn = (prompt: string, context: JudgeCallContext) => Record<string, unknown> | null;
@@ -416,6 +417,15 @@ export function commandJudge(config: LearnConfig): JudgeFn {
       });
       const parsed = result.timedOut || result.code !== 0 ? null : extractJson(result.stdout);
       const outcome = judgeOutcome(result, parsed);
+      const failure = result.timedOut
+        ? "timeout"
+        : result.code !== 0 &&
+            /\b(?:401|403|unauthorized|unauthenticated|authentication|invalid api key|not logged in)\b/i.test(
+              `${result.stderr}\n${result.stdout}`,
+            )
+          ? "auth"
+          : null;
+      context.onProcessResult?.(failure);
       traceAttempt(config, prompt, context, carrier, attempt + 1, startedAt, result, outcome);
       if (result.timedOut || outcome === "unavailable") return null;
       if (outcome === "ok") return parsed;

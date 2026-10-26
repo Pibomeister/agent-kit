@@ -3,12 +3,13 @@
  * collapse, missing sections and gutted evidence keep the old memory; a valid
  * reply replaces it and bumps the watermark.
  */
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readJsonl } from "../../src/learn/core/store.ts";
+import { readJsonl, tokens } from "../../src/learn/core/store.ts";
 import {
   citedIds,
+  appendRun,
   ensureMemoryLedger,
   provenanceGate,
   readState,
@@ -17,16 +18,21 @@ import {
 } from "../../src/learn/memory/ledger.ts";
 import {
   applyReflection,
+  backfill,
+  degenerate,
   fetchNew,
   formatObservation,
   formatSummaries,
   INPUT_CHARS,
+  outputContract,
   reflect,
   reflectPrompt,
   SUMMARY_CHARS,
+  trimToCap,
 } from "../../src/learn/memory/reflect.ts";
+import { securityRecord, withSecurityRecord, type SecurityNote } from "../../src/learn/memory/redact.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
-import { MemFixture, scratch, testContext } from "./helpers.ts";
+import { MemFixture, reflectorReply, scratch, testContext } from "./helpers.ts";
 
 describe("provenance", () => {
   test("a bullet needs a known id; blank lines and headings pass through", () => {
@@ -98,6 +104,20 @@ function setup() {
   return { ledger, memory };
 }
 
+function largeTailMemory(id: number): string {
+  return `${SECTIONS[0]}\n- short ${"kept ".repeat(130)}[obs:${id}]\n- tail ${"word ".repeat(2000)}[obs:${id}]\n${SECTIONS.slice(1).join("\n")}\n`;
+}
+
+function paddedMemory(padding: string, tail = false): string {
+  return [
+    SECTIONS[0],
+    "- stable fact [obs:20]",
+    `- retained ${padding} [obs:20]`,
+    ...(tail ? [`- tail ${"tail ".repeat(400)}[obs:20]`] : []),
+    ...SECTIONS.slice(1),
+  ].join("\n");
+}
+
 describe("reflect apply", () => {
   function expectRejected(text: string, inputTokens: number, reason: string) {
     const { ledger, memory } = setup();
@@ -109,6 +129,17 @@ describe("reflect apply", () => {
   }
 
   test("over cap is rejected", () => expectRejected(VALID + "- filler [obs:20]\n".repeat(900), 20_000, "over cap"));
+
+  test("otherwise-valid output still fails the independent hard cap", () => {
+    const { ledger, memory } = setup();
+    const bullets = Array.from({ length: 400 }, (_, n) => `- distinct fact ${n} recorded here [obs:20]`);
+    const reply = `${SECTIONS[0]}\n${bullets.join("\n")}\n${SECTIONS.slice(1).join("\n")}\n`;
+    expect(tokens(reply)).toBeGreaterThan(1.5 * CAP);
+    expect(degenerate(reply, PREV, 20_000)).toBeNull();
+    const result = applyReflection(ledger, reply, new Set(["obs:20"]), 20_000, 20, CAP);
+    expect([result.ok, result.reason]).toEqual([false, "over cap"]);
+    expect(memory()).toBe(PREV);
+  });
 
   test("repeated lines are rejected", () =>
     expectRejected(VALID + "- same line [obs:20]\n".repeat(3), 20_000, "repeated lines"));
@@ -127,6 +158,19 @@ describe("reflect apply", () => {
     );
     expect([result.ok, result.reason]).toEqual([false, "collapsed"]);
     expect(memory()).toBe(before);
+  });
+
+  test("trimming that collapses memory rejects the oversized original", () => {
+    const { ledger, memory } = setup();
+    const previous = `${PREV}- prior ${"old ".repeat(1200)}[obs:10]\n`;
+    writeFileSync(ledger.path("memory.md"), previous);
+    const reply = largeTailMemory(20);
+    expect(tokens(reply)).toBeGreaterThan(CAP);
+    expect(tokens(reply)).toBeLessThan(1.3 * CAP);
+    const result = applyReflection(ledger, reply, new Set(["obs:20"]), 2000, 20, CAP);
+    expect([result.ok, result.reason]).toEqual([false, "collapsed"]);
+    expect(memory()).toBe(previous);
+    expect(readState(ledger).last_obs_id_reflected).toBeUndefined();
   });
 
   test("a missing section is rejected", () =>
@@ -193,11 +237,69 @@ describe("reflect apply", () => {
     const commits = ledger.git(["rev-list", "--count", "HEAD"]).stdout.trim();
     applyReflection(ledger, "not a memory at all", new Set(["obs:20"]), 20_000, 20, CAP);
     const state = readState(ledger);
-    expect(state.last_reflect).toBeGreaterThan(0);
+    expect(state.last_reflect).toBeUndefined();
+    expect(state.last_reflect_attempt).toBeGreaterThan(0);
     expect(state.reflect_failures).toBe(1);
     expect(state.last_obs_id_reflected).toBeUndefined();
     expect(readJsonl<{ status: string }>(ledger.path("runs.jsonl")).at(-1)?.status).toBe("rejected");
     expect(ledger.git(["rev-list", "--count", "HEAD"]).stdout.trim()).toBe(commits);
+  });
+
+  test("the prompt targets three quarters of the cap while the hard gate stays at 1.3x", () => {
+    const contract = outputContract(CAP, "2026-09-18");
+    expect(contract).toContain(`at most ${Math.floor(CAP * 0.75)} tokens`);
+    expect(contract).toContain(`over ${Math.floor(CAP * 1.3)} tokens is rejected`);
+  });
+
+  test("the trimmer keeps every section, fits the cap, and is deterministic", () => {
+    const text = [
+      SECTIONS[0],
+      ...Array.from({ length: 30 }, (_, n) => `- state fact number ${n} with some length to it [obs:20]`),
+      ...SECTIONS.slice(1).flatMap((heading) => [heading, "- noted [obs:20]"]),
+      "",
+    ].join("\n");
+    const trimmed = trimToCap(text, 100);
+    expect(tokens(trimmed)).toBeLessThanOrEqual(100);
+    for (const heading of SECTIONS) expect(trimmed).toContain(heading);
+    expect(trimToCap(text, 100)).toBe(trimmed);
+  });
+
+  test.each([false, true])("trimming measures the final newline and security insertion: %s", (flagged) => {
+    const { ledger, memory } = setup();
+    const notes: SecurityNote[] = flagged ? [{ obs: "obs:21", kind: "remote-code" }] : [];
+    const record = securityRecord(notes, () => null);
+    const serialized = (text: string) => `${withSecurityRecord(text.split("\n"), record).join("\n").trim()}\n`;
+    const size = 10004 - serialized(paddedMemory("")).length;
+    const padding = "word ".repeat(Math.floor(size / 5)) + "x".repeat(size % 5);
+    expect(serialized(paddedMemory(padding))).toHaveLength(10004);
+    const reply = paddedMemory(padding, true);
+    expect(tokens(serialized(reply))).toBeGreaterThan(CAP);
+    expect(tokens(serialized(reply))).toBeLessThanOrEqual(1.5 * CAP);
+    const result = applyReflection(
+      ledger,
+      { memory: reply, security_notes: notes },
+      new Set(["obs:20", "obs:21"]),
+      20_000,
+      21,
+      CAP,
+    );
+    expect([result.ok, result.reason]).toEqual([true, null]);
+    expect(tokens(memory())).toBeLessThanOrEqual(CAP);
+    expect(memory().endsWith("\n")).toBe(true);
+    if (record !== null) expect(memory()).toContain(record);
+  });
+
+  test.each([280, 340])("a valid %i-bullet reply above the cap is trimmed in, not discarded", (count) => {
+    const { ledger, memory } = setup();
+    const bullets = Array.from({ length: count }, (_, n) => `- distinct fact ${n} recorded here [obs:20]`);
+    const reply = `${SECTIONS[0]}\n${bullets.join("\n")}\n${SECTIONS.slice(1).join("\n")}\n`;
+    expect(tokens(reply)).toBeGreaterThan(CAP);
+    expect(tokens(reply)).toBeLessThanOrEqual(1.5 * CAP);
+    const result = applyReflection(ledger, reply, new Set(["obs:20"]), 20_000, 20, CAP);
+    expect(result.ok).toBe(true);
+    expect(tokens(memory())).toBeLessThanOrEqual(CAP);
+    for (const heading of SECTIONS) expect(memory()).toContain(heading);
+    expect(readState(ledger).last_obs_id_reflected).toBe(20);
   });
 
   test("a valid reply replaces memory and bumps the watermark", () => {
@@ -216,9 +318,75 @@ describe("reflect apply", () => {
     ).at(-1)!;
     expect([last.job, last.status, last.dropped_by_provenance]).toEqual(["reflect", "ok", 1]);
   });
+
+  test("failed retries retain the first stalled time and acceptance clears it", () => {
+    const { ledger } = setup();
+    try {
+      setSystemTime(new Date("2026-09-01T00:00:00Z"));
+      applyReflection(ledger, "invalid", new Set(["obs:20"]), 20_000, 20, CAP);
+      const first = readState(ledger).reflect_stalled_since;
+      setSystemTime(new Date("2026-09-03T00:00:00Z"));
+      applyReflection(ledger, "invalid again", new Set(["obs:20"]), 20_000, 20, CAP);
+      expect(readState(ledger).reflect_stalled_since).toBe(first);
+      expect(readState(ledger).last_reflect_attempt).toBeGreaterThan(first ?? 0);
+      expect(applyReflection(ledger, VALID, new Set(["obs:20"]), 20_000, 20, CAP).ok).toBe(true);
+      expect(readState(ledger).reflect_stalled_since).toBeUndefined();
+    } finally {
+      setSystemTime();
+    }
+  });
 });
 
 describe("reflect", () => {
+  test.each(["empty", "malformed", "rejected", "accepted", "trim-collapse"])(
+    "backfill %s output preserves reflector retry and progress state",
+    (outcome) => {
+      const { ledger, memory } = setup();
+      if (outcome === "trim-collapse")
+        writeFileSync(ledger.path("memory.md"), `${PREV}- prior ${"old ".repeat(1200)}[obs:10]\n`);
+      const previous = memory();
+      const dbPath = join(scratch(), "mem.db");
+      const mem = new MemFixture(dbPath);
+      for (const title of ["unscreened", "screened"])
+        mem.observation({ sid: "session", project: "app", type: "discovery", title, at: Date.now() });
+      mem.close();
+      appendRun(ledger, { job: "reflect", status: "ok", obs_ids: [2] });
+      saveState(ledger, {
+        last_obs_id_reflected: 2,
+        last_reflect: 1,
+        last_reflect_attempt: Date.now() - 30 * 60_000,
+        reflect_failures: 3,
+        reflect_stalled_since: 2,
+      });
+      const before = readState(ledger);
+      const ctx = testContext();
+      ctx.config.memoryTokens = CAP;
+      ctx.judge = (prompt) => {
+        if (outcome === "empty") return null;
+        if (outcome === "malformed") return { memory: "" };
+        if (outcome === "trim-collapse") return { memory: largeTailMemory(1) };
+        return outcome === "accepted" ? reflectorReply(prompt) : { memory: "invalid" };
+      };
+      const source = ClaudeMemSource.open(dbPath);
+      if (source === null) throw new Error("fixture database unavailable");
+      try {
+        const result = backfill(ctx, source, ledger, "app", [1]);
+        expect(result).toStartWith(outcome === "accepted" ? "backfill: ok" : "backfill:");
+        expect(readState(ledger)).toEqual(before);
+        expect(memory()).toBe(previous);
+        if (outcome === "trim-collapse") expect(result).toBe("backfill: rejected: collapsed");
+        backfill(ctx, source, ledger, "app", [1]);
+        expect(readState(ledger)).toEqual(before);
+        const runs = readJsonl<{ job: string; status: string }>(ledger.path("runs.jsonl"));
+        expect(runs.find((row) => row.job === "backfill")?.status).toBe(
+          outcome === "accepted" ? "ok" : outcome === "rejected" || outcome === "trim-collapse" ? "rejected" : "failed",
+        );
+      } finally {
+        source.close();
+      }
+    },
+  );
+
   test("two hundred summaries keep the newest inside the documented summary cap, oldest first", () => {
     const summaries = Array.from({ length: 200 }, (_, index) => ({
       memory_session_id: index.toString(16).padStart(8, "0"),

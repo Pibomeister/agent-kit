@@ -106,9 +106,11 @@ function projectTemplate(): string {
   const dir = scratch("ak-learn-template-");
   mkdirSync(dir, { recursive: true });
   run(["git", "init", "-q"], { cwd: dir });
+  run(["git", "config", "user.name", "t"], { cwd: dir });
+  run(["git", "config", "user.email", "t@t"], { cwd: dir });
   writeFileSync(join(dir, "README.md"), "fixture\n");
   run(["git", "add", "-A"], { cwd: dir });
-  run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init", "--no-gpg-sign"], { cwd: dir });
+  run(["git", "commit", "-qm", "init", "--no-gpg-sign"], { cwd: dir });
   return dir;
 }
 

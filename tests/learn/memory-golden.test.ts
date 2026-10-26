@@ -193,7 +193,7 @@ describe("reflect golden", () => {
     expect(tokens(memory)).toBeLessThanOrEqual(ctx.config.memoryTokens);
     for (const section of SECTIONS) expect(memory).toContain(section);
     expect(provenanceGate(splitLines(memory), valid).dropped).toBe(0);
-    expect(degenerate(memory, "", 20_000, ctx.config.memoryTokens)).toBeNull();
+    expect(degenerate(memory, "", 20_000)).toBeNull();
 
     // Before the gate the reply carried three bad lines; the gate took exactly those.
     expect(provenanceGate(splitLines(reply), valid).dropped).toBe(3);

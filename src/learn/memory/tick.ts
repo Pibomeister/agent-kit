@@ -61,6 +61,7 @@ export const FAILURE_BACKOFF_MAX_MS = 24 * FAILURE_BACKOFF_MIN_MS;
 
 export interface DecideInput {
   state: MemoryState;
+  screenAttemptAt?: number;
   /** The machine's local clock: the nightly hour and the calendar day are local. */
   now: Date;
   idleS: number;
@@ -88,6 +89,13 @@ function backoffElapsed(state: MemoryState, job: "reflect" | "nightly", now: num
   return now - attempted >= delay;
 }
 
+function backfillHeld(state: MemoryState, attempted: number | undefined, now: number): boolean {
+  if (state.reflect_process_failure === undefined || attempted === undefined) return false;
+  const failures = Math.max(1, state.reflect_failures ?? 0);
+  const delay = Math.min(FAILURE_BACKOFF_MIN_MS * 2 ** (failures - 1), FAILURE_BACKOFF_MAX_MS);
+  return now - attempted < delay;
+}
+
 /**
  * Which jobs are due. Pure.
  *
@@ -99,8 +107,11 @@ function backoffElapsed(state: MemoryState, job: "reflect" | "nightly", now: num
  * | weekly | idle and a week since the last |
  *
  * A failed or rejected reflect, and a failed nightly, hold that job back for
- * 1h, doubling per consecutive failure up to 24h. The backfill shares the
- * reflect backoff. A forced job ignores it.
+ * 1h, doubling per consecutive failure up to 24h. Backfill holds only after
+ * judge auth failures or timeouts, timed from the latest reflect/backfill run;
+ * a reply rejected over its formatting does not hold backfill back, or one
+ * oversized reflection would starve the screen the review loop waits on. A
+ * forced job ignores it.
  */
 export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
   if (input.force) return input.force === "all" ? [...JOBS] : [input.force];
@@ -115,7 +126,7 @@ export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
       (input.newObs > 0 && now - lastReflect >= REFLECT_MAX_GAP_MS))
   )
     due.push("reflect");
-  if (idle && input.unscreened > 0 && backoffElapsed(input.state, "reflect", now)) due.push("backfill");
+  if (idle && input.unscreened > 0 && !backfillHeld(input.state, input.screenAttemptAt, now)) due.push("backfill");
   const today = todayLocal(input.now);
   if (
     backoffElapsed(input.state, "nightly", now) &&
@@ -135,6 +146,8 @@ export function decide(input: DecideInput, thresholds: Thresholds): Job[] {
  * and lesson lists are arrays of ids). The log itself stays open.
  */
 interface RunRow {
+  ts?: string;
+  job?: string;
   status: "ok" | "rejected" | "failed";
   reason?: string;
   dropped_by_provenance?: number;
@@ -164,6 +177,8 @@ const RUN_ROW_SCHEMA = {
   type: "object",
   required: ["status"],
   properties: {
+    job: { type: "string" },
+    ts: { type: "string" },
     status: { enum: ["ok", "rejected", "failed"] },
     reason: { type: "string" },
     dropped_by_provenance: COUNT,
@@ -194,6 +209,11 @@ function runLog(ledger: Ledger): RunRow[] {
     }
   }
   return rows;
+}
+
+function lastScreenTime(ledger: Ledger): number | undefined {
+  const last = runLog(ledger).findLast((row) => row.job === "reflect" || row.job === "backfill");
+  return last?.ts === undefined ? undefined : Date.parse(last.ts);
 }
 
 /** A run row's counts as span attributes: numbers as they are, id lists by length. */
@@ -333,7 +353,17 @@ export function runProject(
     const unconsolidated = readyEpisodes(source, ledger, unconsolidatedEpisodes(ledger)).size;
     const force = options.force === true ? (options.job ?? "all") : null;
     let due = decide(
-      { state, now: new Date(), idleS, newTokens, newObs, unscreened, unconsolidated, force },
+      {
+        state,
+        now: new Date(),
+        idleS,
+        newTokens,
+        newObs,
+        unscreened,
+        unconsolidated,
+        force,
+        screenAttemptAt: lastScreenTime(ledger),
+      },
       ctx.config,
     );
     if (options.job !== undefined && options.force !== true)
@@ -344,7 +374,12 @@ export function runProject(
     );
     const runners: Record<Job, (ctx: LearnContext) => string> = {
       reflect: (job) => reflect(job, source, ledger, memProject, trigger),
-      backfill: (job) => backfill(job, source, ledger, memProject, deferred, trigger),
+      backfill: (job) => {
+        const current = readState(ledger);
+        return options.force !== true && backfillHeld(current, lastScreenTime(ledger), nowMs())
+          ? `backfill: held after judge ${current.reflect_process_failure}`
+          : backfill(job, source, ledger, memProject, deferred, trigger);
+      },
       // Forwarding findings seeds the review ledger when it is missing; compaction only touches one that exists.
       nightly: (job) => consolidate(job, source, ledger, root, dryRun ? null : reviewLedger(job.config, root), trigger),
       weekly: (job) => deep(job, ledger, root, existingReview.initialized ? existingReview : null, trigger),

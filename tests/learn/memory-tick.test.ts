@@ -7,6 +7,7 @@ import { afterAll, describe, expect, setSystemTime, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { acquireLock, type Ledger } from "../../src/learn/core/ledger.ts";
+import { commandJudge } from "../../src/learn/core/judge.ts";
 import { tickLogPath } from "../../src/learn/core/paths.ts";
 import { readJsonl } from "../../src/learn/core/store.ts";
 import { ClaudeMemSource } from "../../src/learn/sources/claude-mem.ts";
@@ -97,6 +98,17 @@ describe("decide", () => {
     expect(run({}, NOON, { force: "nightly" })).toEqual(["nightly"]);
   });
 
+  test("a formatting rejection does not hold the backfill; a failing judge does, until its backoff elapses", () => {
+    const failed = { ...fresh(), last_reflect_attempt: NOON.getTime(), reflect_failures: 3 };
+    const due = { idleS: 600, unscreened: 5, screenAttemptAt: NOON.getTime() };
+    expect(run(failed, NOON, due)).toEqual(["backfill"]);
+    for (const failure of ["auth", "timeout"] as const) {
+      const held = { ...failed, reflect_process_failure: failure };
+      expect(run(held, NOON, due)).toEqual([]);
+      expect(run(held, new Date(NOON.getTime() + 4 * 3_600_000), due)).toEqual(["backfill"]);
+    }
+  });
+
   test("failed jobs back off exponentially and the reflect token clause respects it", () => {
     const failed = {
       ...fresh(),
@@ -106,7 +118,7 @@ describe("decide", () => {
       nightly_failures: 1,
     };
     expect(run(failed, NOON, { idleS: 600, newTokens: 30_000, newObs: 40, unscreened: 5, unconsolidated: 30 })).toEqual(
-      [],
+      ["backfill"],
     );
     expect(
       run(failed, new Date(NOON.getTime() + 31 * 60_000), {
@@ -137,7 +149,7 @@ describe("decide, the failure backoff schedule", () => {
         nightly_failures: failures,
       };
       const due = { idleS: 600, newTokens: 30_000, newObs: 40, unscreened: 5, unconsolidated: 30 };
-      expect(run(state, new Date(attempted + waitH * 3_600_000 - 60_000), due)).toEqual([]);
+      expect(run(state, new Date(attempted + waitH * 3_600_000 - 60_000), due)).toEqual(["backfill"]);
       expect(run(state, new Date(attempted + waitH * 3_600_000), due)).toEqual(["reflect", "backfill", "nightly"]);
     });
   }
@@ -170,6 +182,113 @@ function seedReflected(ledger: Ledger, reflected: number, state: MemoryState = {
 afterAll(removeProjectScratch);
 
 describe("tick", () => {
+  test.each([
+    { failure: "auth", expired: false },
+    { failure: "auth", expired: true },
+    { failure: "timeout", expired: false },
+    { failure: "timeout", expired: true },
+  ])("backfill-only $failure uses its run timestamp with expired reflector state: $expired", ({ failure, expired }) => {
+    const { root, reflected, ctx } = fixtureProject();
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    const started = Date.now();
+    const state: MemoryState = {
+      last_reflect: started,
+      last_weekly: started,
+    };
+    if (expired) {
+      state.last_reflect_attempt = 1;
+      state.reflect_failures = 2;
+      state.reflect_stalled_since = 2;
+    }
+    seedReflected(ledger, reflected + 1, state);
+    const before = readState(ledger);
+    ctx.judge = commandJudge({
+      ...ctx.config,
+      judgeCommand: ["sh", "-c", failure === "auth" ? "echo Unauthorized >&2; exit 1" : "sleep 1"],
+      judgeTimeoutMs: 100,
+    });
+    const source = ClaudeMemSource.open(ctx.config.memDb);
+    if (source === null) throw new Error("fixture database unavailable");
+    const attempts = () =>
+      readJsonl<{ job: string }>(ledger.path("runs.jsonl")).filter((row) => row.job === "backfill").length;
+    try {
+      setSystemTime(new Date(started));
+      runProject(ctx, source, root, "shop", { job: "backfill" });
+      expect(attempts()).toBe(1);
+      expect(readState(ledger).reflect_process_failure).toBe(failure);
+      const { reflect_process_failure: _process, ...reflection } = readState(ledger);
+      expect(reflection).toEqual(before);
+      setSystemTime(new Date(started + 30 * 60_000));
+      runProject(ctx, source, root, "shop", { job: "backfill" });
+      expect(attempts()).toBe(1);
+      setSystemTime(new Date(started + 4 * 3_600_000));
+      runProject(ctx, source, root, "shop", { job: "backfill" });
+      expect(attempts()).toBe(2);
+      const { reflect_process_failure: _again, ...afterRetry } = readState(ledger);
+      expect(afterRetry).toEqual(before);
+    } finally {
+      source.close();
+      setSystemTime();
+    }
+  });
+
+  test.each([
+    { name: "malformed JSON", script: "echo malformed", blocked: false },
+    { name: "empty output", script: "true", blocked: false },
+    { name: "empty memory", script: 'echo \'{"memory":""}\'', blocked: false },
+    { name: "ordinary process error", script: "echo failure >&2; exit 1", blocked: false },
+    { name: "auth failure", script: "echo Unauthorized >&2; exit 1", blocked: true },
+    {
+      name: "auth recovery",
+      script: 'if [ -e "$1" ]; then echo \'{"memory":""}\'; else : > "$1"; echo Unauthorized >&2; exit 1; fi',
+      blocked: false,
+    },
+    { name: "timeout", script: "sleep 1", blocked: true },
+  ])("backfill checks $name when it executes", ({ script, blocked }) => {
+    const base = scratch();
+    const root = gitRepo(join(base, "shop"));
+    const dbPath = join(base, "mem.db");
+    const mem = new MemFixture(dbPath);
+    const at = Date.now() - 86_400_000;
+    mem.session({ sid: "session", project: "shop", started: at, completed: at + 1000 });
+    for (const title of ["old", "screened", "new"])
+      mem.observation({ sid: "session", project: "shop", type: "discovery", title, at: at + 500 });
+    mem.close();
+    const ctx = testContext({ cwd: root, env: { AK_LEARN_MEM_DB: dbPath } });
+    ctx.judge = commandJudge({
+      ...ctx.config,
+      judgeCommand: ["sh", "-c", script, "judge", join(base, "attempt")],
+      judgeTimeoutMs: 100,
+    });
+    const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
+    seedReflected(ledger, 2, { last_reflect: Date.now() - 7 * 3_600_000, last_weekly: Date.now() });
+    const source = ClaudeMemSource.open(dbPath);
+    if (source === null) throw new Error("fixture database unavailable");
+    try {
+      const output = runProject(ctx, source, root, "shop");
+      expect(output.some((line) => line.includes("due reflect,backfill"))).toBe(true);
+      const jobs = readJsonl<{ job: string }>(ledger.path("runs.jsonl")).map((row) => row.job);
+      expect(jobs.includes("backfill")).toBe(!blocked);
+      expect(readState(ledger).reflect_process_failure !== undefined).toBe(blocked);
+      if (blocked) {
+        const failed = readState(ledger);
+        runProject(ctx, source, root, "shop", { force: true, job: "backfill" });
+        expect(readState(ledger)).toEqual(failed);
+        ctx.judge = (prompt) => reflectorReply(prompt);
+        const recovered = runProject(ctx, source, root, "shop", { force: true, job: "backfill" });
+        expect(recovered.some((line) => line.startsWith("backfill: ok"))).toBe(true);
+        expect(readJsonl<{ job: string; status: string }>(ledger.path("runs.jsonl")).at(-1)).toMatchObject({
+          job: "backfill",
+          status: "ok",
+        });
+        const { reflect_process_failure: _process, ...priorReflection } = failed;
+        expect(readState(ledger)).toEqual(priorReflection);
+      }
+    } finally {
+      source.close();
+    }
+  });
+
   test("an always-failing judge runs once per backoff window and never commits failures", () => {
     const { root, reflected, ctx } = fixtureProject();
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));

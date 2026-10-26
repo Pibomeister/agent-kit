@@ -90,6 +90,8 @@ export interface MemoryState {
   last_worker_obs_id_reflected?: number;
   last_reflect?: number;
   last_reflect_attempt?: number;
+  reflect_stalled_since?: number;
+  reflect_process_failure?: "auth" | "timeout";
   reflect_failures?: number;
   /** Local calendar date of the last nightly run. */
   last_nightly?: string;

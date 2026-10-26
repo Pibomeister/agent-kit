@@ -1,18 +1,28 @@
 /**
- * Raw layer: GitHub PR threads, claude-mem review observations and user
- * corrections become `raw/review-events.jsonl`.
+ * Raw layer: GitHub PR threads, claude-mem review observations, local
+ * knowledgebase findings and user corrections become `raw/review-events.jsonl`.
  *
  * An inline comment that starts a thread is a finding; a reply in the thread
  * is a resolution, attributed to the PR author or to a third party. Reviewer
  * text is data: it is stored, never executed or interpreted.
  */
+import Ajv from "ajv";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
+import { git as kbGit } from "../../kb/git.ts";
+import { checkRunArtifact } from "../../kb/artifacts.ts";
+import { registryPath as kbRegistryPath, resolveKnowledgebase } from "../../kb/binding.ts";
 import type { LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
-import { isScreened, memoryDir, quarantinedObservationIds, screenedObservationRanges } from "../memory/ledger.ts";
+import {
+  isScreened,
+  memoryDir,
+  quarantinedObservationIds,
+  readState,
+  screenedObservationRanges,
+} from "../memory/ledger.ts";
 import { projectFolderName, reflectFolderName, registryPath } from "../core/paths.ts";
-import { nowIso, readJson, writeJson } from "../core/store.ts";
+import { nowIso, nowMs, readJson, writeJson } from "../core/store.ts";
 import { ClaudeMemSource, jsonList, type ObservationRow } from "../sources/claude-mem.ts";
 import {
   authorLabel,
@@ -167,6 +177,7 @@ export function observationEvent(row: ObservationRow, project: string): ReviewEv
     `obs:${row.id}`,
   );
   event.obs_id = row.id;
+  event.session = row.memory_session_id;
   return event;
 }
 
@@ -175,19 +186,23 @@ export function deferredObservationIds(ledger: Ledger): number[] {
   return readJson<{ deferred?: number[] }>(ledger.path(WATERMARK_FILE), {}).deferred ?? [];
 }
 
-/**
- * Review observations after the ledger's watermark, and the ones an earlier
- * run deferred. A review-shaped row becomes an event once an accepted reflect
- * or backfill run screened it, and is dropped once a run quarantined it. Until
- * then its id rides in the watermark file's `deferred` list, so the watermark
- * moves on and each run replays only those rows.
- */
+/** How long the reflector may stay silent before unscreened rows stop waiting on it. */
+export const CLAUDE_MEM_STALE_MS = 24 * 3600 * 1000;
+
+function staleWindowMs(ctx: LearnContext, override?: number): number {
+  if (override !== undefined) return override;
+  const raw = ctx.env.AK_LEARN_CLAUDE_MEM_STALE_MS;
+  const parsed = raw === undefined ? Number.NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : CLAUDE_MEM_STALE_MS;
+}
+
 export function eventsFromClaudeMem(
   ctx: LearnContext,
   ledger: Ledger,
   project: string,
   sinceMs: number,
   memory: Ledger,
+  options: { staleMs?: number; now?: number } = {},
 ): { events: ReviewEvent[]; maxId: number; deferred: number[] } {
   const minId = readJson<{ claude_mem_max_id?: number }>(ledger.path(WATERMARK_FILE), {}).claude_mem_max_id ?? 0;
   const waiting = deferredObservationIds(ledger);
@@ -195,6 +210,10 @@ export function eventsFromClaudeMem(
   if (source === null) return { events: [], maxId: minId, deferred: waiting };
   const ranges = screenedObservationRanges(memory);
   const quarantined = quarantinedObservationIds(memory);
+  const state = readState(memory);
+  const attempted = state.reflect_stalled_since ?? state.last_reflect ?? state.last_reflect_attempt;
+  const stale = attempted !== undefined && (options.now ?? nowMs()) - attempted >= staleWindowMs(ctx, options.staleMs);
+  const release = stale && (state.reflect_failures ?? 0) > 0;
   try {
     let maxId = minId;
     const events: ReviewEvent[] = [];
@@ -207,13 +226,103 @@ export function eventsFromClaudeMem(
       maxId = Math.max(maxId, row.id);
       const event = observationEvent(row, project);
       if (event === null || quarantined.has(`obs:${row.id}`)) continue;
-      if (isScreened(ranges, row.id)) events.push(event);
+      if (release || isScreened(ranges, row.id)) events.push(event);
       else deferred.push(row.id);
     }
     return { events, maxId, deferred };
   } finally {
     source.close();
   }
+}
+
+interface KbArtifact {
+  project: { id: string };
+  run_id: string | null;
+  created_at: string;
+  title: string;
+  detail?: string;
+  lane: string;
+  severity: string;
+  evidence: Array<{ location: { path?: string }; observation: string }>;
+}
+
+interface StoredKbArtifact {
+  record: { ref: string };
+  artifact: KbArtifact;
+}
+
+let kbArtifactValidator: ((value: unknown) => value is StoredKbArtifact) | undefined;
+
+function kbArtifact(line: string): StoredKbArtifact | null {
+  kbArtifactValidator ??= new Ajv({ strict: false }).compile<StoredKbArtifact>({
+    type: "object",
+    required: ["record", "artifact"],
+    properties: {
+      record: {
+        type: "object",
+        required: ["ref"],
+        properties: { ref: { type: "string", minLength: 1 } },
+      },
+      artifact: { type: "object" },
+    },
+  });
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!kbArtifactValidator(value)) return null;
+  return checkRunArtifact(JSON.stringify(value.artifact)).artifact?.schema === "finding" ? value : null;
+}
+
+export function eventsFromKbFindings(kbRoot: string, project: string | null): ReviewEvent[] {
+  if (project === null) return [];
+  const head = kbGit(kbRoot, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]);
+  if (head.status !== 0) {
+    const branch = kbGit(kbRoot, ["symbolic-ref", "--quiet", "HEAD"]);
+    if (branch.status === 0 && kbGit(kbRoot, ["show-ref", "--verify", "--quiet", branch.stdout.trim()]).status === 1)
+      return [];
+    throw new Error(`knowledgebase findings: cannot read committed HEAD at ${kbRoot}`);
+  }
+  const snapshot = head.stdout.trim();
+  const path = `projects/${project}/runs/artifacts.jsonl`;
+  const listed = kbGit(kbRoot, ["ls-tree", "-z", snapshot, "--", path]);
+  if (listed.status !== 0) throw new Error(`knowledgebase findings: cannot locate ${path}: ${listed.stderr.trim()}`);
+  if (listed.stdout === "") return [];
+  const committed = kbGit(kbRoot, ["cat-file", "blob", `${snapshot}:${path}`]);
+  if (committed.status !== 0)
+    throw new Error(`knowledgebase findings: cannot read ${path}: ${committed.stderr.trim()}`);
+  const events: ReviewEvent[] = [];
+  for (const line of committed.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    const stored = kbArtifact(line);
+    if (stored === null) continue;
+    const { artifact, record } = stored;
+    if (artifact.project.id !== project) continue;
+    const observations = artifact.evidence.map((entry) => entry.observation);
+    const text = [artifact.title, artifact.detail ?? "", ...observations].filter((part) => part !== "").join("\n");
+    const event = makeEvent(
+      {
+        source: "kb-finding",
+        kind: "finding",
+        project,
+        pr: null,
+        sha: null,
+        author: artifact.lane,
+        severity: artifact.severity,
+        path: artifact.evidence[0]?.location.path ?? null,
+        line: null,
+        text,
+        url: null,
+        ts: artifact.created_at,
+      },
+      record.ref,
+    );
+    if (artifact.run_id) event.session = artifact.run_id;
+    events.push(event);
+  }
+  return events;
 }
 
 /**
@@ -291,6 +400,8 @@ export interface IngestOptions {
   github?: GitHubReviewSource;
   skipGithub?: boolean;
   skipMem?: boolean;
+  /** Override for the claude-mem staleness window (`AK_LEARN_CLAUDE_MEM_STALE_MS`). */
+  claudeMemStaleMs?: number;
 }
 
 /** The hosts a session's review findings come from; `--source` names one. */
@@ -321,6 +432,12 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
   if (Number.isNaN(sinceMs)) throw new Error(`--since wants YYYY-MM-DD, got ${options.since}`);
   const events: ReviewEvent[] = [];
   const unavailable: string[] = [];
+  const started = nowIso();
+  const watermark = readJson<{ claude_mem_max_id?: number; deferred?: number[]; github_since?: string }>(
+    ledger.path(WATERMARK_FILE),
+    {},
+  );
+  let githubSince = watermark.github_since;
 
   if (options.skipGithub !== true) {
     const github = options.github ?? new GitHubReviewSource(options.cwd ?? root);
@@ -333,23 +450,56 @@ export function ingest(ctx: LearnContext, ledger: Ledger, root: string, options:
       );
     } else {
       events.push(
-        ...eventsFromGithub(github, repo, github.pullRequests(repo, options.prs ?? [], options.since), project),
+        ...eventsFromGithub(
+          github,
+          repo,
+          github.pullRequests(repo, options.prs ?? [], options.since, githubSince),
+          project,
+        ),
       );
+      if (!github.unavailable && github.fallbackComplete) githubSince = `${started.slice(0, 19)}Z`;
+      if (github.unavailable) {
+        unavailable.push("github");
+        ctx.io.err("ak learn review: review source github unavailable; selection watermark retained");
+      }
     }
   }
   let maxId = 0;
   let deferred: number[] = [];
   if (options.skipMem !== true) {
-    const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs, new Ledger(memoryDir(ctx.config, root)));
+    const mem = eventsFromClaudeMem(ctx, ledger, project, sinceMs, new Ledger(memoryDir(ctx.config, root)), {
+      staleMs: options.claudeMemStaleMs,
+    });
     events.push(...mem.events);
     maxId = mem.maxId;
     deferred = mem.deferred;
+  }
+  const kb = resolveKnowledgebase(root, kbRegistryPath(ctx.env));
+  if (kb.state === "failed")
+    throw new Error(`knowledgebase findings: ${kb.issues.map((issue) => issue.message).join("; ")}`);
+  if (kb.resolved !== null) events.push(...eventsFromKbFindings(kb.resolved.root, kb.resolved.binding.project));
+  else if (kb.issues.some((issue) => issue.rule === "kb.unregistered")) {
+    unavailable.push("kb-finding");
+    ctx.io.err(
+      `ak learn review: review source kb-finding unavailable: ${kb.issues.map((issue) => issue.message).join("; ")}`,
+    );
   }
   if (options.source !== "codex") events.push(...eventsFromReflectQueue(ctx, root, project));
 
   if (ctx.config.dryRun) return { events, fresh: 0, unavailable, deferred: deferred.length };
   const fresh = appendEvents(ledger, events);
-  if (maxId > 0) writeJson(ledger.path(WATERMARK_FILE), { claude_mem_max_id: maxId, deferred, ts: nowIso() });
+  if (maxId > 0 || githubSince !== watermark.github_since) {
+    const nextWatermark = {
+      ...watermark,
+      github_since: githubSince,
+      ts: started,
+    };
+    if (maxId > 0) {
+      nextWatermark.claude_mem_max_id = maxId;
+      nextWatermark.deferred = deferred;
+    }
+    writeJson(ledger.path(WATERMARK_FILE), nextWatermark);
+  }
   if (fresh > 0) ledger.commit(`ingest: +${fresh} events`);
   return { events, fresh, unavailable, deferred: deferred.length };
 }

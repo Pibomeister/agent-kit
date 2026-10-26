@@ -14,6 +14,7 @@ import {
 } from "../../src/learn/review/maintain.ts";
 import { addEvidence, loadPatterns, sourceFamily, statusFor, str } from "../../src/learn/review/patterns.ts";
 import { propose } from "../../src/learn/review/propose.ts";
+import { buildReviewEvents } from "../../src/learn/memory/consolidate.ts";
 import { scratch, testContext } from "./helpers.ts";
 
 const PAGE = `---
@@ -84,6 +85,11 @@ function ev(hash: string, fields: Partial<ReviewEvent>): ReviewEvent {
     }),
     hash,
   };
+}
+
+/** A session-collected sighting: no PR, a runtime author label, plus whatever session evidence it carries. */
+function sighting(hash: string, fields: Partial<ReviewEvent>): ReviewEvent {
+  return ev(hash, { pr: null, url: null, author: "observer:review-finding", ...fields });
 }
 
 const E1 = ev("h1", { url: "https://x.test/1", text: "toBeNull on a value that is always null" });
@@ -519,6 +525,139 @@ describe("independence gate", () => {
     ]);
     expect(sourceFamily("correction")).toBe("correction");
     expect(["claude-mem", "learn-memory", "something-new"].map(sourceFamily)).toEqual([null, null, null]);
+  });
+
+  test("knowledgebase findings are a primary family", () => {
+    expect(sourceFamily("kb-finding")).toBe("kb-finding");
+  });
+
+  test("sightings from two distinct sessions activate; two collectors of one session do not", () => {
+    const start = { status: "candidate", count: 0, sources: [], prs: [], reviewers: [], sessions: [] };
+    const body = "\n## Evidence\n";
+
+    const twoSessions = addEvidence(
+      addEvidence({ ...start }, body, sighting("s1", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
+      body,
+      sighting("s2", { source: "claude-mem", session: "sess-b", obs_id: 8 }),
+      2,
+    );
+    expect(twoSessions.meta.status).toBe("active");
+    expect(twoSessions.meta.sessions).toEqual(["s:sess-a", "s:sess-b"]);
+
+    const oneSession = addEvidence(
+      addEvidence({ ...start }, body, sighting("s3", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
+      body,
+      sighting("s4", { source: "claude-mem", session: "sess-a", obs_id: 8 }),
+      2,
+    );
+    expect(oneSession.meta.status).toBe("candidate");
+
+    const twoCollectors = addEvidence(
+      addEvidence({ ...start }, body, sighting("s5", { source: "claude-mem", session: "sess-a", obs_id: 7 }), 2).meta,
+      body,
+      sighting("s6", { source: "learn-memory", author: "learn-memory", session: "sess-a", obs_id: 7 }),
+      2,
+    );
+    expect(twoCollectors.meta.status).toBe("candidate");
+    expect(twoCollectors.meta.sessions).toEqual(["s:sess-a"]);
+
+    const twoRuns = addEvidence(
+      addEvidence(
+        { ...start },
+        body,
+        sighting("s7", { source: "kb-finding", author: "reviewer-standards", session: "run-1" }),
+        2,
+      ).meta,
+      body,
+      sighting("s8", { source: "kb-finding", author: "reviewer-spec", session: "run-2" }),
+      2,
+    );
+    expect(twoRuns.meta.status).toBe("active");
+  });
+
+  test("existing compound tokens count known sessions without observation alias matching", () => {
+    const meta = { status: "candidate", count: 3, sources: ["claude-mem", "learn-memory"], prs: [], reviewers: [] };
+    expect(statusFor({ ...meta, sessions: ["s:sess-a~obs:7", "obs:8~s:sess-a", "s:sess-a"] }, 2)).toBe("candidate");
+    expect(statusFor({ ...meta, sessions: ["s:sess-a~obs:7", "s:sess-b~obs:7"] }, 2)).toBe("active");
+    expect(statusFor({ ...meta, sessions: ["obs:7", "obs:8", "s:"] }, 2)).toBe("candidate");
+  });
+
+  test("forwarded observations require known distinct sessions before activation and promotion", () => {
+    const judged = [7, 8, 9].map((id) => ({ text: `finding ${id}`, evidence: [`obs:${id}`] }));
+    const valid = new Set(["obs:7", "obs:8", "obs:9"]);
+    const sameSession = new Map([...valid].map((id) => [id, "session-a-full-id"]));
+    for (const sessions of [new Map<string, string>(), sameSession]) {
+      const events = buildReviewEvents("shop", judged, valid, "nightly-1", sessions);
+      const { ctx, ledger, page } = run(events);
+      expect(page.meta.count).toBe(3);
+      expect(page.meta.status).toBe("candidate");
+      expect(propose(ctx, ledger, scratch(), 3)).toBe("nothing to promote");
+      expect(readFileSync(ledger.path("guardrails.md"), "utf8")).toBe("");
+    }
+    const forwarded = buildReviewEvents("shop", judged, valid, "nightly-1", sameSession);
+    expect(forwarded.map((event) => event.session)).toEqual(Array(3).fill("session-a-full-id"));
+    expect(
+      run([sighting("native", { source: "claude-mem", session: "session-a-full-id", obs_id: 6 }), ...forwarded]).page
+        .meta.status,
+    ).toBe("candidate");
+    const distinct = new Map([
+      ["obs:7", "session-a-full-id"],
+      ["obs:8", "session-b-full-id"],
+      ["obs:9", "session-b-full-id"],
+    ]);
+    expect(run(buildReviewEvents("shop", judged, valid, "nightly-1", distinct)).page.meta.status).toBe("active");
+    expect(statusFor({ status: "active", count: 3, sessions: ["obs:7", "obs:8", "obs:9"] }, 2)).toBe("candidate");
+  });
+
+  test("identical findings retain each cited session and deduplicate within that session", () => {
+    const valid = new Set(["obs:7", "obs:8", "obs:9", "Ssession-b"]);
+    const sessions = new Map([
+      ["obs:7", "session-a"],
+      ["obs:8", "session-b"],
+      ["obs:9", "session-a"],
+      ["Ssession-b", "session-b"],
+    ]);
+    const first = buildReviewEvents(
+      "shop",
+      [{ text: "same finding", evidence: ["obs:7"] }],
+      valid,
+      "night-1",
+      sessions,
+    );
+    const later = buildReviewEvents(
+      "shop",
+      [{ text: "same finding", evidence: ["obs:8"] }],
+      valid,
+      "night-2",
+      sessions,
+    );
+    const repeat = buildReviewEvents(
+      "shop",
+      [{ text: "same finding", evidence: ["obs:9"] }],
+      valid,
+      "night-3",
+      sessions,
+    );
+    expect(first[0]?.hash).toBe(repeat[0]?.hash);
+    expect(first[0]?.hash).not.toBe(later[0]?.hash);
+    const { ledger, page } = run([...first, ...later, ...repeat]);
+    expect(loadEvents(ledger)).toHaveLength(2);
+    expect(page.meta.status).toBe("active");
+    const multiple = buildReviewEvents(
+      "shop",
+      [
+        {
+          text: "same finding",
+          evidence: ["obs:7", "obs:8", "Ssession-b"],
+        },
+      ],
+      valid,
+      "night-4",
+      sessions,
+    );
+    expect(multiple.map((event) => event.session)).toEqual(["session-a", "session-b"]);
+    expect(multiple.map((event) => event.hash)).toEqual([...first, ...later].map((event) => event.hash));
+    expect(multiple.map((event) => event.obs_id)).toEqual([7, 8]);
   });
 });
 
