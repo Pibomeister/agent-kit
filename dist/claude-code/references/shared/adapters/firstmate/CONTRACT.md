@@ -171,7 +171,8 @@ record in the binding's evidence store, for the lifecycle run the worker opened 
 (`open --ticket <ticket-file> --binding <binding file> --dir <evidence store>`; the latest one when it
 opened more than one, and the binding's own run id when it opened none), current for the head the latest `ship-preflight`
 record names. `build-checks` and `review-full` may sit on an earlier head in that head's history; a
-`review-full` on an earlier head also needs a `review-delta` at this one. That history is bounded
+`review-full` on an earlier head, or one that requested changes, also needs a `review-delta` at this
+one recorded after it. That history is bounded
 by ancestry alone. The fork-point bound applies only to a standalone run named after its branch (no
 `--run` and no opened run): there, a record whose snapshot is already on the default branch
 (`origin/HEAD`, else `main`, else `master`) does not count unless it is at the head's own revision,
