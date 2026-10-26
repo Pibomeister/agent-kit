@@ -240,8 +240,8 @@ export const DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red
 export type DelegationClass = (typeof DELEGATION_CLASSES)[number];
 export const AUTHOR_KINDS = ["human", "agent"] as const;
 export type AuthorKind = (typeof AUTHOR_KINDS)[number];
-/** A full review's verdict. A record without one was approved; one that requested changes needs a later delta. */
-export const REVIEW_VERDICTS = ["approved", "changes-requested"] as const;
+/** The verdict a full review may record. A record without one was approved; one that requested changes needs a later delta. */
+export const REVIEW_VERDICTS = ["changes-requested"] as const;
 export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 
 const BUNDLED_ADAPTER_IDS: readonly string[] = [];
@@ -1736,8 +1736,8 @@ export const LIFECYCLE_USAGE = [
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
-  `  --verdict (review-full only): ${REVIEW_VERDICTS.join(", ")}, default approved. A full review that requested`,
-  "  changes counts once a review-delta recorded after it covers the head.",
+  `  --verdict (review-full only): ${REVIEW_VERDICTS.join(", ")}. Leave it out for an approved full review. A full`,
+  "  review that requested changes counts once a review-delta recorded after it covers the head.",
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate open with --binding and pass the binding's evidence store.",
   `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant as \`node <bundle>/bin/ak-gate.mjs bypass grant\``,
@@ -2021,6 +2021,10 @@ export function main(
     }
     const verdictFlag = str("verdict");
     const verdict = REVIEW_VERDICTS.find((known) => known === verdictFlag);
+    if (verdictFlag === "approved") {
+      io.err("ak lifecycle record: an approved full review is recorded without --verdict");
+      return 2;
+    }
     if (verdictFlag !== undefined && (verdict === undefined || gate !== "review-full")) {
       io.err(
         `ak lifecycle record: --verdict is only valid with --gate review-full and is one of ${REVIEW_VERDICTS.join(", ")}`,

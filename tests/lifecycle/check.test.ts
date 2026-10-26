@@ -2093,6 +2093,14 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     expect(r.err).toContain("--verdict is only valid with --gate review-full");
     expect(ak(dir, "record", "--gate", "review-full", "--verdict", "maybe").code).toBe(2);
   });
+
+  test("--verdict approved is refused: an approved full review carries no verdict", () => {
+    const dir = repo();
+    const r = ak(dir, "record", "--gate", "review-full", "--verdict", "approved");
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("an approved full review is recorded without --verdict");
+    expect(ak(dir, "record", "--gate", "review-full").code).toBe(0);
+  });
 });
 
 describe("readRecords, each stored-record filter alone", () => {
