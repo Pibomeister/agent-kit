@@ -4143,8 +4143,8 @@
     },
     "firstmate:adapters/firstmate/WORKER.md": {
       "file": "adapters/firstmate/WORKER.md",
-      "bytes": 5888,
-      "tokens": 1472
+      "bytes": 5965,
+      "tokens": 1491
     },
     "firstmate:stock-brief": {
       "file": "src/firstmate/stock.ts",
