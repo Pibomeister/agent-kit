@@ -295,7 +295,8 @@ The first follow-up above is closed this way:
 - The check reads "current" per gate. `verify`, `review-delta`, `review-readiness` and `ship-preflight`
   must name the exact head, revision and diff hash. `build-checks` and `review-full` may name an earlier
   revision in the head's history, because a fix loop moves the head after them, but a `review-full` on
-  an earlier head counts only with a `review-delta` at this one. For a standalone run named after
+  an earlier head, or one that requested changes, counts only with a `review-delta` at this one
+  recorded after it. For a standalone run named after
   its branch (no `--run` and no opened run), "in the head's history" stops at the fork point: an
   earlier record counts only if its snapshot is not already on the default branch
   (`origin/HEAD`, else `main`, else `master`; ancestor-only when none resolves). A record at the head's

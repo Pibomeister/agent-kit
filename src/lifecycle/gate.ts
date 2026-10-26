@@ -240,6 +240,9 @@ export const DELEGATION_CLASSES = ["green", "yellow-agent", "yellow-owner", "red
 export type DelegationClass = (typeof DELEGATION_CLASSES)[number];
 export const AUTHOR_KINDS = ["human", "agent"] as const;
 export type AuthorKind = (typeof AUTHOR_KINDS)[number];
+/** The verdict a full review may record. A record without one was approved; one that requested changes needs a later delta. */
+export const REVIEW_VERDICTS = ["changes-requested"] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
 
 const BUNDLED_ADAPTER_IDS: readonly string[] = [];
 
@@ -260,7 +263,8 @@ export const PRE_SHIP_GATES: readonly Gate[] = ["build-checks", "verify", "revie
  * Gates judged once per run, before any fix cycle. A later fix moves the head, and the lifecycle
  * answers it with verify again and `review-delta`, not by rebuilding or re-running the full panel. So
  * these need a record on an ancestor of the head, not on the head itself; `review-full` is also current
- * when a `review-delta` record is.
+ * when a `review-delta` record recorded after it is. A full review that requested changes counts only
+ * that way, since after the first full every later review is a delta.
  */
 const EARLIER: ReadonlySet<Gate> = new Set<Gate>(["build-checks", "review-full"]);
 
@@ -274,6 +278,8 @@ export interface GateRecord {
   class?: DelegationClass;
   implementer?: { author_kind: AuthorKind; host: string; seat_id?: string };
   evidence?: ArtifactRef[];
+  /** `review-full` only. */
+  verdict?: ReviewVerdict;
   /** Present when the phase was started under a bypass grant rather than a typed command (ADR-0008). */
   authority?: GateAuthority;
 }
@@ -505,6 +511,7 @@ export interface RecordArgs {
   receipts?: readonly string[];
   delegationClass?: DelegationClass;
   implementer?: { author_kind: AuthorKind; host: string; seat_id?: string };
+  verdict?: ReviewVerdict;
   bypass?: BypassAttribution;
   now?: () => Date;
 }
@@ -527,6 +534,8 @@ export function recordGate(
       reason: `the implementer needs an author kind of human or agent and a host that is one of ${adapterIds().join(", ")}`,
     };
   }
+  if (a.verdict !== undefined && a.gate !== "review-full")
+    return { ok: false, reason: "a verdict is only recorded with review-full" };
   const snapshot = takeSnapshot(a.project);
   if (typeof snapshot === "string") return { ok: false, reason: snapshot };
   if ((a.receipts?.length ?? 0) > 0 && readRunRecord(a.dir, a.run) === undefined) {
@@ -596,6 +605,7 @@ export function recordGate(
     recorded_at: (a.now ?? (() => new Date()))().toISOString(),
     ...(strengthenedVerify ? { evidence: refs } : {}),
   };
+  if (a.verdict !== undefined) record.verdict = a.verdict;
   // One file per gate and snapshot: re-recording the same state is idempotent, and a fix cycle adds a
   // record rather than replacing the one before it.
   const name = `${snapshot.revision}-${snapshot.diff_hash.replace(/^sha256:/, "").slice(0, 16)}.json`;
@@ -674,6 +684,7 @@ export function readRecords(dir: string, run: string, gate: Gate): GateRecord[] 
       typeof g.snapshot?.diff_hash === "string" &&
       (g.class === undefined || DELEGATION_CLASSES.includes(g.class)) &&
       implementerWellFormed(g.implementer) &&
+      (g.verdict === undefined || (g.gate === "review-full" && REVIEW_VERDICTS.includes(g.verdict))) &&
       bypassWellFormed(g.authority)
     ) {
       const evidenceValid =
@@ -1175,7 +1186,7 @@ export function checkGates(a: CheckArgs): CheckResult {
       stale(gate, `no record for run ${a.run} in ${a.dir}`);
       continue;
     }
-    if (records.some((r) => same(r.snapshot, head))) continue;
+    if (records.some((r) => same(r.snapshot, head) && r.verdict !== "changes-requested")) continue;
 
     if (EARLIER.has(gate)) {
       const onLine = records.filter((r) => onBranchLine(a.project, r.snapshot, head.revision, fork));
@@ -1195,11 +1206,14 @@ export function checkGates(a: CheckArgs): CheckResult {
         }
       }
       if (gate === "build-checks") continue;
-      // review-full on an earlier head stands once a delta review covers the fix on this one.
-      if (readRecords(a.dir, a.run, "review-delta").some((r) => same(r.snapshot, head))) continue;
+      // review-full on an earlier head, or one that requested changes, stands once a delta review
+      // recorded after it covers this head.
+      const deltas = readRecords(a.dir, a.run, "review-delta");
+      if (deltas.some((r) => same(r.snapshot, head) && r.recorded_at >= counted.recorded_at)) continue;
+      const verdict = counted.verdict === "changes-requested" ? ", which requested changes," : "";
       stale(
         gate,
-        `the full review is for ${short(onLine[onLine.length - 1]!.snapshot)} and no review-delta covers ${short(head)}`,
+        `the full review is for ${short(counted.snapshot)}${verdict} and no review-delta covers ${short(head)} after it`,
       );
       continue;
     }
@@ -1714,7 +1728,7 @@ export const LIFECYCLE_USAGE = [
   "exists only in an agent-kit checkout (the `ak` on PATH is the maintenance CLI).",
   "",
   "  ak lifecycle open --ticket <file> [--binding <file>] [--dir <dir>] [--project <dir>]",
-  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
+  "  ak lifecycle record --gate <gate> [--receipt <file> ...] [--verdict <verdict>] [--class <class> --author-kind <kind> --host <id> [--seat-id <id>]] [--bypass <file> --task <id>] [--run <id>] [--dir <dir>] [--project <dir>]",
   "  ak lifecycle check [--evidence] [--gates <g,g>] [--run <id>] [--dir <dir>] [--project <dir>] [--json]",
   "  ak lifecycle bypass grant --task <id> --by <who> --reason <why> --out <file> --project <dir> --worktree <dir> [--hours <n>]",
   "  ak lifecycle bypass check --grant <file> --task <id> [--phase <phase>] [--run <id>] [--project <dir>]",
@@ -1722,6 +1736,8 @@ export const LIFECYCLE_USAGE = [
   "",
   `  gates: ${GATES.join(", ")}`,
   `  check defaults to the gates before ship: ${PRE_SHIP_GATES.join(", ")}`,
+  `  --verdict (review-full only): ${REVIEW_VERDICTS.join(", ")}. Leave it out for an approved full review. A full`,
+  "  review that requested changes counts once a review-delta recorded after it covers the head.",
   "  --project defaults to the working directory, --run to its branch's opened run (else the branch), and --dir to",
   "  <git common dir>/agent-kit/evidence. Under Firstmate open with --binding and pass the binding's evidence store.",
   `  bypass phases: ${BYPASS_PHASES.join(", ")}. A supervisor runs grant as \`node <bundle>/bin/ak-gate.mjs bypass grant\``,
@@ -1738,7 +1754,20 @@ export const LIFECYCLE_USAGE = [
 
 const FLAGS: Record<string, readonly string[]> = {
   open: ["ticket", "binding", "dir", "project"],
-  record: ["gate", "receipt", "class", "author-kind", "host", "seat-id", "bypass", "task", "run", "dir", "project"],
+  record: [
+    "gate",
+    "receipt",
+    "verdict",
+    "class",
+    "author-kind",
+    "host",
+    "seat-id",
+    "bypass",
+    "task",
+    "run",
+    "dir",
+    "project",
+  ],
   check: ["evidence", "gates", "run", "dir", "project", "json"],
   "bypass grant": ["task", "by", "reason", "out", "hours", "project", "worktree"],
   "bypass check": ["grant", "task", "phase", "run", "dir", "project"],
@@ -1990,6 +2019,18 @@ export function main(
       io.err("ak lifecycle record: --receipt is only valid with --gate verify");
       return 2;
     }
+    const verdictFlag = str("verdict");
+    const verdict = REVIEW_VERDICTS.find((known) => known === verdictFlag);
+    if (verdictFlag === "approved") {
+      io.err("ak lifecycle record: an approved full review is recorded without --verdict");
+      return 2;
+    }
+    if (verdictFlag !== undefined && (verdict === undefined || gate !== "review-full")) {
+      io.err(
+        `ak lifecycle record: --verdict is only valid with --gate review-full and is one of ${REVIEW_VERDICTS.join(", ")}`,
+      );
+      return 2;
+    }
     const classFlag = str("class");
     const authorKindFlag = str("author-kind");
     const host = str("host");
@@ -2046,6 +2087,7 @@ export function main(
       receipts: receipts.map((path) => resolve(cwd, path)),
       delegationClass,
       implementer,
+      verdict,
       bypass,
     });
     if (!r.ok) {

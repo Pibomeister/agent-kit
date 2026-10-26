@@ -45,7 +45,8 @@ branch.
 Each phase leaves a gate record when its own gates pass. Record it with
 `{{gate_cmd}} record --dir {{evidence_dir}} --gate <gate>`: `build-checks` after
 super-build, `verify` after super-verify, `review-full`, `review-delta` and `review-readiness` after
-the matching super-review mode, and `ship-preflight` after super-ship's preconditions hold. Before it
+the matching super-review mode (a full review that requested changes records
+`--verdict changes-requested`), and `ship-preflight` after super-ship's preconditions hold. Before it
 ships, super-ship runs `{{gate_cmd}} check --dir {{evidence_dir}}`; a refusal names
 the phase you skipped or whose evidence went stale, and you go back and run it. Skipping a phase is
 not a shortcut: `done` is refused without its record.

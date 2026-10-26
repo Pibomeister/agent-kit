@@ -2025,6 +2025,82 @@ describe("ak lifecycle check, each evidence refusal alone", () => {
     expect(checked.err).toContain("refused: gate review-full has no current evidence (the full review is for");
     expect(checked.err).toContain("and no review-delta covers");
   });
+
+  test("a full review that requested changes plus an approved delta at the head passes", () => {
+    const dir = repo();
+    open(dir, "changes-requested");
+    record(dir, "build-checks", "verify");
+    expect(ak(dir, "record", "--gate", "review-full", "--verdict", "changes-requested").code).toBe(0);
+    git(dir, "commit", "-qam", "build");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 4;\n"); // the fix for the requested changes
+    record(dir, "verify", "review-readiness");
+    const before = ak(dir, "check");
+    expect(before.code).toBe(1);
+    expect(before.err).toContain(", which requested changes, and no review-delta covers");
+    record(dir, "review-delta");
+    expect(ak(dir, "check").code).toBe(0);
+  });
+
+  test("a full review that requested changes does not count at its own head", () => {
+    const dir = repo();
+    open(dir, "changes-requested-head");
+    record(dir, "build-checks", "verify", "review-readiness");
+    expect(ak(dir, "record", "--gate", "review-full", "--verdict", "changes-requested").code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: gate review-full has no current evidence (the full review is for");
+  });
+
+  test("an approved delta on an older head does not close a full review that requested changes", () => {
+    const dir = repo();
+    open(dir, "changes-requested-stale");
+    record(dir, "build-checks", "verify");
+    expect(ak(dir, "record", "--gate", "review-full", "--verdict", "changes-requested").code).toBe(0);
+    git(dir, "commit", "-qam", "build");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 4;\n");
+    record(dir, "review-delta");
+    writeFileSync(join(dir, "src/a.js"), "export const a = 5;\n"); // changed after the delta review
+    record(dir, "verify", "review-readiness");
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain(", which requested changes, and no review-delta covers");
+  });
+
+  test("an approved delta with no full review in the run is refused", () => {
+    const dir = repo();
+    open(dir, "delta-only");
+    record(dir, "build-checks", "verify", "review-delta", "review-readiness");
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("refused: gate review-full has no current evidence (no record for run");
+  });
+
+  test("a delta recorded before the full review it would close does not count", () => {
+    const dir = repo();
+    open(dir, "delta-first");
+    git(dir, "commit", "-qam", "build");
+    record(dir, "build-checks", "verify", "review-delta", "review-readiness");
+    expect(ak(dir, "record", "--gate", "review-full", "--verdict", "changes-requested").code).toBe(0);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("and no review-delta covers");
+  });
+
+  test("--verdict is refused on any gate but review-full", () => {
+    const dir = repo();
+    const r = ak(dir, "record", "--gate", "review-delta", "--verdict", "changes-requested");
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("--verdict is only valid with --gate review-full");
+    expect(ak(dir, "record", "--gate", "review-full", "--verdict", "maybe").code).toBe(2);
+  });
+
+  test("--verdict approved is refused: an approved full review carries no verdict", () => {
+    const dir = repo();
+    const r = ak(dir, "record", "--gate", "review-full", "--verdict", "approved");
+    expect(r.code).toBe(2);
+    expect(r.err).toContain("an approved full review is recorded without --verdict");
+    expect(ak(dir, "record", "--gate", "review-full").code).toBe(0);
+  });
 });
 
 describe("readRecords, each stored-record filter alone", () => {

@@ -155,13 +155,13 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
     missing declaration or a missing kind makes the verification lane `unavailable`; name the gap.
 11. Set the verdict from the lane results: `approved`, `changes-requested`, `blocked` or
     `unavailable`. Emit the review and its findings, and report what is still open.
-12. On `approved`, and only then, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record
-    --gate review-full`, `review-delta` or `review-readiness` (the bundle's `bin/`, two directories
-    above this skill). A delta record at the head is what lets a full review of an earlier head count.
-    Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
-    branch-named v1 run when none was opened) and records default to the repository's git directory.
-    A binding's brief supplies `--dir` for the run opened with it. A record on a run that
-    `ship-preflight` has closed is refused; the task needs a new `open`.
+12. On `approved`, record the gate for this mode: `node <this skill's directory>/../../bin/ak-gate.mjs record
+    --gate review-full`, `review-delta` or `review-readiness` (the bundle's `bin/`). A `full` that returned
+    `changes-requested` records `review-full --verdict changes-requested`; no other verdict is recorded. A
+    full record on an earlier head, or one that requested changes, counts once an approved delta recorded
+    after it covers the head. Run it from the project checkout; the run defaults to the branch's opened-run
+    pointer (or the branch-named v1 run) and records to the git directory. A binding's brief supplies
+    `--dir`. A record on a run that `ship-preflight` has closed is refused; the task needs a new `open`.
 
 ## Hard gates
 
