@@ -750,6 +750,12 @@ describe("readContext", () => {
 });
 
 describe("ak kb usage", () => {
+  test("an empty trail-attempts path is a usage error", () => {
+    const run = kb(fixture(), REPO, "publish", "--trail-attempts", "");
+    expect(run.code).toBe(2);
+    expect(run.err).toContain("--trail-attempts");
+  });
+
   test("an unknown subcommand names the one it was probably meant to be", () => {
     const run = kb(fixture(), REPO, "raed");
     expect(run.code).toBe(2);

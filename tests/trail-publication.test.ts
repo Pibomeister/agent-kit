@@ -29,7 +29,7 @@ function knowledgebase(project: string): ResolvedKb {
 }
 
 for (const artifact of [trail, trailAudit]) {
-  test(`${artifact.schema}: failed publication and failed outcome saving cannot resend on resume`, () => {
+  test(`${artifact.schema}: a marked failed publication cannot resend`, () => {
     const kb = knowledgebase(artifact.project.id);
     const directory = processScratch("ak-trail-attempts-");
     const text = JSON.stringify(artifact);
@@ -37,7 +37,6 @@ for (const artifact of [trail, trailAudit]) {
     writeFileSync(hook, "#!/bin/sh\nexit 1\n", { mode: 0o700 });
     const first = publishRunArtifact(kb, text, artifact.run_id, [], directory);
     expect(first).toMatchObject({ status: "failed", code: "kb.commit-failed" });
-    expect(() => writeFileSync(join(directory, "absent", "outcome.json"), JSON.stringify(first))).toThrow();
     rmSync(hook);
 
     const resumed = publishRunArtifact(kb, text, artifact.run_id, [], directory);
@@ -60,9 +59,31 @@ for (const artifact of [trail, trailAudit]) {
     expect(git(kb.root, ["rev-list", "--count", "HEAD"]).stdout.trim()).toBe("2");
   });
 
+  test(`${artifact.schema}: an unwritten artifact does not consume its attempt`, () => {
+    const kb = knowledgebase(artifact.project.id);
+    const directory = processScratch("ak-trail-attempts-");
+    const path = join(kb.root, "projects", artifact.project.id, "runs", "artifacts.jsonl");
+    mkdirSync(join(kb.root, "projects", artifact.project.id, "runs"), { recursive: true });
+    writeFileSync(path, "dirty\n");
+    const text = JSON.stringify(artifact);
+    expect(publishRunArtifact(kb, text, artifact.run_id, [], directory)).toMatchObject({
+      status: "failed",
+      code: "kb.uncommitted-record",
+    });
+    rmSync(path);
+    expect(publishRunArtifact(kb, text, artifact.run_id, [], directory)).toMatchObject({
+      status: "complete",
+      effect: "published",
+    });
+  });
+
   test(`${artifact.schema}: publication requires an attempt directory`, () => {
     const kb = knowledgebase(artifact.project.id);
     expect(publishRunArtifact(kb, JSON.stringify(artifact), artifact.run_id, [])).toMatchObject({
+      status: "refused",
+      code: "kb.trail-attempts-required",
+    });
+    expect(publishRunArtifact(kb, JSON.stringify(artifact), artifact.run_id, [], "")).toMatchObject({
       status: "refused",
       code: "kb.trail-attempts-required",
     });

@@ -113,8 +113,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20624,
-      "tokens": 5156
+      "bytes": 20670,
+      "tokens": 5168
     },
     "bundle/claude-code:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -708,8 +708,8 @@
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24459,
-      "tokens": 6109
+      "bytes": 24634,
+      "tokens": 6153
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -938,8 +938,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20624,
-      "tokens": 5156
+      "bytes": 20670,
+      "tokens": 5168
     },
     "bundle/codex:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -1533,8 +1533,8 @@
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24459,
-      "tokens": 6109
+      "bytes": 24634,
+      "tokens": 6153
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1763,8 +1763,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20624,
-      "tokens": 5156
+      "bytes": 20670,
+      "tokens": 5168
     },
     "bundle/droid:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -2358,8 +2358,8 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24455,
-      "tokens": 6108
+      "bytes": 24630,
+      "tokens": 6152
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -2588,8 +2588,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20624,
-      "tokens": 5156
+      "bytes": 20670,
+      "tokens": 5168
     },
     "bundle/grok:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -3183,8 +3183,8 @@
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24459,
-      "tokens": 6109
+      "bytes": 24634,
+      "tokens": 6153
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -3413,8 +3413,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20624,
-      "tokens": 5156
+      "bytes": 20670,
+      "tokens": 5168
     },
     "bundle/kimi:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -4008,8 +4008,8 @@
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24459,
-      "tokens": 6109
+      "bytes": 24634,
+      "tokens": 6153
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",

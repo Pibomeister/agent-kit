@@ -133,11 +133,12 @@ The build, for each ticket, in this order (ruling `work-trail-is-account-not-evi
 14. Report what Outputs lists.
 
 The publication boundary for steps 8 and 13 is `ak kb publish artifact --file <record> --run <run-id>
---trail-attempts <stretch-index>.attempts`. Immediately before calling `publishArtifact`, it creates
-the record's attempt mark exclusively, flushes the mark and its directory to durable storage, then
-sends the record. The mark's filename is the sha256 of the knowledgebase, project, run, kind and id
+--trail-attempts <stretch-index>.attempts`. Inside the knowledgebase lock, after checks that can
+refuse without writing and immediately before writing the record, it creates the attempt mark
+exclusively and flushes the mark and its directory to durable storage. The mark's filename is the
+sha256 of the knowledgebase, project, run, kind and id
 as joined in the command's record identity; it never depends on content or an attempt count.
-An existing mark admits no publish. A mark that cannot be made durable also sends nothing:
+An existing mark admits no new write. A mark that cannot be made durable also sends nothing:
 preserve each stretch's missing, unpublished or published state, add that reason only to
 unpublished stretches, and report an affected audit unavailable. Keep every mark, including after
 a refused or failed publish and after an outcome the index cannot hold.

@@ -8,7 +8,7 @@ import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
 import type { ResolvedKb } from "./binding.ts";
 import { git } from "./git.ts";
-import { publishTrailRecord } from "./trail-publish.ts";
+import { markTrailAttempt } from "./trail-publish.ts";
 
 /**
  * The `local-git` backend (adapters/knowledgebase/backends/local-git.md): a
@@ -465,7 +465,12 @@ interface RecordFile {
  * holds and at least one more commits a new stored copy. Every result reports what
  * the knowledgebase holds, not what was sent.
  */
-function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentity): PublishOutcome | KbRefusal {
+function commitRecord(
+  kb: ResolvedKb,
+  store: RecordFile,
+  identity: RecordIdentity,
+  trailAttempt?: { directory: string; record: string },
+): PublishOutcome | KbRefusal {
   return withLock(kb.root, () => {
     const path = store.path;
     const before = headCommit(kb.root);
@@ -517,6 +522,10 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
       return uncommitted;
     }
     mkdirSync(dirname(file), { recursive: true });
+    if (trailAttempt !== undefined) {
+      const refusal = markTrailAttempt(trailAttempt.directory, trailAttempt.record);
+      if (refusal !== null) return refusal;
+    }
     writeFileSync(file, store.write(existing));
     const added = git(kb.root, ["add", "--", path]);
     const made =
@@ -705,15 +714,18 @@ export function publishRunArtifact(
       return `${kept}${JSON.stringify(stored)}\n`;
     },
   };
-  const publishArtifact = () => commitRecord(kb, store, { ref, hash, key, links, approvals: approvalsOf(artifact) });
+  const identity = { ref, hash, key, links, approvals: approvalsOf(artifact) };
   if (artifact.schema === "trail" || artifact.schema === "trail-audit") {
-    if (trailAttempts === undefined) {
+    if (trailAttempts === undefined || trailAttempts === "") {
       return refused("kb.trail-attempts-required", "Trail and trail-audit publication needs --trail-attempts.");
     }
-    return publishTrailRecord(trailAttempts, `${kb.knowledgebase}/${project}/${ref}`, publishArtifact);
+    return commitRecord(kb, store, identity, {
+      directory: trailAttempts,
+      record: `${kb.knowledgebase}/${project}/${ref}`,
+    });
   }
   if (trailAttempts !== undefined) {
     return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
   }
-  return publishArtifact();
+  return commitRecord(kb, store, identity);
 }

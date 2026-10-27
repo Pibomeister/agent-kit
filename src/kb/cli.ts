@@ -114,7 +114,11 @@ function parseArgs(argv: readonly string[]): KbArgs {
     }
     const name = token.slice(2);
     const value = argv[i + 1];
-    if ((!VALUE_FLAGS.has(name) && name !== "link") || value === undefined) {
+    if (
+      (!VALUE_FLAGS.has(name) && name !== "link") ||
+      value === undefined ||
+      (name === "trail-attempts" && value === "")
+    ) {
       args.bad ??= token;
       continue;
     }

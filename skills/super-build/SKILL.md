@@ -256,8 +256,9 @@ This skill names no repository path for project-derived content. Each implemente
 
 `kb-publish` is a remote effect: the idempotency key is derived from the content hash of the
 published set per `adapters/runner-contract/CONTRACT.md` §5, and the returned record reference is
-read back before the ticket reports. Republishing an unchanged set after an interruption is a no-op
-success rather than a second record.
+read back before the ticket reports. Republishing unchanged receipts, ticket results and check
+results after an interruption is a no-op success. Trail and trail-audit records instead follow the
+attempt-mark and resume rules in [the work trail protocol](../../protocols/work-trail/PROTOCOL.md).
 
 No `remote-push`, no `pr-open`: a commit on an owned branch is where this lane ends.
 
