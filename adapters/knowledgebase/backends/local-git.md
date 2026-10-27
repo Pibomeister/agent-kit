@@ -134,8 +134,10 @@ header of its own is refused, because the header carries the status.
   file, or a line of `artifacts.jsonl` that carries that ref.
 - **Trail attempts are durable and per record.** A `trail` or `trail-audit` publication requires
   `--trail-attempts <directory>`, the existing attempt directory of the build's stretch index.
-  The command exclusively creates and flushes a mark for that knowledgebase, project, run, kind
-  and id before calling the publisher. A mark already present returns
+  Inside the knowledgebase lock, after the checks that can refuse or answer `effect: none`
+  without writing, the command exclusively creates and flushes a mark for that knowledgebase,
+  project, run, kind and id immediately before writing the record. A refusal from those checks
+  consumes no mark. A mark already present when a write is due returns
   `kb.trail-publication-unknown` without sending anything; a mark that cannot be made durable
   returns `kb.trail-attempt-unrecorded` without sending anything. Neither failure stops the build.
   The caller records the outcome in its index and replays a recorded outcome without invoking the
@@ -147,8 +149,8 @@ header of its own is refused, because the header carries the status.
 Per `adapters/runner-contract/CONTRACT.md` §5. The key is the digest of the run, the operation, the
 record ref and the content hash.
 
-Trail records first pass the per-record attempt boundary above. The table describes records
-admitted to publication.
+Trail records follow the table too; only the rows that write pass the per-record attempt boundary
+above first.
 
 | The record at that ref | Result |
 |---|---|

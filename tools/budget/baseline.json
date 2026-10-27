@@ -23,8 +23,8 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11560,
-      "tokens": 2883
+      "bytes": 11739,
+      "tokens": 2928
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -848,8 +848,8 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11560,
-      "tokens": 2883
+      "bytes": 11739,
+      "tokens": 2928
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1673,8 +1673,8 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11560,
-      "tokens": 2883
+      "bytes": 11739,
+      "tokens": 2928
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2498,8 +2498,8 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11560,
-      "tokens": 2883
+      "bytes": 11739,
+      "tokens": 2928
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3323,8 +3323,8 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11560,
-      "tokens": 2883
+      "bytes": 11739,
+      "tokens": 2928
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
