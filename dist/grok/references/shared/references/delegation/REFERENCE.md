@@ -172,3 +172,69 @@ Consultation adds judgment evidence only: it never lowers `delegation.class`, au
 action, closes a finding or substitutes for a required independent lane. A host without the
 facility remains valid and records no invented consultation evidence (ruling
 `advisor-consultation-follows-class`).
+
+## Light route for a text-only single-slice ticket
+
+Load this section at super-bound step 7 when the author claims a single-slice ticket is text-only.
+It is the single normative definition of that route; super-bound step 7 holds only a pointer here.
+
+**Eligibility.** The route is open only to a single-slice ticket whose every changed path the
+author claims, path by path, changes no required behavior. An eligible path is non-normative
+documentation, or explanatory or optional guidance prose in an existing skill or reference, that
+changes no required action, trigger, process ordering, acceptance criterion, limit, model routing,
+independence, permission, authority or trust rule, gate or receipt rule, publication guarantee or
+destructive guarantee. Executable, source, configuration, schema, API-contract, policy, adapter,
+role, protocol, test and tooling surfaces stay excluded, and the exclusions always win: clarifying
+prose cannot amend a rule by calling itself clarification, and a disputed or uncertain restatement
+takes the normal path. Extension alone and a green class alone never establish eligibility, and
+doubt takes the normal path. A restated rule needs the exact pinned settled-source quote with its
+context and a no-looser comparison.
+
+**The claim.** The claim is written before review, in existing ticket, specification, readiness
+and verification fields only: the per-path semantic explanations, the integration owner named in
+the existing `integration_owner` field and, for any restated rule, the pinned quote with context
+and the no-looser comparison. The claim is not an approval, and no field is added for it.
+
+**Preparation.** The one real saving is bounded compact preparation: one compact content is
+written once and the complete existing-schema specification and ticket are both prepared from it
+before the review snapshot, and the route has no light correction loop, so any correction takes
+the normal path. The plan record is still produced. The capability map, consensus gate and
+multi-slice slicing are already skipped for this ticket shape on the normal path and are not
+savings. For an eligible candidate only, the complete ticket — interfaces, edges, readiness, the
+zero-context details and the persisted real scorer output — is prepared before the step 7
+snapshot; this narrow ordering exception leaves the non-eligible path's steps in their current
+order. Persisting the real scorer output is part of that preparation, never a post-snapshot edit.
+
+**Review.** One unchanged full first-pass document review reads the derived specification as the
+document. The specification is the one reviewed document: the eligibility claim, the per-path
+semantic explanations and any pinned settled-source quotes are written in the specification's
+existing fields, so they sit under the reviewed hash. The complete ticket is pinned in the
+review's `inputs` as provenance of the frozen second hash; it is not presented to seats as settled
+recorded context, and no seat is promised ticket text that is not in the specification. Both exact
+specification and ticket hashes are frozen at the snapshot; steps 10 to 13 then only check the
+already-prepared content, any semantic change they would need takes the normal fallback, and any
+later ticket edit invalidates eligibility normally.
+
+**Exits.** The route is left on any verdict other than approved, any non-empty Proposed fixes or
+Decisions bucket, any unavailable required lane, any reported finding in any bucket including FYI,
+or any semantic edit after the snapshot, including an Applied edit. An eligibility doubt is a
+finding a seat files at anchor 50 or above. Preserved lane raw outputs are an audit surface only:
+a doubt reaches this exit only as a filed finding, and no exit is promised on a doubt a seat does
+not file. Leaving
+the route keeps the real first-pass receipt for its original hashes and roster and the review's
+run, cycle and counter history; it never declares changed hashes reviewed, never drops a newly
+required lane and never repeats a valid seat without cause. The existing delta, primer and
+required-lane rules in the review policy govern continuation.
+
+**Approvals.** The supervisor's existing specification stop and ticket stop approve or refuse the
+eligibility claim bound to those exact hashes; both approval requests state that the light route
+was taken and enumerate the per-path claims and the exact input hashes. There is no earlier gate
+and no inherited approval.
+
+**Before closure.** A manual semantic comparison of the actual exact-head diff against the pinned
+settled rule and each per-path claim is additional closure evidence on this route: the independent
+code-review actor receives the pinned quote, the per-path claims and the diff and
+reports the comparison, and the ticket's integration owner accepts or refuses it. With no actual
+manual comparison the ticket is not eligible and takes the normal path. A normative or
+required-action change leaves the route, and the existing class rules decide whether the class
+raises. A series that raises uncertainty takes the normal path with no new counter or monitor.
