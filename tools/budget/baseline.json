@@ -548,8 +548,8 @@
     },
     "bundle/claude-code:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 15591,
-      "tokens": 3891
+      "bytes": 16723,
+      "tokens": 4174
     },
     "bundle/claude-code:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -728,8 +728,8 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13113,
-      "tokens": 3275
+      "bytes": 13544,
+      "tokens": 3383
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -1373,8 +1373,8 @@
     },
     "bundle/codex:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 15591,
-      "tokens": 3891
+      "bytes": 16723,
+      "tokens": 4174
     },
     "bundle/codex:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -1553,8 +1553,8 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13113,
-      "tokens": 3275
+      "bytes": 13544,
+      "tokens": 3383
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -2198,8 +2198,8 @@
     },
     "bundle/droid:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 15591,
-      "tokens": 3891
+      "bytes": 16723,
+      "tokens": 4174
     },
     "bundle/droid:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -2378,8 +2378,8 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13109,
-      "tokens": 3274
+      "bytes": 13540,
+      "tokens": 3382
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -3023,8 +3023,8 @@
     },
     "bundle/grok:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 15591,
-      "tokens": 3891
+      "bytes": 16723,
+      "tokens": 4174
     },
     "bundle/grok:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -3203,8 +3203,8 @@
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13113,
-      "tokens": 3275
+      "bytes": 13544,
+      "tokens": 3383
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -3848,8 +3848,8 @@
     },
     "bundle/kimi:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 15591,
-      "tokens": 3891
+      "bytes": 16723,
+      "tokens": 4174
     },
     "bundle/kimi:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -4028,8 +4028,8 @@
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13113,
-      "tokens": 3275
+      "bytes": 13544,
+      "tokens": 3383
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
