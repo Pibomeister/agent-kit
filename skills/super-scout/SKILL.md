@@ -177,7 +177,8 @@ rather than published as a dossier nobody asked to keep.
 
 Turns: 4 (gate, `policies/limits.yaml` `scout_turns`). A project may configure a lower value and
 cannot raise it. Multiple independent reads may run inside one turn where the host permits it;
-parallel reads do not buy extra turns.
+parallel reads do not buy extra turns. How to spend those reads without narrowing the evidence:
+[the read-economy reference](../../references/read-economy/REFERENCE.md).
 
 Tool surface: read, glob, lexical search and at most one graph query (gate). A scout is not handed
 an ambient tool inventory, and a question needing more tools than these is a question for another

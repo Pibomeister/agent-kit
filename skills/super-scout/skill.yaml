@@ -91,6 +91,7 @@ constraints:
 
 references:
   - knowledgebase-binding
+  - read-economy
 
 limits:
   scout-turns: 4
