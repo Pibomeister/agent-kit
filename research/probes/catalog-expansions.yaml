@@ -80,7 +80,7 @@ roles:
 
 references:
   baseline: 4
-  catalog: 9
+  catalog: 10
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -105,6 +105,12 @@ references:
         the commands and what unconfigured means inside the bundle.
       commits: [89b0290f]
       docs: [docs/decisions/0010-file-backed-knowledgebase.md]
+    - ids: [read-economy]
+      reason: >-
+        The scout and build lanes need one shared statement of how the loading agent spends its own
+        reads, batched, excerpted and bounded without re-reading, that keeps a required full read
+        full and changes no gate.
+      commits: [55613e5b]
 
 schemas:
   baseline: 14

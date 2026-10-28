@@ -161,6 +161,11 @@
       "bytes": 13278,
       "tokens": 3319
     },
+    "bundle/claude-code:references/shared/references/read-economy/REFERENCE.md": {
+      "file": "references/read-economy/REFERENCE.md",
+      "bytes": 1371,
+      "tokens": 343
+    },
     "bundle/claude-code:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
       "bytes": 9408,
@@ -708,8 +713,8 @@
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24567,
-      "tokens": 6136
+      "bytes": 24598,
+      "tokens": 6144
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -728,8 +733,8 @@
     },
     "bundle/claude-code:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13544,
-      "tokens": 3383
+      "bytes": 13693,
+      "tokens": 3420
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -985,6 +990,11 @@
       "file": "references/prose-quality/REFERENCE.md",
       "bytes": 13278,
       "tokens": 3319
+    },
+    "bundle/codex:references/shared/references/read-economy/REFERENCE.md": {
+      "file": "references/read-economy/REFERENCE.md",
+      "bytes": 1371,
+      "tokens": 343
     },
     "bundle/codex:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -1533,8 +1543,8 @@
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24567,
-      "tokens": 6136
+      "bytes": 24598,
+      "tokens": 6144
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1553,8 +1563,8 @@
     },
     "bundle/codex:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13544,
-      "tokens": 3383
+      "bytes": 13693,
+      "tokens": 3420
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -1810,6 +1820,11 @@
       "file": "references/prose-quality/REFERENCE.md",
       "bytes": 13278,
       "tokens": 3319
+    },
+    "bundle/droid:references/shared/references/read-economy/REFERENCE.md": {
+      "file": "references/read-economy/REFERENCE.md",
+      "bytes": 1371,
+      "tokens": 343
     },
     "bundle/droid:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -2358,8 +2373,8 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24563,
-      "tokens": 6135
+      "bytes": 24594,
+      "tokens": 6143
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -2378,8 +2393,8 @@
     },
     "bundle/droid:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13540,
-      "tokens": 3382
+      "bytes": 13689,
+      "tokens": 3419
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -2635,6 +2650,11 @@
       "file": "references/prose-quality/REFERENCE.md",
       "bytes": 13278,
       "tokens": 3319
+    },
+    "bundle/grok:references/shared/references/read-economy/REFERENCE.md": {
+      "file": "references/read-economy/REFERENCE.md",
+      "bytes": 1371,
+      "tokens": 343
     },
     "bundle/grok:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -3183,8 +3203,8 @@
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24567,
-      "tokens": 6136
+      "bytes": 24598,
+      "tokens": 6144
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -3203,8 +3223,8 @@
     },
     "bundle/grok:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13544,
-      "tokens": 3383
+      "bytes": 13693,
+      "tokens": 3420
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
@@ -3460,6 +3480,11 @@
       "file": "references/prose-quality/REFERENCE.md",
       "bytes": 13278,
       "tokens": 3319
+    },
+    "bundle/kimi:references/shared/references/read-economy/REFERENCE.md": {
+      "file": "references/read-economy/REFERENCE.md",
+      "bytes": 1371,
+      "tokens": 343
     },
     "bundle/kimi:references/shared/references/tracker-of-record/REFERENCE.md": {
       "file": "references/tracker-of-record/REFERENCE.md",
@@ -4008,8 +4033,8 @@
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24567,
-      "tokens": 6136
+      "bytes": 24598,
+      "tokens": 6144
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -4028,8 +4053,8 @@
     },
     "bundle/kimi:skills/super-scout/SKILL.md": {
       "file": "skills/super-scout/SKILL.md",
-      "bytes": 13544,
-      "tokens": 3383
+      "bytes": 13693,
+      "tokens": 3420
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
