@@ -192,7 +192,7 @@ context and a no-looser comparison.
 
 **The claim.** The claim is written before review, in existing ticket, specification, readiness
 and verification fields only: the per-path semantic explanations, the integration owner named in
-the existing `integration owner` field and, for any restated rule, the pinned quote with context
+the existing `integration_owner` field and, for any restated rule, the pinned quote with context
 and the no-looser comparison. The claim is not an approval, and no field is added for it.
 
 **Preparation.** The one real saving is bounded compact preparation: one compact content is
@@ -233,7 +233,7 @@ and no inherited approval.
 
 **Before closure.** A manual semantic comparison of the actual exact-head diff against the pinned
 settled rule and each per-path claim is additional closure evidence on this route: the independent
-different-model code-review actor receives the pinned quote, the per-path claims and the diff and
+code-review actor receives the pinned quote, the per-path claims and the diff and
 reports the comparison, and the ticket's integration owner accepts or refuses it. With no actual
 manual comparison the ticket is not eligible and takes the normal path. A normative or
 required-action change leaves the route, and the existing class rules decide whether the class
