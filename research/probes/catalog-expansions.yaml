@@ -110,7 +110,7 @@ references:
         The scout and build lanes need one shared statement of how the loading agent spends its own
         reads, batched, excerpted and bounded without re-reading, that keeps a required full read
         full and changes no gate.
-      commits: [55613e5b]
+      commits: [2cb4e3a8]
 
 schemas:
   baseline: 14
