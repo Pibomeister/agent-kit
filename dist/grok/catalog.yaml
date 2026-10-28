@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.71
+  version: 0.1.72
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -841,7 +841,7 @@ roles:
       candidate for each. Repeated corrections become guardrails, not skills.
 
 # ---------------------------------------------------------------------------
-# References — 9. Loaded on demand. Never exposed as slash commands.
+# References — 10. Loaded on demand. Never exposed as slash commands.
 # ---------------------------------------------------------------------------
 references:
   - id: codebase-design-vocabulary
@@ -913,6 +913,15 @@ references:
       How a checkout reaches the project's knowledgebase: the binding check and what unconfigured
       means, and the read and publish commands with what each result obliges, shipped inside the
       plugin.
+  - id: read-economy
+    batch: 15
+    provenance_origin: conversation
+    status: authored
+    loaded_by: [super-scout, super-build]
+    summary: >-
+      Guidance for the loading agent's own reads: batch independent reads, take targeted excerpts,
+      bound tool output and avoid re-reading what is already in context, while a required full read
+      stays full.
 
 # ---------------------------------------------------------------------------
 # Schemas — 37. `common` holds shared $defs and validates no document itself.
