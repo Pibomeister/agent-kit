@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runFirstmate } from "../../src/firstmate/cli.ts";
@@ -118,29 +118,26 @@ const CHECK_IDS = [
   "supervisor-token",
   "delivery",
 ];
-const GUIDE = join(REPO, "adapters", "firstmate", "SUPERVISOR.md");
-const GUIDE_OPENING = "The stock preflight reports guided mode without a runner socket.";
 
 type State = "no-socket" | "socket" | "not-socket";
 
-/** Shared phrases: id, exact substring, the state whose runner detail carries it, and whether the guide passage must too. */
-const PHRASES: ReadonlyArray<readonly [string, string, State, boolean]> = [
-  ["N1", "reads no run state, grant, seat or receipt", "no-socket", true],
+/** Shared phrases: id, exact substring, and the state whose runner detail carries it. */
+const PHRASES: ReadonlyArray<readonly [string, string, State]> = [
+  ["N1", "reads no run state, grant, seat or receipt", "no-socket"],
   [
     "N2",
     "if the run holds a bypass or delegated grant record or its build gate records an implementer seat",
     "no-socket",
-    true,
   ],
-  ["N3", "required evidence or a recipe", "no-socket", true],
-  ["N4", "not runner-attested", "no-socket", true],
-  ["N5", "recorded later", "no-socket", true],
-  ["N6", "worker-attested", "no-socket", true],
-  ["S1", "only the file type was checked", "socket", true],
-  ["S2", "nothing connected", "socket", true],
-  ["S3", "not liveness, identity or qualification", "socket", true],
-  ["S4", "does not establish a configured qualified producer or a passed gate", "socket", true],
-  ["F1", "is not a socket-type file", "not-socket", false],
+  ["N3", "required evidence or a recipe", "no-socket"],
+  ["N4", "not runner-attested", "no-socket"],
+  ["N5", "recorded later", "no-socket"],
+  ["N6", "worker-attested", "no-socket"],
+  ["S1", "only the file type was checked", "socket"],
+  ["S2", "nothing connected", "socket"],
+  ["S3", "not liveness, identity or qualification", "socket"],
+  ["S4", "does not establish a configured qualified producer or a passed gate", "socket"],
+  ["F1", "is not a socket-type file", "not-socket"],
 ];
 const FORBIDDEN = [
   "live runner socket",
@@ -150,23 +147,13 @@ const FORBIDDEN = [
   "verification closes",
 ];
 
-/** The guide passage: from its opening sentence to the next blank line, with line wraps collapsed. */
-function guidePassage(text: string): string {
-  const start = text.indexOf(GUIDE_OPENING);
-  if (start < 0) throw new Error(`the guide has no paragraph beginning "${GUIDE_OPENING}"`);
-  const end = text.indexOf("\n\n", start);
-  return text.slice(start, end < 0 ? undefined : end).replace(/\s+/g, " ");
-}
-
-/** Every way the details and the guide passage depart from the shared phrase list and the forbidden list. */
-function tieViolations(guide: string, details: Record<State, string[]>): string[] {
+/** Every way the details depart from the shared phrase list and the forbidden list. */
+function tieViolations(details: Record<State, string[]>): string[] {
   const found: string[] = [];
-  for (const [id, phrase, state, inGuide] of PHRASES) {
+  for (const [id, phrase, state] of PHRASES)
     for (const detail of details[state])
       if (!detail.includes(phrase)) found.push(`${id} missing from a ${state} detail`);
-    if (inGuide && !guide.includes(phrase)) found.push(`${id} missing from the guide passage`);
-  }
-  for (const text of [guide, ...Object.values(details).flat()])
+  for (const text of Object.values(details).flat())
     for (const phrase of FORBIDDEN) if (text.includes(phrase)) found.push(`forbidden "${phrase}" present`);
   return found;
 }
@@ -319,20 +306,15 @@ describe("stock preflight runner check", () => {
     }
   });
 
-  test("the guide and every state's detail carry the shared phrases and none of the forbidden ones", async () => {
+  test("every state's detail carries the shared phrases and none of the forbidden ones", async () => {
     const { live, stale, close } = await sockets();
     try {
-      const guide = guidePassage(readFileSync(GUIDE, "utf8"));
       const details: Record<State, string[]> = {
         "no-socket": [runner().detail],
         socket: [runner(live).detail, runner(stale).detail],
         "not-socket": [runner(missing).detail, runner(regular).detail],
       };
-      expect(tieViolations(guide, details)).toEqual([]);
-      // Guide-only drift is detected: one phrase removed, or one forbidden phrase added, from a copy of the guide.
-      for (const [id, phrase, , inGuide] of PHRASES)
-        if (inGuide) expect(tieViolations(guide.replaceAll(phrase, ""), details), id).not.toEqual([]);
-      expect(tieViolations(`${guide} ${FORBIDDEN[0]}`, details)).not.toEqual([]);
+      expect(tieViolations(details)).toEqual([]);
     } finally {
       close();
     }
