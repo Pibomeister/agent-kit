@@ -210,3 +210,10 @@ returns, read before the write and confirmed after it ([`adapters/runner-contrac
   catalog and a small correction does not.
 - Session scope: the primer is intra-session. A later review of the same document starts at round
   one and reads the durable disposition record instead.
+- Seat capability and cost (guidance): [`doc-review/coherence`](../../references/shared/roles/doc-review/coherence/ROLE.md), [`doc-review/feasibility`](../../references/shared/roles/doc-review/feasibility/ROLE.md),
+  [`doc-review/product-lens`](../../references/shared/roles/doc-review/product-lens/ROLE.md), [`doc-review/design-lens`](../../references/shared/roles/doc-review/design-lens/ROLE.md) and [`doc-review/scope-guardian`](../../references/shared/roles/doc-review/scope-guardian/ROLE.md) read a pinned
+  snapshot against recorded context, so the lane does not by itself call for the strongest
+  reasoning available; a document that turns on complex judgment may still need it. Whoever binds a
+  seat decides, an explicit choice by the human or the runner stands, and this skill never changes
+  a seat on its own. Lane independence, the unavailable-lane rule, [`doc-review/security-lens`](../../references/shared/roles/doc-review/security-lens/ROLE.md) and
+  [`doc-review/adversarial-document`](../../references/shared/roles/doc-review/adversarial-document/ROLE.md) are untouched. Do not claim a saving without measurement.

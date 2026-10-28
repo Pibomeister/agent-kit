@@ -187,5 +187,11 @@ Precision over recall (guidance): a shorter list of read-back hits is the return
 is for. An unread long list is not more coverage, and reporting it as though it were is what turns
 the dossier into a map that is trusted and wrong.
 
+Seat capability and cost (guidance): a scout reads and cites; it does not weigh, so this work does
+not by itself call for the strongest reasoning available. Whoever binds the seat decides, and a
+question that turns on complex judgment may still need it. An explicit choice by the human or the
+runner stands, this skill never changes its own seat, and every gate above applies unchanged. Do
+not claim a saving without measurement.
+
 Searches recorded: all of them, including the empty ones (gate). A search omitted because it found
 nothing removes the evidence that the area was looked at.
