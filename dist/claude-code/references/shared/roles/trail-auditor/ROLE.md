@@ -107,6 +107,9 @@ a verdict. This seat cites:
 11. **Its audit is required by no approval.** When this seat is unavailable, the build reports it
     and nothing is blocked; the audit is never backfilled (ruling
     `work-trail-is-account-not-evidence`).
+12. **Points at each item and stretch state.** It puts no item on the attention list, and states no
+    stretch's state, that it cannot point at: a stretch, or an entry and its stretch, a file or a
+    line of the ticket's commit, a commit of the ticket's branch, or a receipt of the run.
 
 ## What it returns
 
@@ -131,9 +134,11 @@ returns `unavailable`, naming what is missing or what failed, and no record (rul
   missing (`every-stretch-missing`), or the run left nothing to compare a stretch with
   (`nothing-to-compare`). The record says which.
 - **Unavailable** is a seat that could not run or failed: a thing it must be given was not supplied,
-  the seat could not be filled independently, or the audit failed. It returns `unavailable` and
-  names what is missing or what failed (ruling `required-lane-failure-is-unavailable`). The build
-  reports it, and nothing is blocked (ruling `work-trail-is-account-not-evidence`).
+  or the audit failed. It returns `unavailable` and names what is missing or what failed (ruling
+  `required-lane-failure-is-unavailable`), and the build reports it. When no independent context
+  exists, the build reports the audit unavailable before any seat runs, in the super-build steps
+  that seat the trail auditor and report its audit (ruling `work-trail-is-account-not-evidence`). In
+  both cases nothing is blocked (ruling `work-trail-is-account-not-evidence`).
 - An empty stretch that says why it is empty is material. Audit it like any other stretch.
 - A partly missing trail is audited on what exists. Each missing stretch is named under what could
   not be inspected, with the reason.

@@ -122,7 +122,7 @@ header of its own is refused, because the header carries the status.
 
 ### `run-artifact` placement
 
-`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]…`
+`ak kb publish artifact --file <artifact.json> --run <run> [--link <record-ref>]… [--trail-attempts <directory>]`
 
 - **Validated before any write** against the schema its envelope names. A failing artifact leaves
   the knowledgebase untouched.
@@ -132,11 +132,42 @@ header of its own is refused, because the header carries the status.
   the commit touches that file alone. Lines already there are not changed.
 - **Links resolve or the publish is refused.** Each `--link` must name a committed record: a page
   file, or a line of `artifacts.jsonl` that carries that ref.
+- **Trail attempts are durable and per record.** A `trail` or `trail-audit` publication requires
+  `--trail-attempts <directory>`, the existing attempt directory of the build's stretch index.
+  Inside the knowledgebase lock, after the checks that can refuse or answer `effect: none`
+  without writing, the command exclusively creates and flushes a mark for that knowledgebase,
+  project, run, kind and id immediately before writing the record. A refusal from those checks
+  consumes no mark. A mark already present when a write is due returns
+  `kb.trail-publication-unknown` without sending anything; a mark that cannot be made durable
+  returns `kb.trail-attempt-unrecorded` without sending anything. Neither result is itself a build gate.
+  If creation succeeded before durability failed, the first response says that this call sent
+  nothing and the mark remains. A later call conservatively reports publication-unknown; it does
+  not establish that the earlier call published. Unsupported directory flushing refuses in the
+  same way, without publishing or deleting the mark.
+  The caller records the outcome in its index and replays a recorded outcome without invoking the
+  publisher. It never removes marks or uses another directory to retry a record. Other artifact
+  kinds and document publication do not accept this flag.
+- **Write and cleanup failures are reported.** A record-write exception returns a structured
+  failure. Cleanup is limited to that record, and restores it only while HEAD, working content
+  and index state remain recognizable as the interrupted write. An incomplete write, concurrent
+  content or a refused cleanup is left in place with its diagnostic; unrelated staged work is
+  untouched. A trail whose cleanup cannot be confirmed returns `kb.trail-publication-unknown`
+  and warns that content may have been published or exposed. Its mark stays. A confirmed restore
+  still retains the mark and returns `kb.write-failed` or `kb.commit-failed`, not success.
+  Partial or unrecognized content left in the shared `artifacts.jsonl` can make **all later
+  project publications**, including required receipts, refuse with `kb.uncommitted-record`.
+  The trail result is not a gate, but this shared-file refusal can stop later build work.
+  An operator must preserve a copy, inspect the reported file against its committed content and
+  deliberately resolve only its contents under normal ownership. Never automatically reset or
+  delete concurrent changes, remove attempt marks, or resend an unknown publication outcome.
 
 ### Idempotency and read-back
 
 Per [`adapters/runner-contract/CONTRACT.md`](../../runner-contract/CONTRACT.md) §5. The key is the digest of the run, the operation, the
 record ref and the content hash.
+
+Trail records follow the table too; only the rows that write pass the per-record attempt boundary
+above first.
 
 | The record at that ref | Result |
 |---|---|
@@ -152,7 +183,9 @@ Approvals are outside the content hash, so a draft and its approved copy share a
 key. Publishing the approved copy after the draft stores it; the draft stays as the earlier line.
 Approvals are compared entry by entry. A republish that carries none, or only some of
 those stored, writes nothing, so a late retry of an earlier copy does not strip the approvals
-already stored.
+already stored. This approval-superset append path does not override a `trail` or `trail-audit`
+attempt mark: a later write, including an approval-only copy after successful publication, is
+refused with `kb.trail-publication-unknown`. There is no approval exemption from that fence.
 
 Every result reports what the knowledgebase holds: `content_hash`, `idempotency_key` and `run` are
 read from the stored record. `effect: none` returns the commit that wrote the stored copy: for a
