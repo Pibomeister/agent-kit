@@ -28,14 +28,15 @@ alone. `ak validate` checks the invocation graph and the first-step authority ga
 **How "only a human starts these" is held** changed in `docs/decisions/0003-model-invocation.md`. The packager no
 longer emits `disable-model-invocation`, so the model can load any skill. A U skill keeps its class:
 its description carries the non-trigger clause, its first workflow step is the authority check, and
-started without an explicit request or a validated grant it stops and says so.
+started without an explicit request, a validated grant or, for align, bound and ship, an opt-in to the
+unattended policy with `ak-gate.mjs unattended check` exiting 0, it stops and says so.
 
 **Standing-start amendment (ADR-0007):** Firstmate may start `autopilot` for a crewmate only after
 the runner validates a standing grant for autopilot.start against a captain-approved immutable
 charter. The worker's brief, a prompt naming autopilot, and a phase grant do not start it. Every
 other U public entrypoint remains human-started by its slash command, save under the bypass grant
-below. Sensitive grants, merge,
-deploy and anything outside the charter remain human decisions.
+below and, for align, bound and ship, the opt-in unattended policy (ADR-0014). Sensitive grants,
+merge, deploy and anything outside the charter remain human decisions.
 
 **A second standing exception to "only a human starts these"** is the bypass grant
 (`docs/decisions/0008-bypass-start-grant.md`, `policies/invocation.yaml` `bypass`). A supervisor
@@ -48,7 +49,9 @@ only: every approval inside them still goes to the supervisor, and merge and dep
 judgment. No slash command and no human act is required. `delta` stays inside an open review run.
 The phase operations `review.full` and `review.readiness` remain delegated-grant paths for a
 controller that already holds one. Starting the review is not approval: the author does not sit a
-seat and does not close a finding. Align, bound, ship, wayfind and compound stay human-started.
+seat and does not close a finding. Align, bound, ship, wayfind and compound stay human-started,
+save that align, bound and ship need no start under the opt-in unattended policy
+(`docs/decisions/0014-unattended-lifecycle-policy.md`).
 
 Source: `G:L1672–1676`. The elision in the fourth bullet drops a model-routing illustration that the
 content denylist forbids in this file; the unedited text is at
@@ -78,13 +81,16 @@ skills, which the law forbids. The resolution (ruling `entrypoint-phase-operatio
 
 | Layer | Who may start it | Example |
 |---|---|---|
-| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant | `/ak:super-ship` |
+| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant; align, bound and ship also the agent under the opt-in unattended policy (ADR-0014) | `/ak:super-ship` |
 | Phase operation | A delegated controller, **only** under a runner-validated grant | `review.delta` |
 
-A human invokes a public entrypoint, or Firstmate starts autopilot under the standing-start amendment.
+A human invokes a public entrypoint, or Firstmate starts autopilot under the standing-start amendment,
+or the agent starts align, bound and ship under the opt-in unattended policy once
+`ak-gate.mjs unattended check` exits 0 (ADR-0014).
 A controller invokes a phase operation only when the runner validates a grant that covers it.
 **Ordinary workers cannot manufacture a grant or start a new human-started
-phase.** `super-review` `full` and `readiness` are not in that set: the agent doing the work starts
+phase**, save align, bound and ship under that opt-in policy. `super-review` `full` and
+`readiness` are not in that set: the agent doing the work starts
 them (`docs/decisions/0013-model-starts-super-review.md`). Public wrappers and the supervisor pair
 run the same protocol, so there is no second pipeline. Where a host cannot validate a grant, a
 controller **stops** rather than reproducing a forbidden command's effect through a side door
@@ -116,7 +122,8 @@ that cannot be filled independently is **unavailable**, and unavailability block
 is never backfilled — not by the implementer, not by the author, not by the spec approver, and not by
 a seat already sitting on the panel (ruling `missing-supervisor-never-implementer`).
 
-Worker-attested evidence never lifts an autonomy ceiling. The evidence-consuming autonomous form
+Worker-attested evidence never lifts an autonomy ceiling, save under the opt-in unattended policy, whose
+boundary is a live-checked merge gate (ADR-0014). The evidence-consuming autonomous form
 requires `trusted-evidence`, supplied fail-closed by the runner contract; host permissions are not
 evidence provenance and never imply that capability.
 

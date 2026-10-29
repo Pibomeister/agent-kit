@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-scout/SKILL.md (AUTHORING.md §4.1).
 
 id: super-scout
-version: 0.1.0
+version: 0.1.1
 kind: lifecycle
 invocation: M
 summary: >-
@@ -92,6 +92,7 @@ constraints:
 references:
   - knowledgebase-binding
   - read-economy
+  - unattended-lifecycle
 
 limits:
   scout-turns: 4

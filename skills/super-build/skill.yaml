@@ -152,6 +152,7 @@ references:
   - verification-evidence
   - knowledgebase-binding
   - read-economy
+  - unattended-lifecycle
 
 limits:
   fix-rounds: 5
@@ -362,6 +363,7 @@ provenance:
     - safe-auto-restricted-per-seat
     - fail-closed-adapter-lifts-ceiling
     - work-trail-is-account-not-evidence
+    - delegation-class-is-authority-not-finding
 
 tests:
   - id: approved-ticket-executes-and-reports-receipts

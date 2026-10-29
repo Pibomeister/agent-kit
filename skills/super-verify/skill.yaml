@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-verify/SKILL.md (AUTHORING.md §4.1).
 
 id: super-verify
-version: 0.1.0
+version: 0.2.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -82,7 +82,9 @@ inputs:
     required: true
     summary: >-
       A runner-assigned verifier context outside implementer lineage. A host-only fresh context is
-      recorded as host-unattested and cannot satisfy autonomous closure.
+      recorded as host-unattested and cannot satisfy autonomous closure; under the unattended policy
+      it is a recorded note instead, whose boundary is the live merge-gate read (an exception to
+      ruling `closure-requires-independent-verification`).
   - id: prior-receipts
     schema: verification
     required: false
@@ -130,6 +132,7 @@ constraints:
 references:
   - verification-evidence
   - knowledgebase-binding
+  - unattended-lifecycle
 
 budget:
   provided_by: runner
@@ -138,8 +141,11 @@ budget:
 hard_gates:
   - A runnable frontend or backend criterion needs every project-declared running-surface evidence
     kind; tests, type checks and builds alone never pass it.
-  - An implementer-authored or host-unattested receipt cannot satisfy autonomous closure. A missing
-    verifier seat is unavailable and never backfilled (ruling `missing-supervisor-never-implementer`).
+  - An implementer-authored or host-unattested receipt cannot satisfy autonomous closure; under the
+    unattended policy a host-unattested one counts, labelled worker-attested, whose boundary is the live
+    merge-gate read (an exception to ruling `closure-requires-independent-verification`), and an
+    implementer-authored one still never does. A missing verifier seat is unavailable and never
+    backfilled (ruling `missing-supervisor-never-implementer`).
   - No completion claim without fresh evidence for the revision claimed. A description of a green run
     is not a receipt, and a patch that changed after a receipt was taken does not inherit it.
   - A classifier, a confidence score and a reviewer's judgement are advisory and recorded as such.

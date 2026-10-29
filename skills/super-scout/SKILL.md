@@ -48,6 +48,10 @@ No grant covers delegation here, because no phase operation exposes this skill:
 `policies/invocation.yaml` records model-invoked skills as exposing none by construction, so there
 is no delegated path for a runner to validate and nothing in this skill runs on one.
 
+Under the unattended policy (ADR-0014), record the `scout` gate with the dossier's read-back as its
+evidence command, even when bounded exploration finds nothing more to scout, as
+[the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
+
 ## Inputs
 
 One bounded question, as text. Absent, or broad enough that no answer would end the search: stop and

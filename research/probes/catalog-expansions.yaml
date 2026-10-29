@@ -80,7 +80,7 @@ roles:
 
 references:
   baseline: 4
-  catalog: 10
+  catalog: 11
   expansions:
     - ids: [tracker-of-record]
       reason: >-
@@ -111,6 +111,12 @@ references:
         reads, batched, excerpted and bounded without re-reading, that keeps a required full read
         full and changes no gate.
       commits: [2cb4e3a8]
+    - ids: [unattended-lifecycle]
+      reason: >-
+        The opt-in unattended policy is shared by all seven lifecycle phases: how each one starts
+        and records its evidence commands, the advances that replace waits, and the operator setup
+        the live merge-gate read rests on, loaded on demand rather than copied into each skill.
+      commits: [ea051ee7]
 
 schemas:
   baseline: 14

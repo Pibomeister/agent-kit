@@ -76,7 +76,7 @@ operation. It does not stop the model start.
 
 Under a bypass grant, `node <this skill's directory>/../../bin/ak-gate.mjs bypass check --grant
 <path> --task <id> --phase super-review:full` (or `super-review:readiness`) exits 0 as one valid
-start. Record the gate with `--bypass <path> --task <id>` so it carries the attribution.
+start. Record the gate with `--bypass <path> --task <id>` so it carries the attribution. Under the unattended policy (ADR-0014), record each review gate with its evidence command after `--`, as [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says; a blocking finding still stops.
 
 `review.delta` does not open a review run. Invoked where none is open, it stops with `needs-input`
 naming `super-review full` as the next permitted action.
@@ -150,7 +150,7 @@ its input hashes, and the fix diff (`schemas/review.schema.json` `packet`).
     [verification evidence](../../references/verification-evidence/REFERENCE.md), then, where the build
     gate records an implementer seat, require each criterion's current receipt to name a
     runner-attested verifier seat distinct from it (without that record, only recipe-bound checks
-    need one, and a `host-unattested` seat counts, disclosed as worker-attested, only in a run that never held a grant). Each `frontend` or `backend` criterion needs a supporting check that declares
+    need one, and a `host-unattested` seat counts, disclosed as worker-attested, only in a run that never held a grant; under the unattended policy (ADR-0014) a distinct `host-unattested` seat counts as a recorded note, whose boundary is the live merge-gate read, an exception to ruling `closure-requires-independent-verification`). Each `frontend` or `backend` criterion needs a supporting check that declares
     `evidence_required`, and receipts carrying every declared kind. A missing required attestation, a
     missing declaration or a missing kind makes the verification lane `unavailable`; name the gap.
 11. Set the verdict from the lane results: `approved`, `changes-requested`, `blocked` or

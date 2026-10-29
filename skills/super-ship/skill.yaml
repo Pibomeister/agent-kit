@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.3.0
+version: 0.4.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -158,6 +158,7 @@ constraints:
 
 references:
   - verification-evidence
+  - unattended-lifecycle
 
 limits:
   remote-effects-per-operation: 1
@@ -184,7 +185,7 @@ hard_gates:
     the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
     evidence, and neither a grant nor a host permission makes them so.
   - No ship begins with an uncovered criterion, an implementer-authored receipt where the build gate
-    records an implementer seat or a recipe binds the check, a host-unattested verifier where that seat is recorded or the run ever held a bypass or delegated grant, or a missing project-declared surface evidence kind.
+    records an implementer seat or a recipe binds the check, a host-unattested verifier where that seat is recorded or the run ever held a bypass or delegated grant (under the unattended policy, a recorded note instead, whose boundary is the live merge-gate read; an exception to ruling `closure-requires-independent-verification`), or a missing project-declared surface evidence kind.
   - Under either transport, an uncommitted head, a stale verify, review-readiness or approved
     full or delta review record, or a non-empty working-tree diff refuses the ship before ship-preflight and any remote effect.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
@@ -211,11 +212,14 @@ hard_gates:
 stop_conditions:
   - complete under no-mistakes delivery when the committed handoff head has current verify,
     review-readiness and approved full or delta review records, ship-preflight records that head with an empty working-tree diff, and
-    super-ship has neither pushed nor opened a pull request.
+    super-ship has neither pushed nor opened a pull request. Under the unattended policy (ADR-0014)
+    that handoff is intermediate, and it completes only once the pipeline's pull request carries the
+    disclosure and `record --gate ship-preflight --pr <n>` succeeded at its head.
   - complete in dry-run when the payload and the pre-flight record are emitted and no remote call was
     made.
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
-    lesson candidate is drafted, and the watch lane holds the pull request.
+    lesson candidate is drafted, and the watch lane holds the pull request; under the unattended
+    policy, also once the pull request carries the disclosure and `ship-preflight --pr <n>` succeeded.
   - needs-input when the run was started by neither the typed command nor a validated grant,
     receipts or the verdict are missing or bound to another revision, the mode was not named, or a
     sensitive action is required and no charter entry covers it. A no-mistakes handoff with an
@@ -379,6 +383,7 @@ provenance:
     - central-kb-owns-project-artifacts
     - sensitive-actions-need-approved-charter-entry
     - direct-push-as-ship-transport
+    - closure-requires-independent-verification
 
 tests:
   - id: dry-run-generates-a-payload-and-pushes-nothing
