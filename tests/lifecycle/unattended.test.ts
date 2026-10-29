@@ -354,6 +354,10 @@ describe("merge gate (pure, API shapes written from the documentation)", () => {
     const base = { ...UNPROTECTED, [`repos/${REPO}/rules/branches/main`]: rules };
     expect(failuresOf(withFixtures({ ...base, [`repos/${REPO}/rulesets/9`]: hidden }))).toContain("bypass list");
     expect(failuresOf(withFixtures({ ...base, [`repos/${REPO}/rulesets/9`]: empty }))).toBe("");
+    const forbidden = { status: 403, body: { message: "Forbidden", bypass_actors: [] } };
+    expect(failuresOf(withFixtures({ ...base, [`repos/${REPO}/rulesets/9`]: forbidden }))).toContain(
+      "ruleset 9 (its detail is unreadable (HTTP 403))",
+    );
   });
 
   test("code owners: catch-all, owners inside the designated set, no ownerless rule and no forge errors", () => {
@@ -1008,6 +1012,30 @@ describe("ship-preflight and final ship success (command seam)", () => {
     const diverged = ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7");
     expect(diverged.code).toBe(1);
     expect(diverged.err).toContain("open a new run");
+  });
+
+  test("a run the final ship closed refuses a fresh ship-preflight and keeps its record as it was", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
+    const run = fullRun(cwd);
+    const compareKey = `repos/${REPO}/compare/${snapshotOf(cwd).revision}...${HEAD}`;
+    stubGh(
+      withFixtures({
+        [compareKey]: { body: { status: "ahead", commits: [{ sha: HEAD, author: { login: "pipeline-bot" } }] } },
+      }),
+    );
+    expect(ak(cwd, "record", "--gate", "ship-preflight").code).toBe(0);
+    expect(ak(cwd, "record", "--gate", "ship-preflight", "--pr", "7").code).toBe(0);
+    const runJson = join(store(cwd), "runs", run, "run.json");
+    expect(readFileSync(runJson, "utf8")).toContain('"closed_at"');
+    const before = { run: readFileSync(runJson, "utf8"), records: recordsOf(cwd, run, "ship-preflight") };
+    expect(before.records[0]?.commands?.map((entry) => entry.builtin)).toEqual(["merge-gate", "final-ship"]);
+
+    const again = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(again.code).toBe(1);
+    expect(again.err).toContain("run closed; open a new run");
+    expect(readFileSync(runJson, "utf8")).toBe(before.run);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual(before.records);
   });
 
   test("ship-preflight judges the run's own policy stamp: a repository source off the forge's default branch refuses", () => {

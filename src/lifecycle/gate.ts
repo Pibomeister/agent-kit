@@ -2543,7 +2543,9 @@ export function main(
     }
     if (opened?.closed_at !== undefined && !(policy !== undefined && gate === "ship-preflight" && flags.has("pr"))) {
       const live = gate === "ship-preflight" ? takeSnapshot(project) : undefined;
+      // Under the policy only the final `--pr` append may touch a closed run.
       const closedHere =
+        policy === undefined &&
         live !== undefined &&
         typeof live !== "string" &&
         readRecords(dir, run, "ship-preflight").some((r) => same(r.snapshot, live));

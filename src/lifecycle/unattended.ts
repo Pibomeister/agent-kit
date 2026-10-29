@@ -315,7 +315,12 @@ function rulesetSources(get: Get, repo: string, rules: Json | undefined, uncount
   }
   const sources: Source[] = [];
   for (const [id, found] of byRuleset) {
-    const actors = field(get(`repos/${repo}/rulesets/${id}`, true).body, "bypass_actors");
+    const detail = get(`repos/${repo}/rulesets/${id}`, true);
+    if (detail.status !== 200) {
+      uncountable.push(`ruleset ${id} (its detail is unreadable (HTTP ${detail.status}))`);
+      continue;
+    }
+    const actors = field(detail.body, "bypass_actors");
     if (!Array.isArray(actors) || actors.length > 0) {
       uncountable.push(`ruleset ${id} (its bypass list is ${Array.isArray(actors) ? "not empty" : "unreadable"})`);
       continue;
