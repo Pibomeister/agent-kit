@@ -130,6 +130,7 @@ constraints:
 references:
   - verification-evidence
   - knowledgebase-binding
+  - unattended-lifecycle
 
 budget:
   provided_by: runner

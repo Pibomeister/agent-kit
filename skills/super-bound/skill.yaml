@@ -121,6 +121,7 @@ references:
   - delegation
   - verification-evidence
   - knowledgebase-binding
+  - unattended-lifecycle
 
 hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context

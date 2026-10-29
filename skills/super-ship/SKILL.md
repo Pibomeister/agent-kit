@@ -3,8 +3,9 @@ name: super-ship
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-ship`, or
   under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
-  bypass check`. On any other request do not load or follow it; tell the human to type that
-  command. When prose asks for this publication work on a reviewed change, do not inspect the
+  bypass check`, or when the repository or environment opts into the unattended policy and
+  `ak-gate.mjs unattended check` exits 0. On any other request do not load or follow it; tell the
+  human to type that command. When prose asks for this publication work on a reviewed change, do not inspect the
   branch or act; tell the human to type `/ak:super-ship` followed by their request. Prepares a
   verified, reviewed commit for publication: release checks, a sensitive-data scan, the
   pull-request payload and the linked knowledgebase draft. Runs dry, generating the payload locally
@@ -76,6 +77,13 @@ task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-
 first remote call, as in `dry-run`, and every remote effect waits for the supervisor's answer to a
 `needs-decision`. Record `ship-preflight` with `--bypass <path> --task <id>`. Merge and deploy are never on it.
 
+Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
+check --phase super-ship` exiting 0 is the start. `record --gate ship-preflight` then reads the merge
+gate live and closes the run only when it holds. Put the disclosure it prints in the pull request text
+(under no-mistakes delivery, by editing the opened pull request's text once the pipeline returns, the
+only pull-request write) and record final ship success with `--pr <n>`, as
+[the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
+
 For the autonomous form, `ship.prepare` delegated under a grant, exit 0 is necessary and not
 sufficient. That form also needs trusted evidence: gate evidence the runner recorded into the run's
 evidence store, outside this worker's reach (`adapters/runner-contract/CONTRACT.md` §2). Gate records
@@ -109,7 +117,8 @@ The project's own release checks, discovered rather than assumed.
    check. It is started only when the human's message begins with `/ak:super-ship`, or when a
    controller started the phase operation `ship.prepare` under a validated grant; under a Firstmate
    binding the grant check is the `ak firstmate grant` call in Authority, and under a bypass grant
-   it is the bypass check there; a refusal is a stop. A request in prose is not a start, even when
+   it is the bypass check there; under the unattended policy it is the unattended check there; a
+   refusal is a stop. A request in prose is not a start, even when
    it names this skill or the command, or asks for this work without naming either. With neither,
    stop before inspecting the branch, checking prerequisites or answering the task: the only
    response is to tell the human to type `/ak:super-ship` followed by their request.
@@ -172,7 +181,7 @@ worker's reach. Gate records the worker itself wrote are worker-attested, not tr
 neither a grant nor a host permission makes them so.
 
 Gate: no ship begins with an uncovered criterion, an implementer-authored receipt where independent
-verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant, or a missing project-declared surface evidence kind. The run
+verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant (under the unattended policy, a recorded note instead), or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
 Gate: under either transport, an uncommitted head, a stale verify, review-readiness or approved

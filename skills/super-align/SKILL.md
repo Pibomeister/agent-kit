@@ -3,8 +3,9 @@ name: super-align
 description: >-
   Human-started command: it runs only when the human's message begins with `/ak:super-align`, or
   under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs
-  bypass check`. On any other request do not load or follow it; tell the human to type that
-  command. When prose asks for this alignment work, do not answer its questions or inspect project
+  bypass check`, or when the repository or environment opts into the unattended policy and
+  `ak-gate.mjs unattended check` exits 0. On any other request do not load or follow it; tell the
+  human to type that command. When prose asks for this alignment work, do not answer its questions or inspect project
   context; tell the human to type `/ak:super-align` followed by their request. Grills an unsettled
   request into agreed direction: a design tree worked in rounds, named terms, two or three
   approaches with a recommendation, and an explicit human yes before anything is built. Use when
@@ -61,6 +62,11 @@ task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-
 `needs-decision`. The grant starts the interview and nothing else. The explicit yes at step 11 still
 comes from the supervisor through `needs-decision`; the worker never approves its own direction.
 
+Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
+check --phase super-align` exiting 0 is the start, with no command or grant. Each frontier round and
+the step 11 approval then proceed with your own recommended answers, recorded as unattended advances
+and never as an approval; record the `align` gate as [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
+
 ## Inputs
 
 - The request, as prose from the human. Absent: return `needs-input` and ask for one. A request
@@ -86,7 +92,8 @@ comes from the supervisor through `needs-decision`; the worker never approves it
 
 1. Check how this run was started, before any other step and before any tool call. It is started
    only when the human's message begins with `/ak:super-align`, when a controller started the phase
-   operation `align.run` under a validated grant, or when the bypass check in Authority exits 0. A
+   operation `align.run` under a validated grant, when the bypass check in Authority exits 0, or
+   when its unattended check exits 0. A
    request in prose is not a start, even when it names this skill or the command, or asks for this
    work without naming either. With neither, stop before answering the task, inspecting project
    context or checking inputs: the only response is to tell the human to type `/ak:super-align`

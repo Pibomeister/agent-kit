@@ -152,6 +152,7 @@ references:
   - verification-evidence
   - knowledgebase-binding
   - read-economy
+  - unattended-lifecycle
 
 limits:
   fix-rounds: 5

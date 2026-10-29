@@ -92,6 +92,7 @@ constraints:
 references:
   - knowledgebase-binding
   - read-economy
+  - unattended-lifecycle
 
 limits:
   scout-turns: 4

@@ -258,7 +258,7 @@ operations:
       Release checks, sensitive-data scan, PR preparation and the linked knowledgebase change,
       up to and including opening a pull request when the charter grants it.
     preconditions:
-      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`
+      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`, except under the unattended policy (ADR-0014), whose worker-attested evidence is bounded by the live merge-gate read
       - verification receipts bind to the head being shipped
       - review approval exists and binds to that head's artifact hash
     hard_gates:
@@ -464,6 +464,34 @@ bypass:
     the repository: on a single-user install this guards against accidents and shortcuts, not a
     determined worker. Firstmate accepted that limit on the captain's behalf on 2026-10-01; an
     issuer outside the worker's account (the runner, or a separate uid) is the follow-up.
+  ruling: entrypoint-phase-operation-split
+
+# ADR-0014. A third standing exception to "only a human starts these", for any runner.
+unattended:
+  rule: >-
+    Where the operator opts in, by `AK_LIFECYCLE_POLICY=unattended` in the runner's environment or by
+    `ak.lifecycle.json` naming the policy on the repository's default branch, super-align,
+    super-bound and super-ship start when `ak-gate.mjs unattended check --phase <phase>` exits 0,
+    with no typed command and no grant. Absent both opt-ins nothing here applies. A typed command
+    still starts a phase, and a bypass grant is refused under the policy.
+  phases: [super-align, super-bound, super-ship]
+  advance: >-
+    A wait for a human answer or approval proceeds with the skill's own recommendation, recorded as
+    an unattended advance and never as an approval. A ticket whose class makes a human the author is
+    implemented by the agent with its true class, floor and author kind recorded. Every other stop
+    still stops, every sensitive action included.
+  never: [merge, deploy, scope-expansion]
+  evidence: >-
+    Every gate records the policy and the evidence commands the gate tool ran; align, bound and scout
+    gain gates under the policy. The evidence is worker-attested, and a host-unattested verifier is a
+    recorded note rather than a refusal.
+  trust: >-
+    The boundary is the merge. ship-preflight reads the target's default branch live and read-only
+    and refuses unless code-owner review by designated human reviewers, required CI and the
+    independent review check pinned to a dedicated app are enforced with no bypass, and the runner is
+    a non-admin, non-designated user. Final ship success validates the posted review at the pull
+    request's exact head; its reviewer identity must be a canonical model different from every
+    configured author model.
   ruling: entrypoint-phase-operation-split
 
 packs:

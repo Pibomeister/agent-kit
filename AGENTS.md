@@ -48,7 +48,9 @@ only: every approval inside them still goes to the supervisor, and merge and dep
 judgment. No slash command and no human act is required. `delta` stays inside an open review run.
 The phase operations `review.full` and `review.readiness` remain delegated-grant paths for a
 controller that already holds one. Starting the review is not approval: the author does not sit a
-seat and does not close a finding. Align, bound, ship, wayfind and compound stay human-started.
+seat and does not close a finding. Align, bound, ship, wayfind and compound stay human-started,
+save that align, bound and ship need no start under the opt-in unattended policy
+(`docs/decisions/0014-unattended-lifecycle-policy.md`).
 
 Source: `G:L1672–1676`. The elision in the fourth bullet drops a model-routing illustration that the
 content denylist forbids in this file; the unedited text is at
@@ -116,7 +118,8 @@ that cannot be filled independently is **unavailable**, and unavailability block
 is never backfilled — not by the implementer, not by the author, not by the spec approver, and not by
 a seat already sitting on the panel (ruling `missing-supervisor-never-implementer`).
 
-Worker-attested evidence never lifts an autonomy ceiling. The evidence-consuming autonomous form
+Worker-attested evidence never lifts an autonomy ceiling, save under the opt-in unattended policy, whose
+boundary is a live-checked merge gate (ADR-0014). The evidence-consuming autonomous form
 requires `trusted-evidence`, supplied fail-closed by the runner contract; host permissions are not
 evidence provenance and never imply that capability.
 

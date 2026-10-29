@@ -57,7 +57,7 @@ No grant covers delegation, because no phase operation exposes this skill —
 `policies/invocation.yaml` records model-invoked skills as exposing none by construction. What
 authority governs here is the ticket rather than the caller: the approval the ticket carries, and the
 charter checkpoint the run took before its build phase opened. A skill that cannot see either stops
-rather than treating its own invocation as the approval.
+rather than treating its own invocation as the approval. Under the unattended policy (ADR-0014) that approval is a recorded unattended advance, a ticket whose class makes a human the author is built by the agent with its true class recorded, and each gate is recorded with its evidence command, as [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
 
 ## Inputs
 

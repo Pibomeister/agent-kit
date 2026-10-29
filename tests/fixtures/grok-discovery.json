@@ -1,10 +1,10 @@
 {
-  "version": "grok 1.0.50 (c58f321264ba)",
+  "version": "grok 1.0.70 (f50904eaee6c)",
   "skillCount": 36,
   "skills": [
     {
       "name": "super-align",
-      "description": "Human-started command: it runs only when the human's message begins with `/super-align`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. When prose asks for this alignment work, do not answer its questions or inspect project context; tell the human to type `/super-align` followed by their request. Grills an unsettled request into agreed direction: a design tree worked in rounds, named terms, two or three approaches with a recommendation, and an explicit human yes before anything is built. Use when what to build is not yet agreed. Not for a request that already carries acceptance criteria, and not for a single-file fix with no decision in it.",
+      "description": "Human-started command: it runs only when the human's message begins with `/super-align`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`, or when the repository or environment opts into the unattended policy and `ak-gate.mjs unattended check` exits 0. On any other request do not load or follow it; tell the human to type that command. When prose asks for this alignment work, do not answer its questions or inspect project context; tell the human to type `/super-align` followed by their request. Grills an unsettled request into agreed direction: a design tree worked in rounds, named terms, two or three approaches with a recommendation, and an explicit human yes before anything is built. Use when what to build is not yet agreed. Not for a request that already carries acceptance criteria, and not for a single-file fix with no decision in it.",
       "source": {
         "type": "plugin",
         "plugin_name": "ak"

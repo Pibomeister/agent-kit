@@ -170,6 +170,7 @@ packs:
 references:
   - engineering-principles
   - verification-evidence
+  - unattended-lifecycle
 
 roles:
   - code-review/correctness

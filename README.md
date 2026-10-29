@@ -3,7 +3,7 @@
 One engineering lifecycle, amalgamated from ten donors (nine MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**36 public skills · 8 domain packs · 9 protocols · 36 role prompts · 10 reference packs · 36 schemas**,
+**36 public skills · 8 domain packs · 9 protocols · 36 role prompts · 11 reference packs · 36 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -212,11 +212,11 @@ Shared phase logic, invoked by skills rather than by humans:
 7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 5 learn (`learn/pattern-maintainer`,
 `learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`).
 
-### References (10)
+### References (11)
 
 `codebase-design-vocabulary` · `domain-modeling` · `engineering-principles` · `prose-quality` ·
 `tracker-of-record` · `delegation` · `structural-checks` · `verification-evidence` ·
-`knowledgebase-binding` · `read-economy`. Loaded on demand,
+`knowledgebase-binding` · `read-economy` · `unattended-lifecycle`. Loaded on demand,
 never exposed as slash commands. `structural-checks` is declared at `status: contract`; its body is
 not authored yet.
 

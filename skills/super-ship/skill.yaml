@@ -158,6 +158,7 @@ constraints:
 
 references:
   - verification-evidence
+  - unattended-lifecycle
 
 limits:
   remote-effects-per-operation: 1

@@ -107,6 +107,7 @@ references:
   - codebase-design-vocabulary
   - verification-evidence
   - knowledgebase-binding
+  - unattended-lifecycle
 
 hard_gates:
   - Nothing is implemented before approval; no source file is written, no project is scaffolded and
