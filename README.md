@@ -189,7 +189,8 @@ directory with no entry.
 
 **U** = user-invoked; only a human starts it except autopilot under Firstmate's runner-validated
 standing grant, a phase under a supervisor's bypass grant, and align, bound and ship under the
-opt-in unattended policy (`docs/decisions/0014-unattended-lifecycle-policy.md`). **M** = model-invoked. See the invocation law in
+opt-in unattended policy (`docs/decisions/0014-unattended-lifecycle-policy.md`). **M** =
+model-invoked. See the invocation law in
 `AGENTS.md`.
 
 ### Packs (8)
