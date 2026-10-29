@@ -758,8 +758,8 @@
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6813,
-      "tokens": 1704
+      "bytes": 6825,
+      "tokens": 1707
     },
     "bundle/claude-code:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -1608,8 +1608,8 @@
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6813,
-      "tokens": 1704
+      "bytes": 6825,
+      "tokens": 1707
     },
     "bundle/codex:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -2458,8 +2458,8 @@
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6813,
-      "tokens": 1704
+      "bytes": 6825,
+      "tokens": 1707
     },
     "bundle/droid:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -3308,8 +3308,8 @@
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6813,
-      "tokens": 1704
+      "bytes": 6825,
+      "tokens": 1707
     },
     "bundle/grok:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",
@@ -4158,8 +4158,8 @@
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
-      "bytes": 6813,
-      "tokens": 1704
+      "bytes": 6825,
+      "tokens": 1707
     },
     "bundle/kimi:skills/super-ship/references/transport-direct.md": {
       "file": "skills/super-ship/references/transport-direct.md",

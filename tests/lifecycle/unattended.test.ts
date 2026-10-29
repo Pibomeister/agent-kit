@@ -23,6 +23,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import Ajv from "ajv";
+import { parse } from "yaml";
+
 import { runCli } from "../../src/cli.ts";
 import { defaultEvidenceDir, readRecords, takeSnapshot, type Gate, type Snapshot } from "../../src/lifecycle/gate.ts";
 import {
@@ -1103,6 +1106,61 @@ describe("ship-preflight and final ship success (command seam)", () => {
   });
 });
 
+interface Step {
+  name?: string;
+  id?: string;
+  uses?: string;
+  run?: string;
+  with?: { [key: string]: string | number };
+  env?: { [key: string]: string };
+}
+interface Job {
+  environment?: string;
+  permissions?: { [scope: string]: string };
+  outputs?: { [name: string]: string };
+  env?: { [key: string]: string };
+  steps: Step[];
+}
+interface Workflow {
+  on: { [event: string]: { types?: string[] } };
+  jobs: { review: Job; post: Job };
+}
+const ajv = new Ajv({ strict: false });
+const strings = { type: "object", additionalProperties: { type: "string" } };
+const jobSchema = {
+  type: "object",
+  required: ["steps"],
+  properties: {
+    environment: { type: "string" },
+    permissions: strings,
+    outputs: strings,
+    env: strings,
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          id: { type: "string" },
+          uses: { type: "string" },
+          run: { type: "string" },
+          with: { type: "object", additionalProperties: { type: ["string", "number"] } },
+          env: strings,
+        },
+      },
+    },
+  },
+};
+const uses = (prefix: string) => (step: Step) => step.uses?.startsWith(prefix) === true;
+const isWorkflow = ajv.compile<Workflow>({
+  type: "object",
+  required: ["on", "jobs"],
+  properties: {
+    on: { type: "object" },
+    jobs: { type: "object", required: ["review", "post"], properties: { review: jobSchema, post: jobSchema } },
+  },
+});
+
 /** The metadata file the review harness writes: the provider's reported model for the call. */
 const meta = (model: string) => JSON.stringify({ provider_model: model });
 /** A configuration whose reviewer is the alias `prov/latest`, written with stray case and space, for `target`. */
@@ -1113,42 +1171,51 @@ const aliasing = (target: string): JsonObject => ({
 
 describe("the review workflow template", () => {
   const template = readFileSync(join(import.meta.dir, "../../skills/super-ship/assets/independent-review.yml"), "utf8");
-  const [review = "", post = ""] = template.split(/^ {2}post:/m);
+  const workflow: unknown = parse(template);
+  if (!isWorkflow(workflow)) throw new Error(`the template is not a workflow: ${ajv.errorsText(isWorkflow.errors)}`);
+  const { review, post } = workflow.jobs;
+  const postScript = post.steps.find((step) => step.env?.APP_TOKEN === "${{ steps.app.outputs.token }}")?.run ?? "";
 
   test("runs only on pull_request_target and never checks out or runs pull-request code", () => {
-    expect(template).toMatch(/^on:\n {2}pull_request_target:/m);
-    expect(template).not.toMatch(/^ {2}(pull_request|push|workflow_dispatch|issue_comment):/m);
-    expect(template).not.toContain("actions/checkout");
+    expect(workflow.on).toEqual({ pull_request_target: { types: ["opened", "synchronize", "reopened"] } });
+    expect(Object.keys(workflow.jobs).toSorted()).toEqual(["post", "review"]);
+    for (const job of [review, post]) expect(job.steps.filter(uses("actions/checkout"))).toEqual([]);
+    expect(review.steps.find((step) => step.name === "Review the diff")?.run).toContain("< diff.patch");
   });
 
   test("the review job holds no environment and reads only; the posting job holds the key and stamps identity itself", () => {
-    expect(review).not.toMatch(/environment:/);
-    expect(review).toMatch(/permissions:\n\s+contents: read\n\s+pull-requests: read/);
-    expect(review).toContain("< diff.patch");
-    expect(post).toMatch(/environment: \$\{\{ vars\.AK_REVIEW_ENVIRONMENT \}\}/);
-    for (const word of ["native_metadata", "reviewer_model", "author_models"]) expect(post).toContain(word);
-    expect(post).not.toMatch(/\$\{\{[^}]*outputs\.[^}]*\}\}[^\n]*\n[^\n]*run:/);
+    expect(review.environment).toBeUndefined();
+    expect(review.permissions).toEqual({ contents: "read", "pull-requests": "read" });
+    expect(post.environment).toBe("${{ vars.AK_REVIEW_ENVIRONMENT }}");
+    expect(post.permissions).toEqual({ contents: "read" });
+    expect(postScript).not.toBe("");
+    expect(postScript).not.toContain("${{");
   });
 
   test("the result moves only as a file, and the posting job re-derives what it stamps and posts", () => {
-    expect(review).toContain("uses: actions/upload-artifact@");
-    expect(review).not.toMatch(/^\s+outputs:/m);
-    expect(post).toContain("uses: actions/download-artifact@");
-    expect(post).not.toContain("needs.review.outputs");
-    expect(post).toContain("DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}");
-    expect(post).toContain(
+    expect(review.outputs).toBeUndefined();
+    expect(review.steps.find(uses("actions/upload-artifact@"))?.with).toMatchObject({
+      name: "review",
+      path: "verdict.json\nmetadata.json\n",
+    });
+    expect(post.steps.find(uses("actions/download-artifact@"))?.with).toEqual({ name: "review", path: "review" });
+    expect(post.env?.DEFAULT_BRANCH).toBe("${{ github.event.repository.default_branch }}");
+    const app = post.steps.find(uses("actions/create-github-app-token@"));
+    expect(app?.uses).toMatch(/@[0-9a-f]{40}$/);
+    expect(app?.id).toBe("app");
+    expect(app?.with).toEqual({
+      "app-id": "${{ vars.AK_REVIEW_APP_ID }}",
+      "private-key": "${{ secrets.AK_REVIEW_APP_KEY }}",
+    });
+    expect(postScript).toContain(
       'gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" | sha256sum',
     );
-    expect(post).toContain('"repos/$REPO/contents/ak.lifecycle.json?ref=$DEFAULT_BRANCH"');
-    for (const key of ["check", "reviewer_model", "author_models", "model_aliases"])
-      expect(post).toContain(`.independent_review.${key}`);
-    expect(post).toMatch(
-      /uses: actions\/create-github-app-token@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+app-id: \$\{\{ vars\.AK_REVIEW_APP_ID \}\}\n\s+private-key: \$\{\{ secrets\.AK_REVIEW_APP_KEY \}\}/,
+    expect(postScript).toContain('"repos/$REPO/contents/ak.lifecycle.json?ref=$DEFAULT_BRANCH"');
+    expect(postScript).toContain('jq -n --arg name "$check" --arg head "$HEAD_SHA"');
+    expect(postScript).toContain('{name: $name, head_sha: $head, status: "completed"');
+    expect(postScript).toContain(
+      'GH_TOKEN="$APP_TOKEN" gh api --method POST "repos/$REPO/check-runs" --input check.json',
     );
-    expect(post).toContain("APP_TOKEN: ${{ steps.app.outputs.token }}");
-    expect(post).toContain('jq -n --arg name "$check" --arg head "$HEAD_SHA"');
-    expect(post).toContain('{name: $name, head_sha: $head, status: "completed"');
-    expect(post).toContain('GH_TOKEN="$APP_TOKEN" gh api --method POST "repos/$REPO/check-runs" --input check.json');
   });
 
   /**
@@ -1157,7 +1224,7 @@ describe("the review workflow template", () => {
    */
   function stamp(config: JsonObject, files: { metadata?: string; verdict: string }) {
     if (Bun.which("jq") === null) throw new Error("jq is not on the search path; the template test needs it");
-    const lines = post.split("\n").map((line) => line.replace(/^ {10}/, ""));
+    const lines = postScript.split("\n");
     const from = lines.findIndex((line) => line.startsWith("check=$(jq"));
     const to = lines.findIndex((line) => line.startsWith("jq -n --arg name"));
     if (from < 0 || to <= from || !lines.slice(from, to).some((line) => line.startsWith("canon() {")))

@@ -37,7 +37,8 @@ jobs:
       AK_REVIEW_PROVIDER_TOKEN: ${{ secrets.AK_REVIEW_PROVIDER_TOKEN }}
     steps:
       - name: Fetch the head-bound diff as data
-        run: gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" > diff.patch
+        run: |
+          gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" > diff.patch
       - name: Review the diff
         # Contract: the reviewer command reads the diff on standard input only and writes its verdict JSON
         # ({"verdict": "approve" | "changes-requested", "findings": [...]}) to standard output. Its harness,
