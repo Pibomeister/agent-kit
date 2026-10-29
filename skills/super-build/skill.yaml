@@ -212,8 +212,10 @@ failure_outcomes:
       finding sharpened or the seat available.
   - status: failed
     meaning: >-
-      No writable worktree, the branch is already checked out elsewhere, or the knowledgebase refused
-      the write. The worktree and the ledger are left intact for the resume.
+      No writable worktree, the branch is already checked out elsewhere, or the knowledgebase
+      refused a receipt, the ticket result or the check result; a refused trail record fails
+      nothing (ruling `work-trail-is-account-not-evidence`). The worktree and the ledger are left
+      intact for the resume.
     next_permitted_action: Re-invoke once the worktree is available or the knowledgebase accepts writes.
   - status: cancelled
     meaning: >-
@@ -434,9 +436,9 @@ tests:
       A run is interrupted after two tickets committed and a third was mid-fix-loop, and is started
       again against the same ready set.
     expect: >-
-      The skill reads the recorded base commits, commits and rulings rather than its own recollection,
-      resumes the third ticket at its next round, and does not re-dispatch implementers for work
-      already committed.
+      The skill reads the recorded base commits, commits and rulings, and each ticket's work-trail
+      stretch index, rather than its own recollection, resumes the third ticket at its next round,
+      and does not re-dispatch implementers for work already committed.
   - id: task-local-child-does-not-ship
     kind: adversarial
     given: >-

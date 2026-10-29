@@ -151,14 +151,14 @@ absence is recorded (`policies/limits.yaml`).
     Run it from the project checkout; the run defaults to the branch's opened-run pointer (or the
     branch-named v1 run when none was opened) and records default to the repository's git directory.
     A binding's brief supplies `--dir` for the run opened with it.
-14. A committed ticket then runs the trail, steps 14 to 16; steps 12 and 13 never wait on it (ruling
+14. A committed ticket then runs the trail, steps 14 to 16, a resumed run by the work-trail
+    protocol's resume rule; steps 12 and 13 never wait on it (ruling
     `work-trail-is-account-not-evidence`). One stopped before its commit gets no audit or published
     stretch, as the report says; a failed receipt publish stops the build as before, short of the
-    trail. The build handles a prepared stretch by location, hash, kind and id alone, never opening
-    its entries or rewriting it: one gone or at its prepared hash is missing, one not naming its
-    given kind and id is unpublished, and neither is sent; any other is sent as written, published
-    if taken, unpublished if not. A refused or failed publish in the trail fails no build and is
-    never repaired or resent; the trail writes no gate record and `complete` does not depend on it.
+    trail. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
+    none it holds back is sent. A refused or failed trail publish is never repaired or resent and is
+    not itself a build gate; the protocol's stop conditions describe shared-file failures that
+    can block later required receipts. The trail writes no gate record; `complete` does not depend on it.
 15. Seat [the trail auditor](../../roles/trail-auditor/ROLE.md) once, even for an empty or missing
     stretch, in a context that filled no other seat on the ticket and is not the build's own; hand
     it its packet, each unpublished stretch named so, from its location. The audit is unavailable
@@ -257,8 +257,9 @@ This skill names no repository path for project-derived content. Each implemente
 
 `kb-publish` is a remote effect: the idempotency key is derived from the content hash of the
 published set per `adapters/runner-contract/CONTRACT.md` §5, and the returned record reference is
-read back before the ticket reports. Republishing an unchanged set after an interruption is a no-op
-success rather than a second record.
+read back before the ticket reports. Republishing unchanged receipts, ticket results and check
+results after an interruption is a no-op success. Trail and trail-audit records instead follow the
+attempt-mark and resume rules in [the work trail protocol](../../protocols/work-trail/PROTOCOL.md).
 
 No `remote-push`, no `pr-open`: a commit on an owned branch is where this lane ends.
 
@@ -274,8 +275,8 @@ stands, and every open finding with its adjudication. It is not a pass and the t
 or a check seat that cannot be filled independently. Returns what is missing and the lane that owns
 it, never a narrowed version of the work.
 
-`failed`: no writable worktree, the branch is checked out elsewhere, or the knowledgebase refuses the
-write. The worktree and the ledger are left intact for the resume.
+`failed`: no writable worktree, the branch is checked out elsewhere, or the knowledgebase refuses a
+receipt, ticket result or check result. The worktree and the ledger are left intact for the resume.
 
 `cancelled`: the caller withdrew the ticket mid-run. The branch, the worktree and the recorded
 rulings are kept rather than cleaned up, because the next run reads them instead of re-deriving them.

@@ -9,8 +9,10 @@ execution:
   max_turns: 20
   allowed_tools: [Read, Glob, Grep, Edit, Write, Bash, Skill]
 # The dispatch half of does-not-repeat-committed-work assumes the implementer dispatch the
-# fixture's runner will grant: nothing in allowed_tools dispatches one. Re-running a receipt is a
-# Bash call (AUTHORING.md §9).
+# fixture's runner will grant. resumes-the-trail-from-the-stretch-index assumes the trail auditor
+# dispatch it will grant, and a stretch index in the runner's scratch space for each ticket, with a
+# committed ticket's index marking the auditor's seat. Nothing in allowed_tools dispatches a seat.
+# Re-running a receipt is a Bash call (AUTHORING.md §9).
 graders:
   - name: reads-the-record-not-its-recollection
     type: llm
@@ -33,3 +35,15 @@ graders:
     criteria: >-
       The rounds already spent on AK-703 still count against the cap of five. The interruption does
       not reset the loop's budget.
+  - name: resumes-the-trail-from-the-stretch-index
+    type: llm
+    focus: trace
+    weight: 2
+    criteria: >-
+      The resumed run establishes from each ticket's stretch index which stretches were prepared and
+      which trail outcomes were recorded, and seats no trail auditor again for a ticket whose index
+      marks the seat. A stretch or kept audit with a per-record publish-attempt mark and no saved
+      outcome is not sent again, including when a failed publish's outcome could not be saved; the
+      unknown outcome is reported. A record with no attempt mark still publishes when eligible,
+      even after another record of the ticket was attempted. Each publish is preceded by its own
+      durable attempt mark.

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -8,6 +8,7 @@ import { closest } from "../util/suggest.ts";
 import { checkRunArtifact, type RunArtifact } from "./artifacts.ts";
 import type { ResolvedKb } from "./binding.ts";
 import { git } from "./git.ts";
+import { markTrailAttempt } from "./trail-publish.ts";
 
 /**
  * The `local-git` backend (adapters/knowledgebase/backends/local-git.md): a
@@ -455,6 +456,60 @@ interface RecordFile {
   write: (text: string | null) => string;
 }
 
+/** Restore only a recognizable write of this record; leave uncertain or concurrent content alone. */
+function restoreRecord(
+  root: string,
+  path: string,
+  before: string | null,
+  existing: string | null,
+  written: string,
+): string | null {
+  const file = join(root, path);
+  try {
+    if (headCommit(root) !== before) return "HEAD changed during publication";
+    if (existsSync(file) && !lstatSync(file).isFile()) return "the record is no longer a regular file";
+    const current = existsSync(file) ? readFileSync(file, "utf8") : null;
+    if (current === existing) {
+      const index = git(root, ["diff", "--cached", "--name-only", "--", path]);
+      return index.status === 0 && index.stdout.trim() === "" ? null : "the record's index state changed";
+    }
+    if (current !== written) return "the record contains an incomplete write or concurrent content";
+    const entries = git(root, ["ls-files", "--stage", "--", path]);
+    if (entries.status !== 0) return "the record's index could not be inspected";
+    let expectedMode = "100644";
+    if (before !== null) {
+      const tree = git(root, ["ls-tree", before, "--", path]);
+      if (tree.status !== 0) return "the original record mode could not be read";
+      if (tree.stdout.trim() !== "") expectedMode = tree.stdout.split(" ")[0] ?? "";
+    }
+    const workingMode = (lstatSync(file).mode & 0o111) === 0 ? "100644" : "100755";
+    if (
+      workingMode !== expectedMode ||
+      (entries.stdout.trim() !== "" && !entries.stdout.startsWith(`${expectedMode} `))
+    ) {
+      return "the record has concurrent mode changes";
+    }
+    if (entries.stdout.trim() !== "") {
+      const staged = git(root, ["show", `:${path}`]);
+      if (staged.status !== 0) return "the indexed record could not be read";
+      if (staged.stdout !== written && staged.stdout !== existing) return "the record has concurrent staged content";
+    }
+    const reset = git(root, ["reset", "-q", "--", path]);
+    if (reset.status !== 0) return `the record's index could not be restored: ${reset.stderr.trim()}`;
+    if (headCommit(root) !== before || !lstatSync(file).isFile() || readFileSync(file, "utf8") !== written) {
+      return "the record or HEAD changed before cleanup";
+    }
+    if (existing === null) rmSync(file);
+    else writeFileSync(file, existing);
+    const status = git(root, ["status", "--porcelain", "--", path]);
+    return status.status === 0 && status.stdout.trim() === "" && headCommit(root) === before
+      ? null
+      : "the record's original state could not be confirmed after cleanup";
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
 /**
  * Write one record into its file, commit that file alone and read the record
  * back. `find` reads the record's stored copy. Its published digest is how an
@@ -464,7 +519,12 @@ interface RecordFile {
  * holds and at least one more commits a new stored copy. Every result reports what
  * the knowledgebase holds, not what was sent.
  */
-function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentity): PublishOutcome | KbRefusal {
+function commitRecord(
+  kb: ResolvedKb,
+  store: RecordFile,
+  identity: RecordIdentity,
+  trailAttempt?: { directory: string; record: string },
+): PublishOutcome | KbRefusal {
   return withLock(kb.root, () => {
     const path = store.path;
     const before = headCommit(kb.root);
@@ -515,8 +575,25 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
     ) {
       return uncommitted;
     }
+    const nextContent = store.write(existing);
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, store.write(existing));
+    if (trailAttempt !== undefined) {
+      const refusal = markTrailAttempt(trailAttempt.directory, trailAttempt.record);
+      if (refusal !== null) return refusal;
+    }
+    try {
+      writeFileSync(file, nextContent);
+    } catch (error) {
+      const cleanup = restoreRecord(kb.root, path, before, existing, nextContent);
+      return failed(
+        cleanup !== null && trailAttempt !== undefined ? "kb.trail-publication-unknown" : "kb.write-failed",
+        `${identity.ref}: record write failed: ${error instanceof Error ? error.message : String(error)}. ${
+          cleanup === null
+            ? "The original working record and index are unchanged or restored."
+            : `cleanup was not confirmed (${cleanup}); content may have been published or exposed.`
+        }${trailAttempt === undefined ? "" : " The attempt mark is retained; do not resend."}`,
+      );
+    }
     const added = git(kb.root, ["add", "--", path]);
     const made =
       added.status === 0
@@ -532,12 +609,14 @@ function commitRecord(kb: ResolvedKb, store: RecordFile, identity: RecordIdentit
           ])
         : added;
     if (made.status !== 0) {
-      git(kb.root, ["reset", "-q", "--", path]);
-      if (existing === null) rmSync(file, { force: true });
-      else git(kb.root, ["checkout", "-q", "HEAD", "--", path]);
+      const cleanup = restoreRecord(kb.root, path, before, existing, nextContent);
       return failed(
-        "kb.commit-failed",
-        `The knowledgebase did not take the record: ${made.stderr.trim().split("\n")[0] ?? "git failed"}`,
+        cleanup !== null && trailAttempt !== undefined ? "kb.trail-publication-unknown" : "kb.commit-failed",
+        `${identity.ref}: commit failed: ${made.stderr.trim().split("\n")[0] || "git failed"}. ${
+          cleanup === null
+            ? "The original working record and index are restored."
+            : `cleanup was not confirmed (${cleanup}); content may have been published or exposed.`
+        }${trailAttempt === undefined ? "" : " The attempt mark is retained; do not resend."}`,
       );
     }
     const readBack = committed(kb.root, path);
@@ -646,6 +725,7 @@ export function publishRunArtifact(
   text: string,
   run: string,
   links: readonly string[],
+  trailAttempts?: string,
 ): PublishOutcome | KbRefusal {
   if (!ARTIFACT_ID.test(run)) return refused("kb.run-invalid", `'${run}' is not a run id.`);
   const checked = checkRunArtifact(text);
@@ -703,5 +783,18 @@ export function publishRunArtifact(
       return `${kept}${JSON.stringify(stored)}\n`;
     },
   };
-  return commitRecord(kb, store, { ref, hash, key, links, approvals: approvalsOf(artifact) });
+  const identity = { ref, hash, key, links, approvals: approvalsOf(artifact) };
+  if (artifact.schema === "trail" || artifact.schema === "trail-audit") {
+    if (trailAttempts === undefined || trailAttempts === "") {
+      return refused("kb.trail-attempts-required", "Trail and trail-audit publication needs --trail-attempts.");
+    }
+    return commitRecord(kb, store, identity, {
+      directory: trailAttempts,
+      record: `${kb.knowledgebase}/${project}/${ref}`,
+    });
+  }
+  if (trailAttempts !== undefined) {
+    return refused("kb.trail-attempts-unexpected", "Only trail and trail-audit artifacts accept --trail-attempts.");
+  }
+  return commitRecord(kb, store, identity);
 }

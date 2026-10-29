@@ -18,13 +18,13 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 24950,
-      "tokens": 6191
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 10608,
-      "tokens": 2645
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -123,8 +123,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12854,
-      "tokens": 3214
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/claude-code:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -163,8 +163,8 @@
     },
     "bundle/claude-code:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5869,
-      "tokens": 1465
+      "bytes": 6066,
+      "tokens": 1515
     },
     "bundle/claude-code:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -338,8 +338,8 @@
     },
     "bundle/claude-code:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 9906,
-      "tokens": 2477
+      "bytes": 10388,
+      "tokens": 2597
     },
     "bundle/claude-code:references/shared/roles/verifier/ROLE.md": {
       "file": "roles/verifier/ROLE.md",
@@ -473,8 +473,8 @@
     },
     "bundle/claude-code:references/shared/schemas/trail.schema.json": {
       "file": "schemas/trail.schema.json",
-      "bytes": 4452,
-      "tokens": 1113
+      "bytes": 4460,
+      "tokens": 1115
     },
     "bundle/claude-code:references/shared/schemas/verification-recipe.schema.json": {
       "file": "schemas/verification-recipe.schema.json",
@@ -728,8 +728,8 @@
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25021,
-      "tokens": 6250
+      "bytes": 25195,
+      "tokens": 6293
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -868,13 +868,13 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 24950,
-      "tokens": 6191
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 10608,
-      "tokens": 2645
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -973,8 +973,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12854,
-      "tokens": 3214
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/codex:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -1013,8 +1013,8 @@
     },
     "bundle/codex:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5869,
-      "tokens": 1465
+      "bytes": 6066,
+      "tokens": 1515
     },
     "bundle/codex:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -1188,8 +1188,8 @@
     },
     "bundle/codex:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 9906,
-      "tokens": 2477
+      "bytes": 10388,
+      "tokens": 2597
     },
     "bundle/codex:references/shared/roles/verifier/ROLE.md": {
       "file": "roles/verifier/ROLE.md",
@@ -1323,8 +1323,8 @@
     },
     "bundle/codex:references/shared/schemas/trail.schema.json": {
       "file": "schemas/trail.schema.json",
-      "bytes": 4452,
-      "tokens": 1113
+      "bytes": 4460,
+      "tokens": 1115
     },
     "bundle/codex:references/shared/schemas/verification-recipe.schema.json": {
       "file": "schemas/verification-recipe.schema.json",
@@ -1578,8 +1578,8 @@
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25021,
-      "tokens": 6250
+      "bytes": 25195,
+      "tokens": 6293
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1718,13 +1718,13 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 24950,
-      "tokens": 6191
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 10608,
-      "tokens": 2645
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1823,8 +1823,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12854,
-      "tokens": 3214
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/droid:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -1863,8 +1863,8 @@
     },
     "bundle/droid:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5869,
-      "tokens": 1465
+      "bytes": 6066,
+      "tokens": 1515
     },
     "bundle/droid:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2038,8 +2038,8 @@
     },
     "bundle/droid:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 9906,
-      "tokens": 2477
+      "bytes": 10388,
+      "tokens": 2597
     },
     "bundle/droid:references/shared/roles/verifier/ROLE.md": {
       "file": "roles/verifier/ROLE.md",
@@ -2173,8 +2173,8 @@
     },
     "bundle/droid:references/shared/schemas/trail.schema.json": {
       "file": "schemas/trail.schema.json",
-      "bytes": 4452,
-      "tokens": 1113
+      "bytes": 4460,
+      "tokens": 1115
     },
     "bundle/droid:references/shared/schemas/verification-recipe.schema.json": {
       "file": "schemas/verification-recipe.schema.json",
@@ -2428,8 +2428,8 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25017,
-      "tokens": 6249
+      "bytes": 25191,
+      "tokens": 6292
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -2568,13 +2568,13 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 24950,
-      "tokens": 6191
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 10608,
-      "tokens": 2645
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2673,8 +2673,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12854,
-      "tokens": 3214
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/grok:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -2713,8 +2713,8 @@
     },
     "bundle/grok:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5869,
-      "tokens": 1465
+      "bytes": 6066,
+      "tokens": 1515
     },
     "bundle/grok:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -2888,8 +2888,8 @@
     },
     "bundle/grok:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 9906,
-      "tokens": 2477
+      "bytes": 10388,
+      "tokens": 2597
     },
     "bundle/grok:references/shared/roles/verifier/ROLE.md": {
       "file": "roles/verifier/ROLE.md",
@@ -3023,8 +3023,8 @@
     },
     "bundle/grok:references/shared/schemas/trail.schema.json": {
       "file": "schemas/trail.schema.json",
-      "bytes": 4452,
-      "tokens": 1113
+      "bytes": 4460,
+      "tokens": 1115
     },
     "bundle/grok:references/shared/schemas/verification-recipe.schema.json": {
       "file": "schemas/verification-recipe.schema.json",
@@ -3278,8 +3278,8 @@
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25021,
-      "tokens": 6250
+      "bytes": 25195,
+      "tokens": 6293
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -3418,13 +3418,13 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 24950,
-      "tokens": 6191
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 10608,
-      "tokens": 2645
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3523,8 +3523,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 12854,
-      "tokens": 3214
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/kimi:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -3563,8 +3563,8 @@
     },
     "bundle/kimi:references/shared/references/knowledgebase-binding/REFERENCE.md": {
       "file": "references/knowledgebase-binding/REFERENCE.md",
-      "bytes": 5869,
-      "tokens": 1465
+      "bytes": 6066,
+      "tokens": 1515
     },
     "bundle/kimi:references/shared/references/prose-quality/REFERENCE.md": {
       "file": "references/prose-quality/REFERENCE.md",
@@ -3738,8 +3738,8 @@
     },
     "bundle/kimi:references/shared/roles/trail-auditor/ROLE.md": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 9906,
-      "tokens": 2477
+      "bytes": 10388,
+      "tokens": 2597
     },
     "bundle/kimi:references/shared/roles/verifier/ROLE.md": {
       "file": "roles/verifier/ROLE.md",
@@ -3873,8 +3873,8 @@
     },
     "bundle/kimi:references/shared/schemas/trail.schema.json": {
       "file": "schemas/trail.schema.json",
-      "bytes": 4452,
-      "tokens": 1113
+      "bytes": 4460,
+      "tokens": 1115
     },
     "bundle/kimi:references/shared/schemas/verification-recipe.schema.json": {
       "file": "schemas/verification-recipe.schema.json",
@@ -4128,8 +4128,8 @@
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 25021,
-      "tokens": 6250
+      "bytes": 25195,
+      "tokens": 6293
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -4498,8 +4498,8 @@
     },
     "role:trail-auditor": {
       "file": "roles/trail-auditor/ROLE.md",
-      "bytes": 9721,
-      "tokens": 2431
+      "bytes": 10203,
+      "tokens": 2551
     },
     "role:verifier": {
       "file": "roles/verifier/ROLE.md",
