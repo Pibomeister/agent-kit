@@ -24,7 +24,7 @@ export function markTrailAttempt(directory: string, record: string): KbRefusal |
   try {
     markAttempt(directory, record);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") {
       return {
         status: "failed",
         code: "kb.trail-publication-unknown",
