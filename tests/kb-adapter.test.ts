@@ -20,6 +20,7 @@ import commonSchema from "../schemas/common.schema.json" with { type: "json" };
 import charterExample from "../templates/charter.example.json" with { type: "json" };
 import decisionExample from "../templates/decision.example.json" with { type: "json" };
 import reviewExample from "../templates/review.example.json" with { type: "json" };
+import trailExample from "../templates/trail.example.json" with { type: "json" };
 import { runCli } from "../src/cli.ts";
 import { ARTIFACT_SCHEMA_IDS, checkRunArtifact } from "../src/kb/artifacts.ts";
 import {
@@ -750,6 +751,54 @@ describe("readContext", () => {
 });
 
 describe("ak kb usage", () => {
+  test("an empty trail-attempts path is a usage error", () => {
+    const fx = registered();
+    const file = join(fx.scratch, "trail.json");
+    writeFileSync(file, JSON.stringify(trailExample));
+    const run = kb(
+      fx,
+      fx.project,
+      "publish",
+      "artifact",
+      "--file",
+      file,
+      "--run",
+      trailExample.run_id,
+      "--trail-attempts",
+      "",
+    );
+    expect(run.code).toBe(2);
+    expect(run.err.split("\n")[0]).toBe("ak kb: --trail-attempts is not a flag this command takes, or has no value");
+  });
+
+  test("trail publication resolves its attempt directory relative to the project cwd", () => {
+    const fx = registered();
+    const file = join(fx.scratch, "trail.json");
+    writeFileSync(file, JSON.stringify(trailExample));
+    mkdirSync(join(fx.project, "attempts"));
+    const run = kb(
+      fx,
+      fx.project,
+      "publish",
+      "artifact",
+      "--file",
+      file,
+      "--run",
+      trailExample.run_id,
+      "--trail-attempts",
+      "attempts",
+    );
+    expect(run.code).toBe(0);
+    expect(JSON.parse(run.out)).toMatchObject({ status: "complete", effect: "published" });
+    const marks = readdirSync(join(fx.project, "attempts"));
+    expect(marks).toHaveLength(1);
+    const mark = marks[0];
+    if (mark === undefined) throw new Error("the published trail has no attempt mark");
+    expect(readFileSync(join(fx.project, "attempts", mark), "utf8")).toBe(
+      `fixture-kb/example-project/run:${trailExample.run_id}/trail/${trailExample.id}\n`,
+    );
+  });
+
   test("an unknown subcommand names the one it was probably meant to be", () => {
     const run = kb(fixture(), REPO, "raed");
     expect(run.code).toBe(2);
