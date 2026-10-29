@@ -28,7 +28,8 @@ alone. `ak validate` checks the invocation graph and the first-step authority ga
 **How "only a human starts these" is held** changed in `docs/decisions/0003-model-invocation.md`. The packager no
 longer emits `disable-model-invocation`, so the model can load any skill. A U skill keeps its class:
 its description carries the non-trigger clause, its first workflow step is the authority check, and
-started without an explicit request or a validated grant it stops and says so.
+started without an explicit request, a validated grant or, for align, bound and ship, an opt-in to the
+unattended policy with `ak-gate.mjs unattended check` exiting 0, it stops and says so.
 
 **Standing-start amendment (ADR-0007):** Firstmate may start `autopilot` for a crewmate only after
 the runner validates a standing grant for autopilot.start against a captain-approved immutable
