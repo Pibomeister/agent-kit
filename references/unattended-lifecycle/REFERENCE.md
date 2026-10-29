@@ -113,7 +113,11 @@ Nothing here is done by an agent or by agent-kit.
    metadata file (`$AK_REVIEW_METADATA_FILE`); the model has no shell or file tools.
 5. Copy the workflow template the super-ship skill ships as `assets/independent-review.yml` to
    `.github/workflows/`, and allow `pull_request_target` for that file in the repository's Actions
-   event policy. The template is not evidence that a review was installed or ran.
+   event policy. The template is not evidence that a review was installed or ran. Any earlier
+   completed review-app run on a head that did not approve, an `unavailable` provider failure
+   included, refuses that head even after an approving rerun; the gate does not tell
+   infrastructure failures apart. Recovery is a new commit whose head gets its own current
+   independent review and any required human approval; rerunning on the refused head is not.
 6. Give the runner its own user account with role exactly `write` that is not a designated
    reviewer, and a fine-grained `AK_UNATTENDED_READ_TOKEN` with Administration, Secrets and
    Environments read. A runner that shares the operator's account or credentials does not meet
