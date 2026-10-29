@@ -34,7 +34,7 @@ widens the authority it was called with (ruling `entrypoint-phase-operation-spli
 - The shapes `schemas/trail.schema.json` and `schemas/trail-audit.schema.json`, and
   [an example stretch](../../templates/trail.example.json).
 
-An absent input fails closed: nothing is guessed, and nothing stops the build
+An absent trail input fails closed: nothing is guessed, and its absence is not a build gate
 (ruling `work-trail-is-account-not-evidence`). No ticket id or hash, or no scratch space: the
 stretch is reported missing. No directory for the build, or a stretch index that cannot hold a
 stretch's row: step 7 tells that stretch's state from its record, as for any stretch this run
@@ -205,8 +205,12 @@ beyond the publish's own read-back. It governs both publication steps, 8 and 13.
   run, and do not seat its auditor. No order uniqueness or safe resend can be established after
   losing the order source or fence. Existing knowledgebase identity/hash refusals remain in force;
   they do not recover the lost state. The ticket's implementation can continue without a trail,
-  and a later separately identified run follows its own approved inputs. Nothing in the rule stops the build
-  (ruling `work-trail-is-account-not-evidence`).
+  and a later separately identified run follows its own approved inputs.
+  This loss rule requires known-resume invocation context or external evidence of a prior start.
+  Without that evidence, lost state cannot reliably be distinguished from a first invocation;
+  identity/hash refusals are degraded protection, not recovered fencing. A known resumed run
+  with lost or uncertain state refuses reconstruction and resend (ruling
+  `work-trail-is-account-not-evidence`).
 
 ## Hard gates
 
@@ -265,7 +269,10 @@ publish (the Idempotency section of `adapters/runner-contract/CONTRACT.md`). No 
 
 ## Stop conditions
 
-No outcome here stops the build (ruling `work-trail-is-account-not-evidence`).
+Trail outcomes are not build gates (ruling `work-trail-is-account-not-evidence`). A failed write
+can nevertheless leave the shared knowledgebase file dirty and block later project publications,
+including required receipts; see the [local-git write/cleanup boundary](../../adapters/knowledgebase/backends/local-git.md#5-publishartifact)
+for the preservation limit and operator resolution.
 
 - `complete`: every stretch has a state, and the audit is published or reported unavailable.
 - `cap-reached`: the invoking operation's cap was reached. What stands is reported as it stands.

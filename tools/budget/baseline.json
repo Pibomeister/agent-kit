@@ -23,8 +23,8 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 12738,
-      "tokens": 3178
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -113,8 +113,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 22172,
-      "tokens": 5543
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/claude-code:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -713,8 +713,8 @@
     },
     "bundle/claude-code:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24665,
-      "tokens": 6161
+      "bytes": 24772,
+      "tokens": 6188
     },
     "bundle/claude-code:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -853,8 +853,8 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 12738,
-      "tokens": 3178
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -943,8 +943,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 22172,
-      "tokens": 5543
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/codex:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -1543,8 +1543,8 @@
     },
     "bundle/codex:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24665,
-      "tokens": 6161
+      "bytes": 24772,
+      "tokens": 6188
     },
     "bundle/codex:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -1683,8 +1683,8 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 12738,
-      "tokens": 3178
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1773,8 +1773,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 22172,
-      "tokens": 5543
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/droid:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -2373,8 +2373,8 @@
     },
     "bundle/droid:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24661,
-      "tokens": 6160
+      "bytes": 24768,
+      "tokens": 6187
     },
     "bundle/droid:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -2513,8 +2513,8 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 12738,
-      "tokens": 3178
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2603,8 +2603,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 22172,
-      "tokens": 5543
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/grok:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -3203,8 +3203,8 @@
     },
     "bundle/grok:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24665,
-      "tokens": 6161
+      "bytes": 24772,
+      "tokens": 6188
     },
     "bundle/grok:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",
@@ -3343,8 +3343,8 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 12738,
-      "tokens": 3178
+      "bytes": 13568,
+      "tokens": 3385
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3433,8 +3433,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 22172,
-      "tokens": 5543
+      "bytes": 22808,
+      "tokens": 5702
     },
     "bundle/kimi:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -4033,8 +4033,8 @@
     },
     "bundle/kimi:skills/super-build/SKILL.md": {
       "file": "skills/super-build/SKILL.md",
-      "bytes": 24665,
-      "tokens": 6161
+      "bytes": 24772,
+      "tokens": 6188
     },
     "bundle/kimi:skills/super-review/SKILL.md": {
       "file": "skills/super-review/SKILL.md",

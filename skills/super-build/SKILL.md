@@ -156,8 +156,9 @@ absence is recorded (`policies/limits.yaml`).
     `work-trail-is-account-not-evidence`). One stopped before its commit gets no audit or published
     stretch, as the report says; a failed receipt publish stops the build as before, short of the
     trail. Each prepared stretch is handled and sent as the work-trail protocol's build steps say;
-    none it holds back is sent. A refused or failed publish in the trail fails no build and is never
-    repaired or resent; the trail writes no gate record and `complete` does not depend on it.
+    none it holds back is sent. A refused or failed trail publish is never repaired or resent and is
+    not itself a build gate; the protocol's stop conditions describe shared-file failures that
+    can block later required receipts. The trail writes no gate record; `complete` does not depend on it.
 15. Seat [the trail auditor](../../roles/trail-auditor/ROLE.md) once, even for an empty or missing
     stretch, in a context that filled no other seat on the ticket and is not the build's own; hand
     it its packet, each unpublished stretch named so, from its location. The audit is unavailable
