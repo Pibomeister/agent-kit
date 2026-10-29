@@ -425,7 +425,8 @@ export function checkMergeGate(
   // The local default-branch ref a run was stamped from is the task's to repoint; the forge's branch is not.
   const stamped = /^default-branch:(.+)$/.exec(opts.policySource ?? "")?.[1];
   if (stamped !== undefined) {
-    const tip = nonEmpty(field(field(get(`repos/${repo}/branches/${branch}`).body, "commit"), "sha"));
+    const branchRead = get(`repos/${repo}/branches/${branch}`);
+    const tip = branchRead.status === 200 ? nonEmpty(field(field(branchRead.body, "commit"), "sha")) : undefined;
     const standing = tip === undefined ? undefined : compareShipped(io, repo, stamped, tip);
     const status = standing === undefined || "error" in standing ? "unreadable" : standing.status;
     if (status !== "identical" && status !== "ahead")
@@ -586,11 +587,16 @@ function identityFailures(reviewer: Json | undefined, config: LifecycleConfig): 
 export function checkReviewStatus(io: GateIo, repo: string, pr: number, gate: MergeGate): ReviewStatus {
   const failures = [...gate.failures];
   const notes = [...gate.notes];
-  const pull = io.forge(`repos/${repo}/pulls/${pr}`).body;
-  const head = nonEmpty(field(field(pull, "head"), "sha"));
+  const pullRead = io.forge(`repos/${repo}/pulls/${pr}`);
+  const pull = pullRead.body;
+  const head = pullRead.status === 200 ? nonEmpty(field(field(pull, "head"), "sha")) : undefined;
   const base = field(pull, "base");
   if (head === undefined)
-    return { state: "refused", failures: [...failures, `pull request ${pr} is unreadable`], notes };
+    return {
+      state: "refused",
+      failures: [...failures, `pull request ${pr} is unreadable (HTTP ${pullRead.status})`],
+      notes,
+    };
   if (field(base, "ref") !== gate.defaultBranch)
     failures.push(
       `pull request ${pr} targets ${nonEmpty(field(base, "ref")) ?? "an unknown base"}, not ${gate.defaultBranch ?? "the default branch"}`,

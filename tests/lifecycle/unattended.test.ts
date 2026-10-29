@@ -478,6 +478,9 @@ describe("merge gate (pure, API shapes written from the documentation)", () => {
     expect(failuresAt(standing("behind"))).toContain("not on main");
     expect(failuresAt(standing())).toContain("not on main");
     expect(failuresAt(withFixtures({}, [branchKey]))).toContain("not on main");
+    const forbidden = standing("ahead");
+    forbidden[branchKey] = { status: 403, body: { name: "main", commit: { sha: tip } } };
+    expect(failuresAt(forbidden)).toContain("(comparison: unreadable)");
     expect(failuresAt(standing("diverged"), "environment")).toBe("");
   });
 });
@@ -487,6 +490,16 @@ describe("independent review status (pure)", () => {
     const r = reviewOf(protectedFixtures());
     expect(r.failures).toEqual([]);
     expect(r.state).toBe("pass");
+  });
+
+  test("a pull request read that is not HTTP 200 is unreadable, whatever its body carries", () => {
+    const pullKey = `repos/${REPO}/pulls/7`;
+    const healthy = protectedFixtures();
+    expect(reviewOf(healthy).state).toBe("pass");
+    const r = reviewOf(withFixtures({ [pullKey]: { ...healthy[pullKey], status: 403 } }));
+    expect(r.state).toBe("refused");
+    expect(r.head).toBeUndefined();
+    expect(r.failures).toContain("pull request 7 is unreadable (HTTP 403)");
   });
 
   test("no completed run from the pinned app waits; another app's run is ignored and listed", () => {
