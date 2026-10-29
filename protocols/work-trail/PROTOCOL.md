@@ -48,8 +48,11 @@ missing.
 ## Workflow
 
 Stretch record id: `<ticket-id>.<r>.<n>`, where r is the first 12 hex digits of the stretch's
-`source_revision.revision` and n is its order among the ticket's stretches, counted from 1 across
-the run and never reused. Audit record id: `<ticket-id>.<r>`, where r is the first 12 hex digits of
+`source_revision.revision` and n is its order among the ticket's stretches, counted from 1.
+The build does not reuse an order held by its retained index or already formed by this live
+invocation. Across an interruption, only retained rows supply that history; a row the index could
+not hold gives no durable uniqueness guarantee. Lost state follows
+the refusal and reporting boundary in the resume rule. Audit record id: `<ticket-id>.<r>`, where r is the first 12 hex digits of
 the audited revision. The kind is not in the id: the knowledgebase files a run artifact as
 `run:<run_id>/<schema>/<id>`, so the two never collide. Both ids must fit
 `common#/$defs/artifact_id` (at most 128 characters); a ticket id too long for that (over about 115
@@ -84,7 +87,10 @@ The implementer, while it works (ruling `work-trail-is-account-not-evidence`):
 The build, for each ticket, in this order (ruling `work-trail-is-account-not-evidence`):
 1. Before seating an implementer, form its stretch's id. Its order n is one more than the highest
    order among the rows of the ticket's stretch index and the stretches this run has formed for the
-   ticket, so no order is reused across an interruption or after a row the index could not hold.
+   ticket. This avoids those known orders, not an earlier order whose row could not be retained;
+   report that index-write degradation without claiming uniqueness after its history is lost.
+   A resumed ticket whose earlier index or attempt directory is gone does not allocate a
+   replacement stretch or attempt directory for publication; the resume rule reports that loss.
    An id that does not fit is reported missing.
 2. Prepare the stretch's record outside the checkout, in the runner's scratch space, never in the
    ticket's worktree or any tracked directory, at a location that holds that stretch alone, and
@@ -149,11 +155,15 @@ audit, under its audit id, its ref, why it is unavailable or not sent, or the er
 index cannot hold is reported, and nothing stops the build (ruling
 `work-trail-is-account-not-evidence`).
 
-The resume rule (ruling `work-trail-is-account-not-evidence`). At the start of a resumed run, for
-each ticket the run ledger shows an implementer was seated for, committed or not, the build reads
-the stretch index before any build step writes it. For a ticket whose trail runs, it reports each
+The resume rule (ruling `work-trail-is-account-not-evidence`). At the start of a resumed build,
+the build uses the approved ticket supplied to this invocation, committed or not, to locate its
+stretch index by run id and ticket id. It reads the index before any build step writes it. For a
+ticket whose trail runs, it reports each
 recorded outcome as recorded and runs only the trail steps whose outcome the index does not hold.
-It reads the auditor's seat mark, kept record and outcome only under the audit id formed from the
+The ticket and hash are already required inputs; checkpoint-ledger entries or a commit-only seat
+record do not select tickets. A coordinator resumes each of its already assigned approved tickets
+through that same ticket-bound invocation. If the ticket input is absent, report the trail missing
+rather than guessing. It reads the auditor's seat mark, kept record and outcome only under the audit id formed from the
 ticket's current committed revision, and no auditor is seated again for a seat the index marks
 under that id. The rule decides what to run from the index alone and adds no knowledgebase read
 beyond the publish's own read-back. It governs both publication steps, 8 and 13.
@@ -164,6 +174,9 @@ beyond the publish's own read-back. It governs both publication steps, 8 and 13.
   in such a stretch or audit is reported as exposed, for its owner to rotate, as for a published
   record. Recorded outcomes are still reported as recorded, and a recorded refusal or failure is
   never sent again.
+  A recorded `kb.trail-publication-unknown` result carries the same possible-exposure warning,
+  including when a write or its cleanup failed. A known no-send durability failure is reported as
+  such; an uncertain retained mark is not proof that publication occurred.
 - A record with no attempt mark can publish normally, subject to its state, identity and hash
   checks, even when another record of the ticket was attempted. Mark it at the shared publication
   boundary before sending it.
@@ -187,9 +200,12 @@ beyond the publish's own read-back. It governs both publication steps, 8 and 13.
 - The rule depends on the runner handing the resumed run the scratch space the interrupted run used.
   An index row the scratch space cannot hold leaves that stretch reported missing. An index that is
   present but cannot be read in full, or whose attempt directory is gone, is gone. Where the index
-  is gone, the first row of the new index records that the earlier index was gone; at that ticket's
-  trail, its earlier stretches are reported missing and its audit unavailable, with that reason,
-  and no auditor is seated for it. Nothing in the rule stops the build
+  is gone, report its earlier stretches missing and its audit unavailable, with that reason;
+  do not recreate an index or attempt directory to publish another stretch of that ticket in this
+  run, and do not seat its auditor. No order uniqueness or safe resend can be established after
+  losing the order source or fence. Existing knowledgebase identity/hash refusals remain in force;
+  they do not recover the lost state. The ticket's implementation can continue without a trail,
+  and a later separately identified run follows its own approved inputs. Nothing in the rule stops the build
   (ruling `work-trail-is-account-not-evidence`).
 
 ## Hard gates

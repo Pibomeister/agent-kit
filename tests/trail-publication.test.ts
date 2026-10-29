@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { expect, spyOn, test } from "bun:test";
+import * as fs from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import trailAudit from "../templates/trail-audit.example.json" with { type: "json" };
@@ -91,7 +92,7 @@ for (const artifact of [trail, trailAudit]) {
   });
 }
 
-test("failure to create a durable mark prevents publication without consuming the attempt", () => {
+test("failure before mark creation leaves an attempt available", () => {
   const kb = knowledgebase(trail.project.id);
   const directory = join(processScratch("ak-trail-attempts-"), "absent");
   const text = JSON.stringify(trail);
@@ -105,4 +106,123 @@ test("failure to create a durable mark prevents publication without consuming th
     status: "complete",
     effect: "published",
   });
+});
+
+for (const failureAt of [1, 2]) {
+  test(`failure at mark fsync ${failureAt} reports a retained mark without publishing`, () => {
+    const kb = knowledgebase(trail.project.id);
+    const directory = processScratch("ak-trail-attempts-");
+    let calls = 0;
+    const sync = fs.fsyncSync;
+    const fault = spyOn(fs, "fsyncSync").mockImplementation((fd) => {
+      calls += 1;
+      if (calls === failureAt) throw new Error("injected durability failure");
+      sync(fd);
+    });
+    try {
+      const result = publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory);
+      expect(calls).toBe(failureAt);
+      expect(result).toMatchObject({ status: "failed", code: "kb.trail-attempt-unrecorded" });
+      expect(result).toHaveProperty("message", expect.stringContaining("mark remains"));
+      expect(readdirSync(directory)).toHaveLength(1);
+      expect(git(kb.root, ["rev-parse", "--verify", "HEAD"]).status).not.toBe(0);
+    } finally {
+      fault.mockRestore();
+    }
+    expect(publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory)).toMatchObject({
+      status: "failed",
+      code: "kb.trail-publication-unknown",
+    });
+  });
+}
+
+test("a partial record write returns an honest structured failure and keeps its mark", () => {
+  const kb = knowledgebase(trail.project.id);
+  const directory = processScratch("ak-trail-attempts-");
+  const file = join(kb.root, "projects", trail.project.id, "runs", "artifacts.jsonl");
+  const write = fs.writeFileSync;
+  let injected = false;
+  const fault = spyOn(fs, "writeFileSync").mockImplementation((target, data, options) => {
+    if (target === file) {
+      injected = true;
+      write(target, "partial record\n");
+      throw new Error("injected partial write");
+    }
+    write(target, data, options);
+  });
+  try {
+    const result = publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory);
+    expect(injected).toBe(true);
+    expect(result).toMatchObject({ status: "failed", code: "kb.trail-publication-unknown" });
+    expect(result).toHaveProperty("message", expect.stringContaining("cleanup"));
+    expect(readFileSync(file, "utf8")).toBe("partial record\n");
+    expect(readdirSync(directory)).toHaveLength(1);
+  } finally {
+    fault.mockRestore();
+  }
+});
+
+test("commit failure preserves concurrent record content and unrelated staged work", () => {
+  const kb = knowledgebase(trail.project.id);
+  const directory = processScratch("ak-trail-attempts-");
+  writeFileSync(join(kb.root, "notes.md"), "unrelated staged work\n");
+  expect(git(kb.root, ["add", "notes.md"]).status).toBe(0);
+  const hook = join(kb.root, "hooks", "pre-commit");
+  const relative = `projects/${trail.project.id}/runs/artifacts.jsonl`;
+  writeFileSync(hook, `#!/bin/sh\nprintf 'concurrent data\\n' > '${relative}'\nexit 1\n`, { mode: 0o700 });
+  const result = publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory);
+  expect(result).toMatchObject({ status: "failed", code: "kb.trail-publication-unknown" });
+  expect(result).toHaveProperty("message", expect.stringContaining("exposed"));
+  expect(readFileSync(join(kb.root, relative), "utf8")).toBe("concurrent data\n");
+  expect(git(kb.root, ["show", ":notes.md"]).stdout).toBe("unrelated staged work\n");
+});
+
+test("cleanup does not follow a concurrent replacement symlink", () => {
+  const kb = knowledgebase(trail.project.id);
+  const directory = processScratch("ak-trail-attempts-");
+  writeFileSync(join(kb.root, "concurrent.md"), "keep this content\n");
+  const relative = `projects/${trail.project.id}/runs/artifacts.jsonl`;
+  writeFileSync(
+    join(kb.root, "hooks", "pre-commit"),
+    `#!/bin/sh\nrm '${relative}'\nln -s '../../../concurrent.md' '${relative}'\nexit 1\n`,
+    { mode: 0o700 },
+  );
+  expect(publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory)).toMatchObject({
+    status: "failed",
+    code: "kb.trail-publication-unknown",
+  });
+  expect(fs.lstatSync(join(kb.root, relative)).isSymbolicLink()).toBe(true);
+  expect(readFileSync(join(kb.root, "concurrent.md"), "utf8")).toBe("keep this content\n");
+});
+
+test("cleanup preserves a concurrent record mode change", () => {
+  const kb = knowledgebase(trail.project.id);
+  const directory = processScratch("ak-trail-attempts-");
+  const relative = `projects/${trail.project.id}/runs/artifacts.jsonl`;
+  writeFileSync(join(kb.root, "hooks", "pre-commit"), `#!/bin/sh\nchmod +x '${relative}'\nexit 1\n`, {
+    mode: 0o700,
+  });
+  expect(publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory)).toMatchObject({
+    status: "failed",
+    code: "kb.trail-publication-unknown",
+  });
+  expect(fs.lstatSync(join(kb.root, relative)).mode & 0o111).not.toBe(0);
+});
+
+test("an index lock prevents cleanup without removing the written record", () => {
+  const kb = knowledgebase(trail.project.id);
+  const directory = processScratch("ak-trail-attempts-");
+  const first = { ...trail, id: "existing-trail" };
+  expect(publishRunArtifact(kb, JSON.stringify(first), trail.run_id, [], directory)).toMatchObject({
+    status: "complete",
+  });
+  writeFileSync(join(kb.root, ".git", "index.lock"), "external lock\n");
+  const result = publishRunArtifact(kb, JSON.stringify(trail), trail.run_id, [], directory);
+  expect(result).toMatchObject({ status: "failed", code: "kb.trail-publication-unknown" });
+  expect(result).toHaveProperty("message", expect.stringContaining("cleanup"));
+  expect(result).toHaveProperty("message", expect.stringContaining("exposed"));
+  expect(readFileSync(join(kb.root, ".git", "index.lock"), "utf8")).toBe("external lock\n");
+  expect(readFileSync(join(kb.root, "projects", trail.project.id, "runs", "artifacts.jsonl"), "utf8")).toContain(
+    `"id":"${trail.id}"`,
+  );
 });

@@ -18,13 +18,13 @@
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25164,
-      "tokens": 6244
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/claude-code:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11739,
-      "tokens": 2928
+      "bytes": 12738,
+      "tokens": 3178
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -113,8 +113,8 @@
     },
     "bundle/claude-code:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20670,
-      "tokens": 5168
+      "bytes": 22172,
+      "tokens": 5543
     },
     "bundle/claude-code:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -848,13 +848,13 @@
     },
     "bundle/codex:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25164,
-      "tokens": 6244
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/codex:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11739,
-      "tokens": 2928
+      "bytes": 12738,
+      "tokens": 3178
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -943,8 +943,8 @@
     },
     "bundle/codex:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20670,
-      "tokens": 5168
+      "bytes": 22172,
+      "tokens": 5543
     },
     "bundle/codex:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -1678,13 +1678,13 @@
     },
     "bundle/droid:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25164,
-      "tokens": 6244
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/droid:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11739,
-      "tokens": 2928
+      "bytes": 12738,
+      "tokens": 3178
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -1773,8 +1773,8 @@
     },
     "bundle/droid:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20670,
-      "tokens": 5168
+      "bytes": 22172,
+      "tokens": 5543
     },
     "bundle/droid:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -2508,13 +2508,13 @@
     },
     "bundle/grok:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25164,
-      "tokens": 6244
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/grok:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11739,
-      "tokens": 2928
+      "bytes": 12738,
+      "tokens": 3178
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -2603,8 +2603,8 @@
     },
     "bundle/grok:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20670,
-      "tokens": 5168
+      "bytes": 22172,
+      "tokens": 5543
     },
     "bundle/grok:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",
@@ -3338,13 +3338,13 @@
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/CONTRACT.md": {
       "file": "adapters/knowledgebase/CONTRACT.md",
-      "bytes": 25164,
-      "tokens": 6244
+      "bytes": 25176,
+      "tokens": 6247
     },
     "bundle/kimi:references/shared/adapters/knowledgebase/backends/local-git.md": {
       "file": "adapters/knowledgebase/backends/local-git.md",
-      "bytes": 11739,
-      "tokens": 2928
+      "bytes": 12738,
+      "tokens": 3178
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
@@ -3433,8 +3433,8 @@
     },
     "bundle/kimi:references/shared/protocols/work-trail/PROTOCOL.md": {
       "file": "protocols/work-trail/PROTOCOL.md",
-      "bytes": 20670,
-      "tokens": 5168
+      "bytes": 22172,
+      "tokens": 5543
     },
     "bundle/kimi:references/shared/protocols/worktree-ownership/PROTOCOL.md": {
       "file": "protocols/worktree-ownership/PROTOCOL.md",

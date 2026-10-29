@@ -189,7 +189,7 @@ Placement = { class: "kb-document", kind: KBDocumentType, scope: Scope }
   that an author may not close their own finding.
 - **Side effects** — `kb-publish`. Idempotency key derived per runner-contract §5 from the artifact
   hash. Publication admission and read-back follow the binding's idempotency rules; for `local-git`,
-  see [§5](backends/local-git.md#5-publishartifact).
+  see [publishArtifact](backends/local-git.md#5-publishartifact).
 
 ### `linkCodeEvidence`
 

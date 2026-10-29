@@ -4,27 +4,25 @@ import { join } from "node:path";
 import { sha256Hex } from "../util/hash.ts";
 import type { KbRefusal } from "./local-git.ts";
 
-function markAttempt(directory: string, record: string): void {
-  const file = openSync(join(directory, `${sha256Hex(record)}.attempt`), "wx", 0o600);
-  try {
-    writeFileSync(file, `${record}\n`);
-    fsyncSync(file);
-  } finally {
-    closeSync(file);
-  }
-  const parent = openSync(directory, "r");
-  try {
-    fsyncSync(parent);
-  } finally {
-    closeSync(parent);
-  }
-}
-
 export function markTrailAttempt(directory: string, record: string): KbRefusal | null {
+  let created = false;
   try {
-    markAttempt(directory, record);
+    const file = openSync(join(directory, `${sha256Hex(record)}.attempt`), "wx", 0o600);
+    created = true;
+    try {
+      writeFileSync(file, `${record}\n`);
+      fsyncSync(file);
+    } finally {
+      closeSync(file);
+    }
+    const parent = openSync(directory, "r");
+    try {
+      fsyncSync(parent);
+    } finally {
+      closeSync(parent);
+    }
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+    if (!created && error instanceof Error && "code" in error && error.code === "EEXIST") {
       return {
         status: "failed",
         code: "kb.trail-publication-unknown",
@@ -34,7 +32,9 @@ export function markTrailAttempt(directory: string, record: string): KbRefusal |
     return {
       status: "failed",
       code: "kb.trail-attempt-unrecorded",
-      message: `${record}: the publish-attempt mark could not be made durable; nothing was sent.`,
+      message: created
+        ? `${record}: this call created a mark but could not make it durable; nothing was sent. The mark remains; a later call conservatively reports publication-unknown and must not resend.`
+        : `${record}: the publish-attempt mark could not be created; nothing was sent and this call created no mark.`,
     };
   }
   return null;

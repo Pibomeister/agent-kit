@@ -140,9 +140,20 @@ header of its own is refused, because the header carries the status.
   consumes no mark. A mark already present when a write is due returns
   `kb.trail-publication-unknown` without sending anything; a mark that cannot be made durable
   returns `kb.trail-attempt-unrecorded` without sending anything. Neither failure stops the build.
+  If creation succeeded before durability failed, the first response says that this call sent
+  nothing and the mark remains. A later call conservatively reports publication-unknown; it does
+  not establish that the earlier call published. Unsupported directory flushing refuses in the
+  same way, without publishing or deleting the mark.
   The caller records the outcome in its index and replays a recorded outcome without invoking the
   publisher. It never removes marks or uses another directory to retry a record. Other artifact
   kinds and document publication do not accept this flag.
+- **Write and cleanup failures are reported.** A record-write exception returns a structured
+  failure. Cleanup is limited to that record, and restores it only while HEAD, working content
+  and index state remain recognizable as the interrupted write. An incomplete write, concurrent
+  content or a refused cleanup is left in place with its diagnostic; unrelated staged work is
+  untouched. A trail whose cleanup cannot be confirmed returns `kb.trail-publication-unknown`
+  and warns that content may have been published or exposed. Its mark stays. A confirmed restore
+  still retains the mark and returns `kb.write-failed` or `kb.commit-failed`, not success.
 
 ### Idempotency and read-back
 
