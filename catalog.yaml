@@ -7,10 +7,10 @@
 # its own entries without editing this file (docs/decisions/0010-catalog-fragments.md).
 #
 # Field notes
-#   invocation        U = user-invoked, only a human starts it (held by the skill's
-#                     authority step; no host flag, see docs/decisions/0003-model-invocation.md).
+#   invocation        U = user-invoked, human-started save the standing exceptions (held by the
+#                     skill's authority step; no host flag, see docs/decisions/0003-model-invocation.md).
 #                     M = model-invoked.
-#                     See AGENTS.md, "The invocation law".
+#                     See AGENTS.md, "The invocation law", for the exceptions.
 #   profiles          Which install profiles include it. Never model names.
 #   batch             Authoring batch (Phase 4). Order is deliberate; git is the resume point.
 #   provenance_origin donor      = adapted from at least one pinned donor file; every such file
