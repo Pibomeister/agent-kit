@@ -205,7 +205,7 @@ describe("tick", () => {
     ctx.judge = commandJudge({
       ...ctx.config,
       judgeCommand: ["sh", "-c", failure === "auth" ? "echo Unauthorized >&2; exit 1" : "sleep 1"],
-      judgeTimeoutMs: 100,
+      judgeTimeoutMs: failure === "auth" ? 10_000 : 100,
     });
     const source = ClaudeMemSource.open(ctx.config.memDb);
     if (source === null) throw new Error("fixture database unavailable");
@@ -244,7 +244,7 @@ describe("tick", () => {
       blocked: false,
     },
     { name: "timeout", script: "sleep 1", blocked: true },
-  ])("backfill checks $name when it executes", ({ script, blocked }) => {
+  ])("backfill checks $name when it executes", ({ name, script, blocked }) => {
     const base = scratch();
     const root = gitRepo(join(base, "shop"));
     const dbPath = join(base, "mem.db");
@@ -258,7 +258,7 @@ describe("tick", () => {
     ctx.judge = commandJudge({
       ...ctx.config,
       judgeCommand: ["sh", "-c", script, "judge", join(base, "attempt")],
-      judgeTimeoutMs: 100,
+      judgeTimeoutMs: name === "timeout" ? 100 : 10_000,
     });
     const ledger = ensureMemoryLedger(memoryDir(ctx.config, root));
     seedReflected(ledger, 2, { last_reflect: Date.now() - 7 * 3_600_000, last_weekly: Date.now() });
