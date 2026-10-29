@@ -266,7 +266,7 @@ In `dry-run` the effects performed are `artifact-write` alone.
 `complete`: under no-mistakes delivery, the committed handoff head and ship-preflight are recorded
 with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request carries the disclosure and `ship-preflight --pr <n>` succeeded. In direct `dry-run`, the payload and pre-flight record are
 emitted. In direct `publish`, the branch and PR exist with read-backs, the lesson candidate is
-drafted, and the watch lane holds the PR.
+drafted, and the watch lane holds the PR (under the unattended policy, also the disclosure and a successful `--pr` check).
 
 `needs-input`: the run was started by neither the typed command nor a validated grant, receipts or
 the review verdict are missing or bound to another revision, the mode was not named, or a sensitive

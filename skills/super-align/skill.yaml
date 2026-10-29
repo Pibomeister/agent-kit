@@ -126,7 +126,8 @@ stop_conditions:
     matched what was sent. Under the unattended policy (ADR-0014) the approval is instead a recorded
     unattended advance, which is never a human approval.
   - needs-input when the run was started by neither the typed command nor a validated grant, there
-    is no request, no explicit approval, a question outside the charter at align.run, a fork only
+    is no request, no explicit approval (outside the unattended policy, where the recorded advance
+    stands in), a question outside the charter at align.run, a fork only
     the human can settle, or publication reaches an unavailable knowledgebase adapter.
   - cap-reached when the runner-supplied alignment budget is exhausted.
   - cancelled when the human ends the run before approval.
@@ -137,7 +138,8 @@ failure_outcomes:
   - status: needs-input
     meaning: >-
       The run cannot proceed without one answer or capability: a start by neither the typed
-      command nor a validated grant, a missing request, a withheld approval, an out-of-charter
+      command nor a validated grant, a missing request, a withheld approval (outside the
+      unattended policy, whose recorded advance stands in), an out-of-charter
       question, a fork only the human can settle, or unavailable kb-read and kb-write at
       publication.
     next_permitted_action: >-

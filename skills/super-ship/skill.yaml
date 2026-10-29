@@ -218,7 +218,8 @@ stop_conditions:
   - complete in dry-run when the payload and the pre-flight record are emitted and no remote call was
     made.
   - complete in publish when the branch and pull request exist with their read-backs recorded, the
-    lesson candidate is drafted, and the watch lane holds the pull request.
+    lesson candidate is drafted, and the watch lane holds the pull request; under the unattended
+    policy, also once the pull request carries the disclosure and `ship-preflight --pr <n>` succeeded.
   - needs-input when the run was started by neither the typed command nor a validated grant,
     receipts or the verdict are missing or bound to another revision, the mode was not named, or a
     sensitive action is required and no charter entry covers it. A no-mistakes handoff with an

@@ -127,7 +127,7 @@ and never as an approval; record the `align` gate as [the unattended-lifecycle r
     success field describing a rendered interface or running service, name the observable surface,
     user path or request, and evidence kinds the project declares. Do not assume a browser, trace
     collector or running service.
-12. On an explicit yes, publish the settled vocabulary as a `concept` page and the direction as an
+12. On an explicit yes (under the unattended policy, the recorded step 11 advance), publish the settled vocabulary as a `concept` page and the direction as an
     `adr` with status `proposed`. On a fork the human cannot settle, publish a `type: decision`
     ticket instead and say what it blocks. If the knowledgebase adapter was unavailable, publish
     nothing and return `needs-input` naming `kb-read`, `kb-write` and the setup step the check
@@ -191,7 +191,7 @@ performed is `failed`, never complete.
 - `complete` — the human approved the restated direction (under the unattended policy, a recorded
   unattended advance, never an approval), and every published artifact's read-back matched what was sent.
 - `needs-input` — a start by neither the typed command nor a validated grant, no request, no
-  explicit approval, a question outside the charter at `align.run`, a fork only the human can
+  explicit approval (outside the unattended policy, whose recorded advance stands in), a question outside the charter at `align.run`, a fork only the human can
   settle, or publication reached an unavailable knowledgebase adapter. The first returns the
   command to type and nothing else. The unavailable-adapter result names `kb-read` and `kb-write`
   and returns the completed interview without publishing it.
