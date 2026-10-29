@@ -112,6 +112,9 @@ approves its own specification or tickets.
 7. Run `/ak:doc-review` on the specification and resolve everything it returns before cutting a
    ticket. A current review receipt bound to this specification with every decision answered
    satisfies this step; otherwise open decisions return to the human and stop the run.
+   For a single-slice ticket whose every changed path the author claims is text-only, the light
+   route defined in [the delegation reference](../../references/delegation/REFERENCE.md) under
+   "Light route for a text-only single-slice ticket" governs.
    While a specification or review decision is open, an evidence-bearing draft, where one exists, is
    kept and retyped `decision`, and no implementation ticket exists. An open assumption is per
    slice; that slice becomes a decision ticket at the zero-context gate and unrelated slices

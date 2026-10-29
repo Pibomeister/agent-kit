@@ -13,8 +13,19 @@ only when the task in front of you needs it; this index is enough to route.
 
 Use `adapters/runner-contract/CLI.md` for the request and private configuration shapes.
 
-The stock preflight reports guided mode without a runner socket. A socket is a candidate, not a
-grant: `start` must validate the standing grant in a captain-approved charter and the worker's
+The stock preflight reports guided mode without a runner socket. Preflight reads no run state, grant,
+seat or receipt. The strengthened autonomous-ship evidence decision (`evaluateEvidence` in
+`src/lifecycle/gate.ts`, reason `unattested-verifier`) runs when evidence is checked explicitly or a
+task-bound run record exists. That decision refuses a verifier receipt whose seat is not
+runner-attested if the run holds a bypass or delegated grant record or its build gate records an
+implementer seat: every such receipt when an implementer seat is recorded, and with only a grant
+record the receipts of checks that declare required evidence or a recipe. A grant recorded later
+applies to receipts already recorded when next evaluated. With neither, only such a receipt of a
+check that declares required evidence or a recipe is noted as worker-attested and counts for guided
+ship only. With a socket, only the file type was checked and nothing connected; that is not
+liveness, identity or qualification, and a socket alone does not establish a configured qualified
+producer or a passed gate. A socket is a candidate, not a grant: `start` must validate the standing
+grant in a captain-approved charter and the worker's
 first autopilot step must read that attestation. The runner's state and evidence are outside the
 worker worktree and Git common directory.
 

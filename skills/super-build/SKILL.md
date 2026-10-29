@@ -293,8 +293,7 @@ Parallel tickets: a bounded batch rather than every independent ticket at once (
 small to outweigh its own dispatch runs inline or batched with related units; the runner's ticket
 budget is the only cap this skill enforces on how many start.
 
-Changed-line target and test-pyramid shape: guidance, configurable per project and carried in the
-project record (`schemas/project.schema.json`). Neither is validated or enforced here and neither is
-grounds for a finding on its own; a ticket that exceeds the configured target records the exception
-rather than answering it with an artificial file split or a meaningless test (ruling
-`numeric-heuristics-are-guidance`).
+Changed-line target and test-pyramid shape: guidance, not a gate; configurable per project, neither
+validated nor enforced, not on its own grounds for a finding, an exception recorded rather than an artificial
+split or a meaningless test. [The reference loaded at step 5](../../references/engineering-principles/REFERENCE.md)
+states each (ruling `numeric-heuristics-are-guidance`). Reads of the calling agent: [read-economy](../../references/read-economy/REFERENCE.md).

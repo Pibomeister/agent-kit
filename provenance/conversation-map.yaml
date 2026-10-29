@@ -1350,6 +1350,21 @@ capabilities:
       knowledgebase. Building a file-backed backend here is the owner's decision recorded in
       docs/decisions/0010-file-backed-knowledgebase.md.
 
+  - id: read-economy
+    capability: Spending the loading agent's own reads and tool output deliberately, by batching independent reads, taking targeted excerpts, bounding output and not re-reading what is already in context
+    disposition: reference
+    destination: references/read-economy
+    locator: G:L76-76; G:L763-763
+    origin: conversation
+    acceptance_test: >-
+      Loaded on demand by `super-scout` and `super-build`; it has no invocation of its own. It is
+      guidance for the loading agent's reads, claims no measured saving and keeps a required full
+      read a full read.
+    note: >-
+      The two locators describe an orchestrating agent re-reading context and re-reading a plan it
+      already holds, which is the one capability here a source supports. The batching, excerpt and
+      bounded-output wording carries no cited source and is plain guidance.
+
   - id: knowledgebase-pr-linkage
     capability: Source PRs linked to their knowledgebase PRs, with a source merge activating the existing knowledgebase coordinator
     disposition: retained

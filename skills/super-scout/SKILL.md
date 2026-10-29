@@ -177,7 +177,8 @@ rather than published as a dossier nobody asked to keep.
 
 Turns: 4 (gate, `policies/limits.yaml` `scout_turns`). A project may configure a lower value and
 cannot raise it. Multiple independent reads may run inside one turn where the host permits it;
-parallel reads do not buy extra turns.
+parallel reads do not buy extra turns. How to spend those reads without narrowing the evidence:
+[the read-economy reference](../../references/read-economy/REFERENCE.md).
 
 Tool surface: read, glob, lexical search and at most one graph query (gate). A scout is not handed
 an ambient tool inventory, and a question needing more tools than these is a question for another
@@ -186,6 +187,12 @@ lane.
 Precision over recall (guidance): a shorter list of read-back hits is the return shape this skill
 is for. An unread long list is not more coverage, and reporting it as though it were is what turns
 the dossier into a map that is trusted and wrong.
+
+Seat capability and cost (guidance): a scout reads and cites; it does not weigh, so this work does
+not by itself call for the strongest reasoning available. Whoever binds the seat decides, and a
+question that turns on complex judgment may still need it. An explicit choice by the human or the
+runner stands, this skill never changes its own seat, and every gate above applies unchanged. Do
+not claim a saving without measurement.
 
 Searches recorded: all of them, including the empty ones (gate). A search omitted because it found
 nothing removes the evidence that the area was looked at.
