@@ -6,9 +6,11 @@
  * patch stack standing in for a5d78f8, 0001-agent-kit-mode and 0002-agent-kit-audit.
  */
 import { describe, expect, spyOn, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import Ajv from "ajv";
 
 import { runCli } from "../../src/cli.ts";
 import { bind } from "../../src/firstmate/bind.ts";
@@ -443,6 +445,45 @@ describe("binding schema", () => {
   });
 });
 
+interface WorkerSettings {
+  hooks: { PreToolUse: unknown[]; Stop: { hooks: { type: string; command: string; timeout: number }[] }[] };
+}
+const isWorkerSettings = new Ajv({ strict: false }).compile<WorkerSettings>({
+  type: "object",
+  required: ["hooks"],
+  properties: {
+    hooks: {
+      type: "object",
+      required: ["PreToolUse", "Stop"],
+      properties: {
+        PreToolUse: { type: "array" },
+        Stop: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["hooks"],
+            properties: {
+              hooks: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["type", "command", "timeout"],
+                  properties: { type: { type: "string" }, command: { type: "string" }, timeout: { type: "number" } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+function workerSettings(text: string): WorkerSettings {
+  const raw: unknown = JSON.parse(text);
+  if (!isWorkerSettings(raw)) throw new Error("worker settings lack the PreToolUse and Stop hooks");
+  return raw;
+}
+
 describe("install and remove", () => {
   test("writes exactly its files, is idempotent, and remove deletes exactly those", () => {
     const { home, opts } = env();
@@ -470,6 +511,13 @@ describe("install and remove", () => {
     expect(command).toContain("child-guard.sh");
     // Patch 0001 replaces the token with a bare absolute path, so the quotes around it are ours.
     expect(command).toContain("--binding '__AK_FIRSTMATE_BINDING__'");
+    expect(
+      workerSettings(readFileSync(join(home, "config/agent-kit/worker-settings.json"), "utf8")).hooks.Stop,
+    ).toEqual([
+      {
+        hooks: [{ type: "command", command: `bun '${join(REPO, "tools/hooks/semantic-lint.ts")}' hook`, timeout: 30 }],
+      },
+    ]);
 
     const second = install({ fmHome: home, evidence: { store: "mock", location } }, opts);
     expect(second.ok).toBe(true);
@@ -490,6 +538,35 @@ describe("install and remove", () => {
     expect(existsSync(join(home, "config/agent-kit/evidence.env"))).toBe(false);
     remove({ fmHome: home }, opts);
     expect(existsSync(join(home, "config/.keep"))).toBe(true);
+  });
+
+  test("the worker Stop command runs the semantic lint hook, quiet without a key, and carries no key or switch", () => {
+    const { home, opts } = env();
+    // Settings written by the release before the Stop hook are still this installer's and are upgraded in place.
+    const settingsPath = join(home, "config/agent-kit/worker-settings.json");
+    install({ fmHome: home }, opts);
+    const { PreToolUse } = workerSettings(readFileSync(settingsPath, "utf8")).hooks;
+    writeFileSync(settingsPath, `${JSON.stringify({ hooks: { PreToolUse } }, null, 2)}\n`);
+    expect(install({ fmHome: home }, opts).ok).toBe(true);
+    const text = readFileSync(settingsPath, "utf8");
+    expect(text).not.toContain("AK_JEV_ENABLED");
+    expect(text).not.toContain("jev.env");
+    const command = workerSettings(text).hooks.Stop[0]?.hooks[0]?.command ?? "";
+    const worker = makeDir();
+    const run = spawnSync("/bin/sh", ["-c", command], {
+      cwd: worker,
+      env: { PATH: process.env.PATH, HOME: worker },
+      encoding: "utf8",
+    });
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual({
+      status: "skipped",
+      reason: "missing-key",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
   });
 
   test("refuses an unpatched home, and refuses to overwrite a file it did not write", () => {
