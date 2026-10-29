@@ -62,7 +62,9 @@ The verifier seat record names its id, the implementer seat, and one isolation s
   This remains useful guided evidence and never claims autonomous independence. The gate counts it
   only for a human-typed ship, with a visible note, as worker-attested evidence. It refuses it once
   the build gate records the implementer seat, or once the run holds any bypass or delegated grant
-  record, and the refusal names the record. A bypass check made before the lifecycle run
+  record, and the refusal names the record. Under the opt-in unattended policy (ADR-0014) it is
+  counted with a recorded note instead, whose boundary is the live merge-gate read (an exception to
+  ruling `closure-requires-independent-verification`). A bypass check made before the lifecycle run
   is opened does not mark that run. A delegated grant is found through the binding
   the run was opened with (`open --binding <binding file>`): the run record keeps the binding's run
   id and evidence store, and the gate reads the grant records there whatever store the run itself
@@ -77,7 +79,8 @@ the worker's writable scope is what makes an attestation trustworthy; without a 
 
 Independent verification is declared available when the build gate records the implementer seat.
 Then every counted receipt, `surface: none` included, must name a runner-attested verifier seat
-distinct from that seat. Without that record, only checks bound to a recipe require a verifier seat,
+distinct from that seat (under the unattended policy, a distinct host-unattested seat with its recorded
+note; never the implementer's own). Without that record, only checks bound to a recipe require a verifier seat,
 which keeps older tickets and receipts compatible. A seat recorded at one commit stays declared for
 its descendants; a record whose commit an amend or rebase removed from history no longer counts, so
 the build gate is recorded with the seat again after a history rewrite.

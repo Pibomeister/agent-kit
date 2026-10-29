@@ -32,12 +32,16 @@ law:
         immutable charter (ADR-0007). A worker prompt or phase grant is never a start. The other
         standing exception is `bypass` below: a supervisor-held grant stands in for the typed
         command of the lifecycle phases it names, for one task, and starts them only (ADR-0008).
+        The third is `unattended` below: where the operator opts in, super-align, super-bound and
+        super-ship start with no typed command and no grant, bounded by the live merge-gate read
+        (ADR-0014).
       enforced_by: >-
         the skill's own text, which `ak validate` checks (`human-start`): the description names
         the typed command and the class, and the first workflow step names the command and stops;
         autopilot also names Firstmate's standing grant and runner validation; no host flag is
         emitted (docs/decisions/0003-model-invocation.md, ADR-0007). A bypass start is checked by
-        the bundle's `ak-gate.mjs bypass check` (src/lifecycle/gate.ts)
+        the bundle's `ak-gate.mjs bypass check` (src/lifecycle/gate.ts), an unattended start by its
+        `ak-gate.mjs unattended check` (src/lifecycle/gate.ts)
     - id: u-may-call-m
       rule: A user-invoked skill may call model-invoked (M) skills directly.
     - id: u-may-not-call-u
@@ -258,7 +262,7 @@ operations:
       Release checks, sensitive-data scan, PR preparation and the linked knowledgebase change,
       up to and including opening a pull request when the charter grants it.
     preconditions:
-      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`
+      - in the autonomous form, super-ship step 7's `ak-gate.mjs check` requires `trusted-evidence`, except under the unattended policy (ADR-0014), whose worker-attested evidence is bounded by the live merge-gate read
       - verification receipts bind to the head being shipped
       - review approval exists and binds to that head's artifact hash
     hard_gates:
@@ -465,6 +469,34 @@ bypass:
     determined worker. Firstmate accepted that limit on the captain's behalf on 2026-10-01; an
     issuer outside the worker's account (the runner, or a separate uid) is the follow-up.
   ruling: entrypoint-phase-operation-split
+
+# ADR-0014. A third standing exception to "only a human starts these", for any runner.
+unattended:
+  rule: >-
+    Where the operator opts in, by `AK_LIFECYCLE_POLICY=unattended` in the runner's environment or by
+    `ak.lifecycle.json` naming the policy on the repository's default branch, super-align,
+    super-bound and super-ship start when `ak-gate.mjs unattended check --phase <phase>` exits 0,
+    with no typed command and no grant, an exception for this policy only to the ordinary-workers clause of ruling `entrypoint-phase-operation-split`.
+    Absent both opt-ins nothing here applies. A typed command
+    still starts a phase, and a bypass grant is refused under the policy.
+  phases: [super-align, super-bound, super-ship]
+  advance: >-
+    A wait for a human answer or approval proceeds with the skill's own recommendation, recorded as
+    an unattended advance and never as an approval. A ticket whose class makes a human the author is
+    implemented by the agent with its true class, floor and author kind recorded, an exception to ruling `delegation-class-is-authority-not-finding` whose boundary is the live merge-gate read.
+    Every other stop still stops, every sensitive action included.
+  never: [merge, deploy, scope-expansion]
+  evidence: >-
+    Every gate records the policy and the evidence commands the gate tool ran; align, bound and scout
+    gain gates under the policy. The evidence is worker-attested, and a host-unattested verifier is a
+    recorded note rather than a refusal, an exception to ruling `closure-requires-independent-verification` whose boundary is the live merge-gate read.
+  trust: >-
+    The boundary is the merge. ship-preflight reads the target's default branch live and read-only
+    and refuses unless code-owner review by designated human reviewers, required CI and the
+    independent review check pinned to a dedicated app are enforced with no bypass, and the runner is
+    a non-admin, non-designated user. Final ship success validates the posted review at the pull
+    request's exact head; its reviewer identity must be a canonical model different from every
+    configured author model.
 
 packs:
   rule: >-

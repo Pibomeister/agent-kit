@@ -25,11 +25,16 @@ never as an implementation identity.
 
 The class changes authorship and checkpoint authority, not whether bounding produces a ticket. A
 `red` result produces a human-owned implementation ticket and limits agent participation to the
-bounded assistance the ticket names. A ticket whose class makes a human the author states the
+bounded assistance the ticket names. Under the opt-in unattended policy (ADR-0014,
+`docs/decisions/0014-unattended-lifecycle-policy.md`) the agent implements a ticket whose class makes
+a human the author, within its allowed changes, with the true class, floor and `author_kind: agent`
+recorded and no approval written, the human boundary being the live protected merge: an exception to
+ruling `delegation-class-is-authority-not-finding` for that policy only. A ticket whose class makes a human the author states the
 authorship boundary in existing fields. `allowed_changes` remains the ticket's
 full write scope for the implementer. Name the agent's permitted file and symbol subset in text, in
 `goal` or `stop_conditions`, alongside non-file assistance such as research; put prohibited agent
-work, including authoring the implementation, in `non_goals`. On a decision ticket the boundary
+work, including authoring the implementation outside the unattended policy, in `non_goals`. Under that
+policy the agent may author only the ticket-scoped implementation, its author kind recorded as `agent`. On a decision ticket the boundary
 lives in `goal` and `non_goals`. Naming a human owner alone is not that boundary.
 
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A

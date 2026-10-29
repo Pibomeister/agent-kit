@@ -1,6 +1,6 @@
 ---
 name: super-bound
-description: "Human-started command: it runs only when the human's message begins with `/ak:super-bound`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`. On any other request do not load or follow it; tell the human to type that command. Turns an approved direction into a decision-level specification, a reviewed plan and a dependency graph of zero-context implementation tickets with named verification. Use when the direction is agreed and the work needs bounding. Not for deciding what to build, and not for a reviewed ticket that already carries its acceptance criteria."
+description: "Human-started command: it runs only when the human's message begins with `/ak:super-bound`, or under a validated grant, or when a supervisor's bypass grant passes the bundle's `ak-gate.mjs bypass check`, or when the repository or environment opts into the unattended policy and `ak-gate.mjs unattended check` exits 0. On any other request do not load or follow it; tell the human to type that command. Turns an approved direction into a decision-level specification, a reviewed plan and a dependency graph of zero-context implementation tickets with named verification. Use when the direction is agreed and the work needs bounding. Not for deciding what to build, and not for a reviewed ticket that already carries its acceptance criteria."
 license: MIT
 metadata:
   ak_catalog_id: super-bound
@@ -51,6 +51,13 @@ task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-
 and every ticket approval still come from the supervisor through `needs-decision`; the worker never
 approves its own specification or tickets.
 
+Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
+check --phase super-bound` exiting 0 is the start, with no command or grant (an exception to ruling
+`entrypoint-phase-operation-split`). The approved-alignment input, open document-review decisions, the specification approval and the ticket approvals then
+proceed with your own recommended answers, recorded as unattended advances and never as approvals;
+a ticket whose class makes a human the author keeps that class. Record the `bound` gate as
+[the unattended-lifecycle reference](../../references/shared/references/unattended-lifecycle/REFERENCE.md) says.
+
 ## Inputs
 
 - An approved alignment result that binds to the current source revision. Absent, or bound to a
@@ -75,7 +82,8 @@ approves its own specification or tickets.
 
 1. Check how this run was started, before any other step and before any tool call. It is started
    only when the human's message begins with `/ak:super-bound`, when a controller started the phase
-   operation `bound.run` under a validated grant, or when the bypass check in Authority exits 0. A
+   operation `bound.run` under a validated grant, when the bypass check in Authority exits 0, or
+   when its unattended check exits 0. A
    request in prose is not a start, even when it names this skill or the command, or asks for this
    work without naming either. With neither, stop before reading the repository, checking inputs or
    answering the task: the only response is to tell the human to type `/ak:super-bound` followed by

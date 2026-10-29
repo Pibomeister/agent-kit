@@ -119,6 +119,10 @@ read-only work may continue within budget. Control returns to the runner. No age
 their explicit form only. A human-started public entrypoint **stops for explicit invocation**
 rather than reproducing a forbidden command's effect through a side door (`AGENTS.md`, "The invocation law";
 ruling `entrypoint-phase-operation-split`).
+Under the opt-in unattended policy ([ADR-0014](../../docs/decisions/0014-unattended-lifecycle-policy.md)),
+align, bound and ship start instead when the gate tool's `unattended check` exits 0, the human boundary
+being the live protected merge: an exception, for that policy only, to ruling
+`entrypoint-phase-operation-split`.
 For model-started review, see [ADR-0013](../../docs/decisions/0013-model-starts-super-review.md).
 
 ### How a runner signals trusted evidence
@@ -132,6 +136,10 @@ With this contract attached and no real runner behind it, no such evidence exist
 form of an evidence-consuming operation stops with `status: needs-input` naming trusted evidence as
 unavailable. That stop is the `fails-closed` row in §1. The explicit form is unaffected.
 
+The one exception is the opt-in unattended policy (ADR-0014): there the worker-attested gate records
+count, labelled so, and the boundary is the live merge-gate read with its residual assumptions
+stated. Work outside that opt-in keeps both restrictions above.
+
 ---
 
 ## 3. Seat independence
@@ -140,7 +148,11 @@ A **seat** is a run-scoped role assignment the runner makes and attests. `roles/
 prompt for a seat; the runner supplies who fills it.
 
 **Independence is a runner-enforced structural constraint, never a model identity.** It is never
-expressed as, satisfied by, or checked against a different model, provider or family. What the runner
+expressed as, satisfied by, or checked against a different model, provider or family. The one scoped
+exception is the forge-side independent review check under the opt-in unattended policy
+([ADR-0014](../../docs/decisions/0014-unattended-lifecycle-policy.md)), whose reviewer must be a
+canonical model identity different from every configured author model; the seats this contract fills
+and every run outside that policy are unchanged. What the runner
 must attest for two seats declared independent:
 
 - **Distinct seat identifiers** bound to the run, recorded in the decision card.
