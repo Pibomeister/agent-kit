@@ -1174,6 +1174,16 @@ const isWorkflow = ajv.compile<Workflow>({
   },
 });
 
+/** The check run the posting job sends. */
+const isPosted = ajv.compile<{ conclusion: string; output: { text: string } }>({
+  type: "object",
+  required: ["conclusion", "output"],
+  properties: {
+    conclusion: { type: "string" },
+    output: { type: "object", required: ["text"], properties: { text: { type: "string" } } },
+  },
+});
+
 /** The metadata file the review harness writes: the provider's reported model for the call. */
 const meta = (model: string) => JSON.stringify({ provider_model: model });
 /** A configuration whose reviewer is the alias `prov/latest`, written with stray case and space, for `target`. */
@@ -1188,12 +1198,31 @@ describe("the review workflow template", () => {
   if (!isWorkflow(workflow)) throw new Error(`the template is not a workflow: ${ajv.errorsText(isWorkflow.errors)}`);
   const { review, post } = workflow.jobs;
   const postScript = post.steps.find((step) => step.env?.APP_TOKEN === "${{ steps.app.outputs.token }}")?.run ?? "";
+  const approve = JSON.stringify({ verdict: "approve", findings: [] });
 
   test("runs only on pull_request_target and never checks out or runs pull-request code", () => {
     expect(workflow.on).toEqual({ pull_request_target: { types: ["opened", "synchronize", "reopened"] } });
     expect(Object.keys(workflow.jobs).toSorted()).toEqual(["post", "review"]);
     for (const job of [review, post]) expect(job.steps.filter(uses("actions/checkout"))).toEqual([]);
-    expect(review.steps.find((step) => step.name === "Review the diff")?.run).toContain("< diff.patch");
+  });
+
+  test("the review step hands the reviewer the diff on standard input and keeps its verdict and metadata", () => {
+    const step = review.steps.find((s) => s.name === "Review the diff");
+    if (step?.run === undefined) throw new Error("the template has no review step");
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-review-")));
+    writeFileSync(join(dir, "diff.patch"), DIFF);
+    const p = Bun.spawnSync(["bash", "-c", step.run], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        AK_REVIEW_COMMAND: `cat > seen.patch; printf '%s' '{"provider_model":"prov/model-b"}' > "$AK_REVIEW_METADATA_FILE"; printf '%s' '{"verdict":"approve"}'`,
+        AK_REVIEW_METADATA_FILE: join(dir, "meta.out"),
+      },
+    });
+    expect(p.exitCode).toBe(0);
+    expect(readFileSync(join(dir, "seen.patch"), "utf8")).toBe(DIFF);
+    expect(readFileSync(join(dir, "verdict.json"), "utf8")).toBe('{"verdict":"approve"}');
+    expect(readFileSync(join(dir, "metadata.json"), "utf8")).toBe('{"provider_model":"prov/model-b"}');
   });
 
   test("the review job holds no environment and reads only; the posting job holds the key and stamps identity itself", () => {
@@ -1202,7 +1231,6 @@ describe("the review workflow template", () => {
     expect(post.environment).toBe("${{ vars.AK_REVIEW_ENVIRONMENT }}");
     expect(post.permissions).toEqual({ contents: "read" });
     expect(postScript).not.toBe("");
-    expect(postScript).not.toContain("${{");
   });
 
   test("the result moves only as a file, and the posting job re-derives what it stamps and posts", () => {
@@ -1220,55 +1248,83 @@ describe("the review workflow template", () => {
       "app-id": "${{ vars.AK_REVIEW_APP_ID }}",
       "private-key": "${{ secrets.AK_REVIEW_APP_KEY }}",
     });
-    expect(postScript).toContain(
-      'gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" | sha256sum',
-    );
-    expect(postScript).toContain('"repos/$REPO/contents/ak.lifecycle.json?ref=$DEFAULT_BRANCH"');
-    expect(postScript).toContain('jq -n --arg name "$check" --arg head "$HEAD_SHA"');
-    expect(postScript).toContain('{name: $name, head_sha: $head, status: "completed"');
-    expect(postScript).toContain(
-      'GH_TOKEN="$APP_TOKEN" gh api --method POST "repos/$REPO/check-runs" --input check.json',
-    );
+    const stamped = stamp(CONFIG, { metadata: meta("prov/model-b"), verdict: approve });
+    expect(stamped.requests).toEqual([
+      {
+        token: "read-token",
+        args: ["api", "--method", "GET", "repos/o/r/contents/ak.lifecycle.json?ref=main", "--jq", ".content"],
+      },
+      {
+        token: "read-token",
+        args: [
+          "api",
+          "--method",
+          "GET",
+          "-H",
+          "Accept: application/vnd.github.diff",
+          `repos/o/r/compare/${BASE}...${HEAD}`,
+        ],
+      },
+      { token: "app-token", args: ["api", "--method", "POST", "repos/o/r/check-runs", "--input", "check.json"] },
+    ]);
+    expect(stamped.posted).toMatchObject({ name: CHECK, head_sha: HEAD, status: "completed", conclusion: "success" });
+    expect(stamped.parsed).toMatchObject({ head_sha: HEAD, base_sha: BASE, diff_sha256: sha(DIFF) });
   });
 
   /**
-   * Runs the posting job's own stamping lines (its `canon` function through the `jq -n` program that builds
-   * the result) over fixture configuration, metadata and verdict files, the forge reads replaced by fixtures.
+   * Runs the posting job's whole script over fixture metadata and verdict files, with a stub `gh` on the
+   * search path that serves `config` and the diff, records every request and keeps the posted check run.
    */
   function stamp(config: JsonObject, files: { metadata?: string; verdict: string }) {
     if (Bun.which("jq") === null) throw new Error("jq is not on the search path; the template test needs it");
-    const lines = postScript.split("\n");
-    const from = lines.findIndex((line) => line.startsWith("check=$(jq"));
-    const to = lines.findIndex((line) => line.startsWith("jq -n --arg name"));
-    if (from < 0 || to <= from || !lines.slice(from, to).some((line) => line.startsWith("canon() {")))
-      throw new Error("the template's stamping lines were not found");
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-stamp-")));
     mkdirSync(join(dir, "review"));
+    mkdirSync(join(dir, "bin"));
     if (files.metadata !== undefined) writeFileSync(join(dir, "review", "metadata.json"), files.metadata);
     writeFileSync(join(dir, "review", "verdict.json"), files.verdict);
     writeFileSync(join(dir, "config.json"), JSON.stringify(config));
-    const script = [
-      "set -euo pipefail",
-      "config=$(cat config.json)",
-      `diff_sha256=${sha(DIFF)}`,
-      ...lines.slice(from, to),
-      'printf "%s\\n%s" "$conclusion" "$result"',
-    ].join("\n");
-    const p = Bun.spawnSync(["bash", "-c", script], {
+    writeFileSync(join(dir, "diff.patch"), DIFF);
+    writeFileSync(
+      join(dir, "bin", "gh"),
+      [
+        "#!/usr/bin/env bash",
+        `jq -cn --arg token "$GH_TOKEN" '{token: $token, args: $ARGS.positional}' --args -- "$@" >> requests.jsonl`,
+        'case "$*" in',
+        "  *contents/ak.lifecycle.json*) base64 < config.json ;;",
+        "  *compare/*) cat diff.patch ;;",
+        "  *check-runs*) cp check.json posted.json ;;",
+        "  *) exit 1 ;;",
+        "esac",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const p = Bun.spawnSync(["bash", "-c", postScript], {
       cwd: dir,
-      env: { ...process.env, HEAD_SHA: HEAD, BASE_SHA: BASE },
+      env: {
+        ...process.env,
+        PATH: `${join(dir, "bin")}:${process.env.PATH ?? ""}`,
+        REPO: "o/r",
+        HEAD_SHA: HEAD,
+        BASE_SHA: BASE,
+        DEFAULT_BRANCH: "main",
+        READ_TOKEN: "read-token",
+        APP_TOKEN: "app-token",
+      },
     });
-    if (p.exitCode !== 0) throw new Error(`the template's stamping lines failed: ${p.stderr.toString()}`);
-    const [conclusion = "", ...rest] = p.stdout.toString().split("\n");
-    const text = rest.join("\n");
+    if (p.exitCode !== 0) throw new Error(`the template's posting script failed: ${p.stderr.toString()}`);
+    const requests: unknown = JSON.parse(
+      `[${readFileSync(join(dir, "requests.jsonl"), "utf8").trim().split("\n").join(",")}]`,
+    );
+    const posted: unknown = JSON.parse(readFileSync(join(dir, "posted.json"), "utf8"));
+    if (!isPosted(posted)) throw new Error(`the posted check run is malformed: ${ajv.errorsText(isPosted.errors)}`);
+    const { conclusion } = posted;
+    const { text } = posted.output;
     const parsed: unknown = JSON.parse(text);
     const status = reviewOf(
       withFixtures({ ...configWith(config), ...runsWith([checkRun(1, result(), { conclusion, output: { text } })]) }),
     );
-    return { conclusion, parsed, status };
+    return { conclusion, parsed, posted, requests, status };
   }
-
-  const approve = JSON.stringify({ verdict: "approve", findings: [] });
 
   test("a stamped approval passes the validator, the alias and case mapping agreeing in both implementations", () => {
     const plain = stamp(CONFIG, { metadata: meta("prov/model-b"), verdict: approve });
