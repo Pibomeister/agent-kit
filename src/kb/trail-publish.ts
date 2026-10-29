@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fsyncSync, openSync, writeFileSync } from "node:fs";
+import { closeSync, fsyncSync, openSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { sha256Hex } from "../util/hash.ts";
@@ -23,8 +23,8 @@ function markAttempt(directory: string, record: string): void {
 export function markTrailAttempt(directory: string, record: string): KbRefusal | null {
   try {
     markAttempt(directory, record);
-  } catch {
-    if (existsSync(join(directory, `${sha256Hex(record)}.attempt`))) {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
       return {
         status: "failed",
         code: "kb.trail-publication-unknown",
