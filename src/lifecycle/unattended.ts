@@ -24,6 +24,9 @@ export const CONFIG_FILE = "ak.lifecycle.json";
 export const UNATTENDED = "unattended";
 export const DISCLOSURE =
   "Unattended lifecycle policy: no human approved the align or bound artifacts, phase evidence is worker-attested and kept in the runner's evidence store, and merge is the human gate: it requires approval by a designated human reviewer.";
+/** What the forge reads cannot show, stated by ship-preflight and review-status whatever their outcome. */
+export const RESIDUAL_ASSUMPTIONS =
+  "Residual assumptions these reads cannot verify: designated reviewer accounts are operated by people and are not reachable by the runner through credentials outside the forge client, so a runner that shares the operator's OS account and credentials does not meet them; team membership is not verified; a fine-grained read credential is scoped read-only by the operator; and the runner's push credential is the active one.";
 /** The app every GitHub Actions workflow posts check runs as, a task branch's own included. */
 export const ACTIONS_APP_ID = 15368;
 export const HUMAN_STARTED_PHASES = ["super-align", "super-bound", "super-ship"] as const;
@@ -65,9 +68,10 @@ const parse = (source: string): Json | undefined => {
 };
 const decode = (content: Json | undefined): string | undefined =>
   isText(content) ? Buffer.from(content, "base64").toString("utf8") : undefined;
+const sha256 = (bytes: Uint8Array): string => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
-const exec = (cmd: string, args: readonly string[], cwd?: string, env?: NodeJS.ProcessEnv) => {
-  const r = spawnSync(cmd, args, { cwd, env, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const exec = (cmd: string, args: readonly string[], cwd?: string) => {
+  const r = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   return { code: r.status ?? 1, out: r.stdout ?? "" };
 };
 
@@ -100,6 +104,8 @@ export interface ForgeResponse {
   headers: Record<string, string>;
   body: Json | undefined;
   text: string;
+  /** `sha256:<hex>` of the body's raw bytes as the client returned them, before any decoding. */
+  digest: string;
 }
 export type Forge = (path: string, options?: { token?: string; accept?: string }) => ForgeResponse;
 
@@ -117,10 +123,12 @@ export function ghForge(): Forge {
     if (options.token !== undefined) env.GH_TOKEN = options.token;
     const args = ["api", "--method", "GET", "-i"];
     if (options.accept !== undefined) args.push("-H", `Accept: ${options.accept}`);
-    const r = exec("gh", [...args, path], undefined, env);
-    const split = /\r?\n\r?\n/.exec(r.out);
-    const head = split === null ? r.out : r.out.slice(0, split.index);
-    const bodyText = split === null ? "" : r.out.slice(split.index + split[0].length);
+    const raw = spawnSync("gh", [...args, path], { env, maxBuffer: 64 * 1024 * 1024 }).stdout ?? Buffer.alloc(0);
+    // latin1 decodes one character per byte, so the match index is the body's byte offset.
+    const split = /\r?\n\r?\n/.exec(raw.toString("latin1"));
+    const head = (split === null ? raw : raw.subarray(0, split.index)).toString("utf8");
+    const body = split === null ? Buffer.alloc(0) : raw.subarray(split.index + split[0].length);
+    const bodyText = body.toString("utf8");
     const lines = head.split(/\r?\n/);
     const status = Number(/^HTTP\/\S+ (\d{3})/.exec(lines[0] ?? "")?.[1] ?? 0);
     const headers: Record<string, string> = {};
@@ -128,7 +136,7 @@ export function ghForge(): Forge {
       const at = line.indexOf(":");
       if (at > 0) headers[line.slice(0, at).trim().toLowerCase()] = line.slice(at + 1).trim();
     }
-    return { status, headers, body: parse(bodyText) ?? bodyText, text: bodyText };
+    return { status, headers, body: parse(bodyText) ?? bodyText, text: bodyText, digest: sha256(body) };
   };
 }
 
@@ -237,6 +245,35 @@ interface Source {
 
 type Get = (path: string, read?: boolean) => ForgeResponse;
 
+const PER_PAGE = 100;
+
+/** A paginated listing read whole, or `failure` saying why it is not. */
+interface Listing {
+  found: Json[];
+  /** The last page's HTTP status. */
+  status: number;
+  failure?: string;
+}
+
+/**
+ * Every item of a paginated listing, page by page until `total_count` is reached. `failure` says why the
+ * listing is not whole: a page is unreadable or carries no `total_count`, or the pages ran short of it.
+ */
+function listAll(get: Get, path: string, key: string, read = false): Listing {
+  const found: Json[] = [];
+  for (let n = 1; ; n += 1) {
+    const r = get(`${path}${path.includes("?") ? "&" : "?"}per_page=${PER_PAGE}&page=${n}`, read);
+    const total = field(r.body, "total_count");
+    if (r.status !== 200) return { found, status: r.status, failure: `unreadable (HTTP ${r.status})` };
+    if (!isNumber(total)) return { found, status: r.status, failure: "listed without a total_count" };
+    const batch = items(field(r.body, key));
+    found.push(...batch);
+    if (found.length >= total) return { found, status: r.status };
+    if (batch.length < PER_PAGE)
+      return { found, status: r.status, failure: `incomplete (${found.length} of ${total} listed)` };
+  }
+}
+
 const isDesignated = (config: LifecycleConfig, who: string) =>
   config.humanReviewers.some((reviewer) => norm(reviewer).replace(/^@/, "") === norm(who).replace(/^@/, ""));
 const requiredChecks = (list: Json | undefined, appKey: string) =>
@@ -244,8 +281,7 @@ const requiredChecks = (list: Json | undefined, appKey: string) =>
     const context = nonEmpty(field(entry, "context"));
     return context === undefined ? [] : [{ context, app: pinned(field(entry, appKey)) }];
   });
-const secretNames = (r: ForgeResponse) =>
-  items(field(r.body, "secrets")).flatMap((s) => nonEmpty(field(s, "name")) ?? []);
+const names = (list: Json[]) => list.flatMap((entry) => nonEmpty(field(entry, "name")) ?? []);
 const atLeastOne = (count: Json | undefined) => isNumber(count) && count >= 1;
 
 /** Classic protection as a counted source, when nothing may bypass it. */
@@ -381,6 +417,17 @@ export function checkMergeGate(
     failures.push(`${CONFIG_FILE} is missing from ${defaultBranch} (HTTP ${configResponse.status})`);
   if (config !== undefined && opts.policySource?.startsWith("default-branch:") === true && config.policy !== UNATTENDED)
     failures.push(`${CONFIG_FILE} on ${defaultBranch} no longer names the unattended policy this run was opened under`);
+  // The local default-branch ref a run was stamped from is the task's to repoint; the forge's branch is not.
+  const stamped = /^default-branch:(.+)$/.exec(opts.policySource ?? "")?.[1];
+  if (stamped !== undefined) {
+    const tip = nonEmpty(field(field(get(`repos/${repo}/branches/${branch}`).body, "commit"), "sha"));
+    const standing = tip === undefined ? undefined : compareShipped(io, repo, stamped, tip);
+    const status = standing === undefined || "error" in standing ? "unreadable" : standing.status;
+    if (status !== "identical" && status !== "ahead")
+      failures.push(
+        `the run was opened under ${CONFIG_FILE} read at ${stamped.slice(0, 12)}, which is not on ${defaultBranch} as the forge reads it (comparison: ${status})`,
+      );
+  }
 
   const reviewCheck = config?.check ?? "";
   const checks = sources.flatMap((s) => s.checks);
@@ -453,22 +500,20 @@ function checkEnvironment(
       `environment ${config.environment}'s deployment branch policy is not exactly the branch ${defaultBranch}`,
     );
   if (config.keySecret === "") return;
-  const placed = (where: string, r: ForgeResponse, missingOk = false) => {
-    if (r.status !== 200 && !(missingOk && r.status === 404))
-      failures.push(`${where} secrets are unreadable (HTTP ${r.status})`);
-    else if (secretNames(r).includes(config.keySecret))
+  const placed = (where: string, path: string, missingOk = false) => {
+    const listing = listAll(get, path, "secrets", true);
+    if (missingOk && listing.status === 404 && listing.found.length === 0) return;
+    if (listing.failure !== undefined) failures.push(`${where} secrets are ${listing.failure}`);
+    if (names(listing.found).includes(config.keySecret))
       failures.push(`${config.keySecret} is also stored as ${where} secret`);
   };
-  placed("a repository", get(`repos/${repo}/actions/secrets`, true));
-  placed("an organisation", get(`repos/${repo}/actions/organization-secrets`, true), ownerType === "User");
-  const environments = get(`repos/${repo}/environments`);
-  if (environments.status !== 200) failures.push(`the environments are unreadable (HTTP ${environments.status})`);
-  for (const other of items(field(environments.body, "environments")).flatMap((e) => nonEmpty(field(e, "name")) ?? []))
+  placed("a repository", `repos/${repo}/actions/secrets`);
+  placed("an organisation", `repos/${repo}/actions/organization-secrets`, ownerType === "User");
+  const environments = listAll(get, `repos/${repo}/environments`, "environments");
+  if (environments.failure !== undefined) failures.push(`the environments are ${environments.failure}`);
+  for (const other of names(environments.found))
     if (other !== config.environment)
-      placed(
-        `the ${other} environment's`,
-        get(`repos/${repo}/environments/${encodeURIComponent(other)}/secrets`, true),
-      );
+      placed(`the ${other} environment's`, `repos/${repo}/environments/${encodeURIComponent(other)}/secrets`);
 }
 
 function checkIdentity(io: GateIo, get: Get, repo: string, config: LifecycleConfig, failures: string[]): void {
@@ -542,14 +587,19 @@ export function checkReviewStatus(io: GateIo, repo: string, pr: number, gate: Me
   const { config, reviewAppId: app } = gate;
   if (config === undefined || app === undefined) return { state: "refused", failures, notes, head };
 
-  const runs = items(
-    field(
-      io.forge(
-        `repos/${repo}/commits/${head}/check-runs?check_name=${encodeURIComponent(config.check)}&filter=all&per_page=100`,
-      ).body,
-      "check_runs",
-    ),
+  const listing = listAll(
+    (path) => io.forge(path),
+    `repos/${repo}/commits/${head}/check-runs?check_name=${encodeURIComponent(config.check)}&filter=all`,
+    "check_runs",
   );
+  if (listing.failure !== undefined)
+    return {
+      state: "refused",
+      failures: [...failures, `the ${config.check} check runs are ${listing.failure}`],
+      notes,
+      head,
+    };
+  const runs = listing.found;
   const others = [...new Set(runs.filter((r) => appOf(r) !== app).map((r) => pinned(appOf(r)) ?? "unknown"))];
   if (others.length > 0) notes.push(`ignored ${config.check} run(s) from other apps: ${others.join(", ")}`);
   const completed = runs
@@ -576,10 +626,9 @@ export function checkReviewStatus(io: GateIo, repo: string, pr: number, gate: Me
   if (field(result, "verdict") !== "approve") failures.push(`the review verdict is ${claimed("verdict")}`);
   const baseSha = nonEmpty(field(base, "sha")) ?? "";
   const diff = io.forge(`repos/${repo}/compare/${baseSha}...${head}`, { accept: "application/vnd.github.diff" });
-  const digest = `sha256:${createHash("sha256").update(diff.text).digest("hex")}`;
   if (diff.status !== 200) failures.push(`the comparison diff is unreadable (HTTP ${diff.status})`);
-  else if (field(result, "diff_sha256") !== digest)
-    failures.push(`the review's diff digest ${claimed("diff_sha256")} is not ${digest}`);
+  else if (field(result, "diff_sha256") !== diff.digest)
+    failures.push(`the review's diff digest ${claimed("diff_sha256")} is not ${diff.digest}`);
   failures.push(...identityFailures(field(result, "reviewer"), config));
   return { state: failures.length > 0 ? "refused" : "pass", failures, notes, head };
 }

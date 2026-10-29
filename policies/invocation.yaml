@@ -472,19 +472,20 @@ unattended:
     Where the operator opts in, by `AK_LIFECYCLE_POLICY=unattended` in the runner's environment or by
     `ak.lifecycle.json` naming the policy on the repository's default branch, super-align,
     super-bound and super-ship start when `ak-gate.mjs unattended check --phase <phase>` exits 0,
-    with no typed command and no grant. Absent both opt-ins nothing here applies. A typed command
+    with no typed command and no grant, an exception for this policy only to the ordinary-workers clause of ruling `entrypoint-phase-operation-split`.
+    Absent both opt-ins nothing here applies. A typed command
     still starts a phase, and a bypass grant is refused under the policy.
   phases: [super-align, super-bound, super-ship]
   advance: >-
     A wait for a human answer or approval proceeds with the skill's own recommendation, recorded as
     an unattended advance and never as an approval. A ticket whose class makes a human the author is
-    implemented by the agent with its true class, floor and author kind recorded. Every other stop
-    still stops, every sensitive action included.
+    implemented by the agent with its true class, floor and author kind recorded, an exception to ruling `delegation-class-is-authority-not-finding` whose boundary is the live merge-gate read.
+    Every other stop still stops, every sensitive action included.
   never: [merge, deploy, scope-expansion]
   evidence: >-
     Every gate records the policy and the evidence commands the gate tool ran; align, bound and scout
     gain gates under the policy. The evidence is worker-attested, and a host-unattested verifier is a
-    recorded note rather than a refusal.
+    recorded note rather than a refusal, an exception to ruling `closure-requires-independent-verification` whose boundary is the live merge-gate read.
   trust: >-
     The boundary is the merge. ship-preflight reads the target's default branch live and read-only
     and refuses unless code-owner review by designated human reviewers, required CI and the
@@ -492,7 +493,6 @@ unattended:
     a non-admin, non-designated user. Final ship success validates the posted review at the pull
     request's exact head; its reviewer identity must be a canonical model different from every
     configured author model.
-  ruling: entrypoint-phase-operation-split
 
 packs:
   rule: >-

@@ -63,8 +63,8 @@ task. From the task's worktree, run `node <this skill's directory>/../../bin/ak-
 comes from the supervisor through `needs-decision`; the worker never approves its own direction.
 
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
-check --phase super-align` exiting 0 is the start, with no command or grant. Each frontier round and
-the step 11 approval then proceed with your own recommended answers, recorded as unattended advances
+check --phase super-align` exiting 0 is the start, with no command or grant (an exception to ruling
+`entrypoint-phase-operation-split`). Each frontier round and the step 11 approval then proceed with your own recommended answers, recorded as unattended advances
 and never as an approval; record the `align` gate as [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
 
 ## Inputs

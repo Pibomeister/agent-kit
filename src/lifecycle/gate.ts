@@ -61,6 +61,7 @@ import {
   type GateIo,
   type Policy,
   READ_TOKEN_ENV,
+  RESIDUAL_ASSUMPTIONS,
   resolvePolicy,
   resolveRepo,
 } from "./unattended.ts";
@@ -467,7 +468,8 @@ export interface OpenArgs {
 
 /**
  * Copies the branch-named run's pre-ticket phase records at the opening revision into `run`, keeping their
- * command entries and times. Only records written after every earlier run of the branch opened, and never a
+ * command entries and times. Only records written after every earlier run of the branch opened, only their
+ * entries started after it (a record re-stamped by a later entry still carries the earlier ones), and never a
  * record that is itself an import, so a reused branch does not hand an earlier task's phases to this one.
  */
 function importPhaseRecords(dir: string, run: RunRecord, now: string): void {
@@ -484,12 +486,15 @@ function importPhaseRecords(dir: string, run: RunRecord, now: string): void {
     for (const record of readRecords(dir, from, gate)) {
       if (record.snapshot.revision !== run.base || record.imported_from !== undefined || record.recorded_at <= since)
         continue;
-      for (const entry of record.commands ?? []) {
+      const commands = (record.commands ?? []).filter((entry) => entry.started_at > since);
+      if (commands.length === 0) continue;
+      for (const entry of commands) {
         const stored = artifactPath(dir, from, entry.output);
         if (stored !== undefined && existsSync(stored)) storeArtifact(dir, run.run_id, readFileSync(stored));
       }
       const copy: GateRecord = {
         ...record,
+        commands,
         run_id: run.run_id,
         recorded_at: now,
         imported_from: { run: from, sha256: sha256(readFileSync(recordPath(dir, from, record))) },
@@ -1329,10 +1334,24 @@ function countedRecord(
     : undefined;
 }
 
-/** Under the unattended policy, why a gate's counted record is not current, passing command evidence. */
+/**
+ * Under the unattended policy, why a gate's counted record is not current, passing command evidence. A full
+ * review current only through a later review-delta at the head is judged with that delta's entries too.
+ */
 function commandRefusals(a: CheckArgs, gate: Gate, head: Snapshot, fork: { base: string } | undefined): string[] {
   const record = countedRecord(a, gate, head, fork);
   if (record === undefined) return [];
+  const own = entryRefusals(a, gate, record);
+  if (gate !== "review-full" || (same(record.snapshot, head) && record.verdict !== "changes-requested")) return own;
+  const delta = readRecords(a.dir, a.run, "review-delta")
+    .filter((r) => same(r.snapshot, head) && r.recorded_at >= record.recorded_at)
+    .toSorted((x, y) => x.recorded_at.localeCompare(y.recorded_at))
+    .at(-1);
+  return delta === undefined ? own : [...own, ...entryRefusals(a, "review-delta", delta)];
+}
+
+/** Why one counted record's command entries are not passing evidence. */
+function entryRefusals(a: CheckArgs, gate: Gate, record: GateRecord): string[] {
   const entries = record.commands ?? [];
   if (entries.length === 0) return [`refused: gate ${gate} has no evidence command (missing evidence)`];
   const out: string[] = [];
@@ -1989,9 +2008,10 @@ const forgeIo = (): GateIo => ({
 });
 
 /**
- * Ship-preflight under the unattended policy. Without a pull request: the pre-ship check, then the live merge-gate
- * read; only both passing writes the record and closes the run. With one: final ship success, appended to the
- * run's latest ship-preflight record once the posted review validates and the head still descends from it.
+ * Ship-preflight under the unattended policy. Without a pull request: the live merge-gate read, then the pre-ship
+ * check; only both passing writes the record and closes the run, and a merge-gate refusal leaves no decision
+ * record. With one: final ship success, appended to the run's latest ship-preflight record once the posted
+ * review validates and the head still descends from it.
  */
 function shipUnattended(io: Io, dir: string, run: string, project: string, policy: Policy, prFlag?: string): number {
   const say = (failures: readonly string[], notes: readonly string[]) => {
@@ -2004,15 +2024,18 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     return 1;
   }
   const forge = forgeIo();
+  io.err(`note: ${RESIDUAL_ASSUMPTIONS}`);
+  // The run's stamp, not this invocation's resolution, says where the run's policy was read.
+  const source = readRunRecord(dir, run)?.policy?.source ?? policy.source;
   if (prFlag === undefined) {
+    const gate = checkMergeGate(forge, repo.repo, { identity: true, policySource: source });
+    if (gate.failures.length > 0) {
+      say(gate.failures, gate.notes);
+      return 1;
+    }
     const pre = checkGates({ dir, run, gates: UNATTENDED_PRE_SHIP_GATES, project });
     if (!pre.ok) {
       for (const refusal of pre.refusals) io.err(`ak lifecycle record: ${refusal}`);
-      return 1;
-    }
-    const gate = checkMergeGate(forge, repo.repo, { identity: true, policySource: policy.source });
-    if (gate.failures.length > 0) {
-      say(gate.failures, gate.notes);
       return 1;
     }
     const r = recordGate({
@@ -2060,7 +2083,7 @@ function shipUnattended(io: Io, dir: string, run: string, project: string, polic
     forge,
     repo.repo,
     pr,
-    checkMergeGate(forge, repo.repo, { identity: true, policySource: policy.source }),
+    checkMergeGate(forge, repo.repo, { identity: true, policySource: source }),
   );
   if (status.state !== "pass") {
     say(status.failures, status.notes);
@@ -2228,6 +2251,7 @@ export function main(
     }
     const forge = forgeIo();
     const status = checkReviewStatus(forge, repo.repo, pr, checkMergeGate(forge, repo.repo, { identity: false }));
+    io.err(`note: ${RESIDUAL_ASSUMPTIONS}`);
     for (const note of status.notes) io.err(`note: ${note}`);
     for (const failure of status.failures) io.err(`refused: ${failure}`);
     if (status.state === "waiting") io.err(`waiting: no completed independent review on ${String(status.head)} yet`);

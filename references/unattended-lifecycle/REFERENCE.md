@@ -100,15 +100,20 @@ Nothing here is done by an agent or by agent-kit.
 3. Protect the default branch (classic protection or a ruleset with an empty bypass list): require
    a pull request with one approval, code-owner review, dismissal of stale approvals, approval of
    the most recent push, required CI pinned to its app, the review check pinned to the review app,
-   and enforcement for admins.
+   and enforcement for admins. Required CI pinned to GitHub Actions counts, but its workflow is
+   editable in the change under review; code-owner review of the workflow files, which the
+   catch-all rule covers, is what covers it.
 4. Create a dedicated GitHub App (Checks write, Contents read, Pull requests read, Metadata read).
    Store its key only in a deployment environment whose policy is exactly the default branch; set
    `AK_REVIEW_APP_ID`, `AK_REVIEW_ENVIRONMENT` and `AK_REVIEW_COMMAND`, and the review command's
    provider credential as `AK_REVIEW_PROVIDER_TOKEN`. The review job holds that credential, so a
-   reviewer steered by the diff can leak it; scope it to review calls.
+   reviewer steered by the diff can leak it; scope it to review calls. The reviewer command
+   contract: the command reads the diff on standard input and writes its verdict JSON on standard
+   output; its harness, not the model, writes the provider's reported model for the call to the
+   metadata file (`$AK_REVIEW_METADATA_FILE`); the model has no shell or file tools.
 5. Copy the workflow template the super-ship skill ships as `assets/independent-review.yml` to
    `.github/workflows/`, and allow `pull_request_target` for that file in the repository's Actions
-   event policy.
+   event policy. The template is not evidence that a review was installed or ran.
 6. Give the runner its own user account with role exactly `write` that is not a designated
    reviewer, and a fine-grained `AK_UNATTENDED_READ_TOKEN` with Administration, Secrets and
    Environments read. A runner that shares the operator's account or credentials does not meet
@@ -117,8 +122,11 @@ Nothing here is done by an agent or by agent-kit.
 ## Limits
 
 The forge does not show that a designated account is operated by a person, that the review
-command used the model it reports (identity rests on configuration and the provider's metadata),
-or that a fine-grained read credential is read-only. Team membership is not verified. A diff hides
+command used the model it reports (identity rests on operator configuration and the provider's
+reported metadata, not on a cryptographic attestation), or that a fine-grained read credential is
+read-only. Team membership is not verified. The runner's identity is read with the forge client's
+active credential, on the assumption that the runner's push credential is the active one;
+ship-preflight and review-status print these assumptions. A diff hides
 binary files, large-file pointers and submodule contents, and text in it can steer the reviewer.
 Local checks run with the task's privileges and guard against misconfiguration and accidents, not
 a determined task on the same account; the forge enforces the merge gate either way.

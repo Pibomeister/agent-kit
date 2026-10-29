@@ -10,7 +10,16 @@
  */
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,11 +47,15 @@ const BASE = "b".repeat(40);
 const REVIEW_APP = 4242;
 const CHECK = "agent-kit/independent-review";
 const DIFF = "diff --git a/x b/x\n+changed\n";
-const RUNS_KEY = `repos/${REPO}/commits/${HEAD}/check-runs?check_name=${encodeURIComponent(CHECK)}&filter=all&per_page=100`;
+/** One page of a paginated listing, as the forge reads it. */
+const page = (path: string, n = 1) => `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${n}`;
+const RUNS_PATH = `repos/${REPO}/commits/${HEAD}/check-runs?check_name=${encodeURIComponent(CHECK)}&filter=all`;
+const RUNS_KEY = page(RUNS_PATH);
 const CONFIG_KEY = `repos/${REPO}/contents/ak.lifecycle.json?ref=main`;
 const OWNERS_KEY = `repos/${REPO}/contents/.github/CODEOWNERS?ref=main`;
 const PROTECTION_KEY = `repos/${REPO}/branches/main/protection`;
-const sha = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+const REPO_SECRETS = `repos/${REPO}/actions/secrets`;
+const sha = (text: string | Uint8Array) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 const b64 = (text: string) => Buffer.from(text).toString("base64");
 
 interface Fixture {
@@ -51,7 +64,13 @@ interface Fixture {
   body?: Json;
   /** A raw body, served as is (the comparison diff). */
   text?: string;
+  /** A raw body given as base64, for bytes that are not UTF-8. */
+  base64?: string;
 }
+/** A listing page carrying its `total_count`, as the forge's paginated listings do. */
+const listed = (key: string, list: Json[], total = list.length): Fixture => ({
+  body: { total_count: total, [key]: list },
+});
 interface FixtureMap {
   [path: string]: Fixture;
 }
@@ -64,6 +83,14 @@ const REVIEW = {
   author_models: ["prov/model-a"],
 };
 const CONFIG = { policy: "unattended", human_reviewers: ["@alice", "@acme/maintainers"], independent_review: REVIEW };
+/** The residual assumptions ship-preflight and review-status state (AC-8), one phrase each. */
+const RESIDUAL = [
+  "designated reviewer accounts are operated by people",
+  "not reachable by the runner through credentials outside the forge client",
+  "team membership is not verified",
+  "scoped read-only by the operator",
+  "the runner's push credential is the active one",
+];
 
 function identity(configuration: string, native?: string): JsonObject {
   const sources: JsonObject = { configuration };
@@ -85,6 +112,9 @@ function result(overrides: JsonObject = {}): JsonObject {
     ...overrides,
   };
 }
+
+/** A completion time `minute` minutes into the hour. */
+const at = (minute: number) => new Date(Date.UTC(2026, 9, 29, 1, minute)).toISOString();
 
 function checkRun(id: number, body: JsonObject, overrides: JsonObject = {}): JsonObject {
   return {
@@ -145,14 +175,14 @@ function protectedFixtures(): FixtureMap {
     [`repos/${REPO}/environments/independent-review/deployment-branch-policies`]: {
       body: { branch_policies: [{ name: "main", type: "branch" }] },
     },
-    [`repos/${REPO}/actions/secrets`]: { body: { secrets: [] } },
-    [`repos/${REPO}/actions/organization-secrets`]: { body: { secrets: [] } },
-    [`repos/${REPO}/environments`]: { body: { environments: [{ name: "independent-review" }, { name: "prod" }] } },
-    [`repos/${REPO}/environments/prod/secrets`]: { body: { secrets: [{ name: "DEPLOY_KEY" }] } },
+    [page(REPO_SECRETS)]: listed("secrets", []),
+    [page(`repos/${REPO}/actions/organization-secrets`)]: listed("secrets", []),
+    [page(`repos/${REPO}/environments`)]: listed("environments", [{ name: "independent-review" }, { name: "prod" }]),
+    [page(`repos/${REPO}/environments/prod/secrets`)]: listed("secrets", [{ name: "DEPLOY_KEY" }]),
     [`repos/${REPO}/pulls/7`]: {
       body: { number: 7, base: { ref: "main", sha: BASE }, head: { sha: HEAD }, body: `Change.\n\n${DISCLOSURE}\n` },
     },
-    [RUNS_KEY]: { body: { check_runs: [checkRun(1, result())] } },
+    [RUNS_KEY]: listed("check_runs", [checkRun(1, result())]),
     [`repos/${REPO}/compare/${BASE}...${HEAD}#diff`]: { text: DIFF },
   };
 }
@@ -167,7 +197,7 @@ const UNPROTECTED: FixtureMap = { [PROTECTION_KEY]: { status: 404, body: { messa
 const configWith = (value: JsonObject): FixtureMap => ({
   [CONFIG_KEY]: { body: { content: b64(JSON.stringify(value)) } },
 });
-const runsWith = (list: Json[]): FixtureMap => ({ [RUNS_KEY]: { body: { check_runs: list } } });
+const runsWith = (list: Json[]): FixtureMap => ({ [RUNS_KEY]: listed("check_runs", list) });
 
 function memForge(fixtures: FixtureMap, log: string[] = []): Forge {
   return (path, options = {}) => {
@@ -175,11 +205,13 @@ function memForge(fixtures: FixtureMap, log: string[] = []): Forge {
     log.push(`${options.token === undefined ? "runner" : "read"} ${key}`);
     const fixture = fixtures[key];
     const body: Json = fixture === undefined ? { message: "Not Found" } : (fixture.body ?? null);
+    const text = fixture?.text ?? JSON.stringify(body);
     return {
       status: fixture === undefined ? 404 : (fixture.status ?? 200),
       headers: fixture?.headers ?? {},
       body,
-      text: fixture?.text ?? JSON.stringify(body),
+      text,
+      digest: sha(text),
     };
   };
 }
@@ -221,10 +253,10 @@ describe("merge gate (pure, API shapes written from the documentation)", () => {
     expect(r.reviewAppId).toBe(REVIEW_APP);
     expect(log.flatMap((line) => (line.startsWith("read ") ? [line.slice(5)] : [])).toSorted()).toEqual(
       [
-        `repos/${REPO}/actions/organization-secrets`,
-        `repos/${REPO}/actions/secrets`,
+        page(`repos/${REPO}/actions/organization-secrets`),
+        page(REPO_SECRETS),
         PROTECTION_KEY,
-        `repos/${REPO}/environments/prod/secrets`,
+        page(`repos/${REPO}/environments/prod/secrets`),
       ].toSorted(),
     );
     expect(log).toContain("runner user");
@@ -382,9 +414,50 @@ describe("merge gate (pure, API shapes written from the documentation)", () => {
       },
     };
     expect(failuresOf(withFixtures(wildcard))).toContain("deployment branch policy");
-    const keyed = { body: { secrets: [{ name: "REVIEW_APP_KEY" }] } };
-    expect(failuresOf(withFixtures({ [`repos/${REPO}/actions/secrets`]: keyed }))).toContain("REVIEW_APP_KEY");
-    expect(failuresOf(withFixtures({ [`repos/${REPO}/environments/prod/secrets`]: keyed }))).toContain("prod");
+    const keyed = listed("secrets", [{ name: "REVIEW_APP_KEY" }]);
+    expect(failuresOf(withFixtures({ [page(REPO_SECRETS)]: keyed }))).toContain("REVIEW_APP_KEY");
+    expect(failuresOf(withFixtures({ [page(`repos/${REPO}/environments/prod/secrets`)]: keyed }))).toContain("prod");
+  });
+
+  test("every page of a secrets listing is read: the key on page two refuses, a short listing refuses", () => {
+    const filler = Array.from({ length: 100 }, (_, i) => ({ name: `SECRET_${i}` }));
+    const twoPages = withFixtures({
+      [page(REPO_SECRETS)]: listed("secrets", filler, 101),
+      [page(REPO_SECRETS, 2)]: listed("secrets", [{ name: "REVIEW_APP_KEY" }], 101),
+    });
+    expect(failuresOf(twoPages)).toContain("REVIEW_APP_KEY is also stored as a repository secret");
+    const clean = withFixtures({
+      [page(REPO_SECRETS)]: listed("secrets", filler, 101),
+      [page(REPO_SECRETS, 2)]: listed("secrets", [{ name: "OTHER" }], 101),
+    });
+    expect(failuresOf(clean)).toBe("");
+    const short = withFixtures({ [page(REPO_SECRETS)]: listed("secrets", [{ name: "OTHER" }], 3) });
+    expect(failuresOf(short)).toContain("repository secrets are incomplete (1 of 3 listed)");
+    const unreadable = withFixtures({
+      [page(REPO_SECRETS)]: listed("secrets", filler, 101),
+      [page(REPO_SECRETS, 2)]: { status: 502, body: { message: "Bad Gateway" } },
+    });
+    expect(failuresOf(unreadable)).toContain("repository secrets are unreadable (HTTP 502)");
+  });
+
+  test("a repository-sourced run must have been stamped from a revision on the forge's default branch", () => {
+    const stamped = "c".repeat(40);
+    const tip = "d".repeat(40);
+    const branchKey = `repos/${REPO}/branches/main`;
+    const standing = (status?: string): FixtureMap => {
+      const fixtures = withFixtures({ [branchKey]: { body: { name: "main", commit: { sha: tip } } } });
+      if (status !== undefined) fixtures[`repos/${REPO}/compare/${stamped}...${tip}`] = { body: { status } };
+      return fixtures;
+    };
+    const failuresAt = (fixtures: FixtureMap, source = `default-branch:${stamped}`) =>
+      checkMergeGate(io(fixtures), REPO, { identity: true, policySource: source }).failures.join("\n");
+    expect(failuresAt(standing("ahead"))).toBe("");
+    expect(failuresAt(standing("identical"))).toBe("");
+    expect(failuresAt(standing("diverged"))).toContain(`read at ${stamped.slice(0, 12)}, which is not on main`);
+    expect(failuresAt(standing("behind"))).toContain("not on main");
+    expect(failuresAt(standing())).toContain("not on main");
+    expect(failuresAt(withFixtures({}, [branchKey]))).toContain("not on main");
+    expect(failuresAt(standing("diverged"), "environment")).toBe("");
   });
 });
 
@@ -435,6 +508,26 @@ describe("independent review status (pure)", () => {
     expect(reviewOf(withFixtures(runsWith([rejected, checkRun(2, result())]))).failures.join("\n")).toContain(
       "earlier",
     );
+  });
+
+  test("every page of check runs is read: an earlier rejection off page one refuses, a short listing refuses", () => {
+    const approvals = Array.from({ length: 100 }, (_, i) => checkRun(i + 2, result(), { completed_at: at(i + 10) }));
+    const rejected = checkRun(1, result({ verdict: "changes-requested" }), {
+      conclusion: "failure",
+      completed_at: at(0),
+    });
+    const paged = (second: Json[]) =>
+      reviewOf(
+        withFixtures({
+          [RUNS_KEY]: listed("check_runs", approvals, 100 + second.length),
+          [page(RUNS_PATH, 2)]: listed("check_runs", second, 100 + second.length),
+        }),
+      );
+    expect(paged([rejected]).failures.join("\n")).toContain("earlier");
+    expect(paged([checkRun(1, result(), { completed_at: at(0) })]).failures).toEqual([]);
+    const short = reviewOf(withFixtures({ [RUNS_KEY]: listed("check_runs", [checkRun(1, result())], 4) }));
+    expect(short.state).toBe("refused");
+    expect(short.failures.join("\n")).toContain("check runs are incomplete (1 of 4 listed)");
   });
 
   test("the pull request text must carry the disclosure outside HTML comments", () => {
@@ -506,8 +599,9 @@ fs.appendFileSync(dir + "/log", method + " " + path + " " + (process.env.GH_TOKE
 const f = fixtures[accept.includes("diff") ? path + "#diff" : path];
 const status = f ? (f.status || 200) : 404;
 const text = f ? (f.text !== undefined ? f.text : JSON.stringify(f.body === undefined ? null : f.body)) : '{"message":"Not Found"}';
+const raw = f && f.base64 !== undefined ? Buffer.from(f.base64, "base64") : Buffer.from(text);
 const headers = Object.entries((f && f.headers) || {}).map(([k, v]) => k + ": " + v + "\\r\\n").join("");
-process.stdout.write("HTTP/2.0 " + status + " X\\r\\n" + headers + "\\r\\n" + text);
+process.stdout.write(Buffer.concat([Buffer.from("HTTP/2.0 " + status + " X\\r\\n" + headers + "\\r\\n"), raw]));
 process.exit(status < 300 ? 0 : 1);
 `;
 
@@ -597,6 +691,29 @@ function fullRun(cwd: string): string {
   return run;
 }
 
+/** An opened unattended run whose full review requested changes, current through a review-delta running `delta`. */
+function deltaRun(cwd: string, delta: string[]) {
+  const ticketPath = ticketFile(cwd);
+  for (const g of ["align", "bound", "scout"]) expect(ak(cwd, "record", "--gate", g, "--", ...ok).code).toBe(0);
+  const run = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+  expect(ak(cwd, "record", "--gate", "build-checks", "--", ...ok).code).toBe(0);
+  expect(ak(cwd, "record", "--gate", "review-full", "--verdict", "changes-requested", "--", ...ok).code).toBe(0);
+  const code = ak(cwd, "record", "--gate", "review-delta", "--", ...delta).code;
+  expect(ak(cwd, "record", "--gate", "review-readiness", "--", ...ok).code).toBe(0);
+  expect(ak(cwd, "record", "--gate", "verify", "--receipt", receiptFile(cwd, run, ticketPath), "--", ...ok).code).toBe(
+    0,
+  );
+  return { run, code };
+}
+
+/** The one record file of a gate in a run. */
+function recordFile(cwd: string, run: string, gate: Gate): string {
+  const dir = join(store(cwd), run, gate);
+  const [name] = readdirSync(dir).filter((file) => file.endsWith(".json"));
+  if (name === undefined) throw new Error(`no ${gate} record in ${dir}`);
+  return join(dir, name);
+}
+
 describe("selection and start (command seam)", () => {
   test("legacy by default: a human-started phase needs its typed command, a model-started one starts, nothing names the opt-in", () => {
     const cwd = repo();
@@ -643,6 +760,24 @@ describe("selection and start (command seam)", () => {
     const r = ak(cwd, "bypass", "check", "--grant", join(cwd, "g.json"), "--task", "t", "--phase", "super-align");
     expect(r.code).toBe(1);
     expect(r.err).toContain("unattended");
+    const recorded = ak(cwd, "record", "--gate", "align", "--bypass", join(cwd, "g.json"), "--task", "t", "--", ...ok);
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain("a bypass grant does not apply under the unattended policy");
+    expect(recordsOf(cwd, "feature", "align")).toEqual([]);
+  });
+
+  test("a legacy run refuses an unattended record and an unattended check", () => {
+    const cwd = repo();
+    expect(ak(cwd, "open", "--ticket", ticketFile(cwd)).code).toBe(0);
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const recorded = ak(cwd, "record", "--gate", "build-checks", "--", ...ok);
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain(
+      "was opened under the legacy policy, and this record resolves the unattended policy",
+    );
+    const checked = ak(cwd, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("was opened under the legacy policy, and this check resolves the unattended policy");
   });
 });
 
@@ -701,7 +836,90 @@ describe("command evidence, import and the pre-ship check (command seam)", () =>
     expect(check.code).toBe(1);
     expect(check.err).toContain("scout");
     setEnv({ AK_LIFECYCLE_POLICY: undefined });
-    expect(ak(cwd, "record", "--gate", "build-checks").err).toContain("policy");
+    const recorded = ak(cwd, "record", "--gate", "build-checks");
+    expect(recorded.code).toBe(1);
+    expect(recorded.err).toContain(
+      "was opened under the unattended policy, and this record resolves the legacy policy",
+    );
+    const checked = ak(cwd, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("was opened under the unattended policy, and this check resolves the legacy policy");
+  });
+
+  test("a covering review-delta's command entries count like the full review's: tampered output refuses", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const { run, code } = deltaRun(cwd, ["sh", "-c", "echo delta"]);
+    expect(code).toBe(0);
+    expect(ak(cwd, "check").code).toBe(0);
+    writeFileSync(join(store(cwd), run, "artifacts", sha("delta\n").slice(7)), "forged\n");
+    const tampered = ak(cwd, "check");
+    expect(tampered.code).toBe(1);
+    expect(tampered.err).toContain(`gate review-delta evidence output ${sha("delta\n")} is absent or changed`);
+  });
+
+  test("a failed covering review-delta refuses as failed evidence", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    expect(deltaRun(cwd, ["sh", "-c", "echo bad; exit 1"]).code).toBe(1);
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain('gate review-delta failed evidence: ["sh","-c","echo bad; exit 1"] exited 1');
+  });
+
+  test("a covering review-delta without command entries refuses as missing evidence", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const { run } = deltaRun(cwd, ["sh", "-c", "echo delta"]);
+    const [delta] = recordsOf(cwd, run, "review-delta");
+    writeFileSync(recordFile(cwd, run, "review-delta"), JSON.stringify({ ...delta, commands: undefined }));
+    expect(recordsOf(cwd, run, "review-delta")[0]?.commands).toBeUndefined();
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain("gate review-delta has no evidence command (missing evidence)");
+  });
+
+  test("a tampered stored output of a counted record refuses at check", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const run = fullRun(cwd);
+    expect(ak(cwd, "record", "--gate", "build-checks", "--", "sh", "-c", "echo built").code).toBe(0);
+    expect(ak(cwd, "check").code).toBe(0);
+    writeFileSync(join(store(cwd), run, "artifacts", sha("built\n").slice(7)), "forged\n");
+    const r = ak(cwd, "check");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(`gate build-checks evidence output ${sha("built\n")} is absent or changed`);
+  });
+
+  test("a reused branch imports only the command entries recorded after its earlier run opened", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const ticketPath = ticketFile(cwd);
+    const argvs = (run: string) => recordsOf(cwd, run, "align")[0]?.commands?.map((entry) => entry.argv.join(" "));
+    expect(ak(cwd, "record", "--gate", "align", "--", "sh", "-c", "echo first").code).toBe(0);
+    const first = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+    expect(argvs(first)).toEqual(["sh -c echo first"]);
+    // The first task ships: its run closes, and the next task's phases land in the branch-named run again.
+    const runJson = join(store(cwd), "runs", first, "run.json");
+    const closedAt = `,\n  "closed_at": "${new Date().toISOString()}"\n}\n`;
+    writeFileSync(runJson, readFileSync(runJson, "utf8").replace(/\n}\n$/, closedAt));
+    expect(readFileSync(runJson, "utf8")).toContain('"closed_at"');
+    expect(ak(cwd, "record", "--gate", "align", "--", "sh", "-c", "echo second").code).toBe(0);
+    expect(argvs("feature")).toEqual(["sh -c echo first", "sh -c echo second"]);
+    const second = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+    expect(argvs(second)).toEqual(["sh -c echo second"]);
+    expect(recordsOf(cwd, second, "align")[0]?.imported_from?.run).toBe("feature");
+  });
+
+  test("an imported record whose every entry predates an earlier run's opening is not imported", () => {
+    const cwd = repo();
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended" });
+    const ticketPath = ticketFile(cwd);
+    expect(ak(cwd, "record", "--gate", "bound", "--", ...ok).code).toBe(0);
+    const first = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+    expect(recordsOf(cwd, first, "bound")).toHaveLength(1);
+    const second = runId(ak(cwd, "open", "--ticket", ticketPath).out);
+    expect(recordsOf(cwd, second, "bound")).toEqual([]);
   });
 
   test("a host-unattested verifier is a note under the policy, with the implementer seat recorded", () => {
@@ -747,10 +965,13 @@ describe("ship-preflight and final ship success (command seam)", () => {
     setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
     const run = fullRun(cwd);
     const log = stubGh(withFixtures(UNPROTECTED));
+    const decisions = join(store(cwd), run, "decisions");
     const r = ak(cwd, "record", "--gate", "ship-preflight");
     expect(r.code).toBe(1);
     for (const item of ["code-owner", "required CI", CHECK]) expect(r.err).toContain(item);
+    for (const assumption of RESIDUAL) expect(r.err).toContain(assumption);
     expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+    expect(existsSync(decisions) ? readdirSync(decisions) : []).toEqual([]);
     expect(log().length).toBeGreaterThan(0);
     for (const line of log()) expect(line).toMatch(/^(GET |CLIENT auth status$)/);
     expect(log()).toContain(`GET ${PROTECTION_KEY} read`);
@@ -769,6 +990,8 @@ describe("ship-preflight and final ship success (command seam)", () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain(DISCLOSURE);
     expect(r.out).toContain("align");
+    for (const assumption of RESIDUAL) expect(r.err).toContain(assumption);
+    expect(readdirSync(join(store(cwd), run, "decisions"))).toHaveLength(1);
     expect(recordsOf(cwd, run, "ship-preflight")[0]?.commands?.[0]?.builtin).toBe("merge-gate");
 
     stubGh({ ...shipped, ...runsWith([]) });
@@ -787,12 +1010,63 @@ describe("ship-preflight and final ship success (command seam)", () => {
     expect(diverged.err).toContain("open a new run");
   });
 
+  test("ship-preflight judges the run's own policy stamp: a repository source off the forge's default branch refuses", () => {
+    const cwd = repo();
+    git(cwd, "checkout", "-q", "main");
+    writeFileSync(join(cwd, "ak.lifecycle.json"), JSON.stringify({ policy: "unattended" }));
+    git(cwd, "add", "ak.lifecycle.json");
+    git(cwd, "commit", "-q", "-m", "opt in");
+    const stamped = git(cwd, "rev-parse", "HEAD");
+    git(cwd, "update-ref", "refs/remotes/origin/main", stamped);
+    git(cwd, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main");
+    git(cwd, "checkout", "-q", "feature");
+    const run = fullRun(cwd);
+    const runRecord: unknown = JSON.parse(readFileSync(join(store(cwd), "runs", run, "run.json"), "utf8"));
+    expect(runRecord).toMatchObject({ policy: { source: `default-branch:${stamped}` } });
+    // This invocation resolves the policy from the environment; the run was stamped from the repository.
+    setEnv({ AK_LIFECYCLE_POLICY: "unattended", AK_UNATTENDED_READ_TOKEN: "read-token" });
+    stubGh(withFixtures({ [`repos/${REPO}/branches/main`]: { body: { commit: { sha: "e".repeat(40) } } } }));
+    const r = ak(cwd, "record", "--gate", "ship-preflight");
+    expect(r.code).toBe(1);
+    expect(r.err).toContain(`read at ${stamped.slice(0, 12)}, which is not on main`);
+    expect(recordsOf(cwd, run, "ship-preflight")).toEqual([]);
+  });
+
   test("review-status is a standalone command for whoever merges", () => {
     const cwd = repo();
     setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
     stubGh(protectedFixtures());
-    expect(ak(cwd, "unattended", "review-status", "--pr", "7").code).toBe(0);
+    const r = ak(cwd, "unattended", "review-status", "--pr", "7");
+    expect(r.code).toBe(0);
+    for (const assumption of RESIDUAL) expect(r.err).toContain(assumption);
   });
+
+  test("review-status hashes the comparison diff's raw bytes, not decoded text", () => {
+    const cwd = repo();
+    setEnv({ AK_UNATTENDED_READ_TOKEN: "read-token" });
+    const raw = Buffer.concat([
+      Buffer.from("diff --git a/x b/x\n+"),
+      Buffer.from([0xff, 0xfe, 0x80]),
+      Buffer.from("\n"),
+    ]);
+    stubGh(
+      withFixtures({
+        [`repos/${REPO}/compare/${BASE}...${HEAD}#diff`]: { base64: raw.toString("base64") },
+        ...runsWith([checkRun(1, result({ diff_sha256: sha(raw) }))]),
+      }),
+    );
+    const r = ak(cwd, "unattended", "review-status", "--pr", "7");
+    expect(r.err).not.toContain("diff digest");
+    expect(r.code).toBe(0);
+  });
+});
+
+/** The metadata file the review harness writes: the provider's reported model for the call. */
+const meta = (model: string) => JSON.stringify({ provider_model: model });
+/** A configuration whose reviewer is the alias `prov/latest`, written with stray case and space, for `target`. */
+const aliasing = (target: string): JsonObject => ({
+  ...CONFIG,
+  independent_review: { ...REVIEW, reviewer_model: "prov/latest", model_aliases: { "Prov/Latest ": target } },
 });
 
 describe("the review workflow template", () => {
@@ -814,9 +1088,112 @@ describe("the review workflow template", () => {
     expect(post).not.toMatch(/\$\{\{[^}]*outputs\.[^}]*\}\}[^\n]*\n[^\n]*run:/);
   });
 
-  test("a result in the template's shape passes the validator", () => {
-    for (const word of ["head_sha", "base_sha", "diff_sha256", "diff-only", "verdict", "findings", "schema_version"])
-      expect(template).toContain(word);
-    expect(reviewOf(protectedFixtures()).state).toBe("pass");
+  test("the result moves only as a file, and the posting job re-derives what it stamps and posts", () => {
+    expect(review).toContain("uses: actions/upload-artifact@");
+    expect(review).not.toMatch(/^\s+outputs:/m);
+    expect(post).toContain("uses: actions/download-artifact@");
+    expect(post).not.toContain("needs.review.outputs");
+    expect(post).toContain("DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}");
+    expect(post).toContain(
+      'gh api --method GET -H "Accept: application/vnd.github.diff" "repos/$REPO/compare/$BASE_SHA...$HEAD_SHA" | sha256sum',
+    );
+    expect(post).toContain('"repos/$REPO/contents/ak.lifecycle.json?ref=$DEFAULT_BRANCH"');
+    for (const key of ["check", "reviewer_model", "author_models", "model_aliases"])
+      expect(post).toContain(`.independent_review.${key}`);
+    expect(post).toMatch(
+      /uses: actions\/create-github-app-token@[0-9a-f]{40}[^\n]*\n\s+with:\n\s+app-id: \$\{\{ vars\.AK_REVIEW_APP_ID \}\}\n\s+private-key: \$\{\{ secrets\.AK_REVIEW_APP_KEY \}\}/,
+    );
+    expect(post).toContain("APP_TOKEN: ${{ steps.app.outputs.token }}");
+    expect(post).toContain('jq -n --arg name "$check" --arg head "$HEAD_SHA"');
+    expect(post).toContain('{name: $name, head_sha: $head, status: "completed"');
+    expect(post).toContain('GH_TOKEN="$APP_TOKEN" gh api --method POST "repos/$REPO/check-runs" --input check.json');
+  });
+
+  /**
+   * Runs the posting job's own stamping lines (its `canon` function through the `jq -n` program that builds
+   * the result) over fixture configuration, metadata and verdict files, the forge reads replaced by fixtures.
+   */
+  function stamp(config: JsonObject, files: { metadata?: string; verdict: string }) {
+    if (Bun.which("jq") === null) throw new Error("jq is not on the search path; the template test needs it");
+    const lines = post.split("\n").map((line) => line.replace(/^ {10}/, ""));
+    const from = lines.findIndex((line) => line.startsWith("check=$(jq"));
+    const to = lines.findIndex((line) => line.startsWith("jq -n --arg name"));
+    if (from < 0 || to <= from || !lines.slice(from, to).some((line) => line.startsWith("canon() {")))
+      throw new Error("the template's stamping lines were not found");
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "ak-stamp-")));
+    mkdirSync(join(dir, "review"));
+    if (files.metadata !== undefined) writeFileSync(join(dir, "review", "metadata.json"), files.metadata);
+    writeFileSync(join(dir, "review", "verdict.json"), files.verdict);
+    writeFileSync(join(dir, "config.json"), JSON.stringify(config));
+    const script = [
+      "set -euo pipefail",
+      "config=$(cat config.json)",
+      `diff_sha256=${sha(DIFF)}`,
+      ...lines.slice(from, to),
+      'printf "%s\\n%s" "$conclusion" "$result"',
+    ].join("\n");
+    const p = Bun.spawnSync(["bash", "-c", script], {
+      cwd: dir,
+      env: { ...process.env, HEAD_SHA: HEAD, BASE_SHA: BASE },
+    });
+    if (p.exitCode !== 0) throw new Error(`the template's stamping lines failed: ${p.stderr.toString()}`);
+    const [conclusion = "", ...rest] = p.stdout.toString().split("\n");
+    const text = rest.join("\n");
+    const parsed: unknown = JSON.parse(text);
+    const status = reviewOf(
+      withFixtures({ ...configWith(config), ...runsWith([checkRun(1, result(), { conclusion, output: { text } })]) }),
+    );
+    return { conclusion, parsed, status };
+  }
+
+  const approve = JSON.stringify({ verdict: "approve", findings: [] });
+
+  test("a stamped approval passes the validator, the alias and case mapping agreeing in both implementations", () => {
+    const plain = stamp(CONFIG, { metadata: meta("prov/model-b"), verdict: approve });
+    expect(plain.conclusion).toBe("success");
+    expect(plain.status.failures).toEqual([]);
+    expect(plain.status.state).toBe("pass");
+    const viaAlias = stamp(aliasing("prov/model-b"), { metadata: meta(" PROV/MODEL-B"), verdict: approve });
+    expect(viaAlias.conclusion).toBe("success");
+    expect(viaAlias.status.failures).toEqual([]);
+    expect(viaAlias.parsed).toMatchObject({
+      schema: "independent-review",
+      head_sha: HEAD,
+      base_sha: BASE,
+      diff_sha256: sha(DIFF),
+      input: "diff-only",
+      reviewer: { sources: { configuration: "prov/latest", native_metadata: " PROV/MODEL-B" } },
+    });
+  });
+
+  test("a reviewer that resolves to an author model is refused by the template and by the validator", () => {
+    const stamped = stamp(aliasing("prov/model-a"), { metadata: meta("prov/model-a"), verdict: approve });
+    expect(stamped.conclusion).toBe("failure");
+    expect(stamped.parsed).toMatchObject({ verdict: "unavailable" });
+    expect(stamped.status.state).toBe("refused");
+    expect(stamped.status.failures.join("\n")).toContain("is an author model");
+  });
+
+  test("absent native metadata is refused by the template and by the validator", () => {
+    const stamped = stamp(CONFIG, { verdict: approve });
+    expect(stamped.conclusion).toBe("failure");
+    expect(stamped.status.state).toBe("refused");
+    expect(stamped.status.failures.join("\n")).toContain("lacks its configuration or native metadata source");
+  });
+
+  test("a reviewer identity forged in verdict.json is ignored: the stamp comes from configuration and metadata", () => {
+    const forged = JSON.stringify({
+      verdict: "approve",
+      reviewer_model: "prov/model-b",
+      reviewer: { model: "prov/model-b", sources: { configuration: "prov/model-b", native_metadata: "prov/model-b" } },
+      findings: [{ text: "reviewed by prov/model-b" }],
+    });
+    const stamped = stamp(CONFIG, { metadata: meta("prov/model-a"), verdict: forged });
+    expect(stamped.parsed).toMatchObject({
+      reviewer: { model: "prov/model-b", sources: { configuration: "prov/model-b", native_metadata: "prov/model-a" } },
+    });
+    expect(stamped.conclusion).toBe("failure");
+    expect(stamped.status.state).toBe("refused");
+    expect(stamped.status.failures.join("\n")).toContain("disagree");
   });
 });

@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-build/SKILL.md (AUTHORING.md §4.1).
 
 id: super-build
-version: 0.1.0
+version: 0.2.0
 kind: lifecycle
 invocation: M
 summary: >-
@@ -361,6 +361,7 @@ provenance:
     - safe-auto-restricted-per-seat
     - fail-closed-adapter-lifts-ceiling
     - work-trail-is-account-not-evidence
+    - delegation-class-is-authority-not-finding
 
 tests:
   - id: approved-ticket-executes-and-reports-receipts

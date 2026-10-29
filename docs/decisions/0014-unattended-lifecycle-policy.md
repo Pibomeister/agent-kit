@@ -11,9 +11,9 @@ supervising orchestrator, not by a human reading the generated artifacts.
 
 ## Context
 
-A human-started phase starts by a typed command, a delegated grant, Firstmate's standing autopilot
-grant or a supervisor's bypass grant. A CI job, a scheduled job, a chat bot, a coding-agent platform
-or a Firstmate worker running with nobody watching holds none of them honestly. Autonomous ship also
+A human-started phase starts by a typed command, a delegated grant, the standing autopilot grant of
+ADR-0007 or a supervisor's bypass grant. A CI job, a scheduled job, a chat bot, a coding-agent
+platform or a supervised worker with nobody watching holds none of them honestly. Autonomous ship also
 refuses a host-unattested verifier once a seat or grant is recorded, and the runner-attested path that
 would lift that refusal does not exist. Such a runner therefore cannot finish the lifecycle at all.
 
@@ -24,7 +24,7 @@ runner's environment, or `ak.lifecycle.json` naming it on the repository's defau
 every record, decision and exit status is unchanged. The policy is runner-neutral. Its behaviour is
 `references/unattended-lifecycle/REFERENCE.md`; the decisions it rests on are:
 
-- **Start.** align, bound and ship start through `ak-gate.mjs unattended check`; scout, build, verify and
+- **Start.** align, bound and ship start through the gate tool's `unattended check`; scout, build, verify and
   review were already model-started. A typed command still starts a phase. A bypass grant is refused, so
   a record never carries both authorities.
 - **Advance.** A wait for a human answer or approval proceeds with the skill's own recommendation,
@@ -49,9 +49,17 @@ every record, decision and exit status is unchanged. The policy is runner-neutra
   differ from every configured author model; the same provider is allowed. This is a deterministic check
   against operator-declared evidence. The catalog names no model, provider or route.
 
-This amends the invocation law's start rule for align, bound and ship, and the maintainer guide's
-statement that worker-attested evidence never lifts an autonomy ceiling, for this policy only. Merge and
-deploy stay outside every policy.
+For this policy only, this amends: the invocation law's start rule for align, bound and ship, with the
+ordinary-workers clause of ruling `entrypoint-phase-operation-split` and the start-path statements of
+`protocols/invocation-authority.md` and the runner contract; the maintainer guide's statement that
+worker-attested evidence never lifts an autonomy ceiling; the host-unattested verifier refusal in
+super-ship, super-verify, super-review and the verification-evidence reference, an exception to ruling
+`closure-requires-independent-verification`; the delegation reference's rule that a human-author class
+makes a human the author, an exception to ruling `delegation-class-is-authority-not-finding`; and the
+rule that seat independence is never a model identity (`AUTHORING.md` section 7,
+`adapters/runner-contract/CONTRACT.md` section 3), for the forge-side review check alone. Each rule's
+text carries its scoped exception beside it; runner-filled seats and every run outside the policy are
+unchanged. Merge and deploy stay outside every policy.
 
 ## Consequences
 

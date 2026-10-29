@@ -73,8 +73,9 @@ One runner-assigned verifier context (`independent-context`) and trusted evidenc
 autonomous form. A fresh host context without attestation remains valid in guided mode and records
 `host-unattested`; the gate refuses it once the build gate records an implementer seat or the run
 holds any bypass or delegated grant record, for the rest of that run. Under the unattended policy
-(ADR-0014) it is a recorded note instead, and the gate is recorded with its evidence command, as
-[the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
+(ADR-0014) it is a recorded note instead, whose boundary is the live merge-gate read (an exception
+to ruling `closure-requires-independent-verification`), and the gate is recorded with its evidence
+command, as [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
 
 The environment the checks run in, identified (`schemas/verification.schema.json`). Test execution
 belongs in the appropriate isolated environment, and repository test code does not receive production
@@ -154,8 +155,9 @@ Gate: a runnable frontend or backend criterion is never passed by tests, type ch
 It needs the project-declared running-surface evidence kind, or an explicit non-pass outcome.
 
 Gate: an implementer-authored or host-unattested receipt cannot satisfy autonomous closure; under the
-unattended policy a host-unattested one counts, labelled worker-attested, and an implementer-authored one
-still never does. A missing
+unattended policy a host-unattested one counts, labelled worker-attested, whose boundary is the live
+merge-gate read (an exception to ruling `closure-requires-independent-verification`), and an
+implementer-authored one still never does. A missing
 independent seat is `unavailable`, never self-verification with a note.
 
 Gate: a classifier, a confidence score and a reviewer's judgement are advisory and are recorded as

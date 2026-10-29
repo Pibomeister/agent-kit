@@ -2,7 +2,7 @@
 # Prose mirror: skills/super-ship/SKILL.md (AUTHORING.md §4.1).
 
 id: super-ship
-version: 0.3.0
+version: 0.4.0
 kind: lifecycle
 invocation: U
 summary: >-
@@ -185,7 +185,7 @@ hard_gates:
     the worker's reach. Gate records the worker itself wrote are worker-attested, not trusted
     evidence, and neither a grant nor a host permission makes them so.
   - No ship begins with an uncovered criterion, an implementer-authored receipt where the build gate
-    records an implementer seat or a recipe binds the check, a host-unattested verifier where that seat is recorded or the run ever held a bypass or delegated grant, or a missing project-declared surface evidence kind.
+    records an implementer seat or a recipe binds the check, a host-unattested verifier where that seat is recorded or the run ever held a bypass or delegated grant (under the unattended policy, a recorded note instead, whose boundary is the live merge-gate read; an exception to ruling `closure-requires-independent-verification`), or a missing project-declared surface evidence kind.
   - Under either transport, an uncommitted head, a stale verify, review-readiness or approved
     full or delta review record, or a non-empty working-tree diff refuses the ship before ship-preflight and any remote effect.
   - dry-run makes no remote call at all. A run that pushed a branch to demonstrate the push was not a
@@ -380,6 +380,7 @@ provenance:
     - central-kb-owns-project-artifacts
     - sensitive-actions-need-approved-charter-entry
     - direct-push-as-ship-transport
+    - closure-requires-independent-verification
 
 tests:
   - id: dry-run-generates-a-payload-and-pushes-nothing

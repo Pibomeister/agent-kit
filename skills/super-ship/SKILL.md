@@ -78,7 +78,7 @@ first remote call, as in `dry-run`, and every remote effect waits for the superv
 `needs-decision`. Record `ship-preflight` with `--bypass <path> --task <id>`. Merge and deploy are never on it.
 
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
-check --phase super-ship` exiting 0 is the start. `record --gate ship-preflight` then reads the merge
+check --phase super-ship` exiting 0 is the start (an exception to ruling `entrypoint-phase-operation-split`). `record --gate ship-preflight` then reads the merge
 gate live and closes the run only when it holds. Put the disclosure it prints in the pull request text
 (under no-mistakes delivery, by editing the opened pull request's text once the pipeline returns, the
 only pull-request write) and record final ship success with `--pr <n>`, as
@@ -181,7 +181,7 @@ worker's reach. Gate records the worker itself wrote are worker-attested, not tr
 neither a grant nor a host permission makes them so.
 
 Gate: no ship begins with an uncovered criterion, an implementer-authored receipt where independent
-verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant (under the unattended policy, a recorded note instead), or a missing project-declared surface evidence kind. The run
+verification is declared or a recipe binds the check, a host-unattested verifier where a seat is recorded or the run ever held a grant (under the unattended policy, a recorded note instead, whose boundary is the live merge-gate read; an exception to ruling `closure-requires-independent-verification`), or a missing project-declared surface evidence kind. The run
 stops with `needs-input` naming the criterion, seat or kind before any remote effect.
 
 Gate: under either transport, an uncommitted head, a stale verify, review-readiness or approved

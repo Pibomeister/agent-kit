@@ -878,7 +878,11 @@ is how a populated tree of authored prose went unscanned. The substitutions are 
 
 **Independence between seats is structural, never a model identity.** "An independent reviewer" is a
 runner-enforced constraint on who fills the seat (`adapters/runner-contract/CONTRACT.md`). It is
-never expressed as, or satisfied by, a different model, provider or family.
+never expressed as, or satisfied by, a different model, provider or family. The one scoped exception
+is the forge-side independent review check under the opt-in unattended policy
+(`docs/decisions/0014-unattended-lifecycle-policy.md`), whose reviewer must be a canonical model
+identity different from every configured author model; runner-filled seats and every run outside that
+policy are unchanged.
 
 **No placeholders.** `TODO`, `TBD`, `lorem` and `placeholder` fail validation. A section a writer
 cannot complete is reported as an open item in the batch report, not committed as a stub. (This file

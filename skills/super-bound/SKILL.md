@@ -58,8 +58,8 @@ and every ticket approval still come from the supervisor through `needs-decision
 approves its own specification or tickets.
 
 Under the unattended policy (ADR-0014), `node <this skill's directory>/../../bin/ak-gate.mjs unattended
-check --phase super-bound` exiting 0 is the start, with no command or grant. The approved-alignment
-input, open document-review decisions, the specification approval and the ticket approvals then
+check --phase super-bound` exiting 0 is the start, with no command or grant (an exception to ruling
+`entrypoint-phase-operation-split`). The approved-alignment input, open document-review decisions, the specification approval and the ticket approvals then
 proceed with your own recommended answers, recorded as unattended advances and never as approvals;
 a ticket whose class makes a human the author keeps that class. Record the `bound` gate as
 [the unattended-lifecycle reference](../../references/unattended-lifecycle/REFERENCE.md) says.
