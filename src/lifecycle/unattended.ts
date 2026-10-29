@@ -488,18 +488,25 @@ function checkEnvironment(
 ): void {
   if (config.environment === "") return;
   const env = encodeURIComponent(config.environment);
-  const policy = field(get(`repos/${repo}/environments/${env}`).body, "deployment_branch_policy");
-  const branches = items(
-    field(get(`repos/${repo}/environments/${env}/deployment-branch-policies`).body, "branch_policies"),
-  );
+  const detail = get(`repos/${repo}/environments/${env}`);
+  const branchPolicies = get(`repos/${repo}/environments/${env}/deployment-branch-policies`);
+  const policy = field(detail.body, "deployment_branch_policy");
+  const branches = items(field(branchPolicies.body, "branch_policies"));
   const [only] = branches;
   const policyType = field(only, "type");
+  if (detail.status !== 200) failures.push(`environment ${config.environment} is unreadable (HTTP ${detail.status})`);
+  if (branchPolicies.status !== 200)
+    failures.push(
+      `environment ${config.environment}'s deployment branch policies are unreadable (HTTP ${branchPolicies.status})`,
+    );
   if (
-    field(policy, "custom_branch_policies") !== true ||
-    field(policy, "protected_branches") === true ||
-    branches.length !== 1 ||
-    field(only, "name") !== defaultBranch ||
-    (policyType !== undefined && policyType !== "branch")
+    detail.status === 200 &&
+    branchPolicies.status === 200 &&
+    (field(policy, "custom_branch_policies") !== true ||
+      field(policy, "protected_branches") === true ||
+      branches.length !== 1 ||
+      field(only, "name") !== defaultBranch ||
+      (policyType !== undefined && policyType !== "branch"))
   )
     failures.push(
       `environment ${config.environment}'s deployment branch policy is not exactly the branch ${defaultBranch}`,
@@ -527,10 +534,11 @@ function checkIdentity(io: GateIo, get: Get, repo: string, config: LifecycleConf
   if (user.status !== 200 || login === undefined || field(user.body, "type") !== "User")
     failures.push("the runner's forge credential is not a user account, so its identity cannot be checked");
   else {
-    const role = nonEmpty(
-      field(get(`repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`).body, "role_name"),
-    );
-    if (role !== "write")
+    const permission = get(`repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`);
+    const role = nonEmpty(field(permission.body, "role_name"));
+    if (permission.status !== 200)
+      failures.push(`the runner ${login}'s role on ${repo} is unreadable (HTTP ${permission.status})`);
+    else if (role !== "write")
       failures.push(`the runner ${login} has role ${role ?? "unknown"} on ${repo}; it must be exactly write`);
     if (isDesignated(config, login)) failures.push(`the runner ${login} is a designated human reviewer`);
   }

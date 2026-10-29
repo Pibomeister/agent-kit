@@ -406,6 +406,20 @@ describe("merge gate (pure, API shapes written from the documentation)", () => {
     expect(stored.failures.join("\n")).toContain("stored");
   });
 
+  test("an environment, branch-policy or permission read that is not HTTP 200 refuses, though its body would pass", () => {
+    const fixtures = protectedFixtures();
+    expect(failuresOf(fixtures)).toBe("");
+    const forbidden = (key: string) => withFixtures({ [key]: { ...fixtures[key], status: 403 } });
+    const environment = `repos/${REPO}/environments/independent-review`;
+    expect(failuresOf(forbidden(environment))).toContain("environment independent-review is unreadable (HTTP 403)");
+    expect(failuresOf(forbidden(`${environment}/deployment-branch-policies`))).toContain(
+      "environment independent-review's deployment branch policies are unreadable (HTTP 403)",
+    );
+    expect(failuresOf(forbidden(`repos/${REPO}/collaborators/runner-bot/permission`))).toContain(
+      `the runner runner-bot's role on ${REPO} is unreadable (HTTP 403)`,
+    );
+  });
+
   test("a classic read credential with a write scope refuses", () => {
     expect(failuresOf(scoped("read:org, repo"))).toContain("write scope");
     expect(failuresOf(scoped("read:org"))).toBe("");
