@@ -111,7 +111,9 @@ inputs:
     summary: >-
       For readiness: current receipts with recipe, evidence kind and verifier-seat lineage. A
       missing required kind, or a missing runner attestation where the build gate records an
-      implementer seat or the run ever held a grant, makes the verification lane unavailable.
+      implementer seat or the run ever held a grant, makes the verification lane unavailable. Under
+      the unattended policy (ADR-0014) a host-unattested verifier distinct from the implementer counts
+      with its recorded note; a self-verification is still refused.
 
 outputs:
   - id: review-record
@@ -232,7 +234,9 @@ hard_gates:
     on their own (ruling `numeric-heuristics-are-guidance`).
   - Readiness never substitutes review judgment for a verifier-seat attestation the recorded build
     seat or a run that ever held a grant requires, or a project-declared surface evidence kind; it names the
-    criterion and gap as unavailable.
+    criterion and gap as unavailable. Under the unattended policy (ADR-0014) the attestation it
+    requires is met by a distinct host-unattested verifier with its recorded note, never by
+    self-verification.
 
 stop_conditions:
   - complete when every selected lane has a state, every required lane is covered, the

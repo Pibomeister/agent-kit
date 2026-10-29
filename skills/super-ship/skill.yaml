@@ -212,7 +212,9 @@ hard_gates:
 stop_conditions:
   - complete under no-mistakes delivery when the committed handoff head has current verify,
     review-readiness and approved full or delta review records, ship-preflight records that head with an empty working-tree diff, and
-    super-ship has neither pushed nor opened a pull request.
+    super-ship has neither pushed nor opened a pull request. Under the unattended policy (ADR-0014)
+    that handoff is intermediate, and it completes only once the pipeline's pull request carries the
+    disclosure and `record --gate ship-preflight --pr <n>` succeeded at its head.
   - complete in dry-run when the payload and the pre-flight record are emitted and no remote call was
     made.
   - complete in publish when the branch and pull request exist with their read-backs recorded, the

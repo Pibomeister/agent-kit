@@ -146,7 +146,7 @@ The project's own release checks, discovered rather than assumed.
    and fresh gates. Compose any PR payload from the ticket, receipts and verdict, linking the recipe,
    acceptance-to-evidence matrix and evidence digests with the delegation class, sensitive factors,
    risks and rollback fields.
-8. For no-mistakes delivery, stop at this immutable handoff. Do not push, open a PR or pass a skip;
+8. For no-mistakes delivery, stop at this immutable handoff (under the unattended policy an intermediate one). Do not push, open a PR or pass a skip;
    the task's no-mistakes delivery contract owns the branch from here. Follow
    `./references/transport-no-mistakes.md` (ruling `no-mistakes-as-ship-transport`). A deprecated
    legacy `agent-kit` publish binding follows that reference's legacy publish procedure instead.
@@ -264,7 +264,7 @@ In `dry-run` the effects performed are `artifact-write` alone.
 ## Stop conditions
 
 `complete`: under no-mistakes delivery, the committed handoff head and ship-preflight are recorded
-with an empty diff and no remote effect. In direct `dry-run`, the payload and pre-flight record are
+with an empty diff and no remote effect; under the unattended policy, only once the pipeline's pull request carries the disclosure and `ship-preflight --pr <n>` succeeded. In direct `dry-run`, the payload and pre-flight record are
 emitted. In direct `publish`, the branch and PR exist with read-backs, the lesson candidate is
 drafted, and the watch lane holds the PR.
 

@@ -28,8 +28,8 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33828,
-      "tokens": 8428
+      "bytes": 34089,
+      "tokens": 8493
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -148,8 +148,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 16867,
-      "tokens": 4213
+      "bytes": 17012,
+      "tokens": 4249
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -188,8 +188,8 @@
     },
     "bundle/claude-code:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6507,
-      "tokens": 1627
+      "bytes": 6622,
+      "tokens": 1656
     },
     "bundle/claude-code:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -718,8 +718,8 @@
     },
     "bundle/claude-code:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15418,
-      "tokens": 3847
+      "bytes": 15608,
+      "tokens": 3894
     },
     "bundle/claude-code:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
@@ -753,8 +753,8 @@
     },
     "bundle/claude-code:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 22802,
-      "tokens": 5697
+      "bytes": 22983,
+      "tokens": 5742
     },
     "bundle/claude-code:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -878,8 +878,8 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33828,
-      "tokens": 8428
+      "bytes": 34089,
+      "tokens": 8493
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -998,8 +998,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 16867,
-      "tokens": 4213
+      "bytes": 17012,
+      "tokens": 4249
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1038,8 +1038,8 @@
     },
     "bundle/codex:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6507,
-      "tokens": 1627
+      "bytes": 6622,
+      "tokens": 1656
     },
     "bundle/codex:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -1568,8 +1568,8 @@
     },
     "bundle/codex:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15536,
-      "tokens": 3876
+      "bytes": 15726,
+      "tokens": 3924
     },
     "bundle/codex:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
@@ -1603,8 +1603,8 @@
     },
     "bundle/codex:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 22963,
-      "tokens": 5737
+      "bytes": 23144,
+      "tokens": 5782
     },
     "bundle/codex:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -1728,8 +1728,8 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33828,
-      "tokens": 8428
+      "bytes": 34089,
+      "tokens": 8493
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1848,8 +1848,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 16867,
-      "tokens": 4213
+      "bytes": 17012,
+      "tokens": 4249
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1888,8 +1888,8 @@
     },
     "bundle/droid:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6507,
-      "tokens": 1627
+      "bytes": 6622,
+      "tokens": 1656
     },
     "bundle/droid:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -2418,8 +2418,8 @@
     },
     "bundle/droid:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15521,
-      "tokens": 3873
+      "bytes": 15711,
+      "tokens": 3920
     },
     "bundle/droid:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
@@ -2453,8 +2453,8 @@
     },
     "bundle/droid:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 22946,
-      "tokens": 5733
+      "bytes": 23127,
+      "tokens": 5778
     },
     "bundle/droid:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -2578,8 +2578,8 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33828,
-      "tokens": 8428
+      "bytes": 34089,
+      "tokens": 8493
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2698,8 +2698,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 16867,
-      "tokens": 4213
+      "bytes": 17012,
+      "tokens": 4249
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2738,8 +2738,8 @@
     },
     "bundle/grok:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6507,
-      "tokens": 1627
+      "bytes": 6622,
+      "tokens": 1656
     },
     "bundle/grok:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -3268,8 +3268,8 @@
     },
     "bundle/grok:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15403,
-      "tokens": 3843
+      "bytes": 15593,
+      "tokens": 3891
     },
     "bundle/grok:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
@@ -3303,8 +3303,8 @@
     },
     "bundle/grok:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 22787,
-      "tokens": 5693
+      "bytes": 22968,
+      "tokens": 5738
     },
     "bundle/grok:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",
@@ -3428,8 +3428,8 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 33828,
-      "tokens": 8428
+      "bytes": 34089,
+      "tokens": 8493
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3548,8 +3548,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 16867,
-      "tokens": 4213
+      "bytes": 17012,
+      "tokens": 4249
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3588,8 +3588,8 @@
     },
     "bundle/kimi:references/shared/references/verification-evidence/REFERENCE.md": {
       "file": "references/verification-evidence/REFERENCE.md",
-      "bytes": 6507,
-      "tokens": 1627
+      "bytes": 6622,
+      "tokens": 1656
     },
     "bundle/kimi:references/shared/roles/code-review/adversarial/ROLE.md": {
       "file": "roles/code-review/adversarial/ROLE.md",
@@ -4118,8 +4118,8 @@
     },
     "bundle/kimi:skills/super-align/SKILL.md": {
       "file": "skills/super-align/SKILL.md",
-      "bytes": 15551,
-      "tokens": 3880
+      "bytes": 15741,
+      "tokens": 3928
     },
     "bundle/kimi:skills/super-bound/SKILL.md": {
       "file": "skills/super-bound/SKILL.md",
@@ -4153,8 +4153,8 @@
     },
     "bundle/kimi:skills/super-ship/SKILL.md": {
       "file": "skills/super-ship/SKILL.md",
-      "bytes": 22978,
-      "tokens": 5741
+      "bytes": 23159,
+      "tokens": 5786
     },
     "bundle/kimi:skills/super-ship/assets/independent-review.yml": {
       "file": "skills/super-ship/assets/independent-review.yml",

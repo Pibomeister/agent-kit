@@ -33,7 +33,8 @@ ruling `delegation-class-is-authority-not-finding` for that policy only. A ticke
 authorship boundary in existing fields. `allowed_changes` remains the ticket's
 full write scope for the implementer. Name the agent's permitted file and symbol subset in text, in
 `goal` or `stop_conditions`, alongside non-file assistance such as research; put prohibited agent
-work, including authoring the implementation, in `non_goals`. On a decision ticket the boundary
+work, including authoring the implementation outside the unattended policy, in `non_goals`. Under that
+policy the agent may author only the ticket-scoped implementation, its author kind recorded as `agent`. On a decision ticket the boundary
 lives in `goal` and `non_goals`. Naming a human owner alone is not that boundary.
 
 `merge` and `deploy` remain sensitive actions for every class, and a human merges every class. A

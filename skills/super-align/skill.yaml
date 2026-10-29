@@ -111,9 +111,10 @@ references:
 
 hard_gates:
   - Nothing is implemented before approval; no source file is written, no project is scaffolded and
-    no implementation skill is started until the human approves the restated direction.
+    no implementation skill is started until the human approves the restated direction, or, under
+    the unattended policy (ADR-0014), until the step 11 unattended advance is recorded.
   - Approval is an explicit yes to the restatement; "whatever you think is best", "sounds good",
-    "sure, let's go" and silence are not approval.
+    "sure, let's go" and silence are not approval. An unattended advance is not approval either.
   - Complexity found mid-run upgrades the classification and nothing downgrades it.
   - A fork the human cannot settle in this session leaves as a type decision ticket, never as a
     recorded guess.
@@ -122,7 +123,8 @@ hard_gates:
 
 stop_conditions:
   - complete when the human approved the restated direction and every published artifact's read-back
-    matched what was sent.
+    matched what was sent. Under the unattended policy (ADR-0014) the approval is instead a recorded
+    unattended advance, which is never a human approval.
   - needs-input when the run was started by neither the typed command nor a validated grant, there
     is no request, no explicit approval, a question outside the charter at align.run, a fork only
     the human can settle, or publication reaches an unavailable knowledgebase adapter.

@@ -136,6 +136,10 @@ With this contract attached and no real runner behind it, no such evidence exist
 form of an evidence-consuming operation stops with `status: needs-input` naming trusted evidence as
 unavailable. That stop is the `fails-closed` row in §1. The explicit form is unaffected.
 
+The one exception is the opt-in unattended policy (ADR-0014): there the worker-attested gate records
+count, labelled so, and the boundary is the live merge-gate read with its residual assumptions
+stated. Work outside that opt-in keeps both restrictions above.
+
 ---
 
 ## 3. Seat independence

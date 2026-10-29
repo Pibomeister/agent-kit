@@ -138,10 +138,10 @@ and never as an approval; record the `align` gate as [the unattended-lifecycle r
 
 Gate: nothing is implemented before approval. On every classification this skill writes no source
 file, scaffolds no project and starts no implementation skill until the human has approved the
-restated direction. The ceremony scales with the work; the gate does not.
+restated direction (under the unattended policy, until the step 11 unattended advance is recorded). The ceremony scales with the work; the gate does not.
 
 Gate: approval is an explicit yes to the restatement. "Whatever you think is best", "sounds good",
-"sure, let's go" and silence are not approval. Restate and ask again.
+"sure, let's go" and silence are not approval, nor is an unattended advance. Restate and ask again.
 
 Gate: complexity found mid-run upgrades the classification, and nothing downgrades it. Say when it
 moves and why.
@@ -188,8 +188,8 @@ performed is `failed`, never complete.
 
 ## Stop conditions
 
-- `complete` — the human approved the restated direction, and every published artifact's read-back
-  matched what was sent.
+- `complete` — the human approved the restated direction (under the unattended policy, a recorded
+  unattended advance, never an approval), and every published artifact's read-back matched what was sent.
 - `needs-input` — a start by neither the typed command nor a validated grant, no request, no
   explicit approval, a question outside the charter at `align.run`, a fork only the human can
   settle, or publication reached an unavailable knowledgebase adapter. The first returns the
