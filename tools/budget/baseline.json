@@ -63,8 +63,8 @@
     },
     "bundle/claude-code:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25016,
-      "tokens": 6252
+      "bytes": 25322,
+      "tokens": 6329
     },
     "bundle/claude-code:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -913,8 +913,8 @@
     },
     "bundle/codex:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25016,
-      "tokens": 6252
+      "bytes": 25322,
+      "tokens": 6329
     },
     "bundle/codex:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -1763,8 +1763,8 @@
     },
     "bundle/droid:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25016,
-      "tokens": 6252
+      "bytes": 25322,
+      "tokens": 6329
     },
     "bundle/droid:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -2613,8 +2613,8 @@
     },
     "bundle/grok:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25016,
-      "tokens": 6252
+      "bytes": 25322,
+      "tokens": 6329
     },
     "bundle/grok:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -3463,8 +3463,8 @@
     },
     "bundle/kimi:references/shared/policies/invocation.yaml": {
       "file": "policies/invocation.yaml",
-      "bytes": 25016,
-      "tokens": 6252
+      "bytes": 25322,
+      "tokens": 6329
     },
     "bundle/kimi:references/shared/policies/limits.yaml": {
       "file": "policies/limits.yaml",
@@ -4318,8 +4318,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 23655,
-      "tokens": 5900
+      "bytes": 23997,
+      "tokens": 5985
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",

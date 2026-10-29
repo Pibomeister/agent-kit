@@ -34,7 +34,7 @@ started without an explicit request or a validated grant it stops and says so.
 the runner validates a standing grant for autopilot.start against a captain-approved immutable
 charter. The worker's brief, a prompt naming autopilot, and a phase grant do not start it. Every
 other U public entrypoint remains human-started by its slash command, save under the bypass grant
-below. Sensitive grants, merge,
+below and, for align, bound and ship, the opt-in unattended policy (ADR-0014). Sensitive grants, merge,
 deploy and anything outside the charter remain human decisions.
 
 **A second standing exception to "only a human starts these"** is the bypass grant
@@ -80,13 +80,15 @@ skills, which the law forbids. The resolution (ruling `entrypoint-phase-operatio
 
 | Layer | Who may start it | Example |
 |---|---|---|
-| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant | `/ak:super-ship` |
+| Public entrypoint | A human by slash command; autopilot also Firstmate under a runner-validated standing grant; align, bound and ship also the agent under the opt-in unattended policy (ADR-0014) | `/ak:super-ship` |
 | Phase operation | A delegated controller, **only** under a runner-validated grant | `review.delta` |
 
-A human invokes a public entrypoint, or Firstmate starts autopilot under the standing-start amendment.
+A human invokes a public entrypoint, or Firstmate starts autopilot under the standing-start amendment,
+or the agent starts align, bound and ship under the opt-in unattended policy once
+`ak-gate.mjs unattended check` exits 0 (ADR-0014).
 A controller invokes a phase operation only when the runner validates a grant that covers it.
 **Ordinary workers cannot manufacture a grant or start a new human-started
-phase.** `super-review` `full` and `readiness` are not in that set: the agent doing the work starts
+phase**, save align, bound and ship under that opt-in policy. `super-review` `full` and `readiness` are not in that set: the agent doing the work starts
 them (`docs/decisions/0013-model-starts-super-review.md`). Public wrappers and the supervisor pair
 run the same protocol, so there is no second pipeline. Where a host cannot validate a grant, a
 controller **stops** rather than reproducing a forbidden command's effect through a side door

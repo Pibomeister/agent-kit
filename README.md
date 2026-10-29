@@ -188,7 +188,8 @@ directory with no entry.
 | **Operational** (2) | `babysit-pr` U · `ultraqa` U |
 
 **U** = user-invoked; only a human starts it except autopilot under Firstmate's runner-validated
-standing grant. **M** = model-invoked. See the invocation law in
+standing grant, a phase under a supervisor's bypass grant, and align, bound and ship under the
+opt-in unattended policy (`docs/decisions/0014-unattended-lifecycle-policy.md`). **M** = model-invoked. See the invocation law in
 `AGENTS.md`.
 
 ### Packs (8)
