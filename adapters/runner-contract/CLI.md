@@ -8,7 +8,8 @@ AK_RUNNER_WORKER_TOKEN=<task-token> \
   ak runner serve --socket <private-socket> --state-dir <private-state> \
     --worker-root <task-worktree> --run-id <run-id> \
     --admin-token-file ~/.config/agent-kit/runner/<run-id>/admin.token \
-    --seat-config <private-seat-config> --verify-config <private-verification-config> \
+    --seat-config <private-seat-config> [--council-config <private-council-config>] \
+    --verify-config <private-verification-config> \
     --effect-config <private-effect-config> \
     --event-config <private-event-config> --loop-config <private-loop-config> \
     --kit-root <installed-bundle-root>
@@ -59,7 +60,16 @@ violations of [seat independence](CONTRACT.md#3-seat-independence) with
 `invalid or excluded seat`; `decide` rechecks persisted judgments and returns `needs-input` with a
 `runner:seat-independence` escalation if the pair violates the rule.
 Each launcher receives a frozen card on stdin and returns JSON with `choice` and
-`rationale`. Seat launchers and effect commands run from the private state directory with worker-root
+`rationale`. The optional private council config (ADR-0015) names the blind veto seat as
+`{"veto":{"seat":"...","chain":[{"actor":"...","lineage":["..."],"command":["..."],"requested":"..."}]},
+"limits":{"max_bytes":262144,"timeout_ms":900000},"deny":["..."]}`. Only its owner may read or write
+it. `serve` refuses a council config that names a `pair`, a chain that repeats an actor, or a veto
+lineage shared with either seat launcher. A veto launcher may add `model_served` to its answer.
+The card records the launcher's `requested` label, `unspecified` when absent, and the
+answer's `model_served` as served, `unverified` when absent. A charter that requires the veto, served without
+a council config, records an unavailable veto under seat id `veto` and refuses every approving pair
+with `runner:council-veto`: there is no `judge`
+equivalent for the veto seat. Seat launchers and effect commands run from the private state directory with worker-root
 runtime configuration and `PATH` entries removed. The verification command alone runs from the worker
 root, so it executes worker-controlled code under the runner's OS identity; isolate that identity
 from supervisor secrets when workers may be adversarial. Under stock Firstmate those launchers must

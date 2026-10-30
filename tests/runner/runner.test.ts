@@ -3210,3 +3210,320 @@ describe("unknown runner selectors", () => {
     expect(err).toEqual(["ak runner: unknown verb 'stauts'; did you mean status or start?"]);
   });
 });
+
+// ADR-0015: the blind veto is an opt-in, refusal-only side record on an approving pair.
+function councilFixture() {
+  const f = fixture();
+  const charter: typeof f.charter & { council?: { blind_veto: "required" } } = f.charter;
+  charter.council = { blind_veto: "required" };
+  charter.immutability.hash = artifactHash({ ...charter, immutability: { ...charter.immutability, hash: "" } });
+  const approval = charter.approvals[0];
+  if (approval === undefined) throw new Error("toy charter approval missing");
+  approval.artifact_hash = charter.immutability.hash;
+  writeFileSync(f.path, JSON.stringify(charter));
+  return f;
+}
+
+function councilReady() {
+  const f = councilFixture();
+  f.runner.start("toy-run", f.path, "implementer-1", f.revision, standing(f));
+  const log = join(f.privateDir, "log.txt");
+  writeFileSync(log, "independently collected verification");
+  f.runner.collect("toy-run", "e1", log, f.revision, "source");
+  return f;
+}
+
+const answered = (choice: string, actor = "veto-1", lineage = [actor]) => ({
+  status: "answered" as const,
+  seat: "veto",
+  actor,
+  lineage,
+  dispatch: "card-1-veto",
+  choice,
+  rationale: "Blind judgment of the same packet",
+});
+
+describe("council blind veto", () => {
+  test("without the charter block nothing changes and no veto can be recorded", () => {
+    const f = ready();
+    card(f);
+    expect(f.runner.vetoDue("toy-run", "card-1")).toBe(false);
+    expect(() => f.runner.veto("toy-run", "card-1", answered("yes"))).toThrow("does not seat a blind veto");
+    expect(f.runner.decide("toy-run", "card-1").next_permitted_action).toBe("bound.run");
+  });
+
+  test("an approving pair without a recorded veto escalates once", () => {
+    const f = councilReady();
+    card(f);
+    expect(f.runner.vetoDue("toy-run", "card-1")).toBe(true);
+    const result = f.runner.decide("toy-run", "card-1");
+    expect(result).toMatchObject({ status: "needs-input", escalation: { charter_rule: "runner:council-veto" } });
+    expect(stage(f)).toEqual(["needs-input", null]);
+  });
+
+  test("an approving veto lets the pair's approval stand and the decision keeps two judgments", () => {
+    const f = councilReady();
+    card(f);
+    f.runner.veto("toy-run", "card-1", answered("yes"));
+    expect(f.runner.vetoDue("toy-run", "card-1")).toBe(false);
+    expect(f.runner.decide("toy-run", "card-1").next_permitted_action).toBe("bound.run");
+    const decision = parseJson(readFileSync(join(f.privateDir, "toy-run-card-1.decision.json"), "utf8"));
+    expect(decision).toMatchObject({ status: "ruled" });
+    expect(decision).toHaveProperty("judgments.length", 2);
+  });
+
+  test("a non-approving veto refuses and never decides in its own favour", () => {
+    const f = councilReady();
+    card(f);
+    f.runner.veto("toy-run", "card-1", answered("no"));
+    const result = f.runner.decide("toy-run", "card-1");
+    expect(result.escalation?.charter_rule).toBe("runner:council-veto");
+    expect(result.escalation?.need).toContain("did not approve");
+    expect(stage(f)).toEqual(["needs-input", null]);
+  });
+
+  test("an unavailable veto chain refuses with its failures", () => {
+    const f = councilReady();
+    card(f);
+    f.runner.veto("toy-run", "card-1", { status: "unavailable", seat: "veto", failures: ["seat veto x: exited 1"] });
+    expect(f.runner.decide("toy-run", "card-1").escalation?.need).toContain("exited 1");
+  });
+
+  test("a veto that shares a lineage with the pair, or is excluded, is refused at submission", () => {
+    const f = councilReady();
+    card(f);
+    expect(() => f.runner.veto("toy-run", "card-1", answered("yes", "supervisor-1"))).toThrow("not independent");
+    expect(() => f.runner.veto("toy-run", "card-1", answered("yes", "veto-1", ["veto-1", "supervisor-2"]))).toThrow(
+      "not independent",
+    );
+    expect(() => f.runner.veto("toy-run", "card-1", answered("yes", "implementer-1"))).toThrow("excluded");
+    expect(() => f.runner.veto("toy-run", "card-1", { ...answered("yes"), seat: "seat-a" })).toThrow(
+      "must not be a supervisor seat",
+    );
+    expect(() => f.runner.veto("toy-run", "card-1", answered("maybe"))).toThrow("invalid");
+    f.runner.veto("toy-run", "card-1", answered("yes"));
+    expect(() => f.runner.veto("toy-run", "card-1", answered("no"))).toThrow("changed after first submission");
+  });
+
+  test("a judgment recorded after the veto may not share its lineage", () => {
+    const f = councilReady();
+    f.runner.prepare("toy-run", {
+      id: "card-1",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    f.runner.veto("toy-run", "card-1", answered("yes"));
+    expect(() => f.runner.judge("toy-run", "card-1", "seat-a", "veto-1", "card-1-a", "yes", [])).toThrow(
+      "blind veto seat",
+    );
+    expect(() =>
+      f.runner.judge("toy-run", "card-1", "seat-a", "supervisor-1", "card-1-a", "yes", [], ["supervisor-1", "veto-1"]),
+    ).toThrow("blind veto seat");
+  });
+
+  test("a pair agreeing not to approve needs no veto", () => {
+    const f = councilReady();
+    f.runner.prepare("toy-run", {
+      id: "nay",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    f.runner.judge("toy-run", "nay", "seat-a", "supervisor-1", "nay-a", "no", []);
+    f.runner.judge("toy-run", "nay", "seat-b", "supervisor-2", "nay-b", "no", []);
+    expect(f.runner.vetoDue("toy-run", "nay")).toBe(false);
+    expect(f.runner.decide("toy-run", "nay")).toMatchObject({ status: "complete", next_permitted_action: "align.run" });
+  });
+
+  test("serve dispatches the veto chain blind, moving to a substitute only on failure", async () => {
+    const f = councilFixture();
+    const socket = join(f.privateDir, "runner.sock");
+    const seatConfig = join(f.privateDir, "seats.json");
+    const councilConfig = join(f.privateDir, "council.json");
+    const vetoLog = join(f.privateDir, "veto.log");
+    const answer = (choice: string) =>
+      `const p=JSON.parse(await Bun.stdin.text());require('node:fs').appendFileSync(${JSON.stringify(vetoLog)},Object.keys(p).sort().join(',')+'\\n');console.log(JSON.stringify({choice:${JSON.stringify(choice)},rationale:'blind',model_served:'served-label'}));`;
+    writeFileSync(
+      seatConfig,
+      JSON.stringify({
+        launchers: ["seat-a", "seat-b"].map((seat) => ({
+          seat,
+          actor: `supervisor-${seat}`,
+          lineage: [`supervisor-${seat}`],
+          command: [
+            "bun",
+            "-e",
+            "const p=JSON.parse(await Bun.stdin.text());console.log(JSON.stringify({choice:p.card.approve,rationale:'agree'}));",
+          ],
+        })),
+      }),
+    );
+    writeFileSync(
+      councilConfig,
+      JSON.stringify({
+        veto: {
+          seat: "veto",
+          chain: [
+            {
+              actor: "veto-1",
+              lineage: ["veto-1"],
+              command: ["bun", "-e", "process.exit(3)"],
+              requested: "first-label",
+            },
+            { actor: "veto-2", lineage: ["veto-2"], command: ["bun", "-e", answer("yes")], requested: "second-label" },
+            { actor: "veto-3", lineage: ["veto-3"], command: ["bun", "-e", answer("no")] },
+          ],
+        },
+      }),
+      { mode: 0o600 },
+    );
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    const server = Bun.spawn(
+      [
+        "bun",
+        join(root, "src", "cli.ts"),
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--seat-config",
+        seatConfig,
+        "--council-config",
+        councilConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      await waitForPath(socket, server);
+      const request = join(f.privateDir, "request.json");
+      const call = (verb: string, token: string, args: RunnerArgs) => {
+        writeFileSync(request, JSON.stringify(args));
+        return callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
+      };
+      expect(
+        call("start", adminToken, {
+          run: "toy-run",
+          charter: f.path,
+          implementer: "implementer-1",
+          revision: f.revision,
+          standing_grant: standing(f),
+        }).exitCode,
+      ).toBe(0);
+      const receipt = join(f.privateDir, "receipt.txt");
+      writeFileSync(receipt, "independent receipt");
+      expect(
+        call("collect", adminToken, { run: "toy-run", id: "e1", source: receipt, revision: f.revision, kind: "source" })
+          .exitCode,
+      ).toBe(0);
+      expect(
+        call("prepare", workerToken, {
+          run: "toy-run",
+          card: {
+            id: "card-1",
+            operation: "align.run",
+            grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+            question: "Proceed?",
+            options: ["yes", "no"],
+            approve: "yes",
+            evidence: ["e1"],
+            artifact_hash: `sha256:${"b".repeat(64)}`,
+          },
+        }).exitCode,
+      ).toBe(0);
+      const decided = call("decide", workerToken, { run: "toy-run", card_id: "card-1" });
+      expect(JSON.parse(decided.stdout.toString())).toMatchObject({
+        status: "complete",
+        next_permitted_action: "bound.run",
+      });
+      expect(f.runner.status("toy-run").cards["card-1"]?.veto).toMatchObject({
+        status: "answered",
+        actor: "veto-2",
+        choice: "yes",
+        model_requested: "second-label",
+        model_served: "served-label",
+      });
+      expect(readFileSync(vetoLog, "utf8").trim().split("\n")).toEqual(["card,charter_hash,diff_hash,revision,run"]);
+      expect(
+        call("prepare", workerToken, {
+          run: "toy-run",
+          card: {
+            id: "card-2",
+            operation: "bound.run",
+            grant: { charter_hash: f.charter.immutability.hash, covers: "spec-approval" },
+            question: `Proceed with ${["gh", "p_", "a1".repeat(18)].join("")}?`,
+            options: ["yes", "no"],
+            approve: "yes",
+            evidence: ["e1"],
+            artifact_hash: `sha256:${"c".repeat(64)}`,
+          },
+        }).exitCode,
+      ).toBe(0);
+      const refused = call("decide", workerToken, { run: "toy-run", card_id: "card-2" });
+      expect(JSON.parse(refused.stdout.toString())).toMatchObject({
+        status: "needs-input",
+        escalation: { charter_rule: "runner:council-veto" },
+      });
+      expect(refused.stdout.toString()).toContain("outbound secret");
+      expect(readFileSync(vetoLog, "utf8").trim().split("\n")).toHaveLength(1);
+    } finally {
+      server.kill();
+      await server.exited;
+    }
+  }, 300_000);
+
+  test("serve refuses a council configuration others can read", () => {
+    const f = councilFixture();
+    const councilConfig = join(f.privateDir, "council.json");
+    writeFileSync(
+      councilConfig,
+      JSON.stringify({ veto: { seat: "veto", chain: [{ actor: "v", lineage: ["v"], command: ["true"] }] } }),
+      { mode: 0o644 },
+    );
+    chmodSync(councilConfig, 0o644);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, "a".repeat(48), { mode: 0o600 });
+    const server = Bun.spawnSync(
+      [
+        "bun",
+        join(root, "src", "cli.ts"),
+        "runner",
+        "serve",
+        "--socket",
+        join(f.privateDir, "runner.sock"),
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+        "--council-config",
+        councilConfig,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: "b".repeat(48) }, stdout: "pipe", stderr: "pipe" },
+    );
+    expect(server.exitCode).not.toBe(0);
+    expect(server.stderr.toString()).toContain("owner only");
+  });
+});

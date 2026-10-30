@@ -6,8 +6,8 @@
  * A seat's `chain` is ordered. The first launcher is the seat's holder and
  * each later one is a substitute, tried only when every earlier launcher
  * failed to start or returned no valid answer. A valid answer is never
- * replaced. `model` is the operator's own label for what the launcher asks
- * for; the council records it as requested and never routes on it.
+ * replaced. `requested` is the operator's own label for what the launcher
+ * asks for; the council records it and never routes on it.
  */
 
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -23,7 +23,9 @@ export interface CouncilLauncher {
   actor: string;
   lineage: string[];
   command: string[];
-  model?: string;
+  requested?: string;
+  /** Names of caller environment variables `ak council run` passes to this launcher, beyond the base set. */
+  env?: string[];
 }
 
 export interface CouncilSeat {
@@ -55,7 +57,8 @@ const launcher = {
     actor: nonEmpty,
     lineage: { type: "array", minItems: 1, items: nonEmpty },
     command: { type: "array", minItems: 1, items: nonEmpty },
-    model: nonEmpty,
+    requested: nonEmpty,
+    env: { type: "array", items: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]*$" } },
   },
 };
 const seat = {
@@ -118,7 +121,7 @@ export function readCouncilConfig(path: string): CouncilConfig {
   const stat = statSync(real);
   if (!stat.isFile()) throw new Error("council configuration is not a regular file");
   if ((stat.mode & 0o077) !== 0)
-    throw new Error("council configuration must be readable and writable by its owner only");
+    throw new Error("council configuration must be owner only: no group or other permission bits");
   const uid = process.getuid?.();
   if (uid !== undefined && stat.uid !== uid)
     throw new Error("council configuration must be owned by the operator running the council");

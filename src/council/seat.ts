@@ -8,7 +8,10 @@
 
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
-export type Spawn = (argv: string[], stdin: string) => Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>;
+export type Spawn = (
+  launcher: CouncilLauncher,
+  stdin: string,
+) => Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>;
 
 export interface Attempt {
   actor: string;
@@ -37,10 +40,10 @@ export async function launchSeat(
 ): Promise<SeatResult> {
   const attempts: Attempt[] = [];
   for (const launcher of seat.chain) {
-    const attempt: Attempt = { actor: launcher.actor, model_requested: launcher.model ?? UNSPECIFIED };
+    const attempt: Attempt = { actor: launcher.actor, model_requested: launcher.requested ?? UNSPECIFIED };
     attempts.push(attempt);
     try {
-      const child = await spawn(launcher.command, payload);
+      const child = await spawn(launcher, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
       const value: unknown = JSON.parse(child.stdout.toString());

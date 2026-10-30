@@ -10,6 +10,7 @@
  * reviewed. The refusal names the finding and never the secret value.
  */
 
+import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 
 import { SECRET_KINDS, scrubSecrets, type SecretKind } from "../learn/core/secrets.ts";
@@ -74,8 +75,7 @@ function segmentPattern(entry: string): RegExp {
   return new RegExp(`^${escaped}$`, "i");
 }
 
-/** The deny-list entry a path matches, or null. */
-export function deniedBy(path: string, extra: readonly string[] = []): string | null {
+function deniedSegment(path: string, extra: readonly string[]): string | null {
   const segments = path.split(/[\\/]+/).filter((segment) => segment.length > 0);
   const name = basename(path);
   for (const entry of [...BUILT_IN_DENY, ...extra]) {
@@ -85,8 +85,31 @@ export function deniedBy(path: string, extra: readonly string[] = []): string | 
   return null;
 }
 
-/** Every reason the items may not leave the host. An empty list means they may. */
-export function checkOutbound(items: readonly OutboundItem[], limits: OutboundLimits = {}): OutboundRefusal[] {
+/**
+ * The deny-list entry a path matches, or null. A path that exists is also
+ * checked as it resolves, so a link with an innocent name to a denied file
+ * is refused like the file.
+ */
+export function deniedBy(path: string, extra: readonly string[] = []): string | null {
+  const given = deniedSegment(path, extra);
+  if (given !== null) return given;
+  try {
+    return deniedSegment(realpathSync(path), extra);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every reason the items may not leave the host. An empty list means they may.
+ * `sent` is the exact text a seat receives, when it wraps the items; the size
+ * cap counts it rather than the items alone.
+ */
+export function checkOutbound(
+  items: readonly OutboundItem[],
+  limits: OutboundLimits = {},
+  sent?: string,
+): OutboundRefusal[] {
   const refusals: OutboundRefusal[] = [];
   for (const item of items) {
     if (item.path !== undefined) {
@@ -100,7 +123,10 @@ export function checkOutbound(items: readonly OutboundItem[], limits: OutboundLi
       refusals.push({ kind: "secret", label: item.label, detail: `detected credential kinds: ${kinds.join(", ")}` });
   }
   const cap = limits.max_bytes ?? DEFAULT_MAX_BYTES;
-  const bytes = items.reduce((sum, item) => sum + Buffer.byteLength(item.text, "utf8"), 0);
+  const bytes =
+    sent === undefined
+      ? items.reduce((sum, item) => sum + Buffer.byteLength(item.text, "utf8"), 0)
+      : Buffer.byteLength(sent, "utf8");
   if (bytes > cap)
     refusals.push({ kind: "too-large", label: "payload", detail: `payload is ${bytes} bytes; the cap is ${cap}` });
   return refusals;

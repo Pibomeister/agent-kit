@@ -228,9 +228,9 @@ async function dispatchVeto(
     return;
   }
   const options = runner.status(runId).cards[cardId]?.options ?? [];
-  const result = await launchSeat(council.veto, packet, options, (argv, stdin) =>
+  const result = await launchSeat(council.veto, packet, options, (launcher, stdin) =>
     spawnPiped(
-      argv,
+      launcher.command,
       runner.stateDir,
       stdin,
       privateChildEnv(runner),
@@ -254,7 +254,7 @@ async function dispatchVeto(
     dispatch: `${cardId}-${council.veto.seat}`,
     choice: result.answer.choice,
     rationale: result.answer.rationale,
-    model_requested: result.launcher.model ?? UNSPECIFIED,
+    model_requested: result.launcher.requested ?? UNSPECIFIED,
     model_served: result.answer.model_served ?? UNVERIFIED,
   });
 }
@@ -280,8 +280,16 @@ async function decideCard(
   if (failures.length === 0 && runner.vetoDue(runId, cardId)) {
     try {
       await dispatchVeto(runner, runId, cardId, council, activeChildren);
-    } catch {
-      // A veto the runner could not record leaves the card without one, and decide refuses it.
+    } catch (cause) {
+      try {
+        runner.veto(runId, cardId, {
+          status: "unavailable",
+          seat: council?.veto.seat ?? "veto",
+          failures: [`veto dispatch failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500)],
+        });
+      } catch {
+        // A veto the runner cannot record leaves the card without one, and decide refuses it.
+      }
     }
   }
   return runner.decide(runId, cardId, failures);

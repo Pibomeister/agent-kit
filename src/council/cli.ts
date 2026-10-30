@@ -70,7 +70,7 @@ function seatEntry(role: SeatEntry["role"], seat: CouncilSeat, result: SeatResul
       role,
       seat: seat.seat,
       actor: null,
-      model_requested: seat.chain[0]?.model ?? UNSPECIFIED,
+      model_requested: seat.chain[0]?.requested ?? UNSPECIFIED,
       model_served: UNVERIFIED,
       choice: null,
       rationale: null,
@@ -80,7 +80,7 @@ function seatEntry(role: SeatEntry["role"], seat: CouncilSeat, result: SeatResul
     role,
     seat: seat.seat,
     actor: result.launcher.actor,
-    model_requested: result.launcher.model ?? UNSPECIFIED,
+    model_requested: result.launcher.requested ?? UNSPECIFIED,
     model_served: result.answer.model_served ?? UNVERIFIED,
     choice: result.answer.choice,
     rationale: result.answer.rationale,
@@ -88,14 +88,32 @@ function seatEntry(role: SeatEntry["role"], seat: CouncilSeat, result: SeatResul
   };
 }
 
-/** The council launchers' environment: the caller's, without any runner credential. */
-function seatEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("AK_RUNNER_")));
+/** What every launcher may see of the caller's environment. A roster adds more per launcher with `env`. */
+const BASE_ENV = new Set(["PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR", "TZ"]);
+
+/**
+ * A launcher's environment: the base names, any `LC_` locale setting, and the
+ * names its roster entry lists. Nothing else of the caller's environment
+ * reaches a seat, and no runner credential ever does.
+ */
+export function seatEnv(names: readonly string[] = []): NodeJS.ProcessEnv {
+  const allowed = new Set([...BASE_ENV, ...names]);
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !key.startsWith("AK_RUNNER_") && (allowed.has(key) || key.startsWith("LC_")),
+    ),
+  );
 }
 
 function spawner(cwd: string, timeoutMs: number): Spawn {
-  return async (argv, stdin) => {
-    const child = Bun.spawn(argv, { cwd, env: seatEnv(), stdin: Buffer.from(stdin), stdout: "pipe", stderr: "pipe" });
+  return async (launcher, stdin) => {
+    const child = Bun.spawn(launcher.command, {
+      cwd,
+      env: seatEnv(launcher.env),
+      stdin: Buffer.from(stdin),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -160,12 +178,12 @@ async function run(args: RunArgs, io: Io): Promise<number> {
     { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: entry.text })),
   ];
-  const refusals = checkOutbound(items, outboundLimits(config));
   const payload = JSON.stringify({
     council: "blind",
     card,
     context: context.map((entry) => ({ name: entry.name, sha256: sha256(entry.text), text: entry.text })),
   });
+  const refusals = checkOutbound(items, outboundLimits(config), payload);
   const seats: SeatEntry[] = [];
   let decided: CouncilResult | null = null;
   if (refusals.length === 0) {
