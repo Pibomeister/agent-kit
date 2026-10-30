@@ -79,9 +79,10 @@ this brief came from counted 27 rulings at an earlier revision; there are 32.
 
 **For where the in-loop feedback lives.**
 
-- **Hooks in the core bundle.** Rejected: the bundle ships no hooks, every skill behaves the same
+- **Constitution hooks in the core bundle.** Rejected: every skill behaves the same
   with hooks absent, and long-running host behavior belongs in an opt-in runtime (ruling
   `full-catalog-opt-in-profiles`; ruling `learning-runtime-is-host-adapter` is the precedent).
+  Current advisory bundle hooks are documented in the [semantic lint contract](../semantic-lint.md).
 - **Extend `child-guard.sh` to the main thread.** Rejected: it is a Claude-only shell script scoped
   to a Firstmate child envelope. Its decoder discipline is kept: one parse, deny on unparseable input,
   git global options skipped before the subcommand.

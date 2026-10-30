@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-/** Optional sibling command hook. It never runs or replaces deterministic lint. */
+/** Advisory sibling command hook. It never runs or replaces deterministic lint. */
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";

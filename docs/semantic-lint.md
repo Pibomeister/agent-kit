@@ -1,6 +1,7 @@
 # Semantic lint hook
 
-The source checkout and the Claude Code and Codex bundles carry an advisory `Stop` command hook. It finds tracked staged and unstaged
+The Claude Code and Codex bundles and `ak firstmate install` register an advisory `Stop` command hook.
+The source checkout provides the same command for manual wiring. It finds tracked staged and unstaged
 changes relative to `HEAD` in the Git repository containing its working directory. It sends each
 eligible file's full working-tree content, not a diff or the staged version. Deleted and untracked
 files are not sent. It asks about claims in names, comments and changed documents. All
@@ -26,7 +27,7 @@ bun tools/hooks/semantic-lint.ts hook
 | `0` | Off. It reports `skipped/disabled` before it reads the key file or the repository |
 
 The key file is named by `key_file` in the pin, relative to the user's home. It must be a regular file, not a symlink, owned by the current user,
-with mode `0600`. The hook parses one `TYPESAFE_API_KEY` or `TYPESAFEAI_API_KEY` assignment as data
+with mode `0600`. The hook reads the first valid `TYPESAFE_API_KEY` or `TYPESAFEAI_API_KEY` assignment as data
 through [one strict reader](../src/semantic-lint/key.ts). It never sources the file, copies it,
 exports the key, or changes a Firstmate environment file. A missing file reports
 `skipped/missing-key`. Unsafe permissions or malformed credentials report `error/auth`.
@@ -36,16 +37,18 @@ key, no changed files or a repeated input sees nothing. Errors and reviewed resu
 message. Explicit mode keeps every message, and the claims below stay active in both modes.
 
 `ak doctor` reports one `semantic lint` finding from the same reader: `PASS` when the key file is
-present and owner-only, `WARN` when it is absent or `AK_JEV_ENABLED=0`, and `FAIL` when it is unsafe
-or malformed. The finding names the path and never the value.
+present, owner-only and parseable, `WARN` when it is absent or `AK_JEV_ENABLED=0`, and `FAIL` when it is unsafe
+or malformed. The disabled check returns before reading the file. Findings never include the key value.
 
 ## One check per input
 
 Each input is checked once. The claim key is the SHA-256 of the claim protocol version, the pinned
-revision and endpoint, and the exact request body. A changed file, question set or pin makes a new
-key. Claims sit beside the receipts in `claims/<key>/`, in a directory with mode `0700`. Each
+revision and endpoint, and the exact request body. A changed file, question set, runtime identity,
+pinned revision or endpoint makes a new key. Claims sit beside the receipts in `claims/<key>/`,
+in a directory with mode `0700`. Each
 attempt creates the next numbered generation file exclusively, with mode `0600`, and holds one JSON
-record: state, trace carrier, start and end time. Generation files are never renamed or deleted.
+record: state, trace carrier, start and end time. Generation paths are retained. Settlement atomically
+replaces only the owner's generation record.
 
 | Current generation | Result |
 |---|---|
@@ -54,9 +57,11 @@ record: state, trace carrier, start and end time. Generation files are never ren
 | `released`, or `in-progress` and stale | The next generation is created, and its creator owns the check |
 
 Unparsable or empty content reads as `in-progress` from the file's modification time. Only a
-reviewed result marks a claim `complete`. Every error releases it, cancellation included, so a later
-`Stop` checks the same input again. The hook adds no retry and has no force mode. A claim that
-cannot be read or created reports `error/receipt` with no call. Duplicate and in-progress results
+reviewed result can mark a claim `complete`. The hook attempts to release it on every error, cancellation
+included, so a later `Stop` checks the same input again. If settlement fails, the record can remain
+`in-progress` until stale. The claim layer adds no retry beyond the batch retry described below and
+has no force mode. A claim that cannot be read or created reports `error/receipt` with no call.
+Duplicate and in-progress results
 never carry findings.
 
 Claims are unsigned advisory state. The trust boundary is the user that owns the state directory:
@@ -77,7 +82,7 @@ the usage line and exits 2. Every hook run exits 0.
 
 Codex skips a plugin hook until the operator trusts it in `/hooks`. agent-kit records no trust,
 writes no Codex settings and never passes `--dangerously-bypass-hook-trust`
-([Codex contract](../adapters/codex/CONTRACT.md)). Neither carrier holds the key or sets
+([Codex contract](../adapters/codex/CONTRACT.md)). No carrier holds the key or sets
 `AK_JEV_ENABLED`.
 
 To add a sibling entry to a specific host settings file, use:

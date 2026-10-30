@@ -1,6 +1,6 @@
 /**
  * One check per normalized input. Each attempt owns one generation file under
- * `<receipts>/claims/<key>/`, created exclusively; nobody renames or deletes a generation.
+ * `<receipts>/claims/<key>/`, created exclusively; settlement replaces only the owner's record.
  * Claims are unsigned advisory state owned by the user that owns the receipts directory.
  */
 import { createHash, randomBytes } from "node:crypto";
