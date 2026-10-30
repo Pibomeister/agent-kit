@@ -3141,3 +3141,54 @@ describe("the executable bit on bin/ programs", () => {
     }
   }, 120_000);
 });
+
+/** The bundle hooks file for one Stop command, as the packager writes it. */
+function stopHookFile(command: string): string {
+  return `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command, timeout: 30 }] }] } }, null, 2)}\n`;
+}
+
+describe("semantic lint Stop hook in the plugin bundles", () => {
+  test("only the Claude Code and Codex bundles carry the Stop hook, each in its host's form", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repo catalog did not load");
+    const hooks = Object.fromEntries(
+      HOST_IDS.map((host) => [
+        host,
+        planBundle({ root: REPO, catalog }, host, {}).files.get("hooks/hooks.json")?.contents,
+      ]),
+    );
+    expect(hooks).toEqual({
+      "claude-code": stopHookFile('"${CLAUDE_PLUGIN_ROOT}/bin/ak" semantic-lint hook'),
+      codex: stopHookFile('"${PLUGIN_ROOT}/bin/ak" semantic-lint hook --host codex'),
+      grok: undefined,
+      kimi: undefined,
+      droid: undefined,
+    });
+  }, 60_000);
+
+  test("the bundled bin/ak runs the Stop hook from a home with no key and stays quiet", () => {
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repo catalog did not load");
+    const script = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get("bin/ak")?.contents ?? "";
+    const home = makeTree({});
+    writeFileSync(join(home, "ak"), script);
+    const hook = (args: string[]) =>
+      spawnSync(process.execPath, [join(home, "ak"), "semantic-lint", "hook", ...args], {
+        cwd: home,
+        env: { PATH: process.env.PATH, HOME: home },
+        encoding: "utf8",
+      });
+    const claude = hook([]);
+    expect(claude.status).toBe(0);
+    expect(claude.stderr).toBe("");
+    expect(JSON.parse(claude.stdout)).toEqual({
+      status: "skipped",
+      reason: "missing-key",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
+    expect(JSON.parse(hook(["--host", "codex"]).stdout)).toEqual({});
+  }, 60_000);
+});

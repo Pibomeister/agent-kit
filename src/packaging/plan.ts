@@ -61,6 +61,12 @@ type MaintenanceScript = { script: string; inlined: string[] | null };
 
 const maintenanceScripts = new Map<string, MaintenanceScript | null>();
 
+const STOP_HOOK_FILE = "hooks/hooks.json";
+const STOP_HOOK_COMMANDS: Partial<Record<HostId, string>> = {
+  "claude-code": '"${CLAUDE_PLUGIN_ROOT}/bin/ak" semantic-lint hook',
+  codex: '"${PLUGIN_ROOT}/bin/ak" semantic-lint hook --host codex',
+};
+
 function maintenanceScript(root: string): MaintenanceScript | null {
   const cached = maintenanceScripts.get(root);
   if (cached !== undefined) return cached;
@@ -1003,6 +1009,13 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const built = maintenanceScript(root);
     if (built !== null) {
       files.set("bin/ak", { path: "bin/ak", contents: built.script });
+      const stop = STOP_HOOK_COMMANDS[host];
+      // The semantic lint Stop hook rides on bin/ak, so it ships only with it, in the two hosts that run plugin hooks.
+      if (stop !== undefined)
+        files.set(STOP_HOOK_FILE, {
+          path: STOP_HOOK_FILE,
+          contents: `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: stop, timeout: 30 }] }] } }, null, 2)}\n`,
+        });
       if (built.inlined === null) {
         issues.push(
           error(

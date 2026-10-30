@@ -81,7 +81,9 @@ live acceptance remains separate for each served binding, and `ak update` does n
 
 ## Guard hook
 
-The source checkout also has an [optional semantic lint hook](docs/semantic-lint.md).
+The Claude Code and Codex bundles and `ak firstmate install` register an advisory
+[semantic lint `Stop` hook](docs/semantic-lint.md). The source checkout provides the same command
+for manual wiring. See its contract for enablement and key-file requirements.
 
 The source CLI (`bun run ak`) and the installed `bin/ak` carry the opt-in Claude Code hook:
 

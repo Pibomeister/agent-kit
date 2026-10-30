@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { processScratch } from "./helpers/process-tmp.ts";
 import { collectInput } from "../src/semantic-lint/input.ts";
-import { hookOutput, runHook, unwireHook, wireHook } from "../tools/hooks/semantic-lint.ts";
-import { measurement } from "../src/semantic-lint/client.ts";
+import { enablement, hookOutput, runHook, unwireHook, wireHook } from "../tools/hooks/semantic-lint.ts";
+import { STALE_MS, acquireClaim, claimKey, settleClaim } from "../src/semantic-lint/claim.ts";
+import { measurement, requestFor } from "../src/semantic-lint/client.ts";
 import pin from "../provenance/semantic-lint.json";
 import Ajv from "ajv";
 import type { AttemptReceipt } from "../src/semantic-lint/client.ts";
@@ -96,6 +98,10 @@ function wiredAt(path: string): Wired {
   if (!isWired(raw)) throw new Error("bad wiring");
   return raw;
 }
+/** Attempt receipts only; the claims directory sits beside them. */
+function attempts(receipts: string): string[] {
+  return readdirSync(receipts).filter((name) => name.endsWith(".json"));
+}
 async function neverSend(): Promise<Response> {
   throw new Error("must not send");
 }
@@ -166,6 +172,38 @@ describe("optional semantic sibling hook", () => {
       status: "skipped",
       reason: "disabled",
       systemMessage: "JEV lint (advisory): skipped (disabled).",
+    });
+  });
+
+  test("unset enable variable runs by default and skips quietly without a key file", () => {
+    const root = processScratch("semantic-default-");
+    const run = (flag: Record<string, string>) =>
+      spawnSync(process.execPath, [ENTRY, "hook"], {
+        cwd: root,
+        env: { PATH: process.env.PATH, HOME: root, ...flag },
+        encoding: "utf8",
+      });
+    const explicit = run({ AK_JEV_ENABLED: "1" });
+    expect(explicit.status).toBe(0);
+    expect(JSON.parse(explicit.stdout)).toEqual({
+      status: "skipped",
+      reason: "missing-key",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+      systemMessage: "JEV lint (advisory): skipped (missing-key).",
+    });
+    const unset = run({});
+    expect(unset.status).toBe(0);
+    expect(unset.stderr).toBe("");
+    expect(JSON.parse(unset.stdout)).toEqual({
+      status: "skipped",
+      reason: "missing-key",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
     });
   });
 
@@ -324,7 +362,7 @@ describe("optional semantic sibling hook", () => {
     expect(Object.keys(payload.questions)).toHaveLength(3);
     expect(result).toMatchObject({ status: "reviewed", advisory: true });
     expect(result.findings.length).toBe(3);
-    const files = readdirSync(options.receipts);
+    const files = attempts(options.receipts);
     expect(files).toHaveLength(1);
     const receipt = receiptAt(join(options.receipts, files[0] ?? ""));
     expect(payload).toEqual(receipt.request);
@@ -428,7 +466,7 @@ describe("optional semantic sibling hook", () => {
     expect(result.status).toBe("reviewed");
     expect(result.excluded).toEqual(excluded.toSorted((left, right) => left.path.localeCompare(right.path)));
     expect(result.findings.map((finding) => finding.file)).toEqual(["README.md", "cart.ts", "config.json", "(batch)"]);
-    const receipts = readdirSync(options.receipts);
+    const receipts = attempts(options.receipts);
     expect(receipts).toHaveLength(1);
     const receipt = receiptAt(join(options.receipts, receipts[0] ?? ""));
     expect(receipt.request.state.files.map((file) => file.path)).toEqual(["README.md", "cart.ts", "config.json"]);
@@ -475,7 +513,7 @@ describe("optional semantic sibling hook", () => {
     });
     expect(calls).toBe(2);
     expect(result).toMatchObject({ status: "error", reason: "http", findings: [] });
-    expect(readdirSync(options.receipts)).toHaveLength(2);
+    expect(attempts(options.receipts)).toHaveLength(2);
   });
 
   test("network failures stay distinct from findings", async () => {
@@ -519,7 +557,7 @@ describe("optional semantic sibling hook", () => {
         ),
     });
     expect(result).toMatchObject({ status: "error", reason: "timeout", findings: [] });
-    const first = readdirSync(options.receipts)[0] ?? "";
+    const first = attempts(options.receipts)[0] ?? "";
     expect(receiptAt(join(options.receipts, first))).toMatchObject({
       http_status: 200,
       status: "timeout",
@@ -553,7 +591,7 @@ describe("optional semantic sibling hook", () => {
         Response.json({ model: "unexpected-runtime", usage: { input_tokens: 100, output_tokens: 5 }, answers: {} }),
     });
     expect(result).toMatchObject({ status: "error", reason: "response", findings: [] });
-    const receipt = receiptAt(join(options.receipts, readdirSync(options.receipts)[0] ?? ""));
+    const receipt = receiptAt(join(options.receipts, attempts(options.receipts)[0] ?? ""));
     expect(receipt).toMatchObject({
       resolved_model: "unexpected-runtime",
       usage: { input_tokens: 100, output_tokens: 5 },
@@ -596,7 +634,7 @@ describe("optional semantic sibling hook", () => {
     expect(result.status).toBe("reviewed");
     expect(result.excluded.length).toBeLessThanOrEqual(128);
     expect(result.excludedOmitted).toBeGreaterThan(0);
-    const message = hookOutput(result).systemMessage;
+    const message = hookOutput(result).systemMessage ?? "";
     expect(message).toContain(`${result.excludedOmitted} additional paths excluded (details omitted)`);
     expect(message).toContain("\\nJEV lint");
     expect(message).not.toContain("\nJEV lint (advisory): reviewed.bin");
@@ -735,5 +773,298 @@ describe("optional semantic sibling hook", () => {
     expect(deterministicText).toBe("deterministic-lint-error\n");
     expect(semanticCode).toBe(0);
     expect(JSON.parse(semanticText)).toMatchObject({ status: "skipped", reason: "disabled" });
+  });
+});
+
+function claimDir(options: { root: string; receipts: string }) {
+  const body = JSON.stringify(requestFor(collectInput(options.root)).request);
+  return join(options.receipts, "claims", claimKey(body));
+}
+const noFindings: [] = [];
+/** The claim key written out independently of claim.ts: version 1, revision, endpoint, exact body. */
+function claimOracle(revision: string, endpoint: string, text: string): string {
+  return createHash("sha256")
+    .update(JSON.stringify([1, revision, endpoint, text]))
+    .digest("hex");
+}
+interface ClaimView {
+  names: string[];
+  state: string | null;
+}
+function claimState(dir: string): ClaimView {
+  const names = readdirSync(dir).toSorted();
+  const last = names
+    .filter((name) => /^[1-9][0-9]*$/.test(name))
+    .map(Number)
+    .toSorted((a, b) => a - b)
+    .at(-1);
+  const raw: unknown = JSON.parse(readFileSync(join(dir, String(last)), "utf8"));
+  const isState = ajv.compile<{ state: string }>({ type: "object", required: ["state"] });
+  return { names, state: isState(raw) ? raw.state : null };
+}
+
+describe("default-on enablement and one check per input", () => {
+  test("only 0 and 1 are explicit; unset or any other value runs by default", () => {
+    expect(enablement("0")).toEqual({ enabled: false, explicit: true });
+    expect(enablement("1")).toEqual({ enabled: true, explicit: true });
+    for (const flag of [undefined, "", "true", "yes", " 1"])
+      expect(enablement(flag)).toEqual({ enabled: true, explicit: false });
+  });
+
+  test("default mode makes exactly one call and reports the reviewed result with its message", async () => {
+    const options = fixture();
+    const mode = enablement(undefined);
+    let calls = 0;
+    const result = await runHook({
+      ...options,
+      enabled: mode.enabled,
+      transport: async (_url, init) => {
+        calls += 1;
+        if (!isText(init.body)) throw new Error("non-text request");
+        return reply(init.body);
+      },
+    });
+    expect(calls).toBe(1);
+    expect(result.status).toBe("reviewed");
+    const output = hookOutput(result, { explicit: mode.explicit });
+    expect(output.systemMessage).toStartWith("JEV lint (advisory): reviewed.\nReceipt trace: ");
+    expect(hookOutput(result, { explicit: mode.explicit, host: "codex" })).toEqual({
+      systemMessage: output.systemMessage,
+    });
+  });
+
+  test("the off switch reads no key file", async () => {
+    const options = fixture();
+    chmodSync(options.keyFile, 0o644);
+    expect(await runHook({ ...options, enabled: true, transport: neverSend })).toMatchObject({ reason: "auth" });
+    const off = await runHook({ ...options, enabled: enablement("0").enabled, transport: neverSend });
+    expect(off).toMatchObject({ status: "skipped", reason: "disabled" });
+    expect(hookOutput(off, { explicit: true }).systemMessage).toBe("JEV lint (advisory): skipped (disabled).");
+  });
+
+  test("default mode skips are quiet while errors and reviewed results keep their message", () => {
+    const base = { advisory: true as const, excluded: [], excludedOmitted: 0, findings: noFindings };
+    const skips = [
+      { ...base, status: "skipped" as const, reason: "missing-key" },
+      { ...base, status: "skipped" as const, reason: "no-input" },
+      { ...base, status: "skipped" as const, reason: "duplicate" as const, priorTrace: null },
+      { ...base, status: "skipped" as const, reason: "in-progress" as const },
+    ];
+    for (const skip of skips) {
+      expect(hookOutput(skip, { explicit: false })).toEqual(skip);
+      expect(hookOutput(skip, { explicit: false, host: "codex" })).toEqual({});
+      expect(hookOutput(skip, { explicit: true }).systemMessage).toBe(`JEV lint (advisory): skipped (${skip.reason}).`);
+    }
+    const loud = [
+      { ...base, status: "error" as const, reason: "auth" as const },
+      { ...base, status: "error" as const, reason: "receipt" as const },
+      { ...base, status: "reviewed" as const },
+    ];
+    for (const result of loud)
+      for (const explicit of [true, false]) {
+        expect(hookOutput(result, { explicit })).toHaveProperty("systemMessage");
+        const codex = hookOutput(result, { explicit, host: "codex" });
+        expect(Object.keys(codex)).toEqual(["systemMessage"]);
+      }
+  });
+
+  test("the Codex host form prints only the documented Stop fields and other arguments are usage errors", () => {
+    const root = processScratch("semantic-codex-");
+    const run = (args: string[], flag: Record<string, string>) =>
+      spawnSync(process.execPath, [ENTRY, "hook", ...args], {
+        cwd: root,
+        env: { PATH: process.env.PATH, HOME: root, ...flag },
+        encoding: "utf8",
+      });
+    const quiet = run(["--host", "codex"], {});
+    expect(quiet.status).toBe(0);
+    expect(JSON.parse(quiet.stdout)).toEqual({});
+    const explicit = run(["--host", "codex"], { AK_JEV_ENABLED: "1" });
+    expect(JSON.parse(explicit.stdout)).toEqual({ systemMessage: "JEV lint (advisory): skipped (missing-key)." });
+    for (const args of [["--host"], ["--host", "claude"], ["extra"], ["--host", "codex", "extra"]]) {
+      const bad = run(args, { AK_JEV_ENABLED: "0" });
+      expect(bad.status).toBe(2);
+      expect(bad.stdout).toBe("");
+      expect(bad.stderr).toStartWith("usage: ");
+    }
+  });
+
+  test("a completed check makes an identical later Stop a duplicate in both modes, with no call", async () => {
+    const options = fixture();
+    const first = await runHook({
+      ...options,
+      transport: async (_url, init) => {
+        if (!isText(init.body)) throw new Error("non-text request");
+        return reply(init.body);
+      },
+    });
+    expect(first.status).toBe("reviewed");
+    expect(claimState(claimDir(options)).state).toBe("complete");
+    const again = await runHook({ ...options, transport: neverSend });
+    expect(again).toEqual({
+      status: "skipped",
+      reason: "duplicate",
+      findings: [],
+      priorTrace: first.traceparent ?? "",
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
+    expect(hookOutput(again, { explicit: true }).systemMessage).toBe(
+      `JEV lint (advisory): skipped (duplicate).\nPrior receipt trace: ${first.traceparent}`,
+    );
+    expect(hookOutput(again, { explicit: false })).not.toHaveProperty("systemMessage");
+    for (const file of readdirSync(claimDir(options))) {
+      const text = readFileSync(join(claimDir(options), file), "utf8");
+      expect(text).not.toContain("fixture-private-key");
+      expect(text).not.toContain("Returns null on absence");
+      expect(statSync(join(claimDir(options), file)).mode & 0o777).toBe(0o600);
+    }
+    expect(statSync(claimDir(options)).mode & 0o777).toBe(0o700);
+  });
+
+  test("overlapping runs on the same input make one call; a changed file makes a new one", async () => {
+    const options = fixture();
+    const gate = Promise.withResolvers<void>();
+    let calls = 0;
+    const owner = runHook({
+      ...options,
+      transport: async (_url, init) => {
+        calls += 1;
+        await gate.promise;
+        if (!isText(init.body)) throw new Error("non-text request");
+        return reply(init.body);
+      },
+    });
+    const overlap = await runHook({ ...options, transport: neverSend });
+    expect(overlap).toMatchObject({ status: "skipped", reason: "in-progress", findings: [] });
+    gate.resolve();
+    expect((await owner).status).toBe("reviewed");
+    expect(calls).toBe(1);
+    writeFileSync(join(options.root, "cart.ts"), "export function cart() { return 1; }\n");
+    const changed = await runHook({
+      ...options,
+      transport: async (_url, init) => {
+        calls += 1;
+        if (!isText(init.body)) throw new Error("non-text request");
+        return reply(init.body);
+      },
+    });
+    expect(changed.status).toBe("reviewed");
+    expect(calls).toBe(2);
+  });
+
+  test("the claim identity covers the protocol version, pinned revision, endpoint and exact request", () => {
+    const body = JSON.stringify({ model: pin.model, state: { files: [] }, questions: {} });
+    expect(claimKey(body)).toBe(claimOracle(pin.revision, pin.endpoint, body));
+    expect(claimKey(body)).not.toBe(claimOracle("0".repeat(40), pin.endpoint, body));
+    expect(claimKey(body)).not.toBe(claimOracle(pin.revision, "https://example.invalid/v1", body));
+    expect(claimKey(`${body} `)).not.toBe(claimKey(body));
+  });
+
+  test("an error releases the input so a later Stop checks it again, with no added retry", async () => {
+    const options = fixture();
+    let calls = 0;
+    const failed = await runHook({
+      ...options,
+      transport: async () => {
+        calls += 1;
+        return new Response("busy", { status: 503 });
+      },
+    });
+    expect(failed).toMatchObject({ status: "error", reason: "http" });
+    expect(calls).toBe(2);
+    expect(claimState(claimDir(options))).toEqual({ names: ["1"], state: "released" });
+    const retried = await runHook({
+      ...options,
+      transport: async (_url, init) => {
+        calls += 1;
+        if (!isText(init.body)) throw new Error("non-text request");
+        return reply(init.body);
+      },
+    });
+    expect(retried.status).toBe("reviewed");
+    expect(calls).toBe(3);
+    expect(claimState(claimDir(options))).toEqual({ names: ["1", "2"], state: "complete" });
+  });
+
+  test("a cancelled run releases its claim before it returns", async () => {
+    const options = fixture();
+    const controller = new AbortController();
+    controller.abort();
+    expect(await runHook({ ...options, signal: controller.signal, transport: neverSend })).toMatchObject({
+      status: "error",
+      reason: "cancelled",
+    });
+    expect(claimState(claimDir(options)).state).toBe("released");
+  });
+
+  test("a claim left in progress blocks only until the stale window passes", () => {
+    const receipts = processScratch("semantic-stale-");
+    const key = "a".repeat(64);
+    const trace = "00-11111111111111111111111111111111-2222222222222222-01";
+    const started = 1_000_000;
+    const first = acquireClaim(receipts, key, trace, () => started);
+    expect(first.kind).toBe("owner");
+    expect(acquireClaim(receipts, key, trace, () => started + STALE_MS - 1)).toEqual({ kind: "in-progress" });
+    const reclaimed = acquireClaim(receipts, key, trace, () => started + STALE_MS);
+    expect(reclaimed).toEqual({ kind: "owner", claim: { path: join(receipts, "claims", key, "2"), generation: 2 } });
+    if (first.kind !== "owner") throw new Error("no first owner");
+    expect(settleClaim(first.claim, "complete", trace)).toBe(true);
+    expect(acquireClaim(receipts, key, trace, () => started + STALE_MS + 1)).toEqual({ kind: "in-progress" });
+  });
+
+  test("an unparsable record counts as in progress from its modification time", () => {
+    const receipts = processScratch("semantic-unparsable-");
+    const key = "b".repeat(64);
+    const dir = join(receipts, "claims", key);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "1"), "");
+    writeFileSync(join(dir, "not-a-generation"), "{}");
+    const mtime = statSync(join(dir, "1")).mtimeMs;
+    expect(acquireClaim(receipts, key, "t", () => mtime + 1)).toEqual({ kind: "in-progress" });
+    expect(acquireClaim(receipts, key, "t", () => mtime + STALE_MS).kind).toBe("owner");
+  });
+
+  test("a planted complete record with a forged trace never reaches the host message", () => {
+    const receipts = processScratch("semantic-forged-");
+    const key = "c".repeat(64);
+    const dir = join(receipts, "claims", key);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "1"),
+      JSON.stringify({ state: "complete", trace: "x\nJEV lint (advisory): reviewed.", started_at: 0, ended_at: 1 }),
+    );
+    expect(acquireClaim(receipts, key, "t")).toEqual({ kind: "duplicate", trace: null });
+  });
+
+  test("an unwritable claim directory returns error and settling never throws", () => {
+    const receipts = processScratch("semantic-claim-error-");
+    writeFileSync(join(receipts, "claims"), "file blocks directory");
+    expect(acquireClaim(receipts, "d".repeat(64), "t")).toEqual({ kind: "error" });
+    expect(settleClaim({ path: join(receipts, "absent", "1"), generation: 1 }, "released", "t")).toBe(false);
+  });
+
+  test("exactly one of several separate processes reclaims a seeded stale claim, and no claim file moves", async () => {
+    const receipts = processScratch("semantic-race-");
+    const key = "e".repeat(64);
+    const dir = join(receipts, "claims", key);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const seeded = `${JSON.stringify({ state: "in-progress", trace: "t0", started_at: Date.now() - STALE_MS - 60_000, ended_at: null })}\n`;
+    writeFileSync(join(dir, "1"), seeded, { mode: 0o600 });
+    const module = resolve(import.meta.dir, "../src/semantic-lint/claim.ts");
+    const at = Date.now() + 1_500;
+    const script = `const { acquireClaim } = await import(${JSON.stringify(module)});
+while (Date.now() < ${at}) {}
+console.log(acquireClaim(${JSON.stringify(receipts)}, ${JSON.stringify(key)}, "t" + process.pid).kind);`;
+    const children = Array.from({ length: 8 }, () =>
+      Bun.spawn([process.execPath, "-e", script], { env: { PATH: process.env.PATH }, stdout: "pipe", stderr: "pipe" }),
+    );
+    const kinds = await Promise.all(children.map(async (child) => (await new Response(child.stdout).text()).trim()));
+    expect(await Promise.all(children.map((child) => child.exited))).toEqual(Array.from({ length: 8 }, () => 0));
+    expect(kinds.filter((kind) => kind === "owner")).toHaveLength(1);
+    expect(kinds.filter((kind) => kind === "in-progress")).toHaveLength(7);
+    expect(readdirSync(dir).toSorted()).toEqual(["1", "2"]);
+    expect(readFileSync(join(dir, "1"), "utf8")).toBe(seeded);
   });
 });

@@ -9,6 +9,7 @@ import {
   checkMaintenanceCommand,
   checkPlugin,
   checkProjectEnablement,
+  checkSemanticLint,
   checkSource,
   checkToken,
   command,
@@ -458,5 +459,116 @@ describe("ak doctor checks", () => {
     mkdirSync(nestedBin, { recursive: true });
     symlinkSync(outside, join(nestedBin, "linearis"));
     expect(checkLinearis(nested, "linear-linearis").level).toBe("FAIL");
+  });
+});
+
+function keyed(text: string, mode = 0o600): string {
+  const file = join(processScratch("ak-doctor-jev-"), "jev.env");
+  writeFileSync(file, text, { mode });
+  chmodSync(file, mode);
+  return file;
+}
+
+function doctorWith(value: string, mode: number) {
+  const home = processScratch("ak-doctor-jev-home-");
+  mkdirSync(join(home, ".config/agent-kit"), { recursive: true });
+  writeFileSync(join(home, ".config/agent-kit/jev.env"), `TYPESAFE_API_KEY='${value}'\n`, { mode });
+  chmodSync(join(home, ".config/agent-kit/jev.env"), mode);
+  const cwd = project();
+  return spawnSync(process.execPath, [maintenanceCli, "doctor", "--json"], {
+    cwd,
+    env: {
+      ...maintenanceEnv,
+      CLAUDE_CONFIG_DIR: join(cwd, "claude-home"),
+      CODEX_HOME: join(cwd, "codex-home"),
+      HOME: home,
+      AK_JEV_ENABLED: "",
+    },
+    encoding: "utf8",
+  });
+}
+
+describe("ak doctor semantic lint check", () => {
+  const value = "fixture-doctor-key-value";
+
+  test("reports each key-file state without the key value", () => {
+    const good = keyed(`TYPESAFE_API_KEY="${value}"\n`);
+    const found = [
+      checkSemanticLint(good, undefined),
+      checkSemanticLint(good, "1"),
+      checkSemanticLint(good, "0"),
+      checkSemanticLint(join(processScratch("ak-doctor-jev-none-"), "jev.env"), undefined),
+      checkSemanticLint(keyed(`TYPESAFE_API_KEY="${value}"\n`, 0o644), undefined),
+      checkSemanticLint(keyed("OTHER=1\n"), undefined),
+    ];
+    expect(found.map((item) => item.level)).toEqual(["PASS", "PASS", "WARN", "WARN", "FAIL", "FAIL"]);
+    expect(found[0]?.detail).toBe("key file present and owner-only; the Stop hook runs on changed files");
+    expect(found[2]?.detail).toBe("disabled by AK_JEV_ENABLED=0");
+    expect(found[3]?.detail).toStartWith("no key file at ");
+    expect(found[3]?.detail).toEndWith("; the Stop hook skips quietly");
+    expect(found[4]?.detail).toEndWith(" is not a private owner-only file with one key assignment");
+    for (const item of found) {
+      expect(item.check).toBe("semantic lint");
+      expect(JSON.stringify(item)).not.toContain(value);
+    }
+  });
+
+  test("refuses a symlinked key file even when its target is private", () => {
+    const target = keyed(`TYPESAFE_API_KEY=${value}\n`);
+    const link = join(processScratch("ak-doctor-jev-link-"), "jev.env");
+    symlinkSync(target, link);
+    const item = checkSemanticLint(link, undefined);
+    expect(item.level).toBe("FAIL");
+    expect(JSON.stringify(item)).not.toContain(value);
+  });
+
+  test("the doctor reports the key file it found and never prints its value", () => {
+    for (const [mode, level] of [
+      [0o600, "PASS"],
+      [0o644, "FAIL"],
+    ] as const) {
+      const run = doctorWith(value, mode);
+      expect(run.stdout.split('"check":"semantic lint"')).toHaveLength(2);
+      expect(JSON.parse(run.stdout)).toHaveProperty(
+        "findings",
+        expect.arrayContaining([expect.objectContaining({ check: "semantic lint", level })]),
+      );
+      expect(run.stdout + run.stderr).not.toContain(value);
+    }
+  });
+
+  test("the bundled CLI runs the Stop hook and refuses other arguments", () => {
+    const home = processScratch("ak-cli-jev-home-");
+    const env = { PATH: process.env.PATH, HOME: home };
+    const quiet = spawnSync(process.execPath, [maintenanceCli, "semantic-lint", "hook"], {
+      cwd: home,
+      env,
+      encoding: "utf8",
+    });
+    expect(quiet.status).toBe(0);
+    expect(JSON.parse(quiet.stdout)).toEqual({
+      status: "skipped",
+      reason: "missing-key",
+      findings: [],
+      advisory: true,
+      excluded: [],
+      excludedOmitted: 0,
+    });
+    const codex = spawnSync(process.execPath, [maintenanceCli, "semantic-lint", "hook", "--host", "codex"], {
+      cwd: home,
+      env,
+      encoding: "utf8",
+    });
+    expect(JSON.parse(codex.stdout)).toEqual({});
+    for (const args of [["semantic-lint"], ["semantic-lint", "hook", "--host"], ["semantic-lint", "wire", "x"]]) {
+      const bad = spawnSync(process.execPath, [maintenanceCli, ...args], {
+        cwd: home,
+        env: { ...env, AK_JEV_ENABLED: "0" },
+        encoding: "utf8",
+      });
+      expect(bad.status).toBe(2);
+      expect(bad.stdout).toBe("");
+      expect(bad.stderr).toStartWith("Usage: ak doctor");
+    }
   });
 });

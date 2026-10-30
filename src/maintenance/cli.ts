@@ -23,6 +23,9 @@ import { runKb } from "../kb/cli.ts";
 import { readHookStdin, runLearn } from "../learn/cli.ts";
 import { readGuardStdin, runGuard } from "../guard/cli.ts";
 import { runRunner } from "../runner/cli.ts";
+import { readKeyFile } from "../semantic-lint/key.ts";
+import pin from "../../provenance/semantic-lint.json" with { type: "json" };
+import { hookMain } from "../../tools/hooks/semantic-lint.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -478,6 +481,32 @@ export async function manifest(
   }
 }
 
+/** Reads the key through the hook's own strict reader and keeps only whether it holds one. */
+export function checkSemanticLint(keyFile: string, flag: string | undefined): Finding {
+  const check = "semantic lint";
+  if (flag === "0")
+    return finding("WARN", check, "disabled by AK_JEV_ENABLED=0", "Unset AK_JEV_ENABLED to run the Stop hook.");
+  let present: boolean;
+  try {
+    present = readKeyFile(keyFile) !== null;
+  } catch {
+    return finding(
+      "FAIL",
+      check,
+      `${keyFile} is not a private owner-only file with one key assignment`,
+      "Make it a regular file you own, mode 0600, holding one TYPESAFE_API_KEY= line.",
+    );
+  }
+  return present
+    ? finding("PASS", check, "key file present and owner-only; the Stop hook runs on changed files", "None.")
+    : finding(
+        "WARN",
+        check,
+        `no key file at ${keyFile}; the Stop hook skips quietly`,
+        "Place an existing key in that file, mode 0600, to turn the check on.",
+      );
+}
+
 function print(items: Finding[], json = false): number {
   if (json) console.log(JSON.stringify({ findings: items }));
   else for (const item of items) console.log(`${item.level} ${item.check}: ${item.detail}. Remedy: ${item.remedy}`);
@@ -509,6 +538,7 @@ async function doctor(json = false): Promise<number> {
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
+    checkSemanticLint(join(homedir(), pin.key_file), process.env.AK_JEV_ENABLED),
   ];
   if (!hasClaude && !hasCodex) {
     items.push(
@@ -645,6 +675,8 @@ if (import.meta.main) {
   } else if (action === "runner") {
     const io = { out: (line: string) => console.log(line), err: (line: string) => console.error(line) };
     process.exitCode = await runRunner(flags, io);
+  } else if (action === "semantic-lint" && flags[0] === "hook" && (await hookMain(flags.slice(1))) === 0) {
+    // The plugin's Stop hook: hookMain printed the host output.
   } else if (
     (action === "doctor" && flags.every((flag) => flag === "--json") && flags.length <= 1) ||
     (action === "update" && flags.length === 0)
@@ -660,7 +692,7 @@ if (import.meta.main) {
     }
   } else {
     console.error(
-      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call …",
+      "Usage: ak doctor [--json] | ak update | ak delegation <ticket> --project <path> | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak semantic-lint hook [--host codex]",
     );
     process.exitCode = 2;
   }
