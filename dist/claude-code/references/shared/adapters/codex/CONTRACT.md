@@ -71,6 +71,7 @@ dist/codex/
 ├── .codex-plugin/plugin.json   # identity, skill registration, no interface block
 ├── skills/<id>/SKILL.md        # generated keys plus Codex-native U explicit-start markers
 ├── skills/<id>/references/     # U explicit-start markers rendered here and in references/shared/
+├── hooks/hooks.json            # the semantic lint Stop hook (§6)
 ├── LICENSES/                   # licence texts of packages in bin/ak and bin/ak-gate.mjs (NOTICE)
 ├── provenance/licenses/        # claude-mem licence and NOTICE
 └── NOTICE, LICENSE
@@ -262,9 +263,16 @@ with a message when it does not: `ak learn hook session-start --source codex` on
 whose roster names human-only commands as `$ak:<id>` (ADR-0011),
 `ak learn hook prompt` on `UserPromptSubmit`, which captures user corrections, and
 `ak learn hook stop --source codex` on `Stop`. As on claude-code
-([`adapters/claude-code/CONTRACT.md`](../claude-code/CONTRACT.md) §7), no skill requires a hook, the bundle ships none, and the
+([`adapters/claude-code/CONTRACT.md`](../claude-code/CONTRACT.md) §7), no skill requires a hook, the bundle ships none of them, and the
 runtime's ledgers never live inside a project repository (ruling
 `learning-runtime-is-host-adapter`).
+
+The bundle's one hook is the advisory semantic lint. `hooks/hooks.json` runs
+`"${PLUGIN_ROOT}/bin/ak" semantic-lint hook --host codex` on `Stop` with a 30-second timeout, which
+prints only `{ "systemMessage": … }` or `{}` (`docs/semantic-lint.md`). Codex skips this hook until
+the operator trusts it in `/hooks`, as point 1 below says of every non-managed hook. agent-kit
+records no trust, writes no Codex settings and never passes `--dangerously-bypass-hook-trust`. The
+bundle holds no key and sets no switch.
 
 What the host does with those hooks, verified (receipt) at `codex-cli 0.153.4`:
 

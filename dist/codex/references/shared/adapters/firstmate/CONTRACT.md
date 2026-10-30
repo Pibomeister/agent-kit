@@ -134,8 +134,10 @@ built from the home's working tree, so the home's own index and files are never 
 the three keys 0001 requires (`AK_FIRSTMATE_BIN`, `AK_FIRSTMATE_PATCH`,
 `AK_FIRSTMATE_WORKER_SETTINGS`), which the patched parser refuses if it holds any other key but
 0002's optional `AK_FIRSTMATE_WORKER_BUDGET_USD` (install never writes that one; a maintainer adds it);
-`agent-kit/worker-settings.json`, whose hook command carries `'__AK_FIRSTMATE_BINDING__'`, in
-single quotes, for the patch to replace with the task's bare binding path; and, when an evidence store is given,
+`agent-kit/worker-settings.json`, whose `PreToolUse` hook command carries `'__AK_FIRSTMATE_BINDING__'`, in
+single quotes, for the patch to replace with the task's bare binding path, and whose `Stop` hook runs
+`bun '<ak root>/tools/hooks/semantic-lint.ts' hook` with a 30-second timeout, the advisory semantic
+lint of `docs/semantic-lint.md`, holding no key and setting no switch; and, when an evidence store is given,
 `agent-kit/evidence.env`, which only `ak` reads. It is idempotent and `ak firstmate remove` deletes
 exactly those.
 

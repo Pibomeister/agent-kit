@@ -24,6 +24,7 @@ dist/claude-code/
 ├── skills/<id>/SKILL.md       # host frontmatter generated; canonical /ak:<id> start retained
 ├── skills/<id>/references/    # transitive dependencies resolved into the bundle
 ├── evals/<id>/<case>/case.yaml
+├── hooks/hooks.json           # the semantic lint Stop hook (§7)
 ├── LICENSES/                  # licence texts of packages in bin/ak and bin/ak-gate.mjs (NOTICE)
 ├── provenance/licenses/       # claude-mem licence and NOTICE
 └── NOTICE, LICENSE
@@ -259,7 +260,13 @@ They inject the working memory and active guardrails at session start and queue 
 session ends. User corrections reach the runtime on this host from claude-reflect's per-project
 queue, read-only, where that plugin is installed, rather than from a prompt hook. This bundle ships none of them: no skill in it requires
 a hook, every skill behaves the same with them absent, and `ak learn setup uninstall` removes what
-`wire` added. The runtime is a host adapter, not a phase, and its ledgers live under the host's
+`wire` added.
+
+The bundle's one hook is not a learning hook. `hooks/hooks.json` runs
+`"${CLAUDE_PLUGIN_ROOT}/bin/ak" semantic-lint hook` on `Stop` with a 30-second timeout. It is the
+advisory semantic lint: on by default, quiet until the key file the pin names holds a key, and
+never a blocking decision. The bundle holds no key and sets no switch. `docs/semantic-lint.md` is its
+contract, and no skill requires it. The runtime is a host adapter, not a phase, and its ledgers live under the host's
 configuration directory, never inside a project repository (ruling
 `learning-runtime-is-host-adapter`).
 
