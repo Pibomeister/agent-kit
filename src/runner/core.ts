@@ -10,6 +10,8 @@ import { unknownSelector } from "../util/suggest.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
+import { sharesLineage } from "./lineage.ts";
+import { vetoRefusal, type VetoRecord } from "../council/rule.ts";
 import { isVersionManifest } from "./wire.ts";
 import {
   ciConfigDrift,
@@ -129,14 +131,6 @@ function verdictBase(run: Run): string {
   const baseRef = run.charter.repos[0]?.base_branch;
   if (baseRef === undefined) throw new Error("charter names no verdict base branch");
   return baseRef;
-}
-
-// CONTRACT.md §3: neither supervisor's lineage may name the other supervisor's actor.
-export function sharesLineage(
-  a: { actor: string; lineage: string[] },
-  b: { actor: string; lineage: string[] },
-): boolean {
-  return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
 }
 
 function approved(decision: Decision): boolean {
@@ -905,8 +899,60 @@ export class Runner {
     )
       throw new Error("seat is not independently dispatched");
     if (card.judgments.some((j) => sharesLineage(j, { actor, lineage }))) throw new Error("invalid or excluded seat");
+    if (card.veto?.status === "answered" && sharesLineage(card.veto, { actor, lineage }))
+      throw new Error("seat shares a lineage with the blind veto seat");
     if (inputDispatches.length > 0) throw new Error("seat input includes another dispatch");
     card.judgments.push({ seat, actor, dispatch, choice, rationale, input_dispatches: inputDispatches, lineage });
+    this.save(run);
+    return card;
+  }
+
+  /** True when the charter requires a blind veto and this card's pair agreed to approve without one recorded. */
+  vetoDue(id: string, cardId: string): boolean {
+    const run = this.load(id);
+    const card = run.cards[cardId];
+    if (card === undefined) throw new Error(unknownCard(run, cardId));
+    return (
+      run.charter.council?.blind_veto === "required" &&
+      card.veto === undefined &&
+      !run.decisions.some((d) => d.card.id === cardId) &&
+      card.judgments.length === 2 &&
+      card.judgments.every((j) => j.choice === card.approve)
+    );
+  }
+
+  /**
+   * Records the blind veto seat's answer, or its unavailability, for one card
+   * (ADR-0015). The veto judges the same packet as the pair with no other
+   * judgment in its input, and is stored on the card apart from the two
+   * judgments, so the decision record keeps exactly two. Like a judgment, a
+   * record is fixed once submitted.
+   */
+  veto(id: string, cardId: string, record: VetoRecord): Card {
+    const run = this.load(id);
+    const card = run.cards[cardId];
+    if (card === undefined) throw new Error(unknownCard(run, cardId));
+    if (card.veto !== undefined) {
+      if (JSON.stringify(card.veto) === JSON.stringify(record)) return card;
+      throw new Error("blind veto changed after first submission");
+    }
+    if (STOPPED.has(run.run_state)) throw new Error("run is stopped; no new veto can be submitted");
+    if (run.charter.council?.blind_veto !== "required") throw new Error("charter does not seat a blind veto");
+    if (run.decisions.some((d) => d.card.id === cardId)) throw new Error("card is already decided");
+    if (!ID.test(record.seat) || run.charter.supervisors.seats.some((seat) => seat.id === record.seat))
+      throw new Error("blind veto seat must not be a supervisor seat");
+    if (record.status === "answered") {
+      if (
+        !card.options.includes(record.choice) ||
+        !ID.test(record.dispatch) ||
+        !record.lineage.includes(record.actor) ||
+        run.excluded_actors.some((excluded) => record.actor === excluded || record.lineage.includes(excluded))
+      )
+        throw new Error("invalid or excluded veto seat");
+      if (card.judgments.some((j) => j.dispatch === record.dispatch || sharesLineage(j, record)))
+        throw new Error("blind veto seat is not independent of the supervisor pair");
+    }
+    card.veto = record;
     this.save(run);
     return card;
   }
@@ -1081,6 +1127,10 @@ export class Runner {
     if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
       return this.refuse(run, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
     const approve = card.judgments[0]?.choice === card.approve;
+    if (approve && run.charter.council?.blind_veto === "required") {
+      const blocked = vetoRefusal(card.approve, card.veto, card.judgments, run.excluded_actors);
+      if (blocked !== null) return this.refuse(run, card, "runner:council-veto", blocked);
+    }
     const result: OperationResult = {
       operation: card.operation,
       status: "complete",

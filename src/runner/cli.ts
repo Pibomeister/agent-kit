@@ -5,7 +5,11 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { unknownSelector } from "../util/suggest.ts";
 import { sha256Hex } from "../util/hash.ts";
-import { Runner, sharesLineage } from "./core.ts";
+import { Runner } from "./core.ts";
+import { sharesLineage } from "./lineage.ts";
+import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
+import { checkOutbound, describeRefusals, outboundLimits } from "../council/outbound.ts";
+import { chainFailures, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
@@ -201,11 +205,66 @@ async function dispatchSeat(
   );
 }
 
+// ADR-0015: after an approving pair and before decide accepts it, the blind veto judges the same packet.
+async function dispatchVeto(
+  runner: Runner,
+  runId: string,
+  cardId: string,
+  council: CouncilConfig | null,
+  activeChildren: Set<KillableChild>,
+): Promise<void> {
+  if (council === null) {
+    runner.veto(runId, cardId, { status: "unavailable", seat: "veto", failures: ["no council configuration"] });
+    return;
+  }
+  const packet = JSON.stringify(runner.packet(runId, cardId));
+  const refusals = checkOutbound([{ label: "packet", text: packet }], outboundLimits(council));
+  if (refusals.length > 0) {
+    runner.veto(runId, cardId, {
+      status: "unavailable",
+      seat: council.veto.seat,
+      failures: describeRefusals(refusals),
+    });
+    return;
+  }
+  const options = runner.status(runId).cards[cardId]?.options ?? [];
+  const result = await launchSeat(council.veto, packet, options, (argv, stdin) =>
+    spawnPiped(
+      argv,
+      runner.stateDir,
+      stdin,
+      privateChildEnv(runner),
+      activeChildren,
+      council.limits?.timeout_ms ?? DEFAULT_TIMEOUT_MS,
+    ),
+  );
+  if (!result.ok) {
+    runner.veto(runId, cardId, {
+      status: "unavailable",
+      seat: council.veto.seat,
+      failures: chainFailures(council.veto.seat, result.attempts),
+    });
+    return;
+  }
+  runner.veto(runId, cardId, {
+    status: "answered",
+    seat: council.veto.seat,
+    actor: result.launcher.actor,
+    lineage: result.launcher.lineage,
+    dispatch: `${cardId}-${council.veto.seat}`,
+    choice: result.answer.choice,
+    rationale: result.answer.rationale,
+    model_requested: result.launcher.model ?? UNSPECIFIED,
+    model_served: result.answer.model_served ?? UNVERIFIED,
+  });
+}
+
 async function decideCard(
   runner: Runner,
   runId: string,
   cardId: string,
   launchers: SeatLauncher[],
+  council: CouncilConfig | null,
   activeChildren: Set<KillableChild>,
 ) {
   const early = runner.authorize(runId, cardId);
@@ -218,6 +277,13 @@ async function decideCard(
       failures.push(`seat ${launcher.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
+  if (failures.length === 0 && runner.vetoDue(runId, cardId)) {
+    try {
+      await dispatchVeto(runner, runId, cardId, council, activeChildren);
+    } catch {
+      // A veto the runner could not record leaves the card without one, and decide refuses it.
+    }
+  }
   return runner.decide(runId, cardId, failures);
 }
 
@@ -228,6 +294,7 @@ async function execute(
   workerToken: string,
   allowedRun: string,
   launchers: SeatLauncher[],
+  council: CouncilConfig | null,
   verifyCommand: string[] | null,
   effectAdapters: Map<string, EffectAdapter>,
   decisions: Map<string, Promise<unknown>>,
@@ -348,7 +415,9 @@ async function execute(
       const cardId = str(a, "card_id");
       const pending =
         decisions.get(cardId) ??
-        decideCard(runner, str(a, "run"), cardId, launchers, activeChildren).finally(() => decisions.delete(cardId));
+        decideCard(runner, str(a, "run"), cardId, launchers, council, activeChildren).finally(() =>
+          decisions.delete(cardId),
+        );
       decisions.set(cardId, pending);
       return pending;
     }
@@ -369,6 +438,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const runId = flag(argv, "run-id");
   const mode = flag(argv, "socket-mode") ?? "600";
   const seatConfigPath = flag(argv, "seat-config");
+  const councilConfigPath = flag(argv, "council-config");
   const verifyConfigPath = flag(argv, "verify-config");
   const effectConfigPath = flag(argv, "effect-config");
   const eventConfigPath = flag(argv, "event-config");
@@ -428,6 +498,18 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
       throw new Error("seat configuration must name two distinct seats and actors");
     if (launchers.some((launcher, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher, other))))
       throw new Error("seat configuration lineages must be independent");
+  }
+  let council: CouncilConfig | null = null;
+  if (councilConfigPath !== undefined) {
+    runner.assertPrivatePath(realpathSync(councilConfigPath));
+    council = readCouncilConfig(councilConfigPath);
+    if (council.pair !== undefined)
+      throw new Error(
+        "the runner's supervisor pair comes from --seat-config; a council configuration names the veto only",
+      );
+    const pairSeats = launchers.map((launcher) => ({ seat: launcher.seat, chain: [launcher] }));
+    const problems = rosterProblems([...pairSeats, council.veto]);
+    if (problems.length > 0) throw new Error(`invalid council configuration: ${problems.join("; ")}`);
   }
   let verifyCommand: string[] | null = null;
   if (verifyConfigPath !== undefined) {
@@ -608,6 +690,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           workerToken,
           runId,
           launchers,
+          council,
           verifyCommand,
           effectAdapters,
           decisions,
@@ -719,7 +802,7 @@ export async function runRunner(argv: readonly string[], io: Io): Promise<number
     if (argv[0] === "call") return call(argv.slice(1), io);
     if (argv[0] !== undefined) io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
     io.err(
-      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]",
+      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]",
     );
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;
