@@ -6,7 +6,7 @@ import { BUILT_IN_DENY, checkOutbound, deniedBy, DEFAULT_MAX_BYTES } from "../..
 import { seatEnv } from "../../src/council/cli.ts";
 import type { CouncilSeat } from "../../src/council/config.ts";
 import { councilOutcome, vetoRefusal, type AnsweredVeto } from "../../src/council/rule.ts";
-import { launchSeat } from "../../src/council/seat.ts";
+import { collectDetached, launchSeat } from "../../src/council/seat.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 // Built from parts so the sample is not itself a credential-shaped literal in the tree.
@@ -38,7 +38,6 @@ describe("council outbound gate", () => {
     for (const path of [".env", "app/.env.local", "keys/server.pem", "home/.ssh/config", "repo/.git/config"])
       expect(deniedBy(path)).not.toBeNull();
     expect(deniedBy("src/environment.ts")).toBeNull();
-    expect(deniedBy("docs/private-notes.md", ["private-*"])).toBe("private-*");
     expect(BUILT_IN_DENY).toContain(".npmrc");
     expect(checkOutbound([{ label: "x", path: "id_rsa.pub", text: "" }])).toMatchObject([{ kind: "deny-listed" }]);
   });
@@ -60,22 +59,29 @@ describe("council outbound gate", () => {
     expect(checkOutbound([{ label: "ctx", text: "see /home/someone/project/readme" }])).toEqual([]);
   });
 
-  test("the size cap counts the whole payload and is configurable", () => {
-    expect(checkOutbound([{ label: "a", text: "x".repeat(DEFAULT_MAX_BYTES + 1) }])).toMatchObject([
+  test("JSON escapes do not hide a credential, at any depth of encoding", () => {
+    for (const text of [
+      JSON.stringify({ log: `token:\n${TOKEN}` }),
+      JSON.stringify({ log: `token:\t${TOKEN}` }),
+      JSON.stringify({ inner: JSON.stringify({ log: `token:\n${TOKEN}` }) }),
+      `{"log":"token:\\u000a${TOKEN}"}`,
+    ])
+      expect(checkOutbound([{ label: "ctx", text }])).toMatchObject([{ kind: "secret", label: "ctx" }]);
+    expect(checkOutbound([{ label: "ctx", text: JSON.stringify({ log: "line one\nline two" }) }])).toEqual([]);
+  });
+
+  test("the size cap counts the whole payload", () => {
+    const half = "x".repeat(DEFAULT_MAX_BYTES / 2 + 1);
+    expect(
+      checkOutbound([
+        { label: "a", text: half },
+        { label: "b", text: half },
+      ]),
+    ).toMatchObject([{ kind: "too-large" }]);
+    expect(checkOutbound([{ label: "a", text: "x" }], "x".repeat(DEFAULT_MAX_BYTES + 1))).toMatchObject([
       { kind: "too-large" },
     ]);
-    expect(
-      checkOutbound(
-        [
-          { label: "a", text: "x".repeat(6) },
-          { label: "b", text: "x".repeat(6) },
-        ],
-        { max_bytes: 10 },
-      ),
-    ).toMatchObject([{ kind: "too-large" }]);
-    expect(
-      checkOutbound([{ label: "a", text: "x".repeat(8) }], { max_bytes: 10 }, `{"a":"${"x".repeat(8)}"}`),
-    ).toMatchObject([{ kind: "too-large" }]);
+    expect(checkOutbound([{ label: "a", text: "x".repeat(DEFAULT_MAX_BYTES) }])).toEqual([]);
   });
 });
 
@@ -96,6 +102,23 @@ describe("council seats", () => {
     });
     expect(launched).toEqual(["v1"]);
     expect(result).toMatchObject({ ok: true, answer: { choice: "no" } });
+  });
+
+  test("a seat whose descendant holds the pipes times out on time and the substitute answers", async () => {
+    const live = new Set<number>();
+    const started = Date.now();
+    const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
+      if (launcher.actor === "v2") return Promise.resolve(ok("yes"));
+      const child = Bun.spawn(["sh", "-c", "sleep 30 & wait"], { stdout: "pipe", stderr: "pipe", detached: true });
+      return collectDetached(child, live, 500, "launcher");
+    });
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect(live.size).toBe(0);
+    expect(result).toMatchObject({
+      ok: true,
+      launcher: { actor: "v2" },
+      attempts: [{ actor: "v1", error: "launcher timed out after 500ms" }, { actor: "v2" }],
+    });
   });
 
   test("a choice outside the options moves to the substitute", async () => {

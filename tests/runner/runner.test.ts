@@ -3383,7 +3383,11 @@ describe("council blind veto", () => {
     const f = councilReady();
     card(f);
     f.runner.veto("toy-run", "card-1", { status: "unavailable", seat: "veto", failures: ["seat veto x: exited 1"] });
-    expect(f.runner.decide("toy-run", "card-1").escalation?.need).toContain("exited 1");
+    const need = f.runner.decide("toy-run", "card-1").escalation?.need;
+    expect(need).toContain("unavailable");
+    expect(need).not.toContain("exited 1");
+    expect(need).not.toContain("seat veto");
+    expect(f.runner.status("toy-run").cards["card-1"]?.veto).toMatchObject({ failures: ["seat veto x: exited 1"] });
   });
 
   test("a veto that shares a lineage with the pair, or is excluded, is refused at submission", () => {
@@ -3560,6 +3564,27 @@ describe("council blind veto", () => {
         model_served: "served-label",
       });
       expect(readFileSync(vetoLog, "utf8").trim().split("\n")).toEqual(["card,charter_hash,diff_hash,revision,run"]);
+      const firstCard = {
+        id: "card-1",
+        operation: "align.run",
+        grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+        question: "Proceed?",
+        options: ["yes", "no"],
+        approve: "yes",
+        evidence: ["e1"],
+        artifact_hash: `sha256:${"b".repeat(64)}`,
+      };
+      const retried = call("prepare", workerToken, { run: "toy-run", card: firstCard }).stdout.toString();
+      expect(JSON.parse(retried)).toMatchObject({ id: "card-1", veto: { status: "answered", choice: "yes" } });
+      const workerStatus = call("status", workerToken, { run: "toy-run" }).stdout.toString();
+      expect(JSON.stringify(parseJson(workerStatus))).toContain('"veto":{"status":"answered","choice":"yes"}');
+      for (const text of [retried, workerStatus])
+        for (const hidden of ["veto-2", "second-label", "served-label", 'blind"']) expect(text).not.toContain(hidden);
+      expect(parseJson(call("status", adminToken, { run: "toy-run" }).stdout.toString())).toMatchObject({
+        cards: {
+          "card-1": { veto: { actor: "veto-2", model_requested: "second-label", model_served: "served-label" } },
+        },
+      });
       expect(
         call("prepare", workerToken, {
           run: "toy-run",
@@ -3580,7 +3605,11 @@ describe("council blind veto", () => {
         status: "needs-input",
         escalation: { charter_rule: "runner:council-veto" },
       });
-      expect(refused.stdout.toString()).toContain("outbound secret");
+      expect(refused.stdout.toString()).not.toContain("outbound secret");
+      const refusedWorker = call("status", workerToken, { run: "toy-run" }).stdout.toString();
+      expect(JSON.stringify(parseJson(refusedWorker))).toContain('"veto":{"status":"unavailable"}');
+      expect(refusedWorker).not.toContain("outbound secret");
+      expect(JSON.stringify(f.runner.status("toy-run").cards["card-2"]?.veto)).toContain("outbound secret");
       expect(readFileSync(vetoLog, "utf8").trim().split("\n")).toHaveLength(1);
     } finally {
       server.kill();

@@ -27,8 +27,8 @@ for ticket approval.
 
 **D4 A.** The council's two primary seats are the charter's own two supervisor seats, judged through
 the existing path. For `ak runner serve`, the operator's private council configuration names only the
-blind veto seat and its ordered substitute chain. `ak council run` has no charter, so its configuration
-also names its own pair.
+blind veto seat and its ordered substitute chain. `ak council run` names its own pair in its configuration, because it
+has no charter.
 
 **D5 A.** The council adds no route for ticket approval. Ticket approval stays where the charter and
 `policy:invocation/bound.run` put it.
@@ -47,6 +47,8 @@ judgment:
   approves alone.
 - A substitute in the chain is tried only when a launcher fails to start, exits non-zero or returns
   no valid answer. A valid answer is never replaced.
+- A worker token sees only that the veto ran and its choice. Actor, lineage, model labels, rationale
+  and launcher failures stay with the admin token, and the escalation names no seat.
 - The veto seat must be independent of both primary seats and of every excluded actor, by the same
   lineage rule as CONTRACT.md §3.
 
@@ -54,8 +56,9 @@ judgment:
 supplied: the runner's frozen packet, or the card and the named context files for `ak council run`.
 There is no automatic screening. The gate refuses the whole payload, and never redacts, when a
 context path matches the deny-list, the payload exceeds its size cap, or a credential pattern matches.
-A context path is checked as given and as it resolves, and the cap counts the exact bytes a seat
-receives. `ak council run` passes a launcher only a small base set of environment names and the
+A context path is checked as given and as it resolves, text is scanned as given and JSON-decoded, and
+the cap counts the exact bytes a seat receives. The cap, the launcher timeout and the deny-list are
+fixed; no configuration changes them. `ak council run` passes a launcher only a small base set of environment names and the
 names its roster entry lists.
 
 **`ak council run`** asks one question outside a runner. It reads an owner-only roster, asks the

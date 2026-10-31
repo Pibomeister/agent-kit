@@ -8,7 +8,8 @@ import { sha256Hex } from "../util/hash.ts";
 import { Runner } from "./core.ts";
 import { sharesLineage } from "./lineage.ts";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
-import { checkOutbound, decodedText, describeRefusals, outboundLimits } from "../council/outbound.ts";
+import { checkOutbound, describeRefusals } from "../council/outbound.ts";
+import { workerVeto, type VetoRecord } from "../council/rule.ts";
 import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
@@ -198,7 +199,7 @@ async function dispatchVeto(
     return;
   }
   const packet = JSON.stringify(runner.packet(runId, cardId));
-  const refusals = checkOutbound([{ label: "packet", text: decodedText(packet) }], outboundLimits(council), packet);
+  const refusals = checkOutbound([{ label: "packet", text: packet }]);
   if (refusals.length > 0) {
     runner.veto(runId, cardId, {
       status: "unavailable",
@@ -209,14 +210,7 @@ async function dispatchVeto(
   }
   const options = runner.status(runId).cards[cardId]?.options ?? [];
   const result = await launchSeat(council.veto, packet, options, (launcher, stdin) =>
-    spawnPiped(
-      launcher.command,
-      runner.stateDir,
-      stdin,
-      privateChildEnv(runner),
-      activeChildren,
-      council.limits?.timeout_ms ?? DEFAULT_TIMEOUT_MS,
-    ),
+    spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
   );
   if (!result.ok) {
     runner.veto(runId, cardId, {
@@ -701,7 +695,12 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           request.verb === "status"
             ? { ...runner.status(runId), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } }
             : result;
-        connection.end(`${JSON.stringify({ ok: true, result: presented })}\n`);
+        const reply = equal(request.token, adminToken)
+          ? JSON.stringify({ ok: true, result: presented })
+          : JSON.stringify({ ok: true, result: presented }, (key, value: VetoRecord) =>
+              key === "veto" ? workerVeto(value) : value,
+            );
+        connection.end(`${reply}\n`);
         if (request.verb === "event" || request.verb === "start") wakeEvents();
         if (request.verb === "delegate" || request.verb === "start") armAudit();
       } catch (cause) {

@@ -31,6 +31,11 @@ export interface UnavailableVeto {
 
 export type VetoRecord = AnsweredVeto | UnavailableVeto;
 
+/** All a worker token may see of a veto: that it ran, and its choice. */
+export function workerVeto(veto: VetoRecord): { status: VetoRecord["status"]; choice?: string } {
+  return veto.status === "answered" ? { status: veto.status, choice: veto.choice } : { status: veto.status };
+}
+
 /**
  * Why an approving pair's approval may not stand, or null when the veto
  * lets it stand. The veto must be answered, independent of both primary
@@ -43,15 +48,14 @@ export function vetoRefusal(
   excluded: readonly string[],
 ): string | null {
   if (veto === undefined) return "The charter requires a blind veto seat judgment and none was recorded";
-  if (veto.status === "unavailable")
-    return `Blind veto seat ${veto.seat} was unavailable: ${veto.failures.join("; ")}`.slice(0, 2000);
+  if (veto.status === "unavailable") return "The blind veto seat was unavailable";
   if (
     pair.some((judgment) => sharesLineage(judgment, veto)) ||
     excluded.some((actor) => veto.actor === actor || veto.lineage.includes(actor)) ||
     !veto.lineage.includes(veto.actor)
   )
-    return `Blind veto seat ${veto.seat} is not independent of the supervisor pair`;
-  if (veto.choice !== approve) return `Blind veto seat ${veto.seat} did not approve; it chose ${veto.choice}`;
+    return "The blind veto seat is not independent of the supervisor pair";
+  if (veto.choice !== approve) return `The blind veto seat did not approve; it chose ${veto.choice}`;
   return null;
 }
 

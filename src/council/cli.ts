@@ -21,7 +21,7 @@ import { basename, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilSeat } from "./config.ts";
-import { checkOutbound, decodedText, describeRefusals, outboundLimits, type OutboundItem } from "./outbound.ts";
+import { checkOutbound, describeRefusals, type OutboundItem } from "./outbound.ts";
 import { councilOutcome, type CouncilResult } from "./rule.ts";
 import {
   collectDetached,
@@ -114,7 +114,7 @@ export function seatEnv(names: readonly string[] = []): NodeJS.ProcessEnv {
   );
 }
 
-function spawner(cwd: string, timeoutMs: number, live: Set<number>): Spawn {
+function spawner(cwd: string, live: Set<number>): Spawn {
   return async (launcher, stdin) => {
     const child = Bun.spawn(launcher.command, {
       cwd,
@@ -124,7 +124,7 @@ function spawner(cwd: string, timeoutMs: number, live: Set<number>): Spawn {
       stderr: "pipe",
       detached: true,
     });
-    return collectDetached(child, live, timeoutMs, "launcher");
+    return collectDetached(child, live, DEFAULT_TIMEOUT_MS, "launcher");
   };
 }
 
@@ -170,7 +170,7 @@ async function run(args: RunArgs, io: Io): Promise<number> {
 
   const context = args.context.map((path) => ({ path, name: basename(path), text: readFileSync(path, "utf8") }));
   const items: OutboundItem[] = [
-    { label: "card", text: decodedText(JSON.stringify(card)) },
+    { label: "card", text: JSON.stringify(card) },
     ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}\n${entry.text}` })),
   ];
   const payload = JSON.stringify({
@@ -178,7 +178,7 @@ async function run(args: RunArgs, io: Io): Promise<number> {
     card,
     context: context.map((entry) => ({ name: entry.name, sha256: sha256(entry.text), text: entry.text })),
   });
-  const refusals = checkOutbound(items, outboundLimits(config), payload);
+  const refusals = checkOutbound(items, payload);
   const seats: SeatEntry[] = [];
   let decided: CouncilResult | null = null;
   if (refusals.length === 0) {
@@ -196,7 +196,7 @@ async function run(args: RunArgs, io: Io): Promise<number> {
     ] as const;
     for (const [signal, stop] of stops) process.once(signal, stop);
     try {
-      const spawn = spawner(scratch, config.limits?.timeout_ms ?? DEFAULT_TIMEOUT_MS, live);
+      const spawn = spawner(scratch, live);
       const results = await Promise.all(pair.map((seat) => launchSeat(seat, payload, card.options, spawn)));
       seats.push(...pair.map((seat, i) => seatEntry("primary", seat, results[i] ?? { ok: false, attempts: [] })));
       const choices = seats.map((entry) => entry.choice);

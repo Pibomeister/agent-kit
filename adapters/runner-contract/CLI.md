@@ -61,12 +61,13 @@ violations of [seat independence](CONTRACT.md#3-seat-independence) with
 `runner:seat-independence` escalation if the pair violates the rule.
 Each launcher receives a frozen card on stdin and returns JSON with `choice` and
 `rationale`. The optional private council config (ADR-0015) names the blind veto seat as
-`{"veto":{"seat":"...","chain":[{"actor":"...","lineage":["..."],"command":["..."],"requested":"..."}]},
-"limits":{"max_bytes":262144,"timeout_ms":900000},"deny":["..."]}`. Only its owner may read or write
+`{"veto":{"seat":"...","chain":[{"actor":"...","lineage":["..."],"command":["..."],"requested":"..."}]}}`.
+The outbound cap, launcher timeout and deny-list are fixed and no configuration changes them. Only its owner may read or write
 it. `serve` refuses a council config that names a `pair`, a chain that repeats an actor, or a veto
 lineage shared with either seat launcher. A veto launcher may add `model_served` to its answer.
 The card records the launcher's `requested` label, `unspecified` when absent, and the
-answer's `model_served` as served, `unverified` when absent. A charter that requires the veto, served without
+answer's `model_served` as served, `unverified` when absent. The admin token reads that record through
+`status`. A worker token sees only the veto's `status` and `choice`, and the escalation names no seat. A charter that requires the veto, served without
 a council config, records an unavailable veto under seat id `veto` and refuses every approving pair
 with `runner:council-veto`: there is no `judge`
 equivalent for the veto seat. Seat launchers and effect commands run from the private state directory with worker-root

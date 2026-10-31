@@ -16,7 +16,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { sharesLineage } from "../runner/lineage.ts";
 
-/** How long one launcher may run when the configuration names no limit: 15 minutes. */
+/** How long one launcher may run: 15 minutes. */
 export const DEFAULT_TIMEOUT_MS = 900_000;
 
 export interface CouncilLauncher {
@@ -36,8 +36,6 @@ export interface CouncilSeat {
 export interface CouncilConfig {
   pair?: CouncilSeat[];
   veto: CouncilSeat;
-  limits?: { max_bytes?: number; timeout_ms?: number };
-  deny?: string[];
 }
 
 /** A council seat's answer. `model_served` is the launcher's own report of what answered, when it has one. */
@@ -78,12 +76,6 @@ export const isCouncilConfig = ajv.compile<CouncilConfig>({
   properties: {
     pair: { type: "array", minItems: 2, maxItems: 2, items: seat },
     veto: seat,
-    limits: {
-      type: "object",
-      additionalProperties: false,
-      properties: { max_bytes: { type: "integer", minimum: 1 }, timeout_ms: { type: "integer", minimum: 1 } },
-    },
-    deny: { type: "array", items: nonEmpty },
   },
 });
 

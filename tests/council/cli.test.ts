@@ -177,30 +177,40 @@ describe("ak council run", () => {
       expect(() => readFileSync(s.log)).toThrow();
     });
 
-  test("a seat whose descendant holds the pipes times out on time and the substitute answers", async () => {
+  test("an escaped credential in a JSON context file is refused before any seat launches", async () => {
     const s = setup();
-    const shell = updated(record(s.config), ["veto"], () => ({
-      seat: "veto",
-      chain: [
-        { actor: "hung", lineage: ["hung"], command: ["sh", "-c", "sleep 30 & wait"] },
-        {
-          actor: "v1",
-          lineage: ["v1"],
-          command: ["bun", "-e", "console.log(JSON.stringify({choice:'yes',rationale:'blind'}))"],
-        },
-      ],
-    }));
-    const limited = updated(shell, ["limits"], () => ({ timeout_ms: 3000 }));
-    writeFileSync(s.config, JSON.stringify(limited), { mode: 0o600 });
-    const started = Date.now();
-    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
-    expect(Date.now() - started).toBeLessThan(20_000);
-    expect(result.code).toBe(0);
-    expect(record(s.out)).toMatchObject({
-      outcome: "approve",
-      seats: [{}, {}, { actor: "v1", attempts: [{ actor: "hung", error: "launcher timed out after 3000ms" }, {}] }],
-    });
+    const token = `ghp_${"a1B2".repeat(10)}`;
+    writeFileSync(s.context, JSON.stringify({ log: `token:\n${token}` }));
+    const result = await run([
+      "run",
+      "--card",
+      s.card,
+      "--council-config",
+      s.config,
+      "--context",
+      s.context,
+      "--out",
+      s.out,
+    ]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({ outcome: "refused", seats: [] });
+    expect(JSON.stringify(record(s.out))).toContain("outbound secret: context.md");
+    expect(JSON.stringify(record(s.out))).not.toContain(token);
+    expect(() => readFileSync(s.log)).toThrow();
   });
+
+  const fixedOptions: [string, JsonValue][] = [
+    ["limits", { max_bytes: 1 << 30 }],
+    ["deny", ["private-*"]],
+  ];
+  for (const [name, option] of fixedOptions)
+    test(`a roster naming ${name} is refused: the gate's limits are fixed`, async () => {
+      const s = setup();
+      writeFileSync(s.config, JSON.stringify(updated(record(s.config), [name], () => option)), { mode: 0o600 });
+      const result = await run(["run", "--card", s.card, "--council-config", s.config]);
+      expect(result.code).toBe(2);
+      expect(result.err.join("\n")).toContain("invalid council configuration");
+    });
 
   for (const [signal, code] of [
     ["SIGINT", 130],
