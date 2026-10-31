@@ -381,7 +381,7 @@ export function parseCodexSession(path: string): Parsed | null {
 }
 
 function grokCwd(dir: string, summary: JsonObject | null): string | null {
-  const recorded = str(summary?.cwd) ?? str(object(summary?.info)?.cwd);
+  const recorded = str(object(summary?.info)?.cwd);
   if (recorded !== null) return recorded;
   try {
     const decoded = decodeURIComponent(basename(dirname(dir)));

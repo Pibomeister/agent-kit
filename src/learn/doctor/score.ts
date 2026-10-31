@@ -138,24 +138,40 @@ export function parseScore(session: DoctorSession, reply: JsonObject | null): Se
   return { ...base, status: "scored", results, failed };
 }
 
-/** Score every sampled session, one judge call each. */
+/** What the last judge attempt reported. */
+interface JudgeHealth {
+  failure: "auth" | "timeout" | null;
+}
+
+/**
+ * Score every sampled session, one judge call each. A timeout or an auth failure will
+ * meet the next session too, so scoring stops there and the rest are marked unavailable.
+ */
 export function scoreSessions(
   ctx: LearnContext,
   sessions: readonly DoctorSession[],
   skills: readonly SkillInfo[],
   project: string,
 ): SessionScore[] {
-  return sessions.map((session) =>
-    parseScore(
-      session,
-      judgeObject(ctx, scorerPrompt(session, skills, ctx.env), {
-        runId: null,
-        loop: "skills",
-        role: "session-scorer",
-        project,
-      }),
-    ),
-  );
+  const scores: SessionScore[] = [];
+  const judge: JudgeHealth = { failure: null };
+  for (const session of sessions) {
+    if (judge.failure !== null) {
+      scores.push({ ...parseScore(session, null), why: `not attempted: the judge hit a ${judge.failure} failure` });
+      continue;
+    }
+    const reply = judgeObject(ctx, scorerPrompt(session, skills, ctx.env), {
+      runId: null,
+      loop: "skills",
+      role: "session-scorer",
+      project,
+      onProcessResult: (failure) => {
+        judge.failure = failure;
+      },
+    });
+    scores.push(parseScore(session, reply));
+  }
+  return scores;
 }
 
 export function curve(score: number): number {

@@ -44,9 +44,14 @@ export function text(value: JsonValue | undefined): string | null {
   return value !== undefined && validateString(value) ? value : null;
 }
 
+/** `value` when it is an array, else null. */
+export function array(value: JsonValue | undefined): JsonValue[] | null {
+  return value !== undefined && validateArray(value) ? value : null;
+}
+
 /** `value` when it is an array, else an empty one. */
 export function items(value: JsonValue | undefined): JsonValue[] {
-  return value !== undefined && validateArray(value) ? value : [];
+  return array(value) ?? [];
 }
 
 /** The objects in `value` when it is an array; anything else in it is skipped. */

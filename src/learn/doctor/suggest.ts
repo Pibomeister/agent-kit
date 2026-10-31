@@ -24,7 +24,7 @@ import { scrubCaptured } from "../memory/redact.ts";
 import type { ClaudeMemSource } from "../sources/claude-mem.ts";
 import type { DoctorSession, SkillInfo } from "./collect.ts";
 import { frontmatter, truncate } from "./collect.ts";
-import { items, judgeObject, objects, text, type JsonObject, type JsonValue } from "./json.ts";
+import { array, items, judgeObject, objects, parseJson, text, type JsonObject, type JsonValue } from "./json.ts";
 import type { Aggregate, Scorer, SessionScore } from "./score.ts";
 import { SCORERS } from "./score.ts";
 
@@ -285,6 +285,15 @@ export function parseAdvice(reply: JsonObject | null, run: string, input: GateIn
       dropped: [],
       deferred: [],
     };
+  if (array(reply.findings) === null || array(reply.suggestions) === null)
+    return {
+      status: "unavailable",
+      why: "the reply is off contract: findings and suggestions must both be arrays",
+      findings: [],
+      suggestions: [],
+      dropped: [],
+      deferred: [],
+    };
   const findings = items(reply.findings)
     .map((item) => str(item))
     .filter((item) => item !== "")
@@ -426,9 +435,16 @@ export const IMPACT_FILE = "doctor/impact.json";
 export const IMPACT_PAGE = "wiki/skill-impact.md";
 export const RUNS_DIR = "doctor/runs";
 
+/** The impact record exists and is not an array: writing over it would lose every recorded decision. */
+export class CorruptImpactError extends Error {}
+
+/** The impact record, empty when there is none yet. Throws `CorruptImpactError` when the file is not an array. */
 export function loadImpact(ledgerDir: string): ImpactEntry[] {
   const path = join(ledgerDir, IMPACT_FILE);
-  return existsSync(path) ? readJson<ImpactEntry[]>(path, []) : [];
+  if (!existsSync(path)) return [];
+  if (array(parseJson(readFileSync(path, "utf8")) ?? undefined) === null)
+    throw new CorruptImpactError(`${path} is not a JSON array; repair or restore it from the ledger's history`);
+  return readJson<ImpactEntry[]>(path, []);
 }
 
 /** The impact record as a page a human reads: newest first, each proposal with its rule, outcome and diff. */
@@ -472,8 +488,8 @@ export function recordRun(
       failed: score.failed,
       labels: Object.fromEntries(SCORERS.map((scorer) => [scorer, score.results[scorer]?.label ?? null])),
     }));
-    writeJson(ledger.path(RUNS_DIR, `${run}.json`), { run, at: nowIso(), aggregate, sessions: rows }, ledger.dir);
     const impact = loadImpact(ledger.dir);
+    writeJson(ledger.path(RUNS_DIR, `${run}.json`), { run, at: nowIso(), aggregate, sessions: rows }, ledger.dir);
     for (const suggestion of advice.suggestions) {
       impact.push({
         id: suggestion.id,

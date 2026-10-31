@@ -291,14 +291,14 @@ judge call. The host CLI documents
 but documents no login guarantee for either. The runtime therefore adopts neither: login
 preservation is required before a context-reduction flag can enter the scheduled path.
 
-`ak learn doctor` hands the judge condensed whole sessions, so its default judge runs
-subscription-only. Every variable that could bill or reroute the call (`*_API_KEY`,
-`*_AUTH_TOKEN`, `*_BEARER_TOKEN`, `*_BASE_URL`, `AWS_BEARER_TOKEN*` and `CLAUDE_CODE_USE_*`) is
-dropped by name from the judge's environment, and the judge's `--settings` layer blanks each such
-name and `apiKeyHelper` from both the user's `settings.json` and the judge command's own
-`--settings`, so the call answers on the host's
-signed-in seat or fails (`src/learn/core/judge.ts` `subscriptionEnv`, `subscriptionCommand`). The doctor refuses an output path inside a work
-tree unless git ignores it, and it never edits a skill file.
+`ak learn doctor` hands the judge whole sessions, so its judge runs subscription-only. Every variable
+that could bill or reroute it (`*_API_KEY`, `*_AUTH_TOKEN`, `*_BEARER_TOKEN`, `*_BASE_URL`,
+`AWS_BEARER_TOKEN*`, `CLAUDE_CODE_USE_*`, `HTTP(S)_PROXY`, `ALL_PROXY`, `NODE_EXTRA_CA_CERTS`) is
+dropped from its environment, and its `--settings` layer blanks each such name and `apiKeyHelper` from
+user `settings.json` and the command's `--settings`, so the call answers on the signed-in
+seat or fails. Both force OTel content logging off. Any command but `claude` is unavailable
+(`src/learn/core/judge.ts`). The doctor refuses output inside a work tree unless git ignores
+it, and never edits a skill file.
 
 Each memory ledger keeps episodes, captured worker observations and worker sessions in
 `raw/learn.sqlite`, an agent-kit database excluded from ledger commits along with its journal files.

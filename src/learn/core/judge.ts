@@ -27,14 +27,21 @@ const HOST_MODEL_FIELD = "model";
 /**
  * Variables that would bill a call to an account instead of the host's signed-in seat:
  * an API key or bearer token for any provider, a provider base URL that reroutes the
- * call, and the switches that send the host CLI to a cloud provider. A subscription-only
- * judge never sees them.
+ * call, the switches that send the host CLI to a cloud provider, and the proxy and
+ * trusted-CA variables that let a middlebox reroute or read it. A subscription-only judge
+ * never sees them. Proxy names are honoured in either case, so the match ignores case.
  */
-const METERED_VARS = /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN|_BASE_URL)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_/;
+const METERED_VARS =
+  /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN|_BASE_URL)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_|^(?:HTTPS?|ALL)_PROXY$|^NODE_EXTRA_CA_CERTS$/i;
+/** OpenTelemetry switches a subscription-only judge always has off: the prompt is a whole session. */
+const OTEL_CONTENT_OFF = { OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" };
 
-/** `env` without the variables that could meter a judge call (`METERED_VARS`). Names are compared, values never read. */
+/**
+ * `env` without the variables that could meter a judge call (`METERED_VARS`), and with
+ * OpenTelemetry content logging forced off. Names are compared, values never read.
+ */
 export function subscriptionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key)));
+  return { ...Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key))), ...OTEL_CONTENT_OFF };
 }
 
 /** A host settings text as an object; anything else reads as no settings. */
@@ -50,13 +57,16 @@ function settingsFrom(text: string): HostEnvelope {
 /**
  * The host CLI's command with a `--settings` layer that blanks what the user's
  * `settings.json` or the command's own `--settings` would reapply over `subscriptionEnv`:
- * each `METERED_VARS` name in either `env`, and `apiKeyHelper`. The flag layer outranks
+ * each `METERED_VARS` name in either `env`, and `apiKeyHelper`. The layer also forces
+ * OpenTelemetry content logging off. The flag layer outranks
  * user settings, so the call stays on the signed-in seat. The command's own `--settings` layers, in either form,
  * become one merged layer, the last given winning as the host would read it; a file
- * path is read from `cwd`, where the judge runs. Any other command is returned as given.
+ * path is read from `cwd`, where the judge runs. Null for any other command: only `claude`
+ * itself is known to read this layer, and a launcher such as `env` or `npx` can set its own
+ * environment or run something else.
  */
-export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] {
-  if (command[0] === undefined || basename(command[0]) !== "claude") return [...command];
+export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] | null {
+  if (command[0] === undefined || basename(command[0]) !== "claude") return null;
   const user = settingsFrom(readText(join(configDir, "settings.json")));
   const userEnv = validateHostEnvelope(user.env) ? user.env : {};
   const rest: string[] = [];
@@ -77,14 +87,17 @@ export function subscriptionCommand(command: readonly string[], configDir: strin
   const helper = "apiKeyHelper" in user || "apiKeyHelper" in base ? { apiKeyHelper: "" } : {};
   const text = JSON.stringify({
     ...base,
-    env: { ...baseEnv, ...Object.fromEntries(blanked.map((key) => [key, ""])) },
+    env: { ...baseEnv, ...Object.fromEntries(blanked.map((key) => [key, ""])), ...OTEL_CONTENT_OFF },
     ...helper,
   });
   return [command[0], "--settings", text, ...rest];
 }
 
 export interface CommandJudgeOptions {
-  /** Drop every metered credential from the judge's environment, so a call runs on the signed-in seat or fails. */
+  /**
+   * Drop every metered credential from the judge's environment, so a call runs on the signed-in seat or fails.
+   * A command other than `claude` cannot be held to that, so it is not run and the reply declares it unavailable.
+   */
   subscriptionOnly?: boolean;
 }
 
@@ -464,15 +477,19 @@ function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn
 export function commandJudge(config: LearnConfig, options: CommandJudgeOptions = {}): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
     mkdirSync(config.runtimeDir, { recursive: true });
+    const command =
+      options.subscriptionOnly === true
+        ? subscriptionCommand(config.judgeCommand, config.configDir, config.runtimeDir)
+        : config.judgeCommand;
+    if (command === null)
+      return {
+        unavailable: `a subscription-only judge must be the claude command, not ${config.judgeCommand[0] ?? "nothing"}`,
+      };
     const env: NodeJS.ProcessEnv = {};
     const parent = options.subscriptionOnly === true ? subscriptionEnv(process.env) : process.env;
     for (const [key, value] of Object.entries(parent)) {
       if (!NESTED_SESSION_VARS.includes(key) && !TRACE_CONTEXT_VARS.includes(key)) env[key] = value;
     }
-    const command =
-      options.subscriptionOnly === true
-        ? subscriptionCommand(config.judgeCommand, config.configDir, config.runtimeDir)
-        : config.judgeCommand;
     const traceId = context.traceId ?? randomBytes(16).toString("hex");
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const carrier = { traceId, spanId: randomBytes(8).toString("hex") };

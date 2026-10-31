@@ -12,9 +12,9 @@
  * proposals to the repository's skills ledger, and `accept` / `reject` record a
  * human's decision there for the next run to read.
  */
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
-import { flag, type LearnArea, type LearnArgs, type LearnContext } from "../core/context.ts";
+import { chmodSync, existsSync, mkdirSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { flag, type LearnArea, type LearnArgs, type LearnCommand, type LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { loopDir, mainRepoRoot } from "../core/paths.ts";
 import { run as runProcess } from "../core/proc.ts";
@@ -38,7 +38,7 @@ import {
 } from "./collect.ts";
 import { renderReport, repoArgument } from "./render.ts";
 import { aggregate, scoreSessions, type Aggregate, type SessionScore } from "./score.ts";
-import { advise, decide, loadImpact, recordRun, type Advice } from "./suggest.ts";
+import { advise, CorruptImpactError, decide, loadImpact, recordRun, type Advice } from "./suggest.ts";
 
 const RUN_FILE = "run.json";
 const DEFAULT_TITLE = "Skill health report";
@@ -57,14 +57,49 @@ function enclosingWorkTree(path: string): string | null {
   }
 }
 
+/** Where a symlink at `path` points, relative to its folder; null when `path` is not a symlink. */
+function linkTarget(path: string): string | null {
+  try {
+    return readlinkSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/** Symlinks a kernel would follow before giving up; past this the path cannot be written either. */
+const MAX_LINK_HOPS = 40;
+
+/**
+ * Where a write to `path` lands: its nearest existing ancestor through `realpath`, with the
+ * parts that do not exist yet kept. A dangling symlink is followed, because a write creates its target.
+ */
+function realOutputPath(path: string, hops = 0): string {
+  let dir = resolve(path);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(dir), ...missing);
+    } catch {
+      const link = hops < MAX_LINK_HOPS ? linkTarget(dir) : null;
+      if (link !== null) return join(realOutputPath(resolve(dirname(dir), link), hops + 1), ...missing);
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return resolve(path);
+    missing.unshift(basename(dir));
+    dir = parent;
+  }
+}
+
 /**
  * Why `path` may not hold doctor output, or null when it may: a path inside a work tree
  * must be one git ignores, so a transcript or report can never be staged by accident.
+ * The check reads where the path really lands, so a symlink cannot carry output into a tree.
  */
 export function outputRefusal(path: string): string | null {
-  const tree = enclosingWorkTree(path);
+  const real = realOutputPath(path);
+  const tree = enclosingWorkTree(real);
   if (tree === null) return null;
-  const ignored = runProcess(["git", "-C", tree, "check-ignore", "-q", "--", resolve(path)], { timeoutMs: 10_000 });
+  const ignored = runProcess(["git", "-C", tree, "check-ignore", "-q", "--", real], { timeoutMs: 10_000 });
   return ignored.code === 0 ? null : `${path} is inside the work tree ${tree} and git does not ignore it`;
 }
 
@@ -269,6 +304,9 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     ctx.io.err("ak learn doctor run: --record needs a repository; pass --repo P");
     return 2;
   }
+  // Before any judge call: a corrupt impact record refuses the run rather than spending on it.
+  const ledger = ledgerRoot === undefined ? null : new Ledger(loopDir(ctx.config, ledgerRoot, "skills"));
+  const impact = ledger === null ? [] : loadImpact(ledger.dir);
   const collection = collect(options, ctx.env);
   if (ctx.config.dryRun) {
     ctx.io.out(
@@ -284,8 +322,6 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
   ctx.io.out(
     `scored: ${summary.sessions_scored}, unavailable: ${summary.sessions_unavailable}, failed: ${summary.failed.length}`,
   );
-  const ledger = ledgerRoot === undefined ? null : new Ledger(loopDir(ctx.config, ledgerRoot, "skills"));
-  const impact = ledger === null ? [] : loadImpact(ledger.dir);
   const runId = new Date(options.now)
     .toISOString()
     .replaceAll(/[-:]/g, "")
@@ -418,23 +454,42 @@ function impactCommand(args: LearnArgs, ctx: LearnContext): number {
   return 0;
 }
 
+/**
+ * A verb's command behind two refusals: a flag its usage does not name, because an ignored
+ * `--dry-run` would still spend real judge calls, and a corrupt impact record.
+ */
+function checkedVerb(usage: string, command: LearnCommand): LearnArea["verbs"][string] {
+  const known = new Set([...usage.matchAll(/--([a-z-]+)/g)].map((match) => match[1]));
+  return {
+    usage,
+    run: (args, ctx) => {
+      const unknown = [...args.flags.keys()].filter((name) => !known.has(name));
+      if (unknown.length > 0) {
+        ctx.io.err(
+          `${usage.split(" ").slice(0, 4).join(" ")}: unknown flag ${unknown.map((n) => `--${n}`).join(", ")}`,
+        );
+        ctx.io.err(`usage: ${usage}`);
+        return 2;
+      }
+      try {
+        return command(args, ctx);
+      } catch (error) {
+        if (!(error instanceof CorruptImpactError)) throw error;
+        ctx.io.err(`ak learn doctor: refusing to proceed: ${error.message}`);
+        return 1;
+      }
+    },
+  };
+}
+
 export const doctorArea: LearnArea = {
   summary: "score recent sessions, propose gated skill edits, render a local report",
   verbs: {
-    run: {
-      usage: `ak learn doctor run ${COLLECT_FLAGS} [--report FILE] [--title T] [--record]`,
-      run: runCommand,
-    },
-    collect: { usage: `ak learn doctor collect ${COLLECT_FLAGS}`, run: collectCommand },
-    render: { usage: "ak learn doctor render --out DIR [--report FILE]", run: renderCommand },
-    accept: {
-      usage: "ak learn doctor accept <proposal-id> [--repo P] [--reason TEXT]",
-      run: decideCommand("accepted"),
-    },
-    reject: {
-      usage: "ak learn doctor reject <proposal-id> [--repo P] [--reason TEXT]",
-      run: decideCommand("rejected"),
-    },
-    impact: { usage: "ak learn doctor impact [--repo P]", run: impactCommand },
+    run: checkedVerb(`ak learn doctor run ${COLLECT_FLAGS} [--report FILE] [--title T] [--record]`, runCommand),
+    collect: checkedVerb(`ak learn doctor collect ${COLLECT_FLAGS}`, collectCommand),
+    render: checkedVerb("ak learn doctor render --out DIR [--report FILE]", renderCommand),
+    accept: checkedVerb("ak learn doctor accept <proposal-id> [--repo P] [--reason TEXT]", decideCommand("accepted")),
+    reject: checkedVerb("ak learn doctor reject <proposal-id> [--repo P] [--reason TEXT]", decideCommand("rejected")),
+    impact: checkedVerb("ak learn doctor impact [--repo P]", impactCommand),
   },
 };

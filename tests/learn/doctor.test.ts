@@ -38,11 +38,12 @@ import {
 } from "../../src/learn/doctor/collect.ts";
 import type { JsonObject, JsonValue } from "../../src/learn/doctor/json.ts";
 import { renderReport, repoArgument } from "../../src/learn/doctor/render.ts";
-import { aggregate, gradeFor, parseScore, type SessionScore } from "../../src/learn/doctor/score.ts";
+import { aggregate, gradeFor, parseScore, scoreSessions, type SessionScore } from "../../src/learn/doctor/score.ts";
 import {
   type Advice,
   decide,
   gateSuggestion,
+  IMPACT_FILE,
   IMPACT_PAGE,
   loadImpact,
   parseAdvice,
@@ -348,6 +349,16 @@ describe("collect", () => {
   test("Grok: the working directory comes from the session folder and synthetic turns are left out", () => {
     const w = world();
     const grok = find(collect(options(w, { hosts: ["grok"] }), {}).sampled, "grok-g1");
+    writeFileSync(
+      join(w.grok, "sessions", encodeURIComponent(w.repo), "g1", "summary.json"),
+      JSON.stringify({ cwd: "/elsewhere", info: { id: "g1", cwd: join(w.repo, "src") } }),
+    );
+    expect(find(collect(options(w, { hosts: ["grok"] }), {}).sampled, "grok-g1").cwd).toBe(join(w.repo, "src"));
+    writeFileSync(
+      join(w.grok, "sessions", encodeURIComponent(w.repo), "g1", "summary.json"),
+      JSON.stringify({ cwd: w.repo, info: { id: "g1", cwd: "/elsewhere" } }),
+    );
+    expect(collect(options(w, { hosts: ["grok"] }), {}).sampled).toEqual([]);
     expect(grok.cwd).toBe(w.repo);
     expect(grok.started_at).toBe("2026-10-30T08:00:00Z");
     expect(texts(grok)).toContain("[tool:read_file]");
@@ -645,6 +656,23 @@ describe("parseAdvice", () => {
       why: "no failed session",
     });
   });
+
+  test("a valid JSON reply off the contract is unavailable, not ok with no edits", () => {
+    const why = "the reply is off contract: findings and suggestions must both be arrays";
+    const replies: JsonObject[] = [
+      { answer: "fine" },
+      { findings: [] },
+      { suggestions: [] },
+      { findings: "x", suggestions: [] },
+    ];
+    for (const reply of replies)
+      expect(parseAdvice(reply, "r", gateInput({ skillPath }))).toMatchObject({
+        status: "unavailable",
+        why,
+        suggestions: [],
+      });
+    expect(parseAdvice({ findings: [], suggestions: [] }, "r", gateInput({ skillPath })).status).toBe("ok");
+  });
 });
 
 describe("impact record", () => {
@@ -685,7 +713,7 @@ describe("impact record", () => {
     const advice: Advice = { status: "ok", findings: [], suggestions: [], dropped: [], deferred: [] };
     const skillPath = join(ledger.dir, "SKILL.md");
     writeFileSync(skillPath, SKILL_TEXT);
-    const proposing = parseAdvice({ suggestions: [edit()] }, "run2", gateInput({ skillPath }));
+    const proposing = parseAdvice({ findings: [], suggestions: [edit()] }, "run2", gateInput({ skillPath }));
 
     const release = ledger.tryLock();
     if (release === null) throw new Error("no lock");
@@ -750,14 +778,21 @@ describe("subscription-only judge", () => {
         HOME: "/h",
         PATH: "/bin",
       }),
-    ).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "o", HOME: "/h", PATH: "/bin" });
+    ).toEqual({
+      CLAUDE_CODE_OAUTH_TOKEN: "o",
+      HOME: "/h",
+      PATH: "/bin",
+      OTEL_LOG_USER_PROMPTS: "0",
+      OTEL_LOG_TOOL_DETAILS: "0",
+    });
   });
 
   test("the judge command never sees a metered credential when it is subscription-only", () => {
     const ctx = testContext();
-    const script =
-      'if [ -n "$ANTHROPIC_API_KEY" ]; then echo \'{"key":"present"}\'; else echo \'{"key":"absent"}\'; fi';
-    const config = { ...ctx.config, judgeCommand: ["sh", "-c", script] };
+    const claude = fakeClaude(
+      'if [ -n "$ANTHROPIC_API_KEY" ]; then echo \'{"key":"present"}\'; else echo \'{"key":"absent"}\'; fi',
+    );
+    const config = { ...ctx.config, judgeCommand: [claude] };
     const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
     const previous = process.env.ANTHROPIC_API_KEY;
     process.env.ANTHROPIC_API_KEY = "fixture-value";
@@ -789,7 +824,13 @@ describe("subscription-only judge", () => {
     expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toEqual([
       {
         disableAllHooks: true,
-        env: { ANTHROPIC_BASE_URL: "", CLAUDE_CODE_USE_BEDROCK: "", ANTHROPIC_API_KEY: "" },
+        env: {
+          ANTHROPIC_BASE_URL: "",
+          CLAUDE_CODE_USE_BEDROCK: "",
+          ANTHROPIC_API_KEY: "",
+          OTEL_LOG_USER_PROMPTS: "0",
+          OTEL_LOG_TOOL_DETAILS: "0",
+        },
         apiKeyHelper: "",
       },
     ]);
@@ -804,14 +845,26 @@ describe("subscription-only judge", () => {
     expect(settingsOf(commandJudge(fromFile, { subscriptionOnly: true })("prompt", context))).toEqual([
       {
         disableAllHooks: true,
-        env: { ANTHROPIC_BASE_URL: "", CLAUDE_CODE_USE_BEDROCK: "", ANTHROPIC_API_KEY: "" },
+        env: {
+          ANTHROPIC_BASE_URL: "",
+          CLAUDE_CODE_USE_BEDROCK: "",
+          ANTHROPIC_API_KEY: "",
+          OTEL_LOG_USER_PROMPTS: "0",
+          OTEL_LOG_TOOL_DETAILS: "0",
+        },
         apiKeyHelper: "",
       },
     ]);
     expect(settingsOf(commandJudge(equalsForm, { subscriptionOnly: true })("prompt", context))).toEqual([
       {
         disableAllHooks: true,
-        env: { ANTHROPIC_BASE_URL: "", CLAUDE_CODE_USE_BEDROCK: "", ANTHROPIC_API_KEY: "" },
+        env: {
+          ANTHROPIC_BASE_URL: "",
+          CLAUDE_CODE_USE_BEDROCK: "",
+          ANTHROPIC_API_KEY: "",
+          OTEL_LOG_USER_PROMPTS: "0",
+          OTEL_LOG_TOOL_DETAILS: "0",
+        },
         apiKeyHelper: "",
       },
     ]);
@@ -837,10 +890,135 @@ describe("subscription-only judge", () => {
     writeFileSync(join(config.runtimeDir, "own-settings.json"), JSON.stringify(own));
     const fromFile = { ...config, judgeCommand: [claude, "-p", "--settings=own-settings.json"] };
     const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
-    const pinned = { disableAllHooks: true, env: { ANTHROPIC_BASE_URL: "", KEEP: "v" }, apiKeyHelper: "" };
+    const pinned = {
+      disableAllHooks: true,
+      env: { ANTHROPIC_BASE_URL: "", KEEP: "v", OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" },
+      apiKeyHelper: "",
+    };
     expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toEqual([pinned]);
     expect(settingsOf(commandJudge(fromFile, { subscriptionOnly: true })("prompt", context))).toEqual([pinned]);
     expect(settingsOf(commandJudge(config)("prompt", context))).toEqual([own]);
+  });
+
+  test("a claude command with no --settings of its own still blanks metered keys and the key helper", () => {
+    const ctx = testContext();
+    const bin = scratch("ak-judge-bin-");
+    const echo = join(bin, "claude");
+    writeFileSync(echo, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
+    chmodSync(echo, 0o755);
+    const configDir = scratch("ak-judge-config-");
+    writeFileSync(
+      join(configDir, "settings.json"),
+      JSON.stringify({
+        env: { ANTHROPIC_API_KEY: "k", HTTPS_PROXY: "http://proxy", OTEL_LOG_USER_PROMPTS: "1", KEEP: "v" },
+        apiKeyHelper: "print-key",
+      }),
+    );
+    const config = { ...ctx.config, configDir, judgeCommand: [echo, "-p"] };
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toEqual([
+      {
+        env: { ANTHROPIC_API_KEY: "", HTTPS_PROXY: "", OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" },
+        apiKeyHelper: "",
+      },
+    ]);
+  });
+
+  test("proxy and trusted-CA variables are dropped, and OpenTelemetry content logging is forced off", () => {
+    const names = ["HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "NODE_EXTRA_CA_CERTS"];
+    const given = Object.fromEntries(names.map((name) => [name, "fixture"]));
+    expect(
+      subscriptionEnv({ ...given, NO_PROXY: "localhost", OTEL_LOG_USER_PROMPTS: "1", OTEL_LOG_TOOL_DETAILS: "1" }),
+    ).toEqual({ NO_PROXY: "localhost", OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" });
+
+    const ctx = testContext();
+    const claude = fakeClaude(
+      'printf \'{"proxy":"%s","ca":"%s","prompts":"%s","tools":"%s"}\\n\' "$HTTPS_PROXY$HTTP_PROXY$ALL_PROXY" "$NODE_EXTRA_CA_CERTS" "$OTEL_LOG_USER_PROMPTS" "$OTEL_LOG_TOOL_DETAILS"',
+    );
+    const config = { ...ctx.config, judgeCommand: [claude] };
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    const previous = { ...process.env };
+    Object.assign(process.env, {
+      HTTPS_PROXY: "http://proxy",
+      HTTP_PROXY: "http://proxy",
+      ALL_PROXY: "http://proxy",
+      NODE_EXTRA_CA_CERTS: "/ca.pem",
+      OTEL_LOG_USER_PROMPTS: "1",
+      OTEL_LOG_TOOL_DETAILS: "1",
+    });
+    try {
+      expect(commandJudge(config, { subscriptionOnly: true })("prompt", context)).toEqual({
+        proxy: "",
+        ca: "",
+        prompts: "0",
+        tools: "0",
+      });
+    } finally {
+      for (const name of [...names, "OTEL_LOG_USER_PROMPTS", "OTEL_LOG_TOOL_DETAILS"]) {
+        const value = previous[name];
+        if (value === undefined) Reflect.deleteProperty(process.env, name);
+        else process.env[name] = value;
+      }
+    }
+  });
+
+  test("a command that is not recognisably claude is never run and reads as unavailable", () => {
+    const ctx = testContext();
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    const marker = join(scratch("ak-judge-marker-"), "ran");
+    const script = `touch ${marker}; echo '{"ran":true}'`;
+    const refused = [
+      ["sh", "-c", script],
+      ["npx", "claude", "-p"],
+      ["bunx", "claude", "-p"],
+      ["env", "claude", "-p"],
+      ["/opt/bin/claude.exe", "-p"],
+    ];
+    for (const judgeCommand of refused) {
+      const reply = commandJudge({ ...ctx.config, judgeCommand }, { subscriptionOnly: true })("prompt", context);
+      expect(reply).toEqual({
+        unavailable: `a subscription-only judge must be the claude command, not ${judgeCommand[0]}`,
+      });
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(commandJudge({ ...ctx.config, judgeCommand: ["sh", "-c", script] })("prompt", context)).toEqual({
+      ran: true,
+    });
+    expect(existsSync(marker)).toBe(true);
+  });
+});
+
+describe("scoreSessions", () => {
+  const sessions = ["a", "b", "c"].map((key) => synthetic(key, [], 0));
+
+  for (const failure of ["timeout", "auth"] as const)
+    test(`a judge ${failure} stops scoring and marks the rest unavailable`, () => {
+      const ctx = testContext();
+      let calls = 0;
+      ctx.judge = (_prompt, context) => {
+        calls += 1;
+        if (calls === 1) return labels("highly_efficient", "approve", "fully_compliant", "proportionate");
+        context.onProcessResult?.(failure);
+        return null;
+      };
+      const scores = scoreSessions(ctx, sessions, [], "p");
+      expect(calls).toBe(2);
+      expect(scores.map((score) => score.status)).toEqual(["scored", "unavailable", "unavailable"]);
+      expect(scores[1]?.why).toBe("no usable reply");
+      expect(scores[2]?.why).toBe(`not attempted: the judge hit a ${failure} failure`);
+    });
+
+  test("a failure the judge's retry cleared does not stop scoring", () => {
+    const ctx = testContext();
+    let calls = 0;
+    ctx.judge = (_prompt, context) => {
+      calls += 1;
+      context.onProcessResult?.("auth");
+      context.onProcessResult?.(null);
+      return labels("highly_efficient", "approve", "fully_compliant", "proportionate");
+    };
+    expect(scoreSessions(ctx, sessions, [], "p").map((score) => score.status)).toEqual(["scored", "scored", "scored"]);
+    expect(calls).toBe(3);
   });
 });
 
@@ -854,6 +1032,14 @@ function verb(name: string, argv: readonly string[], ctx: TestContext): number {
 function settingsOf(reply: ReturnType<JudgeFn>): unknown[] {
   const argv = Array.isArray(reply?.argv) ? reply.argv.map(String) : [];
   return argv.flatMap((arg, index): unknown[] => (argv[index - 1] === "--settings" ? [JSON.parse(arg)] : []));
+}
+
+/** An executable named `claude` that runs `body` in sh. */
+function fakeClaude(body: string): string {
+  const claude = join(scratch("ak-judge-bin-"), "claude");
+  writeFileSync(claude, `#!/bin/sh\n${body}\n`);
+  chmodSync(claude, 0o755);
+  return claude;
 }
 
 function mode(path: string): number {
@@ -882,6 +1068,161 @@ describe("ak learn doctor", () => {
     writeFileSync(join(repo, ".gitignore"), "out/\n");
     expect(outputRefusal(join(repo, "out", "report.html"))).toBeNull();
     expect(outputRefusal(join(scratch("ak-doctor-free-"), "out"))).toBeNull();
+  });
+
+  test("a symlink cannot carry --out or --report into a tracked directory", () => {
+    const w = world();
+    const git = (...argv: string[]) =>
+      runProcess(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-C", w.repo, ...argv], {
+        timeoutMs: 30_000,
+      });
+    const tracked = join(w.repo, "tracked");
+    mkdirSync(tracked);
+    writeFileSync(join(tracked, "keep.txt"), "keep\n");
+    expect(git("add", "tracked").code).toBe(0);
+    expect(git("commit", "-q", "-m", "tracked").code).toBe(0);
+    mkdirSync(join(w.repo, "ignored"));
+    writeFileSync(join(w.repo, ".gitignore"), "ignored/\n");
+    const outside = join(w.base, "outside");
+    mkdirSync(outside);
+    const link = join(outside, "link");
+    symlinkSync(tracked, link);
+    const dangling = join(outside, "dangling.html");
+    symlinkSync(join(tracked, "report.html"), dangling);
+    const allowed = join(outside, "allowed");
+    symlinkSync(join(w.repo, "ignored"), allowed);
+
+    expect(outputRefusal(link)).toContain("git does not ignore it");
+    expect(outputRefusal(join(link, "new", "report.html"))).toContain("git does not ignore it");
+    expect(outputRefusal(dangling)).toContain("git does not ignore it");
+    expect(outputRefusal(allowed)).toBeNull();
+    expect(outputRefusal(join(allowed, "report.html"))).toBeNull();
+
+    const ctx = testContext({ cwd: w.repo });
+    let calls = 0;
+    ctx.judge = (prompt) => {
+      calls += 1;
+      return scriptedJudge(prompt);
+    };
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    expect(verb("run", ["--out", link, "--repo", w.repo, ...homes], ctx)).toBe(2);
+    expect(ctx.err.join("\n")).toContain("refusing --out");
+    const out = join(w.base, "out");
+    expect(verb("run", ["--out", out, "--report", join(link, "r.html"), "--repo", w.repo, ...homes], ctx)).toBe(2);
+    expect(ctx.err.join("\n")).toContain("refusing --report");
+    expect(calls).toBe(0);
+    expect(readdirSync(tracked)).toEqual(["keep.txt"]);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  test("--report inside a work tree is refused before any judge call", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    let calls = 0;
+    ctx.judge = (prompt) => {
+      calls += 1;
+      return scriptedJudge(prompt);
+    };
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const out = join(w.base, "out");
+    const report = join(w.repo, "report.html");
+    expect(verb("run", ["--out", out, "--report", report, "--repo", w.repo, ...homes], ctx)).toBe(2);
+    expect(ctx.err.join("\n")).toContain(`refusing --report: ${report} is inside the work tree`);
+    expect(calls).toBe(0);
+    expect(existsSync(report)).toBe(false);
+    expect(existsSync(out)).toBe(false);
+  });
+
+  test("a flag the verb does not name is refused before any judge call", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    let calls = 0;
+    ctx.judge = (prompt) => {
+      calls += 1;
+      return scriptedJudge(prompt);
+    };
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const out = join(w.base, "out");
+    for (const extra of ["--dry-run", "--json"]) {
+      expect(verb("run", ["--out", out, "--repo", w.repo, extra, ...homes], ctx)).toBe(2);
+      expect(ctx.err.join("\n")).toContain(`ak learn doctor run: unknown flag ${extra}`);
+    }
+    expect(calls).toBe(0);
+    expect(existsSync(out)).toBe(false);
+    expect(verb("collect", ["--out", out, "--record", ...homes], ctx)).toBe(2);
+    expect(verb("impact", ["--json"], ctx)).toBe(2);
+    expect(verb("accept", ["id", "--out", out], ctx)).toBe(2);
+  });
+
+  test("a corrupt impact record refuses every verb that reads it and is left as found", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    let calls = 0;
+    ctx.judge = (prompt) => {
+      calls += 1;
+      return scriptedJudge(prompt);
+    };
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const ledger = skillsLedger(ctx, w.repo);
+    const path = ledger.path(IMPACT_FILE);
+    for (const corrupt of ['{"not":"an array"}', "not json", "null"]) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, corrupt);
+      calls = 0;
+      expect(() => loadImpact(ledger.dir)).toThrow("is not a JSON array");
+      expect(verb("run", ["--out", join(w.base, "out"), "--repo", w.repo, "--record", ...homes], ctx)).toBe(1);
+      expect(calls).toBe(0);
+      expect(verb("accept", ["id", "--repo", w.repo], ctx)).toBe(1);
+      expect(verb("impact", ["--repo", w.repo], ctx)).toBe(1);
+      expect(ctx.err.join("\n")).toContain("refusing to proceed");
+      expect(readFileSync(path, "utf8")).toBe(corrupt);
+    }
+    expect(() =>
+      recordRun(ledger, "r", [], aggregate([], 0), {
+        status: "ok",
+        findings: [],
+        suggestions: [],
+        dropped: [],
+        deferred: [],
+      }),
+    ).toThrow("is not a JSON array");
+    expect(readFileSync(path, "utf8")).toBe("null");
+    expect(existsSync(ledger.path(RUNS_DIR, "r.json"))).toBe(false);
+  });
+
+  test("a secret in a session is redacted in the transcript and in the scorer's prompt", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    const secret = "fixturevalue123";
+    const file = join(w.claude, "projects", "-secret", "leak.jsonl");
+    jsonl(file, [
+      { type: "user", sessionId: "leak", cwd: w.repo, message: { role: "user", content: `Use API_KEY=${secret}` } },
+      {
+        type: "assistant",
+        sessionId: "leak",
+        message: {
+          content: [
+            { type: "text", text: "On it." },
+            { type: "tool_use", name: "Bash", input: { command: `export API_KEY=${secret}` } },
+          ],
+        },
+      },
+    ]);
+    touch(file, w.now - HOUR);
+    const prompts: string[] = [];
+    ctx.judge = (prompt) => {
+      prompts.push(prompt);
+      return scriptedJudge(prompt);
+    };
+    const out = join(w.base, "out");
+    const homes = ["--host", "claude", "--claude-home", w.claude];
+    expect(verb("run", ["--out", out, "--repo", w.repo, ...homes], ctx)).toBe(0);
+    const transcript = readFileSync(join(out, "transcripts", "claude-leak.md"), "utf8");
+    expect(transcript).toContain("API_KEY=[redacted:env-secret]");
+    expect(transcript).not.toContain(secret);
+    const prompt = prompts.find((text) => text.includes("# Session claude-leak"));
+    expect(prompt).toContain("API_KEY=[redacted:env-secret]");
+    expect(prompts.join("\n")).not.toContain(secret);
   });
 
   test("a session belongs by the root, a listed worktree or a registered one; a same-named folder does not", () => {
@@ -1174,12 +1515,10 @@ describe("ak learn doctor", () => {
   test("the doctor area's default judge runs subscription-only", async () => {
     const w = world();
     const base = testContext();
-    const script = join(w.base, "judge.sh");
-    writeFileSync(
-      script,
+    const claude = fakeClaude(
       `if [ -n "$ANTHROPIC_API_KEY" ]; then echo '{"unavailable":"metered"}'; else cat <<'EOF'\n${JSON.stringify(
         labels("highly_efficient", "approve", "fully_compliant", "proportionate"),
-      )}\nEOF\nfi\n`,
+      )}\nEOF\nfi`,
     );
     const out: string[] = [];
     const previous = process.env.ANTHROPIC_API_KEY;
@@ -1203,7 +1542,7 @@ describe("ak learn doctor", () => {
         {
           cwd: w.repo,
           io: { out: (line) => out.push(line), err: (line) => out.push(line) },
-          env: { ...base.env, AK_LEARN_JUDGE: `sh ${script}` },
+          env: { ...base.env, AK_LEARN_JUDGE: claude },
         },
       );
       expect(code).toBe(0);
