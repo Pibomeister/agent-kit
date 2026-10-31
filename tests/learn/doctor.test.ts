@@ -4,7 +4,16 @@
  * Every session here is a synthetic fixture; no real transcript is read.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
@@ -250,6 +259,36 @@ describe("collect", () => {
     expect(texts(claude)).not.toContain("sidechain work");
     const withSubagents = collect(options(w, { hosts: ["claude"], includeSubagents: true }), {});
     expect(texts(find(withSubagents.sampled, "claude-c1"))).toContain("sidechain work");
+  });
+
+  test("a symlinked skill directory is found, and a session using it counts as using it", () => {
+    const w = world();
+    const elsewhere = join(w.base, "elsewhere", "linked-skill");
+    mkdirSync(elsewhere, { recursive: true });
+    writeFileSync(join(elsewhere, "SKILL.md"), "---\nname: linked-skill\ndescription: Linked.\n---\n\nBody.\n");
+    const skillsDir = join(w.base, "skills-dir");
+    mkdirSync(skillsDir);
+    symlinkSync(elsewhere, join(skillsDir, "linked-skill"));
+    symlinkSync(join(w.base, "missing"), join(skillsDir, "dangling"));
+    writeFileSync(join(skillsDir, "README.md"), "not a skill");
+    const claudeFile = join(w.claude, "projects", "-repo", "c9.jsonl");
+    jsonl(claudeFile, [
+      { type: "user", sessionId: "c9", cwd: w.repo, message: { role: "user", content: "Do the linked work" } },
+      {
+        type: "assistant",
+        sessionId: "c9",
+        message: {
+          content: [
+            { type: "text", text: "Loading it." },
+            { type: "tool_use", name: "Skill", input: { skill: "linked-skill" } },
+          ],
+        },
+      },
+    ]);
+    touch(claudeFile, w.now - HOUR);
+    const collection = collect(options(w, { hosts: ["claude"], skillDirs: [skillsDir] }), {});
+    expect(collection.skills.map((skill) => skill.name)).toEqual(["diagnose", "linked-skill"]);
+    expect(find(collection.sampled, "claude-c9").skills_used).toEqual(["linked-skill"]);
   });
 
   test("a skill's folded or quoted frontmatter is read as YAML", () => {
@@ -775,12 +814,14 @@ describe("ak learn doctor", () => {
     expect(html).toContain("&lt;b&gt;bold&lt;/b&gt;");
     expect(html).toContain("no evidence from a failed session");
     expect(html).not.toContain("Fix the flaky parser test");
-    expect(readFileSync(join(out, "proposed", "diagnose", "SKILL.md"), "utf8")).toContain("record the failing command");
     expect(readFileSync(w.skillPath, "utf8")).toBe(SKILL_TEXT);
     expect(readFileSync(join(out, "run.json"), "utf8")).not.toContain("Fix the flaky parser test");
 
     const [proposal] = loadImpact(skillsLedger(ctx, w.repo).dir);
     if (proposal === undefined) throw new Error("no proposal recorded");
+    expect(readFileSync(join(out, "proposed", proposal.id, "SKILL.md"), "utf8")).toContain(
+      "record the failing command",
+    );
     expect(verb("reject", [proposal.id, "--repo", w.repo, "--reason", "too narrow"], ctx)).toBe(0);
     expect(verb("reject", [proposal.id, "--repo", w.repo], ctx)).toBe(1);
     expect(verb("impact", ["--repo", w.repo], ctx)).toBe(0);
@@ -893,6 +934,29 @@ describe("ak learn doctor", () => {
     const again = join(w.base, "again.html");
     expect(verb("render", ["--out", out, "--report", again], ctx)).toBe(0);
     expect(readFileSync(again, "utf8")).toBe(readFileSync(join(out, "report.html"), "utf8"));
+  });
+
+  test("two edits to one skill each keep their own proposed file", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = (prompt) =>
+      prompt.includes("# learn/skill-doctor")
+        ? {
+            findings: [],
+            suggestions: [
+              edit(),
+              edit({ rule: "Bisect last.", replace: [{ old: "Then bisect.", new: "Bisect last." }] }),
+            ],
+          }
+        : scriptedJudge(prompt);
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const out = join(w.base, "out");
+    expect(verb("run", ["--out", out, "--repo", w.repo, ...homes], ctx)).toBe(0);
+    const proposed = join(out, "proposed");
+    const texts = readdirSync(proposed).map((id) => readFileSync(join(proposed, id, "SKILL.md"), "utf8"));
+    expect(texts).toHaveLength(2);
+    expect(texts.filter((text) => text.includes("record the failing command"))).toHaveLength(1);
+    expect(texts.filter((text) => text.includes("Bisect last."))).toHaveLength(1);
   });
 
   test("a held ledger lock fails --record and leaves the report without a decision command", () => {

@@ -509,9 +509,25 @@ export function frontmatter(source: string): SkillFront {
   return { name: field("name"), description: field("description") };
 }
 
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** The skills directly under `root`. A skill directory or file may be a symlink, as installed skills usually are. */
 function skillsIn(root: string, scope: SkillInfo["scope"]): SkillInfo[] {
-  return files(root, (name) => name === "SKILL.md", 1)
-    .filter((path) => dirname(dirname(path)) === root)
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return [];
+  }
+  return names
+    .map((name) => join(root, name, "SKILL.md"))
+    .filter(isFile)
     .map((path) => {
       const meta = frontmatter(readFileSync(path, "utf8"));
       return {

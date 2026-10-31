@@ -320,7 +320,7 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
   };
   writeJson(join(out, RUN_FILE), runRecord, out);
   for (const suggestion of advice.suggestions) {
-    const path = join(out, "proposed", suggestion.skill, "SKILL.md");
+    const path = join(out, "proposed", suggestion.id, "SKILL.md");
     mkdirSync(dirname(path), { recursive: true });
     writeGated(out, path, suggestion.proposed);
     chmodSync(path, 0o600);
