@@ -18,6 +18,7 @@ import { main as runLifecycle } from "./lifecycle/gate.ts";
 import { runKb } from "./kb/cli.ts";
 import { readHookStdin, runLearn } from "./learn/cli.ts";
 import { runRunner } from "./runner/cli.ts";
+import { runCouncil } from "./council/cli.ts";
 import { loadCatalog } from "./catalog/load.ts";
 import type { BuildOptions } from "./packaging/build.ts";
 import { checkBundles, writeAdaptations, writeBundles } from "./packaging/build.ts";
@@ -67,6 +68,7 @@ const USAGE = [
   "  ak learn <area> <verb> ...                 the opt-in learning runtime (`ak learn` for help)",
   "  ak guard hook <event> ...                  the opt-in guard runtime's host hook (`ak guard` for help)",
   "  ak runner serve|call ...                   runner service and charter-bound requests",
+  "  ak council run --card <file> ...           ask the council one question; the record grants no authority",
   "",
   "Exit 0 when nothing failed, non-zero on any error.",
 ];
@@ -95,6 +97,7 @@ const COMMANDS = [
   "learn",
   "guard",
   "runner",
+  "council",
 ];
 
 const VALUE_FLAGS = new Set(["profile", "host", "project"]);
@@ -420,10 +423,12 @@ if (import.meta.main) {
   const code =
     argv[0] === "runner"
       ? await runRunner(argv.slice(1), io)
-      : argv[0] === "learn"
-        ? await runLearn(argv.slice(1), { cwd: process.cwd(), io, stdin: readHookStdin(argv) })
-        : argv[0] === "guard"
-          ? runGuard(argv.slice(1), { cwd: process.cwd(), io, stdin: readGuardStdin(argv) })
-          : runCli(argv, { cwd: process.cwd(), io });
+      : argv[0] === "council"
+        ? await runCouncil(argv.slice(1), io)
+        : argv[0] === "learn"
+          ? await runLearn(argv.slice(1), { cwd: process.cwd(), io, stdin: readHookStdin(argv) })
+          : argv[0] === "guard"
+            ? runGuard(argv.slice(1), { cwd: process.cwd(), io, stdin: readGuardStdin(argv) })
+            : runCli(argv, { cwd: process.cwd(), io });
   if (argv[0] !== "runner" || argv[1] !== "serve" || code !== 0) process.exit(code);
 }
