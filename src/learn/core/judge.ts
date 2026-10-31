@@ -24,6 +24,22 @@ const NESTED_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
 /** Trace context the judge must not inherit: it gets its own child carrier instead. */
 const TRACE_CONTEXT_VARS = ["TRACEPARENT", "TRACESTATE", "BAGGAGE"];
 const HOST_MODEL_FIELD = "model";
+/**
+ * Variables that would bill a call to an account instead of the host's signed-in seat:
+ * an API key or bearer token for any provider, and the switches that send the host CLI
+ * to a cloud provider. A subscription-only judge never sees them.
+ */
+const METERED_VARS = /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_/;
+
+/** `env` without the variables that could meter a judge call (`METERED_VARS`). Names are compared, values never read. */
+export function subscriptionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key)));
+}
+
+export interface CommandJudgeOptions {
+  /** Drop every metered credential from the judge's environment, so a call runs on the signed-in seat or fails. */
+  subscriptionOnly?: boolean;
+}
 
 export interface JudgeCallContext {
   /** The enclosing span's id (`trace.ts` `runOf`); null outside a span. */
@@ -398,11 +414,12 @@ function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn
  * A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced.
  * The command runs from the runtime directory, so it discovers no project instructions from its working directory.
  */
-export function commandJudge(config: LearnConfig): JudgeFn {
+export function commandJudge(config: LearnConfig, options: CommandJudgeOptions = {}): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
     mkdirSync(config.runtimeDir, { recursive: true });
     const env: NodeJS.ProcessEnv = {};
-    for (const [key, value] of Object.entries(process.env)) {
+    const parent = options.subscriptionOnly === true ? subscriptionEnv(process.env) : process.env;
+    for (const [key, value] of Object.entries(parent)) {
       if (!NESTED_SESSION_VARS.includes(key) && !TRACE_CONTEXT_VARS.includes(key)) env[key] = value;
     }
     const traceId = context.traceId ?? randomBytes(16).toString("hex");

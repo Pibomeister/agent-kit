@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.75
+  version: 0.1.77
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -35,7 +35,7 @@ package:
   # different texts about different objects, and adapters/codex/CONTRACT.md §5.2
   # is what keeps them from being forced to agree. Stated verbatim by
   # adapters/claude-code/CONTRACT.md §1.
-  description: "One engineering lifecycle, amalgamated from ten donors: nine MIT, one Apache-2.0."
+  description: "One engineering lifecycle, amalgamated from eleven donors: ten MIT, one Apache-2.0."
   # Emitted into both host manifests from here, so the two cannot drift apart or
   # drift from the catalog. Both values are specified verbatim by
   # adapters/claude-code/CONTRACT.md §1 and are not chosen here.
@@ -593,7 +593,7 @@ protocols:
       shown to a seat that judges the change.
 
 # ---------------------------------------------------------------------------
-# Roles — 36. Role prompts, not skills. Never individually invocable.
+# Roles — 38. Role prompts, not skills. Never individually invocable.
 # ---------------------------------------------------------------------------
 roles:
   # Core (6)
@@ -839,6 +839,20 @@ roles:
     summary: >-
       Finds requests repeated across sessions that no installed skill serves and drafts a skill
       candidate for each. Repeated corrections become guardrails, not skills.
+  - id: learn/session-scorer
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Labels one condensed session on efficiency, code quality, procedure compliance and verbosity,
+      with a reason that cites the transcript. The runtime turns the labels into scores.
+  - id: learn/skill-doctor
+    batch: 9
+    provenance_origin: donor
+    status: authored
+    summary: >-
+      Traces the failed sessions of a scored run to instruction gaps in installed skills and drafts
+      the smallest edit for each. Most runs propose none.
 
 # ---------------------------------------------------------------------------
 # References — 11. Loaded on demand. Never exposed as slash commands.

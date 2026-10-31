@@ -3,8 +3,8 @@
   "surfaces": {
     "bundle/claude-code:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 20680,
-      "tokens": 5142
+      "bytes": 21198,
+      "tokens": 5271
     },
     "bundle/claude-code:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -73,8 +73,8 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89549,
-      "tokens": 22360
+      "bytes": 89695,
+      "tokens": 22396
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -853,8 +853,8 @@
     },
     "bundle/codex:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 20680,
-      "tokens": 5142
+      "bytes": 21198,
+      "tokens": 5271
     },
     "bundle/codex:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -923,8 +923,8 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89549,
-      "tokens": 22360
+      "bytes": 89695,
+      "tokens": 22396
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -1703,8 +1703,8 @@
     },
     "bundle/droid:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 20680,
-      "tokens": 5142
+      "bytes": 21198,
+      "tokens": 5271
     },
     "bundle/droid:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -1773,8 +1773,8 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89549,
-      "tokens": 22360
+      "bytes": 89695,
+      "tokens": 22396
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -2553,8 +2553,8 @@
     },
     "bundle/grok:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 20680,
-      "tokens": 5142
+      "bytes": 21198,
+      "tokens": 5271
     },
     "bundle/grok:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -2623,8 +2623,8 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89549,
-      "tokens": 22360
+      "bytes": 89695,
+      "tokens": 22396
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -3403,8 +3403,8 @@
     },
     "bundle/kimi:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 20680,
-      "tokens": 5142
+      "bytes": 21198,
+      "tokens": 5271
     },
     "bundle/kimi:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -3473,8 +3473,8 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89549,
-      "tokens": 22360
+      "bytes": 89695,
+      "tokens": 22396
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
@@ -4311,6 +4311,16 @@
       "bytes": 8989,
       "tokens": 2246
     },
+    "judge:session-scorer": {
+      "file": "src/learn/doctor/score.ts",
+      "bytes": 6916,
+      "tokens": 1729
+    },
+    "judge:skill-doctor": {
+      "file": "src/learn/doctor/suggest.ts",
+      "bytes": 6399,
+      "tokens": 1600
+    },
     "judge:skill-scout": {
       "file": "src/learn/skills/learn.ts",
       "bytes": 6025,
@@ -4318,8 +4328,8 @@
     },
     "repo:AGENTS.md": {
       "file": "AGENTS.md",
-      "bytes": 24108,
-      "tokens": 6013
+      "bytes": 24110,
+      "tokens": 6014
     },
     "repo:CLAUDE.md": {
       "file": "CLAUDE.md",
@@ -4460,6 +4470,16 @@
       "file": "roles/learn/reflector/ROLE.md",
       "bytes": 7022,
       "tokens": 1755
+    },
+    "role:learn/session-scorer": {
+      "file": "roles/learn/session-scorer/ROLE.md",
+      "bytes": 5956,
+      "tokens": 1489
+    },
+    "role:learn/skill-doctor": {
+      "file": "roles/learn/skill-doctor/ROLE.md",
+      "bytes": 5190,
+      "tokens": 1298
     },
     "role:learn/skill-scout": {
       "file": "roles/learn/skill-scout/ROLE.md",

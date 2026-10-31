@@ -27,6 +27,7 @@ const LEARN_AREAS: Readonly<Record<string, () => Promise<LearnArea>>> = {
   setup: async () => (await import("./setup/cli.ts")).setupArea,
   hook: async () => (await import("./hooks.ts")).hookArea,
   stats: async () => (await import("./stats.ts")).statsArea,
+  doctor: async () => (await import("./doctor/cli.ts")).doctorArea,
 };
 
 export async function learnUsage(): Promise<string[]> {
@@ -112,7 +113,8 @@ async function dispatch(argv: readonly string[], options: RunLearnOptions): Prom
     cwd: options.cwd,
     io: options.io,
     config,
-    judge: options.judge ?? commandJudge(config),
+    // The doctor hands the judge whole sessions; it answers on the signed-in seat or not at all.
+    judge: options.judge ?? commandJudge(config, { subscriptionOnly: areaName === "doctor" }),
     env,
     stdin: options.stdin,
   };

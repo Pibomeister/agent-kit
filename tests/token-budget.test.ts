@@ -57,7 +57,15 @@ describe("this tree's agent-facing text", () => {
       "hook:session-start (invented project)",
       "firstmate:adapters/firstmate/WORKER.md",
       "firstmate:stock-brief",
-      ...["pattern-maintainer", "reflector", "consolidator", "lesson-merger", "skill-scout"].map((r) => `judge:${r}`),
+      ...[
+        "pattern-maintainer",
+        "reflector",
+        "consolidator",
+        "lesson-merger",
+        "skill-scout",
+        "session-scorer",
+        "skill-doctor",
+      ].map((r) => `judge:${r}`),
       "distill:tool-calls",
       "hook:semantic-lint-questions",
       ...catalog

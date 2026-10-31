@@ -14,7 +14,15 @@ import { run } from "../../src/learn/core/proc.ts";
 import { removeStartScratch, startScratch } from "./helpers.ts";
 
 const LEARN = join(import.meta.dir, "..", "..", "src", "learn");
-const AREA_MODULES = ["review/cli.ts", "memory/cli.ts", "skills/cli.ts", "setup/cli.ts", "hooks.ts", "stats.ts"];
+const AREA_MODULES = [
+  "review/cli.ts",
+  "memory/cli.ts",
+  "skills/cli.ts",
+  "setup/cli.ts",
+  "hooks.ts",
+  "stats.ts",
+  "doctor/cli.ts",
+];
 const COMMANDS = [
   ["hook", "session-start"],
   ["hook", "prompt"],

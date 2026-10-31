@@ -96,7 +96,15 @@ export function removeStartScratch(): void {
   for (const dir of startScratches.splice(0)) rmSync(dir, { recursive: true, force: true });
 }
 
-export const ROLE_IDS = ["pattern-maintainer", "reflector", "consolidator", "lesson-merger", "skill-scout"] as const;
+export const ROLE_IDS = [
+  "pattern-maintainer",
+  "reflector",
+  "consolidator",
+  "lesson-merger",
+  "skill-scout",
+  "session-scorer",
+  "skill-doctor",
+] as const;
 
 /** A roles directory whose ROLE.md files are one line each, so tests never depend on catalog prose. */
 export function stubRoles(dir: string): string {

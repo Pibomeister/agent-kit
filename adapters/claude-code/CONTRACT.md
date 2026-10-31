@@ -37,7 +37,7 @@ discovery:
 {
   "name": "ak",
   "version": "0.1.0",
-  "description": "One engineering lifecycle, amalgamated from ten donors: nine MIT, one Apache-2.0.",
+  "description": "One engineering lifecycle, amalgamated from eleven donors: ten MIT, one Apache-2.0.",
   "author": { "name": "agent-kit maintainers" },
   "license": "MIT",
   "skills": ["./skills/super-align", "./skills/super-bound"],
@@ -290,6 +290,13 @@ judge call. The host CLI documents
 `--disable-slash-commands` as disabling skills and `--setting-sources` as selecting settings inputs,
 but documents no login guarantee for either. The runtime therefore adopts neither: login
 preservation is required before a context-reduction flag can enter the scheduled path.
+
+`ak learn doctor` hands the judge condensed whole sessions, so its default judge runs
+subscription-only. Every variable that could bill the call to an account (`*_API_KEY`,
+`*_AUTH_TOKEN`, `*_BEARER_TOKEN`, `AWS_BEARER_TOKEN*` and `CLAUDE_CODE_USE_*`) is dropped by name
+from the judge's environment, so the call answers on the host's signed-in seat or fails
+(`src/learn/core/judge.ts` `subscriptionEnv`). The doctor refuses an output path inside a work
+tree unless git ignores it, and it never edits a skill file.
 
 Each memory ledger keeps episodes, captured worker observations and worker sessions in
 `raw/learn.sqlite`, an agent-kit database excluded from ledger commits along with its journal files.

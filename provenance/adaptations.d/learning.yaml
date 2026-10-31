@@ -1,12 +1,12 @@
 # Provenance fragment for the "learning" batch: compound, compound-refresh, the skill scout, the
-# evidence-source contracts, the claude-mem mode file and the review-event schema.
+# skill doctor, the evidence-source contracts, the claude-mem mode file and the review-event schema.
 #
 # One row per (path, source) pair, keyed `path:` with a single `source:`, which is what
 # loadAdaptationFragments reads (src/validation/provenance.ts). One fragment owns each adapted path.
 #
 # Donor ids and commits are those pinned in provenance/upstream.lock.yaml. Every source path below
 # was verified to exist at its pin with `git cat-file -e` in the pinned clone before it was written
-# here. The rest of the learning batch — the evidence-gate protocol and four of the five learn
+# here. The rest of the learning batch — the evidence-gate protocol and four of the seven learn
 # roles — has no upstream source and is recorded in provenance/conversation-map.yaml instead.
 #
 # claude-mem is Apache-2.0. Each row adapted from it states what was changed, as section 4(b) of
@@ -124,3 +124,78 @@ adaptations:
       extractUserMessages ports extract_user_messages, with should_include_message's filter: user
       turns of a JSONL transcript, meta turns and non-text parts dropped. The messages feed the skill
       scout's repetition count; the donor's in-command skill writing is not ported.
+
+  # --- skill doctor (src/learn/doctor, ak learn doctor) ------------------------------
+
+  - path: src/learn/doctor/collect.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scripts/collect_sessions.py
+    rationale: >-
+      The collector is ported: per-entry truncation (1500 characters for a message, 500 for a tool
+      call or its output), the 160-entry head-and-tail cut, injected-context filtering, skill
+      detection intersected with installed skill names, the 45-day window and the newest-first
+      sample of 12 sessions with 3 per skill and 4 with no skill. Changed: Grok sessions are read
+      as well as Claude Code and Codex, Warp's own store is not read, a session matches a
+      repository by its working directory as text so no git process starts on a session's
+      directory, user corrections are counted with claude-reflect's detectPatterns, and every
+      condensed transcript passes the runtime's secret scrub before it is written.
+
+  - path: src/learn/doctor/score.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/SKILL.md
+    rationale: >-
+      Step 3's aggregation is ported: label scores, the 0.5 + 0.5 x score curve, the rubric
+      weights, skill coverage as the share of sessions that used an installed skill, a session
+      failing below 0.5 on any rubric, and code quality's insufficient-evidence sessions left out of
+      its mean. Changed: the judge returns labels only and the runtime maps them to scores; a reply
+      missing a valid label leaves the session unscored rather than scored zero.
+
+  - path: src/learn/doctor/score.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scripts/render_report.py
+    rationale: >-
+      The grade bands from A+ at 0.97 down to F below 0.6 are ported unchanged.
+
+  - path: src/learn/doctor/suggest.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/references/skill-improvements.md
+    rationale: >-
+      The filing bar for a skill edit becomes deterministic gates on the judge's reply: evidence
+      must cite a failed session, an edit must name an installed skill and replace text that occurs
+      in it exactly once, and a rule a human rejected is not proposed again. Changed: proposals are
+      drafts recorded with their accept or reject outcome in the skills ledger; no skill file is
+      written (ruling learning-drafts-not-publishes).
+
+  - path: src/learn/doctor/render.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scripts/render_report.py
+    rationale: >-
+      The report's sections are adapted: the overall grade, the five sub-scores, top findings,
+      proposed edits with their diffs and the per-session table. Changed: the page is one
+      self-contained file with no script, no remote font and a content security policy that
+      blocks every fetch, styled with this package's palette instead of the donor's assets.
+
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/efficiency.md
+    rationale: >-
+      The efficiency rubric and its four labels are condensed into the seat's first rubric.
+
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/code-quality.md
+    rationale: >-
+      The code-quality rubric, its approve or block verdict and the insufficient-evidence label are
+      condensed into the seat's second rubric.
+
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/procedure-compliance.md
+    rationale: >-
+      The procedure-compliance rubric, with its applicability rule and the weight on protective
+      rules, is condensed into the seat's third rubric.
+
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/verbosity.md
+    rationale: >-
+      The verbosity rubric and its proportionate, verbose and terse labels are condensed into the
+      seat's fourth rubric.
+
+  - path: roles/learn/skill-doctor/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/references/skill-improvements.md
+    rationale: >-
+      The method (cluster, rank, verify, smallest edit, replace rather than append) and the
+      file-only-when and do-not-file lists become the seat's judgement and its Never rows. Changed:
+      the seat returns proposals to the runtime instead of opening a change.
