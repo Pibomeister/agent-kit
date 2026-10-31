@@ -6,8 +6,8 @@
  * the hosts' own stores, condensed into a directory the caller names, which may
  * not be a tracked part of any repository, and handed only to the configured
  * judge command. The judge runs without metered credentials in its environment
- * (`core/judge.ts` `subscriptionEnv`), so it answers on the host's signed-in
- * seat or not at all. Nothing here edits a skill file (ruling
+ * or reapplied from user settings (`core/judge.ts` `subscriptionEnv`,
+ * `subscriptionCommand`), so it answers on the host's signed-in seat or not at all. Nothing here edits a skill file (ruling
  * `learning-drafts-not-publishes`); `--record` writes the scores' labels and the
  * proposals to the repository's skills ledger, and `accept` / `reject` record a
  * human's decision there for the next run to read.

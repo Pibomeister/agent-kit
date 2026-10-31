@@ -18,7 +18,8 @@ import {
 import { dirname, join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
-import { commandJudge, subscriptionEnv, type JudgeCallContext } from "../../src/learn/core/judge.ts";
+import { DEFAULT_JUDGE } from "../../src/learn/core/config.ts";
+import { commandJudge, subscriptionEnv, type JudgeCallContext, type JudgeFn } from "../../src/learn/core/judge.ts";
 import { worktreesPath } from "../../src/learn/core/paths.ts";
 import { run as runProcess } from "../../src/learn/core/proc.ts";
 import { scrubSecrets } from "../../src/learn/core/secrets.ts";
@@ -743,6 +744,8 @@ describe("subscription-only judge", () => {
         AWS_BEARER_TOKEN_BEDROCK: "t",
         CLAUDE_CODE_USE_BEDROCK: "1",
         CLAUDE_CODE_USE_VERTEX: "1",
+        ANTHROPIC_BASE_URL: "http://proxy",
+        ANTHROPIC_BEDROCK_BASE_URL: "http://proxy",
         CLAUDE_CODE_OAUTH_TOKEN: "o",
         HOME: "/h",
         PATH: "/bin",
@@ -766,12 +769,44 @@ describe("subscription-only judge", () => {
       else process.env.ANTHROPIC_API_KEY = previous;
     }
   });
+
+  test("user settings cannot reapply a metered credential, base URL or key helper inside the judge", () => {
+    const ctx = testContext();
+    const bin = scratch("ak-judge-bin-");
+    const claude = join(bin, "claude");
+    writeFileSync(claude, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
+    chmodSync(claude, 0o755);
+    const configDir = scratch("ak-judge-config-");
+    writeFileSync(
+      join(configDir, "settings.json"),
+      JSON.stringify({
+        env: { ANTHROPIC_BASE_URL: "http://proxy", CLAUDE_CODE_USE_BEDROCK: "1", ANTHROPIC_API_KEY: "k", KEEP: "v" },
+        apiKeyHelper: "print-key",
+      }),
+    );
+    const config = { ...ctx.config, configDir, judgeCommand: [claude, ...DEFAULT_JUDGE.slice(1)] };
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toEqual([
+      {
+        disableAllHooks: true,
+        env: { ANTHROPIC_BASE_URL: "", CLAUDE_CODE_USE_BEDROCK: "", ANTHROPIC_API_KEY: "" },
+        apiKeyHelper: "",
+      },
+    ]);
+    expect(settingsOf(commandJudge(config)("prompt", context))).toEqual([{ disableAllHooks: true }]);
+  });
 });
 
 function verb(name: string, argv: readonly string[], ctx: TestContext): number {
   const found = doctorArea.verbs[name];
   if (found === undefined) throw new Error(`no verb ${name}`);
   return found.run(parseLearnArgs(argv), ctx);
+}
+
+/** Each `--settings` value the fake host CLI echoed back as its argv, parsed. */
+function settingsOf(reply: ReturnType<JudgeFn>): unknown[] {
+  const argv = Array.isArray(reply?.argv) ? reply.argv.map(String) : [];
+  return argv.flatMap((arg, index): unknown[] => (argv[index - 1] === "--settings" ? [JSON.parse(arg)] : []));
 }
 
 function mode(path: string): number {

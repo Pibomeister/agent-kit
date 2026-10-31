@@ -10,12 +10,12 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
 import type { Loop } from "./paths.ts";
 import { run } from "./proc.ts";
-import { gateJsonText, gateText } from "./store.ts";
+import { gateJsonText, gateText, readText } from "./store.ts";
 import type { LearnRole } from "./roles.ts";
 import { carrierOf, recordJudgeAttempt } from "./trace.ts";
 
@@ -26,14 +26,53 @@ const TRACE_CONTEXT_VARS = ["TRACEPARENT", "TRACESTATE", "BAGGAGE"];
 const HOST_MODEL_FIELD = "model";
 /**
  * Variables that would bill a call to an account instead of the host's signed-in seat:
- * an API key or bearer token for any provider, and the switches that send the host CLI
- * to a cloud provider. A subscription-only judge never sees them.
+ * an API key or bearer token for any provider, a provider base URL that reroutes the
+ * call, and the switches that send the host CLI to a cloud provider. A subscription-only
+ * judge never sees them.
  */
-const METERED_VARS = /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_/;
+const METERED_VARS = /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN|_BASE_URL)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_/;
 
 /** `env` without the variables that could meter a judge call (`METERED_VARS`). Names are compared, values never read. */
 export function subscriptionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key)));
+}
+
+/** A host settings text as an object; anything else reads as no settings. */
+function settingsFrom(text: string): HostEnvelope {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return validateHostEnvelope(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The host CLI's command with a `--settings` layer that blanks what the user's
+ * `settings.json` would reapply over `subscriptionEnv`: each `METERED_VARS` name in
+ * its `env`, and `apiKeyHelper`. The flag layer outranks user settings, so the call
+ * stays on the signed-in seat. Any other command is returned as given.
+ */
+export function subscriptionCommand(command: readonly string[], configDir: string): string[] {
+  if (command[0] === undefined || basename(command[0]) !== "claude") return [...command];
+  const user = settingsFrom(readText(join(configDir, "settings.json")));
+  const userEnv = validateHostEnvelope(user.env) ? user.env : {};
+  const blanked = Object.keys(userEnv).filter((key) => METERED_VARS.test(key));
+  const at = command.indexOf("--settings");
+  const given = at === -1 ? undefined : command[at + 1];
+  const base = settingsFrom(
+    given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(given),
+  );
+  const baseEnv = validateHostEnvelope(base.env) ? base.env : {};
+  const helper = "apiKeyHelper" in user ? ["apiKeyHelper"] : [];
+  const text = JSON.stringify({
+    ...base,
+    env: { ...baseEnv, ...Object.fromEntries(blanked.map((key) => [key, ""])) },
+    ...Object.fromEntries(helper.map((key) => [key, ""])),
+  });
+  return given === undefined
+    ? [...command.slice(0, 1), "--settings", text, ...command.slice(1)]
+    : [...command.slice(0, at + 1), text, ...command.slice(at + 2)];
 }
 
 export interface CommandJudgeOptions {
@@ -422,11 +461,15 @@ export function commandJudge(config: LearnConfig, options: CommandJudgeOptions =
     for (const [key, value] of Object.entries(parent)) {
       if (!NESTED_SESSION_VARS.includes(key) && !TRACE_CONTEXT_VARS.includes(key)) env[key] = value;
     }
+    const command =
+      options.subscriptionOnly === true
+        ? subscriptionCommand(config.judgeCommand, config.configDir)
+        : config.judgeCommand;
     const traceId = context.traceId ?? randomBytes(16).toString("hex");
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const carrier = { traceId, spanId: randomBytes(8).toString("hex") };
       const startedAt = Date.now();
-      const result = run(config.judgeCommand, {
+      const result = run(command, {
         cwd: config.runtimeDir,
         input: prompt,
         env: { ...env, TRACEPARENT: carrierOf(carrier) },
