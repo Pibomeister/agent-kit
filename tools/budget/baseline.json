@@ -3,8 +3,8 @@
   "surfaces": {
     "bundle/claude-code:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21349,
-      "tokens": 5309
+      "bytes": 21387,
+      "tokens": 5318
     },
     "bundle/claude-code:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -853,8 +853,8 @@
     },
     "bundle/codex:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21349,
-      "tokens": 5309
+      "bytes": 21387,
+      "tokens": 5318
     },
     "bundle/codex:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -1703,8 +1703,8 @@
     },
     "bundle/droid:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21349,
-      "tokens": 5309
+      "bytes": 21387,
+      "tokens": 5318
     },
     "bundle/droid:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -2553,8 +2553,8 @@
     },
     "bundle/grok:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21349,
-      "tokens": 5309
+      "bytes": 21387,
+      "tokens": 5318
     },
     "bundle/grok:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
@@ -3403,8 +3403,8 @@
     },
     "bundle/kimi:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
-      "bytes": 21349,
-      "tokens": 5309
+      "bytes": 21387,
+      "tokens": 5318
     },
     "bundle/kimi:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
