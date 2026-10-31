@@ -168,6 +168,16 @@ start, checkpoint ledger and trusted evidence outside the worker worktree. The o
 not required for stock Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in core, its tests or
 CI needs Firstmate installed.
 
+**The council is optional.** `ak council run --card <card.json> --council-config <roster> [--context <file>]... [--out <record.json>]`
+asks two primary seats and a blind veto seat one question outside a runner. The card holds `id`, `question`,
+`options` and `approve`. The owner-only roster is `{"pair":[<seat>,<seat>],"veto":<seat>}`, where a seat is
+`{"seat":"...","chain":[{"actor":"...","lineage":["..."],"command":["..."],"requested":"...","env":["..."]}]}`
+with `requested` and `env` optional and each `lineage` naming its own `actor`. Each launcher gets the payload on stdin and
+prints JSON with `choice`, `rationale` and optionally `model_served`. The command exits 0 on `approve` or `decline`,
+1 on `escalate` or `refused`, and 2 on a usage or configuration error. The record grants no authority.
+[ADR-0015](docs/decisions/0015-council-blind-veto.md) owns the rule and the outbound gate;
+[`adapters/runner-contract/CLI.md`](adapters/runner-contract/CLI.md) owns the runner's `--council-config`.
+
 **Bypass, for one task.** A supervisor who wants a task to run without typing each phase command writes
 a grant from its own home with `node <bundle>/bin/ak-gate.mjs bypass grant`, and the worker checks it before
 each human-started phase. A grant holds in each lifecycle run of its task while that run is its
