@@ -458,6 +458,11 @@ function mtime(path: string): number {
   }
 }
 
+/** The working directory the first Claude Code record that names one carries. */
+function firstCwd(rows: JsonObject[]): string | null {
+  return str(rows.find((row) => str(row.cwd) !== null)?.cwd);
+}
+
 /** Every session file in the window, placed by the working directory its first records name, read past the peek when it misses. */
 function locate(options: CollectOptions): Located[] {
   const since = options.now - options.days * 86_400_000;
@@ -469,8 +474,7 @@ function locate(options: CollectOptions): Located[] {
   if (options.hosts.includes("claude")) {
     for (const home of options.claudeHomes) {
       for (const path of files(join(home, "projects"), (name) => name.endsWith(".jsonl"), 1)) {
-        const first = (rows: JsonObject[]) => str(rows.find((row) => str(row.cwd) !== null)?.cwd);
-        keep("claude", path, (p) => first(peekRows(p)) ?? first(readRows(p)));
+        keep("claude", path, (p) => firstCwd(peekRows(p)) ?? firstCwd(readRows(p)));
       }
     }
   }
@@ -499,11 +503,9 @@ interface SkillFront {
 
 /** The `name` and `description` of a SKILL.md frontmatter block, read as YAML; a field that is absent or not text is null. */
 export function frontmatter(source: string): SkillFront {
-  const { data } = parseFrontmatter(source);
-  const field = (key: string): string | null => {
-    const value = data[key];
-    return typeof value === "string" ? value.trim() : null;
-  };
+  // The YAML core schema yields only JSON values, so the round trip decodes the block without changing it.
+  const data = object(parseJson(JSON.stringify(parseFrontmatter(source).data)));
+  const field = (key: string): string | null => str(data?.[key])?.trim() ?? null;
   return { name: field("name"), description: field("description") };
 }
 

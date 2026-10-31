@@ -1032,10 +1032,10 @@ describe("ak learn doctor", () => {
     const out = join(w.base, "out");
     expect(verb("run", ["--out", out, "--repo", w.repo, ...homes], ctx)).toBe(0);
     const proposed = join(out, "proposed");
-    const texts = readdirSync(proposed).map((id) => readFileSync(join(proposed, id, "SKILL.md"), "utf8"));
-    expect(texts).toHaveLength(2);
-    expect(texts.filter((text) => text.includes("record the failing command"))).toHaveLength(1);
-    expect(texts.filter((text) => text.includes("Bisect last."))).toHaveLength(1);
+    const proposedTexts = readdirSync(proposed).map((id) => readFileSync(join(proposed, id, "SKILL.md"), "utf8"));
+    expect(proposedTexts).toHaveLength(2);
+    expect(proposedTexts.filter((text) => text.includes("record the failing command"))).toHaveLength(1);
+    expect(proposedTexts.filter((text) => text.includes("Bisect last."))).toHaveLength(1);
   });
 
   test("a held ledger lock fails --record and leaves the report without a decision command", () => {
