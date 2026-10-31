@@ -216,6 +216,15 @@
       },
       "x-validator-rule": "charter.supervisor-seats-independent-and-not-the-implementer"
     },
+    "council": {
+      "description": "Opt-in blind veto (docs/decisions/0015-council-blind-veto.md). With 'blind_veto' set to 'required', an approval the two supervisor seats agree on stands only when a third, blind veto seat also approves the same frozen packet. The veto is a refusal-only side record: it is not a third supervisor seat and not a third judgment, it never breaks a tie and it never approves alone. A missing, unavailable, non-independent or non-approving veto turns the pair's approval into one escalation. Who fills the veto seat lives in the operator's private council configuration, never in the charter.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blind_veto"],
+      "properties": {
+        "blind_veto": { "const": "required" }
+      }
+    },
     "ci_repair": {
       "description": "Plan 7.5. The repair's purpose is limited to test failures; that is a limit on purpose, not permission to edit tests until they pass. No skipped check, weakened assertion, lowered threshold or removed coverage without a separate decision, and a required product-code change goes back through diagnosis, a bounded patch, new verification and affected delta review (release scenario 19).",
       "type": "object",

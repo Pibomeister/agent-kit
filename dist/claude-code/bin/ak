@@ -17434,6 +17434,15 @@ var init_charter_schema = __esm(() => {
         },
         "x-validator-rule": "charter.supervisor-seats-independent-and-not-the-implementer"
       },
+      council: {
+        description: "Opt-in blind veto (docs/decisions/0015-council-blind-veto.md). With 'blind_veto' set to 'required', an approval the two supervisor seats agree on stands only when a third, blind veto seat also approves the same frozen packet. The veto is a refusal-only side record: it is not a third supervisor seat and not a third judgment, it never breaks a tie and it never approves alone. A missing, unavailable, non-independent or non-approving veto turns the pair's approval into one escalation. Who fills the veto seat lives in the operator's private council configuration, never in the charter.",
+        type: "object",
+        additionalProperties: false,
+        required: ["blind_veto"],
+        properties: {
+          blind_veto: { const: "required" }
+        }
+      },
       ci_repair: {
         description: "Plan 7.5. The repair's purpose is limited to test failures; that is a limit on purpose, not permission to edit tests until they pass. No skipped check, weakened assertion, lowered threshold or removed coverage without a separate decision, and a required product-code change goes back through diagnosis, a bounded patch, new verification and affected delta review (release scenario 19).",
         type: "object",
@@ -33018,11 +33027,11 @@ var init_hooks2 = __esm(() => {
 // src/maintenance/cli.ts
 init_common_schema();
 var import_ajv15 = __toESM(require_ajv(), 1);
-var import__202011 = __toESM(require_2020(), 1);
+var import__202012 = __toESM(require_2020(), 1);
 import { spawnSync as spawnSync5 } from "child_process";
-import { existsSync as existsSync36, readFileSync as readFileSync33, realpathSync as realpathSync13 } from "fs";
+import { existsSync as existsSync36, readFileSync as readFileSync34, realpathSync as realpathSync15 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename17, isAbsolute as isAbsolute17, join as join43, relative as relative14 } from "path";
+import { basename as basename18, isAbsolute as isAbsolute17, join as join43, relative as relative14 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -36460,7 +36469,7 @@ function resolveLink(absolute) {
 // src/runner/cli.ts
 init_hash();
 import { timingSafeEqual } from "crypto";
-import { chmodSync as chmodSync2, existsSync as existsSync35, readFileSync as readFileSync29, realpathSync as realpathSync11, unlinkSync } from "fs";
+import { chmodSync as chmodSync2, existsSync as existsSync35, readFileSync as readFileSync30, realpathSync as realpathSync13, unlinkSync } from "fs";
 import { createConnection, createServer } from "net";
 import { dirname as dirname19, isAbsolute as isAbsolute15, relative as relative12, resolve as resolve13 } from "path";
 
@@ -36497,6 +36506,27 @@ class PrivateFileEvidenceStore {
       throw new Error("evidence ref escapes runner store");
     return readFileSync25(resolved);
   }
+}
+
+// src/runner/lineage.ts
+function sharesLineage(a, b) {
+  return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+}
+
+// src/council/rule.ts
+function workerVeto(veto) {
+  return veto.status === "answered" ? { status: veto.status, choice: veto.choice } : { status: veto.status };
+}
+function vetoRefusal(approve, veto, pair, excluded) {
+  if (veto === undefined)
+    return "The charter requires a blind veto seat judgment and none was recorded";
+  if (veto.status === "unavailable")
+    return "The blind veto seat was unavailable";
+  if (pair.some((judgment) => sharesLineage(judgment, veto)) || excluded.some((actor) => veto.actor === actor || veto.lineage.includes(actor)) || !veto.lineage.includes(veto.actor))
+    return "The blind veto seat is not independent of the supervisor pair";
+  if (veto.choice !== approve)
+    return `The blind veto seat did not approve; it chose ${veto.choice}`;
+  return null;
 }
 
 // src/runner/wire.ts
@@ -37035,8 +37065,10 @@ function verdictBase(run2) {
     throw new Error("charter names no verdict base branch");
   return baseRef;
 }
-function sharesLineage(a, b) {
-  return a.actor === b.actor || a.lineage.includes(b.actor) || b.lineage.includes(a.actor);
+function unjudged(card) {
+  const frozen = { ...card, judgments: [] };
+  delete frozen.veto;
+  return frozen;
 }
 function approved(decision) {
   const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
@@ -37658,13 +37690,13 @@ class Runner {
       throw new Error("invalid checkpoint card: options must leave room for refusal and name a non-reserved approving option");
     const existing = run2.cards[card.id];
     if (existing !== undefined) {
-      if (JSON.stringify({ ...existing, judgments: [] }) !== JSON.stringify({ ...card, judgments: [] }))
+      if (JSON.stringify(unjudged(existing)) !== JSON.stringify(unjudged(card)))
         throw new Error("checkpoint card changed");
       return existing;
     }
     if (run2.decisions.some((d) => d.result.status === "complete" && !approved(d) && d.answer?.choice !== "retry" && d.card.operation === card.operation && d.card.artifact_hash === card.artifact_hash && d.revision === run2.revision && d.diff_hash === run2.diff_hash))
       throw new Error("a non-approving ruling settled this artifact at this revision; revise it before preparing another");
-    const prepared = { ...card, judgments: [] };
+    const prepared = unjudged(card);
     run2.cards[card.id] = prepared;
     this.save(run2);
     return prepared;
@@ -37689,9 +37721,46 @@ class Runner {
       throw new Error("seat is not independently dispatched");
     if (card.judgments.some((j) => sharesLineage(j, { actor, lineage })))
       throw new Error("invalid or excluded seat");
+    if (card.veto?.status === "answered" && sharesLineage(card.veto, { actor, lineage }))
+      throw new Error("seat shares a lineage with the blind veto seat");
     if (inputDispatches.length > 0)
       throw new Error("seat input includes another dispatch");
     card.judgments.push({ seat, actor, dispatch: dispatch2, choice, rationale, input_dispatches: inputDispatches, lineage });
+    this.save(run2);
+    return card;
+  }
+  vetoDue(id, cardId) {
+    const run2 = this.load(id);
+    const card = run2.cards[cardId];
+    if (card === undefined)
+      throw new Error(unknownCard(run2, cardId));
+    return run2.charter.council?.blind_veto === "required" && card.veto === undefined && !run2.decisions.some((d) => d.card.id === cardId) && card.judgments.length === 2 && card.judgments.every((j) => j.choice === card.approve);
+  }
+  veto(id, cardId, record) {
+    const run2 = this.load(id);
+    const card = run2.cards[cardId];
+    if (card === undefined)
+      throw new Error(unknownCard(run2, cardId));
+    if (card.veto !== undefined) {
+      if (JSON.stringify(card.veto) === JSON.stringify(record))
+        return card;
+      throw new Error("blind veto changed after first submission");
+    }
+    if (STOPPED.has(run2.run_state))
+      throw new Error("run is stopped; no new veto can be submitted");
+    if (run2.charter.council?.blind_veto !== "required")
+      throw new Error("charter does not seat a blind veto");
+    if (run2.decisions.some((d) => d.card.id === cardId))
+      throw new Error("card is already decided");
+    if (!ID.test(record.seat) || run2.charter.supervisors.seats.some((seat) => seat.id === record.seat))
+      throw new Error("blind veto seat must not be a supervisor seat");
+    if (record.status === "answered") {
+      if (!card.options.includes(record.choice) || !ID.test(record.dispatch) || !record.lineage.includes(record.actor) || run2.excluded_actors.some((excluded) => record.actor === excluded || record.lineage.includes(excluded)))
+        throw new Error("invalid or excluded veto seat");
+      if (card.judgments.some((j) => j.dispatch === record.dispatch || sharesLineage(j, record)))
+        throw new Error("blind veto seat is not independent of the supervisor pair");
+    }
+    card.veto = record;
     this.save(run2);
     return card;
   }
@@ -37805,6 +37874,11 @@ class Runner {
     if (card.judgments[0]?.choice !== card.judgments[1]?.choice)
       return this.refuse(run2, card, "runner:supervisor-disagreement", "Supervisor seats disagreed");
     const approve = card.judgments[0]?.choice === card.approve;
+    if (approve && run2.charter.council?.blind_veto === "required") {
+      const blocked = vetoRefusal(card.approve, card.veto, card.judgments, run2.excluded_actors);
+      if (blocked !== null)
+        return this.refuse(run2, card, "runner:council-veto", blocked);
+    }
     const result = {
       operation: card.operation,
       status: "complete",
@@ -38164,12 +38238,240 @@ class Runner {
   }
 }
 
-// src/runner/token.ts
+// src/council/config.ts
+var import__202011 = __toESM(require_2020(), 1);
 import { readFileSync as readFileSync28, realpathSync as realpathSync10, statSync as statSync17 } from "fs";
+var DEFAULT_TIMEOUT_MS = 900000;
+var ajv6 = new import__202011.default({ strict: false });
+var nonEmpty = { type: "string", minLength: 1 };
+var launcher = {
+  type: "object",
+  additionalProperties: false,
+  required: ["actor", "lineage", "command"],
+  properties: {
+    actor: nonEmpty,
+    lineage: { type: "array", minItems: 1, items: nonEmpty },
+    command: { type: "array", minItems: 1, items: nonEmpty },
+    requested: nonEmpty,
+    env: { type: "array", items: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_]*$" } }
+  }
+};
+var seat = {
+  type: "object",
+  additionalProperties: false,
+  required: ["seat", "chain"],
+  properties: {
+    seat: { type: "string", pattern: "^[a-z0-9][a-z0-9-]*$" },
+    chain: { type: "array", minItems: 1, items: launcher }
+  }
+};
+var isCouncilConfig = ajv6.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["veto"],
+  properties: {
+    pair: { type: "array", minItems: 2, maxItems: 2, items: seat },
+    veto: seat
+  }
+});
+var isCouncilAnswer = ajv6.compile({
+  type: "object",
+  additionalProperties: false,
+  required: ["choice", "rationale"],
+  properties: { choice: { type: "string" }, rationale: { type: "string" }, model_served: nonEmpty }
+});
+function rosterProblems(seats) {
+  const problems = [];
+  if (new Set(seats.map((s) => s.seat)).size !== seats.length)
+    problems.push("council seats must have distinct ids");
+  for (const [i, a] of seats.entries()) {
+    if (new Set(a.chain.map((l) => l.actor)).size !== a.chain.length)
+      problems.push(`seat ${a.seat} names an actor twice in its chain`);
+    for (const l of a.chain)
+      if (!l.lineage.includes(l.actor))
+        problems.push(`seat ${a.seat} launcher ${l.actor} omits itself from its lineage`);
+    for (const b of seats.slice(i + 1))
+      if (a.chain.some((l) => b.chain.some((m) => sharesLineage(l, m))))
+        problems.push(`seats ${a.seat} and ${b.seat} share a lineage`);
+  }
+  return problems;
+}
+function readCouncilConfig(path) {
+  const real = realpathSync10(path);
+  const stat = statSync17(real);
+  if (!stat.isFile())
+    throw new Error("council configuration is not a regular file");
+  if ((stat.mode & 63) !== 0)
+    throw new Error("council configuration must be owner only: no group or other permission bits");
+  const uid = process.getuid?.();
+  if (uid !== undefined && stat.uid !== uid)
+    throw new Error("council configuration must be owned by the operator running the council");
+  const value = JSON.parse(readFileSync28(real, "utf8"));
+  if (!isCouncilConfig(value))
+    throw new Error(`invalid council configuration: ${JSON.stringify(isCouncilConfig.errors)}`);
+  return value;
+}
+
+// src/council/outbound.ts
+init_secrets();
+import { realpathSync as realpathSync11 } from "fs";
+import { basename as basename17 } from "path";
+var DEFAULT_MAX_BYTES = 262144;
+var BUILT_IN_DENY = [
+  ".env",
+  ".env.*",
+  "*.pem",
+  "*.key",
+  "*.p12",
+  "*.pfx",
+  "*.keystore",
+  "*.jks",
+  "id_rsa*",
+  "id_dsa*",
+  "id_ecdsa*",
+  "id_ed25519*",
+  ".ssh",
+  ".aws",
+  ".gnupg",
+  ".docker",
+  ".kube",
+  ".git",
+  ".npmrc",
+  ".netrc",
+  ".pypirc",
+  "credentials*",
+  "secrets*"
+];
+var REFUSING_KINDS = SECRET_KINDS.filter((kind) => kind !== "home-path");
+function segmentPattern(entry) {
+  const escaped = entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
+  return new RegExp(`^${escaped}$`, "i");
+}
+function deniedSegment(path) {
+  const segments = path.split(/[\\/]+/).filter((segment) => segment.length > 0);
+  const name = basename17(path);
+  for (const entry of BUILT_IN_DENY) {
+    const pattern = segmentPattern(entry);
+    if (pattern.test(name) || segments.some((segment) => pattern.test(segment)))
+      return entry;
+  }
+  return null;
+}
+function deniedBy(path) {
+  const given = deniedSegment(path);
+  if (given !== null)
+    return given;
+  try {
+    return deniedSegment(realpathSync11(path));
+  } catch {
+    return null;
+  }
+}
+var JSON_ESCAPE = /\\(?:u([0-9a-fA-F]{4})|(["\\/bfnrt]))/g;
+var JSON_ESCAPED = new Map([
+  ["b", "\b"],
+  ["f", "\f"],
+  ["n", `
+`],
+  ["r", "\r"],
+  ["t", "\t"]
+]);
+function jsonDecoded(text2) {
+  const once = text2.replace(JSON_ESCAPE, (_, hex2, char) => hex2 === undefined ? JSON_ESCAPED.get(char) ?? char : String.fromCharCode(Number.parseInt(hex2, 16)));
+  return once === text2 ? text2 : jsonDecoded(once);
+}
+function checkOutbound(items, sent) {
+  const refusals = [];
+  for (const item of items) {
+    if (item.path !== undefined) {
+      const entry = deniedBy(item.path);
+      if (entry !== null)
+        refusals.push({ kind: "deny-listed", label: item.label, detail: `path matches deny-list entry ${entry}` });
+    }
+    const raw = scrubSecrets(item.text).found;
+    const decoded = scrubSecrets(jsonDecoded(item.text)).found;
+    const kinds = REFUSING_KINDS.filter((kind) => (raw[kind] ?? 0) + (decoded[kind] ?? 0) > 0);
+    if (kinds.length > 0)
+      refusals.push({ kind: "secret", label: item.label, detail: `detected credential kinds: ${kinds.join(", ")}` });
+  }
+  const bytes = sent === undefined ? items.reduce((sum, item) => sum + Buffer.byteLength(item.text, "utf8"), 0) : Buffer.byteLength(sent, "utf8");
+  if (bytes > DEFAULT_MAX_BYTES)
+    refusals.push({
+      kind: "too-large",
+      label: "payload",
+      detail: `payload is ${bytes} bytes; the cap is ${DEFAULT_MAX_BYTES}`
+    });
+  return refusals;
+}
+function describeRefusals(refusals) {
+  return refusals.map((refusal) => `outbound ${refusal.kind}: ${refusal.label}: ${refusal.detail}`);
+}
+
+// src/council/seat.ts
+var UNSPECIFIED = "unspecified";
+var UNVERIFIED = "unverified";
+function reason(cause) {
+  return (cause instanceof Error ? cause.message : String(cause)).slice(0, 500);
+}
+function killGroup(pid, signal = "SIGKILL") {
+  try {
+    process.kill(-pid, signal);
+  } catch {}
+}
+async function collectDetached(child, live, timeoutMs, what) {
+  live.add(child.pid);
+  const output = Promise.all([
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).arrayBuffer(),
+    child.exited
+  ]).then(([stdout, stderr, exitCode]) => ({ exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }));
+  let timer;
+  const pending = [output];
+  if (timeoutMs !== undefined)
+    pending.push(new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        killGroup(child.pid);
+        reject(new Error(`${what} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    }));
+  try {
+    return await Promise.race(pending);
+  } finally {
+    clearTimeout(timer);
+    live.delete(child.pid);
+  }
+}
+async function launchSeat(seat2, payload, options, spawn2) {
+  const attempts = [];
+  for (const launcher2 of seat2.chain) {
+    const attempt = { actor: launcher2.actor, model_requested: launcher2.requested ?? UNSPECIFIED };
+    attempts.push(attempt);
+    try {
+      const child = await spawn2(launcher2, payload);
+      if (child.exitCode !== 0)
+        throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
+      const value = JSON.parse(child.stdout.toString());
+      if (!isCouncilAnswer(value))
+        throw new Error("launcher returned an invalid answer");
+      if (!options.includes(value.choice))
+        throw new Error(`launcher chose ${value.choice}, which is not an option`);
+      return { ok: true, launcher: launcher2, answer: value, attempts };
+    } catch (cause) {
+      attempt.error = reason(cause);
+    }
+  }
+  return { ok: false, attempts };
+}
+function chainFailures(seat2, attempts) {
+  return attempts.map((attempt) => `seat ${seat2} ${attempt.actor}: ${attempt.error ?? "no answer"}`);
+}
+
+// src/runner/token.ts
+import { readFileSync as readFileSync29, realpathSync as realpathSync12, statSync as statSync18 } from "fs";
 import { dirname as dirname18, isAbsolute as isAbsolute14, relative as relative11 } from "path";
 function readAdminToken(path, forbiddenRoot) {
-  const at = realpathSync10(path);
-  const root = realpathSync10(forbiddenRoot);
+  const at = realpathSync12(path);
+  const root = realpathSync12(forbiddenRoot);
   const rel = relative11(root, at);
   const underRoot = rel === "" || !rel.startsWith("..") && !isAbsolute14(rel);
   const probe = gitProcess(resolveRunnerGit(root), dirname18(at), [
@@ -38179,9 +38481,9 @@ function readAdminToken(path, forbiddenRoot) {
   ]);
   if (underRoot || probe.code === 0 && probe.text.includes("true"))
     throw new Error("runner admin token file must live outside the Firstmate home, the worker root and any git checkout");
-  if ((statSync17(at).mode & 63) !== 0)
+  if ((statSync18(at).mode & 63) !== 0)
     throw new Error("runner admin token file must be mode 0600");
-  const token = readFileSync28(at, "utf8").trim();
+  const token = readFileSync29(at, "utf8").trim();
   if (token.length < 32)
     throw new Error("runner admin token must be at least 32 characters");
   return token;
@@ -38259,68 +38561,111 @@ function privateChildEnv(runner) {
   env["PATH"] = workerFreePath(env["PATH"], runner.workerRoot);
   return env;
 }
-async function spawnPiped(argv, cwd, stdin, env = childEnv(), activeChildren, timeoutMs) {
+async function spawnPiped(argv, cwd, stdin, env, activeChildren, timeoutMs) {
   const child = Bun.spawn(argv, {
     cwd,
     env,
     stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
     stdout: "pipe",
-    stderr: "pipe"
+    stderr: "pipe",
+    detached: true
   });
-  activeChildren?.add(child);
-  let timedOut = false;
-  const timer = timeoutMs === undefined ? null : setTimeout(() => {
-    timedOut = true;
-    child.kill("SIGKILL");
-  }, timeoutMs);
-  try {
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).arrayBuffer(),
-      new Response(child.stderr).arrayBuffer(),
-      child.exited
-    ]);
-    if (timedOut)
-      throw new Error(`adapter command timed out after ${timeoutMs}ms`);
-    return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
-  } finally {
-    if (timer !== null)
-      clearTimeout(timer);
-    activeChildren?.delete(child);
-  }
+  return collectDetached(child, activeChildren, timeoutMs, "adapter command");
 }
-async function dispatchSeat(runner, runId, cardId, launcher, activeChildren) {
+async function dispatchSeat(runner, runId, cardId, launcher2, activeChildren) {
   const card = runner.status(runId).cards[cardId];
-  if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat))
+  if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher2.seat))
     return;
   const packet = runner.packet(runId, cardId);
-  const child = await spawnPiped(launcher.command, runner.stateDir, JSON.stringify(packet), privateChildEnv(runner), activeChildren);
+  const child = await spawnPiped(launcher2.command, runner.stateDir, JSON.stringify(packet), privateChildEnv(runner), activeChildren);
   if (child.exitCode !== 0)
     throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
   const answerValue = JSON.parse(child.stdout.toString());
   if (!isSeatAnswer(answerValue))
     throw new Error("launcher returned an invalid judgment");
-  runner.judge(runId, cardId, launcher.seat, launcher.actor, `${cardId}-${launcher.seat}`, answerValue.choice, [], launcher.lineage, answerValue.rationale);
+  runner.judge(runId, cardId, launcher2.seat, launcher2.actor, `${cardId}-${launcher2.seat}`, answerValue.choice, [], launcher2.lineage, answerValue.rationale);
 }
-async function decideCard(runner, runId, cardId, launchers, activeChildren) {
+async function dispatchVeto(runner, runId, cardId, council, activeChildren) {
+  if (council === null) {
+    runner.veto(runId, cardId, { status: "unavailable", seat: "veto", failures: ["no council configuration"] });
+    return;
+  }
+  const packet = JSON.stringify(runner.packet(runId, cardId));
+  const refusals = checkOutbound([{ label: "packet", text: packet }]);
+  if (refusals.length > 0) {
+    runner.veto(runId, cardId, {
+      status: "unavailable",
+      seat: council.veto.seat,
+      failures: describeRefusals(refusals)
+    });
+    return;
+  }
+  const options = runner.status(runId).cards[cardId]?.options ?? [];
+  const result = await launchSeat(council.veto, packet, options, (launcher2, stdin) => spawnPiped(launcher2.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS));
+  if (!result.ok) {
+    runner.veto(runId, cardId, {
+      status: "unavailable",
+      seat: council.veto.seat,
+      failures: chainFailures(council.veto.seat, result.attempts)
+    });
+    return;
+  }
+  runner.veto(runId, cardId, {
+    status: "answered",
+    seat: council.veto.seat,
+    actor: result.launcher.actor,
+    lineage: result.launcher.lineage,
+    dispatch: `${cardId}-${council.veto.seat}`,
+    choice: result.answer.choice,
+    rationale: result.answer.rationale,
+    model_requested: result.launcher.requested ?? UNSPECIFIED,
+    model_served: result.answer.model_served ?? UNVERIFIED
+  });
+}
+async function decideCard(runner, runId, cardId, launchers, council, activeChildren) {
   const early = runner.authorize(runId, cardId);
   if (early !== null)
     return early;
   const failures = [];
-  for (const launcher of launchers) {
+  for (const launcher2 of launchers) {
     try {
-      await dispatchSeat(runner, runId, cardId, launcher, activeChildren);
+      await dispatchSeat(runner, runId, cardId, launcher2, activeChildren);
     } catch (cause) {
-      failures.push(`seat ${launcher.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      failures.push(`seat ${launcher2.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+  if (failures.length === 0 && runner.vetoDue(runId, cardId)) {
+    try {
+      await dispatchVeto(runner, runId, cardId, council, activeChildren);
+    } catch (cause) {
+      try {
+        runner.veto(runId, cardId, {
+          status: "unavailable",
+          seat: council?.veto.seat ?? "veto",
+          failures: [`veto dispatch failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500)]
+        });
+      } catch {}
     }
   }
   return runner.decide(runId, cardId, failures);
 }
-async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable) {
+function workerCard({ veto, ...card }) {
+  return veto === undefined ? card : { ...card, veto: workerVeto(veto) };
+}
+function workerRun(run2) {
+  return {
+    ...run2,
+    cards: Object.fromEntries(Object.entries(run2.cards).map(([id, card]) => [id, workerCard(card)])),
+    decisions: run2.decisions.map((decision) => ({ ...decision, card: workerCard(decision.card) }))
+  };
+}
+async function execute(runner, request, adminToken, workerToken, allowedRun, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, autonomousAvailable) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken))
     throw new Error("unauthorized runner request");
   if (!WORKER.has(request.verb) && !(admin && ADMIN.has(request.verb)))
     throw new Error("runner verb unavailable to this token");
+  const seen = (run2) => admin ? run2 : workerRun(run2);
   const a = request.args;
   if (a.run !== allowedRun)
     throw new Error("run is outside this runner endpoint");
@@ -38376,7 +38721,7 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
     case "status":
       return runner.status(str3(a, "run"));
     case "sync":
-      return runner.syncRevision(str3(a, "run"));
+      return seen(runner.syncRevision(str3(a, "run")));
     case "run-verify": {
       if (verifyCommand === null)
         throw new Error("runner verification command is unconfigured");
@@ -38392,7 +38737,7 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
         throw new Error(`verification failed (${result.exitCode}): ${result.stderr.toString().slice(0, 4000)}`);
       const evidenceId = `verify-${after.revision.slice(0, 8)}-${after.diff_hash.slice(7, 15)}`;
       runner.recordOutput(runId, evidenceId, Buffer.concat([result.stdout, result.stderr]), "verify");
-      return runner.verify(runId, evidenceId);
+      return seen(runner.verify(runId, evidenceId));
     }
     case "ledger":
       return runner.ledger(str3(a, "run"));
@@ -38401,14 +38746,15 @@ async function execute(runner, request, adminToken, workerToken, allowedRun, lau
     case "prepare": {
       if (a.card === undefined)
         throw new Error("card is required");
-      return runner.prepare(str3(a, "run"), a.card);
+      const card = runner.prepare(str3(a, "run"), a.card);
+      return admin ? card : workerCard(card);
     }
     case "decide": {
       const charter = runner.status(str3(a, "run")).charter;
       if (charter.audit_cadence_seconds !== undefined && (!autonomousAvailable || !charter.allowed_capabilities.includes("event-delivery")))
         throw new Error("guided mode: event delivery or supervisor loop is unavailable; use explicit invocation");
       const cardId = str3(a, "card_id");
-      const pending = decisions.get(cardId) ?? decideCard(runner, str3(a, "run"), cardId, launchers, activeChildren).finally(() => decisions.delete(cardId));
+      const pending = decisions.get(cardId) ?? decideCard(runner, str3(a, "run"), cardId, launchers, council, activeChildren).finally(() => decisions.delete(cardId));
       decisions.set(cardId, pending);
       return pending;
     }
@@ -38427,6 +38773,7 @@ async function serve(argv, io) {
   const runId = flag2(argv, "run-id");
   const mode = flag2(argv, "socket-mode") ?? "600";
   const seatConfigPath = flag2(argv, "seat-config");
+  const councilConfigPath = flag2(argv, "council-config");
   const verifyConfigPath = flag2(argv, "verify-config");
   const effectConfigPath = flag2(argv, "effect-config");
   const eventConfigPath = flag2(argv, "event-config");
@@ -38436,7 +38783,7 @@ async function serve(argv, io) {
   const workerToken = process.env["AK_RUNNER_WORKER_TOKEN"] ?? "";
   if (!socket || !state || !worker || !runId || !adminTokenFile || workerToken.length < 32 || !/^(600|660)$/.test(mode))
     throw new Error("serve needs --socket, --state-dir, --worker-root, --run-id, --admin-token-file, a 32+ character AK_RUNNER_WORKER_TOKEN, and socket mode 600 or 660");
-  const workerRoot = realpathSync11(worker);
+  const workerRoot = realpathSync13(worker);
   const socketPath = resolve13(socket);
   const relativeSocket = relative12(workerRoot, socketPath);
   if (relativeSocket === "" || !relativeSocket.startsWith("..") && !isAbsolute15(relativeSocket))
@@ -38460,12 +38807,12 @@ async function serve(argv, io) {
     if (existsSync35(socketPath))
       unlinkSync(socketPath);
   }
-  const socketParent = realpathSync11(dirname19(socketPath));
+  const socketParent = realpathSync13(dirname19(socketPath));
   const relativeParent = relative12(workerRoot, socketParent);
   if (relativeParent === "" || !relativeParent.startsWith("..") && !isAbsolute15(relativeParent))
     throw new Error("runner socket parent resolves inside worker root");
   const entry = process.argv[1];
-  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve13(import.meta.dir, "..", "..") : resolve13(realpathSync11(entry), "..", ".."));
+  const kitRoot = kitRootFlag ?? (entry === undefined ? resolve13(import.meta.dir, "..", "..") : resolve13(realpathSync13(entry), "..", ".."));
   const runner = new Runner(state, workerRoot, kitRoot, true);
   runner.assertPrivatePath(socketPath);
   runner.assertPrivatePath(adminTokenFile);
@@ -38474,22 +38821,33 @@ async function serve(argv, io) {
     throw new Error("admin and worker tokens must differ");
   let launchers = [];
   if (seatConfigPath !== undefined) {
-    const configPath = realpathSync11(seatConfigPath);
+    const configPath = realpathSync13(seatConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync29(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync30(configPath, "utf8"));
     if (!isSeatConfig(configValue))
       throw new Error(`invalid seat configuration: ${JSON.stringify(isSeatConfig.errors)}`);
     launchers = configValue.launchers;
-    if (new Set(launchers.map((launcher) => launcher.seat)).size !== 2 || new Set(launchers.map((launcher) => launcher.actor)).size !== 2)
+    if (new Set(launchers.map((launcher2) => launcher2.seat)).size !== 2 || new Set(launchers.map((launcher2) => launcher2.actor)).size !== 2)
       throw new Error("seat configuration must name two distinct seats and actors");
-    if (launchers.some((launcher, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher, other))))
+    if (launchers.some((launcher2, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher2, other))))
       throw new Error("seat configuration lineages must be independent");
+  }
+  let council = null;
+  if (councilConfigPath !== undefined) {
+    runner.assertPrivatePath(realpathSync13(councilConfigPath));
+    council = readCouncilConfig(councilConfigPath);
+    if (council.pair !== undefined)
+      throw new Error("the runner's supervisor pair comes from --seat-config; a council configuration names the veto only");
+    const pairSeats = launchers.map((launcher2) => ({ seat: launcher2.seat, chain: [launcher2] }));
+    const problems = rosterProblems([...pairSeats, council.veto]);
+    if (problems.length > 0)
+      throw new Error(`invalid council configuration: ${problems.join("; ")}`);
   }
   let verifyCommand = null;
   if (verifyConfigPath !== undefined) {
-    const configPath = realpathSync11(verifyConfigPath);
+    const configPath = realpathSync13(verifyConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync29(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync30(configPath, "utf8"));
     if (!isVerifyConfig(configValue))
       throw new Error(`invalid verification configuration: ${JSON.stringify(isVerifyConfig.errors)}`);
     verifyCommand = configValue.command;
@@ -38497,9 +38855,9 @@ async function serve(argv, io) {
   let eventCommand = null;
   let eventTimeoutMs = null;
   if (eventConfigPath !== undefined) {
-    const configPath = realpathSync11(eventConfigPath);
+    const configPath = realpathSync13(eventConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync29(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync30(configPath, "utf8"));
     if (!isEventConfig(configValue))
       throw new Error(`invalid event configuration: ${JSON.stringify(isEventConfig.errors)}`);
     eventCommand = configValue.command;
@@ -38508,9 +38866,9 @@ async function serve(argv, io) {
   let loopCommand = null;
   let loopTimeoutMs = null;
   if (loopConfigPath !== undefined) {
-    const configPath = realpathSync11(loopConfigPath);
+    const configPath = realpathSync13(loopConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync29(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync30(configPath, "utf8"));
     if (!isEventConfig(configValue))
       throw new Error(`invalid loop configuration: ${JSON.stringify(isEventConfig.errors)}`);
     loopCommand = configValue.command;
@@ -38518,9 +38876,9 @@ async function serve(argv, io) {
   }
   const effectAdapters = new Map;
   if (effectConfigPath !== undefined) {
-    const configPath = realpathSync11(effectConfigPath);
+    const configPath = realpathSync13(effectConfigPath);
     runner.assertPrivatePath(configPath);
-    const configValue = JSON.parse(readFileSync29(configPath, "utf8"));
+    const configValue = JSON.parse(readFileSync30(configPath, "utf8"));
     if (!isEffectConfig(configValue))
       throw new Error(`invalid effect configuration: ${JSON.stringify(isEffectConfig.errors)}`);
     for (const adapter of configValue.adapters) {
@@ -38639,7 +38997,7 @@ async function serve(argv, io) {
         if (!isRequest(requestValue))
           throw new Error(`invalid request: ${JSON.stringify(isRequest.errors)}`);
         const request = requestValue;
-        const result = await execute(runner, request, adminToken, workerToken, runId, launchers, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
+        const result = await execute(runner, request, adminToken, workerToken, runId, launchers, council, verifyCommand, effectAdapters, decisions, activeChildren, eventCommand !== null && loopCommand !== null && deliveryHealthy && auditHealthy);
         const missing = [
           eventCommand === null ? "event-adapter" : null,
           !deliveryHealthy ? "event-delivery-failed" : null,
@@ -38648,7 +39006,11 @@ async function serve(argv, io) {
           loopCommand !== null && runner.status(runId).charter.audit_cadence_seconds === undefined ? "charter-cadence" : null,
           !auditHealthy ? "audit-failed" : null
         ].filter((part) => part !== null);
-        const presented = request.verb === "status" ? { ...runner.status(runId), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } } : result;
+        const visibleStatus = () => {
+          const run2 = runner.status(runId);
+          return equal(request.token, adminToken) ? run2 : workerRun(run2);
+        };
+        const presented = request.verb === "status" ? { ...visibleStatus(), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } } : result;
         connection.end(`${JSON.stringify({ ok: true, result: presented })}
 `);
         if (request.verb === "event" || request.verb === "start")
@@ -38683,12 +39045,13 @@ async function serve(argv, io) {
   const close = () => {
     if (auditTimer !== null)
       clearInterval(auditTimer);
-    for (const child of activeChildren)
-      child.kill("SIGKILL");
+    for (const pid of activeChildren)
+      killGroup(pid);
     if (existsSync35(socketPath))
       unlinkSync(socketPath);
     process.exit(0);
   };
+  process.once("SIGHUP", close);
   process.once("SIGINT", close);
   process.once("SIGTERM", close);
   return 0;
@@ -38750,7 +39113,7 @@ async function runRunner(argv, io) {
       return call(argv.slice(1), io);
     if (argv[0] !== undefined)
       io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
-    io.err("usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]");
+    io.err("usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]");
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;
   } catch (cause) {
@@ -38760,14 +39123,14 @@ async function runRunner(argv, io) {
 }
 
 // src/semantic-lint/key.ts
-import { lstatSync as lstatSync6, readFileSync as readFileSync30 } from "fs";
+import { lstatSync as lstatSync6, readFileSync as readFileSync31 } from "fs";
 function readKeyFile(path) {
   const stat = lstatSync6(path, { throwIfNoEntry: false });
   if (stat === undefined)
     return null;
   if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 511) !== 384 || process.getuid !== undefined && stat.uid !== process.getuid())
     throw new Error("auth");
-  const lines = readFileSync30(path, "utf8").split(`
+  const lines = readFileSync31(path, "utf8").split(`
 `);
   for (const line of lines) {
     const match = /^(?:TYPESAFE_API_KEY|TYPESAFEAI_API_KEY)\s*=\s*(?:"([^"\r\n]+)"|'([^'\r\n]+)'|([^\s#'"`$]+))\s*$/.exec(line.trim());
@@ -38822,7 +39185,7 @@ var semantic_lint_response_schema_default = {
 };
 
 // src/semantic-lint/client.ts
-var ajv6 = new import_ajv12.default({ strict: false });
+var ajv7 = new import_ajv12.default({ strict: false });
 var scoreCriteria = [
   "No relevant claim to assess",
   "The claim matches the supplied implementation",
@@ -38830,7 +39193,7 @@ var scoreCriteria = [
   "A clear mismatch is visible in the supplied implementation"
 ];
 var unit = { type: "number", minimum: 0, maximum: 1 };
-var isScore = ajv6.compile({
+var isScore = ajv7.compile({
   type: "object",
   required: ["type", "score"],
   properties: {
@@ -38839,7 +39202,7 @@ var isScore = ajv6.compile({
     confidence: unit
   }
 });
-var isReply = ajv6.compile(semantic_lint_response_schema_default);
+var isReply = ajv7.compile(semantic_lint_response_schema_default);
 function measurement(value) {
   if (!isScore(value))
     return null;
@@ -38898,7 +39261,7 @@ async function askBatch(input, options) {
     }
     const timeout = AbortSignal.timeout(options.timeoutMs ?? 1e4);
     const signal = options.signal === undefined ? timeout : AbortSignal.any([timeout, options.signal]);
-    let reason = "response";
+    let reason2 = "response";
     let retry = false;
     let findings = [];
     try {
@@ -38915,7 +39278,7 @@ async function askBatch(input, options) {
       });
       receipt.http_status = response.status;
       if (!response.ok) {
-        reason = [401, 402, 403].includes(response.status) ? "auth" : "http";
+        reason2 = [401, 402, 403].includes(response.status) ? "auth" : "http";
         retry = response.status === 429 || response.status >= 500;
         await response.body?.cancel();
       } else {
@@ -38946,10 +39309,10 @@ async function askBatch(input, options) {
         }
       }
     } catch {
-      reason = options.signal?.aborted ? "cancelled" : timeout.aborted ? "timeout" : receipt.http_status === null ? "network" : "response";
-      retry = reason === "network";
+      reason2 = options.signal?.aborted ? "cancelled" : timeout.aborted ? "timeout" : receipt.http_status === null ? "network" : "response";
+      retry = reason2 === "network";
     }
-    receipt.status = findings.length > 0 ? "reviewed" : reason;
+    receipt.status = findings.length > 0 ? "reviewed" : reason2;
     try {
       save2();
     } catch {
@@ -38958,7 +39321,7 @@ async function askBatch(input, options) {
     if (findings.length > 0)
       return { status: "reviewed", findings };
     if (!retry || attempt === 2)
-      return { status: "error", reason, findings: [] };
+      return { status: "error", reason: reason2, findings: [] };
     try {
       await delay(250, undefined, { signal: options.signal });
     } catch {
@@ -38972,12 +39335,12 @@ async function askBatch(input, options) {
 init_trace();
 var import_ajv13 = __toESM(require_ajv(), 1);
 import { createHash as createHash10, randomBytes as randomBytes3 } from "crypto";
-import { mkdirSync as mkdirSync23, readdirSync as readdirSync11, readFileSync as readFileSync31, renameSync as renameSync6, statSync as statSync18, writeFileSync as writeFileSync16 } from "fs";
+import { mkdirSync as mkdirSync23, readdirSync as readdirSync11, readFileSync as readFileSync32, renameSync as renameSync6, statSync as statSync19, writeFileSync as writeFileSync16 } from "fs";
 import { join as join40 } from "path";
 var CLAIM_VERSION = 1;
 var STALE_MS = 120000;
-var ajv7 = new import_ajv13.default({ strict: false });
-var isRecord = ajv7.compile({
+var ajv8 = new import_ajv13.default({ strict: false });
+var isRecord = ajv8.compile({
   type: "object",
   required: ["state", "trace", "started_at", "ended_at"],
   properties: {
@@ -38999,13 +39362,13 @@ function taken(cause) {
   return cause instanceof Error && "code" in cause && cause.code === "EEXIST";
 }
 function current(path) {
-  const text2 = readFileSync31(path, "utf8");
+  const text2 = readFileSync32(path, "utf8");
   try {
     const raw = JSON.parse(text2);
     if (isRecord(raw))
       return raw;
   } catch {}
-  return { state: "in-progress", trace: "", started_at: statSync18(path).mtimeMs, ended_at: null };
+  return { state: "in-progress", trace: "", started_at: statSync19(path).mtimeMs, ended_at: null };
 }
 function acquireClaim(receipts, key, trace2, now = Date.now) {
   const dir = join40(receipts, "claims", key);
@@ -39057,7 +39420,7 @@ function settleClaim(claim3, state, trace2, now = Date.now) {
 
 // src/semantic-lint/input.ts
 init_proc();
-import { lstatSync as lstatSync7, readFileSync as readFileSync32, realpathSync as realpathSync12 } from "fs";
+import { lstatSync as lstatSync7, readFileSync as readFileSync33, realpathSync as realpathSync14 } from "fs";
 import { isAbsolute as isAbsolute16, join as join41, relative as relative13, resolve as resolve14 } from "path";
 var EXCLUDED_PATH = /(?:^|\/)(?:\.[^/]+|node_modules|dist|provenance|research|fixtures?|vendor|coverage|logs?|private|secrets?)(?:\/|$)|(?:^|[/. _-])(?:credentials?|secrets?|tokens?|id_rsa|id_ed25519)(?:[/. _-]|$)|\.(?:env|pem|key|p12|pfx|lock)$/i;
 var SECRET_CONTENT = /-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:^|[^A-Za-z0-9_$])["']?[A-Za-z0-9_$-]*(?:api[_-]?key|access[_-]?(?:token|key)|client[_-]?secret|secret|private[_-]?key|token|password|authorization)[A-Za-z0-9_$-]*["']?\s*[=:]\s*["']?[^\s"']{4,}|\b(?:sk-[A-Za-z0-9_-]{16,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AIza[A-Za-z0-9_-]{35}|AKIA[A-Z0-9]{16})|:\/\/[^/\s:@]+:[^/\s@]+@/i;
@@ -39076,7 +39439,7 @@ function collectInput(cwd) {
   const top = run(["git", "rev-parse", "--show-toplevel"], { cwd, timeoutMs: 1500 });
   if (top.code !== 0)
     throw new Error("repository");
-  const root = realpathSync12(top.stdout.trim());
+  const root = realpathSync14(top.stdout.trim());
   const changed = run(["git", "diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR", "--"], {
     cwd: root,
     timeoutMs: 1500
@@ -39087,39 +39450,39 @@ function collectInput(cwd) {
   let bytes = 0;
   let excludedBytes = 0;
   for (const path of changed.stdout.split("\x00").filter(Boolean).toSorted()) {
-    let reason;
+    let reason2;
     const absolute = resolve14(root, path);
     if (EXCLUDED_PATH.test(path))
-      reason = "sensitive-path";
+      reason2 = "sensitive-path";
     else if (!TEXT_FILE.test(path))
-      reason = "unsupported";
+      reason2 = "unsupported";
     else {
       try {
         const stat = lstatSync7(absolute);
-        const rel = relative13(root, realpathSync12(absolute));
+        const rel = relative13(root, realpathSync14(absolute));
         if (stat.isSymbolicLink() || rel.startsWith("..") || isAbsolute16(rel) || !stat.isFile())
-          reason = "symlink";
+          reason2 = "symlink";
         else if (input.files.length >= 32 || stat.size > 16384 || bytes + stat.size + Buffer.byteLength(path) + 64 > 49152)
-          reason = "size-limit";
+          reason2 = "size-limit";
         else {
-          const content = readFileSync32(join41(root, path), "utf8");
+          const content = readFileSync33(join41(root, path), "utf8");
           if (binary(content))
-            reason = "binary";
+            reason2 = "binary";
           else if (SECRET_CONTENT.test(content))
-            reason = "secret-content";
+            reason2 = "secret-content";
           else {
             input.files.push({ path, content });
             bytes += Buffer.byteLength(content) + Buffer.byteLength(path) + 64;
           }
         }
       } catch {
-        reason = "unreadable";
+        reason2 = "unreadable";
       }
     }
-    if (reason !== undefined) {
+    if (reason2 !== undefined) {
       const pathBytes = Buffer.byteLength(JSON.stringify(path));
       if (input.excluded.length < 128 && excludedBytes + pathBytes <= 8192) {
-        input.excluded.push({ path, reason });
+        input.excluded.push({ path, reason: reason2 });
         excludedBytes += pathBytes;
       } else
         input.excludedOmitted = (input.excludedOmitted ?? 0) + 1;
@@ -39218,8 +39581,8 @@ async function hookMain(argv) {
   console.log(JSON.stringify(hookOutput(result, { explicit, host: codex ? "codex" : "claude-code" })));
   return 0;
 }
-var ajv8 = new import_ajv14.default({ strict: false });
-var isHookDoc = ajv8.compile({
+var ajv9 = new import_ajv14.default({ strict: false });
+var isHookDoc = ajv9.compile({
   type: "object",
   properties: {
     hooks: {
@@ -39236,11 +39599,11 @@ var isHookDoc = ajv8.compile({
     }
   }
 });
-var isCommand = ajv8.compile({ type: "string" });
+var isCommand = ajv9.compile({ type: "string" });
 if (false) {}
 
 // src/maintenance/cli.ts
-var ajv9 = new import_ajv15.default;
+var ajv10 = new import_ajv15.default;
 var pluginSchema = {
   type: "object",
   properties: {
@@ -39254,14 +39617,14 @@ var pluginSchema = {
   },
   additionalProperties: true
 };
-var validPluginList = ajv9.compile({ type: "array", items: pluginSchema });
-var validCodexList = ajv9.compile({
+var validPluginList = ajv10.compile({ type: "array", items: pluginSchema });
+var validCodexList = ajv10.compile({
   type: "object",
   required: ["installed"],
   properties: { installed: { type: "array", items: pluginSchema } },
   additionalProperties: true
 });
-var validClaudeMarketplaces = ajv9.compile({
+var validClaudeMarketplaces = ajv10.compile({
   type: "array",
   items: {
     type: "object",
@@ -39275,7 +39638,7 @@ var validClaudeMarketplaces = ajv9.compile({
     additionalProperties: true
   }
 });
-var validCodexConfig = ajv9.compile({
+var validCodexConfig = ajv10.compile({
   type: "object",
   properties: {
     marketplaces: {
@@ -39289,18 +39652,18 @@ var validCodexConfig = ajv9.compile({
   },
   additionalProperties: true
 });
-var validManifest = ajv9.compile({
+var validManifest = ajv10.compile({
   type: "object",
   required: ["name", "version"],
   properties: { name: { type: "string" }, version: { type: "string" } },
   additionalProperties: true
 });
-var validSettings = ajv9.compile({
+var validSettings = ajv10.compile({
   type: "object",
   properties: { enabledPlugins: { type: "object", additionalProperties: { type: "boolean" } } },
   additionalProperties: true
 });
-var bindingAjv = new import__202011.default({ strict: false });
+var bindingAjv = new import__202012.default({ strict: false });
 bindingAjv.addSchema(common_schema_default);
 var validBinding2 = bindingAjv.compile(tracker_binding_schema_default);
 var validLinearis = bindingAjv.compile(linear_linearis_schema_default);
@@ -39335,7 +39698,7 @@ function jsonCommand(binary2, args, cwd = process.cwd()) {
 }
 function projectRoot() {
   const top = command("git", ["rev-parse", "--show-toplevel"]);
-  return realpathSync13(top.ok ? top.output : process.cwd());
+  return realpathSync15(top.ok ? top.output : process.cwd());
 }
 function inProject(row, root) {
   if (row.projectEnabled === true)
@@ -39343,7 +39706,7 @@ function inProject(row, root) {
   if (row.projectPath === undefined)
     return true;
   try {
-    return realpathSync13(row.projectPath) === root;
+    return realpathSync15(row.projectPath) === root;
   } catch {
     return false;
   }
@@ -39370,7 +39733,7 @@ function isCodexSource(source, ref) {
 function codexSourceConfigured() {
   const file = join43(process.env.CODEX_HOME ?? join43(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync33(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync34(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -39412,7 +39775,7 @@ function checkProjectEnablement(project) {
   const file = join43(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson2(readFileSync33(file, "utf8"), validSettings);
+    settings = parseJson2(readFileSync34(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -39476,13 +39839,13 @@ function checkLinearis(root, backend) {
   if (!root || backend !== "linear-linearis")
     return finding("WARN", "linearis", "no linear-linearis binding to check", "Add the binding if this repo uses Linear.");
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
-  const top = topResult.ok ? realpathSync13(topResult.output) : realpathSync13(root);
+  const top = topResult.ok ? realpathSync15(topResult.output) : realpathSync15(root);
   for (const base2 of new Set([root, top])) {
     const binary2 = join43(base2, "node_modules", ".bin", "linearis");
     if (!existsSync36(binary2))
       continue;
-    const target = realpathSync13(binary2);
-    if ([root, top].every((folder) => relative14(join43(realpathSync13(folder), "node_modules"), target).startsWith("..")))
+    const target = realpathSync15(binary2);
+    if ([root, top].every((folder) => relative14(join43(realpathSync15(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -39495,7 +39858,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute17(root)) {
-      const value = parseJson2(readFileSync33(join43(root, suffix), "utf8"), validManifest);
+      const value = parseJson2(readFileSync34(join43(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -39566,11 +39929,11 @@ function checkMaintenanceCommand(current2, published) {
 }
 async function maintenanceCommandNotice() {
   const path = process.argv[1];
-  if (!path || basename17(path) !== "ak")
+  if (!path || basename18(path) !== "ak")
     return null;
   try {
-    const current2 = readFileSync33(path, "utf8");
-    const published = isAbsolute17(ROOT) ? readFileSync33(join43(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current2 = readFileSync34(path, "utf8");
+    const published = isAbsolute17(ROOT) ? readFileSync34(join43(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
