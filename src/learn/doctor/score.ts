@@ -171,9 +171,10 @@ export interface Aggregate {
   sessions_unavailable: number;
   /** Raw rubric means; `code_quality` is null when no session showed enough of a change. */
   raw: Record<Scorer, number | null>;
-  /** Curved rubric scores, literal coverage and the weighted overall, as the report shows them. */
-  scores: Record<Scorer | "skill_coverage" | "overall", number>;
-  grade: string;
+  /** Curved rubric scores, literal coverage and the weighted overall, as the report shows them; null when no session was scored. */
+  scores: Record<Scorer | "skill_coverage" | "overall", number> | null;
+  /** Null when no session was scored: an outage is not a measurement. */
+  grade: string | null;
   failed: string[];
   notes: string[];
 }
@@ -185,9 +186,23 @@ function mean(values: readonly number[]): number | null {
 /**
  * The donor's step 3. A rubric with no applicable session counts as 0.5 before the curve
  * and the report says so; coverage is the share of scored sessions that used an installed skill.
+ * With no scored session there is nothing to curve, so there is no score and no grade.
  */
 export function aggregate(scores: readonly SessionScore[], skillsFound: number): Aggregate {
   const scored = scores.filter((score) => score.status === "scored");
+  const unavailable = scores.length - scored.length;
+  const unavailableNotes =
+    unavailable > 0 ? [`${unavailable} sampled session(s) could not be scored and are left out of every mean.`] : [];
+  if (scored.length === 0)
+    return {
+      sessions_scored: 0,
+      sessions_unavailable: unavailable,
+      raw: { efficiency: null, code_quality: null, procedure_compliance: null, verbosity: null },
+      scores: null,
+      grade: null,
+      failed: [],
+      notes: unavailableNotes,
+    };
   const notes: string[] = [];
   const rubricMean = (scorer: Scorer): number | null => {
     const values = scored.flatMap((score) => {
@@ -205,9 +220,7 @@ export function aggregate(scores: readonly SessionScore[], skillsFound: number):
     verbosity: rubricMean("verbosity"),
   };
   const skillCoverage =
-    skillsFound === 0 || scored.length === 0
-      ? 0
-      : scored.filter((score) => score.skills_used.length > 0).length / scored.length;
+    skillsFound === 0 ? 0 : scored.filter((score) => score.skills_used.length > 0).length / scored.length;
   const rubrics: Record<Scorer, number> = {
     efficiency: curve(raw.efficiency ?? 0.5),
     code_quality: curve(raw.code_quality ?? 0.5),
@@ -217,17 +230,13 @@ export function aggregate(scores: readonly SessionScore[], skillsFound: number):
   const overall =
     SCORERS.reduce((sum, scorer) => sum + WEIGHTS[scorer] * rubrics[scorer], 0) +
     WEIGHTS.skill_coverage * skillCoverage;
-  if (scores.length > scored.length)
-    notes.push(
-      `${scores.length - scored.length} sampled session(s) could not be scored and are left out of every mean.`,
-    );
   return {
     sessions_scored: scored.length,
-    sessions_unavailable: scores.length - scored.length,
+    sessions_unavailable: unavailable,
     raw,
     scores: { ...rubrics, skill_coverage: skillCoverage, overall },
     grade: gradeFor(overall),
     failed: scored.flatMap((score) => (score.failed ? [score.key] : [])),
-    notes,
+    notes: [...notes, ...unavailableNotes],
   };
 }

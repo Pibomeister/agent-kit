@@ -20,9 +20,10 @@ import { declaredUnavailable } from "../core/judge.ts";
 import type { Ledger } from "../core/ledger.ts";
 import { buildPrompt } from "../core/roles.ts";
 import { nowIso, readJson, writeGated, writeJson } from "../core/store.ts";
+import { scrubCaptured } from "../memory/redact.ts";
 import type { ClaudeMemSource } from "../sources/claude-mem.ts";
 import type { DoctorSession, SkillInfo } from "./collect.ts";
-import { truncate } from "./collect.ts";
+import { frontmatter, truncate } from "./collect.ts";
 import { items, judgeObject, objects, text, type JsonObject, type JsonValue } from "./json.ts";
 import type { Aggregate, Scorer, SessionScore } from "./score.ts";
 import { SCORERS } from "./score.ts";
@@ -178,12 +179,6 @@ function occurrences(haystack: string, needle: string): number {
   return count;
 }
 
-function frontmatterName(source: string): string | null {
-  const block = /^---\n([\s\S]*?)\n---/.exec(source)?.[1];
-  const name = block === undefined ? undefined : /^name:\s*(.+)$/m.exec(block)?.[1];
-  return name === undefined ? null : name.trim().replace(/^["']|["']$/g, "");
-}
-
 function normalRule(rule: string): string {
   return rule
     .toLowerCase()
@@ -223,7 +218,7 @@ export function gateSuggestion(
     if (!/^[a-z0-9]+(?:-[a-z0-9]+){0,4}$/.test(skill)) return drop("a new skill name must be lowercase kebab");
     if (input.skills.has(skill)) return drop("a new skill may not reuse an installed name");
     const content = (text(raw.content) ?? "").replaceAll("\r\n", "\n");
-    if (frontmatterName(content) !== skill) return drop("a new skill's frontmatter must name it");
+    if (frontmatter(content).name !== skill) return drop("a new skill's frontmatter must name it");
     if (content.split("\n").length > MAX_SKILL_LINES) return drop(`a skill body is capped at ${MAX_SKILL_LINES} lines`);
     return {
       suggestion: {
@@ -253,7 +248,7 @@ export function gateSuggestion(
     proposed = proposed.replace(old, () => next);
   }
   if (proposed === current) return drop("the edit changes nothing");
-  if (frontmatterName(proposed) !== frontmatterName(current)) return drop("an edit may not rename the skill");
+  if (frontmatter(proposed).name !== frontmatter(current).name) return drop("an edit may not rename the skill");
   if (proposed.split("\n").length > MAX_SKILL_LINES) return drop(`a skill body is capped at ${MAX_SKILL_LINES} lines`);
   return {
     suggestion: {
@@ -345,12 +340,12 @@ function impactLines(entries: readonly ImpactEntry[]): string {
     .join("\n");
 }
 
-/** A claude-mem summary of a host session, when claude-mem observed it. Read-only; absent claude-mem gives null. */
+/** A claude-mem summary of a host session, scrubbed like a transcript, when claude-mem observed it. Read-only; absent claude-mem gives null. */
 function memSummary(mem: ClaudeMemSource | null, session: DoctorSession): string | null {
   const row = mem?.summaryForSession(session.id) ?? null;
   if (row === null) return null;
   const joined = [row.request, row.completed].filter((part) => part).join(" / ");
-  return joined === "" ? null : truncate(joined, SUMMARY_CHARS);
+  return joined === "" ? null : truncate(scrubCaptured(joined), SUMMARY_CHARS);
 }
 
 export interface AdviseInput {
@@ -371,9 +366,9 @@ export function advicePrompt(input: AdviseInput, env: NodeJS.ProcessEnv): string
   const scored = input.scores.filter((score) => score.status === "scored");
   const usedInFailed = new Set(scored.filter((score) => failed.has(score.key)).flatMap((score) => score.skills_used));
   const summary = [
-    `overall ${input.aggregate.scores.overall.toFixed(2)} (${input.aggregate.grade}); ${input.aggregate.sessions_scored} scored, ${failed.size} failed`,
+    `overall ${input.aggregate.scores?.overall.toFixed(2) ?? "n/a"} (${input.aggregate.grade ?? "no grade"}); ${input.aggregate.sessions_scored} scored, ${failed.size} failed`,
     ...SCORERS.map((scorer) => `- ${scorer}: raw ${input.aggregate.raw[scorer]?.toFixed(2) ?? "n/a"}`),
-    `- skill coverage: ${input.aggregate.scores.skill_coverage.toFixed(2)}`,
+    `- skill coverage: ${input.aggregate.scores?.skill_coverage.toFixed(2) ?? "n/a"}`,
   ].join("\n");
   return buildPrompt(
     "skill-doctor",
@@ -455,7 +450,10 @@ function saveImpact(ledger: Ledger, entries: readonly ImpactEntry[]): void {
   writeGated(ledger.dir, ledger.path(IMPACT_PAGE), renderImpactPage(entries));
 }
 
-/** The run's raw layer and its proposals, written to the skills ledger and committed. Labels only: no transcript, no reason. */
+/**
+ * The run's raw layer and its proposals, written to the skills ledger under its lock and committed.
+ * Labels only: no transcript, no reason. Null when another job holds the lock or the commit failed.
+ */
 export function recordRun(
   ledger: Ledger,
   run: string,
@@ -463,48 +461,62 @@ export function recordRun(
   aggregate: Aggregate,
   advice: Advice,
 ): string | null {
-  const rows = scores.map((score) => ({
-    key: score.key,
-    host: score.host,
-    skills_used: score.skills_used,
-    status: score.status,
-    failed: score.failed,
-    labels: Object.fromEntries(SCORERS.map((scorer) => [scorer, score.results[scorer]?.label ?? null])),
-  }));
-  writeJson(ledger.path(RUNS_DIR, `${run}.json`), { run, at: nowIso(), aggregate, sessions: rows }, ledger.dir);
-  const impact = loadImpact(ledger.dir);
-  for (const suggestion of advice.suggestions) {
-    impact.push({
-      id: suggestion.id,
-      run,
-      at: nowIso(),
-      skill: suggestion.skill,
-      kind: suggestion.kind,
-      rule: suggestion.rule,
-      change: suggestion.change,
-      diff: suggestion.diff,
-      status: "proposed",
-    });
+  const release = ledger.tryLock();
+  if (release === null) return null;
+  try {
+    const rows = scores.map((score) => ({
+      key: score.key,
+      host: score.host,
+      skills_used: score.skills_used,
+      status: score.status,
+      failed: score.failed,
+      labels: Object.fromEntries(SCORERS.map((scorer) => [scorer, score.results[scorer]?.label ?? null])),
+    }));
+    writeJson(ledger.path(RUNS_DIR, `${run}.json`), { run, at: nowIso(), aggregate, sessions: rows }, ledger.dir);
+    const impact = loadImpact(ledger.dir);
+    for (const suggestion of advice.suggestions) {
+      impact.push({
+        id: suggestion.id,
+        run,
+        at: nowIso(),
+        skill: suggestion.skill,
+        kind: suggestion.kind,
+        rule: suggestion.rule,
+        change: suggestion.change,
+        diff: suggestion.diff,
+        status: "proposed",
+      });
+    }
+    saveImpact(ledger, impact);
+    return ledger.commit(`doctor: run ${run}, ${advice.suggestions.length} proposal(s)`);
+  } finally {
+    release();
   }
-  saveImpact(ledger, impact);
-  return ledger.commit(`doctor: run ${run}, ${advice.suggestions.length} proposal(s)`);
 }
 
-/** A human's decision on one proposal. A decided proposal is not decided again. */
+/**
+ * A human's decision on one proposal, under the ledger's lock. A decided proposal is not decided again.
+ * `uncommitted` means the decision is saved and rides in the ledger's next commit.
+ */
 export function decide(
   ledger: Ledger,
   id: string,
   status: "accepted" | "rejected",
   reason: string | undefined,
-): "ok" | "unknown" | "decided" {
-  const impact = loadImpact(ledger.dir);
-  const entry = impact.find((item) => item.id === id);
-  if (entry === undefined) return "unknown";
-  if (entry.status !== "proposed") return "decided";
-  entry.status = status;
-  entry.decided_at = nowIso();
-  if (reason !== undefined && reason.trim() !== "") entry.reason = truncate(reason, FIELD_CHARS);
-  saveImpact(ledger, impact);
-  ledger.commit(`doctor: ${status} ${id}`);
-  return "ok";
+): "ok" | "unknown" | "decided" | "locked" | "uncommitted" {
+  const release = ledger.tryLock();
+  if (release === null) return "locked";
+  try {
+    const impact = loadImpact(ledger.dir);
+    const entry = impact.find((item) => item.id === id);
+    if (entry === undefined) return "unknown";
+    if (entry.status !== "proposed") return "decided";
+    entry.status = status;
+    entry.decided_at = nowIso();
+    if (reason !== undefined && reason.trim() !== "") entry.reason = truncate(reason, FIELD_CHARS);
+    saveImpact(ledger, impact);
+    return ledger.commit(`doctor: ${status} ${id}`) === null ? "uncommitted" : "ok";
+  } finally {
+    release();
+  }
 }

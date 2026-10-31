@@ -250,6 +250,17 @@ describe("collect", () => {
     expect(texts(find(withSubagents.sampled, "claude-c1"))).toContain("sidechain work");
   });
 
+  test("a skill's folded or quoted frontmatter is read as YAML", () => {
+    const w = world();
+    writeFileSync(
+      w.skillPath,
+      "---\nname: 'diagnose'\ndescription: >-\n  Find the cause\n  of a defect.\n---\n\nBody.\n",
+    );
+    expect(collect(options(w), {}).skills).toMatchObject([
+      { name: "diagnose", description: "Find the cause of a defect." },
+    ]);
+  });
+
   test("Codex: a skill block is a skill load, a subagent rollout is skipped, a repeated call is counted", () => {
     const w = world();
     const collection = collect(options(w, { hosts: ["codex"] }), {});
@@ -373,10 +384,10 @@ describe("score", () => {
     const result = aggregate([a, b, lost], 1);
     expect(result.raw.efficiency).toBeCloseTo(0.7);
     expect(result.raw.code_quality).toBeCloseTo(1);
-    expect(result.scores.efficiency).toBeCloseTo(0.85);
-    expect(result.scores.verbosity).toBeCloseTo(0.8);
-    expect(result.scores.skill_coverage).toBeCloseTo(0.5);
-    expect(result.scores.overall).toBeCloseTo(0.8475);
+    expect(result.scores?.efficiency).toBeCloseTo(0.85);
+    expect(result.scores?.verbosity).toBeCloseTo(0.8);
+    expect(result.scores?.skill_coverage).toBeCloseTo(0.5);
+    expect(result.scores?.overall).toBeCloseTo(0.8475);
     expect(result.grade).toBe("B");
     expect(result.failed).toEqual(["b"]);
     expect(result.sessions_unavailable).toBe(1);
@@ -390,9 +401,16 @@ describe("score", () => {
     );
     const result = aggregate([only], 0);
     expect(result.raw.code_quality).toBeNull();
-    expect(result.scores.code_quality).toBeCloseTo(0.75);
-    expect(result.scores.skill_coverage).toBe(0);
+    expect(result.scores?.code_quality).toBeCloseTo(0.75);
+    expect(result.scores?.skill_coverage).toBe(0);
     expect(result.notes.join("\n")).toContain("enough evidence for code_quality");
+  });
+
+  test("no scored session has no score and no grade, and says why", () => {
+    const lost = aggregate([parseScore(synthetic("a", [], 1), null)], 1);
+    expect(lost).toMatchObject({ grade: null, scores: null, sessions_scored: 0, sessions_unavailable: 1 });
+    expect(lost.notes).toEqual(["1 sampled session(s) could not be scored and are left out of every mean."]);
+    expect(aggregate([], 1)).toMatchObject({ grade: null, scores: null, notes: [] });
   });
 
   test("grade thresholds", () => {
@@ -495,6 +513,20 @@ describe("gateSuggestion", () => {
     expect(gate(edit({ rule: "Reproduce, before you edit!" }), rejected)).toBe("a human rejected this rule before");
   });
 
+  test("a block-scalar name is read as its value, so renaming it is refused", () => {
+    const folded = join(skillDir, "FOLDED.md");
+    writeFileSync(folded, "---\nname: >-\n  diagnose\ndescription: d\n---\n\nBody.\n");
+    const foldedInput = {
+      ...input,
+      skills: new Map<string, SkillInfo>([
+        ["diagnose", { name: "diagnose", path: folded, scope: "project", description: "d" }],
+      ]),
+    };
+    expect(gate(edit({ replace: [{ old: "  diagnose", new: "  triage" }] }), foldedInput)).toBe(
+      "an edit may not rename the skill",
+    );
+  });
+
   test("a new skill needs a fresh kebab name that its own frontmatter carries", () => {
     const content = "---\nname: pin-clock\ndescription: Pin the clock.\n---\n\nPin it.\n";
     const outcome = gateSuggestion(newSkill("pin-clock", content), "r-2", input);
@@ -566,6 +598,33 @@ describe("impact record", () => {
     expect(loadImpact(ledger.dir)).toMatchObject([{ id: "run1-1", status: "rejected", reason: "too narrow" }]);
     expect(readFileSync(ledger.path(IMPACT_PAGE), "utf8")).toContain("## run1-1 — diagnose (rejected)");
   });
+
+  test("a held lock writes nothing, and a failed commit is reported", () => {
+    const ctx = testContext();
+    const ledger = skillsLedger(ctx, gitRepo(join(scratch("ak-doctor-lock-"), "repo")));
+    const scores = [
+      parseScore(
+        synthetic("claude-c1", [], 1),
+        labels("highly_efficient", "approve", "fully_compliant", "proportionate"),
+      ),
+    ];
+    const advice: Advice = { status: "ok", findings: [], suggestions: [], dropped: [], deferred: [] };
+    const skillPath = join(ledger.dir, "SKILL.md");
+    writeFileSync(skillPath, SKILL_TEXT);
+    const proposing = parseAdvice({ suggestions: [edit()] }, "run2", gateInput({ skillPath }));
+
+    const release = ledger.tryLock();
+    if (release === null) throw new Error("no lock");
+    expect(recordRun(ledger, "run1", scores, aggregate(scores, 0), advice)).toBeNull();
+    expect(existsSync(ledger.path(RUNS_DIR, "run1.json"))).toBe(false);
+    expect(decide(ledger, "run2-1", "accepted", undefined)).toBe("locked");
+    release();
+
+    expect(recordRun(ledger, "run2", scores, aggregate(scores, 0), proposing)).not.toBeNull();
+    writeFileSync(join(ledger.dir, ".git", "index.lock"), "");
+    expect(decide(ledger, "run2-1", "accepted", undefined)).toBe("uncommitted");
+    expect(loadImpact(ledger.dir)).toMatchObject([{ id: "run2-1", status: "accepted" }]);
+  });
 });
 
 describe("renderReport", () => {
@@ -582,7 +641,14 @@ describe("renderReport", () => {
       dropped: [{ skill: "x", change: "<img src=x>", gate: "g" }],
       deferred: [],
     };
-    const html = renderReport({ title: "T & <b>", collection, scores, aggregate: aggregate(scores, 1), advice });
+    const html = renderReport({
+      title: "T & <b>",
+      collection,
+      scores,
+      aggregate: aggregate(scores, 1),
+      advice,
+      recordedRepo: null,
+    });
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>alert");
@@ -748,6 +814,105 @@ describe("ak learn doctor", () => {
     const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
     expect(verb("run", ["--out", join(w.base, "out"), "--repo", w.repo, ...homes], ctx)).toBe(0);
     expect(prompts.at(-1)).toContain("- claude-mem summary: Fix the parser / Reproduced and fixed");
+  });
+
+  test("a claude-mem summary is scrubbed before it reaches the doctor's prompt", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    const mem = new MemFixture(ctx.config.memDb);
+    mem.session({ sid: "mem-1", project: "repo", started: 1, content: "c1" });
+    mem.summary({ sid: "mem-1", project: "repo", request: "Use API_KEY=fixturevalue123", completed: "Done" });
+    mem.db.close();
+    const prompts: string[] = [];
+    ctx.judge = (prompt) => {
+      prompts.push(prompt);
+      return scriptedJudge(prompt);
+    };
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    expect(verb("run", ["--out", join(w.base, "out"), "--repo", w.repo, ...homes], ctx)).toBe(0);
+    expect(prompts.at(-1)).toContain("claude-mem summary: Use API_KEY=[redacted:env-secret]");
+    expect(prompts.at(-1)).not.toContain("fixturevalue123");
+  });
+
+  test("a judge outage reads as no grade and exits non-zero", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = () => null;
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const out = join(w.base, "out");
+    expect(verb("run", ["--out", out, "--repo", w.repo, ...homes], ctx)).toBe(1);
+    expect(ctx.out.join("\n")).toContain("no grade; suggestions unavailable: no session was scored");
+    expect(ctx.out.join("\n")).not.toContain("grade D");
+    const html = readFileSync(join(out, "report.html"), "utf8");
+    expect(html).toContain("No grade: no session was scored, and 3 could not be.");
+    expect(html).not.toContain("/ 100");
+  });
+
+  test("the report offers a decision command only for a recorded proposal, naming its repository", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const plain = join(w.base, "plain");
+    expect(verb("run", ["--out", plain, "--repo", w.repo, ...homes], ctx)).toBe(0);
+    const unrecorded = readFileSync(join(plain, "report.html"), "utf8");
+    expect(unrecorded).not.toContain("ak learn doctor accept");
+    expect(unrecorded).toContain("--repo P --record");
+
+    const kept = join(w.base, "kept");
+    expect(verb("run", ["--out", kept, "--repo", w.repo, "--record", ...homes], ctx)).toBe(0);
+    const [proposal] = loadImpact(skillsLedger(ctx, w.repo).dir);
+    if (proposal === undefined) throw new Error("no proposal recorded");
+    const recorded = readFileSync(join(kept, "report.html"), "utf8");
+    expect(recorded).toContain(`ak learn doctor accept ${proposal.id} --repo `);
+    expect(recorded).toContain(w.repo);
+    expect(verb("accept", [proposal.id, "--repo", w.repo], { ...ctx, cwd: w.base })).toBe(0);
+  });
+
+  test("a held ledger lock fails --record and leaves the report without a decision command", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const release = skillsLedger(ctx, w.repo).tryLock();
+    if (release === null) throw new Error("no lock");
+    const out = join(w.base, "out");
+    expect(verb("run", ["--out", out, "--repo", w.repo, "--record", ...homes], ctx)).toBe(1);
+    release();
+    expect(ctx.err.join("\n")).toContain("was not recorded");
+    expect(readFileSync(join(out, "report.html"), "utf8")).not.toContain("ak learn doctor accept");
+  });
+
+  test("a dry run calls no judge and writes nothing", () => {
+    const w = world();
+    const live = testContext({ cwd: w.repo });
+    live.judge = scriptedJudge;
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    expect(verb("run", ["--out", join(w.base, "live"), "--repo", w.repo, "--record", ...homes], live)).toBe(0);
+    const ledger = skillsLedger(live, w.repo);
+    const [proposal] = loadImpact(ledger.dir);
+    if (proposal === undefined) throw new Error("no proposal recorded");
+    const head = ledger.head();
+
+    let calls = 0;
+    const dry: TestContext = {
+      ...live,
+      config: { ...live.config, dryRun: true },
+      judge: () => {
+        calls += 1;
+        return null;
+      },
+    };
+    const out = join(w.base, "dry");
+    expect(verb("run", ["--out", out, "--repo", w.repo, "--record", ...homes], dry)).toBe(0);
+    expect(verb("collect", ["--out", out, "--repo", w.repo, ...homes], dry)).toBe(0);
+    expect(verb("accept", [proposal.id, "--repo", w.repo], dry)).toBe(0);
+    expect(verb("render", ["--out", join(w.base, "live"), "--report", join(w.base, "dry.html")], dry)).toBe(0);
+    expect(calls).toBe(0);
+    expect(existsSync(out)).toBe(false);
+    expect(existsSync(join(w.base, "dry.html"))).toBe(false);
+    expect(ledger.head()).toBe(head);
+    expect(loadImpact(ledger.dir)).toMatchObject([{ id: proposal.id, status: "proposed" }]);
   });
 
   test("the doctor area's default judge runs subscription-only", async () => {

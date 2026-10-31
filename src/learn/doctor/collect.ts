@@ -14,6 +14,7 @@
  */
 import { existsSync, openSync, readFileSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
+import { parseFrontmatter } from "../../util/frontmatter.ts";
 import { detectPatterns } from "../review/hooks.ts";
 import { scrubCaptured } from "../memory/redact.ts";
 import { userHome, workerHomes } from "../sources/worker-sessions.ts";
@@ -498,12 +499,12 @@ interface SkillFront {
   description: string | null;
 }
 
-/** The `name` and `description` lines of a SKILL.md frontmatter block, quotes and folding markers dropped. */
-function frontmatter(source: string): SkillFront {
-  const block = /^---\n([\s\S]*?)\n---/.exec(source)?.[1] ?? "";
+/** The `name` and `description` of a SKILL.md frontmatter block, read as YAML; a field that is absent or not text is null. */
+export function frontmatter(source: string): SkillFront {
+  const { data } = parseFrontmatter(source);
   const field = (key: string): string | null => {
-    const value = new RegExp(`^${key}:\\s*(.*)$`, "m").exec(block)?.[1];
-    return value === undefined ? null : value.replace(/^["'>|-]+\s*/, "").replace(/["']$/, "");
+    const value = data[key];
+    return typeof value === "string" ? value.trim() : null;
   };
   return { name: field("name"), description: field("description") };
 }

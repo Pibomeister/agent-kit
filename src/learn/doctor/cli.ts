@@ -173,6 +173,8 @@ interface RunRecord {
   scores: SessionScore[];
   aggregate: Aggregate;
   advice: Advice;
+  /** The repository whose skills ledger holds this run's proposals; null when they were not recorded. */
+  recordedRepo: string | null;
 }
 
 function outDir(args: LearnArgs, ctx: LearnContext): string | null {
@@ -215,6 +217,10 @@ function collectCommand(args: LearnArgs, ctx: LearnContext): number {
   }
   const options = parsed.value;
   const collection = collect(options, ctx.env);
+  if (ctx.config.dryRun) {
+    ctx.io.out(`dry run: ${collection.sampled.length} session(s) sampled; nothing was written`);
+    return 0;
+  }
   writeCollection(out, collection);
   ctx.io.out(
     `collected: ${collection.sessions_scanned} scanned, ${collection.sessions_matched} matched, ${collection.sampled.length} sampled, ${collection.skills.length} skills → ${out}`,
@@ -246,6 +252,12 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     return 2;
   }
   const collection = collect(options, ctx.env);
+  if (ctx.config.dryRun) {
+    ctx.io.out(
+      `dry run: ${collection.sampled.length} of ${collection.sessions_matched} matched sessions would go to the judge; no judge call was made and nothing was written`,
+    );
+    return 0;
+  }
   writeCollection(out, collection);
   ctx.io.out(`collected: ${collection.sampled.length} of ${collection.sessions_matched} matched sessions sampled`);
   const project = ledgerRoot ?? "all";
@@ -286,12 +298,24 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
   } finally {
     mem?.close();
   }
+  let recordedRepo: string | null = null;
+  if (record && ledgerRoot !== undefined) {
+    const recorded = skillsLedger(ctx, ledgerRoot);
+    const sha = recordRun(recorded, runId, scores, summary, advice);
+    if (sha === null)
+      ctx.io.err(`ak learn doctor run: run ${runId} was not recorded: ${recorded.dir} is locked or its commit failed`);
+    else {
+      recordedRepo = ledgerRoot;
+      ctx.io.out(`recorded: run ${runId} in ${recorded.dir} at ${sha.slice(0, 12)}`);
+    }
+  }
   const runRecord: RunRecord = {
     title: flag(args, "title") ?? DEFAULT_TITLE,
     collection: { ...collection, sampled: collection.sampled.map((s) => ({ ...s, entries: [] })) },
     scores,
     aggregate: summary,
     advice,
+    recordedRepo,
   };
   writeJson(join(out, RUN_FILE), runRecord, out);
   for (const suggestion of advice.suggestions) {
@@ -301,18 +325,18 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     chmodSync(path, 0o600);
   }
   writeReport(out, report, runRecord);
-  if (record && ledgerRoot !== undefined) {
-    if (ctx.config.dryRun) ctx.io.out("dry run: the skills ledger was not written");
-    else {
-      const recorded = skillsLedger(ctx, ledgerRoot);
-      const sha = recordRun(recorded, runId, scores, summary, advice);
-      ctx.io.out(`recorded: run ${runId} in ${recorded.dir}${sha === null ? "" : ` at ${sha.slice(0, 12)}`}`);
-    }
+  const verdict =
+    summary.scores === null ? "no grade" : `grade ${summary.grade} (${Math.round(summary.scores.overall * 100)}/100)`;
+  const edits =
+    advice.status === "unavailable"
+      ? `suggestions unavailable: ${advice.why ?? "no reason given"}`
+      : `${advice.suggestions.length} edit(s) passed the gates, ${advice.dropped.length} dropped`;
+  ctx.io.out(`${verdict}; ${edits} → ${report}`);
+  if (summary.sessions_scored === 0 && summary.sessions_unavailable > 0) {
+    ctx.io.err("ak learn doctor run: every sampled session was unavailable; check the judge command");
+    return 1;
   }
-  ctx.io.out(
-    `grade ${summary.grade} (${Math.round(summary.scores.overall * 100)}/100); ${advice.suggestions.length} edit(s) passed the gates, ${advice.dropped.length} dropped → ${report}`,
-  );
-  return 0;
+  return record && recordedRepo === null ? 1 : 0;
 }
 
 function renderCommand(args: LearnArgs, ctx: LearnContext): number {
@@ -329,6 +353,10 @@ function renderCommand(args: LearnArgs, ctx: LearnContext): number {
   if (saved === null) {
     ctx.io.err(`ak learn doctor render: ${path} is not a run record`);
     return 1;
+  }
+  if (ctx.config.dryRun) {
+    ctx.io.out("dry run: the report was not written");
+    return 0;
   }
   writeReport(out, report, saved);
   ctx.io.out(report);
@@ -348,9 +376,16 @@ function decideCommand(status: "accepted" | "rejected") {
       ctx.io.err(`ak learn doctor ${verb}: no skills ledger for this repository; pass --repo P`);
       return 1;
     }
+    if (ctx.config.dryRun) {
+      ctx.io.out(`dry run: ${id} was not ${status}; the skills ledger was not written`);
+      return 0;
+    }
     const result = decide(ledger, id, status, flag(args, "reason"));
     if (result === "unknown") ctx.io.err(`ak learn doctor ${verb}: no proposal ${id}`);
     else if (result === "decided") ctx.io.err(`ak learn doctor ${verb}: ${id} was already decided`);
+    else if (result === "locked") ctx.io.err(`ak learn doctor ${verb}: ${ledger.dir} is locked; try again`);
+    else if (result === "uncommitted")
+      ctx.io.err(`ak learn doctor ${verb}: ${id} is ${status} but not committed; it rides in the ledger's next commit`);
     else ctx.io.out(`${id}: ${status}`);
     return result === "ok" ? 0 : 1;
   };
