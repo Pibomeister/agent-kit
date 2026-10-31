@@ -51,16 +51,25 @@ function settingsFrom(text: string): HostEnvelope {
  * The host CLI's command with a `--settings` layer that blanks what the user's
  * `settings.json` would reapply over `subscriptionEnv`: each `METERED_VARS` name in
  * its `env`, and `apiKeyHelper`. The flag layer outranks user settings, so the call
- * stays on the signed-in seat. A `--settings` file path is read from `cwd`, where the
- * judge runs. Any other command is returned as given.
+ * stays on the signed-in seat. The command's own `--settings` layers, in either form,
+ * become one merged layer, the last given winning as the host would read it; a file
+ * path is read from `cwd`, where the judge runs. Any other command is returned as given.
  */
 export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] {
   if (command[0] === undefined || basename(command[0]) !== "claude") return [...command];
   const user = settingsFrom(readText(join(configDir, "settings.json")));
   const userEnv = validateHostEnvelope(user.env) ? user.env : {};
   const blanked = Object.keys(userEnv).filter((key) => METERED_VARS.test(key));
-  const at = command.indexOf("--settings");
-  const given = at === -1 ? undefined : command[at + 1];
+  const rest: string[] = [];
+  let given: string | undefined;
+  for (let index = 1; index < command.length; index += 1) {
+    const arg = command[index] ?? "";
+    if (arg === "--settings") {
+      given = command[index + 1];
+      index += 1;
+    } else if (arg.startsWith("--settings=")) given = arg.slice("--settings=".length);
+    else rest.push(arg);
+  }
   const base = settingsFrom(
     given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(resolve(cwd, given)),
   );
@@ -71,9 +80,7 @@ export function subscriptionCommand(command: readonly string[], configDir: strin
     env: { ...baseEnv, ...Object.fromEntries(blanked.map((key) => [key, ""])) },
     ...Object.fromEntries(helper.map((key) => [key, ""])),
   });
-  return given === undefined
-    ? [...command.slice(0, 1), "--settings", text, ...command.slice(1)]
-    : [...command.slice(0, at + 1), text, ...command.slice(at + 2)];
+  return [command[0], "--settings", text, ...rest];
 }
 
 export interface CommandJudgeOptions {
