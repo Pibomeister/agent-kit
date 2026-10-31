@@ -1,3 +1,5 @@
+import type { VetoRecord } from "../council/rule.ts";
+
 export interface Grant {
   charter_hash: string;
   covers: string;
@@ -37,6 +39,8 @@ export interface Judgment {
 
 export interface Card extends CardInput {
   judgments: Judgment[];
+  /** The blind veto seat's record, kept apart from the two judgments (ADR-0015). */
+  veto?: VetoRecord;
 }
 
 export interface Evidence {
@@ -61,6 +65,7 @@ export interface Charter {
   standing_grants?: { covers: "autopilot.start"; controller: "firstmate" }[];
   sensitive_grants?: { approval: { artifact_hash: string; by: string; authority: string } }[];
   supervisors: { seats: { id: string; filled_by: string }[] };
+  council?: { blind_veto: "required" };
   checkpoints: string[];
   default_grants: string[];
   denied_actions: string[];

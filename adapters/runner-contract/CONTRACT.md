@@ -433,6 +433,16 @@ options refuses the card: the run goes to `needs-input` with a `runner:seat-inde
 that carries each launcher's error, and the seat is not relaunched. Without a seat configuration the
 supervisor may submit separate judgments with `judge`, and a missing judgment blocks the card.
 
+When the charter carries `council.blind_veto: required` (ADR-0015), an approval the pair agrees on
+stands only after a blind veto seat also approves it. After the pair agrees on the approving option
+and before `decide` accepts it, the service runs the outbound gate on the same frozen packet and
+sends it to the veto seat named in the private `--council-config`. No judgment is in that input.
+The service tries the seat's substitutes in order, only when a launcher fails or returns no valid
+answer, and records the result on the card apart from the two judgments. A missing configuration,
+an exhausted chain, a refused payload, a veto that shares a lineage with either primary seat or an
+excluded actor, or a non-approving veto returns `needs-input` with a `runner:council-veto`
+escalation. The veto is not a third seat or a third judgment, and it never approves alone.
+
 Every card names its approving option in `approve`, one of its `options`; `prepare` refuses a card
 without it and refuses `no` or `retry` as approving options. The runner adds `no` as a refusal to
 every human escalation even if the worker omitted it, and recommends it as the default. Only the

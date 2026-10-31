@@ -5,7 +5,13 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 import { unknownSelector } from "../util/suggest.ts";
 import { sha256Hex } from "../util/hash.ts";
-import { Runner, sharesLineage } from "./core.ts";
+import { Runner } from "./core.ts";
+import type { Card, Run } from "./types.ts";
+import { sharesLineage } from "./lineage.ts";
+import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
+import { checkOutbound, describeRefusals } from "../council/outbound.ts";
+import { workerVeto } from "../council/rule.ts";
+import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
@@ -27,7 +33,6 @@ import {
 } from "./wire.ts";
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
-type KillableChild = { kill(signal?: number | NodeJS.Signals): void };
 const ADMIN = new Set([
   "start",
   "collect",
@@ -133,9 +138,9 @@ function privateChildEnv(runner: Runner) {
 async function spawnPiped(
   argv: string[],
   cwd: string,
-  stdin?: string,
-  env = childEnv(),
-  activeChildren?: Set<KillableChild>,
+  stdin: string | undefined,
+  env: NodeJS.ProcessEnv,
+  activeChildren: Set<number>,
   timeoutMs?: number,
 ) {
   const child = Bun.spawn(argv, {
@@ -144,28 +149,9 @@ async function spawnPiped(
     stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
     stdout: "pipe",
     stderr: "pipe",
+    detached: true,
   });
-  activeChildren?.add(child);
-  let timedOut = false;
-  const timer =
-    timeoutMs === undefined
-      ? null
-      : setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGKILL");
-        }, timeoutMs);
-  try {
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).arrayBuffer(),
-      new Response(child.stderr).arrayBuffer(),
-      child.exited,
-    ]);
-    if (timedOut) throw new Error(`adapter command timed out after ${timeoutMs}ms`);
-    return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
-  } finally {
-    if (timer !== null) clearTimeout(timer);
-    activeChildren?.delete(child);
-  }
+  return collectDetached(child, activeChildren, timeoutMs, "adapter command");
 }
 
 async function dispatchSeat(
@@ -173,7 +159,7 @@ async function dispatchSeat(
   runId: string,
   cardId: string,
   launcher: SeatLauncher,
-  activeChildren: Set<KillableChild>,
+  activeChildren: Set<number>,
 ): Promise<void> {
   const card = runner.status(runId).cards[cardId];
   if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
@@ -201,12 +187,60 @@ async function dispatchSeat(
   );
 }
 
+// ADR-0015: after an approving pair and before decide accepts it, the blind veto judges the same packet.
+async function dispatchVeto(
+  runner: Runner,
+  runId: string,
+  cardId: string,
+  council: CouncilConfig | null,
+  activeChildren: Set<number>,
+): Promise<void> {
+  if (council === null) {
+    runner.veto(runId, cardId, { status: "unavailable", seat: "veto", failures: ["no council configuration"] });
+    return;
+  }
+  const packet = JSON.stringify(runner.packet(runId, cardId));
+  const refusals = checkOutbound([{ label: "packet", text: packet }]);
+  if (refusals.length > 0) {
+    runner.veto(runId, cardId, {
+      status: "unavailable",
+      seat: council.veto.seat,
+      failures: describeRefusals(refusals),
+    });
+    return;
+  }
+  const options = runner.status(runId).cards[cardId]?.options ?? [];
+  const result = await launchSeat(council.veto, packet, options, (launcher, stdin) =>
+    spawnPiped(launcher.command, runner.stateDir, stdin, privateChildEnv(runner), activeChildren, DEFAULT_TIMEOUT_MS),
+  );
+  if (!result.ok) {
+    runner.veto(runId, cardId, {
+      status: "unavailable",
+      seat: council.veto.seat,
+      failures: chainFailures(council.veto.seat, result.attempts),
+    });
+    return;
+  }
+  runner.veto(runId, cardId, {
+    status: "answered",
+    seat: council.veto.seat,
+    actor: result.launcher.actor,
+    lineage: result.launcher.lineage,
+    dispatch: `${cardId}-${council.veto.seat}`,
+    choice: result.answer.choice,
+    rationale: result.answer.rationale,
+    model_requested: result.launcher.requested ?? UNSPECIFIED,
+    model_served: result.answer.model_served ?? UNVERIFIED,
+  });
+}
+
 async function decideCard(
   runner: Runner,
   runId: string,
   cardId: string,
   launchers: SeatLauncher[],
-  activeChildren: Set<KillableChild>,
+  council: CouncilConfig | null,
+  activeChildren: Set<number>,
 ) {
   const early = runner.authorize(runId, cardId);
   if (early !== null) return early;
@@ -218,7 +252,34 @@ async function decideCard(
       failures.push(`seat ${launcher.seat}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
+  if (failures.length === 0 && runner.vetoDue(runId, cardId)) {
+    try {
+      await dispatchVeto(runner, runId, cardId, council, activeChildren);
+    } catch (cause) {
+      try {
+        runner.veto(runId, cardId, {
+          status: "unavailable",
+          seat: council?.veto.seat ?? "veto",
+          failures: [`veto dispatch failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500)],
+        });
+      } catch {
+        // A veto the runner cannot record leaves the card without one, and decide refuses it.
+      }
+    }
+  }
   return runner.decide(runId, cardId, failures);
+}
+
+function workerCard({ veto, ...card }: Card) {
+  return veto === undefined ? card : { ...card, veto: workerVeto(veto) };
+}
+
+function workerRun(run: Run) {
+  return {
+    ...run,
+    cards: Object.fromEntries(Object.entries(run.cards).map(([id, card]) => [id, workerCard(card)])),
+    decisions: run.decisions.map((decision) => ({ ...decision, card: workerCard(decision.card) })),
+  };
 }
 
 async function execute(
@@ -228,16 +289,18 @@ async function execute(
   workerToken: string,
   allowedRun: string,
   launchers: SeatLauncher[],
+  council: CouncilConfig | null,
   verifyCommand: string[] | null,
   effectAdapters: Map<string, EffectAdapter>,
   decisions: Map<string, Promise<unknown>>,
-  activeChildren: Set<KillableChild>,
+  activeChildren: Set<number>,
   autonomousAvailable: boolean,
 ) {
   const admin = equal(request.token, adminToken);
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
   if (!WORKER.has(request.verb) && !(admin && ADMIN.has(request.verb)))
     throw new Error("runner verb unavailable to this token");
+  const seen = (run: Run) => (admin ? run : workerRun(run));
   const a = request.args;
   if (a.run !== allowedRun) throw new Error("run is outside this runner endpoint");
   switch (request.verb) {
@@ -313,7 +376,7 @@ async function execute(
     case "status":
       return runner.status(str(a, "run"));
     case "sync":
-      return runner.syncRevision(str(a, "run"));
+      return seen(runner.syncRevision(str(a, "run")));
     case "run-verify": {
       if (verifyCommand === null) throw new Error("runner verification command is unconfigured");
       const runId = str(a, "run");
@@ -328,7 +391,7 @@ async function execute(
         throw new Error(`verification failed (${result.exitCode}): ${result.stderr.toString().slice(0, 4000)}`);
       const evidenceId = `verify-${after.revision.slice(0, 8)}-${after.diff_hash.slice(7, 15)}`;
       runner.recordOutput(runId, evidenceId, Buffer.concat([result.stdout, result.stderr]), "verify");
-      return runner.verify(runId, evidenceId);
+      return seen(runner.verify(runId, evidenceId));
     }
     case "ledger":
       return runner.ledger(str(a, "run"));
@@ -336,7 +399,8 @@ async function execute(
       return runner.packet(str(a, "run"), str(a, "card_id"));
     case "prepare": {
       if (a.card === undefined) throw new Error("card is required");
-      return runner.prepare(str(a, "run"), a.card);
+      const card = runner.prepare(str(a, "run"), a.card);
+      return admin ? card : workerCard(card);
     }
     case "decide": {
       const charter = runner.status(str(a, "run")).charter;
@@ -348,7 +412,9 @@ async function execute(
       const cardId = str(a, "card_id");
       const pending =
         decisions.get(cardId) ??
-        decideCard(runner, str(a, "run"), cardId, launchers, activeChildren).finally(() => decisions.delete(cardId));
+        decideCard(runner, str(a, "run"), cardId, launchers, council, activeChildren).finally(() =>
+          decisions.delete(cardId),
+        );
       decisions.set(cardId, pending);
       return pending;
     }
@@ -369,6 +435,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   const runId = flag(argv, "run-id");
   const mode = flag(argv, "socket-mode") ?? "600";
   const seatConfigPath = flag(argv, "seat-config");
+  const councilConfigPath = flag(argv, "council-config");
   const verifyConfigPath = flag(argv, "verify-config");
   const effectConfigPath = flag(argv, "effect-config");
   const eventConfigPath = flag(argv, "event-config");
@@ -429,6 +496,18 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     if (launchers.some((launcher, i) => launchers.slice(i + 1).some((other) => sharesLineage(launcher, other))))
       throw new Error("seat configuration lineages must be independent");
   }
+  let council: CouncilConfig | null = null;
+  if (councilConfigPath !== undefined) {
+    runner.assertPrivatePath(realpathSync(councilConfigPath));
+    council = readCouncilConfig(councilConfigPath);
+    if (council.pair !== undefined)
+      throw new Error(
+        "the runner's supervisor pair comes from --seat-config; a council configuration names the veto only",
+      );
+    const pairSeats = launchers.map((launcher) => ({ seat: launcher.seat, chain: [launcher] }));
+    const problems = rosterProblems([...pairSeats, council.veto]);
+    if (problems.length > 0) throw new Error(`invalid council configuration: ${problems.join("; ")}`);
+  }
   let verifyCommand: string[] | null = null;
   if (verifyConfigPath !== undefined) {
     const configPath = realpathSync(verifyConfigPath);
@@ -473,7 +552,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     }
   }
   const decisions = new Map<string, Promise<unknown>>();
-  const activeChildren = new Set<KillableChild>();
+  const activeChildren = new Set<number>();
   let delivering = false;
   let rescanEvents = false;
   let deliveryHealthy = true;
@@ -608,6 +687,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
           workerToken,
           runId,
           launchers,
+          council,
           verifyCommand,
           effectAdapters,
           decisions,
@@ -626,9 +706,13 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
             : null,
           !auditHealthy ? "audit-failed" : null,
         ].filter((part): part is string => part !== null);
+        const visibleStatus = () => {
+          const run = runner.status(runId);
+          return equal(request.token, adminToken) ? run : workerRun(run);
+        };
         const presented =
           request.verb === "status"
-            ? { ...runner.status(runId), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } }
+            ? { ...visibleStatus(), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } }
             : result;
         connection.end(`${JSON.stringify({ ok: true, result: presented })}\n`);
         if (request.verb === "event" || request.verb === "start") wakeEvents();
@@ -657,10 +741,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   });
   const close = () => {
     if (auditTimer !== null) clearInterval(auditTimer);
-    for (const child of activeChildren) child.kill("SIGKILL");
+    for (const pid of activeChildren) killGroup(pid);
     if (existsSync(socketPath)) unlinkSync(socketPath);
     process.exit(0);
   };
+  process.once("SIGHUP", close);
   process.once("SIGINT", close);
   process.once("SIGTERM", close);
   return 0;
@@ -719,7 +804,7 @@ export async function runRunner(argv: readonly string[], io: Io): Promise<number
     if (argv[0] === "call") return call(argv.slice(1), io);
     if (argv[0] !== undefined) io.err(`ak runner: ${unknownSelector("subcommand", argv[0], ["serve", "call"])}`);
     io.err(
-      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]",
+      "usage: ak runner serve --socket <path> --state-dir <path> --worker-root <path> --run-id <id> --admin-token-file <path> [--kit-root <bundle>] [--seat-config <path>] [--council-config <path>] [--verify-config <path>] [--effect-config <path>] [--event-config <path>] [--loop-config <path>] [--socket-mode 600|660]",
     );
     io.err("       ak runner call <verb> --json <request-file> [--socket <path>]");
     return 2;

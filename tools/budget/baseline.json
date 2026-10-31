@@ -28,8 +28,8 @@
     },
     "bundle/claude-code:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34089,
-      "tokens": 8493
+      "bytes": 34960,
+      "tokens": 8711
     },
     "bundle/claude-code:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -348,8 +348,8 @@
     },
     "bundle/claude-code:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 16763,
-      "tokens": 4190
+      "bytes": 17569,
+      "tokens": 4392
     },
     "bundle/claude-code:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -878,8 +878,8 @@
     },
     "bundle/codex:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34089,
-      "tokens": 8493
+      "bytes": 34960,
+      "tokens": 8711
     },
     "bundle/codex:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -1198,8 +1198,8 @@
     },
     "bundle/codex:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 16763,
-      "tokens": 4190
+      "bytes": 17569,
+      "tokens": 4392
     },
     "bundle/codex:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -1728,8 +1728,8 @@
     },
     "bundle/droid:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34089,
-      "tokens": 8493
+      "bytes": 34960,
+      "tokens": 8711
     },
     "bundle/droid:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2048,8 +2048,8 @@
     },
     "bundle/droid:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 16763,
-      "tokens": 4190
+      "bytes": 17569,
+      "tokens": 4392
     },
     "bundle/droid:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -2578,8 +2578,8 @@
     },
     "bundle/grok:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34089,
-      "tokens": 8493
+      "bytes": 34960,
+      "tokens": 8711
     },
     "bundle/grok:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -2898,8 +2898,8 @@
     },
     "bundle/grok:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 16763,
-      "tokens": 4190
+      "bytes": 17569,
+      "tokens": 4392
     },
     "bundle/grok:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
@@ -3428,8 +3428,8 @@
     },
     "bundle/kimi:references/shared/adapters/runner-contract/CONTRACT.md": {
       "file": "adapters/runner-contract/CONTRACT.md",
-      "bytes": 34089,
-      "tokens": 8493
+      "bytes": 34960,
+      "tokens": 8711
     },
     "bundle/kimi:references/shared/adapters/tracker/CONTRACT.md": {
       "file": "adapters/tracker/CONTRACT.md",
@@ -3748,8 +3748,8 @@
     },
     "bundle/kimi:references/shared/schemas/charter.schema.json": {
       "file": "schemas/charter.schema.json",
-      "bytes": 16763,
-      "tokens": 4190
+      "bytes": 17569,
+      "tokens": 4392
     },
     "bundle/kimi:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
