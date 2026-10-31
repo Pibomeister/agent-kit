@@ -169,12 +169,10 @@ not required for stock Firstmate (`adapters/firstmate/CONTRACT.md`). Nothing in 
 CI needs Firstmate installed.
 
 **The council is optional.** `ak council run --card <card.json> --council-config <roster> [--context <file>]... [--out <record.json>]`
-asks two primary seats and a blind veto seat one question outside a runner. The card holds `id`, `question`,
-`options` and `approve`. The owner-only roster is `{"pair":[<seat>,<seat>],"veto":<seat>}`, where a seat is
-`{"seat":"...","chain":[{"actor":"...","lineage":["..."],"command":["..."],"requested":"...","env":["..."]}]}`
-with `requested` and `env` optional and each `lineage` naming its own `actor`. Each launcher gets the payload on stdin and
-prints JSON with `choice`, `rationale` and optionally `model_served`. The command exits 0 on `approve` or `decline`,
-1 on `escalate` or `refused`, and 2 on a usage or configuration error. The record grants no authority.
+asks two primary seats one question outside a runner, and asks a blind veto seat the same question only when both
+primary seats choose `approve`. `isCouncilCard` and `runCouncil` in `src/council/cli.ts` define the card and the
+exit status; `isCouncilConfig`, `rosterProblems` and `isCouncilAnswer` in `src/council/config.ts` define the
+owner-only roster and a launcher's answer. The record grants no authority.
 [ADR-0015](docs/decisions/0015-council-blind-veto.md) owns the rule and the outbound gate;
 [`adapters/runner-contract/CLI.md`](adapters/runner-contract/CLI.md) owns the runner's `--council-config`.
 
