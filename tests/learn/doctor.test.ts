@@ -823,7 +823,11 @@ describe("subscription-only judge", () => {
     const claude = join(bin, "claude");
     writeFileSync(claude, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
     chmodSync(claude, 0o755);
-    const own = { disableAllHooks: true, env: { ANTHROPIC_BASE_URL: "http://litellm:4000", KEEP: "v" }, apiKeyHelper: "h" };
+    const own = {
+      disableAllHooks: true,
+      env: { ANTHROPIC_BASE_URL: "http://litellm:4000", KEEP: "v" },
+      apiKeyHelper: "h",
+    };
     const config = {
       ...ctx.config,
       configDir: scratch("ak-judge-config-"),
