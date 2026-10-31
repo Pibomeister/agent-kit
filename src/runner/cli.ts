@@ -8,7 +8,7 @@ import { sha256Hex } from "../util/hash.ts";
 import { Runner } from "./core.ts";
 import { sharesLineage } from "./lineage.ts";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
-import { checkOutbound, describeRefusals, outboundLimits } from "../council/outbound.ts";
+import { checkOutbound, decodedText, describeRefusals, outboundLimits } from "../council/outbound.ts";
 import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
@@ -198,7 +198,7 @@ async function dispatchVeto(
     return;
   }
   const packet = JSON.stringify(runner.packet(runId, cardId));
-  const refusals = checkOutbound([{ label: "packet", text: packet }], outboundLimits(council));
+  const refusals = checkOutbound([{ label: "packet", text: decodedText(packet) }], outboundLimits(council), packet);
   if (refusals.length > 0) {
     runner.veto(runId, cardId, {
       status: "unavailable",

@@ -158,6 +158,25 @@ describe("ak council run", () => {
     expect(JSON.stringify(emitted)).toContain("outbound secret: card");
   });
 
+  for (const [name, wrap] of [
+    ["after a newline", (token: string) => `Is this live?\n${token}`],
+    ["after a tab", (token: string) => `Is this live?\t${token}`],
+    ["in quotes", (token: string) => `Is "${token}" live?`],
+  ] as const)
+    test(`a credential ${name} in the card is refused before any seat launches`, async () => {
+      const s = setup();
+      const token = `ghp_${"a1B2".repeat(10)}`;
+      writeFileSync(
+        s.card,
+        JSON.stringify({ id: "q1", question: wrap(token), options: ["yes", "no"], approve: "yes" }),
+      );
+      const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+      expect(result.code).toBe(1);
+      expect(record(s.out)).toMatchObject({ outcome: "refused", seats: [] });
+      expect(JSON.stringify(record(s.out))).toContain("outbound secret: card");
+      expect(() => readFileSync(s.log)).toThrow();
+    });
+
   test("a seat whose descendant holds the pipes times out on time and the substitute answers", async () => {
     const s = setup();
     const shell = updated(record(s.config), ["veto"], () => ({

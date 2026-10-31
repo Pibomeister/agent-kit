@@ -3567,7 +3567,7 @@ describe("council blind veto", () => {
             id: "card-2",
             operation: "bound.run",
             grant: { charter_hash: f.charter.immutability.hash, covers: "spec-approval" },
-            question: `Proceed with ${["gh", "p_", "a1".repeat(18)].join("")}?`,
+            question: `Proceed with:\n${["gh", "p_", "a1".repeat(18)].join("")}?`,
             options: ["yes", "no"],
             approve: "yes",
             evidence: ["e1"],

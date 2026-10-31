@@ -101,6 +101,20 @@ export function deniedBy(path: string, extra: readonly string[] = []): string | 
 }
 
 /**
+ * The strings inside a JSON text, decoded, one per line. Secret patterns read
+ * this and never the JSON itself, whose escapes hide a token's boundaries.
+ */
+export function decodedText(json: string): string {
+  const strings = json.match(/"(?:[^"\\]|\\.)*"/g) ?? [];
+  return strings
+    .map((token) => {
+      const decoded: unknown = JSON.parse(token);
+      return decoded;
+    })
+    .join("\n");
+}
+
+/**
  * Every reason the items may not leave the host. An empty list means they may.
  * `sent` is the exact text a seat receives, when it wraps the items; the size
  * cap counts it rather than the items alone.

@@ -26,8 +26,9 @@ for ticket approval.
 ## Decision
 
 **D4 A.** The council's two primary seats are the charter's own two supervisor seats, judged through
-the existing path. The operator's private council configuration names only the blind veto seat and
-its ordered substitute chain.
+the existing path. For `ak runner serve`, the operator's private council configuration names only the
+blind veto seat and its ordered substitute chain. `ak council run` has no charter, so its configuration
+also names its own pair.
 
 **D5 A.** The council adds no route for ticket approval. Ticket approval stays where the charter and
 `policy:invocation/bound.run` put it.

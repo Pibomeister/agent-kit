@@ -21,7 +21,7 @@ import { basename, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilSeat } from "./config.ts";
-import { checkOutbound, describeRefusals, outboundLimits, type OutboundItem } from "./outbound.ts";
+import { checkOutbound, decodedText, describeRefusals, outboundLimits, type OutboundItem } from "./outbound.ts";
 import { councilOutcome, type CouncilResult } from "./rule.ts";
 import {
   collectDetached,
@@ -170,8 +170,8 @@ async function run(args: RunArgs, io: Io): Promise<number> {
 
   const context = args.context.map((path) => ({ path, name: basename(path), text: readFileSync(path, "utf8") }));
   const items: OutboundItem[] = [
-    { label: "card", text: JSON.stringify(card) },
-    ...context.map((entry) => ({ label: entry.name, path: entry.path, text: entry.text })),
+    { label: "card", text: decodedText(JSON.stringify(card)) },
+    ...context.map((entry) => ({ label: entry.name, path: entry.path, text: `${entry.name}\n${entry.text}` })),
   ];
   const payload = JSON.stringify({
     council: "blind",
