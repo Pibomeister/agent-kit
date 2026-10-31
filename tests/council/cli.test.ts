@@ -127,6 +127,53 @@ describe("ak council run", () => {
     expect(() => readFileSync(s.log)).toThrow();
   });
 
+  test("a refused record carries the card id and the refusal, never the refused content or its digests", async () => {
+    const s = setup();
+    const token = `ghp_${"a1B2".repeat(10)}`;
+    writeFileSync(
+      s.card,
+      JSON.stringify({ id: "q1", question: `Is ${token} live?`, options: ["yes", "no"], approve: "yes" }),
+    );
+    const secret = join(s.dir, ".env");
+    writeFileSync(secret, "NAME=value");
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--context", secret]);
+    expect(result.code).toBe(1);
+    const text = result.out.join("\n");
+    expect(text).not.toContain(token);
+    expect(text).not.toContain("sha256");
+    const emitted = parseJson(text);
+    expect(emitted).toMatchObject({ outcome: "refused", card: { id: "q1" }, seats: [] });
+    expect(emitted).not.toHaveProperty("card.question");
+    expect(emitted).not.toHaveProperty("payload");
+    expect(JSON.stringify(emitted)).toContain("deny-list");
+    expect(JSON.stringify(emitted)).toContain("outbound secret: card");
+  });
+
+  test("a seat whose descendant holds the pipes times out on time and the substitute answers", async () => {
+    const s = setup();
+    const shell = updated(record(s.config), ["veto"], () => ({
+      seat: "veto",
+      chain: [
+        { actor: "hung", lineage: ["hung"], command: ["sh", "-c", "sleep 30 & wait"] },
+        {
+          actor: "v1",
+          lineage: ["v1"],
+          command: ["bun", "-e", "console.log(JSON.stringify({choice:'yes',rationale:'blind'}))"],
+        },
+      ],
+    }));
+    const limited = updated(shell, ["limits"], () => ({ timeout_ms: 3000 }));
+    writeFileSync(s.config, JSON.stringify(limited), { mode: 0o600 });
+    const started = Date.now();
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect(result.code).toBe(0);
+    expect(record(s.out)).toMatchObject({
+      outcome: "approve",
+      seats: [{}, {}, { actor: "v1", attempts: [{ actor: "hung", error: "launcher timed out after 3000ms" }, {}] }],
+    });
+  });
+
   test("a roster others can read is refused", async () => {
     const s = setup();
     chmodSync(s.config, 0o644);

@@ -133,6 +133,13 @@ function verdictBase(run: Run): string {
   return baseRef;
 }
 
+/** A card as `prepare` freezes it: judgments and the veto arrive only through their own operations. */
+function unjudged(card: CardInput): Card {
+  const frozen: Card = { ...card, judgments: [] };
+  delete frozen.veto;
+  return frozen;
+}
+
 function approved(decision: Decision): boolean {
   const choice = decision.answer?.choice ?? decision.card.judgments[0]?.choice;
   return (
@@ -830,7 +837,7 @@ export class Runner {
       );
     const existing = run.cards[card.id];
     if (existing !== undefined) {
-      if (JSON.stringify({ ...existing, judgments: [] }) !== JSON.stringify({ ...card, judgments: [] }))
+      if (JSON.stringify(unjudged(existing)) !== JSON.stringify(unjudged(card)))
         throw new Error("checkpoint card changed");
       return existing;
     }
@@ -849,7 +856,7 @@ export class Runner {
       throw new Error(
         "a non-approving ruling settled this artifact at this revision; revise it before preparing another",
       );
-    const prepared = { ...card, judgments: [] };
+    const prepared = unjudged(card);
     run.cards[card.id] = prepared;
     this.save(run);
     return prepared;

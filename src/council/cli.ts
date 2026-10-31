@@ -23,7 +23,15 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilSeat } from "./config.ts";
 import { checkOutbound, describeRefusals, outboundLimits, type OutboundItem } from "./outbound.ts";
 import { councilOutcome, type CouncilResult } from "./rule.ts";
-import { launchSeat, UNSPECIFIED, UNVERIFIED, type Attempt, type SeatResult, type Spawn } from "./seat.ts";
+import {
+  collectDetached,
+  launchSeat,
+  UNSPECIFIED,
+  UNVERIFIED,
+  type Attempt,
+  type SeatResult,
+  type Spawn,
+} from "./seat.ts";
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
 
@@ -113,23 +121,9 @@ function spawner(cwd: string, timeoutMs: number): Spawn {
       stdin: Buffer.from(stdin),
       stdout: "pipe",
       stderr: "pipe",
+      detached: true,
     });
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, timeoutMs);
-    try {
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(child.stdout).arrayBuffer(),
-        new Response(child.stderr).arrayBuffer(),
-        child.exited,
-      ]);
-      if (timedOut) throw new Error(`launcher timed out after ${timeoutMs}ms`);
-      return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
-    } finally {
-      clearTimeout(timer);
-    }
+    return collectDetached(child, timeoutMs, "launcher");
   };
 }
 
@@ -205,20 +199,26 @@ async function run(args: RunArgs, io: Io): Promise<number> {
       rmSync(scratch, { recursive: true, force: true });
     }
   }
+  const disclosed =
+    decided === null
+      ? { card: { id: card.id } }
+      : {
+          card,
+          payload: {
+            sha256: sha256(payload),
+            bytes: Buffer.byteLength(payload, "utf8"),
+            context: context.map((entry) => ({
+              name: entry.name,
+              sha256: sha256(entry.text),
+              bytes: Buffer.byteLength(entry.text, "utf8"),
+            })),
+          },
+        };
   const record = {
     schema: "council-record",
     schema_version: 1,
     at: new Date().toISOString(),
-    card,
-    payload: {
-      sha256: sha256(payload),
-      bytes: Buffer.byteLength(payload, "utf8"),
-      context: context.map((entry) => ({
-        name: entry.name,
-        sha256: sha256(entry.text),
-        bytes: Buffer.byteLength(entry.text, "utf8"),
-      })),
-    },
+    ...disclosed,
     seats,
     outcome: decided?.outcome ?? "refused",
     choice: decided?.choice ?? null,

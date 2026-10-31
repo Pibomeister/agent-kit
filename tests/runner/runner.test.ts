@@ -3272,6 +3272,41 @@ describe("council blind veto", () => {
     expect(decision).toHaveProperty("judgments.length", 2);
   });
 
+  test("re-sending a prepared card after a veto returns the card with its veto", () => {
+    const f = councilReady();
+    const input = {
+      id: "card-1",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    };
+    card(f);
+    f.runner.veto("toy-run", "card-1", answered("no"));
+    expect(f.runner.prepare("toy-run", input).veto).toMatchObject({ choice: "no" });
+    expect(() => f.runner.prepare("toy-run", { ...input, question: "Changed?" })).toThrow("checkpoint card changed");
+  });
+
+  test("a veto supplied through prepare is not recorded", () => {
+    const f = councilReady();
+    const forged: Parameters<typeof f.runner.prepare>[1] & { veto: unknown } = {
+      id: "card-1",
+      operation: "align.run",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+      question: "Proceed?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["e1"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+      veto: answered("yes"),
+    };
+    expect(f.runner.prepare("toy-run", forged).veto).toBeUndefined();
+    expect(f.runner.status("toy-run").cards["card-1"]?.veto).toBeUndefined();
+  });
+
   test("a non-approving veto refuses and never decides in its own favour", () => {
     const f = councilReady();
     card(f);

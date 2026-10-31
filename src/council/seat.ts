@@ -8,10 +8,13 @@
 
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
-export type Spawn = (
-  launcher: CouncilLauncher,
-  stdin: string,
-) => Promise<{ exitCode: number; stdout: Buffer; stderr: Buffer }>;
+export interface ChildOutput {
+  exitCode: number;
+  stdout: Buffer;
+  stderr: Buffer;
+}
+
+export type Spawn = (launcher: CouncilLauncher, stdin: string) => Promise<ChildOutput>;
 
 export interface Attempt {
   actor: string;
@@ -30,6 +33,44 @@ export const UNVERIFIED = "unverified";
 
 function reason(cause: unknown): string {
   return (cause instanceof Error ? cause.message : String(cause)).slice(0, 500);
+}
+
+/**
+ * A piped child's output, or a timeout error once `timeoutMs` passes. The child
+ * must be spawned `detached`: the timeout kills its whole process group and
+ * stops waiting, because a descendant can hold the pipes open past any kill.
+ */
+export async function collectDetached(
+  child: {
+    pid: number;
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+  },
+  timeoutMs: number,
+  what: string,
+): Promise<ChildOutput> {
+  const output = Promise.all([
+    new Response(child.stdout).arrayBuffer(),
+    new Response(child.stderr).arrayBuffer(),
+    child.exited,
+  ]).then(([stdout, stderr, exitCode]) => ({ exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // The group is already gone; a descendant that left it may still hold the pipes.
+      }
+      reject(new Error(`${what} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([output, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function launchSeat(

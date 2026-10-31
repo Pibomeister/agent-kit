@@ -9,7 +9,7 @@ import { Runner } from "./core.ts";
 import { sharesLineage } from "./lineage.ts";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
 import { checkOutbound, describeRefusals, outboundLimits } from "../council/outbound.ts";
-import { chainFailures, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
+import { chainFailures, collectDetached, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
@@ -148,26 +148,18 @@ async function spawnPiped(
     stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
     stdout: "pipe",
     stderr: "pipe",
+    detached: timeoutMs !== undefined,
   });
   activeChildren?.add(child);
-  let timedOut = false;
-  const timer =
-    timeoutMs === undefined
-      ? null
-      : setTimeout(() => {
-          timedOut = true;
-          child.kill("SIGKILL");
-        }, timeoutMs);
   try {
+    if (timeoutMs !== undefined) return await collectDetached(child, timeoutMs, "adapter command");
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(child.stdout).arrayBuffer(),
       new Response(child.stderr).arrayBuffer(),
       child.exited,
     ]);
-    if (timedOut) throw new Error(`adapter command timed out after ${timeoutMs}ms`);
     return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
   } finally {
-    if (timer !== null) clearTimeout(timer);
     activeChildren?.delete(child);
   }
 }
