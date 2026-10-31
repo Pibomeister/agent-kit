@@ -816,6 +816,28 @@ describe("subscription-only judge", () => {
       },
     ]);
   });
+
+  test("the judge command's own settings cannot carry a metered name or key helper", () => {
+    const ctx = testContext();
+    const bin = scratch("ak-judge-bin-");
+    const claude = join(bin, "claude");
+    writeFileSync(claude, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
+    chmodSync(claude, 0o755);
+    const own = { disableAllHooks: true, env: { ANTHROPIC_BASE_URL: "http://litellm:4000", KEEP: "v" }, apiKeyHelper: "h" };
+    const config = {
+      ...ctx.config,
+      configDir: scratch("ak-judge-config-"),
+      judgeCommand: [claude, "-p", "--settings", JSON.stringify(own)],
+    };
+    mkdirSync(config.runtimeDir, { recursive: true });
+    writeFileSync(join(config.runtimeDir, "own-settings.json"), JSON.stringify(own));
+    const fromFile = { ...config, judgeCommand: [claude, "-p", "--settings=own-settings.json"] };
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    const pinned = { disableAllHooks: true, env: { ANTHROPIC_BASE_URL: "", KEEP: "v" }, apiKeyHelper: "" };
+    expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toEqual([pinned]);
+    expect(settingsOf(commandJudge(fromFile, { subscriptionOnly: true })("prompt", context))).toEqual([pinned]);
+    expect(settingsOf(commandJudge(config)("prompt", context))).toEqual([own]);
+  });
 });
 
 function verb(name: string, argv: readonly string[], ctx: TestContext): number {
