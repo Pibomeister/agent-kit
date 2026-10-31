@@ -458,7 +458,7 @@ function mtime(path: string): number {
   }
 }
 
-/** Every session file in the window, placed by the working directory its first records name. */
+/** Every session file in the window, placed by the working directory its first records name, read past the peek when it misses. */
 function locate(options: CollectOptions): Located[] {
   const since = options.now - options.days * 86_400_000;
   const out: Located[] = [];
@@ -469,17 +469,15 @@ function locate(options: CollectOptions): Located[] {
   if (options.hosts.includes("claude")) {
     for (const home of options.claudeHomes) {
       for (const path of files(join(home, "projects"), (name) => name.endsWith(".jsonl"), 1)) {
-        keep("claude", path, (p) => {
-          for (const row of peekRows(p)) if (str(row.cwd) !== null) return str(row.cwd);
-          return null;
-        });
+        const first = (rows: JsonObject[]) => str(rows.find((row) => str(row.cwd) !== null)?.cwd);
+        keep("claude", path, (p) => first(peekRows(p)) ?? first(readRows(p)));
       }
     }
   }
   if (options.hosts.includes("codex")) {
     for (const home of options.codexHomes) {
       for (const path of files(join(home, "sessions"), (name) => /^rollout-.*\.jsonl$/.test(name), 4)) {
-        keep("codex", path, (p) => str(codexMeta(peekRows(p))?.cwd));
+        keep("codex", path, (p) => str(codexMeta(peekRows(p))?.cwd) ?? str(codexMeta(readRows(p))?.cwd));
       }
     }
   }

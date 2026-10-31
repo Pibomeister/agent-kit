@@ -172,7 +172,6 @@ export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<Colle
 function writeCollection(out: string, collection: Collection): void {
   const transcripts = join(out, "transcripts");
   mkdirSync(transcripts, { recursive: true, mode: 0o700 });
-  chmodSync(out, 0o700);
   for (const session of collection.sampled) {
     const path = join(transcripts, `${session.key}.md`);
     writeFileSync(path, renderTranscript(session), { mode: 0o600 });

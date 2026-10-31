@@ -5,6 +5,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -258,6 +259,38 @@ describe("collect", () => {
     expect(claude.stats).toMatchObject({ user_turns: 2, corrections: 1, error_outputs: 1, code_edits: true });
     expect(texts(claude)).not.toContain("host text");
     expect(texts(claude)).not.toContain("sidechain work");
+  });
+
+  test("a session whose first records outrun the peek is still placed by its working directory", () => {
+    const w = world();
+    const claudeFile = join(w.claude, "projects", "-repo", "long.jsonl");
+    jsonl(claudeFile, [
+      { type: "user", sessionId: "long", cwd: w.repo, message: { role: "user", content: "x".repeat(70_000) } },
+      {
+        type: "assistant",
+        sessionId: "long",
+        message: {
+          content: [
+            { type: "text", text: "On it." },
+            { type: "tool_use", name: "Read", input: {} },
+          ],
+        },
+      },
+    ]);
+    touch(claudeFile, w.now - HOUR);
+    const codexFile = join(w.codex, "sessions", "2026", "10", "30", "rollout-long.jsonl");
+    jsonl(codexFile, [
+      { type: "session_meta", payload: { id: "xlong", cwd: w.repo, instructions: "y".repeat(70_000) } },
+      {
+        type: "response_item",
+        payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "On it." }] },
+      },
+      { type: "response_item", payload: { type: "function_call", name: "shell", arguments: "{}" } },
+    ]);
+    touch(codexFile, w.now - HOUR);
+    const keys = collect(options(w, { maxSessions: 50, noSkill: 50 }), {}).sampled.map((session) => session.key);
+    expect(keys).toContain("claude-long");
+    expect(keys).toContain("codex-xlong");
   });
 
   test("a symlinked skill directory is found, and a session using it counts as using it", () => {
@@ -846,6 +879,12 @@ describe("ak learn doctor", () => {
       "skill-doctor",
     ]);
     expect(mode(out)).toBe(0o700);
+    const shared = join(w.base, "shared");
+    mkdirSync(shared, { mode: 0o755 });
+    chmodSync(shared, 0o755);
+    expect(verb("run", ["--out", shared, "--repo", w.repo, ...homes], ctx)).toBe(0);
+    expect(mode(shared)).toBe(0o755);
+    expect(mode(join(shared, "transcripts"))).toBe(0o700);
     expect(readdirSync(join(out, "transcripts")).toSorted()).toEqual(["claude-c1.md", "codex-x1.md", "grok-g1.md"]);
     expect(mode(join(out, "transcripts", "claude-c1.md"))).toBe(0o600);
     const report = join(out, "report.html");
