@@ -19,6 +19,7 @@ import { Ledger } from "../core/ledger.ts";
 import { loopDir, mainRepoRoot } from "../core/paths.ts";
 import { run as runProcess } from "../core/proc.ts";
 import { readJson, writeGated, writeJson } from "../core/store.ts";
+import { readWorktrees } from "../memory/registry.ts";
 import { skillsLedger } from "../skills/learn.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
 import { userHome } from "../sources/worker-sessions.ts";
@@ -43,7 +44,7 @@ const RUN_FILE = "run.json";
 const DEFAULT_TITLE = "Skill health report";
 
 const COLLECT_FLAGS =
-  "--out DIR [--repo P[:P…] | --all] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--subagents] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
+  "--out DIR [--repo P[:P…] | --all] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
 
 /** The directory holding `path`'s nearest `.git` (a file in a linked worktree), or null. */
 function enclosingWorkTree(path: string): string | null {
@@ -106,6 +107,20 @@ function paths(value: string | undefined): string[] {
     .map((entry) => resolve(entry));
 }
 
+/**
+ * The worktrees of `roots`: those git lists in each repository, and those the runtime registered
+ * against it, which outlast their removal. Git runs in the repository, never in a session's folder.
+ */
+function linkedWorktrees(roots: readonly string[], ctx: LearnContext): string[] {
+  const registered = Object.entries(readWorktrees(ctx.config));
+  return roots.flatMap((root) => [
+    ...runProcess(["git", "-C", root, "worktree", "list", "--porcelain"], { timeoutMs: 10_000 })
+      .stdout.split("\n")
+      .flatMap((line) => (line.startsWith("worktree ") ? [line.slice("worktree ".length)] : [])),
+    ...registered.flatMap(([worktree, owner]) => (owner === root ? [worktree] : [])),
+  ]);
+}
+
 /** The collector's options from the command line, or the first thing wrong with it. */
 export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<CollectOptions> {
   const hostText = flag(args, "host");
@@ -133,16 +148,17 @@ export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<Colle
         ? "not in a repository: pass --repo P or --all"
         : `--repo names no directory: ${missing.join(", ")}`,
     );
+  const roots = repos.filter((repo): repo is string => repo !== null);
   const homes = defaultHomes(ctx.env, ctx.config.configDir);
   const value: CollectOptions = {
     hosts: names.filter(isHost),
-    repos: repos.filter((repo): repo is string => repo !== null),
+    repos: roots,
+    worktrees: linkedWorktrees(roots, ctx),
     days: days.value,
     maxSessions: maxSessions.value,
     perSkill: perSkill.value,
     noSkill: noSkill.value,
     includeGlobalSkills: args.flags.get("global-skills") === true,
-    includeSubagents: args.flags.get("subagents") === true,
     claudeHomes: flag(args, "claude-home") === undefined ? homes.claudeHomes : paths(flag(args, "claude-home")),
     codexHomes: flag(args, "codex-home") === undefined ? homes.codexHomes : paths(flag(args, "codex-home")),
     grokHomes: flag(args, "grok-home") === undefined ? homes.grokHomes : paths(flag(args, "grok-home")),

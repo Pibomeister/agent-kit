@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import { commandJudge, subscriptionEnv, type JudgeCallContext } from "../../src/learn/core/judge.ts";
+import { worktreesPath } from "../../src/learn/core/paths.ts";
 import { run as runProcess } from "../../src/learn/core/proc.ts";
 import { scrubSecrets } from "../../src/learn/core/secrets.ts";
 import { skillsLedger } from "../../src/learn/skills/learn.ts";
@@ -220,7 +221,7 @@ function options(w: World, extra: Partial<CollectOptions> = {}): CollectOptions 
     perSkill: 3,
     noSkill: 4,
     includeGlobalSkills: false,
-    includeSubagents: false,
+    worktrees: [],
     claudeHomes: [w.claude],
     codexHomes: [w.codex],
     grokHomes: [w.grok],
@@ -257,8 +258,6 @@ describe("collect", () => {
     expect(claude.stats).toMatchObject({ user_turns: 2, corrections: 1, error_outputs: 1, code_edits: true });
     expect(texts(claude)).not.toContain("host text");
     expect(texts(claude)).not.toContain("sidechain work");
-    const withSubagents = collect(options(w, { hosts: ["claude"], includeSubagents: true }), {});
-    expect(texts(find(withSubagents.sampled, "claude-c1"))).toContain("sidechain work");
   });
 
   test("a symlinked skill directory is found, and a session using it counts as using it", () => {
@@ -768,6 +767,47 @@ describe("ak learn doctor", () => {
     writeFileSync(join(repo, ".gitignore"), "out/\n");
     expect(outputRefusal(join(repo, "out", "report.html"))).toBeNull();
     expect(outputRefusal(join(scratch("ak-doctor-free-"), "out"))).toBeNull();
+  });
+
+  test("a session belongs by the root, a listed worktree or a registered one; a same-named folder does not", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    const linked = join(w.base, "linked");
+    const added = runProcess(["git", "-C", w.repo, "worktree", "add", "-q", "-b", "linked", linked], {
+      timeoutMs: 30_000,
+    });
+    expect(added.code).toBe(0);
+    const removed = join(w.base, "removed-worktree");
+    mkdirSync(dirname(worktreesPath(ctx.config)), { recursive: true });
+    writeFileSync(
+      worktreesPath(ctx.config),
+      JSON.stringify({ [removed]: w.repo, [join(w.base, "foreign")]: join(w.base, "other-repo") }),
+    );
+    const session = (id: string, cwd: string): void => {
+      const file = join(w.claude, "projects", "-places", `${id}.jsonl`);
+      jsonl(file, [
+        { type: "user", sessionId: id, cwd, message: { role: "user", content: "Some work" } },
+        {
+          type: "assistant",
+          sessionId: id,
+          message: {
+            content: [
+              { type: "text", text: "On it." },
+              { type: "tool_use", name: "Read", input: {} },
+            ],
+          },
+        },
+      ]);
+      touch(file, w.now - HOUR);
+    };
+    session("in-linked", join(linked, "src"));
+    session("in-removed", removed);
+    session("same-name", join(w.base, "elsewhere", "repo", "src"));
+    session("foreign", join(w.base, "foreign"));
+    const parsed = collectOptions(parseLearnArgs(["--host", "claude", "--claude-home", w.claude]), ctx);
+    if (!parsed.ok) throw new Error(parsed.error);
+    const keys = collect(parsed.value, {}).sampled.map((sampled) => sampled.key);
+    expect(keys.toSorted()).toEqual(["claude-c1", "claude-in-linked", "claude-in-removed"]);
   });
 
   test("collect options: hosts, whole numbers and the repository scope are checked", () => {

@@ -79,12 +79,13 @@ export interface CollectOptions {
   hosts: readonly DoctorHost[];
   /** Repository roots a session's working directory must belong to; empty means every session. */
   repos: readonly string[];
+  /** The linked worktrees of `repos`: a session in one of them belongs too. */
+  worktrees: readonly string[];
   days: number;
   maxSessions: number;
   perSkill: number;
   noSkill: number;
   includeGlobalSkills: boolean;
-  includeSubagents: boolean;
   claudeHomes: readonly string[];
   codexHomes: readonly string[];
   grokHomes: readonly string[];
@@ -281,14 +282,14 @@ interface Parsed {
 const COMMAND_NAME = /<command-name>\s*\/?([^<\s]+)\s*<\/command-name>/;
 const COMMAND_ARGS = /<command-args>([\s\S]*?)<\/command-args>/;
 
-/** One Claude Code project-history file. Sidechain rows are subagent work and are left out unless asked for. */
-export function parseClaudeSession(path: string, includeSubagents = false): Parsed | null {
+/** One Claude Code project-history file. Sidechain rows are subagent work and are left out. */
+export function parseClaudeSession(path: string): Parsed | null {
   const log = new SessionLog();
   let id: string | null = null;
   let cwd: string | null = null;
   let started: string | null = null;
   for (const row of readRows(path)) {
-    if (row.isSidechain === true && !includeSubagents) continue;
+    if (row.isSidechain === true) continue;
     id ??= str(row.sessionId);
     cwd ??= str(row.cwd);
     started ??= str(row.timestamp);
@@ -340,10 +341,10 @@ function codexSubagent(meta: JsonObject | null): boolean {
 }
 
 /** One Codex rollout. A `<skill>` user block is the host loading a skill, recorded as its use. */
-export function parseCodexSession(path: string, includeSubagents = false): Parsed | null {
+export function parseCodexSession(path: string): Parsed | null {
   const rows = readRows(path);
   const meta = codexMeta(rows);
-  if (meta === null || (codexSubagent(meta) && !includeSubagents)) return null;
+  if (meta === null || codexSubagent(meta)) return null;
   const log = new SessionLog();
   for (const row of rows) {
     const payload = object(row.payload);
@@ -420,12 +421,11 @@ export function parseGrokSession(dir: string): Parsed | null {
   };
 }
 
-/** Whether `cwd` belongs to `repo`: inside it, or under a directory with the repository's name (a worktree elsewhere). */
-export function belongsTo(cwd: string, repo: string): boolean {
-  const root = resolve(repo);
+/** Whether `cwd` is `root` or inside it. */
+function belongsTo(cwd: string, root: string): boolean {
+  const top = resolve(root);
   const place = resolve(cwd);
-  if (place === root || place.startsWith(`${root}${sep}`)) return true;
-  return place.split(sep).includes(basename(root));
+  return place === top || place.startsWith(`${top}${sep}`);
 }
 
 interface Located {
@@ -574,9 +574,9 @@ export function defaultHomes(
   return { claudeHomes: [configDir], codexHomes: homes.codex, grokHomes: homes.grok };
 }
 
-function parse(located: Located, includeSubagents: boolean): Parsed | null {
-  if (located.host === "claude") return parseClaudeSession(located.path, includeSubagents);
-  if (located.host === "codex") return parseCodexSession(located.path, includeSubagents);
+function parse(located: Located): Parsed | null {
+  if (located.host === "claude") return parseClaudeSession(located.path);
+  if (located.host === "codex") return parseCodexSession(located.path);
   return parseGrokSession(located.path);
 }
 
@@ -617,13 +617,14 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
   const skills = discoverSkills(options, env);
   const installed = new Set(skills.map((skill) => skill.name));
   const located = locate(options);
+  const places = [...options.repos, ...options.worktrees];
   const matched = located.filter((entry) => {
     const { cwd } = entry;
-    return options.repos.length === 0 || (cwd !== null && options.repos.some((repo) => belongsTo(cwd, repo)));
+    return options.repos.length === 0 || (cwd !== null && places.some((place) => belongsTo(cwd, place)));
   });
   const sessions: DoctorSession[] = [];
   for (const entry of matched) {
-    const parsed = parse(entry, options.includeSubagents);
+    const parsed = parse(entry);
     if (parsed === null) continue;
     const { log } = parsed;
     if (log.stats.assistant_turns === 0 || log.stats.tool_calls === 0) continue;
