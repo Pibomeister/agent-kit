@@ -295,7 +295,8 @@ preservation is required before a context-reduction flag can enter the scheduled
 subscription-only. Every variable that could bill or reroute the call (`*_API_KEY`,
 `*_AUTH_TOKEN`, `*_BEARER_TOKEN`, `*_BASE_URL`, `AWS_BEARER_TOKEN*` and `CLAUDE_CODE_USE_*`) is
 dropped by name from the judge's environment, and the judge's `--settings` layer blanks each such
-name in the user's `settings.json` `env` and its `apiKeyHelper`, so the call answers on the host's
+name and `apiKeyHelper` from both the user's `settings.json` and the judge command's own
+`--settings`, so the call answers on the host's
 signed-in seat or fails (`src/learn/core/judge.ts` `subscriptionEnv`, `subscriptionCommand`). The doctor refuses an output path inside a work
 tree unless git ignores it, and it never edits a skill file.
 
