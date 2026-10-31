@@ -9,6 +9,8 @@ import { dirname, join } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import { commandJudge, subscriptionEnv, type JudgeCallContext } from "../../src/learn/core/judge.ts";
+import { run as runProcess } from "../../src/learn/core/proc.ts";
+import { scrubSecrets } from "../../src/learn/core/secrets.ts";
 import { skillsLedger } from "../../src/learn/skills/learn.ts";
 import { doctorArea, collectOptions, outputRefusal } from "../../src/learn/doctor/cli.ts";
 import {
@@ -23,7 +25,7 @@ import {
   truncate,
 } from "../../src/learn/doctor/collect.ts";
 import type { JsonObject, JsonValue } from "../../src/learn/doctor/json.ts";
-import { renderReport } from "../../src/learn/doctor/render.ts";
+import { renderReport, repoArgument } from "../../src/learn/doctor/render.ts";
 import { aggregate, gradeFor, parseScore, type SessionScore } from "../../src/learn/doctor/score.ts";
 import {
   type Advice,
@@ -647,7 +649,7 @@ describe("renderReport", () => {
       scores,
       aggregate: aggregate(scores, 1),
       advice,
-      recordedRepo: null,
+      decideRepo: null,
     });
     expect(html.startsWith("<!DOCTYPE html>")).toBe(true);
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
@@ -867,6 +869,30 @@ describe("ak learn doctor", () => {
     expect(recorded).toContain(`ak learn doctor accept ${proposal.id} --repo `);
     expect(recorded).toContain(w.repo);
     expect(verb("accept", [proposal.id, "--repo", w.repo], { ...ctx, cwd: w.base })).toBe(0);
+  });
+
+  test("a repository under the home directory gets a --repo argument that passes the gate and reaches it", () => {
+    const home = "/Users/alice";
+    const shellValue = (argument: string): string =>
+      runProcess(["sh", "-c", `printf %s ${argument}`], { timeoutMs: 10_000, env: { ...process.env, HOME: home } })
+        .stdout;
+    for (const repo of [`${home}/orca/agent-kit`, `${home}/home/bob/it's "$x"`, home]) {
+      const argument = repoArgument(repo, home);
+      expect(scrubSecrets(argument).text).toBe(argument);
+      expect(shellValue(argument)).toBe(repo);
+    }
+    expect(repoArgument("/Users/alice2/repo", home)).toBe("/Users/alice2/repo");
+
+    const w = world();
+    const ctx = testContext({ cwd: w.repo, env: { HOME: w.base } });
+    ctx.judge = scriptedJudge;
+    const homes = ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+    const out = join(w.base, "out");
+    expect(verb("run", ["--out", out, "--repo", w.repo, "--record", ...homes], ctx)).toBe(0);
+    expect(readFileSync(join(out, "report.html"), "utf8")).toContain("--repo &quot;$HOME/repo&quot;");
+    const again = join(w.base, "again.html");
+    expect(verb("render", ["--out", out, "--report", again], ctx)).toBe(0);
+    expect(readFileSync(again, "utf8")).toBe(readFileSync(join(out, "report.html"), "utf8"));
   });
 
   test("a held ledger lock fails --record and leaves the report without a decision command", () => {

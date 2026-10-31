@@ -121,15 +121,24 @@ function scorecard(aggregate: Aggregate): string {
   return `<div class="scorecard"><div class="card grade"><div class="small muted">Overall</div><div class="letter">${e(aggregate.grade ?? "—")}</div><div class="value">${percent(scores.overall)} / 100</div><div class="small muted">${aggregate.sessions_scored} scored · ${aggregate.failed.length} failed</div></div><div class="tiles">${tiles}</div></div>`;
 }
 
+/**
+ * `repo` as one shell argument that survives the secret gate: under `home` it is written
+ * from `$HOME`, because the gate rewrites an absolute home path and the shell could not resolve the result.
+ */
+export function repoArgument(repo: string, home: string): string {
+  if (repo !== home && !repo.startsWith(`${home}/`)) return shellQuote(repo);
+  return `"$HOME${repo.slice(home.length).replace(/["$`\\]/g, "\\$&")}"`;
+}
+
 /** How a human decides a proposal: a command that works from anywhere once it is in the ledger, else how to put it there. */
-function decideLine(id: string, recordedRepo: string | null): string {
-  if (recordedRepo === null)
+function decideLine(id: string, decideRepo: string | null): string {
+  if (decideRepo === null)
     return `This run did not record its proposals, so this edit cannot be decided yet. Re-run with <code>--repo P --record</code>.`;
-  const repo = e(shellQuote(recordedRepo));
+  const repo = e(decideRepo);
   return `<code>ak learn doctor accept ${e(id)} --repo ${repo}</code> or <code>ak learn doctor reject ${e(id)} --repo ${repo} --reason "…"</code>`;
 }
 
-function suggestions(advice: Advice, recordedRepo: string | null): string {
+function suggestions(advice: Advice, decideRepo: string | null): string {
   if (advice.status === "unavailable")
     return `<p>The suggestion step was unavailable: ${e(advice.why ?? "no reason given")}. No edit is proposed.</p>`;
   if (advice.suggestions.length === 0)
@@ -139,7 +148,7 @@ function suggestions(advice: Advice, recordedRepo: string | null): string {
       const evidence = s.evidence
         .map((item) => `<li><code>${e(item.session)}</code> · ${e(item.scorer)}: ${e(item.moment)}</li>`)
         .join("");
-      return `<article class="card suggestion"><header><h3>${e(s.skill)}</h3><span class="chip">${s.kind === "new" ? "new skill" : "edit"} · <code>${e(s.id)}</code></span></header><p>${e(s.change)}</p><dl><dt>Rule</dt><dd>${e(s.rule)}</dd>${s.path === undefined ? "" : `<dt>File</dt><dd><code>${e(s.path)}</code></dd>`}<dt>Decide</dt><dd>${decideLine(s.id, recordedRepo)}</dd></dl><div class="small muted">Evidence</div><ul class="evidence">${evidence}</ul>${diffBlock(s.diff)}</article>`;
+      return `<article class="card suggestion"><header><h3>${e(s.skill)}</h3><span class="chip">${s.kind === "new" ? "new skill" : "edit"} · <code>${e(s.id)}</code></span></header><p>${e(s.change)}</p><dl><dt>Rule</dt><dd>${e(s.rule)}</dd>${s.path === undefined ? "" : `<dt>File</dt><dd><code>${e(s.path)}</code></dd>`}<dt>Decide</dt><dd>${decideLine(s.id, decideRepo)}</dd></dl><div class="small muted">Evidence</div><ul class="evidence">${evidence}</ul>${diffBlock(s.diff)}</article>`;
     })
     .join("");
 }
@@ -189,8 +198,8 @@ export interface ReportInput {
   scores: readonly SessionScore[];
   aggregate: Aggregate;
   advice: Advice;
-  /** The repository whose skills ledger holds this run's proposals; null when they were not recorded. */
-  recordedRepo: string | null;
+  /** The `--repo` argument (`repoArgument`) that reaches the ledger holding this run's proposals; null when they were not recorded. */
+  decideRepo: string | null;
 }
 
 /** The whole report. Pure: the same input renders the same bytes. */
@@ -204,7 +213,7 @@ export function renderReport(input: ReportInput): string {
   const decision =
     advice.suggestions.length === 0
       ? "No decision is required."
-      : input.recordedRepo === null
+      : input.decideRepo === null
         ? "No decision is required to read this report; these edits are not recorded, and each one below says how to record it."
         : "No decision is required to read this report; each edit below names the command that accepts or rejects it.";
   const edits =
@@ -240,7 +249,7 @@ export function renderReport(input: ReportInput): string {
 </header>
 <section aria-labelledby="scores"><h2 id="scores">Scorecard</h2>${scorecard(aggregate)}</section>
 <section aria-labelledby="findings"><h2 id="findings">Top findings</h2>${findings}</section>
-<section aria-labelledby="edits"><h2 id="edits">Suggested skill edits</h2>${suggestions(advice, input.recordedRepo)}</section>
+<section aria-labelledby="edits"><h2 id="edits">Suggested skill edits</h2>${suggestions(advice, input.decideRepo)}</section>
 ${screened(advice)}
 <section aria-labelledby="sessions"><h2 id="sessions">Sessions</h2><div class="table"><table><thead><tr><th scope="col">Session</th><th scope="col">Skills</th><th scope="col">Efficiency</th><th scope="col">Code quality</th><th scope="col">Procedure</th><th scope="col">Verbosity</th><th scope="col">Corrections</th><th scope="col">Result</th></tr></thead><tbody>${sessionRows(input.scores)}</tbody></table></div></section>
 <footer><h2>Method</h2><ul class="small muted">${notes.map((n) => `<li>${e(n)}</li>`).join("")}</ul></footer>

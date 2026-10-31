@@ -21,6 +21,7 @@ import { run as runProcess } from "../core/proc.ts";
 import { readJson, writeGated, writeJson } from "../core/store.ts";
 import { skillsLedger } from "../skills/learn.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
+import { userHome } from "../sources/worker-sessions.ts";
 import {
   collect,
   type Collection,
@@ -34,7 +35,7 @@ import {
   type DoctorHost,
   renderTranscript,
 } from "./collect.ts";
-import { renderReport } from "./render.ts";
+import { renderReport, repoArgument } from "./render.ts";
 import { aggregate, scoreSessions, type Aggregate, type SessionScore } from "./score.ts";
 import { advise, decide, loadImpact, recordRun, type Advice } from "./suggest.ts";
 
@@ -173,8 +174,8 @@ interface RunRecord {
   scores: SessionScore[];
   aggregate: Aggregate;
   advice: Advice;
-  /** The repository whose skills ledger holds this run's proposals; null when they were not recorded. */
-  recordedRepo: string | null;
+  /** The `--repo` argument (`repoArgument`) that reaches the ledger holding this run's proposals; null when they were not recorded. */
+  decideRepo: string | null;
 }
 
 function outDir(args: LearnArgs, ctx: LearnContext): string | null {
@@ -298,14 +299,14 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
   } finally {
     mem?.close();
   }
-  let recordedRepo: string | null = null;
+  let decideRepo: string | null = null;
   if (record && ledgerRoot !== undefined) {
     const recorded = skillsLedger(ctx, ledgerRoot);
     const sha = recordRun(recorded, runId, scores, summary, advice);
     if (sha === null)
       ctx.io.err(`ak learn doctor run: run ${runId} was not recorded: ${recorded.dir} is locked or its commit failed`);
     else {
-      recordedRepo = ledgerRoot;
+      decideRepo = repoArgument(ledgerRoot, resolve(userHome(ctx.env)));
       ctx.io.out(`recorded: run ${runId} in ${recorded.dir} at ${sha.slice(0, 12)}`);
     }
   }
@@ -315,7 +316,7 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     scores,
     aggregate: summary,
     advice,
-    recordedRepo,
+    decideRepo,
   };
   writeJson(join(out, RUN_FILE), runRecord, out);
   for (const suggestion of advice.suggestions) {
@@ -336,7 +337,7 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     ctx.io.err("ak learn doctor run: every sampled session was unavailable; check the judge command");
     return 1;
   }
-  return record && recordedRepo === null ? 1 : 0;
+  return record && decideRepo === null ? 1 : 0;
 }
 
 function renderCommand(args: LearnArgs, ctx: LearnContext): number {
