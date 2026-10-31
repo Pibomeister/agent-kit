@@ -10,7 +10,7 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
 import type { Loop } from "./paths.ts";
@@ -51,9 +51,10 @@ function settingsFrom(text: string): HostEnvelope {
  * The host CLI's command with a `--settings` layer that blanks what the user's
  * `settings.json` would reapply over `subscriptionEnv`: each `METERED_VARS` name in
  * its `env`, and `apiKeyHelper`. The flag layer outranks user settings, so the call
- * stays on the signed-in seat. Any other command is returned as given.
+ * stays on the signed-in seat. A `--settings` file path is read from `cwd`, where the
+ * judge runs. Any other command is returned as given.
  */
-export function subscriptionCommand(command: readonly string[], configDir: string): string[] {
+export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] {
   if (command[0] === undefined || basename(command[0]) !== "claude") return [...command];
   const user = settingsFrom(readText(join(configDir, "settings.json")));
   const userEnv = validateHostEnvelope(user.env) ? user.env : {};
@@ -61,7 +62,7 @@ export function subscriptionCommand(command: readonly string[], configDir: strin
   const at = command.indexOf("--settings");
   const given = at === -1 ? undefined : command[at + 1];
   const base = settingsFrom(
-    given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(given),
+    given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(resolve(cwd, given)),
   );
   const baseEnv = validateHostEnvelope(base.env) ? base.env : {};
   const helper = "apiKeyHelper" in user ? ["apiKeyHelper"] : [];
@@ -463,7 +464,7 @@ export function commandJudge(config: LearnConfig, options: CommandJudgeOptions =
     }
     const command =
       options.subscriptionOnly === true
-        ? subscriptionCommand(config.judgeCommand, config.configDir)
+        ? subscriptionCommand(config.judgeCommand, config.configDir, config.runtimeDir)
         : config.judgeCommand;
     const traceId = context.traceId ?? randomBytes(16).toString("hex");
     for (let attempt = 0; attempt < 2; attempt += 1) {

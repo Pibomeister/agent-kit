@@ -794,6 +794,16 @@ describe("subscription-only judge", () => {
       },
     ]);
     expect(settingsOf(commandJudge(config)("prompt", context))).toEqual([{ disableAllHooks: true }]);
+    mkdirSync(config.runtimeDir, { recursive: true });
+    writeFileSync(join(config.runtimeDir, "judge-settings.json"), JSON.stringify({ disableAllHooks: true }));
+    const fromFile = { ...config, judgeCommand: [claude, "-p", "--settings", "judge-settings.json"] };
+    expect(settingsOf(commandJudge(fromFile, { subscriptionOnly: true })("prompt", context))).toEqual([
+      {
+        disableAllHooks: true,
+        env: { ANTHROPIC_BASE_URL: "", CLAUDE_CODE_USE_BEDROCK: "", ANTHROPIC_API_KEY: "" },
+        apiKeyHelper: "",
+      },
+    ]);
   });
 });
 
