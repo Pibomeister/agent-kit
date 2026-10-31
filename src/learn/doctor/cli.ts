@@ -140,7 +140,7 @@ export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<Colle
   const repoText = flag(args, "repo");
   if (all && repoText !== undefined) return fail("--all and --repo are exclusive");
   const named = repoText === undefined ? [ctx.cwd] : paths(repoText);
-  const repos = all ? [] : named.map(repoOf);
+  const repos = all ? [] : repoText === undefined ? [mainRepoRoot(ctx.cwd)] : named.map(repoOf);
   const missing = named.filter((_, index) => repos[index] === null);
   if (missing.length > 0)
     return fail(
@@ -172,6 +172,7 @@ export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<Colle
 function writeCollection(out: string, collection: Collection): void {
   const transcripts = join(out, "transcripts");
   mkdirSync(transcripts, { recursive: true, mode: 0o700 });
+  chmodSync(transcripts, 0o700);
   for (const session of collection.sampled) {
     const path = join(transcripts, `${session.key}.md`);
     writeFileSync(path, renderTranscript(session), { mode: 0o600 });
@@ -181,6 +182,7 @@ function writeCollection(out: string, collection: Collection): void {
     sampled: collection.sampled.map(({ entries: _entries, ...meta }) => meta),
   };
   writeJson(join(out, "inventory.json"), inventory, out);
+  chmodSync(join(out, "inventory.json"), 0o600);
 }
 
 interface RunRecord {
@@ -246,7 +248,7 @@ function collectCommand(args: LearnArgs, ctx: LearnContext): number {
 
 /** The skills ledger of `--repo`, else of the working directory's repository; null outside any. */
 function ledgerFor(ctx: LearnContext, repo: string | undefined): Ledger | null {
-  const root = repoOf(repo === undefined ? ctx.cwd : resolve(ctx.cwd, repo));
+  const root = repo === undefined ? mainRepoRoot(ctx.cwd) : repoOf(resolve(ctx.cwd, repo));
   return root === null ? null : new Ledger(loopDir(ctx.config, root, "skills"));
 }
 
@@ -334,9 +336,10 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     decideRepo,
   };
   writeJson(join(out, RUN_FILE), runRecord, out);
+  chmodSync(join(out, RUN_FILE), 0o600);
   for (const suggestion of advice.suggestions) {
     const path = join(out, "proposed", suggestion.id, "SKILL.md");
-    mkdirSync(dirname(path), { recursive: true });
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeGated(out, path, suggestion.proposed);
     chmodSync(path, 0o600);
   }

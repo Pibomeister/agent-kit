@@ -856,6 +856,8 @@ describe("ak learn doctor", () => {
     expect(refusal(["--all", "--repo", w.repo])).toBe("--all and --repo are exclusive");
     expect(parse([])).toMatchObject({ ok: true, value: { hosts: ["claude", "codex", "grok"], repos: [w.repo] } });
     expect(parse(["--all", "--host", "grok"])).toMatchObject({ ok: true, value: { hosts: ["grok"], repos: [] } });
+    const outside = collectOptions(parseLearnArgs([]), testContext({ cwd: scratch("ak-doctor-norepo-") }));
+    expect(outside).toEqual({ ok: false, error: "not in a repository: pass --repo P or --all" });
   });
 
   test("run: scores each session, gates the edits, writes owner-only files and never edits a skill", () => {
@@ -885,6 +887,9 @@ describe("ak learn doctor", () => {
     expect(verb("run", ["--out", shared, "--repo", w.repo, ...homes], ctx)).toBe(0);
     expect(mode(shared)).toBe(0o755);
     expect(mode(join(shared, "transcripts"))).toBe(0o700);
+    expect(mode(join(shared, "run.json"))).toBe(0o600);
+    expect(mode(join(shared, "inventory.json"))).toBe(0o600);
+    for (const id of readdirSync(join(shared, "proposed"))) expect(mode(join(shared, "proposed", id))).toBe(0o700);
     expect(readdirSync(join(out, "transcripts")).toSorted()).toEqual(["claude-c1.md", "codex-x1.md", "grok-g1.md"]);
     expect(mode(join(out, "transcripts", "claude-c1.md"))).toBe(0o600);
     const report = join(out, "report.html");
