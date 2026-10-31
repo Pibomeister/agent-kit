@@ -60,7 +60,7 @@ protocols:
 
 roles:
   baseline: 29
-  catalog: 36
+  catalog: 38
   expansions:
     - ids: [learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
       reason: >-
@@ -77,6 +77,12 @@ roles:
         super-build seats an independent auditor once per ticket to read the implementer's work
         trail after the commit; the seat is never the implementer, so it needs its own role prompt.
       commits: [f92da557]
+    - ids: [learn/session-scorer, learn/skill-doctor]
+      reason: >-
+        The learning runtime's skill doctor makes two judge calls of different kinds: one labels a
+        single condensed session against the rubrics, and one traces the failed sessions of a run to
+        skill edits. Each runs under a role prompt of its own.
+      commits: [03dfee76]
 
 references:
   baseline: 4
