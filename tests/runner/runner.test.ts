@@ -719,6 +719,68 @@ describe("runner guards", () => {
     }
   });
 
+  test("shutdown ends an adapter's whole process group", async () => {
+    const f = ready();
+    const socket = join(f.privateDir, "runner.sock");
+    const adminToken = "a".repeat(48);
+    const tokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(tokenFile, adminToken, { mode: 0o600 });
+    const pidFile = join(f.privateDir, "descendant.pid");
+    const eventConfig = join(f.privateDir, "event.json");
+    writeFileSync(
+      eventConfig,
+      JSON.stringify({ timeout_ms: 300_000, command: ["sh", "-c", `sleep 300 & echo $! > ${pidFile}; wait`] }),
+    );
+    const service = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        tokenFile,
+        "--event-config",
+        eventConfig,
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, AK_RUNNER_WORKER_TOKEN: "b".repeat(48) },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    try {
+      await waitForPath(socket, service);
+      const request = join(f.requestDir, "event.json");
+      writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
+      expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
+      await waitUntil("the adapter to start", () => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
+      const descendant = Number(readFileSync(pidFile, "utf8").trim());
+      const alive = () => {
+        try {
+          process.kill(descendant, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      expect(alive()).toBe(true);
+      service.kill("SIGTERM");
+      await service.exited;
+      await waitUntil("the adapter's descendant to die", () => !alive());
+    } finally {
+      service.kill("SIGKILL");
+    }
+  }, 60_000);
+
   test("failed event delivery goes guided and restart replays it", async () => {
     const f = fixture();
     withAuditCadence(f);

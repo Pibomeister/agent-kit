@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runCouncil } from "../../src/council/cli.ts";
@@ -51,6 +51,15 @@ async function run(argv: string[]) {
 
 function record(path: string): JsonValue {
   return parseJson(readFileSync(path, "utf8"));
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("ak council run", () => {
@@ -173,6 +182,36 @@ describe("ak council run", () => {
       seats: [{}, {}, { actor: "v1", attempts: [{ actor: "hung", error: "launcher timed out after 3000ms" }, {}] }],
     });
   });
+
+  for (const [signal, code] of [
+    ["SIGINT", 130],
+    ["SIGTERM", 143],
+  ] as const)
+    test(`${signal} ends a hung seat's whole process group`, async () => {
+      const s = setup();
+      const pidFile = join(s.dir, "descendant.pid");
+      const hung = updated(record(s.config), ["pair", 0, "chain"], () => [
+        { actor: "a", lineage: ["a"], command: ["sh", "-c", `sleep 300 & echo $! > ${pidFile}; wait`] },
+      ]);
+      writeFileSync(s.config, JSON.stringify(hung), { mode: 0o600 });
+      const child = Bun.spawn(["bun", "src/cli.ts", "council", "run", "--card", s.card, "--council-config", s.config], {
+        cwd: join(import.meta.dir, "..", ".."),
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      try {
+        while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") await Bun.sleep(25);
+        const descendant = Number(readFileSync(pidFile, "utf8").trim());
+        expect(() => process.kill(descendant, 0)).not.toThrow();
+        child.kill(signal);
+        expect(await child.exited).toBe(code);
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline && alive(descendant)) await Bun.sleep(25);
+        expect(alive(descendant)).toBe(false);
+      } finally {
+        child.kill("SIGKILL");
+      }
+    }, 60_000);
 
   test("a roster others can read is refused", async () => {
     const s = setup();

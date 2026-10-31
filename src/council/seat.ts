@@ -35,9 +35,20 @@ function reason(cause: unknown): string {
   return (cause instanceof Error ? cause.message : String(cause)).slice(0, 500);
 }
 
+/** Signals a detached child's whole process group. A group already gone is not an error. */
+export function killGroup(pid: number, signal: NodeJS.Signals = "SIGKILL"): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // The group is already gone; a descendant that left it may still hold the pipes.
+  }
+}
+
 /**
  * A piped child's output, or a timeout error once `timeoutMs` passes. The child
- * must be spawned `detached`: the timeout kills its whole process group and
+ * must be spawned `detached`, so it leaves the terminal's foreground group: its
+ * pid stays in `live` until it settles, and whoever owns `live` must kill those
+ * groups when it is interrupted or shuts down. The timeout kills the group and
  * stops waiting, because a descendant can hold the pipes open past any kill.
  */
 export async function collectDetached(
@@ -47,29 +58,32 @@ export async function collectDetached(
     stderr: ReadableStream<Uint8Array>;
     exited: Promise<number>;
   },
-  timeoutMs: number,
+  live: Set<number>,
+  timeoutMs: number | undefined,
   what: string,
 ): Promise<ChildOutput> {
+  live.add(child.pid);
   const output = Promise.all([
     new Response(child.stdout).arrayBuffer(),
     new Response(child.stderr).arrayBuffer(),
     child.exited,
   ]).then(([stdout, stderr, exitCode]) => ({ exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) }));
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      try {
-        process.kill(-child.pid, "SIGKILL");
-      } catch {
-        // The group is already gone; a descendant that left it may still hold the pipes.
-      }
-      reject(new Error(`${what} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
+  const pending = [output];
+  if (timeoutMs !== undefined)
+    pending.push(
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          killGroup(child.pid);
+          reject(new Error(`${what} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    );
   try {
-    return await Promise.race([output, deadline]);
+    return await Promise.race(pending);
   } finally {
     clearTimeout(timer);
+    live.delete(child.pid);
   }
 }
 

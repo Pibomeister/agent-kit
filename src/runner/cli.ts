@@ -9,7 +9,7 @@ import { Runner } from "./core.ts";
 import { sharesLineage } from "./lineage.ts";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
 import { checkOutbound, describeRefusals, outboundLimits } from "../council/outbound.ts";
-import { chainFailures, collectDetached, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
+import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
 import {
@@ -31,7 +31,6 @@ import {
 } from "./wire.ts";
 
 type Io = { out: (line: string) => void; err: (line: string) => void };
-type KillableChild = { kill(signal?: number | NodeJS.Signals): void };
 const ADMIN = new Set([
   "start",
   "collect",
@@ -137,9 +136,9 @@ function privateChildEnv(runner: Runner) {
 async function spawnPiped(
   argv: string[],
   cwd: string,
-  stdin?: string,
-  env = childEnv(),
-  activeChildren?: Set<KillableChild>,
+  stdin: string | undefined,
+  env: NodeJS.ProcessEnv,
+  activeChildren: Set<number>,
   timeoutMs?: number,
 ) {
   const child = Bun.spawn(argv, {
@@ -148,20 +147,9 @@ async function spawnPiped(
     stdin: stdin === undefined ? "ignore" : Buffer.from(stdin),
     stdout: "pipe",
     stderr: "pipe",
-    detached: timeoutMs !== undefined,
+    detached: true,
   });
-  activeChildren?.add(child);
-  try {
-    if (timeoutMs !== undefined) return await collectDetached(child, timeoutMs, "adapter command");
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).arrayBuffer(),
-      new Response(child.stderr).arrayBuffer(),
-      child.exited,
-    ]);
-    return { exitCode, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
-  } finally {
-    activeChildren?.delete(child);
-  }
+  return collectDetached(child, activeChildren, timeoutMs, "adapter command");
 }
 
 async function dispatchSeat(
@@ -169,7 +157,7 @@ async function dispatchSeat(
   runId: string,
   cardId: string,
   launcher: SeatLauncher,
-  activeChildren: Set<KillableChild>,
+  activeChildren: Set<number>,
 ): Promise<void> {
   const card = runner.status(runId).cards[cardId];
   if (card === undefined || card.judgments.some((judgment) => judgment.seat === launcher.seat)) return;
@@ -203,7 +191,7 @@ async function dispatchVeto(
   runId: string,
   cardId: string,
   council: CouncilConfig | null,
-  activeChildren: Set<KillableChild>,
+  activeChildren: Set<number>,
 ): Promise<void> {
   if (council === null) {
     runner.veto(runId, cardId, { status: "unavailable", seat: "veto", failures: ["no council configuration"] });
@@ -257,7 +245,7 @@ async function decideCard(
   cardId: string,
   launchers: SeatLauncher[],
   council: CouncilConfig | null,
-  activeChildren: Set<KillableChild>,
+  activeChildren: Set<number>,
 ) {
   const early = runner.authorize(runId, cardId);
   if (early !== null) return early;
@@ -298,7 +286,7 @@ async function execute(
   verifyCommand: string[] | null,
   effectAdapters: Map<string, EffectAdapter>,
   decisions: Map<string, Promise<unknown>>,
-  activeChildren: Set<KillableChild>,
+  activeChildren: Set<number>,
   autonomousAvailable: boolean,
 ) {
   const admin = equal(request.token, adminToken);
@@ -555,7 +543,7 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
     }
   }
   const decisions = new Map<string, Promise<unknown>>();
-  const activeChildren = new Set<KillableChild>();
+  const activeChildren = new Set<number>();
   let delivering = false;
   let rescanEvents = false;
   let deliveryHealthy = true;
@@ -740,10 +728,11 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
   });
   const close = () => {
     if (auditTimer !== null) clearInterval(auditTimer);
-    for (const child of activeChildren) child.kill("SIGKILL");
+    for (const pid of activeChildren) killGroup(pid);
     if (existsSync(socketPath)) unlinkSync(socketPath);
     process.exit(0);
   };
+  process.once("SIGHUP", close);
   process.once("SIGINT", close);
   process.once("SIGTERM", close);
   return 0;

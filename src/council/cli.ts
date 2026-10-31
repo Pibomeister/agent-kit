@@ -25,6 +25,7 @@ import { checkOutbound, describeRefusals, outboundLimits, type OutboundItem } fr
 import { councilOutcome, type CouncilResult } from "./rule.ts";
 import {
   collectDetached,
+  killGroup,
   launchSeat,
   UNSPECIFIED,
   UNVERIFIED,
@@ -113,7 +114,7 @@ export function seatEnv(names: readonly string[] = []): NodeJS.ProcessEnv {
   );
 }
 
-function spawner(cwd: string, timeoutMs: number): Spawn {
+function spawner(cwd: string, timeoutMs: number, live: Set<number>): Spawn {
   return async (launcher, stdin) => {
     const child = Bun.spawn(launcher.command, {
       cwd,
@@ -123,7 +124,7 @@ function spawner(cwd: string, timeoutMs: number): Spawn {
       stderr: "pipe",
       detached: true,
     });
-    return collectDetached(child, timeoutMs, "launcher");
+    return collectDetached(child, live, timeoutMs, "launcher");
   };
 }
 
@@ -182,8 +183,20 @@ async function run(args: RunArgs, io: Io): Promise<number> {
   let decided: CouncilResult | null = null;
   if (refusals.length === 0) {
     const scratch = mkdtempSync(join(tmpdir(), "ak-council-"));
+    const live = new Set<number>();
+    const stopOn = (code: number) => () => {
+      for (const pid of live) killGroup(pid);
+      rmSync(scratch, { recursive: true, force: true });
+      process.exit(code);
+    };
+    const stops = [
+      ["SIGHUP", stopOn(129)],
+      ["SIGINT", stopOn(130)],
+      ["SIGTERM", stopOn(143)],
+    ] as const;
+    for (const [signal, stop] of stops) process.once(signal, stop);
     try {
-      const spawn = spawner(scratch, config.limits?.timeout_ms ?? DEFAULT_TIMEOUT_MS);
+      const spawn = spawner(scratch, config.limits?.timeout_ms ?? DEFAULT_TIMEOUT_MS, live);
       const results = await Promise.all(pair.map((seat) => launchSeat(seat, payload, card.options, spawn)));
       seats.push(...pair.map((seat, i) => seatEntry("primary", seat, results[i] ?? { ok: false, attempts: [] })));
       const choices = seats.map((entry) => entry.choice);
@@ -196,6 +209,7 @@ async function run(args: RunArgs, io: Io): Promise<number> {
       }
       decided = councilOutcome(card.approve, choices, veto);
     } finally {
+      for (const [signal, stop] of stops) process.off(signal, stop);
       rmSync(scratch, { recursive: true, force: true });
     }
   }
