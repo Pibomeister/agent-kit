@@ -3617,6 +3617,88 @@ describe("council blind veto", () => {
     }
   }, 300_000);
 
+  test("worker status keeps a card or evidence whose id is veto, and hides only a card's veto record", async () => {
+    const f = councilFixture();
+    const socket = join(f.privateDir, "runner.sock");
+    const adminToken = "a".repeat(48);
+    const workerToken = "b".repeat(48);
+    const adminTokenFile = join(f.privateDir, "admin.token");
+    writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
+    const server = Bun.spawn(
+      [
+        "bun",
+        join(root, "src", "cli.ts"),
+        "runner",
+        "serve",
+        "--socket",
+        socket,
+        "--state-dir",
+        f.privateDir,
+        "--worker-root",
+        f.worker,
+        "--run-id",
+        "toy-run",
+        "--admin-token-file",
+        adminTokenFile,
+      ],
+      { cwd: root, env: { ...process.env, AK_RUNNER_WORKER_TOKEN: workerToken }, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      await waitForPath(socket, server);
+      const request = join(f.privateDir, "request.json");
+      const call = (verb: string, token: string, args: RunnerArgs) => {
+        writeFileSync(request, JSON.stringify(args));
+        return callRunnerCli(verb, request, socket, token, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
+      };
+      expect(
+        call("start", adminToken, {
+          run: "toy-run",
+          charter: f.path,
+          implementer: "implementer-1",
+          revision: f.revision,
+          standing_grant: standing(f),
+        }).exitCode,
+      ).toBe(0);
+      const receipt = join(f.privateDir, "receipt.txt");
+      writeFileSync(receipt, "independent receipt");
+      expect(
+        call("collect", adminToken, {
+          run: "toy-run",
+          id: "veto",
+          source: receipt,
+          revision: f.revision,
+          kind: "source",
+        }).exitCode,
+      ).toBe(0);
+      for (const id of ["veto", "judgments"])
+        expect(
+          call("prepare", workerToken, {
+            run: "toy-run",
+            card: {
+              id,
+              operation: "align.run",
+              grant: { charter_hash: f.charter.immutability.hash, covers: "align-answer" },
+              question: `Proceed with ${id}?`,
+              options: ["yes", "no"],
+              approve: "yes",
+              evidence: ["veto"],
+              artifact_hash: `sha256:${"b".repeat(64)}`,
+            },
+          }).exitCode,
+        ).toBe(0);
+      expect(parseJson(call("status", workerToken, { run: "toy-run" }).stdout.toString())).toMatchObject({
+        cards: {
+          veto: { id: "veto", question: "Proceed with veto?", judgments: [] },
+          judgments: { id: "judgments", question: "Proceed with judgments?", judgments: [] },
+        },
+        evidence: { veto: { id: "veto", kind: "source" } },
+      });
+    } finally {
+      server.kill();
+      await server.exited;
+    }
+  }, 300_000);
+
   test("serve refuses a council configuration others can read", () => {
     const f = councilFixture();
     const councilConfig = join(f.privateDir, "council.json");

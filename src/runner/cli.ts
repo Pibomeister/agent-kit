@@ -6,10 +6,11 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { unknownSelector } from "../util/suggest.ts";
 import { sha256Hex } from "../util/hash.ts";
 import { Runner } from "./core.ts";
+import type { Card, Run } from "./types.ts";
 import { sharesLineage } from "./lineage.ts";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
 import { checkOutbound, describeRefusals } from "../council/outbound.ts";
-import { workerVeto, type VetoRecord } from "../council/rule.ts";
+import { workerVeto } from "../council/rule.ts";
 import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
@@ -269,6 +270,18 @@ async function decideCard(
   return runner.decide(runId, cardId, failures);
 }
 
+function workerCard({ veto, ...card }: Card) {
+  return veto === undefined ? card : { ...card, veto: workerVeto(veto) };
+}
+
+function workerRun(run: Run) {
+  return {
+    ...run,
+    cards: Object.fromEntries(Object.entries(run.cards).map(([id, card]) => [id, workerCard(card)])),
+    decisions: run.decisions.map((decision) => ({ ...decision, card: workerCard(decision.card) })),
+  };
+}
+
 async function execute(
   runner: Runner,
   request: Request,
@@ -287,6 +300,7 @@ async function execute(
   if (!admin && !equal(request.token, workerToken)) throw new Error("unauthorized runner request");
   if (!WORKER.has(request.verb) && !(admin && ADMIN.has(request.verb)))
     throw new Error("runner verb unavailable to this token");
+  const seen = (run: Run) => (admin ? run : workerRun(run));
   const a = request.args;
   if (a.run !== allowedRun) throw new Error("run is outside this runner endpoint");
   switch (request.verb) {
@@ -362,7 +376,7 @@ async function execute(
     case "status":
       return runner.status(str(a, "run"));
     case "sync":
-      return runner.syncRevision(str(a, "run"));
+      return seen(runner.syncRevision(str(a, "run")));
     case "run-verify": {
       if (verifyCommand === null) throw new Error("runner verification command is unconfigured");
       const runId = str(a, "run");
@@ -377,7 +391,7 @@ async function execute(
         throw new Error(`verification failed (${result.exitCode}): ${result.stderr.toString().slice(0, 4000)}`);
       const evidenceId = `verify-${after.revision.slice(0, 8)}-${after.diff_hash.slice(7, 15)}`;
       runner.recordOutput(runId, evidenceId, Buffer.concat([result.stdout, result.stderr]), "verify");
-      return runner.verify(runId, evidenceId);
+      return seen(runner.verify(runId, evidenceId));
     }
     case "ledger":
       return runner.ledger(str(a, "run"));
@@ -385,7 +399,8 @@ async function execute(
       return runner.packet(str(a, "run"), str(a, "card_id"));
     case "prepare": {
       if (a.card === undefined) throw new Error("card is required");
-      return runner.prepare(str(a, "run"), a.card);
+      const card = runner.prepare(str(a, "run"), a.card);
+      return admin ? card : workerCard(card);
     }
     case "decide": {
       const charter = runner.status(str(a, "run")).charter;
@@ -691,16 +706,15 @@ async function serve(argv: readonly string[], io: Io): Promise<number> {
             : null,
           !auditHealthy ? "audit-failed" : null,
         ].filter((part): part is string => part !== null);
+        const visibleStatus = () => {
+          const run = runner.status(runId);
+          return equal(request.token, adminToken) ? run : workerRun(run);
+        };
         const presented =
           request.verb === "status"
-            ? { ...runner.status(runId), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } }
+            ? { ...visibleStatus(), autonomy: { mode: missing.length === 0 ? "autonomous" : "guided", missing } }
             : result;
-        const reply = equal(request.token, adminToken)
-          ? JSON.stringify({ ok: true, result: presented })
-          : JSON.stringify({ ok: true, result: presented }, (key, value: VetoRecord) =>
-              key === "veto" ? workerVeto(value) : value,
-            );
-        connection.end(`${reply}\n`);
+        connection.end(`${JSON.stringify({ ok: true, result: presented })}\n`);
         if (request.verb === "event" || request.verb === "start") wakeEvents();
         if (request.verb === "delegate" || request.verb === "start") armAudit();
       } catch (cause) {
