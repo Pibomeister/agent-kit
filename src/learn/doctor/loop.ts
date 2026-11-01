@@ -40,9 +40,9 @@ export const DEFAULT_MAX_PRS = 3;
 const SKILL_REF = /^[a-z0-9][a-z0-9_-]*$/;
 
 const LOOP_FLAGS =
-  "--out DIR --repo P [--publish] [--base B] [--max-prs N] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
+  "--out DIR --repo P [--publish] [--max-prs N] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
 export const LOOP_USAGE = `ak learn doctor loop ${LOOP_FLAGS} [--report FILE] [--title T]`;
-export const SCHEDULE_USAGE = `ak learn doctor schedule --out DIR --repo P [--publish] [--base B] [--max-prs N] [--load]`;
+export const SCHEDULE_USAGE = `ak learn doctor schedule --out DIR --repo P [--publish] [--max-prs N] [--load]`;
 
 /** One pushed rewrite, in the skills ledger: the loop's memory of its pull requests. */
 export interface RewriteEntry {
@@ -51,7 +51,6 @@ export interface RewriteEntry {
   skill: string;
   branch: string;
   commit: string;
-  base: string;
   status: "open" | "merged" | "closed";
   pr: string | null;
   at: string;
@@ -125,7 +124,7 @@ function reconcile(ctx: LearnContext, repo: string, ledger: Ledger): string[] {
 /** The arguments the doctor run takes: the collector's and the report's, with the proposals recorded. */
 function doctorArgs(args: LearnArgs): LearnArgs {
   const flags = new Map(args.flags);
-  for (const name of ["publish", "base", "max-prs"]) flags.delete(name);
+  for (const name of ["publish", "max-prs"]) flags.delete(name);
   flags.set("record", true);
   return { positional: [], flags };
 }
@@ -275,7 +274,6 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
     skill: suggestion.skill,
     branch,
     commit,
-    base: target.base,
     status: "open",
     pr: null,
     at: nowIso(),
@@ -340,10 +338,7 @@ export function runLoop(args: LearnArgs, ctx: LearnContext, deps: LoopDeps): num
   }
   const options = deps.collectOptions(inner, ctx);
   if (!options.ok) return refuse(options.error);
-  const target = resolveTarget(repo, ctx.env, {
-    publish: args.flags.get("publish") === true,
-    base: flag(args, "base"),
-  });
+  const target = resolveTarget(repo, ctx.env, args.flags.get("publish") === true);
   if ("refused" in target) return refuse(target.refused, 1);
 
   const ledger = skillsLedger(ctx, repo);
@@ -409,10 +404,8 @@ export function scheduleLoop(
   const deps: SetupDeps = depsFor(ctx);
   const argv = [...deps.ak, "learn", "doctor", "loop", "--out", resolve(ctx.cwd, out), "--repo", repo];
   if (args.flags.get("publish") === true) argv.push("--publish");
-  for (const name of ["base", "max-prs"]) {
-    const value = flag(args, name);
-    if (value !== undefined) argv.push(`--${name}`, value);
-  }
+  const cap = flag(args, "max-prs");
+  if (cap !== undefined) argv.push("--max-prs", cap);
   return installUnit(
     ctx,
     deps,

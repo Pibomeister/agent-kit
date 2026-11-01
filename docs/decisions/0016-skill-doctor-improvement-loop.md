@@ -39,7 +39,9 @@ the check cannot run without it. The pull request body carries no session key or
 temporary index, and the commit must change that one path. Hooks do not run and the skill file on
 disk stays as it was.
 
-**The gate publishes.** With `--publish`, the loop pushes through the `no-mistakes` remote, and that
+**The gate publishes.** The commit is built on origin's default branch, and no flag changes that,
+because a push to the gate carries no target branch. A pass refuses when that default is unknown. With
+`--publish`, the loop pushes through the `no-mistakes` remote, and that
 pipeline opens the pull request. No other route exists: the loop never pushes to origin and never
 runs `gh pr create`. Without that remote, the pass refuses before any judge call. Without `--publish`, rewrites stay
 in the output directory. The loop never merges and never enables auto-merge.

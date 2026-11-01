@@ -71,7 +71,6 @@ export const LEARN_VALUE_FLAGS = new Set([
   "skills-dir",
   "reason",
   "title",
-  "base",
   "max-prs",
 ]);
 

@@ -18,7 +18,7 @@ const PUSH_TIMEOUT_MS = 600_000;
 
 export interface PublishTarget {
   repo: string;
-  /** The branch the pull request goes against. */
+  /** Origin's default branch, which the commit is built on. */
   base: string;
   /** The commit of `base` this run read. */
   baseSha: string;
@@ -34,22 +34,24 @@ function git(repo: string, env: NodeJS.ProcessEnv, args: readonly string[], inpu
 export function resolveTarget(
   repo: string,
   env: NodeJS.ProcessEnv,
-  options: { publish: boolean; base: string | undefined },
+  publish: boolean,
 ): PublishTarget | { refused: string } {
   const remotes = git(repo, env, ["remote"]).stdout.split("\n");
   if (!remotes.includes(SOURCE_REMOTE)) return { refused: `${repo} has no ${SOURCE_REMOTE} remote` };
-  if (options.publish && !remotes.includes(GATE_REMOTE))
+  if (publish && !remotes.includes(GATE_REMOTE))
     return { refused: `${repo} has no ${GATE_REMOTE} remote; run \`no-mistakes init\`` };
   const head = git(repo, env, ["symbolic-ref", "--short", `refs/remotes/${SOURCE_REMOTE}/HEAD`]).stdout.trim();
-  const base = options.base ?? head.slice(`${SOURCE_REMOTE}/`.length);
-  if (base === "") return { refused: `${SOURCE_REMOTE}'s default branch is unknown here; pass --base B` };
-  if (base.startsWith("-")) return { refused: `--base names no branch: ${base}` };
+  const base = head.slice(`${SOURCE_REMOTE}/`.length);
+  if (base === "")
+    return {
+      refused: `${SOURCE_REMOTE}'s default branch is unknown here; set it with \`git remote set-head ${SOURCE_REMOTE} --auto\``,
+    };
   if (git(repo, env, ["fetch", "-q", SOURCE_REMOTE, base]).code !== 0)
     return { refused: `could not fetch ${base} from ${SOURCE_REMOTE}` };
   const baseSha = git(repo, env, ["rev-parse", "--verify", "-q", "FETCH_HEAD^{commit}"]).stdout.trim();
   return baseSha === ""
     ? { refused: `could not read ${base} from ${SOURCE_REMOTE}` }
-    : { repo, base, baseSha, publish: options.publish };
+    : { repo, base, baseSha, publish };
 }
 
 /** A regular tracked file at `sha`, with its mode; null when the path is absent or anything else. */

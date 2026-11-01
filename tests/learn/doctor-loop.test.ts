@@ -283,6 +283,25 @@ describe("a loop pass", () => {
     expect(branches(f.origin)).toEqual([]);
   });
 
+  test("--base is refused by both verbs, so a commit cannot be built on a branch the pull request does not target", () => {
+    const f = fixture();
+    expect(loop(f, "--publish", "--base", "main")).toBe(2);
+    expect(f.ctx.err[0]).toContain("unknown flag --base");
+    expect(verb("schedule").run(parseLearnArgs(["--out", f.out, "--repo", f.repo, "--base", "main"]), f.ctx)).toBe(2);
+    expect(f.ctx.err.join("\n")).toContain("doctor schedule: unknown flag --base");
+    expect(f.ctx.prompts).toEqual([]);
+    expect(branches(f.gate)).toEqual([]);
+  });
+
+  test("an unknown default branch refuses and says how to set it", () => {
+    const f = fixture();
+    git(f.repo, "symbolic-ref", "-d", "refs/remotes/origin/HEAD");
+    expect(loop(f, "--publish")).toBe(1);
+    expect(f.ctx.err.join("\n")).toContain("git remote set-head origin --auto");
+    expect(f.ctx.prompts).toEqual([]);
+    expect(branches(f.gate)).toEqual([]);
+  });
+
   test("--remote is refused: the gate is the only publish route", () => {
     const f = fixture();
     expect(loop(f, "--publish", "--remote", "origin")).toBe(2);
