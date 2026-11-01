@@ -37,10 +37,11 @@ import {
   renderTranscript,
 } from "./collect.ts";
 import { renderReport, repoArgument } from "./render.ts";
+import { LOOP_USAGE, runLoop, scheduleLoop, SCHEDULE_USAGE } from "./loop.ts";
 import { aggregate, scoreSessions, type Aggregate, type SessionScore } from "./score.ts";
 import { advise, CorruptImpactError, decide, loadImpact, recordRun, type Advice } from "./suggest.ts";
 
-const RUN_FILE = "run.json";
+export const RUN_FILE = "run.json";
 const DEFAULT_TITLE = "Skill health report";
 
 const COLLECT_FLAGS =
@@ -220,7 +221,7 @@ function writeCollection(out: string, collection: Collection): void {
   chmodSync(join(out, "inventory.json"), 0o600);
 }
 
-interface RunRecord {
+export interface RunRecord {
   title: string;
   collection: Collection;
   scores: SessionScore[];
@@ -491,5 +492,9 @@ export const doctorArea: LearnArea = {
     accept: checkedVerb("ak learn doctor accept <proposal-id> [--repo P] [--reason TEXT]", decideCommand("accepted")),
     reject: checkedVerb("ak learn doctor reject <proposal-id> [--repo P] [--reason TEXT]", decideCommand("rejected")),
     impact: checkedVerb("ak learn doctor impact [--repo P]", impactCommand),
+    loop: checkedVerb(LOOP_USAGE, (args, ctx) =>
+      runLoop(args, ctx, { runDoctor: runCommand, runFile: RUN_FILE, collectOptions, outputRefusal }),
+    ),
+    schedule: checkedVerb(SCHEDULE_USAGE, (args, ctx) => scheduleLoop(args, ctx, outputRefusal)),
   },
 };

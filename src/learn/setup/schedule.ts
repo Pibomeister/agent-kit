@@ -21,6 +21,8 @@ import type { SetupDeps } from "./wire.ts";
 import { shellQuote } from "./wire.ts";
 
 export const LABEL = "dev.agent-kit.learn";
+/** The skill doctor loop's unit (`doctor/loop.ts`), which `setup uninstall` removes with the tick's. */
+export const DOCTOR_LOOP_LABEL = "dev.agent-kit.learn.doctor";
 export const DEFAULT_INTERVAL_S = 900;
 /** Embedded, so the single-file bundle renders units with no template files beside it. */
 const TEMPLATES = {
@@ -42,17 +44,36 @@ export interface UnitPaths {
   timer?: string;
 }
 
-export function unitPaths(deps: SetupDeps, kind: SchedulerKind): UnitPaths | null {
-  if (kind === "launchd") return { unit: join(deps.home, "Library", "LaunchAgents", `${LABEL}.plist`) };
+export function unitPaths(deps: SetupDeps, kind: SchedulerKind, label: string = LABEL): UnitPaths | null {
+  if (kind === "launchd") return { unit: join(deps.home, "Library", "LaunchAgents", `${label}.plist`) };
   if (kind === "systemd") {
     const dir = join(deps.home, ".config", "systemd", "user");
-    return { unit: join(dir, `${LABEL}.service`), timer: join(dir, `${LABEL}.timer`) };
+    return { unit: join(dir, `${label}.service`), timer: join(dir, `${label}.timer`) };
   }
   return null;
 }
 
 export function tickArgv(deps: SetupDeps): string[] {
   return [...deps.ak, "learn", "memory", "tick"];
+}
+
+/** What one scheduler unit runs and how the scheduler names it. */
+export interface UnitSpec {
+  label: string;
+  argv: string[];
+  /** The systemd service's description. */
+  service: string;
+  /** What the systemd timer runs, in its description. */
+  timer: string;
+}
+
+export function tickUnit(deps: SetupDeps): UnitSpec {
+  return {
+    label: LABEL,
+    argv: tickArgv(deps),
+    service: "agent-kit learning runtime: scheduled memory tick",
+    timer: "the agent-kit learning tick",
+  };
 }
 
 export function schedulerLog(ctx: LearnContext): string {
@@ -111,12 +132,15 @@ export function unitArgv(text: string): string[] {
   );
 }
 
-export function launchdPlist(ctx: LearnContext, deps: SetupDeps, intervalS: number): string {
+export function launchdPlist(
+  ctx: LearnContext,
+  deps: SetupDeps,
+  intervalS: number,
+  unit: UnitSpec = tickUnit(deps),
+): string {
   return renderTemplate("launchd.plist.tmpl", {
-    label: LABEL,
-    arguments: tickArgv(deps)
-      .map((arg) => `    <string>${xml(arg)}</string>`)
-      .join("\n"),
+    label: unit.label,
+    arguments: unit.argv.map((arg) => `    <string>${xml(arg)}</string>`).join("\n"),
     interval: intervalS,
     environment: unitEnvironment(ctx)
       .map(([key, value]) => `    <key>${xml(key)}</key>\n    <string>${xml(value)}</string>`)
@@ -131,9 +155,10 @@ function systemdQuote(arg: string): string {
   return /^[A-Za-z0-9_@+=:,./-]+$/.test(escaped) ? escaped : `"${escaped.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-export function systemdService(ctx: LearnContext, deps: SetupDeps): string {
+export function systemdService(ctx: LearnContext, deps: SetupDeps, unit: UnitSpec = tickUnit(deps)): string {
   return renderTemplate("systemd.service.tmpl", {
-    exec: tickArgv(deps).map(systemdQuote).join(" "),
+    description: unit.service,
+    exec: unit.argv.map(systemdQuote).join(" "),
     environment: unitEnvironment(ctx)
       .map(([key, value]) => `Environment=${systemdQuote(`${key}=${value}`)}`)
       .join("\n"),
@@ -141,29 +166,43 @@ export function systemdService(ctx: LearnContext, deps: SetupDeps): string {
   });
 }
 
-export function systemdTimer(intervalS: number): string {
+export function systemdTimer(intervalS: number, label: string = LABEL, what = "the agent-kit learning tick"): string {
   return renderTemplate("systemd.timer.tmpl", {
+    what,
     minutes: Math.max(1, Math.round(intervalS / 60)),
-    unit: `${LABEL}.service`,
+    unit: `${label}.service`,
   });
 }
 
+/** Minutes in a day: an interval this long or longer fires at midnight, every so many days. */
+const DAY_MINUTES = 1440;
+
 /** A crontab line. Intervals of an hour or more fire on the hour. Cron turns a bare `%` into a newline, so each is escaped. */
-export function cronLine(ctx: LearnContext, deps: SetupDeps, intervalS: number): string {
+export function cronLine(
+  ctx: LearnContext,
+  deps: SetupDeps,
+  intervalS: number,
+  unit: UnitSpec = tickUnit(deps),
+): string {
   const minutes = Math.max(1, Math.round(intervalS / 60));
   const when =
-    minutes < 60 ? `*/${minutes} * * * *` : `0 */${Math.max(1, Math.min(23, Math.round(minutes / 60)))} * * *`;
+    minutes < 60
+      ? `*/${minutes} * * * *`
+      : minutes < DAY_MINUTES
+        ? `0 */${Math.max(1, Math.min(23, Math.round(minutes / 60)))} * * *`
+        : `0 0 */${Math.round(minutes / DAY_MINUTES)} * *`;
   const env = unitEnvironment(ctx).map(([key, value]) => `${key}=${shellQuote(value)}`);
-  const command = `${[...env, ...tickArgv(deps).map(shellQuote)].join(" ")} >> ${shellQuote(schedulerLog(ctx))} 2>&1`;
+  const command = `${[...env, ...unit.argv.map(shellQuote)].join(" ")} >> ${shellQuote(schedulerLog(ctx))} 2>&1`;
   return `${when} ${command.replace(/%/g, "\\%")}`;
 }
 
-/** `900`, `15m` or `1h` as seconds; null when unparseable or under a minute. */
+/** `900`, `15m`, `1h` or `7d` as seconds; null when unparseable or under a minute. */
 export function parseInterval(value: string | undefined): number | null {
   if (value === undefined) return DEFAULT_INTERVAL_S;
-  const match = /^(\d+)([smh]?)$/.exec(value.trim());
+  const match = /^(\d+)([smhd]?)$/.exec(value.trim());
   if (match === null) return null;
-  const n = Number.parseInt(match[1]!, 10) * (match[2] === "h" ? 3600 : match[2] === "m" ? 60 : 1);
+  const unit = match[2] === "d" ? 86_400 : match[2] === "h" ? 3600 : match[2] === "m" ? 60 : 1;
+  const n = Number.parseInt(match[1]!, 10) * unit;
   return n >= 60 ? n : null;
 }
 
@@ -194,46 +233,63 @@ export function schedule(
     );
     return 1;
   }
+  return installUnit(ctx, deps, tickUnit(deps), intervalS, options.load === true);
+}
+
+/** Write one unit for this machine's scheduler, and load it when asked. */
+export function installUnit(
+  ctx: LearnContext,
+  deps: SetupDeps,
+  unit: UnitSpec,
+  intervalS: number,
+  load: boolean,
+): number {
   const kind = schedulerKind(deps);
   mkdirSync(ctx.config.runtimeDir, { recursive: true });
   if (kind === "none") {
     ctx.io.out("no supported scheduler (launchd, systemd, cron); run this from your own scheduler:");
-    ctx.io.out(`  ${tickArgv(deps).map(shellQuote).join(" ")}`);
+    ctx.io.out(`  ${unit.argv.map(shellQuote).join(" ")}`);
     return 0;
   }
   if (kind === "cron") {
     ctx.io.out("add this line with `crontab -e`:");
-    ctx.io.out(`  ${cronLine(ctx, deps, intervalS)}`);
+    ctx.io.out(`  ${cronLine(ctx, deps, intervalS, unit)}`);
     return 0;
   }
-  const paths = unitPaths(deps, kind)!;
+  const paths = unitPaths(deps, kind, unit.label)!;
   if (kind === "launchd") {
-    writeIfChanged(ctx, paths.unit, launchdPlist(ctx, deps, intervalS));
+    writeIfChanged(ctx, paths.unit, launchdPlist(ctx, deps, intervalS, unit));
   } else {
-    writeIfChanged(ctx, paths.unit, systemdService(ctx, deps));
-    writeIfChanged(ctx, paths.timer!, systemdTimer(intervalS));
+    writeIfChanged(ctx, paths.unit, systemdService(ctx, deps, unit));
+    writeIfChanged(ctx, paths.timer!, systemdTimer(intervalS, unit.label, unit.timer));
   }
-  if (options.load !== true) {
+  if (!load) {
     ctx.io.out("not loaded; rerun with --load to register it");
     return 0;
   }
-  return loadUnit(ctx, deps, kind, paths);
+  return loadUnit(ctx, deps, kind, paths, unit.label);
 }
 
-export function loadUnit(ctx: LearnContext, deps: SetupDeps, kind: SchedulerKind, paths: UnitPaths): number {
+export function loadUnit(
+  ctx: LearnContext,
+  deps: SetupDeps,
+  kind: SchedulerKind,
+  paths: UnitPaths,
+  label: string = LABEL,
+): number {
   if (kind === "launchd") {
     const domain = `gui/${deps.uid}`;
-    deps.run(["launchctl", "bootout", `${domain}/${LABEL}`]);
+    deps.run(["launchctl", "bootout", `${domain}/${label}`]);
     const result = deps.run(["launchctl", "bootstrap", domain, paths.unit]);
     ctx.io.out(`launchd: ${result.code === 0 ? "loaded" : `bootstrap failed: ${result.stderr.trim()}`}`);
-    ctx.io.out(`status:  launchctl print ${domain}/${LABEL}`);
+    ctx.io.out(`status:  launchctl print ${domain}/${label}`);
     return result.code === 0 ? 0 : 1;
   }
   if (kind === "systemd") {
     deps.run(["systemctl", "--user", "daemon-reload"]);
-    const result = deps.run(["systemctl", "--user", "enable", "--now", `${LABEL}.timer`]);
+    const result = deps.run(["systemctl", "--user", "enable", "--now", `${label}.timer`]);
     ctx.io.out(`systemd: ${result.code === 0 ? "timer enabled" : `enable failed: ${result.stderr.trim()}`}`);
-    ctx.io.out(`status:  systemctl --user list-timers ${LABEL}.timer`);
+    ctx.io.out(`status:  systemctl --user list-timers ${label}.timer`);
     return result.code === 0 ? 0 : 1;
   }
   return 0;

@@ -36,7 +36,7 @@ const SUMMARY_CHARS = 400;
 const FIELD_CHARS = 400;
 const MOMENT_CHARS = 240;
 /** The authoring contract's hard cap on a skill body. */
-const MAX_SKILL_LINES = 300;
+export const MAX_SKILL_LINES = 300;
 
 export interface Evidence {
   session: string;
@@ -113,7 +113,7 @@ function isScorer(name: string): name is Scorer {
   return SCORERS.some((scorer) => scorer === name);
 }
 
-interface DiffOp {
+export interface DiffOp {
   op: " " | "-" | "+";
   line: string;
   ai: number;
@@ -125,8 +125,8 @@ function diffLines(source: string): string[] {
   return source === "" ? [] : source.replace(/\n$/, "").split("\n");
 }
 
-/** A line-based unified diff with three lines of context. Skill files are short, so a plain LCS table is enough. */
-export function unifiedDiff(before: string, after: string, label: string): string {
+/** The line operations that turn `before` into `after`. Skill files are short, so a plain LCS table is enough. */
+export function diffOps(before: string, after: string): DiffOp[] {
   const a = diffLines(before);
   const b = diffLines(after);
   const table = Array.from({ length: a.length + 1 }, () => Array.from({ length: b.length + 1 }, () => 0));
@@ -149,6 +149,12 @@ export function unifiedDiff(before: string, after: string, label: string): strin
     else if (right !== undefined) ops.push({ op: "+", line: right, ai: i, bi: j++ });
     else break;
   }
+  return ops;
+}
+
+/** A line-based unified diff with three lines of context. */
+export function unifiedDiff(before: string, after: string, label: string): string {
+  const ops = diffOps(before, after);
   const changed = ops.flatMap((op, index) => (op.op === " " ? [] : [index]));
   if (changed.length === 0) return "";
   const hunks: Array<[number, number]> = [];
@@ -179,7 +185,7 @@ function occurrences(haystack: string, needle: string): number {
   return count;
 }
 
-function normalRule(rule: string): string {
+export function normalRule(rule: string): string {
   return rule
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, " ")

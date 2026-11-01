@@ -71,6 +71,9 @@ export const LEARN_VALUE_FLAGS = new Set([
   "skills-dir",
   "reason",
   "title",
+  "base",
+  "remote",
+  "max-prs",
 ]);
 
 export function parseLearnArgs(argv: readonly string[]): LearnArgs {
