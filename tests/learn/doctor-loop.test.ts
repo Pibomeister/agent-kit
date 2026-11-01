@@ -22,7 +22,6 @@ import {
   SHARED_WORDS,
 } from "../../src/learn/doctor/rewrite.ts";
 import { loadImpact } from "../../src/learn/doctor/suggest.ts";
-import { parseInterval } from "../../src/learn/setup/schedule.ts";
 import { uninstall } from "../../src/learn/setup/uninstall.ts";
 import type { SetupDeps } from "../../src/learn/setup/wire.ts";
 import { skillsLedger } from "../../src/learn/skills/learn.ts";
@@ -70,7 +69,7 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.trim();
 }
 
-function session(path: string, id: string, cwd: string): void {
+function session(path: string, id: string, cwd: string, skills: string[] = ["diagnose"]): void {
   mkdirSync(dirname(path), { recursive: true });
   const rows = [
     { type: "user", sessionId: id, cwd, timestamp: "2026-10-30T10:00:00Z", message: { content: SESSION_SECRET } },
@@ -80,7 +79,7 @@ function session(path: string, id: string, cwd: string): void {
       message: {
         content: [
           { type: "text", text: "Loading the skill." },
-          { type: "tool_use", name: "Skill", input: { skill: "diagnose" } },
+          ...skills.map((skill) => ({ type: "tool_use", name: "Skill", input: { skill } })),
         ],
       },
     },
@@ -235,6 +234,10 @@ describe("a loop pass", () => {
     const message = git(f.gate, "log", "-1", "--format=%an%n%B", branch);
     expect(message).toStartWith("ak learn\nRewrite the diagnose skill");
     expect(message).not.toContain("Co-Authored-By");
+    expect(message).toContain(RULE);
+    expect(message).toContain(CHANGE);
+    expect(message).toContain("Merge it to accept the rule. Close it to reject the rule.");
+    for (const leaked of [SESSION_SECRET, MOMENT, "claude-c1", f.base]) expect(message).not.toContain(leaked);
 
     expect(readFileSync(join(f.repo, "skills", "diagnose", "SKILL.md"), "utf8")).toBe(SKILL);
     expect(git(f.repo, "rev-parse", "HEAD")).toBe(head);
@@ -414,6 +417,31 @@ describe("a loop pass", () => {
     expect(loop(f, "--publish", "--max-prs", "1")).toBe(0);
     expect(f.ctx.out.join("\n")).toContain("1 rewrite pull request(s) are already open");
     expect(branches(f.gate)).toHaveLength(1);
+  });
+
+  test("--max-prs counts a pushed rewrite whose pull request could not be opened", () => {
+    const f = fixture({ gateRemote: false });
+    mkdirSync(join(f.repo, "skills", "other"), { recursive: true });
+    writeFileSync(join(f.repo, "skills", "other", "SKILL.md"), SKILL.replace("name: diagnose", "name: other"));
+    git(f.repo, "add", "-A");
+    git(f.repo, "commit", "-qm", "another skill", "--no-gpg-sign");
+    git(f.repo, "push", "-q", "origin", "HEAD:refs/heads/main");
+    session(join(f.base, "claude", "projects", "-repo", "c1.jsonl"), "c1", f.repo, ["diagnose", "other"]);
+    const first = advice().suggestions as JsonObject[];
+    const second = advice({ skill: "other", rule: "State the failing input in the report." })
+      .suggestions as JsonObject[];
+    f.doctor = { ...advice(), suggestions: [...first, ...second] };
+    const judge = f.ctx.judge;
+    f.ctx.judge = (prompt, ...rest) =>
+      prompt.startsWith("# learn/skill-rewriter") && prompt.includes("name: other")
+        ? { content: REWRITE.replace("name: diagnose", "name: other") }
+        : judge(prompt, ...rest);
+    writeFileSync(join(f.base, "bin", "gh"), '#!/bin/sh\n[ "$2" = list ] && { echo "[]"; exit 0; }\nexit 1\n');
+
+    expect(loop(f, "--publish", "--remote", "origin", "--max-prs", "1")).toBe(1);
+    expect(rewrites(f)).toHaveLength(1);
+    expect(branches(f.origin)).toHaveLength(1);
+    expect(f.ctx.out.join("\n")).toContain("1 rewrite pull request(s) are already open");
   });
 
   test("a refused push forgets the rewrite, so the next pass can try again", () => {
@@ -635,7 +663,9 @@ describe("ak learn doctor schedule", () => {
     expect(scheduleLoop(unitArgs(f), f.ctx, outputRefusal, () => unitDeps(f.base))).toBe(0);
     const quiet = readFileSync(unit, "utf8");
     expect(quiet).toContain("<string>loop</string>");
-    expect(quiet).toContain("<integer>604800</integer>");
+    expect(quiet).toContain("<key>StartCalendarInterval</key>");
+    expect(quiet).not.toContain("RunAtLoad");
+    expect(quiet).not.toContain("StartInterval");
     expect(quiet).not.toContain("--publish");
     expect(f.ctx.out).toContain("not loaded; rerun with --load to register it");
 
@@ -648,30 +678,30 @@ describe("ak learn doctor schedule", () => {
     expect(publishing).not.toContain(SESSION_SECRET);
   });
 
-  test("writes a systemd pair that names the loop, and a daily-or-longer cron line", () => {
+  test("writes a systemd pair that names the loop and fires only on its weekly calendar, and a weekly cron line", () => {
     const f = fixture();
     expect(scheduleLoop(unitArgs(f), f.ctx, outputRefusal, () => unitDeps(f.base, "linux", ["systemctl"]))).toBe(0);
     const dir = join(f.base, ".config", "systemd", "user");
     expect(readFileSync(join(dir, "dev.agent-kit.learn.doctor.service"), "utf8")).toContain(
       "Description=agent-kit skill doctor: scheduled improvement loop",
     );
-    expect(readFileSync(join(dir, "dev.agent-kit.learn.doctor.timer"), "utf8")).toContain(
-      "Run the agent-kit skill doctor loop every 10080 minutes",
-    );
+    const timer = readFileSync(join(dir, "dev.agent-kit.learn.doctor.timer"), "utf8");
+    expect(timer).toContain("Run the agent-kit skill doctor loop every week");
+    expect(timer).toContain("OnCalendar=Sun 12:00\nPersistent=true\n");
+    expect(timer).not.toContain("OnBootSec");
+    expect(timer).not.toContain("OnUnitActiveSec");
     expect(scheduleLoop(unitArgs(f), f.ctx, outputRefusal, () => unitDeps(f.base, "linux", ["crontab"]))).toBe(0);
-    expect(f.ctx.out.at(-1)).toContain("0 0 */7 * * ");
+    expect(f.ctx.out.at(-1)).toContain("0 12 * * 0 ");
   });
 
-  test("refuses a missing repository, output or bad interval", () => {
+  test("refuses a missing repository or output", () => {
     const f = fixture();
     const d = () => unitDeps(f.base);
     expect(scheduleLoop(parseLearnArgs(["--out", f.out]), f.ctx, outputRefusal, d)).toBe(2);
     expect(scheduleLoop(parseLearnArgs(["--repo", f.repo]), f.ctx, outputRefusal, d)).toBe(2);
-    expect(scheduleLoop(unitArgs(f, "--interval", "soon"), f.ctx, outputRefusal, d)).toBe(2);
     expect(
       scheduleLoop(parseLearnArgs(["--repo", f.repo, "--out", join(f.repo, "out")]), f.ctx, outputRefusal, d),
     ).toBe(2);
-    expect(parseInterval("7d")).toBe(604_800);
   });
 
   test("setup uninstall removes the loop's unit with the tick's", () => {

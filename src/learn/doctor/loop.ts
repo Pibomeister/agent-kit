@@ -16,7 +16,7 @@ import { flag, type LearnArgs, type LearnCommand, type LearnContext } from "../c
 import type { Ledger } from "../core/ledger.ts";
 import { mainRepoRoot } from "../core/paths.ts";
 import { nowIso, readJson, writeGated, writeJson } from "../core/store.ts";
-import { DOCTOR_LOOP_LABEL, installUnit, parseInterval } from "../setup/schedule.ts";
+import { DOCTOR_LOOP_LABEL, installUnit } from "../setup/schedule.ts";
 import { defaultDeps, type SetupDeps } from "../setup/wire.ts";
 import { skillsLedger } from "../skills/learn.ts";
 import { userHome } from "../sources/worker-sessions.ts";
@@ -38,13 +38,12 @@ import { decide, normalRule, type Suggestion, unifiedDiff } from "./suggest.ts";
 
 export const REWRITES_FILE = "doctor/rewrites.json";
 export const DEFAULT_MAX_PRS = 3;
-const DEFAULT_LOOP_INTERVAL = "7d";
 const SKILL_REF = /^[a-z0-9][a-z0-9_-]*$/;
 
 const LOOP_FLAGS =
   "--out DIR --repo P [--publish] [--base B] [--remote R] [--max-prs N] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
 export const LOOP_USAGE = `ak learn doctor loop ${LOOP_FLAGS} [--report FILE] [--title T]`;
-export const SCHEDULE_USAGE = `ak learn doctor schedule --out DIR --repo P [--publish] [--base B] [--remote R] [--max-prs N] [--interval 7d] [--load]`;
+export const SCHEDULE_USAGE = `ak learn doctor schedule --out DIR --repo P [--publish] [--base B] [--remote R] [--max-prs N] [--load]`;
 
 /** One pushed rewrite, in the skills ledger: the loop's memory of its pull requests. */
 export interface RewriteEntry {
@@ -282,7 +281,7 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
     path,
     mode: file.mode,
     proposed: rewritten.proposed,
-    message: `${title}\n\nThe skill doctor's loop proposed this. A person decides it on the pull request.\n`,
+    message: `${title}\n\n${body}`,
   });
   if (commit === null) {
     ctx.io.err(`ak learn doctor loop: ${suggestion.id}: git could not build the commit`);
@@ -392,9 +391,8 @@ export function runLoop(args: LearnArgs, ctx: LearnContext, deps: LoopDeps): num
   if (texts === null)
     return refuse("a sampled session's transcript is missing, so nothing can be checked against it", 1);
 
-  const open = loadRewrites(ledger).filter((entry) => entry.status === "open");
-  const openSkills = new Set(open.map((entry) => entry.skill));
-  let room = capacity - open.length;
+  const open = () => loadRewrites(ledger).filter((entry) => entry.status === "open");
+  const openSkills = new Set(open().map((entry) => entry.skill));
   const tally: Record<Outcome, number> = { published: 0, prepared: 0, skipped: 0, failed: 0 };
   const input: PassInput = {
     ctx,
@@ -407,16 +405,14 @@ export function runLoop(args: LearnArgs, ctx: LearnContext, deps: LoopDeps): num
     texts,
   };
   for (const suggestion of record.advice.suggestions) {
-    if (room <= 0) {
+    if (open().length + tally.prepared >= capacity) {
       ctx.io.out(
         `skipped ${suggestion.id} (${suggestion.skill}): ${capacity} rewrite pull request(s) are already open`,
       );
       tally.skipped += 1;
       continue;
     }
-    const outcome = passProposal(input, suggestion, openSkills);
-    tally[outcome] += 1;
-    if (outcome === "published" || outcome === "prepared") room -= 1;
+    tally[passProposal(input, suggestion, openSkills)] += 1;
   }
   ctx.io.out(
     `loop: ${tally.published} published, ${tally.prepared} prepared, ${tally.skipped} skipped, ${tally.failed} failed`,
@@ -442,8 +438,6 @@ export function scheduleLoop(
   if (out === undefined) return refuse("--out DIR is required, outside any tracked part of a repository");
   const outRefusal = outputRefusal(resolve(ctx.cwd, out));
   if (outRefusal !== null) return refuse(`refusing --out: ${outRefusal}`);
-  const intervalS = parseInterval(flag(args, "interval") ?? DEFAULT_LOOP_INTERVAL);
-  if (intervalS === null) return refuse("--interval is seconds, or Nm / Nh / Nd, and at least a minute");
   const deps: SetupDeps = depsFor(ctx);
   const argv = [...deps.ak, "learn", "doctor", "loop", "--out", resolve(ctx.cwd, out), "--repo", repo];
   if (args.flags.get("publish") === true) argv.push("--publish");
@@ -460,7 +454,7 @@ export function scheduleLoop(
       service: "agent-kit skill doctor: scheduled improvement loop",
       timer: "the agent-kit skill doctor loop",
     },
-    intervalS,
+    "weekly",
     args.flags.get("load") === true,
   );
 }

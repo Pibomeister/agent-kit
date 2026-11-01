@@ -75,8 +75,8 @@ whole skill file. It refuses an appended addendum, and refuses text that repeats
 `--publish` it opens one pull request per rewrite through the repository's `no-mistakes` remote, or
 through a remote you name with `--remote`. Without `--publish` the rewrites stay in `DIR/rewrites/`.
 It never merges. The next pass records a merge as accepted and a close as rejected. `ak learn doctor
-schedule` writes a local scheduler unit for the loop, weekly unless `--interval` says otherwise, and
-loads it only with `--load`. The unit runs on this machine because the transcripts and the signed-in
+schedule` writes a local scheduler unit for the loop that runs on Sundays at noon, and not at login or
+boot, and loads it only with `--load`. The unit runs on this machine because the transcripts and the signed-in
 seat are here, and `ak learn setup uninstall` removes it. See
 `docs/decisions/0016-skill-doctor-improvement-loop.md`.
 

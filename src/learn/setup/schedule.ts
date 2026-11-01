@@ -31,6 +31,9 @@ const TEMPLATES = {
   "systemd.timer.tmpl": timerTemplate,
 };
 
+/** A repeat in seconds that also fires at load and boot, or one fixed weekly time that fires at neither. */
+export type Cadence = number | "weekly";
+
 export type SchedulerKind = "launchd" | "systemd" | "cron" | "none";
 
 export function schedulerKind(deps: SetupDeps): SchedulerKind {
@@ -135,13 +138,27 @@ export function unitArgv(text: string): string[] {
 export function launchdPlist(
   ctx: LearnContext,
   deps: SetupDeps,
-  intervalS: number,
+  cadence: Cadence,
   unit: UnitSpec = tickUnit(deps),
 ): string {
   return renderTemplate("launchd.plist.tmpl", {
     label: unit.label,
     arguments: unit.argv.map((arg) => `    <string>${xml(arg)}</string>`).join("\n"),
-    interval: intervalS,
+    trigger:
+      cadence === "weekly"
+        ? `  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>12</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>`
+        : `  <key>StartInterval</key>
+  <integer>${cadence}</integer>
+  <key>RunAtLoad</key>
+  <true/>`,
     environment: unitEnvironment(ctx)
       .map(([key, value]) => `    <key>${xml(key)}</key>\n    <string>${xml(value)}</string>`)
       .join("\n"),
@@ -166,43 +183,46 @@ export function systemdService(ctx: LearnContext, deps: SetupDeps, unit: UnitSpe
   });
 }
 
-export function systemdTimer(intervalS: number, label: string = LABEL, what = "the agent-kit learning tick"): string {
+function wholeMinutes(seconds: number): number {
+  return Math.max(1, Math.round(seconds / 60));
+}
+
+export function systemdTimer(cadence: Cadence, label: string = LABEL, what = "the agent-kit learning tick"): string {
   return renderTemplate("systemd.timer.tmpl", {
     what,
-    minutes: Math.max(1, Math.round(intervalS / 60)),
+    when: cadence === "weekly" ? "every week" : `every ${wholeMinutes(cadence)} minutes`,
+    trigger:
+      cadence === "weekly"
+        ? "OnCalendar=Sun 12:00\nPersistent=true"
+        : `OnBootSec=2min\nOnUnitActiveSec=${wholeMinutes(cadence)}min`,
     unit: `${label}.service`,
   });
 }
 
-/** Minutes in a day: an interval this long or longer fires at midnight, every so many days. */
-const DAY_MINUTES = 1440;
+function cronWhen(cadence: Cadence): string {
+  if (cadence === "weekly") return "0 12 * * 0";
+  const minutes = wholeMinutes(cadence);
+  return minutes < 60 ? `*/${minutes} * * * *` : `0 */${Math.max(1, Math.min(23, Math.round(minutes / 60)))} * * *`;
+}
 
-/** A crontab line. Intervals of an hour or more fire on the hour. Cron turns a bare `%` into a newline, so each is escaped. */
+/** A crontab line. The weekly cadence fires on Sundays at noon. Intervals of an hour or more fire on the hour. Cron turns a bare `%` into a newline, so each is escaped. */
 export function cronLine(
   ctx: LearnContext,
   deps: SetupDeps,
-  intervalS: number,
+  cadence: Cadence,
   unit: UnitSpec = tickUnit(deps),
 ): string {
-  const minutes = Math.max(1, Math.round(intervalS / 60));
-  const when =
-    minutes < 60
-      ? `*/${minutes} * * * *`
-      : minutes < DAY_MINUTES
-        ? `0 */${Math.max(1, Math.min(23, Math.round(minutes / 60)))} * * *`
-        : `0 0 */${Math.round(minutes / DAY_MINUTES)} * *`;
   const env = unitEnvironment(ctx).map(([key, value]) => `${key}=${shellQuote(value)}`);
   const command = `${[...env, ...unit.argv.map(shellQuote)].join(" ")} >> ${shellQuote(schedulerLog(ctx))} 2>&1`;
-  return `${when} ${command.replace(/%/g, "\\%")}`;
+  return `${cronWhen(cadence)} ${command.replace(/%/g, "\\%")}`;
 }
 
-/** `900`, `15m`, `1h` or `7d` as seconds; null when unparseable or under a minute. */
+/** `900`, `15m` or `1h` as seconds; null when unparseable or under a minute. */
 export function parseInterval(value: string | undefined): number | null {
   if (value === undefined) return DEFAULT_INTERVAL_S;
-  const match = /^(\d+)([smhd]?)$/.exec(value.trim());
+  const match = /^(\d+)([smh]?)$/.exec(value.trim());
   if (match === null) return null;
-  const unit = match[2] === "d" ? 86_400 : match[2] === "h" ? 3600 : match[2] === "m" ? 60 : 1;
-  const n = Number.parseInt(match[1]!, 10) * unit;
+  const n = Number.parseInt(match[1]!, 10) * (match[2] === "h" ? 3600 : match[2] === "m" ? 60 : 1);
   return n >= 60 ? n : null;
 }
 
@@ -241,7 +261,7 @@ export function installUnit(
   ctx: LearnContext,
   deps: SetupDeps,
   unit: UnitSpec,
-  intervalS: number,
+  cadence: Cadence,
   load: boolean,
 ): number {
   const kind = schedulerKind(deps);
@@ -253,15 +273,15 @@ export function installUnit(
   }
   if (kind === "cron") {
     ctx.io.out("add this line with `crontab -e`:");
-    ctx.io.out(`  ${cronLine(ctx, deps, intervalS, unit)}`);
+    ctx.io.out(`  ${cronLine(ctx, deps, cadence, unit)}`);
     return 0;
   }
   const paths = unitPaths(deps, kind, unit.label)!;
   if (kind === "launchd") {
-    writeIfChanged(ctx, paths.unit, launchdPlist(ctx, deps, intervalS, unit));
+    writeIfChanged(ctx, paths.unit, launchdPlist(ctx, deps, cadence, unit));
   } else {
     writeIfChanged(ctx, paths.unit, systemdService(ctx, deps, unit));
-    writeIfChanged(ctx, paths.timer!, systemdTimer(intervalS, unit.label, unit.timer));
+    writeIfChanged(ctx, paths.timer!, systemdTimer(cadence, unit.label, unit.timer));
   }
   if (!load) {
     ctx.io.out("not loaded; rerun with --load to register it");

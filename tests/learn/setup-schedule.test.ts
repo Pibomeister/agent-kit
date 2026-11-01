@@ -112,7 +112,8 @@ StandardError=append:/cfg/agent-kit/learn/scheduler.log
 
   test("systemd timer interval", () => {
     const text = systemdTimer(900);
-    expect(text).toContain("OnUnitActiveSec=15min\n");
+    expect(text).toContain("Description=Run the agent-kit learning tick every 15 minutes\n");
+    expect(text).toContain("OnBootSec=2min\nOnUnitActiveSec=15min\n");
     expect(text).toContain("Unit=dev.agent-kit.learn.service\n");
     expect(text).not.toContain("$");
   });

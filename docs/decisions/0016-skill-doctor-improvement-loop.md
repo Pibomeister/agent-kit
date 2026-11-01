@@ -48,10 +48,18 @@ in the output directory. The loop never merges and never enables auto-merge.
 each branch before its push, so a crash cannot open a rule twice. Each pass reads the open pull
 requests. A merge records the proposal accepted and a close records it rejected, so the doctor's
 existing gate does not propose a rejected rule again. A failed read decides nothing. Each skill has
-one open rewrite at most, and `--max-prs` caps the total, three by default.
+one open rewrite at most, and `--max-prs` caps the total, three by default. Every recorded open entry
+counts against the cap, including one whose pull request could not be opened yet.
+
+**The commit carries the decision text.** The gate's pipeline opens the pull request from the commit,
+so the commit message holds the same body as a loop-opened pull request: the rule, the change, and the
+merge-accepts and close-rejects instruction.
 
 **The schedule is a local unit.** `ak learn doctor schedule` writes a launchd, systemd or cron entry
-named `dev.agent-kit.learn.doctor`. A hosted schedule cannot work, because the transcripts and the
+named `dev.agent-kit.learn.doctor`. It fires on Sundays at noon and has no interval flag. It does not
+fire at load, login or boot, because each pass spends judge calls and can open pull requests. A
+systemd timer catches up after a missed Sunday, and launchd catches up after sleep. A machine that is
+off on launchd or cron waits for the next Sunday. A hosted schedule cannot work, because the transcripts and the
 signed-in seat exist only on the machine. The unit loads only with `--load`, publishes only with
 `--publish`, and `ak learn setup uninstall` removes it.
 

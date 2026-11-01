@@ -1,9 +1,8 @@
 [Unit]
-Description=Run ${what} every ${minutes} minutes
+Description=Run ${what} ${when}
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=${minutes}min
+${trigger}
 AccuracySec=1min
 Unit=${unit}
 
