@@ -210,7 +210,7 @@ interface PassInput {
 
 type Outcome = "published" | "prepared" | "skipped" | "failed";
 
-/** One proposal through the isolation, rewrite and leak gates, then published when the target has a remote. */
+/** One proposal through the isolation, rewrite and leak gates, then pushed through the gate when the pass publishes. */
 function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<string>): Outcome {
   const { ctx, repo, out, record, target, ledger } = input;
   const skip = (gate: string): Outcome => {

@@ -72,7 +72,6 @@ export const LEARN_VALUE_FLAGS = new Set([
   "reason",
   "title",
   "base",
-  "remote",
   "max-prs",
 ]);
 
