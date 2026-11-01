@@ -284,10 +284,8 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
   const refused = pushBranch(target, ctx.env, branch, commit);
   if (refused !== null) {
     const forgotten = updateRewrites(ledger, `doctor: rewrite ${suggestion.id} not pushed`, (entries) => {
-      entries.splice(
-        entries.findIndex((item) => item.branch === branch),
-        1,
-      );
+      const index = entries.findIndex((item) => item.branch === branch);
+      if (index !== -1) entries.splice(index, 1);
     });
     if (!forgotten)
       ctx.io.err(
