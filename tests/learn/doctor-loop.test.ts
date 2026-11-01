@@ -240,6 +240,7 @@ describe("a loop pass", () => {
 
     expect(readFileSync(join(f.repo, "skills", "diagnose", "SKILL.md"), "utf8")).toBe(SKILL);
     expect(git(f.repo, "rev-parse", "HEAD")).toBe(head);
+    expect(git(f.repo, "for-each-ref", "refs/heads/ak-learn")).toBe("");
     expect(git(f.repo, "status", "--porcelain")).toBe("");
     expect(ghCalls(f)).not.toContain("pr create");
     expect(rewrites(f)).toMatchObject([{ skill: "diagnose", status: "open", pr: null }]);
@@ -450,6 +451,29 @@ describe("a loop pass", () => {
     expect(loop(f, "--publish")).toBe(1);
     expect(rewrites(f)).toEqual([]);
     expect(git(f.repo, "for-each-ref", "refs/heads/ak-learn")).toBe("");
+  });
+
+  test("removing the entry and the gate's branch lets the same rule publish again", () => {
+    const f = fixture();
+    expect(loop(f, "--publish")).toBe(0);
+    const [branch = ""] = branches(f.gate);
+    git(f.gate, "update-ref", "-d", `refs/heads/${branch}`);
+    writeFileSync(skillsLedger(f.ctx, f.repo).path(REWRITES_FILE), "[]\n");
+    f.doctor = advice();
+    expect(loop(f, "--publish")).toBe(0);
+    expect(branches(f.gate)).toEqual([branch]);
+    expect(rewrites(f)).toMatchObject([{ branch, status: "open" }]);
+  });
+
+  test("a refused push with a busy ledger says the entry must be removed by hand", () => {
+    const f = fixture();
+    const ledger = skillsLedger(f.ctx, f.repo);
+    const hook = join(f.gate, "hooks", "pre-receive");
+    writeFileSync(hook, `#!/bin/sh\nprintf '%s' '${process.pid}' > "${join(ledger.dir, ".lock")}"\nexit 1\n`);
+    chmodSync(hook, 0o755);
+    expect(loop(f, "--publish")).toBe(1);
+    expect(f.ctx.err.join("\n")).toContain("remove that entry by hand");
+    expect(rewrites(f)).toHaveLength(1);
   });
 
   test("a dry run makes no judge call and pushes nothing", () => {

@@ -73,4 +73,6 @@ signed-in seat exist only on the machine. The unit loads only with `--load`, pub
 - Through the gate, a pull request appears only after the pipeline finishes, so the record's `pr`
   field stays empty until a later pass reads it. A pipeline that never opens one keeps its slot and
   its skill's one open rewrite, and each pass prints a `waiting:` line for that branch. The loop does
-  not guess that the pipeline failed. A person answers the pipeline or removes the entry.
+  not guess that the pipeline failed. A person answers the pipeline, or removes the entry and deletes the branch
+  from the `no-mistakes` remote, because a rebuilt commit does not fast-forward the old branch. The loop
+  makes no local branch.

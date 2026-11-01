@@ -285,12 +285,16 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
     return skip("the skills ledger is locked");
   const refused = pushBranch(target, ctx.env, branch, commit);
   if (refused !== null) {
-    updateRewrites(ledger, `doctor: rewrite ${suggestion.id} not pushed`, (entries) => {
+    const forgotten = updateRewrites(ledger, `doctor: rewrite ${suggestion.id} not pushed`, (entries) => {
       entries.splice(
         entries.findIndex((item) => item.branch === branch),
         1,
       );
     });
+    if (!forgotten)
+      ctx.io.err(
+        `ak learn doctor loop: the skills ledger is locked, so ${branch} stays open in ${REWRITES_FILE} with nothing pushed; remove that entry by hand`,
+      );
     ctx.io.err(`ak learn doctor loop: ${suggestion.id}: ${refused}`);
     return "failed";
   }

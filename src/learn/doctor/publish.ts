@@ -103,21 +103,18 @@ export function buildCommit(target: PublishTarget, env: NodeJS.ProcessEnv, chang
   }
 }
 
-/** The local branch at `commit`, pushed. A refused push leaves no local branch behind; the reason is returned. */
+/** `commit` pushed as `branch`, with no local branch made; the reason when the push is refused. */
 export function pushBranch(
   target: PublishTarget,
   env: NodeJS.ProcessEnv,
   branch: string,
   commit: string,
 ): string | null {
-  const ref = `refs/heads/${branch}`;
-  if (git(target.repo, env, ["update-ref", ref, commit, ""]).code !== 0) return `the branch ${branch} exists here`;
-  const pushed = run(["git", "-C", target.repo, "push", "-q", GATE_REMOTE, ref], {
+  const pushed = run(["git", "-C", target.repo, "push", "-q", GATE_REMOTE, `${commit}:refs/heads/${branch}`], {
     env,
     timeoutMs: PUSH_TIMEOUT_MS,
   });
   if (pushed.code === 0) return null;
-  git(target.repo, env, ["update-ref", "-d", ref, commit]);
   return pushed.timedOut ? "the push timed out" : `git push exited ${pushed.code}`;
 }
 
