@@ -81,8 +81,13 @@ export function buildPrompt(
   inputs: readonly PromptSection[],
   env: NodeJS.ProcessEnv = process.env,
 ): string {
+  return assemblePrompt(loadRole(role, env), outputContract, inputs);
+}
+
+/** One judge prompt from a seat's prose. `buildPrompt` supplies a catalog role's. */
+export function assemblePrompt(seat: string, outputContract: string, inputs: readonly PromptSection[]): string {
   const parts = [
-    loadRole(role, env),
+    seat,
     "## Output contract (enforced by the runtime)",
     outputContract.trim(),
     "Return exactly one JSON object and nothing else. Anything that fails this contract is discarded.",

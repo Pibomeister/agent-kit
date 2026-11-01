@@ -16,7 +16,7 @@ import { run } from "./proc.ts";
 /** The ledger's raw SQLite store (`memory/raw-store.ts`). `commit` never stages it or its journal. */
 export const RAW_STORE_FILE = "raw/learn.sqlite";
 
-const GIT_ENV = {
+export const GIT_ENV = {
   GIT_AUTHOR_NAME: "ak learn",
   GIT_AUTHOR_EMAIL: "ak-learn@local",
   GIT_COMMITTER_NAME: "ak learn",

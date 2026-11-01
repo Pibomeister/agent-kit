@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { LearnContext } from "../core/context.ts";
 import { readJson } from "../core/store.ts";
-import { LABEL, schedulerKind, unitPaths } from "./schedule.ts";
+import { DOCTOR_LOOP_LABEL, LABEL, schedulerKind, unitPaths } from "./schedule.ts";
 import { withHookBlock } from "./toml-hooks.ts";
 import {
   CONTEXT_OBSERVATIONS,
@@ -132,19 +132,23 @@ export function uninstall(ctx: LearnContext, deps: SetupDeps, options: { purge?:
   unwireKimi(ctx, deps);
 
   const kind = schedulerKind(deps);
-  const paths = unitPaths(deps, kind);
-  if (kind === "launchd" && paths !== null && existsSync(paths.unit)) {
-    deps.run(["launchctl", "bootout", `gui/${deps.uid}/${LABEL}`]);
-    rmSync(paths.unit, { force: true });
-    ctx.io.out(`${paths.unit}: unloaded and removed`);
-  } else if (kind === "systemd" && paths !== null && (existsSync(paths.unit) || existsSync(paths.timer!))) {
-    deps.run(["systemctl", "--user", "disable", "--now", `${LABEL}.timer`]);
-    rmSync(paths.unit, { force: true });
-    rmSync(paths.timer!, { force: true });
-    deps.run(["systemctl", "--user", "daemon-reload"]);
-    ctx.io.out(`${paths.unit}: disabled and removed`);
-  } else if (kind === "cron") {
+  for (const label of [LABEL, DOCTOR_LOOP_LABEL]) {
+    const paths = unitPaths(deps, kind, label);
+    if (kind === "launchd" && paths !== null && existsSync(paths.unit)) {
+      deps.run(["launchctl", "bootout", `gui/${deps.uid}/${label}`]);
+      rmSync(paths.unit, { force: true });
+      ctx.io.out(`${paths.unit}: unloaded and removed`);
+    } else if (kind === "systemd" && paths !== null && (existsSync(paths.unit) || existsSync(paths.timer!))) {
+      deps.run(["systemctl", "--user", "disable", "--now", `${label}.timer`]);
+      rmSync(paths.unit, { force: true });
+      rmSync(paths.timer!, { force: true });
+      deps.run(["systemctl", "--user", "daemon-reload"]);
+      ctx.io.out(`${paths.unit}: disabled and removed`);
+    }
+  }
+  if (kind === "cron") {
     ctx.io.out("remove the `learn memory tick` line with `crontab -e` if you added one");
+    ctx.io.out("remove the `learn doctor loop` line with `crontab -e` if you added one");
   }
 
   restoreMem(ctx, deps);

@@ -69,6 +69,18 @@ a skill file. With
 then records your decision, and the next run reads it. The design is adapted from
 warpdotdev/common-skills `skill-doctor`.
 
+`ak learn doctor loop --out DIR --repo P` is the improvement loop on top of that run. It takes the
+proposals that the failed sessions support and asks the signed-in seat for each as a rewrite of the
+whole skill file. It refuses an appended addendum, and refuses text that repeats a session. With
+`--publish` it opens one pull request per rewrite through the repository's `no-mistakes` remote, and
+refuses when that remote is absent. Without `--publish` the rewrites stay in `DIR/rewrites/`.
+It never merges. The next pass records a merge as accepted and a close as rejected. `ak learn doctor
+schedule` writes a local scheduler unit for the loop that runs on Sundays at noon, and not at login or
+boot, and loads it only with `--load`. Where only cron exists, it prints the crontab line for you to add
+and remove. The unit runs on this machine because the transcripts and the signed-in
+seat are here, and `ak learn setup uninstall` removes it. See
+`docs/decisions/0016-skill-doctor-improvement-loop.md`.
+
 Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
 `bun run ak build --host grok`, then install that local directory with
 `grok plugin install <absolute-path-to-dist/grok> --trust`. Human-started skills use `/<id>`.
