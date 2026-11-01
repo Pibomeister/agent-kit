@@ -25,7 +25,6 @@ import { type CollectOptions, discoverSkills } from "./collect.ts";
 import {
   branchOnOrigin,
   buildCommit,
-  createPullRequest,
   GATE_REMOTE,
   type PublishTarget,
   pullRequestState,
@@ -41,9 +40,9 @@ export const DEFAULT_MAX_PRS = 3;
 const SKILL_REF = /^[a-z0-9][a-z0-9_-]*$/;
 
 const LOOP_FLAGS =
-  "--out DIR --repo P [--publish] [--base B] [--remote R] [--max-prs N] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
+  "--out DIR --repo P [--publish] [--base B] [--max-prs N] [--host claude,codex,grok] [--days N] [--max-sessions N] [--per-skill N] [--no-skill N] [--global-skills] [--claude-home P] [--codex-home P] [--grok-home P] [--skills-dir P]";
 export const LOOP_USAGE = `ak learn doctor loop ${LOOP_FLAGS} [--report FILE] [--title T]`;
-export const SCHEDULE_USAGE = `ak learn doctor schedule --out DIR --repo P [--publish] [--base B] [--remote R] [--max-prs N] [--load]`;
+export const SCHEDULE_USAGE = `ak learn doctor schedule --out DIR --repo P [--publish] [--base B] [--max-prs N] [--load]`;
 
 /** One pushed rewrite, in the skills ledger: the loop's memory of its pull requests. */
 export interface RewriteEntry {
@@ -53,12 +52,8 @@ export interface RewriteEntry {
   branch: string;
   commit: string;
   base: string;
-  /** Whether the gate's pipeline opens the pull request, rather than this loop. */
-  gated: boolean;
   status: "open" | "merged" | "closed";
   pr: string | null;
-  title: string;
-  body: string;
   at: string;
 }
 
@@ -91,8 +86,7 @@ function updateRewrites(ledger: Ledger, message: string, change: (entries: Rewri
 
 /**
  * What became of the open pull requests. A merge records the proposal accepted and a close records
- * it rejected, so the doctor does not propose that rule again. A failed read changes nothing. A
- * branch the loop pushed itself with no pull request yet gets one more attempt.
+ * it rejected, so the doctor does not propose that rule again. A failed read changes nothing.
  */
 function reconcile(ctx: LearnContext, repo: string, ledger: Ledger): string[] {
   const failures: string[] = [];
@@ -103,19 +97,7 @@ function reconcile(ctx: LearnContext, repo: string, ledger: Ledger): string[] {
       continue;
     }
     if (seen === "none") {
-      if (entry.gated) {
-        ctx.io.out(`waiting: ${entry.branch} has no pull request yet; its ${GATE_REMOTE} pipeline opens it`);
-        continue;
-      }
-      const retried = createPullRequest(repo, ctx.env, entry);
-      if ("error" in retried) failures.push(`${entry.branch}: ${retried.error}`);
-      else {
-        updateRewrites(ledger, `doctor: opened ${entry.proposal}`, (entries) => {
-          const row = entries.find((item) => item.branch === entry.branch);
-          if (row !== undefined) row.pr = retried.url;
-        });
-        ctx.io.out(`opened: ${retried.url}`);
-      }
+      ctx.io.out(`waiting: ${entry.branch} has no pull request yet; its ${GATE_REMOTE} pipeline opens it`);
       continue;
     }
     const status = seen.state === "MERGED" ? "merged" : seen.state === "CLOSED" ? "closed" : "open";
@@ -143,7 +125,7 @@ function reconcile(ctx: LearnContext, repo: string, ledger: Ledger): string[] {
 /** The arguments the doctor run takes: the collector's and the report's, with the proposals recorded. */
 function doctorArgs(args: LearnArgs): LearnArgs {
   const flags = new Map(args.flags);
-  for (const name of ["publish", "base", "remote", "max-prs"]) flags.delete(name);
+  for (const name of ["publish", "base", "max-prs"]) flags.delete(name);
   flags.set("record", true);
   return { positional: [], flags };
 }
@@ -249,7 +231,7 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
   const branch = `ak-learn/skill-rewrite/${suggestion.skill}-${hash}`;
   if (loadRewrites(ledger).some((entry) => entry.branch === branch))
     return skip("this rule already had a pull request");
-  if (target.remote !== null && branchOnOrigin(repo, ctx.env, branch)) return skip(`${branch} is already on origin`);
+  if (target.publish && branchOnOrigin(repo, ctx.env, branch)) return skip(`${branch} is already on origin`);
 
   const corpus: SessionCorpus = sessionCorpus(input.texts, file.text, resolve(userHome(ctx.env)));
   for (const field of [suggestion.rule, suggestion.change]) {
@@ -273,7 +255,7 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
   ctx.io.out(
     `rewrite ${suggestion.id} (${suggestion.skill}): ${addedText(file.text, rewritten.proposed).split("\n").length} line(s) rewritten → ${local}`,
   );
-  if (target.remote === null) return "prepared";
+  if (!target.publish) return "prepared";
 
   const title = `Rewrite the ${suggestion.skill} skill (${suggestion.id})`;
   const body = pullRequestBody(record, suggestion, path, failures.length);
@@ -287,7 +269,6 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
     ctx.io.err(`ak learn doctor loop: ${suggestion.id}: git could not build the commit`);
     return "failed";
   }
-  const gated = target.remote === GATE_REMOTE;
   const entry: RewriteEntry = {
     proposal: suggestion.id,
     run: suggestion.id.replace(/-\d+$/, ""),
@@ -295,11 +276,8 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
     branch,
     commit,
     base: target.base,
-    gated,
     status: "open",
     pr: null,
-    title,
-    body,
     at: nowIso(),
   };
   // Recorded before the push, so a crash after it cannot open the same rule twice.
@@ -317,20 +295,7 @@ function passProposal(input: PassInput, suggestion: Suggestion, openSkills: Set<
     return "failed";
   }
   openSkills.add(suggestion.skill);
-  if (gated) {
-    ctx.io.out(`pushed ${branch} through ${GATE_REMOTE}; its pipeline opens the pull request`);
-    return "published";
-  }
-  const pr = createPullRequest(repo, ctx.env, { branch, base: target.base, title, body });
-  if ("error" in pr) {
-    ctx.io.err(`ak learn doctor loop: ${suggestion.id}: ${pr.error}; the next pass retries`);
-    return "failed";
-  }
-  updateRewrites(ledger, `doctor: opened ${suggestion.id}`, (entries) => {
-    const row = entries.find((item) => item.branch === branch);
-    if (row !== undefined) row.pr = pr.url;
-  });
-  ctx.io.out(`opened: ${pr.url}`);
+  ctx.io.out(`pushed ${branch} through ${GATE_REMOTE}; its pipeline opens the pull request`);
   return "published";
 }
 
@@ -374,7 +339,6 @@ export function runLoop(args: LearnArgs, ctx: LearnContext, deps: LoopDeps): num
   const target = resolveTarget(repo, ctx.env, {
     publish: args.flags.get("publish") === true,
     base: flag(args, "base"),
-    remote: flag(args, "remote"),
   });
   if ("refused" in target) return refuse(target.refused, 1);
 
@@ -441,7 +405,7 @@ export function scheduleLoop(
   const deps: SetupDeps = depsFor(ctx);
   const argv = [...deps.ak, "learn", "doctor", "loop", "--out", resolve(ctx.cwd, out), "--repo", repo];
   if (args.flags.get("publish") === true) argv.push("--publish");
-  for (const name of ["base", "remote", "max-prs"]) {
+  for (const name of ["base", "max-prs"]) {
     const value = flag(args, name);
     if (value !== undefined) argv.push(`--${name}`, value);
   }

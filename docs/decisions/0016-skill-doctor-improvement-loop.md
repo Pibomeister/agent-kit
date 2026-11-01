@@ -40,8 +40,8 @@ temporary index, and the commit must change that one path. Hooks do not run and 
 disk stays as it was.
 
 **The gate publishes.** With `--publish`, the loop pushes through the `no-mistakes` remote, and that
-pipeline opens the pull request. Another remote must be named with `--remote`, and then `gh pr create`
-opens it. Without either, the pass refuses before any judge call. Without `--publish`, rewrites stay
+pipeline opens the pull request. No other route exists: the loop never pushes to origin and never
+runs `gh pr create`. Without that remote, the pass refuses before any judge call. Without `--publish`, rewrites stay
 in the output directory. The loop never merges and never enables auto-merge.
 
 **A person decides, and the ledger remembers.** `doctor/rewrites.json` in the skills ledger records
@@ -49,10 +49,10 @@ each branch before its push, so a crash cannot open a rule twice. Each pass read
 requests. A merge records the proposal accepted and a close records it rejected, so the doctor's
 existing gate does not propose a rejected rule again. A failed read decides nothing. Each skill has
 one open rewrite at most, and `--max-prs` caps the total, three by default. Every recorded open entry
-counts against the cap, including one whose pull request could not be opened yet.
+counts against the cap, including one whose pull request the pipeline has not opened yet.
 
 **The commit carries the decision text.** The gate's pipeline opens the pull request from the commit,
-so the commit message holds the same body as a loop-opened pull request: the rule, the change, and the
+so the commit message holds the pull request body: the rule, the change, and the
 merge-accepts and close-rejects instruction.
 
 **The schedule is a local unit.** `ak learn doctor schedule` writes a launchd, systemd or cron entry

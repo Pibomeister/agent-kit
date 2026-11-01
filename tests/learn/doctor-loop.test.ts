@@ -100,19 +100,21 @@ interface Fixture {
   doctor: JsonObject;
 }
 
+function proposal(options: { skill?: string; rule?: string } = {}): JsonObject {
+  return {
+    skill: options.skill ?? "diagnose",
+    kind: "edit",
+    change: CHANGE,
+    rule: options.rule ?? RULE,
+    evidence: [{ session: "claude-c1", scorer: "efficiency", moment: MOMENT }],
+    replace: [{ old: "Then bisect.", new: "Then bisect the reduced input." }],
+  };
+}
+
 function advice(options: { skill?: string; rule?: string } = {}): JsonObject {
   return {
     findings: ["Bisecting began before the input was reduced."],
-    suggestions: [
-      {
-        skill: options.skill ?? "diagnose",
-        kind: "edit",
-        change: CHANGE,
-        rule: options.rule ?? RULE,
-        evidence: [{ session: "claude-c1", scorer: "efficiency", moment: MOMENT }],
-        replace: [{ old: "Then bisect.", new: "Then bisect the reduced input." }],
-      },
-    ],
+    suggestions: [proposal(options)],
     deferred: [],
   };
 }
@@ -148,10 +150,7 @@ function fixture(options: { gateRemote?: boolean; env?: Record<string, string> }
     join(bin, "gh"),
     `#!/bin/sh
 printf '%s\\n' "$*" >> "${ghLog}"
-if [ "$2" = create ]; then
-  while [ $# -gt 0 ]; do [ "$1" = --body-file ] && cp "$2" "${base}/body.md"; shift; done
-  echo https://forge.example/pull/7
-elif [ "$2" = list ]; then
+if [ "$2" = list ]; then
   cat "${ghList}"
 fi
 `,
@@ -243,12 +242,12 @@ describe("a loop pass", () => {
     expect(git(f.repo, "rev-parse", "HEAD")).toBe(head);
     expect(git(f.repo, "status", "--porcelain")).toBe("");
     expect(ghCalls(f)).not.toContain("pr create");
-    expect(rewrites(f)).toMatchObject([{ skill: "diagnose", status: "open", gated: true, pr: null }]);
+    expect(rewrites(f)).toMatchObject([{ skill: "diagnose", status: "open", pr: null }]);
   });
 
-  test("the rewrite step is given no session text, and the pull request carries none", () => {
-    const f = fixture({ gateRemote: false });
-    expect(loop(f, "--publish", "--remote", "origin")).toBe(0);
+  test("the rewrite step is given no session text, and the pushed commit carries none", () => {
+    const f = fixture();
+    expect(loop(f, "--publish")).toBe(0);
 
     const prompt = f.ctx.prompts.find((text) => text.startsWith("# learn/skill-rewriter"));
     expect(prompt).toContain(RULE);
@@ -257,18 +256,11 @@ describe("a loop pass", () => {
       expect(prompt).not.toContain(leaked);
 
     const calls = ghCalls(f);
-    expect(calls).toContain("pr create --head ak-learn/skill-rewrite/diagnose-");
-    expect(calls).toContain("--base main");
     expect(calls).not.toContain("merge");
     expect(calls).not.toContain("--auto");
-    const body = readFileSync(join(f.base, "body.md"), "utf8");
-    expect(body).toContain(RULE);
-    for (const leaked of [SESSION_SECRET, MOMENT, "claude-c1", "c2", f.base]) expect(body).not.toContain(leaked);
-    expect(f.ctx.out).toContain("opened: https://forge.example/pull/7");
-    expect(rewrites(f)[0]?.pr).toBe("https://forge.example/pull/7");
-    const [pushedBranch = ""] = branches(f.origin);
-    const pushed = git(f.origin, "log", "-1", "-p", "--format=%B", pushedBranch);
-    for (const leaked of [SESSION_SECRET, MOMENT, "claude-c1"]) expect(pushed).not.toContain(leaked);
+    const [pushedBranch = ""] = branches(f.gate);
+    const pushed = git(f.gate, "log", "-1", "-p", "--format=%B", pushedBranch);
+    for (const leaked of [SESSION_SECRET, MOMENT, "claude-c1", f.base]) expect(pushed).not.toContain(leaked);
   });
 
   test("without --publish it writes the rewrite locally and pushes nothing", () => {
@@ -282,12 +274,21 @@ describe("a loop pass", () => {
     expect(readFileSync(join(f.out, "rewrites", id, "SKILL.md"), "utf8")).toBe(REWRITE);
   });
 
-  test("--publish with no gate remote and no named remote refuses before any judge call", () => {
+  test("--publish with no gate remote refuses before any judge call", () => {
     const f = fixture({ gateRemote: false });
     expect(loop(f, "--publish")).toBe(1);
     expect(f.ctx.err.join("\n")).toContain("no no-mistakes remote");
     expect(f.ctx.prompts).toEqual([]);
     expect(branches(f.origin)).toEqual([]);
+  });
+
+  test("--remote is refused: the gate is the only publish route", () => {
+    const f = fixture();
+    expect(loop(f, "--publish", "--remote", "origin")).toBe(2);
+    expect(f.ctx.err[0]).toContain("unknown flag --remote");
+    expect(f.ctx.prompts).toEqual([]);
+    expect(branches(f.origin)).toEqual([]);
+    expect(branches(f.gate)).toEqual([]);
   });
 
   test("an appended addendum is refused and nothing is pushed", () => {
@@ -404,7 +405,7 @@ describe("a loop pass", () => {
   test("a commit that would not change exactly the one path is not built", () => {
     const f = fixture();
     const baseSha = git(f.repo, "rev-parse", "HEAD");
-    const target = { repo: f.repo, base: "main", baseSha, remote: "no-mistakes" };
+    const target = { repo: f.repo, base: "main", baseSha, publish: true };
     const change = { path: "skills/diagnose/SKILL.md", mode: "100644", message: "m" };
     expect(buildCommit(target, f.ctx.env, { ...change, proposed: SKILL })).toBeNull();
     expect(buildCommit(target, f.ctx.env, { ...change, proposed: REWRITE })).not.toBeNull();
@@ -419,28 +420,27 @@ describe("a loop pass", () => {
     expect(branches(f.gate)).toHaveLength(1);
   });
 
-  test("--max-prs counts a pushed rewrite whose pull request could not be opened", () => {
-    const f = fixture({ gateRemote: false });
+  test("--max-prs counts a rewrite pushed earlier in the same pass", () => {
+    const f = fixture();
     mkdirSync(join(f.repo, "skills", "other"), { recursive: true });
     writeFileSync(join(f.repo, "skills", "other", "SKILL.md"), SKILL.replace("name: diagnose", "name: other"));
     git(f.repo, "add", "-A");
     git(f.repo, "commit", "-qm", "another skill", "--no-gpg-sign");
     git(f.repo, "push", "-q", "origin", "HEAD:refs/heads/main");
     session(join(f.base, "claude", "projects", "-repo", "c1.jsonl"), "c1", f.repo, ["diagnose", "other"]);
-    const first = advice().suggestions as JsonObject[];
-    const second = advice({ skill: "other", rule: "State the failing input in the report." })
-      .suggestions as JsonObject[];
-    f.doctor = { ...advice(), suggestions: [...first, ...second] };
+    f.doctor = {
+      ...advice(),
+      suggestions: [proposal(), proposal({ skill: "other", rule: "State the failing input in the report." })],
+    };
     const judge = f.ctx.judge;
     f.ctx.judge = (prompt, ...rest) =>
       prompt.startsWith("# learn/skill-rewriter") && prompt.includes("name: other")
         ? { content: REWRITE.replace("name: diagnose", "name: other") }
         : judge(prompt, ...rest);
-    writeFileSync(join(f.base, "bin", "gh"), '#!/bin/sh\n[ "$2" = list ] && { echo "[]"; exit 0; }\nexit 1\n');
 
-    expect(loop(f, "--publish", "--remote", "origin", "--max-prs", "1")).toBe(1);
+    expect(loop(f, "--publish", "--max-prs", "1")).toBe(0);
     expect(rewrites(f)).toHaveLength(1);
-    expect(branches(f.origin)).toHaveLength(1);
+    expect(branches(f.gate)).toHaveLength(1);
     expect(f.ctx.out.join("\n")).toContain("1 rewrite pull request(s) are already open");
   });
 
@@ -565,19 +565,6 @@ describe("what a human does on the pull request", () => {
     expect(loop(f, "--publish")).toBe(1);
     expect(rewrites(f)).toMatchObject([{ status: "open" }]);
     expect(loadImpact(skillsLedger(f.ctx, f.repo).dir)[0]).toMatchObject({ status: "proposed" });
-  });
-
-  test("a pull request the loop could not open is retried on the next pass", () => {
-    const f = fixture({ gateRemote: false });
-    const gh = join(f.base, "bin", "gh");
-    const working = readFileSync(gh, "utf8");
-    writeFileSync(gh, '#!/bin/sh\n[ "$2" = list ] && { echo "[]"; exit 0; }\nexit 1\n');
-    expect(loop(f, "--publish", "--remote", "origin")).toBe(1);
-    expect(rewrites(f)).toMatchObject([{ status: "open", pr: null, gated: false }]);
-    writeFileSync(gh, working);
-    expect(loop(f, "--publish", "--remote", "origin")).toBe(0);
-    expect(rewrites(f)).toMatchObject([{ pr: "https://forge.example/pull/7" }]);
-    expect(branches(f.origin)).toHaveLength(1);
   });
 });
 

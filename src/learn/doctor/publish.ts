@@ -3,10 +3,10 @@
  *
  * The commit is built with git plumbing from the base tree and one replaced blob, so no checkout,
  * stash or hook is involved, the skill file on disk stays as it was, and the commit can hold only
- * that one path. A repository with a `no-mistakes` remote publishes through it, and its pipeline
- * opens the pull request. Any other remote must be named on the command line. The loop never merges.
+ * that one path. The only publish route is the repository's `no-mistakes` remote, whose pipeline
+ * opens the pull request. The loop never merges.
  */
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GIT_ENV } from "../core/ledger.ts";
@@ -22,8 +22,8 @@ export interface PublishTarget {
   base: string;
   /** The commit of `base` this run read. */
   baseSha: string;
-  /** Where the branch is pushed; null when the loop was not asked to publish. */
-  remote: string | null;
+  /** Whether the branch is pushed through the gate. */
+  publish: boolean;
 }
 
 function git(repo: string, env: NodeJS.ProcessEnv, args: readonly string[], input?: string): RunResult {
@@ -34,17 +34,12 @@ function git(repo: string, env: NodeJS.ProcessEnv, args: readonly string[], inpu
 export function resolveTarget(
   repo: string,
   env: NodeJS.ProcessEnv,
-  options: { publish: boolean; base: string | undefined; remote: string | undefined },
+  options: { publish: boolean; base: string | undefined },
 ): PublishTarget | { refused: string } {
   const remotes = git(repo, env, ["remote"]).stdout.split("\n");
   if (!remotes.includes(SOURCE_REMOTE)) return { refused: `${repo} has no ${SOURCE_REMOTE} remote` };
-  let remote: string | null = null;
-  if (options.publish) {
-    remote = options.remote ?? (remotes.includes(GATE_REMOTE) ? GATE_REMOTE : null);
-    if (remote === null)
-      return { refused: `${repo} has no ${GATE_REMOTE} remote; run \`no-mistakes init\` or pass --remote R` };
-    if (!remotes.includes(remote)) return { refused: `${repo} has no remote named ${remote}` };
-  }
+  if (options.publish && !remotes.includes(GATE_REMOTE))
+    return { refused: `${repo} has no ${GATE_REMOTE} remote; run \`no-mistakes init\`` };
   const head = git(repo, env, ["symbolic-ref", "--short", `refs/remotes/${SOURCE_REMOTE}/HEAD`]).stdout.trim();
   const base = options.base ?? head.slice(`${SOURCE_REMOTE}/`.length);
   if (base === "") return { refused: `${SOURCE_REMOTE}'s default branch is unknown here; pass --base B` };
@@ -52,7 +47,9 @@ export function resolveTarget(
   if (git(repo, env, ["fetch", "-q", SOURCE_REMOTE, base]).code !== 0)
     return { refused: `could not fetch ${base} from ${SOURCE_REMOTE}` };
   const baseSha = git(repo, env, ["rev-parse", "--verify", "-q", "FETCH_HEAD^{commit}"]).stdout.trim();
-  return baseSha === "" ? { refused: `could not read ${base} from ${SOURCE_REMOTE}` } : { repo, base, baseSha, remote };
+  return baseSha === ""
+    ? { refused: `could not read ${base} from ${SOURCE_REMOTE}` }
+    : { repo, base, baseSha, publish: options.publish };
 }
 
 /** A regular tracked file at `sha`, with its mode; null when the path is absent or anything else. */
@@ -113,37 +110,15 @@ export function pushBranch(
   branch: string,
   commit: string,
 ): string | null {
-  if (target.remote === null) return "no remote was chosen";
   const ref = `refs/heads/${branch}`;
   if (git(target.repo, env, ["update-ref", ref, commit, ""]).code !== 0) return `the branch ${branch} exists here`;
-  const pushed = run(["git", "-C", target.repo, "push", "-q", target.remote, ref], {
+  const pushed = run(["git", "-C", target.repo, "push", "-q", GATE_REMOTE, ref], {
     env,
     timeoutMs: PUSH_TIMEOUT_MS,
   });
   if (pushed.code === 0) return null;
   git(target.repo, env, ["update-ref", "-d", ref, commit]);
   return pushed.timedOut ? "the push timed out" : `git push exited ${pushed.code}`;
-}
-
-/** The new pull request's URL, or the reason there is none. Never draft-only, never auto-merged. */
-export function createPullRequest(
-  repo: string,
-  env: NodeJS.ProcessEnv,
-  pr: { branch: string; base: string; title: string; body: string },
-): { url: string } | { error: string } {
-  const dir = mkdtempSync(join(tmpdir(), "ak-doctor-pr-"));
-  try {
-    const body = join(dir, "body.md");
-    writeFileSync(body, pr.body);
-    const created = run(
-      ["gh", "pr", "create", "--head", pr.branch, "--base", pr.base, "--title", pr.title, "--body-file", body],
-      { cwd: repo, env },
-    );
-    const url = created.stdout.trim().split("\n").at(-1) ?? "";
-    return created.code === 0 && url !== "" ? { url } : { error: `gh pr create exited ${created.code}` };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 }
 
 export type PullRequestState = { url: string; state: "OPEN" | "MERGED" | "CLOSED" } | "none" | "unknown";
