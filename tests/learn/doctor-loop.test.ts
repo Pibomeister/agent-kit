@@ -12,7 +12,7 @@ import { readJson } from "../../src/learn/core/store.ts";
 import { collectOptions, doctorArea, outputRefusal, RUN_FILE } from "../../src/learn/doctor/cli.ts";
 import { REWRITES_FILE, runLoop, scheduleLoop, type RewriteEntry } from "../../src/learn/doctor/loop.ts";
 import type { JsonObject } from "../../src/learn/doctor/json.ts";
-import { buildCommit } from "../../src/learn/doctor/publish.ts";
+import { buildCommit, parsePullRequestList } from "../../src/learn/doctor/publish.ts";
 import {
   addendumRefusal,
   gateRewrite,
@@ -742,5 +742,26 @@ describe("ak learn doctor schedule", () => {
     expect(existsSync(unit)).toBe(true);
     uninstall(f.ctx, d);
     expect(existsSync(unit)).toBe(false);
+  });
+});
+
+describe("parsePullRequestList", () => {
+  test("reads gh JSON whatever its key order or spacing", () => {
+    expect(parsePullRequestList('[{"state":"MERGED","url":"https://x/pr/1"}]')).toEqual({
+      url: "https://x/pr/1",
+      state: "MERGED",
+    });
+    expect(parsePullRequestList('[ { "url": "https://x/pr/2", "state": "OPEN" } ]\n')).toEqual({
+      url: "https://x/pr/2",
+      state: "OPEN",
+    });
+  });
+
+  test("an empty list is none, anything unexpected is unknown", () => {
+    expect(parsePullRequestList("[]\n")).toBe("none");
+    expect(parsePullRequestList("not json")).toBe("unknown");
+    expect(parsePullRequestList('{"state":"OPEN","url":"u"}')).toBe("unknown");
+    expect(parsePullRequestList('[{"state":"DRAFT","url":"u"}]')).toBe("unknown");
+    expect(parsePullRequestList('[{"state":"OPEN"}]')).toBe("unknown");
   });
 });

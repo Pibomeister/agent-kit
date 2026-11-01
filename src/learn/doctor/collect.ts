@@ -12,6 +12,7 @@
  * the session named, and each user message is classified by the
  * claude-reflect detector so corrections are counted, not guessed.
  */
+import { createHash } from "node:crypto";
 import { existsSync, openSync, readFileSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { parseFrontmatter } from "../../util/frontmatter.ts";
@@ -623,7 +624,14 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
     return options.repos.length === 0 || (cwd !== null && places.some((place) => belongsTo(cwd, place)));
   });
   const sessions: DoctorSession[] = [];
+  /** Keys already given out: one id in two files stays two sessions, each with its own key. */
+  const claimed = new Set<string>();
+  /** Host and file pairs already read: a file located twice is one session, not two. */
+  const seen = new Set<string>();
   for (const entry of matched) {
+    const source = `${entry.host}\0${resolve(entry.path)}`;
+    if (seen.has(source)) continue;
+    seen.add(source);
     const parsed = parse(entry);
     if (parsed === null) continue;
     const { log } = parsed;
@@ -634,8 +642,13 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
         return installed.has(name) ? [name] : [];
       }),
     );
+    const natural = `${entry.host}-${parsed.id}`.replaceAll(/[^A-Za-z0-9._-]/g, "_");
+    let key = natural;
+    for (let attempt = 0; claimed.has(key); attempt += 1)
+      key = `${natural}-${createHash("sha256").update(`${source}\0${attempt}`).digest("hex").slice(0, 10)}`;
+    claimed.add(key);
     sessions.push({
-      key: `${entry.host}-${parsed.id}`.replaceAll(/[^A-Za-z0-9._-]/g, "_"),
+      key,
       host: entry.host,
       id: parsed.id,
       cwd: parsed.cwd ?? entry.cwd,

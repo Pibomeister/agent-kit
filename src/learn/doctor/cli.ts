@@ -12,13 +12,14 @@
  * proposals to the repository's skills ledger, and `accept` / `reject` record a
  * human's decision there for the next run to read.
  */
+import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { flag, type LearnArea, type LearnArgs, type LearnCommand, type LearnContext } from "../core/context.ts";
 import { Ledger } from "../core/ledger.ts";
 import { loopDir, mainRepoRoot } from "../core/paths.ts";
 import { run as runProcess } from "../core/proc.ts";
-import { readJson, writeGated, writeJson } from "../core/store.ts";
+import { gateJsonText, gateText, readJson } from "../core/store.ts";
 import { readWorktrees } from "../memory/registry.ts";
 import { skillsLedger } from "../skills/learn.ts";
 import { ClaudeMemSource } from "../sources/claude-mem.ts";
@@ -204,6 +205,18 @@ export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<Colle
   return { ok: true, value };
 }
 
+/**
+ * `text` through the secret gate of `out` (`gateText`, or `gateJsonText` for JSON), written
+ * owner-only: a new file is created with mode 0o600 and an existing one is tightened before
+ * the new text reaches it, so the text is never readable by others.
+ */
+function writeOwnerOnly(out: string, path: string, text: string, gate = gateText): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const gated = gate(out, path, text);
+  if (existsSync(path)) chmodSync(path, 0o600);
+  writeFileSync(path, gated, { mode: 0o600 });
+}
+
 /** The inventory and one scrubbed transcript per sampled session, owner-readable only. */
 function writeCollection(out: string, collection: Collection): void {
   const transcripts = join(out, "transcripts");
@@ -211,14 +224,14 @@ function writeCollection(out: string, collection: Collection): void {
   chmodSync(transcripts, 0o700);
   for (const session of collection.sampled) {
     const path = join(transcripts, `${session.key}.md`);
+    if (existsSync(path)) chmodSync(path, 0o600);
     writeFileSync(path, renderTranscript(session), { mode: 0o600 });
   }
   const inventory = {
     ...collection,
     sampled: collection.sampled.map(({ entries: _entries, ...meta }) => meta),
   };
-  writeJson(join(out, "inventory.json"), inventory, out);
-  chmodSync(join(out, "inventory.json"), 0o600);
+  writeOwnerOnly(out, join(out, "inventory.json"), JSON.stringify(inventory, null, 1), gateJsonText);
 }
 
 export interface RunRecord {
@@ -256,9 +269,8 @@ function reportPath(args: LearnArgs, ctx: LearnContext, out: string): string | n
 }
 
 function writeReport(out: string, report: string, record: RunRecord): void {
-  mkdirSync(dirname(report), { recursive: true });
-  writeGated(out, report, renderReport(record));
-  chmodSync(report, 0o600);
+  mkdirSync(dirname(report), { recursive: true, mode: 0o700 });
+  writeOwnerOnly(out, report, renderReport(record));
 }
 
 function collectCommand(args: LearnArgs, ctx: LearnContext): number {
@@ -288,6 +300,25 @@ function ledgerFor(ctx: LearnContext, repo: string | undefined): Ledger | null {
   return root === null ? null : new Ledger(loopDir(ctx.config, root, "skills"));
 }
 
+/**
+ * The earlier proposals a run shows the doctor, read after the dry-run branch. A recorded
+ * run writes beside them, so a corrupt record refuses it before any judge call
+ * (`CorruptImpactError`); a run that records nothing only reads them as history, so a
+ * corrupt record there is reported and read as none.
+ */
+function runImpact(ctx: LearnContext, ledgerRoot: string | undefined, record: boolean): ReturnType<typeof loadImpact> {
+  if (ledgerRoot === undefined) return [];
+  const dir = loopDir(ctx.config, ledgerRoot, "skills");
+  if (record) return loadImpact(dir);
+  try {
+    return loadImpact(dir);
+  } catch (error) {
+    if (!(error instanceof CorruptImpactError)) throw error;
+    ctx.io.err(`ak learn doctor run: ignoring earlier proposals: ${error.message}`);
+    return [];
+  }
+}
+
 function runCommand(args: LearnArgs, ctx: LearnContext): number {
   const out = outDir(args, ctx);
   if (out === null) return 2;
@@ -305,9 +336,6 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     ctx.io.err("ak learn doctor run: --record needs a repository; pass --repo P");
     return 2;
   }
-  // Before any judge call: a corrupt impact record refuses the run rather than spending on it.
-  const ledger = ledgerRoot === undefined ? null : new Ledger(loopDir(ctx.config, ledgerRoot, "skills"));
-  const impact = ledger === null ? [] : loadImpact(ledger.dir);
   const collection = collect(options, ctx.env);
   if (ctx.config.dryRun) {
     ctx.io.out(
@@ -315,6 +343,7 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     );
     return 0;
   }
+  const impact = runImpact(ctx, ledgerRoot, record);
   writeCollection(out, collection);
   ctx.io.out(`collected: ${collection.sampled.length} of ${collection.sessions_matched} matched sessions sampled`);
   const project = ledgerRoot ?? "all";
@@ -326,7 +355,9 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
   const runId = new Date(options.now)
     .toISOString()
     .replaceAll(/[-:]/g, "")
-    .replace(/\.\d+Z$/, "Z");
+    .replace(/\.\d+Z$/, "Z")
+    // Two runs in one second must not share proposal ids, which key the impact record.
+    .concat("-", randomBytes(3).toString("hex"));
   const mem = ClaudeMemSource.open(ctx.config.memDb);
   let advice: Advice;
   try {
@@ -372,13 +403,11 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     advice,
     decideRepo,
   };
-  writeJson(join(out, RUN_FILE), runRecord, out);
-  chmodSync(join(out, RUN_FILE), 0o600);
+  writeOwnerOnly(out, join(out, RUN_FILE), JSON.stringify(runRecord, null, 1), gateJsonText);
   for (const suggestion of advice.suggestions) {
     const path = join(out, "proposed", suggestion.id, "SKILL.md");
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    writeGated(out, path, suggestion.proposed);
-    chmodSync(path, 0o600);
+    writeOwnerOnly(out, path, suggestion.proposed);
   }
   writeReport(out, report, runRecord);
   const verdict =

@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GIT_ENV } from "../core/ledger.ts";
+import { array, object, parseJson, text } from "./json.ts";
 import { run, type RunResult } from "../core/proc.ts";
 
 export const GATE_REMOTE = "no-mistakes";
@@ -113,7 +114,7 @@ export function pushBranch(
   commit: string,
 ): string | null {
   const pushed = run(["git", "-C", target.repo, "push", "-q", GATE_REMOTE, `${commit}:refs/heads/${branch}`], {
-    env,
+    env: { ...env, ...GIT_ENV },
     timeoutMs: PUSH_TIMEOUT_MS,
   });
   if (pushed.code === 0) return null;
@@ -129,9 +130,19 @@ export function pullRequestState(repo: string, env: NodeJS.ProcessEnv, branch: s
     env,
   });
   if (listed.code !== 0) return "unknown";
-  const match = /"state":"(OPEN|MERGED|CLOSED)"/.exec(listed.stdout);
-  const url = /"url":"([^"]+)"/.exec(listed.stdout)?.[1];
-  const state = match?.[1];
-  if (state === undefined || url === undefined) return listed.stdout.trim() === "[]" ? "none" : "unknown";
-  return { url, state: state === "OPEN" ? "OPEN" : state === "MERGED" ? "MERGED" : "CLOSED" };
+  return parsePullRequestList(listed.stdout);
+}
+
+/** `gh pr list --json url,state` output read as a pull request state; anything unexpected is `unknown`. */
+export function parsePullRequestList(stdout: string): PullRequestState {
+  // JSON.parse, through the doctor's checked reader.
+  const parsed = array(parseJson(stdout) ?? undefined);
+  if (parsed === null) return "unknown";
+  if (parsed.length === 0) return "none";
+  const first = object(parsed[0]);
+  const url = text(first?.url);
+  const state = text(first?.state);
+  if (url === null || url === "") return "unknown";
+  if (state !== "OPEN" && state !== "MERGED" && state !== "CLOSED") return "unknown";
+  return { url, state };
 }

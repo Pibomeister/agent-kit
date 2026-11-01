@@ -15,7 +15,8 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, join, resolve } from "node:path";
 import { runLearn } from "../../src/learn/cli.ts";
 import { parseLearnArgs } from "../../src/learn/core/context.ts";
 import { DEFAULT_JUDGE } from "../../src/learn/core/config.ts";
@@ -1551,5 +1552,172 @@ describe("ak learn doctor", () => {
       else process.env.ANTHROPIC_API_KEY = previous;
     }
     expect(out.join("\n")).toContain("scored: 3, unavailable: 0");
+  });
+});
+
+function homesOf(w: World): string[] {
+  return ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+}
+
+describe("review fixes", () => {
+  test("a corrupt impact record does not refuse a dry run or a run that does not record", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const path = skillsLedger(ctx, w.repo).path(IMPACT_FILE);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "not json");
+    const dry: TestContext = { ...ctx, config: { ...ctx.config, dryRun: true } };
+    expect(verb("run", ["--out", join(w.base, "dry"), "--repo", w.repo, "--record", ...homesOf(w)], dry)).toBe(0);
+    expect(verb("run", ["--out", join(w.base, "plain"), "--repo", w.repo, ...homesOf(w)], ctx)).toBe(0);
+    expect(ctx.err.join("\n")).toContain("ignoring earlier proposals");
+    expect(verb("run", ["--out", join(w.base, "rec"), "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(1);
+    expect(readFileSync(path, "utf8")).toBe("not json");
+  });
+
+  test("two recorded runs in the same second get distinct proposal ids", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const realNow = Date.now;
+    const fixed = realNow();
+    Date.now = () => fixed;
+    try {
+      expect(verb("run", ["--out", join(w.base, "a"), "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(0);
+      expect(verb("run", ["--out", join(w.base, "b"), "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(0);
+    } finally {
+      Date.now = realNow;
+    }
+    const ids = loadImpact(skillsLedger(ctx, w.repo).dir).map((item) => item.id);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("written files are owner-only even under a permissive umask", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const previous = process.umask(0);
+    const out = join(w.base, "open");
+    try {
+      expect(verb("run", ["--out", out, "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(0);
+    } finally {
+      process.umask(previous);
+    }
+    for (const file of ["report.html", "run.json", "inventory.json", join("transcripts", "claude-c1.md")])
+      expect(mode(join(out, file))).toBe(0o600);
+    for (const id of readdirSync(join(out, "proposed")))
+      expect(mode(join(out, "proposed", id, "SKILL.md"))).toBe(0o600);
+  });
+
+  test("one session id in two files stays two sessions", () => {
+    const w = world();
+    const original = join(w.claude, "projects", "-repo", "c1.jsonl");
+    const copy = join(w.claude, "projects", "-repo-copy", "c1.jsonl");
+    mkdirSync(dirname(copy), { recursive: true });
+    writeFileSync(copy, readFileSync(original));
+    const at = statSync(original).mtimeMs;
+    utimesSync(copy, at / 1000, at / 1000);
+    const keys = collect(options(w, { maxSessions: 50, noSkill: 50, perSkill: 50 }), {}).sampled.map((s) => s.key);
+    const claude = keys.filter((key) => key.startsWith("claude-c1"));
+    expect(claude).toHaveLength(2);
+    expect(claude).toContain("claude-c1");
+  });
+
+  test("an unreadable user settings.json blanks every known metered name and the key helper", () => {
+    const ctx = testContext();
+    const bin = scratch("ak-judge-bin-");
+    const claude = join(bin, "claude");
+    writeFileSync(claude, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
+    chmodSync(claude, 0o755);
+    const configDir = scratch("ak-judge-config-");
+    writeFileSync(join(configDir, "settings.json"), '{ "env": { "ANTHROPIC_API_KEY": "k", } ');
+    const config = { ...ctx.config, configDir, judgeCommand: [claude, ...DEFAULT_JUDGE.slice(1)] };
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    const blank = {
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_AUTH_TOKEN: "",
+      ANTHROPIC_BASE_URL: "",
+      CLAUDE_CODE_USE_BEDROCK: "",
+    };
+    expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toMatchObject([
+      { apiKeyHelper: "", env: blank },
+    ]);
+  });
+
+  test("a present settings.json that cannot be read as an object fails closed; only a missing one is no settings", () => {
+    const ctx = testContext();
+    const bin = scratch("ak-judge-bin-");
+    const claude = join(bin, "claude");
+    writeFileSync(claude, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
+    chmodSync(claude, 0o755);
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    const blank = { ANTHROPIC_API_KEY: "", ANTHROPIC_BASE_URL: "", CLAUDE_CODE_USE_BEDROCK: "" };
+    const layerFor = (configDir: string): unknown[] =>
+      settingsOf(
+        commandJudge(
+          { ...ctx.config, configDir, judgeCommand: [claude, ...DEFAULT_JUDGE.slice(1)] },
+          { subscriptionOnly: true },
+        )("prompt", context),
+      );
+    const unreadable = scratch("ak-judge-config-");
+    mkdirSync(join(unreadable, "settings.json"));
+    expect(layerFor(unreadable)).toMatchObject([{ apiKeyHelper: "", env: blank }]);
+    for (const text of ["[]", '"text"', "null", ""]) {
+      const dir = scratch("ak-judge-config-");
+      writeFileSync(join(dir, "settings.json"), text);
+      expect(layerFor(dir)).toMatchObject([{ apiKeyHelper: "", env: blank }]);
+    }
+    const missing = layerFor(scratch("ak-judge-config-"));
+    expect(JSON.stringify(missing)).not.toContain("apiKeyHelper");
+    expect(JSON.stringify(missing)).not.toContain("ANTHROPIC_API_KEY");
+  });
+
+  test("a disambiguated key never takes another session's natural key", () => {
+    const w = world();
+    const original = join(w.claude, "projects", "-repo", "c1.jsonl");
+    const at = statSync(original).mtimeMs;
+    const copy = join(w.claude, "projects", "-repo-copy", "c1.jsonl");
+    const suffix = createHash("sha256")
+      .update(`claude\0${resolve(copy)}\u00000`)
+      .digest("hex")
+      .slice(0, 10);
+    const rival = join(w.claude, "projects", "-repo-rival", "rival.jsonl");
+    for (const [path, id] of [
+      [copy, "c1"],
+      [rival, `c1-${suffix}`],
+    ] as const) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, readFileSync(original, "utf8").replaceAll('"sessionId":"c1"', `"sessionId":"${id}"`));
+      utimesSync(path, at / 1000, at / 1000);
+    }
+    const keys = collect(options(w, { maxSessions: 50, noSkill: 50, perSkill: 50 }), {}).sampled.map((s) => s.key);
+    expect(keys.filter((key) => key.startsWith("claude-c1"))).toHaveLength(3);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test("a session file located twice is read once", () => {
+    const w = world();
+    const once = collect(options(w, { maxSessions: 50, noSkill: 50, perSkill: 50 }), {}).sampled.map((s) => s.key);
+    const twice = collect(
+      options(w, { maxSessions: 50, noSkill: 50, perSkill: 50, claudeHomes: [w.claude, join(w.claude, ".")] }),
+      {},
+    ).sampled.map((s) => s.key);
+    expect(twice).toEqual(once);
+  });
+
+  test("an existing report readable by others is tightened before it is rewritten", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const out = join(w.base, "again");
+    const report = join(w.base, "new-parent", "report.html");
+    expect(verb("run", ["--out", out, "--report", report, "--repo", w.repo, ...homesOf(w)], ctx)).toBe(0);
+    expect(mode(dirname(report))).toBe(0o700);
+    chmodSync(report, 0o644);
+    chmodSync(join(out, "run.json"), 0o644);
+    expect(verb("run", ["--out", out, "--report", report, "--repo", w.repo, ...homesOf(w)], ctx)).toBe(0);
+    expect(mode(report)).toBe(0o600);
+    expect(mode(join(out, "run.json"))).toBe(0o600);
   });
 });
