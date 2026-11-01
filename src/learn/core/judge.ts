@@ -33,6 +33,29 @@ const HOST_MODEL_FIELD = "model";
  */
 const METERED_VARS =
   /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN|_BASE_URL)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_|^(?:HTTPS?|ALL)_PROXY$|^NODE_EXTRA_CA_CERTS$/i;
+/**
+ * The `METERED_VARS` names the host CLI is known to read, blanked when the user's
+ * `settings.json` cannot be read as an object, since its own names are then unknown.
+ */
+const KNOWN_METERED_NAMES = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_BEDROCK_BASE_URL",
+  "ANTHROPIC_VERTEX_BASE_URL",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "ANTHROPIC_FOUNDRY_BASE_URL",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NODE_EXTRA_CA_CERTS",
+];
 /** OpenTelemetry switches a subscription-only judge always has off: the prompt is a whole session. */
 const OTEL_CONTENT_OFF = { OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" };
 
@@ -44,13 +67,13 @@ export function subscriptionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key))), ...OTEL_CONTENT_OFF };
 }
 
-/** A host settings text as an object; anything else reads as no settings. */
-function settingsFrom(text: string): HostEnvelope {
+/** A host settings text as an object; null when it does not parse as one. */
+function settingsFrom(text: string): HostEnvelope | null {
   try {
     const parsed: unknown = JSON.parse(text);
-    return validateHostEnvelope(parsed) ? parsed : {};
+    return validateHostEnvelope(parsed) ? parsed : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
@@ -65,10 +88,32 @@ function settingsFrom(text: string): HostEnvelope {
  * itself is known to read this layer, and a launcher such as `env` or `npx` can set its own
  * environment or run something else.
  */
+/**
+ * The user's `settings.json` as an object. Only a missing file reads as no settings; a file
+ * that is present but unreadable (EACCES, EISDIR, EIO, ...), does not parse, or is not an
+ * object reads as null, so the caller fails closed.
+ */
+function userSettings(path: string): HostEnvelope | null {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT" ? {} : null;
+  }
+  return settingsFrom(text);
+}
+
 export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] | null {
   if (command[0] === undefined || basename(command[0]) !== "claude") return null;
-  const user = settingsFrom(readText(join(configDir, "settings.json")));
-  const userEnv = validateHostEnvelope(user.env) ? user.env : {};
+  // A user settings.json that is present but cannot be read as an object fails closed: which of
+  // its keys the host would still apply is unknown, so every known metered name and `apiKeyHelper` are blanked.
+  const user = userSettings(join(configDir, "settings.json"));
+  const userEnv =
+    user === null
+      ? Object.fromEntries(KNOWN_METERED_NAMES.map((name) => [name, ""]))
+      : validateHostEnvelope(user.env)
+        ? user.env
+        : {};
   const rest: string[] = [];
   let given: string | undefined;
   for (let index = 1; index < command.length; index += 1) {
@@ -79,12 +124,13 @@ export function subscriptionCommand(command: readonly string[], configDir: strin
     } else if (arg.startsWith("--settings=")) given = arg.slice("--settings=".length);
     else rest.push(arg);
   }
-  const base = settingsFrom(
-    given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(resolve(cwd, given)),
-  );
+  const base =
+    settingsFrom(
+      given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(resolve(cwd, given)),
+    ) ?? {};
   const baseEnv = validateHostEnvelope(base.env) ? base.env : {};
   const blanked = [...Object.keys(userEnv), ...Object.keys(baseEnv)].filter((key) => METERED_VARS.test(key));
-  const helper = "apiKeyHelper" in user || "apiKeyHelper" in base ? { apiKeyHelper: "" } : {};
+  const helper = user === null || "apiKeyHelper" in user || "apiKeyHelper" in base ? { apiKeyHelper: "" } : {};
   const text = JSON.stringify({
     ...base,
     env: { ...baseEnv, ...Object.fromEntries(blanked.map((key) => [key, ""])), ...OTEL_CONTENT_OFF },
