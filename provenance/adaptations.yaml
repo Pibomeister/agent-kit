@@ -419,6 +419,21 @@ adaptations:
   - path: roles/implementer/ROLE.md
     source: superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797:skills/subagent-driven-development/SKILL.md
     rationale: "The surrounding task loop: a fresh implementer per ticket, TDD mandatory within it."
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/code-quality.md
+    rationale: The code-quality rubric, its approve or block verdict and the insufficient-evidence label are condensed into the seat's second rubric.
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/efficiency.md
+    rationale: The efficiency rubric and its four labels are condensed into the seat's first rubric.
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/procedure-compliance.md
+    rationale: The procedure-compliance rubric, with its applicability rule and the weight on protective rules, is condensed into the seat's third rubric.
+  - path: roles/learn/session-scorer/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scorers/verbosity.md
+    rationale: The verbosity rubric and its proportionate, verbose and terse labels are condensed into the seat's fourth rubric.
+  - path: roles/learn/skill-doctor/ROLE.md
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/references/skill-improvements.md
+    rationale: "The method (cluster, rank, verify, smallest edit, replace rather than append) and the file-only-when and do-not-file lists become the seat's judgement and its Never rows. Changed: the seat returns proposals to the runtime instead of opening a change."
   - path: roles/learn/skill-scout/ROLE.md
     source: claude-reflect@2c892cab8fe1285d8116216ec18b6b7b44bcd394:commands/reflect-skills.md
     rationale: "Finding repeated user requests across sessions and proposing them as candidate skills is adapted as a judge prompt. The donor's in-command skill-file writing is dropped: the role returns candidates to the runtime, which records them as drafts and installs nothing (ruling learning-drafts-not-publishes). The session threshold is the runtime's, not the judge's."
@@ -1310,6 +1325,21 @@ adaptations:
   - path: src/delegation.ts
     source: local:delegation-rubric-red-yellow-green@sha256:8769b1c8f43ecc08c64ddec8a9a426fcc1b7536d138571a3705e7b02928fbca1#L256-265
     rationale: Ticket and merge recomputation became raise-only scoring with named-human lowering that cannot cross a sensitive floor.
+  - path: src/learn/doctor/collect.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scripts/collect_sessions.py
+    rationale: "The collector is ported: per-entry truncation (1500 characters for a message, 500 for a tool call or its output), the 160-entry head-and-tail cut, injected-context filtering, skill detection intersected with installed skill names, the 45-day window and the newest-first sample of 12 sessions with 3 per skill and 4 with no skill. Changed: Grok sessions are read as well as Claude Code and Codex, Warp's own store is not read, a session matches a repository by its working directory as text so no git process starts on a session's directory, user corrections are counted with claude-reflect's detectPatterns, and every condensed transcript passes the runtime's secret scrub before it is written."
+  - path: src/learn/doctor/render.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scripts/render_report.py
+    rationale: "The report's sections are adapted: the overall grade, the five sub-scores, top findings, proposed edits with their diffs and the per-session table. Changed: the page is one self-contained file with no script, no remote font and a content security policy that blocks every fetch, styled with this package's palette instead of the donor's assets."
+  - path: src/learn/doctor/score.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/scripts/render_report.py
+    rationale: The grade bands from A+ at 0.97 down to F below 0.6 are ported unchanged.
+  - path: src/learn/doctor/score.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/SKILL.md
+    rationale: "Step 3's aggregation is ported: label scores, the 0.5 + 0.5 x score curve, the rubric weights, skill coverage as the share of sessions that used an installed skill, a session failing below 0.5 on any rubric, and code quality's insufficient-evidence sessions left out of its mean. Changed: the judge returns labels only and the runtime maps them to scores; a reply missing a valid label leaves the session unscored rather than scored zero."
+  - path: src/learn/doctor/suggest.ts
+    source: common-skills@8792394ff1b655e0af451b8fabb68ef0cfcbd208:.agents/skills/skill-doctor/references/skill-improvements.md
+    rationale: "The filing bar for a skill edit becomes deterministic gates on the judge's reply: evidence must cite a failed session, an edit must name an installed skill and replace text that occurs in it exactly once, and a rule a human rejected is not proposed again. Changed: proposals are drafts recorded with their accept or reject outcome in the skills ledger; no skill file is written (ruling learning-drafts-not-publishes)."
   - path: src/learn/review/hooks.ts
     source: claude-reflect@2c892cab8fe1285d8116216ec18b6b7b44bcd394:scripts/lib/reflect_utils.py
     rationale: "detectPatterns is a port of detect_patterns: the same pattern tables, thresholds and order of checks, translated to TypeScript. A detected correction becomes a review event of kind correction in the runtime's own ledger rather than an entry in the donor's learnings queue."

@@ -11,9 +11,18 @@ import consolidator from "../../../roles/learn/consolidator/ROLE.md" with { type
 import lessonMerger from "../../../roles/learn/lesson-merger/ROLE.md" with { type: "text" };
 import patternMaintainer from "../../../roles/learn/pattern-maintainer/ROLE.md" with { type: "text" };
 import reflector from "../../../roles/learn/reflector/ROLE.md" with { type: "text" };
+import sessionScorer from "../../../roles/learn/session-scorer/ROLE.md" with { type: "text" };
+import skillDoctor from "../../../roles/learn/skill-doctor/ROLE.md" with { type: "text" };
 import skillScout from "../../../roles/learn/skill-scout/ROLE.md" with { type: "text" };
 
-export type LearnRole = "pattern-maintainer" | "reflector" | "consolidator" | "lesson-merger" | "skill-scout";
+export type LearnRole =
+  | "pattern-maintainer"
+  | "reflector"
+  | "consolidator"
+  | "lesson-merger"
+  | "skill-scout"
+  | "session-scorer"
+  | "skill-doctor";
 
 /**
  * Whether code in `dir` runs from the published bundle, where every module is inlined into `bin/ak`,
@@ -45,6 +54,8 @@ const ROLES: Record<LearnRole, string> = {
   consolidator,
   "lesson-merger": lessonMerger,
   "skill-scout": skillScout,
+  "session-scorer": sessionScorer,
+  "skill-doctor": skillDoctor,
 };
 
 /** A role prompt: from `AK_LEARN_ROLES_DIR` when it is set, otherwise the embedded catalog text. */

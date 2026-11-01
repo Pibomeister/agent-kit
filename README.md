@@ -1,9 +1,9 @@
 # agent-kit
 
-One engineering lifecycle, amalgamated from ten donors (nine MIT-licensed, one Apache-2.0) into a single installable
+One engineering lifecycle, amalgamated from eleven donors (ten MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**36 public skills · 8 domain packs · 9 protocols · 36 role prompts · 11 reference packs · 36 schemas**,
+**36 public skills · 8 domain packs · 9 protocols · 38 role prompts · 11 reference packs · 36 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -59,6 +59,15 @@ again before publishing, so host caches cannot hide an update.
 
 Use `ak learn skills list [--repo P]` to inspect skill candidates, their status, use counts and
 evidence. If the skills ledger is absent, the command reports zero counts without creating it.
+
+Use `ak learn doctor run --out DIR [--repo P | --all]` to score recent Claude Code, Codex and Grok
+sessions against four rubrics and write one self-contained HTML report. The report lists the
+proposed skill edits that passed every gate, each with its diff. `--out` holds condensed
+transcripts, so it must be outside every work tree or a path git ignores. The command never edits
+a skill file. With
+`--record`, it keeps the proposals in the skills ledger. `ak learn doctor accept|reject <id>`
+then records your decision, and the next run reads it. The design is adapted from
+warpdotdev/common-skills `skill-doctor`.
 
 Grok Build has a generated Claude-compatible bundle at `dist/grok`. Build it with
 `bun run ak build --host grok`, then install that local directory with
@@ -218,11 +227,12 @@ Shared phase logic, invoked by skills rather than by humans:
 `phase-operations` · `consensus-plan-gate` · `tdd` · `apply-findings` · `review-delta` ·
 `worktree-ownership` · `attach-pack` · `evidence-gate` · `work-trail`
 
-### Roles (36)
+### Roles (38)
 
 6 core (`supervisor`, `implementer`, `verifier`, `reviewer-spec`, `reviewer-standards`, `trail-auditor`) · 15 code-review ·
-7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 5 learn (`learn/pattern-maintainer`,
-`learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`).
+7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 7 learn (`learn/pattern-maintainer`,
+`learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`,
+`learn/session-scorer`, `learn/skill-doctor`).
 
 ### References (11)
 
@@ -300,8 +310,9 @@ Six MIT donors make up the engineering lifecycle (pinned 2026-09-18):
 `BuilderIO/skills` (MIT, pinned at its 2026-09-30 commit) is the source of `visual-edit`.
 `cursor/plugins` (MIT, pinned at its 2026-10-03 commit) holds pstack, and only its `pstack/`
 directory is used: from it agent-kit takes the shape of the work trail and its audit, nothing else.
-Two more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect` (MIT) and
-`thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
+Three more feed the opt-in learning runtime: `BayramAnnakov/claude-reflect` (MIT),
+`warpdotdev/common-skills` (MIT, pinned at its 2026-10-20 commit; only its skill-doctor directory
+is used, by `ak learn doctor`) and `thedotmack/claude-mem`, which is **Apache-2.0**, not MIT. Its licence text and NOTICE are in
 `provenance/licenses/`, the root `NOTICE` carries its NOTICE, and each file adapted from it records
 what was changed.
 

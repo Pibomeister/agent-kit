@@ -221,6 +221,19 @@ export class ClaudeMemSource {
     );
   }
 
+  /** The latest summary of the session a host knows as `nativeId`, joined through `sdk_sessions.content_session_id`. */
+  summaryForSession(nativeId: string): SummaryRow | null {
+    return (
+      this.db
+        .query<SummaryRow, [string]>(
+          `select ss.memory_session_id, ss.request, ss.completed, ss.next_steps from session_summaries ss
+           join sdk_sessions s on s.memory_session_id = ss.memory_session_id
+           where s.content_session_id = ? order by ss.id desc limit 1`,
+        )
+        .get(nativeId) ?? null
+    );
+  }
+
   summaries(memorySessionIds: readonly string[]): SummaryRow[] {
     if (memorySessionIds.length === 0) return [];
     const marks = memorySessionIds.map(() => "?").join(", ");

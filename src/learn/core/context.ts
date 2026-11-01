@@ -60,6 +60,17 @@ export const LEARN_VALUE_FLAGS = new Set([
   "limit",
   "gh-repo",
   "days",
+  "out",
+  "report",
+  "max-sessions",
+  "per-skill",
+  "no-skill",
+  "claude-home",
+  "codex-home",
+  "grok-home",
+  "skills-dir",
+  "reason",
+  "title",
 ]);
 
 export function parseLearnArgs(argv: readonly string[]): LearnArgs {

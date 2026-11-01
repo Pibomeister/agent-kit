@@ -27,6 +27,8 @@ import { outputContract as reflectorContract } from "../../src/learn/memory/refl
 import { sessionStartBlock } from "../../src/learn/memory/session-context.ts";
 import { reviewLedgerDir } from "../../src/learn/review/ledger.ts";
 import { MAINTAINER_CONTRACT } from "../../src/learn/review/maintain.ts";
+import { SESSION_SCORER_CONTRACT } from "../../src/learn/doctor/score.ts";
+import { SKILL_DOCTOR_CONTRACT } from "../../src/learn/doctor/suggest.ts";
 import { SKILL_SCOUT_CONTRACT } from "../../src/learn/skills/learn.ts";
 import { rosterSection } from "../../src/learn/skills/roster.ts";
 import { distillPrompt } from "../../src/learn/sources/tool-distill.ts";
@@ -179,6 +181,8 @@ function judgeSurfaces(root: string): Surface[] {
     ["consolidator", "src/learn/memory/consolidate.ts", CONSOLIDATOR_CONTRACT],
     ["lesson-merger", "src/learn/memory/deep.ts", LESSON_MERGER_CONTRACT],
     ["skill-scout", "src/learn/skills/learn.ts", SKILL_SCOUT_CONTRACT],
+    ["session-scorer", "src/learn/doctor/score.ts", SESSION_SCORER_CONTRACT],
+    ["skill-doctor", "src/learn/doctor/suggest.ts", SKILL_DOCTOR_CONTRACT],
   ];
   return judges.map(([role, file, contract]) => ({
     id: `judge:${role}`,

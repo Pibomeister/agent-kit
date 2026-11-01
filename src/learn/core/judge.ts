@@ -10,12 +10,12 @@
 import { Database } from "bun:sqlite";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
 import Ajv from "ajv";
 import type { LearnConfig } from "./config.ts";
 import type { Loop } from "./paths.ts";
 import { run } from "./proc.ts";
-import { gateJsonText, gateText } from "./store.ts";
+import { gateJsonText, gateText, readText } from "./store.ts";
 import type { LearnRole } from "./roles.ts";
 import { carrierOf, recordJudgeAttempt } from "./trace.ts";
 
@@ -24,6 +24,128 @@ const NESTED_SESSION_VARS = ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT"];
 /** Trace context the judge must not inherit: it gets its own child carrier instead. */
 const TRACE_CONTEXT_VARS = ["TRACEPARENT", "TRACESTATE", "BAGGAGE"];
 const HOST_MODEL_FIELD = "model";
+/**
+ * Variables that would bill a call to an account instead of the host's signed-in seat:
+ * an API key or bearer token for any provider, a provider base URL that reroutes the
+ * call, the switches that send the host CLI to a cloud provider, and the proxy and
+ * trusted-CA variables that let a middlebox reroute or read it. A subscription-only judge
+ * never sees them. Proxy names are honoured in either case, so the match ignores case.
+ */
+const METERED_VARS =
+  /(?:_API_KEY|_AUTH_TOKEN|_BEARER_TOKEN|_BASE_URL)$|^AWS_BEARER_TOKEN|^CLAUDE_CODE_USE_|^(?:HTTPS?|ALL)_PROXY$|^NODE_EXTRA_CA_CERTS$/i;
+/**
+ * The `METERED_VARS` names the host CLI is known to read, blanked when the user's
+ * `settings.json` cannot be read as an object, since its own names are then unknown.
+ */
+const KNOWN_METERED_NAMES = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_BEDROCK_BASE_URL",
+  "ANTHROPIC_VERTEX_BASE_URL",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "ANTHROPIC_FOUNDRY_BASE_URL",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NODE_EXTRA_CA_CERTS",
+];
+/** OpenTelemetry switches a subscription-only judge always has off: the prompt is a whole session. */
+const OTEL_CONTENT_OFF = { OTEL_LOG_USER_PROMPTS: "0", OTEL_LOG_TOOL_DETAILS: "0" };
+
+/**
+ * `env` without the variables that could meter a judge call (`METERED_VARS`), and with
+ * OpenTelemetry content logging forced off. Names are compared, values never read.
+ */
+export function subscriptionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key))), ...OTEL_CONTENT_OFF };
+}
+
+/** A host settings text as an object; null when it does not parse as one. */
+function settingsFrom(text: string): HostEnvelope | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return validateHostEnvelope(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The host CLI's command with a `--settings` layer that blanks what the user's
+ * `settings.json` or the command's own `--settings` would reapply over `subscriptionEnv`:
+ * each `METERED_VARS` name in either `env`, and `apiKeyHelper`. The layer also forces
+ * OpenTelemetry content logging off. The flag layer outranks
+ * user settings, so the call stays on the signed-in seat. The command's own `--settings` layers, in either form,
+ * become one merged layer, the last given winning as the host would read it; a file
+ * path is read from `cwd`, where the judge runs. Null for any other command: only `claude`
+ * itself is known to read this layer, and a launcher such as `env` or `npx` can set its own
+ * environment or run something else.
+ */
+/**
+ * The user's `settings.json` as an object. Only a missing file reads as no settings; a file
+ * that is present but unreadable (EACCES, EISDIR, EIO, ...), does not parse, or is not an
+ * object reads as null, so the caller fails closed.
+ */
+function userSettings(path: string): HostEnvelope | null {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT" ? {} : null;
+  }
+  return settingsFrom(text);
+}
+
+export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] | null {
+  if (command[0] === undefined || basename(command[0]) !== "claude") return null;
+  // A user settings.json that is present but cannot be read as an object fails closed: which of
+  // its keys the host would still apply is unknown, so every known metered name and `apiKeyHelper` are blanked.
+  const user = userSettings(join(configDir, "settings.json"));
+  const userEnv =
+    user === null
+      ? Object.fromEntries(KNOWN_METERED_NAMES.map((name) => [name, ""]))
+      : validateHostEnvelope(user.env)
+        ? user.env
+        : {};
+  const rest: string[] = [];
+  let given: string | undefined;
+  for (let index = 1; index < command.length; index += 1) {
+    const arg = command[index] ?? "";
+    if (arg === "--settings") {
+      given = command[index + 1];
+      index += 1;
+    } else if (arg.startsWith("--settings=")) given = arg.slice("--settings=".length);
+    else rest.push(arg);
+  }
+  const base =
+    settingsFrom(
+      given === undefined || given.trimStart().startsWith("{") ? (given ?? "{}") : readText(resolve(cwd, given)),
+    ) ?? {};
+  const baseEnv = validateHostEnvelope(base.env) ? base.env : {};
+  const blanked = [...Object.keys(userEnv), ...Object.keys(baseEnv)].filter((key) => METERED_VARS.test(key));
+  const helper = user === null || "apiKeyHelper" in user || "apiKeyHelper" in base ? { apiKeyHelper: "" } : {};
+  const text = JSON.stringify({
+    ...base,
+    env: { ...baseEnv, ...Object.fromEntries(blanked.map((key) => [key, ""])), ...OTEL_CONTENT_OFF },
+    ...helper,
+  });
+  return [command[0], "--settings", text, ...rest];
+}
+
+export interface CommandJudgeOptions {
+  /**
+   * Drop every metered credential from the judge's environment, so a call runs on the signed-in seat or fails.
+   * A command other than `claude` cannot be held to that, so it is not run and the reply declares it unavailable.
+   */
+  subscriptionOnly?: boolean;
+}
 
 export interface JudgeCallContext {
   /** The enclosing span's id (`trace.ts` `runOf`); null outside a span. */
@@ -398,18 +520,27 @@ function judgeOutcome(result: ReturnType<typeof run>, parsed: ReturnType<JudgeFn
  * A judge bound to the configured command. One retry on an empty, failed or unparseable reply; every attempt is traced.
  * The command runs from the runtime directory, so it discovers no project instructions from its working directory.
  */
-export function commandJudge(config: LearnConfig): JudgeFn {
+export function commandJudge(config: LearnConfig, options: CommandJudgeOptions = {}): JudgeFn {
   return (prompt: string, context: JudgeCallContext) => {
     mkdirSync(config.runtimeDir, { recursive: true });
+    const command =
+      options.subscriptionOnly === true
+        ? subscriptionCommand(config.judgeCommand, config.configDir, config.runtimeDir)
+        : config.judgeCommand;
+    if (command === null)
+      return {
+        unavailable: `a subscription-only judge must be the claude command, not ${config.judgeCommand[0] ?? "nothing"}`,
+      };
     const env: NodeJS.ProcessEnv = {};
-    for (const [key, value] of Object.entries(process.env)) {
+    const parent = options.subscriptionOnly === true ? subscriptionEnv(process.env) : process.env;
+    for (const [key, value] of Object.entries(parent)) {
       if (!NESTED_SESSION_VARS.includes(key) && !TRACE_CONTEXT_VARS.includes(key)) env[key] = value;
     }
     const traceId = context.traceId ?? randomBytes(16).toString("hex");
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const carrier = { traceId, spanId: randomBytes(8).toString("hex") };
       const startedAt = Date.now();
-      const result = run(config.judgeCommand, {
+      const result = run(command, {
         cwd: config.runtimeDir,
         input: prompt,
         env: { ...env, TRACEPARENT: carrierOf(carrier) },
