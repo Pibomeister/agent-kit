@@ -12,6 +12,7 @@
  * the session named, and each user message is classified by the
  * claude-reflect detector so corrections are counted, not guessed.
  */
+import { createHash } from "node:crypto";
 import { existsSync, openSync, readFileSync, readSync, closeSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { parseFrontmatter } from "../../util/frontmatter.ts";
@@ -623,6 +624,8 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
     return options.repos.length === 0 || (cwd !== null && places.some((place) => belongsTo(cwd, place)));
   });
   const sessions: DoctorSession[] = [];
+  /** Session keys by the host and file that claimed them: one id in two files stays two sessions. */
+  const claimed = new Map<string, string>();
   for (const entry of matched) {
     const parsed = parse(entry);
     if (parsed === null) continue;
@@ -634,8 +637,14 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
         return installed.has(name) ? [name] : [];
       }),
     );
+    const source = `${entry.host}\0${resolve(entry.path)}`;
+    let key = `${entry.host}-${parsed.id}`.replaceAll(/[^A-Za-z0-9._-]/g, "_");
+    const owner = claimed.get(key);
+    if (owner !== undefined && owner !== source)
+      key = `${key}-${createHash("sha256").update(source).digest("hex").slice(0, 10)}`;
+    claimed.set(key, source);
     sessions.push({
-      key: `${entry.host}-${parsed.id}`.replaceAll(/[^A-Za-z0-9._-]/g, "_"),
+      key,
       host: entry.host,
       id: parsed.id,
       cwd: parsed.cwd ?? entry.cwd,

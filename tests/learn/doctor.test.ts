@@ -1553,3 +1553,94 @@ describe("ak learn doctor", () => {
     expect(out.join("\n")).toContain("scored: 3, unavailable: 0");
   });
 });
+
+function homesOf(w: World): string[] {
+  return ["--claude-home", w.claude, "--codex-home", w.codex, "--grok-home", w.grok];
+}
+
+describe("review fixes", () => {
+  test("a corrupt impact record does not refuse a dry run or a run that does not record", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const path = skillsLedger(ctx, w.repo).path(IMPACT_FILE);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, "not json");
+    const dry: TestContext = { ...ctx, config: { ...ctx.config, dryRun: true } };
+    expect(verb("run", ["--out", join(w.base, "dry"), "--repo", w.repo, "--record", ...homesOf(w)], dry)).toBe(0);
+    expect(verb("run", ["--out", join(w.base, "plain"), "--repo", w.repo, ...homesOf(w)], ctx)).toBe(0);
+    expect(ctx.err.join("\n")).toContain("ignoring earlier proposals");
+    expect(verb("run", ["--out", join(w.base, "rec"), "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(1);
+    expect(readFileSync(path, "utf8")).toBe("not json");
+  });
+
+  test("two recorded runs in the same second get distinct proposal ids", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const realNow = Date.now;
+    const fixed = realNow();
+    Date.now = () => fixed;
+    try {
+      expect(verb("run", ["--out", join(w.base, "a"), "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(0);
+      expect(verb("run", ["--out", join(w.base, "b"), "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(0);
+    } finally {
+      Date.now = realNow;
+    }
+    const ids = loadImpact(skillsLedger(ctx, w.repo).dir).map((item) => item.id);
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  test("written files are owner-only even under a permissive umask", () => {
+    const w = world();
+    const ctx = testContext({ cwd: w.repo });
+    ctx.judge = scriptedJudge;
+    const previous = process.umask(0);
+    const out = join(w.base, "open");
+    try {
+      expect(verb("run", ["--out", out, "--repo", w.repo, "--record", ...homesOf(w)], ctx)).toBe(0);
+    } finally {
+      process.umask(previous);
+    }
+    for (const file of ["report.html", "run.json", "inventory.json", join("transcripts", "claude-c1.md")])
+      expect(mode(join(out, file))).toBe(0o600);
+    for (const id of readdirSync(join(out, "proposed")))
+      expect(mode(join(out, "proposed", id, "SKILL.md"))).toBe(0o600);
+  });
+
+  test("one session id in two files stays two sessions", () => {
+    const w = world();
+    const original = join(w.claude, "projects", "-repo", "c1.jsonl");
+    const copy = join(w.claude, "projects", "-repo-copy", "c1.jsonl");
+    mkdirSync(dirname(copy), { recursive: true });
+    writeFileSync(copy, readFileSync(original));
+    const at = statSync(original).mtimeMs;
+    utimesSync(copy, at / 1000, at / 1000);
+    const keys = collect(options(w, { maxSessions: 50, noSkill: 50, perSkill: 50 }), {}).sampled.map((s) => s.key);
+    const claude = keys.filter((key) => key.startsWith("claude-c1"));
+    expect(claude).toHaveLength(2);
+    expect(claude).toContain("claude-c1");
+  });
+
+  test("an unreadable user settings.json blanks every known metered name and the key helper", () => {
+    const ctx = testContext();
+    const bin = scratch("ak-judge-bin-");
+    const claude = join(bin, "claude");
+    writeFileSync(claude, "#!/usr/bin/env bun\nconsole.log(JSON.stringify({ argv: process.argv.slice(2) }));\n");
+    chmodSync(claude, 0o755);
+    const configDir = scratch("ak-judge-config-");
+    writeFileSync(join(configDir, "settings.json"), '{ "env": { "ANTHROPIC_API_KEY": "k", } ');
+    const config = { ...ctx.config, configDir, judgeCommand: [claude, ...DEFAULT_JUDGE.slice(1)] };
+    const context: JudgeCallContext = { runId: null, loop: "skills", role: "session-scorer", project: "p" };
+    const blank = {
+      ANTHROPIC_API_KEY: "",
+      ANTHROPIC_AUTH_TOKEN: "",
+      ANTHROPIC_BASE_URL: "",
+      CLAUDE_CODE_USE_BEDROCK: "",
+    };
+    expect(settingsOf(commandJudge(config, { subscriptionOnly: true })("prompt", context))).toMatchObject([
+      { apiKeyHelper: "", env: blank },
+    ]);
+  });
+});
