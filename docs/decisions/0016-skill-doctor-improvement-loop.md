@@ -57,13 +57,15 @@ counts against the cap, including one whose pull request the pipeline has not op
 so the commit message holds the pull request body: the rule, the change, and the
 merge-accepts and close-rejects instruction.
 
-**The schedule is a local unit.** `ak learn doctor schedule` writes a launchd, systemd or cron entry
-named `dev.agent-kit.learn.doctor`. It fires on Sundays at noon and has no interval flag. It does not
+**The schedule is a local unit.** `ak learn doctor schedule` writes a launchd or systemd unit named
+`dev.agent-kit.learn.doctor`. Where only cron exists, it prints the crontab line for a person to add.
+The entry fires on Sundays at noon and has no interval flag. It does not
 fire at load, login or boot, because each pass spends judge calls and can open pull requests. A
 systemd timer catches up after a missed Sunday, and launchd catches up after sleep. A machine that is
 off on launchd or cron waits for the next Sunday. A hosted schedule cannot work, because the transcripts and the
 signed-in seat exist only on the machine. The unit loads only with `--load`, publishes only with
-`--publish`, and `ak learn setup uninstall` removes it.
+`--publish`, and `ak learn setup uninstall` removes it. A crontab line stays until a person removes
+it, and uninstall prints that reminder.
 
 ## Consequences
 

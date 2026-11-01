@@ -76,7 +76,8 @@ whole skill file. It refuses an appended addendum, and refuses text that repeats
 refuses when that remote is absent. Without `--publish` the rewrites stay in `DIR/rewrites/`.
 It never merges. The next pass records a merge as accepted and a close as rejected. `ak learn doctor
 schedule` writes a local scheduler unit for the loop that runs on Sundays at noon, and not at login or
-boot, and loads it only with `--load`. The unit runs on this machine because the transcripts and the signed-in
+boot, and loads it only with `--load`. Where only cron exists, it prints the crontab line for you to add
+and remove. The unit runs on this machine because the transcripts and the signed-in
 seat are here, and `ak learn setup uninstall` removes it. See
 `docs/decisions/0016-skill-doctor-improvement-loop.md`.
 
