@@ -67,9 +67,8 @@ export function subscriptionEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...Object.fromEntries(Object.entries(env).filter(([key]) => !METERED_VARS.test(key))), ...OTEL_CONTENT_OFF };
 }
 
-/** A host settings text as an object; null when it does not parse as one. A missing file reads as `{}`. */
+/** A host settings text as an object; null when it does not parse as one. */
 function settingsFrom(text: string): HostEnvelope | null {
-  if (text.trim() === "") return {};
   try {
     const parsed: unknown = JSON.parse(text);
     return validateHostEnvelope(parsed) ? parsed : null;
@@ -89,11 +88,26 @@ function settingsFrom(text: string): HostEnvelope | null {
  * itself is known to read this layer, and a launcher such as `env` or `npx` can set its own
  * environment or run something else.
  */
+/**
+ * The user's `settings.json` as an object. Only a missing file reads as no settings; a file
+ * that is present but unreadable (EACCES, EISDIR, EIO, ...), does not parse, or is not an
+ * object reads as null, so the caller fails closed.
+ */
+function userSettings(path: string): HostEnvelope | null {
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT" ? {} : null;
+  }
+  return settingsFrom(text);
+}
+
 export function subscriptionCommand(command: readonly string[], configDir: string, cwd: string): string[] | null {
   if (command[0] === undefined || basename(command[0]) !== "claude") return null;
-  // A user settings.json that does not parse fails closed: which of its keys the host would
-  // still apply is unknown, so every known metered name and `apiKeyHelper` are blanked.
-  const user = settingsFrom(readText(join(configDir, "settings.json")));
+  // A user settings.json that is present but cannot be read as an object fails closed: which of
+  // its keys the host would still apply is unknown, so every known metered name and `apiKeyHelper` are blanked.
+  const user = userSettings(join(configDir, "settings.json"));
   const userEnv =
     user === null
       ? Object.fromEntries(KNOWN_METERED_NAMES.map((name) => [name, ""]))

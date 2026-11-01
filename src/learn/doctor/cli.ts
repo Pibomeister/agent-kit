@@ -205,20 +205,15 @@ export function collectOptions(args: LearnArgs, ctx: LearnContext): Parsed<Colle
 }
 
 /**
- * `text` through the secret gate of `out`, written owner-only: a new file is created
- * with mode 0o600, so it is never readable by others, and an existing one is tightened.
+ * `text` through the secret gate of `out` (`gateText`, or `gateJsonText` for JSON), written
+ * owner-only: a new file is created with mode 0o600 and an existing one is tightened before
+ * the new text reaches it, so the text is never readable by others.
  */
-function writeOwnerOnly(out: string, path: string, text: string): void {
+function writeOwnerOnly(out: string, path: string, text: string, gate = gateText): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, gateText(out, path, text), { mode: 0o600 });
-  chmodSync(path, 0o600);
-}
-
-/** A JSON text through the secret gate of `out`, written owner-only (`writeOwnerOnly`). */
-function writeOwnerOnlyJson(out: string, path: string, json: string): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, gateJsonText(out, path, json), { mode: 0o600 });
-  chmodSync(path, 0o600);
+  const gated = gate(out, path, text);
+  if (existsSync(path)) chmodSync(path, 0o600);
+  writeFileSync(path, gated, { mode: 0o600 });
 }
 
 /** The inventory and one scrubbed transcript per sampled session, owner-readable only. */
@@ -228,14 +223,14 @@ function writeCollection(out: string, collection: Collection): void {
   chmodSync(transcripts, 0o700);
   for (const session of collection.sampled) {
     const path = join(transcripts, `${session.key}.md`);
+    if (existsSync(path)) chmodSync(path, 0o600);
     writeFileSync(path, renderTranscript(session), { mode: 0o600 });
-    chmodSync(path, 0o600);
   }
   const inventory = {
     ...collection,
     sampled: collection.sampled.map(({ entries: _entries, ...meta }) => meta),
   };
-  writeOwnerOnlyJson(out, join(out, "inventory.json"), JSON.stringify(inventory, null, 1));
+  writeOwnerOnly(out, join(out, "inventory.json"), JSON.stringify(inventory, null, 1), gateJsonText);
 }
 
 interface RunRecord {
@@ -273,7 +268,7 @@ function reportPath(args: LearnArgs, ctx: LearnContext, out: string): string | n
 }
 
 function writeReport(out: string, report: string, record: RunRecord): void {
-  mkdirSync(dirname(report), { recursive: true });
+  mkdirSync(dirname(report), { recursive: true, mode: 0o700 });
   writeOwnerOnly(out, report, renderReport(record));
 }
 
@@ -407,7 +402,7 @@ function runCommand(args: LearnArgs, ctx: LearnContext): number {
     advice,
     decideRepo,
   };
-  writeOwnerOnlyJson(out, join(out, RUN_FILE), JSON.stringify(runRecord, null, 1));
+  writeOwnerOnly(out, join(out, RUN_FILE), JSON.stringify(runRecord, null, 1), gateJsonText);
   for (const suggestion of advice.suggestions) {
     const path = join(out, "proposed", suggestion.id, "SKILL.md");
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });

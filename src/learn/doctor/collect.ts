@@ -624,9 +624,14 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
     return options.repos.length === 0 || (cwd !== null && places.some((place) => belongsTo(cwd, place)));
   });
   const sessions: DoctorSession[] = [];
-  /** Session keys by the host and file that claimed them: one id in two files stays two sessions. */
-  const claimed = new Map<string, string>();
+  /** Keys already given out: one id in two files stays two sessions, each with its own key. */
+  const claimed = new Set<string>();
+  /** Host and file pairs already read: a file located twice is one session, not two. */
+  const seen = new Set<string>();
   for (const entry of matched) {
+    const source = `${entry.host}\0${resolve(entry.path)}`;
+    if (seen.has(source)) continue;
+    seen.add(source);
     const parsed = parse(entry);
     if (parsed === null) continue;
     const { log } = parsed;
@@ -637,12 +642,11 @@ export function collect(options: CollectOptions, env: NodeJS.ProcessEnv): Collec
         return installed.has(name) ? [name] : [];
       }),
     );
-    const source = `${entry.host}\0${resolve(entry.path)}`;
-    let key = `${entry.host}-${parsed.id}`.replaceAll(/[^A-Za-z0-9._-]/g, "_");
-    const owner = claimed.get(key);
-    if (owner !== undefined && owner !== source)
-      key = `${key}-${createHash("sha256").update(source).digest("hex").slice(0, 10)}`;
-    claimed.set(key, source);
+    const natural = `${entry.host}-${parsed.id}`.replaceAll(/[^A-Za-z0-9._-]/g, "_");
+    let key = natural;
+    for (let attempt = 0; claimed.has(key); attempt += 1)
+      key = `${natural}-${createHash("sha256").update(`${source}\0${attempt}`).digest("hex").slice(0, 10)}`;
+    claimed.add(key);
     sessions.push({
       key,
       host: entry.host,
