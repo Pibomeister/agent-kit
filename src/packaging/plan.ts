@@ -244,9 +244,12 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
  * The licence files every bundle carries, copied verbatim.
  *
  * `source` is where the text is read. `path` is where the bundle ships it.
- * NOTICE and LICENSE stay at the bundle root: both host contracts specify
- * those two names at that place (`adapters/claude-code/CONTRACT.md` §1,
- * `adapters/codex/CONTRACT.md` §2). The other rows are the licence texts of
+ * NOTICE and LICENSE stay at the bundle root on claude-code and codex: both
+ * host contracts specify those two names at that place
+ * (`adapters/claude-code/CONTRACT.md` §1, `adapters/codex/CONTRACT.md` §2).
+ * Cursor relocates the same rows under `.cursor/licenses/` so a vendored
+ * `.cursor/` overlay never writes the consuming repo's LICENSE, NOTICE or
+ * LICENSES/. The other rows are the licence texts of
  * code inlined into `bin/ak` or `bin/ak-gate.mjs` (NOTICE). An installed
  * package keeps its text under `node_modules/`, and that path cannot be the
  * bundle path: gitignore drops it, and the packager's file walk skips it, so
@@ -1019,7 +1022,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       );
       continue;
     }
-    files.set(licence.path, { path: licence.path, contents: text, source: licence.source });
+    const path = relocateForHost(host, licence.path);
+    files.set(path, { path, contents: text, source: licence.source });
   }
 
   const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
@@ -1222,19 +1226,6 @@ function emitCursorOverlay(
       // Relative links above are rewritten for the shallower agent path.
       verbatim: true,
     });
-    // Overlay links use relocateForHost, which keeps templates/ at
-    // `.cursor/templates/` rather than references/shared/. Copy those files
-    // here so a rewritten agent link cannot dangle if shipDeclared's copy
-    // is later removed.
-    for (const link of extractRelativeLinks(body)) {
-      const resolved = resolveFromFile(source, link.target);
-      if (resolved === null || !resolved.startsWith("templates/") || !insideOwnTree(resolve(ctx.root), resolved))
-        continue;
-      const depText = readTextIfPresent(join(ctx.root, resolved));
-      if (depText === null) continue;
-      const publishedDep = relocateForHost("cursor", resolved);
-      files.set(publishedDep, { path: publishedDep, contents: depText, source: resolved, verbatim: true });
-    }
   }
 
   const rulePath = ".cursor/rules/ak-super-review.mdc";

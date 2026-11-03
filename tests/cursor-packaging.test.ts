@@ -10,6 +10,7 @@ import {
   loadHostCapabilities,
   packagedBinFile,
   packagedSkillFile,
+  relocateForHost,
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
 import { schemaRefs } from "../src/packaging/mentions.ts";
@@ -367,8 +368,17 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
       "](../../templates/trail-audit.example.json)",
     );
     for (const licence of LICENCE_FILES) {
-      expect(`${licence.path}:${present.has(licence.path)}`).toBe(`${licence.path}:true`);
+      const path = relocateForHost("cursor", licence.path);
+      expect(path.startsWith(".cursor/licenses/")).toBe(true);
+      expect(`${path}:${present.has(path)}`).toBe(`${path}:true`);
+      expect(present.has(licence.path)).toBe(false);
     }
+    expect(present.has("LICENSE")).toBe(false);
+    expect(present.has("NOTICE")).toBe(false);
+    expect(present.has("LICENSES/ajv.LICENSE")).toBe(false);
+    expect(present.has(".cursor/licenses/LICENSE")).toBe(true);
+    expect(present.has(".cursor/licenses/NOTICE")).toBe(true);
+    expect(present.has(".cursor/licenses/provenance/licenses/thedotmack_claude-mem.NOTICE")).toBe(true);
     const gate = cursor.files.get(".cursor/bin/ak-gate.mjs")?.contents ?? "";
     expect(gate.startsWith("// Licence texts for this file")).toBe(true);
     expect(gate).toContain("// --- LICENSE ---");
