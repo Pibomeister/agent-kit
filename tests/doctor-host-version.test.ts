@@ -1,11 +1,12 @@
 /**
  * PRD R3.6: `ak doctor` warns when an installed host version differs from the
- * last review-isolation probe note. Findings are WARN/NOTE/PASS, never FAIL.
- * Version detection is stubbed; tests do not spawn real host CLIs or fetch.
+ * last review-isolation probe note. Findings are PASS or WARN only, and only
+ * when a real note exists and the host is installed. Version detection is
+ * stubbed; tests do not spawn real host CLIs or fetch.
  */
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -20,6 +21,8 @@ import {
   type DoctorProbeHost,
   type ProbeVersionFinding,
 } from "../src/maintenance/host-probe-version.ts";
+import { HOST_VERSION_NOT_ON_PATH, hostVersion, hostVersionNoOutput } from "../src/review-isolation-probe/dispatch.ts";
+import { captureHostVersion } from "../src/review-isolation-probe/host-cli.ts";
 import { renderNote } from "../src/review-isolation-probe/note.ts";
 import type { ProbeHost, ProbeReport } from "../src/review-isolation-probe/types.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
@@ -73,10 +76,11 @@ function cursorNote(version: string, date: string): string {
   ].join("\n");
 }
 
-function stubInstalled(
-  versions: Partial<Record<DoctorProbeHost, string | null>>,
-): (host: DoctorProbeHost) => string | null {
-  return (host) => (host in versions ? (versions[host] ?? null) : null);
+function recordingInstalled(log: DoctorProbeHost[]) {
+  return (host: DoctorProbeHost) => {
+    log.push(host);
+    return "should-not-spawn";
+  };
 }
 
 function runDoctor(root: string, path: string) {
@@ -103,47 +107,75 @@ describe("ak doctor host-version probe check", () => {
     expect(parseProbedHostVersion(note)).toBe("2.0.1 (Claude Code)");
   });
 
-  test("a fixture with a mismatched version prints WARN and never FAIL", () => {
+  test("a fixture with a mismatched version prints WARN", () => {
     const facts = join(processScratch("ak-doctor-probe-mismatch-"), "facts");
     writeProbeNote(facts, "claude-code", "2026-11-03", "2.0.1 (Claude Code)");
-    const items = probedHostVersionFindings(facts, stubInstalled({ "claude-code": "2.1.0 (Claude Code)" }));
-    const claude = items.find((item) => item.check === "claude-code isolation probe");
+    const items = probedHostVersionFindings(facts, (host) => (host === "claude-code" ? "2.1.0 (Claude Code)" : null));
+    expect(items).toHaveLength(1);
+    const claude = items[0];
     expect(claude).toBeDefined();
     if (claude === undefined) return;
     expect(claude.level).toBe("WARN");
     expect(line(claude)).toContain(
       "WARN claude-code isolation probe: installed 2.1.0 (Claude Code) differs from last probed 2.0.1 (Claude Code) (2026-11-03)",
     );
-    for (const item of items)
-      expect(item.level === "PASS" || item.level === "WARN" || item.level === "NOTE").toBe(true);
   });
 
   test("matching versions print no warning", () => {
     const facts = join(processScratch("ak-doctor-probe-match-"), "facts");
     writeProbeNote(facts, "codex", "2026-11-03", "codex-cli 0.153.4");
-    const items = probedHostVersionFindings(facts, stubInstalled({ codex: "codex-cli 0.153.4" }));
-    const codex = items.find((item) => item.check === "codex isolation probe");
+    const items = probedHostVersionFindings(facts, (host) => (host === "codex" ? "codex-cli 0.153.4" : null));
+    expect(items).toHaveLength(1);
+    const codex = items[0];
     expect(codex).toBeDefined();
     if (codex === undefined) return;
     expect(codex.level).toBe("PASS");
     expect(line(codex)).not.toContain("WARN");
-    expect(items.some((item) => item.check === "codex isolation probe" && item.level === "WARN")).toBe(false);
   });
 
-  test("a missing host or missing note is NOTE, not a warning, and does not error", () => {
+  test("a missing host or missing note emits no finding", () => {
     const facts = join(processScratch("ak-doctor-probe-missing-"), "facts");
     writeProbeNote(facts, "claude-code", "2026-11-03", "2.0.1");
-    const missingHost = checkProbedHostVersion("claude-code", null, "2.0.1", "2026-11-03");
-    const missingNote = checkProbedHostVersion("codex", "codex-cli 0.1.0", null, null);
-    const missingBoth = checkProbedHostVersion("mastracode", null, null, null);
-    expect(missingHost.level).toBe("NOTE");
-    expect(missingNote.level).toBe("NOTE");
-    expect(missingBoth.level).toBe("NOTE");
-    expect(line(missingHost)).toStartWith("NOTE ");
-    expect(line(missingNote)).not.toContain("WARN");
-    const items = probedHostVersionFindings(facts, stubInstalled({}));
-    expect(items.every((item) => item.level === "NOTE" || item.level === "PASS")).toBe(true);
-    expect(items.every((item) => item.level !== "WARN")).toBe(true);
+    const spawned: DoctorProbeHost[] = [];
+    const items = probedHostVersionFindings(facts, (host) => {
+      spawned.push(host);
+      return null;
+    });
+    expect(items).toEqual([]);
+    expect(spawned).toEqual(["claude-code"]);
+    const noNote: DoctorProbeHost[] = [];
+    expect(probedHostVersionFindings(join(facts, "empty"), recordingInstalled(noNote))).toEqual([]);
+    expect(noNote).toEqual([]);
+  });
+
+  test("no probe note means no finding and no --version spawn", () => {
+    const facts = join(processScratch("ak-doctor-probe-nospawn-"), "facts");
+    mkdirSync(facts, { recursive: true });
+    const spawned: DoctorProbeHost[] = [];
+    expect(probedHostVersionFindings(facts, recordingInstalled(spawned))).toEqual([]);
+    expect(spawned).toEqual([]);
+  });
+
+  test("placeholder Host version is not a version and older real notes still count", () => {
+    const facts = join(processScratch("ak-doctor-probe-placeholder-"), "facts");
+    writeProbeNote(facts, "claude-code", "2026-11-03", HOST_VERSION_NOT_ON_PATH);
+    writeProbeNote(facts, "claude-code", "2026-10-01", "2.0.1");
+    writeProbeNote(facts, "codex", "2026-11-03", hostVersionNoOutput("/usr/bin/codex"));
+    writeProbeNote(facts, "codex", "2026-09-01", "codex-cli 0.153.4");
+    expect(parseProbedHostVersion(sampleNote("claude-code", HOST_VERSION_NOT_ON_PATH, "2026-11-03"))).toBeNull();
+    expect(parseProbedHostVersion(sampleNote("codex", hostVersionNoOutput("/usr/bin/codex"), "2026-11-03"))).toBeNull();
+    expect(readLatestProbedHostVersion(facts, "claude-code")?.version).toBe("2.0.1");
+    expect(readLatestProbedHostVersion(facts, "claude-code")?.date).toBe("2026-10-01");
+    expect(readLatestProbedHostVersion(facts, "codex")?.version).toBe("codex-cli 0.153.4");
+    const items = probedHostVersionFindings(facts, (host) => {
+      if (host === "claude-code") return "2.0.1";
+      if (host === "codex") return "codex-cli 0.9.0";
+      return null;
+    });
+    expect(items.map((item) => `${item.level} ${item.check}`)).toEqual([
+      "PASS claude-code isolation probe",
+      "WARN codex isolation probe",
+    ]);
   });
 
   test("the newest dated probe note is the last probed version", () => {
@@ -153,10 +185,12 @@ describe("ak doctor host-version probe check", () => {
     const latest = readLatestProbedHostVersion(facts, "claude-code");
     expect(latest?.date).toBe("2026-11-03");
     expect(latest?.version).toBe("2.0.1");
-    const match = checkProbedHostVersion("claude-code", "2.0.1", latest?.version ?? null, latest?.date ?? null);
-    expect(match.level).toBe("PASS");
-    const stale = checkProbedHostVersion("claude-code", "1.0.0", latest?.version ?? null, latest?.date ?? null);
-    expect(stale.level).toBe("WARN");
+    expect(checkProbedHostVersion("claude-code", "2.0.1", latest?.version ?? "", latest?.date ?? "").level).toBe(
+      "PASS",
+    );
+    expect(checkProbedHostVersion("claude-code", "1.0.0", latest?.version ?? "", latest?.date ?? "").level).toBe(
+      "WARN",
+    );
   });
 
   test("historical host-facts that are not review-isolation notes are ignored", () => {
@@ -165,44 +199,50 @@ describe("ak doctor host-version probe check", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "claude-code-1-hook-failures.md"), "| Host version | should-not-count |\n");
     expect(readLatestProbedHostVersion(facts, "claude-code")).toBeNull();
-    expect(checkProbedHostVersion("claude-code", "1.0.0", null, null).level).toBe("NOTE");
+    const spawned: DoctorProbeHost[] = [];
+    expect(probedHostVersionFindings(facts, recordingInstalled(spawned))).toEqual([]);
+    expect(spawned).toEqual([]);
   });
 
-  test("every doctor probe host is checked and cursor uses cursor-agent", () => {
+  test("cursor is compared only when a real probe note exists", () => {
     expect([...DOCTOR_PROBE_HOSTS]).toEqual(["claude-code", "codex", "mastracode", "cursor"]);
     expect(binariesFor("cursor")).toEqual(["cursor-agent"]);
-    expect(binariesFor("claude-code")).toEqual(["claude"]);
-    expect(binariesFor("codex")).toEqual(["codex"]);
     const facts = join(processScratch("ak-doctor-probe-all-"), "facts");
-    const items = probedHostVersionFindings(facts, stubInstalled({}));
-    expect(items).toHaveLength(3);
-    expect(items.map((item) => item.check)).toEqual([
-      "claude-code isolation probe",
-      "codex isolation probe",
-      "mastracode isolation probe",
-    ]);
-    for (const item of items) expect(item.level).toBe("NOTE");
+    const spawned: DoctorProbeHost[] = [];
+    expect(probedHostVersionFindings(facts, recordingInstalled(spawned))).toEqual([]);
+    expect(spawned).toEqual([]);
     writeProbeNote(facts, "cursor", "2026-11-03", "cursor-agent 0.1.0");
-    const withCursor = probedHostVersionFindings(facts, stubInstalled({ cursor: "cursor-agent 0.2.0" }));
-    expect(withCursor).toHaveLength(4);
-    const cursor = withCursor.find((item) => item.check === "cursor isolation probe");
-    expect(cursor).toBeDefined();
-    if (cursor === undefined) return;
-    expect(cursor.level).toBe("WARN");
+    const withCursor = probedHostVersionFindings(facts, (host) => (host === "cursor" ? "cursor-agent 0.2.0" : null));
+    expect(withCursor).toHaveLength(1);
+    expect(withCursor[0]?.level).toBe("WARN");
   });
 });
 
 describe("installed host version detection (stub binaries, not real host CLIs)", () => {
-  test("returns the first line of a stub --version and null when missing", () => {
+  test("probe and doctor capture the same first line from a zero-exit --version", () => {
     const root = processScratch("ak-doctor-probe-bin-");
     const binDir = join(root, "bin");
     mkdirSync(binDir);
     writeFileSync(join(binDir, "claude"), "#!/bin/sh\nprintf '%s\\n' '2.1.0 (Claude Code)' 'ignored'\\n");
     chmodSync(join(binDir, "claude"), 0o755);
     const env = { ...process.env, PATH: binDir };
+    expect(hostVersion("claude-code", env)).toBe("2.1.0 (Claude Code)");
     expect(readInstalledHostVersion("claude-code", env)).toBe("2.1.0 (Claude Code)");
+    expect(captureHostVersion(["claude"], ["--version"], env)).toBe("2.1.0 (Claude Code)");
     expect(readInstalledHostVersion("codex", env)).toBeNull();
-    expect(readInstalledHostVersion("cursor", { ...process.env, PATH: "/usr/bin:/bin" })).toBeNull();
+    expect(hostVersion("codex", env)).toBe(HOST_VERSION_NOT_ON_PATH);
+  });
+
+  test("a nonzero --version is no version", () => {
+    const root = processScratch("ak-doctor-probe-nonzero-");
+    const binDir = join(root, "bin");
+    mkdirSync(binDir);
+    const claude = join(binDir, "claude");
+    writeFileSync(claude, "#!/bin/sh\nprintf '%s\\n' '2.1.0 (Claude Code)'\nexit 1\n");
+    chmodSync(claude, 0o755);
+    const env = { ...process.env, PATH: binDir };
+    expect(readInstalledHostVersion("claude-code", env)).toBeNull();
+    expect(hostVersion("claude-code", env)).toBe(hostVersionNoOutput(claude));
   });
 
   test("a timed-out stub is missing, not an error", () => {
@@ -219,7 +259,7 @@ describe("installed host version detection (stub binaries, not real host CLIs)",
 });
 
 describe("ak doctor CLI host-version wiring", () => {
-  test("doctor prints WARN on a mismatched stub version and NOTE when the host is missing", () => {
+  test("doctor prints WARN on a mismatched stub version and nothing when the host is missing", () => {
     const root = processScratch("ak-doctor-probe-cli-");
     spawnSync("git", ["init", "-q", root]);
     writeProbeNote(join(root, "research/host-facts"), "claude-code", "2026-11-03", "2.0.1 (Claude Code)");
@@ -237,13 +277,10 @@ printf '%s\\n' '[]'
     expect(mismatch.stdout).toContain(
       "WARN claude-code isolation probe: installed 2.1.0 (Claude Code) differs from last probed 2.0.1 (Claude Code) (2026-11-03)",
     );
-    expect(mismatch.stdout).toContain("NOTE mastracode isolation probe:");
-    expect(mismatch.stdout).not.toContain("NOTE cursor isolation probe:");
-    expect(mismatch.stdout).not.toMatch(/FAIL [a-z-]+ isolation probe:/);
+    expect(mismatch.stdout).not.toContain("NOTE ");
+    expect(mismatch.stdout).not.toContain("mastracode isolation probe");
     const missing = runDoctor(root, "/usr/bin:/bin");
-    expect(missing.stdout).toContain(
-      "NOTE claude-code isolation probe: not installed; last probed 2.0.1 (Claude Code) (2026-11-03)",
-    );
+    expect(missing.stdout).not.toContain("isolation probe");
     expect(missing.status).not.toBe(2);
   });
 
@@ -266,5 +303,24 @@ printf '%s\\n' '[]'
       "PASS claude-code isolation probe: installed 2.0.1 (Claude Code) matches last probed 2.0.1 (Claude Code) (2026-11-03)",
     );
     expect(match.stdout).not.toContain("WARN claude-code isolation probe:");
+  });
+
+  test("a project without probe notes does not spawn --version", () => {
+    const root = processScratch("ak-doctor-probe-cli-nospawn-");
+    spawnSync("git", ["init", "-q", root]);
+    const binDir = join(root, "bin");
+    mkdirSync(binDir);
+    const marker = join(root, "version-called");
+    writeFileSync(
+      join(binDir, "claude"),
+      `#!/bin/sh
+if [ "$1" = --version ]; then printf 'called\\n' > "${marker}"; printf '%s\\n' '2.1.0'; exit 0; fi
+printf '%s\\n' '[]'
+`,
+    );
+    chmodSync(join(binDir, "claude"), 0o755);
+    const run = runDoctor(root, `${binDir}:/usr/bin:/bin`);
+    expect(run.stdout).not.toContain("isolation probe");
+    expect(existsSync(marker)).toBe(false);
   });
 });

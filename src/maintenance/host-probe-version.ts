@@ -1,22 +1,29 @@
 /**
  * `ak doctor` comparison of an installed host CLI version against the last
  * review-isolation probe note (PRD R3.6). Local files and a timed `--version`
- * spawn only: no model call, no fetch, never FAIL.
+ * spawn only: no model call, no fetch. A finding is emitted only when a note
+ * holds a real version and the host is installed: WARN on mismatch, PASS on
+ * match. Missing host, missing note, or placeholder version: no finding and,
+ * when there is no real note, no `--version` spawn.
  */
-import { spawnSync } from "node:child_process";
-import { accessSync, constants, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  captureHostVersion,
+  isHostVersionPlaceholder,
+  VERSION_TIMEOUT_MS,
+} from "../review-isolation-probe/host-cli.ts";
 import { profileFor } from "../review-isolation-probe/hosts.ts";
 import { HOSTS } from "../review-isolation-probe/types.ts";
 
-export const VERSION_TIMEOUT_MS = 5_000;
+export { VERSION_TIMEOUT_MS };
 
-/** Probe hosts plus Cursor's CLI, which doctor detects with `cursor-agent --version`. */
+/** Probe hosts plus Cursor's CLI, compared only when a real probe note exists. */
 export const DOCTOR_PROBE_HOSTS = [...HOSTS, "cursor"] as const;
 export type DoctorProbeHost = (typeof DOCTOR_PROBE_HOSTS)[number];
 
-export type ProbeVersionLevel = "PASS" | "WARN" | "NOTE";
+export type ProbeVersionLevel = "PASS" | "WARN";
 
 export interface ProbeVersionFinding {
   level: ProbeVersionLevel;
@@ -53,13 +60,15 @@ export function checkName(host: DoctorProbeHost): string {
 
 /**
  * The `Host version` cell from a note written by `renderNote` /
- * `scripts/review-isolation-probe.sh`. Anything else is not a probe note.
+ * `scripts/review-isolation-probe.sh`. Probe placeholders and anything else
+ * are not a version: the caller keeps walking to older notes.
  */
 export function parseProbedHostVersion(note: string): string | null {
   const match = HOST_VERSION_ROW.exec(note.replaceAll("\r\n", "\n"));
   const raw = match?.[1]?.trim();
   if (raw === undefined || raw === "") return null;
-  return raw.replaceAll("\\|", "|");
+  const version = raw.replaceAll("\\|", "|");
+  return isHostVersionPlaceholder(version) ? null : version;
 }
 
 export function readLatestProbedHostVersion(
@@ -88,13 +97,13 @@ export function readLatestProbedHostVersion(
 
 export function checkProbedHostVersion(
   host: DoctorProbeHost,
-  installed: string | null,
-  probedVersion: string | null,
-  probedDate: string | null,
+  installed: string,
+  probedVersion: string,
+  probedDate: string,
 ): ProbeVersionFinding {
   const check = checkName(host);
-  if (installed !== null && probedVersion !== null && installed === probedVersion) {
-    const when = probedDate === null ? "" : ` (${probedDate})`;
+  const when = ` (${probedDate})`;
+  if (installed === probedVersion) {
     return {
       level: "PASS",
       check,
@@ -102,52 +111,17 @@ export function checkProbedHostVersion(
       remedy: "No action needed.",
     };
   }
-  if (installed !== null && probedVersion !== null) {
-    const when = probedDate === null ? "" : ` (${probedDate})`;
-    return {
-      level: "WARN",
-      check,
-      detail: `installed ${installed} differs from last probed ${probedVersion}${when}`,
-      remedy: `Re-run scripts/review-isolation-probe.sh ${host} on this host version. Probe results apply only to the version they recorded.`,
-    };
-  }
-  if (installed === null && probedVersion === null) {
-    return {
-      level: "NOTE",
-      check,
-      detail: "not installed; no review-isolation probe note",
-      remedy:
-        host === "cursor"
-          ? "Install cursor-agent. Isolation probe notes for this host are recorded as research/host-facts/<date>/review-isolation-cursor.md."
-          : `Install ${binariesFor(host).join("/")} and run scripts/review-isolation-probe.sh ${host} to record a version.`,
-    };
-  }
-  if (installed === null) {
-    const when = probedDate === null ? "" : ` (${probedDate})`;
-    return {
-      level: "NOTE",
-      check,
-      detail: `not installed; last probed ${probedVersion}${when}`,
-      remedy:
-        host === "cursor"
-          ? "Install cursor-agent to compare against the last isolation probe."
-          : `Install ${binariesFor(host).join("/")} to compare against the last isolation probe.`,
-    };
-  }
   return {
-    level: "NOTE",
+    level: "WARN",
     check,
-    detail: `installed ${installed}; no review-isolation probe note`,
-    remedy:
-      host === "cursor"
-        ? "Record research/host-facts/<date>/review-isolation-cursor.md with a Host version cell for the installed cursor-agent."
-        : `Run scripts/review-isolation-probe.sh ${host} to record the installed host version.`,
+    detail: `installed ${installed} differs from last probed ${probedVersion}${when}`,
+    remedy: `Re-run scripts/review-isolation-probe.sh ${host} on this host version. Probe results apply only to the version they recorded.`,
   };
 }
 
 function hostsToCheck(factsRoot: string): DoctorProbeHost[] {
   const hosts: DoctorProbeHost[] = [...HOSTS];
-  // Cursor has no probe driver yet; compare it only when a note already exists.
+  // Cursor has no probe driver yet; compare it only when a real version note exists.
   if (readLatestProbedHostVersion(factsRoot, "cursor") !== null) hosts.push("cursor");
   return hosts;
 }
@@ -159,52 +133,20 @@ export function probedHostVersionFindings(
   const items: ProbeVersionFinding[] = [];
   for (const host of hostsToCheck(factsRoot)) {
     const probed = readLatestProbedHostVersion(factsRoot, host);
-    items.push(checkProbedHostVersion(host, readInstalled(host), probed?.version ?? null, probed?.date ?? null));
+    if (probed === null) continue;
+    const installed = readInstalled(host);
+    if (installed === null) continue;
+    items.push(checkProbedHostVersion(host, installed, probed.version, probed.date));
   }
   return items;
 }
 
-function isExecutable(path: string): boolean {
-  try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function which(names: readonly string[], pathEnv: string | undefined): string | null {
-  const path = pathEnv ?? "";
-  for (const name of names) {
-    if (name.includes("/")) {
-      if (isExecutable(name)) return name;
-      continue;
-    }
-    for (const dir of path.split(":")) {
-      if (dir === "") continue;
-      const candidate = join(dir, name);
-      if (isExecutable(candidate)) return candidate;
-    }
-  }
-  return null;
-}
-
-/** First line of `<bin> --version`, or null when the host is not on PATH. Timed; no network. */
+/** First line of `<bin> --version`, or null when missing, timed out, or nonzero. */
 export function readInstalledHostVersion(
   host: DoctorProbeHost,
   env: NodeJS.ProcessEnv = process.env,
   timeoutMs: number = VERSION_TIMEOUT_MS,
 ): string | null {
-  const bin = which(binariesFor(host), env.PATH);
-  if (bin === null) return null;
-  const result = spawnSync(bin, [...versionArgsFor(host)], {
-    encoding: "utf8",
-    timeout: timeoutMs,
-    killSignal: "SIGKILL",
-    env: { ...env, NO_UPDATE_NOTIFIER: "1" },
-  });
-  if (result.error !== undefined && result.error.message.includes("ETIMEDOUT")) return null;
-  const text = (result.stdout ?? "").trim() || (result.stderr ?? "").trim();
-  if (text === "") return null;
-  return text.split("\n")[0] ?? text;
+  const captured = captureHostVersion(binariesFor(host), versionArgsFor(host), env, timeoutMs);
+  return isHostVersionPlaceholder(captured) ? null : captured;
 }

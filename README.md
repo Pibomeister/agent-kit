@@ -42,12 +42,13 @@ ak doctor
 ak update
 ```
 
-`ak doctor` prints PASS, WARN, NOTE or FAIL with a remedy for each host and project check, and exits
-nonzero on FAIL. It warns, without a model call or network access, when an installed host's
-`--version` differs from the last review-isolation probe note under `research/host-facts/`. A host
-that is not installed or has no probe note is a NOTE, not a warning, and does not fail the command.
-Use `ak doctor --json` for machine-readable findings. `ak update` refreshes each
-installed host and reports old and new versions; it is safe to rerun. If the curl-installed
+`ak doctor` prints PASS, WARN or FAIL with a remedy for each host and project check, and exits
+nonzero on FAIL. Where the project has review-isolation probe notes under `research/host-facts/`,
+it warns, without a model call or network access, when an installed host's `--version` differs
+from the last probed version. A missing host, missing note, or project without those notes emits
+no extra finding and does not spawn `--version`. Use `ak doctor --json` for
+machine-readable findings. `ak update` refreshes each installed host and reports old and new
+versions; it is safe to rerun. If the curl-installed
 `bin/ak` differs from the published command, update warns and gives the download remedy. Add
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
 `ak delegation <ticket> --project <project-record>`, which `/ak:super-bound` runs to score each

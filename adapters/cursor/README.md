@@ -99,6 +99,6 @@ On the target branch or pull request:
    subagent a clean context window; it does not attest isolation.
 5. The author does not sit a reviewer seat and does not close a finding.
 
-`ak doctor` and `ak update` do not manage Cursor. When a review-isolation probe
-note for Cursor is present, doctor compares `cursor-agent --version` to it as a
-warning only. Re-run the build and rsync to refresh a vendored copy.
+`ak doctor` and `ak update` do not manage Cursor. The isolation-probe version
+check runs only where `research/host-facts/` holds a review-isolation note with
+a real host version. Re-run the build and rsync to refresh a vendored copy.

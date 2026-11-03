@@ -6,7 +6,7 @@
  * are never self-authored.
  */
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -16,11 +16,13 @@ import {
   findCodexChild,
   toLaunchConfig,
 } from "./children.ts";
+import { captureHostVersion, spawnTimedOut, VERSION_TIMEOUT_MS, which } from "./host-cli.ts";
 import { claudeProjectSlug, profileFor } from "./hosts.ts";
 import type { PlantedArm } from "./plant.ts";
 import type { ProbeHost } from "./types.ts";
 
 export { findClaudeChild, findCodexChild, extractSpawn, extractClaudeLaunch, extractCodexLaunch } from "./children.ts";
+export { HOST_VERSION_NOT_ON_PATH, hostVersionNoOutput } from "./host-cli.ts";
 
 export interface DispatchResult {
   command: string[];
@@ -42,31 +44,6 @@ export interface DispatchOptions {
   sessionId: string;
 }
 
-function isExecutable(path: string): boolean {
-  try {
-    accessSync(path, constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function which(names: readonly string[], pathEnv: string | undefined): string | null {
-  const path = pathEnv ?? "";
-  for (const name of names) {
-    if (name.includes("/")) {
-      if (isExecutable(name)) return name;
-      continue;
-    }
-    for (const dir of path.split(":")) {
-      if (dir === "") continue;
-      const candidate = join(dir, name);
-      if (isExecutable(candidate)) return candidate;
-    }
-  }
-  return null;
-}
-
 interface ProcRun {
   stdout: string;
   stderr: string;
@@ -83,12 +60,11 @@ function run(bin: string, args: string[], options: DispatchOptions, cwd: string,
     killSignal: "SIGKILL",
     env: options.env,
   });
-  const timedOut = result.error !== undefined && result.error.message.includes("ETIMEDOUT");
   return {
     stdout: result.stdout ?? "",
     stderr: result.stderr ?? result.error?.message ?? "",
     code: result.status ?? 1,
-    timedOut,
+    timedOut: spawnTimedOut(result.error),
   };
 }
 
@@ -102,16 +78,7 @@ function readIfPresent(path: string): string | null {
 
 export function hostVersion(host: ProbeHost, env: NodeJS.ProcessEnv): string {
   const profile = profileFor(host);
-  const bin = which(profile.binaries, env.PATH);
-  if (bin === null) return "not on PATH";
-  const result = spawnSync(bin, [...profile.versionArgs], {
-    encoding: "utf8",
-    timeout: 5_000,
-    killSignal: "SIGKILL",
-    env,
-  });
-  const text = (result.stdout ?? "").trim() || (result.stderr ?? "").trim();
-  return text === "" ? `${bin} (no version output)` : (text.split("\n")[0] ?? text);
+  return captureHostVersion(profile.binaries, profile.versionArgs, env, VERSION_TIMEOUT_MS);
 }
 
 function recordedCommand(bin: string, args: string[], parentPrompt: string): string[] {

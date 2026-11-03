@@ -28,7 +28,7 @@ import pin from "../../provenance/semantic-lint.json" with { type: "json" };
 import { hookMain } from "../../tools/hooks/semantic-lint.ts";
 import { probedHostVersionFindings, readInstalledHostVersion } from "./host-probe-version.ts";
 
-type Level = "PASS" | "WARN" | "NOTE" | "FAIL";
+type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
   level: Level;
   check: string;
