@@ -1,19 +1,32 @@
-import { chmodSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
-import { readTextIfPresent, walkFiles } from "../util/fs.ts";
+import { isDir, isInside, readTextIfPresent, walkFiles } from "../util/fs.ts";
 import type { CheckContext } from "../validation/context.ts";
 import { error, type Issue } from "../validation/types.ts";
 import { ADAPTATIONS_FILE, loadAdaptationFragments, renderAdaptations } from "../validation/provenance.ts";
 import { HOST_IDS, type HostId } from "./hosts.ts";
-import { isExecutable, planBundle, type BundlePlan, type PlanOptions } from "./plan.ts";
+import { BUILD_RECORD_FILE, isExecutable, planBundle, type BundlePlan, type PlanOptions } from "./plan.ts";
 
 export interface BuildOptions extends PlanOptions {
   hosts?: ReadonlyArray<HostId>;
   /**
-   * Replace `dist/<host>` for a single-host write. The directory is replaced
-   * wholesale, so it must be a dedicated bundle directory, never a consuming
-   * repository root.
+   * Replace `dist/<host>` for a single-host write. A relative path is resolved
+   * from `process.cwd()`, not the repository root. The directory is replaced
+   * wholesale; `outRefusal` refuses `/`, `$HOME` and its ancestors, the
+   * repository root and its ancestors, the current directory and its ancestors,
+   * a symlink that realpath's into one of those, and a non-empty directory that
+   * is not a previous bundle for this host.
    */
   out?: string;
 }
@@ -24,6 +37,80 @@ export function planAll(ctx: CheckContext, options: BuildOptions): BundlePlan[] 
 
 function distDir(host: HostId): string {
   return `dist/${host}`;
+}
+
+/** Symlinks a kernel would follow before giving up; past this the path cannot be written either. */
+const MAX_LINK_HOPS = 40;
+
+/**
+ * Where a write to `path` lands: its nearest existing ancestor through
+ * `realpath`, with the parts that do not exist yet kept. A dangling symlink is
+ * followed, because a write creates its target.
+ */
+function canonicalWritePath(path: string): string {
+  let hops = 0;
+  let dir = resolve(path);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(dir), ...missing);
+    } catch {
+      if (hops < MAX_LINK_HOPS) {
+        try {
+          const link = readlinkSync(dir);
+          hops += 1;
+          dir = resolve(dirname(dir), link);
+          continue;
+        } catch {
+          // Not a symlink; walk to the parent.
+        }
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return resolve(path);
+    missing.unshift(basename(dir));
+    dir = parent;
+  }
+}
+
+/**
+ * Why `--out` may not replace `dest`, or null when it may. Refuse-only: an
+ * empty or nonexistent directory, or one holding this host's build record, is
+ * allowed. Location checks use the realpath, so a symlink cannot hide `/`,
+ * `$HOME`, the repository root, or the current directory.
+ */
+export function outRefusal(dest: string, host: HostId, repoRoot: string): string | null {
+  const target = canonicalWritePath(dest);
+  if (target === "/") return `--out '${dest}' would replace the filesystem root`;
+  const home = process.env.HOME;
+  if (home !== undefined && home !== "") {
+    const realHome = canonicalWritePath(home);
+    if (isInside(realHome, target)) return `--out '${dest}' would replace $HOME or an ancestor of it`;
+  }
+  if (isInside(canonicalWritePath(repoRoot), target)) {
+    return `--out '${dest}' would replace the repository root or an ancestor of it`;
+  }
+  if (isInside(canonicalWritePath(process.cwd()), target)) {
+    return `--out '${dest}' would replace the current directory or an ancestor of it`;
+  }
+  if (!existsSync(target)) return null;
+  if (!isDir(target)) return `--out '${dest}' would replace a file, not a bundle directory`;
+  if (readdirSync(target).length === 0) return null;
+  if (existsSync(join(target, BUILD_RECORD_FILE[host]))) return null;
+  return `--out '${dest}' names a non-empty directory that is not a previous agent-kit bundle for this host (${BUILD_RECORD_FILE[host]})`;
+}
+
+function outRequiresOneHost(): Issue {
+  return error(
+    "packaging.out-requires-one-host",
+    "ak build",
+    "--out writes one bundle directory and needs exactly one --host. Default ak build still writes dist/<host> for every host.",
+  );
+}
+
+function refuseOut(dest: string, host: HostId, repoRoot: string): Issue | null {
+  const reason = outRefusal(dest, host, repoRoot);
+  return reason === null ? null : error("packaging.out-refused", "ak build", reason);
 }
 
 /**
@@ -68,30 +155,33 @@ export interface BuildResult {
 
 function bundleOutDir(ctx: CheckContext, host: HostId, options: BuildOptions): string {
   if (options.out === undefined) return join(ctx.root, distDir(host));
-  return isAbsolute(options.out) ? options.out : join(ctx.root, options.out);
+  return resolve(options.out);
+}
+
+function selectedHosts(options: BuildOptions): ReadonlyArray<HostId> {
+  return options.hosts ?? HOST_IDS;
+}
+
+function outGuard(ctx: CheckContext, options: BuildOptions): Issue | null {
+  if (options.out === undefined) return null;
+  const selected = selectedHosts(options);
+  if (selected.length !== 1) return outRequiresOneHost();
+  const host = selected[0];
+  if (host === undefined) return outRequiresOneHost();
+  return refuseOut(bundleOutDir(ctx, host, options), host, ctx.root);
 }
 
 export function writeBundles(ctx: CheckContext, options: BuildOptions): BuildResult {
-  const selected = options.hosts ?? HOST_IDS;
-  if (options.out !== undefined && selected.length !== 1) {
-    return {
-      issues: [
-        error(
-          "packaging.out-requires-one-host",
-          "ak build",
-          "--out writes one bundle directory and needs exactly one --host. Default ak build still writes dist/<host> for every host.",
-        ),
-      ],
-      profile: "all",
-    };
-  }
+  const guarded = outGuard(ctx, options);
+  if (guarded !== null) return { issues: [guarded], profile: "all" };
   const plans = planAll(ctx, options);
   const issues = plans.flatMap((plan) => plan.issues);
   const profile = plans.at(-1)?.profile ?? "all";
   // A failure in any host must leave every installed bundle intact.
   if (issues.some((issue) => issue.severity === "error")) return { issues: collapseDuplicates(issues), profile };
   for (const plan of plans) {
-    const outRoot = bundleOutDir(ctx, plan.host, options);
+    const dest = bundleOutDir(ctx, plan.host, options);
+    const outRoot = options.out === undefined ? dest : canonicalWritePath(dest);
     rmSync(outRoot, { recursive: true, force: true });
     for (const file of plan.files.values()) {
       const target = join(outRoot, file.path);
@@ -110,22 +200,26 @@ function hasExecBit(path: string): boolean {
   return process.platform === "win32" || (statSync(path).mode & 0o111) !== 0;
 }
 
-/** Verify dist/ matches what a build would emit. Writes nothing. */
+/** Verify dist/ (or `--out`) matches what a build would emit. Writes nothing. */
 export function checkBundles(ctx: CheckContext, options: BuildOptions): Issue[] {
+  const guarded = outGuard(ctx, options);
+  if (guarded !== null) return [guarded];
   const issues: Issue[] = [];
 
   for (const plan of planAll(ctx, options)) {
     issues.push(...plan.issues);
-    const dir = distDir(plan.host);
-    const onDisk = new Set(walkFiles(ctx.root, dir).map((p) => p.slice(dir.length + 1)));
+    const destPath = bundleOutDir(ctx, plan.host, options);
+    const dest = options.out === undefined ? destPath : canonicalWritePath(destPath);
+    const label = options.out === undefined ? distDir(plan.host) : dest;
+    const onDisk = new Set(walkFiles(dest, "."));
 
     for (const file of plan.files.values()) {
-      const actual = readTextIfPresent(join(ctx.root, dir, file.path));
+      const actual = readTextIfPresent(join(dest, file.path));
       if (actual === null) {
         issues.push(
           error(
             "packaging.dist-missing",
-            `${dir}/${file.path}`,
+            `${label}/${file.path}`,
             "Generated by ak build but absent from dist/. Run ak build.",
           ),
         );
@@ -136,16 +230,16 @@ export function checkBundles(ctx: CheckContext, options: BuildOptions): Issue[] 
         issues.push(
           error(
             "packaging.dist-stale",
-            `${dir}/${file.path}`,
+            `${label}/${file.path}`,
             "Content differs from what ak build would emit. Run ak build.",
           ),
         );
       }
-      if (isExecutable(file) && !hasExecBit(join(ctx.root, dir, file.path))) {
+      if (isExecutable(file) && !hasExecBit(join(dest, file.path))) {
         issues.push(
           error(
             "packaging.dist-not-executable",
-            `${dir}/${file.path}`,
+            `${label}/${file.path}`,
             "Starts with a shebang under bin/ and lacks the executable bit, so running it fails with Permission denied. Run ak build.",
           ),
         );
@@ -156,7 +250,7 @@ export function checkBundles(ctx: CheckContext, options: BuildOptions): Issue[] 
       issues.push(
         error(
           "packaging.dist-extra",
-          `${dir}/${extra}`,
+          `${label}/${extra}`,
           "Present in dist/ but not generated by ak build. Run ak build.",
         ),
       );

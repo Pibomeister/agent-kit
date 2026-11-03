@@ -15,16 +15,24 @@ From the agent-kit checkout, after dependencies are installed:
 bun run ak build --host cursor
 ```
 
-writes `dist/cursor/`. To write a dedicated directory instead (the directory is
-**replaced**; do not point this at a repository root):
+writes `dist/cursor/`. To write a dedicated directory instead:
 
 ```bash
 bun run ak build --host cursor --out /tmp/ak-cursor
 ```
 
-`--out` requires `--host`. A default `ak build` with no `--host` still writes
-every host under `dist/` and is unchanged for claude-code, codex, grok, kimi and
-droid.
+A relative `--out` is resolved from the **current working directory**, not the
+repository root. The directory is **replaced**. `ak build` refuses `--out` of
+`/`, `$HOME` or an ancestor of it, the repository root or an ancestor of it, the
+current directory or an ancestor of it, a symlink that resolves into one of
+those, or a non-empty directory that is not a previous agent-kit bundle for
+that host (`.cursor-plugin/ak.json`). An empty directory, a nonexistent path,
+or a directory that already holds that build record is allowed.
+
+`--out` requires `--host`. Combine `--check` with `--out` to verify that
+directory rather than `dist/cursor`. A default `ak build` with no `--host`
+still writes every host under `dist/` and is unchanged for claude-code, codex,
+grok, kimi and droid.
 
 ## Vendor into a consuming repo (Cloud Agents)
 

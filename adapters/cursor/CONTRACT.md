@@ -100,10 +100,10 @@ that enum:
 
 | Feature | Status | Detail |
 |---|---|---|
-| `isolated-review-context` | `partial` | Custom subagents have their own context window and start clean ([subagents](https://cursor.com/docs/subagents)). The parent includes whatever it puts in the task prompt. The host does not attest that a reviewer never saw the author's narrative |
+| `isolated-review-context` | `partial` | Docs only, not session-tested. Custom subagents have their own context window and start clean ([subagents](https://cursor.com/docs/subagents)). The parent includes whatever it puts in the task prompt. The host does not attest that a reviewer never saw the author's narrative. Upgrade when a Cloud Agent reviewer subagent whose prompt omitted the author's narrative cannot read the parent transcript |
 | `independent-context` | `not-provided` | Same as claude-code §3: no excluded-lineage attestation. Host-only verifier receipts are `host-unattested` |
-| Subagent dispatch | `satisfied` | Agent can delegate via the Task tool. Project subagents are `.cursor/agents/*.md` with `name`, `description`, optional `readonly` ([subagents](https://cursor.com/docs/subagents)). Cloud Agents can use subagents. Cloud subagents on isolated VMs exist (`/in-cloud`); this bundle does not require that path |
-| Hooks / guard | `partial` | `.cursor/hooks.json` is supported in IDE and Cloud Agents, including `preToolUse`, `subagentStart` / `subagentStop`, `stop` ([hooks](https://cursor.com/docs/hooks), [cloud agents](https://cursor.com/docs/cloud-agent)). This bundle ships none. A missing hook fails open. User-level `~/.cursor/hooks.json` is not available on Cloud Agent VMs |
+| Subagent dispatch | `partial` | Docs only, not session-tested. Project subagents are `.cursor/agents/*.md` with `name`, `description`, optional `readonly` ([subagents](https://cursor.com/docs/subagents)). Cloud Agents can use subagents. Cloud subagents on isolated VMs exist (`/in-cloud`); this bundle does not require that path. Upgrade when a Cloud Agent session dispatches one of those files, starts with a clean context, and `readonly: true` is observed to block writes |
+| Hooks / guard | `partial` | Docs only. `.cursor/hooks.json` is supported in IDE and Cloud Agents, including `preToolUse`, `subagentStart` / `subagentStop`, `stop` ([hooks](https://cursor.com/docs/hooks), [cloud agents](https://cursor.com/docs/cloud-agent)). This bundle ships none. A missing hook fails open. User-level `~/.cursor/hooks.json` is not available on Cloud Agent VMs. Upgrade when a shipped hook is session-tested on Cloud Agents |
 | Memory | `not-provided` | Product "Memories" is not a package-owned ledger. This bundle does not wire `ak learn` on Cursor. Unverified as an isolation boundary |
 | Transcript locations | `partial` | Cloud Agent conversation state is stored on Cursor's backend, not as a documented repo path ([security](https://cursor.com/docs/cloud-agent/security)). `subagentStop` input includes `agent_transcript_path` ([hooks](https://cursor.com/docs/hooks)). The parent IDE transcript's on-disk path is **unverified**. Built-in Cursor Cloud MCP exposes run transcripts. This package cannot deny a reviewer reading a parent transcript by path |
 
@@ -137,7 +137,7 @@ Downstream interface (exact commands): `adapters/cursor/README.md`.
 
 ```bash
 bun run ak build --host cursor
-# or a dedicated directory (replaced wholesale; never a repo root):
+# or a dedicated directory (replaced wholesale). Relative --out is from cwd:
 bun run ak build --host cursor --out /tmp/ak-cursor
 ```
 
@@ -181,8 +181,11 @@ packaging suite:
    steps use `/<id>`. M descriptions are unchanged.
 3. **Additive default** — claude-code, codex, grok, kimi and droid plans contain
    no `.cursor/` paths and keep their previous manifest locations.
-4. **`--out`** — requires exactly one `--host`; default `ak build` still writes
-   `dist/<host>`.
+4. **`--out`** — requires exactly one `--host`; relative `--out` is from the
+   current directory; `--check --out` verifies that directory. The write refuses
+   `/`, `$HOME` and its ancestors, the repository root and its ancestors, cwd
+   and its ancestors, a symlink into those, and a non-empty directory without
+   this host's build record. Default `ak build` still writes `dist/<host>`.
 5. **`ak validate`** — the tree with this adapter present is clean.
 
 Live Cloud Agent discovery, slash expansion retaining the leading `/<id>`, and
