@@ -251,6 +251,14 @@ describe("verdict logic", () => {
     };
     expect(decideArm("transcript-on-disk", marker, denied, at, unplantable, "codex").kind).toBe("unobservable");
     expect(decideArm("transcript-on-disk", marker, allowed, at, unplantable, "codex").kind).toBe("unobservable");
+    const leakedNoTouch = readEvidence(
+      `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"${marker}"}]}}\n{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"no read"}]}}\n`,
+      null,
+    );
+    expect(leakedNoTouch.contextText).toContain(marker);
+    expect(leakedNoTouch.toolTouches).toEqual([]);
+    expect(decideArm("transcript-on-disk", marker, leakedNoTouch, at).kind).toBe("fail");
+    expect(decideArm("transcript-on-disk", marker, leakedNoTouch, at, unplantable, "codex").kind).toBe("fail");
   });
 
   test("PreToolUse fired counts only hook payloads from the child session", () => {
@@ -520,9 +528,38 @@ describe("review-round-1 fixtures", () => {
     expect(child).toContain("CHILD_THREAD");
     expect(child).not.toContain("PARENT_THREAD_ONLY");
     expect(child).not.toContain("UNRELATED_JSONL");
+    expect(child).not.toContain("SUBSTRING_SPOOF");
     const spawn = extractSpawn(`${stdout}\n${child ?? ""}`);
     expect(spawn.childThreadIds).toEqual(["thread_child_bbbb"]);
     expect(spawn.parentThreadId).toBe("thread_parent_aaaa");
+  });
+
+  test("two Codex children with no unique join is unobservable", () => {
+    const home = join(REVIEW_R1, "two-codex-children");
+    const stdout = readFileSync(join(home, "stdout.jsonl"), "utf8");
+    expect(extractSpawn(stdout).childThreadIds).toEqual(["thread_child_bbbb", "thread_child_cccc"]);
+    expect(findCodexChild(home, stdout)).toBeNull();
+  });
+
+  test("two Codex jsonl files for one child id is unobservable", () => {
+    const home = processScratch("ak-review-iso-codex-ambig-");
+    made.push(home);
+    const sessions = join(home, "sessions", "2026", "01", "15");
+    mkdirSync(sessions, { recursive: true });
+    writeFileSync(
+      join(home, "stdout.jsonl"),
+      '{"type":"thread.started","thread_id":"thread_parent_aaaa"}\n{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"SubAgentActivity","kind":"started","agent_thread_id":"thread_child_bbbb"}}}\n',
+    );
+    writeFileSync(
+      join(sessions, "a-thread_child_bbbb.jsonl"),
+      '{"type":"thread.started","thread_id":"thread_child_bbbb"}\n{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"CHILD_A"}]}}\n',
+    );
+    writeFileSync(
+      join(sessions, "b-thread_child_bbbb.jsonl"),
+      '{"type":"thread.started","thread_id":"thread_child_bbbb"}\n{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"CHILD_B"}]}}\n',
+    );
+    const stdout = readFileSync(join(home, "stdout.jsonl"), "utf8");
+    expect(findCodexChild(home, stdout)).toBeNull();
   });
 
   test("(c) Claude with no subagent file is unobservable", () => {

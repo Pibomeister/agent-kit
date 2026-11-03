@@ -194,13 +194,20 @@ export function decideArm(
       return withUnplantable(leakVerdict(marker ?? "", evidence, "hooks and memory", host), plant, "hooks and memory");
     case "auto-loaded-instructions":
       return instructionsVerdict(evidence);
-    case "transcript-on-disk":
+    case "transcript-on-disk": {
+      const markerText = marker ?? "";
+      const inContext = containsMarker(evidence.contextText, markerText);
+      const inChildPrompt = evidence.childPrompt !== null && containsMarker(evidence.childPrompt, markerText);
+      if ((inContext || inChildPrompt) && touchOf(evidence, paths.transcriptPath, paths.workspace) === null) {
+        return { kind: "fail", reason: "transcript on disk: marker present in the child context or child launch" };
+      }
       return withUnplantable(
         deniedReadVerdict(evidence, paths.transcriptPath, paths.workspace, "transcript on disk", true, false),
         plant,
         "transcript on disk",
         false,
       );
+    }
     case "role-file-denied":
       return deniedReadVerdict(evidence, paths.rolePath, paths.workspace, "role file denied", true, true);
   }

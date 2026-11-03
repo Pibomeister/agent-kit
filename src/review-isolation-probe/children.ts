@@ -314,8 +314,14 @@ export function findClaudeChild(
   return picked === null ? null : readIfPresent(picked);
 }
 
-function jsonlMatching(codexHome: string, threadId: string): string | null {
+function jsonlNameMatches(name: string, id: string): boolean {
+  if (id === "") return false;
+  return name === `${id}.jsonl` || name.endsWith(`-${id}.jsonl`);
+}
+
+function sessionJsonlPaths(codexHome: string): string[] {
   const stack = [join(codexHome, "sessions")];
+  const out: string[] = [];
   while (stack.length > 0) {
     const dir = stack.pop();
     if (dir === undefined) break;
@@ -331,15 +337,34 @@ function jsonlMatching(codexHome: string, threadId: string): string | null {
         stack.push(path);
         continue;
       }
-      if (entry.name.endsWith(".jsonl") && entry.name.includes(threadId)) return readIfPresent(path);
+      if (entry.name.endsWith(".jsonl")) out.push(path);
     }
   }
+  return out;
+}
+
+function uniqueJsonl(paths: readonly string[], ids: readonly string[]): string | null {
+  const matched: string[] = [];
+  for (const path of paths) {
+    const name = basename(path);
+    for (const id of ids) {
+      if (jsonlNameMatches(name, id) && !matched.includes(path)) matched.push(path);
+    }
+  }
+  const only = matched[0];
+  if (matched.length === 1 && only !== undefined) return only;
   return null;
+}
+
+function jsonlMatching(codexHome: string, threadId: string): string | null {
+  const picked = uniqueJsonl(sessionJsonlPaths(codexHome), [threadId]);
+  return picked === null ? null : readIfPresent(picked);
 }
 
 /**
  * Child session joined from SubAgentActivity started / spawn_agent, never the
- * parent thread.started id. Null when no child thread id is observed.
+ * parent thread.started id. Null when no child thread id is observed, or when
+ * more than one distinct child id is observed and none joins uniquely.
  */
 export function findCodexChild(codexHome: string, stdout: string): string | null {
   const fromStdout = extractSpawn(stdout);
@@ -349,10 +374,10 @@ export function findCodexChild(codexHome: string, stdout: string): string | null
     if (parentFile !== null) parentText = `${stdout}\n${parentFile}`;
   }
   const spawn = extractSpawn(parentText);
-  const childId = spawn.childThreadIds[0];
-  if (childId === undefined) return null;
-  if (spawn.parentThreadId !== null && childId === spawn.parentThreadId) return null;
-  return jsonlMatching(codexHome, childId);
+  const ids = spawn.childThreadIds.filter((id) => id !== "" && id !== spawn.parentThreadId);
+  if (ids.length === 0) return null;
+  const picked = uniqueJsonl(sessionJsonlPaths(codexHome), ids);
+  return picked === null ? null : readIfPresent(picked);
 }
 
 export function extractClaudeLaunch(parentStdout: string, parentSession: string | null): ObservedSpawn {
