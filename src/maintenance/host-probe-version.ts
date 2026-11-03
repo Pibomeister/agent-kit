@@ -60,8 +60,9 @@ export function checkName(host: DoctorProbeHost): string {
 
 /**
  * The `Host version` cell from a note written by `renderNote` /
- * `scripts/review-isolation-probe.sh`. Probe placeholders and anything else
- * are not a version: the caller keeps walking to older notes.
+ * `scripts/review-isolation-probe.sh`. Probe placeholders (missing binary,
+ * empty `--version`, fixture run) are not a version: the caller keeps
+ * walking to older notes.
  */
 export function parseProbedHostVersion(note: string): string | null {
   const match = HOST_VERSION_ROW.exec(note.replaceAll("\r\n", "\n"));
@@ -119,11 +120,19 @@ export function checkProbedHostVersion(
   };
 }
 
-function hostsToCheck(factsRoot: string): DoctorProbeHost[] {
-  const hosts: DoctorProbeHost[] = [...HOSTS];
-  // Cursor has no probe driver yet; compare it only when a real version note exists.
-  if (readLatestProbedHostVersion(factsRoot, "cursor") !== null) hosts.push("cursor");
-  return hosts;
+interface HostProbePair {
+  host: DoctorProbeHost;
+  probed: { date: string; version: string; path: string };
+}
+
+/** Resolved `{host, probed}` pairs so each note is read once. */
+function hostsToCheck(factsRoot: string): HostProbePair[] {
+  const pairs: HostProbePair[] = [];
+  for (const host of DOCTOR_PROBE_HOSTS) {
+    const probed = readLatestProbedHostVersion(factsRoot, host);
+    if (probed !== null) pairs.push({ host, probed });
+  }
+  return pairs;
 }
 
 export function probedHostVersionFindings(
@@ -131,9 +140,7 @@ export function probedHostVersionFindings(
   readInstalled: ReadInstalledHostVersion,
 ): ProbeVersionFinding[] {
   const items: ProbeVersionFinding[] = [];
-  for (const host of hostsToCheck(factsRoot)) {
-    const probed = readLatestProbedHostVersion(factsRoot, host);
-    if (probed === null) continue;
+  for (const { host, probed } of hostsToCheck(factsRoot)) {
     const installed = readInstalled(host);
     if (installed === null) continue;
     items.push(checkProbedHostVersion(host, installed, probed.version, probed.date));
@@ -141,12 +148,16 @@ export function probedHostVersionFindings(
   return items;
 }
 
-/** First line of `<bin> --version`, or null when missing, timed out, or nonzero. */
+/** First line of a zero-exit `<bin> --version`, or null when missing, timed out, or nonzero. */
 export function readInstalledHostVersion(
   host: DoctorProbeHost,
   env: NodeJS.ProcessEnv = process.env,
   timeoutMs: number = VERSION_TIMEOUT_MS,
 ): string | null {
-  const captured = captureHostVersion(binariesFor(host), versionArgsFor(host), env, timeoutMs);
+  const captured = captureHostVersion(binariesFor(host), versionArgsFor(host), {
+    requireZeroExit: true,
+    env,
+    timeoutMs,
+  });
   return isHostVersionPlaceholder(captured) ? null : captured;
 }

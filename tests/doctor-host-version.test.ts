@@ -21,7 +21,12 @@ import {
   type DoctorProbeHost,
   type ProbeVersionFinding,
 } from "../src/maintenance/host-probe-version.ts";
-import { HOST_VERSION_NOT_ON_PATH, hostVersion, hostVersionNoOutput } from "../src/review-isolation-probe/dispatch.ts";
+import {
+  HOST_VERSION_FIXTURE,
+  HOST_VERSION_NOT_ON_PATH,
+  hostVersion,
+  hostVersionNoOutput,
+} from "../src/review-isolation-probe/dispatch.ts";
 import { captureHostVersion } from "../src/review-isolation-probe/host-cli.ts";
 import { renderNote } from "../src/review-isolation-probe/note.ts";
 import type { ProbeHost, ProbeReport } from "../src/review-isolation-probe/types.ts";
@@ -156,6 +161,23 @@ describe("ak doctor host-version probe check", () => {
     expect(spawned).toEqual([]);
   });
 
+  test("a newer fixture note is not a version; doctor compares against the older real one", () => {
+    const facts = join(processScratch("ak-doctor-probe-fixture-"), "facts");
+    writeProbeNote(facts, "claude-code", "2026-11-03", HOST_VERSION_FIXTURE);
+    writeProbeNote(facts, "claude-code", "2026-10-01", "2.0.1");
+    expect(parseProbedHostVersion(sampleNote("claude-code", HOST_VERSION_FIXTURE, "2026-11-03"))).toBeNull();
+    expect(readLatestProbedHostVersion(facts, "claude-code")?.version).toBe("2.0.1");
+    expect(readLatestProbedHostVersion(facts, "claude-code")?.date).toBe("2026-10-01");
+    const items = probedHostVersionFindings(facts, (host) => (host === "claude-code" ? "2.0.1" : null));
+    expect(items).toHaveLength(1);
+    const claude = items[0];
+    expect(claude).toBeDefined();
+    if (claude === undefined) return;
+    expect(claude.level).toBe("PASS");
+    expect(line(claude)).toContain("matches last probed 2.0.1 (2026-10-01)");
+    expect(line(claude)).not.toContain(HOST_VERSION_FIXTURE);
+  });
+
   test("placeholder Host version is not a version and older real notes still count", () => {
     const facts = join(processScratch("ak-doctor-probe-placeholder-"), "facts");
     writeProbeNote(facts, "claude-code", "2026-11-03", HOST_VERSION_NOT_ON_PATH);
@@ -223,17 +245,24 @@ describe("installed host version detection (stub binaries, not real host CLIs)",
     const root = processScratch("ak-doctor-probe-bin-");
     const binDir = join(root, "bin");
     mkdirSync(binDir);
-    writeFileSync(join(binDir, "claude"), "#!/bin/sh\nprintf '%s\\n' '2.1.0 (Claude Code)' 'ignored'\\n");
+    writeFileSync(
+      join(binDir, "claude"),
+      `#!/bin/sh
+if [ "$NO_UPDATE_NOTIFIER" = 1 ]; then printf '%s\\n' 'notifier-suppressed'; exit 0; fi
+printf '%s\\n' '2.1.0 (Claude Code)' 'ignored'
+`,
+    );
     chmodSync(join(binDir, "claude"), 0o755);
     const env = { ...process.env, PATH: binDir };
     expect(hostVersion("claude-code", env)).toBe("2.1.0 (Claude Code)");
     expect(readInstalledHostVersion("claude-code", env)).toBe("2.1.0 (Claude Code)");
-    expect(captureHostVersion(["claude"], ["--version"], env)).toBe("2.1.0 (Claude Code)");
+    expect(captureHostVersion(["claude"], ["--version"], { requireZeroExit: false, env })).toBe("2.1.0 (Claude Code)");
+    expect(captureHostVersion(["claude"], ["--version"], { requireZeroExit: true, env })).toBe("2.1.0 (Claude Code)");
     expect(readInstalledHostVersion("codex", env)).toBeNull();
     expect(hostVersion("codex", env)).toBe(HOST_VERSION_NOT_ON_PATH);
   });
 
-  test("a nonzero --version is no version", () => {
+  test("probe records a printed --version line on nonzero exit; doctor treats it as no version", () => {
     const root = processScratch("ak-doctor-probe-nonzero-");
     const binDir = join(root, "bin");
     mkdirSync(binDir);
@@ -241,8 +270,12 @@ describe("installed host version detection (stub binaries, not real host CLIs)",
     writeFileSync(claude, "#!/bin/sh\nprintf '%s\\n' '2.1.0 (Claude Code)'\nexit 1\n");
     chmodSync(claude, 0o755);
     const env = { ...process.env, PATH: binDir };
+    expect(hostVersion("claude-code", env)).toBe("2.1.0 (Claude Code)");
     expect(readInstalledHostVersion("claude-code", env)).toBeNull();
-    expect(hostVersion("claude-code", env)).toBe(hostVersionNoOutput(claude));
+    expect(captureHostVersion(["claude"], ["--version"], { requireZeroExit: false, env })).toBe("2.1.0 (Claude Code)");
+    expect(captureHostVersion(["claude"], ["--version"], { requireZeroExit: true, env })).toBe(
+      hostVersionNoOutput(claude),
+    );
   });
 
   test("a timed-out stub is missing, not an error", () => {

@@ -16,13 +16,13 @@ import {
   findCodexChild,
   toLaunchConfig,
 } from "./children.ts";
-import { captureHostVersion, spawnTimedOut, VERSION_TIMEOUT_MS, which } from "./host-cli.ts";
+import { captureHostVersion, spawnTimedOut, which } from "./host-cli.ts";
 import { claudeProjectSlug, profileFor } from "./hosts.ts";
 import type { PlantedArm } from "./plant.ts";
 import type { ProbeHost } from "./types.ts";
 
 export { findClaudeChild, findCodexChild, extractSpawn, extractClaudeLaunch, extractCodexLaunch } from "./children.ts";
-export { HOST_VERSION_NOT_ON_PATH, hostVersionNoOutput } from "./host-cli.ts";
+export { HOST_VERSION_FIXTURE, HOST_VERSION_NOT_ON_PATH, hostVersionNoOutput } from "./host-cli.ts";
 
 export interface DispatchResult {
   command: string[];
@@ -78,7 +78,7 @@ function readIfPresent(path: string): string | null {
 
 export function hostVersion(host: ProbeHost, env: NodeJS.ProcessEnv): string {
   const profile = profileFor(host);
-  return captureHostVersion(profile.binaries, profile.versionArgs, env, VERSION_TIMEOUT_MS);
+  return captureHostVersion(profile.binaries, profile.versionArgs, { requireZeroExit: false, env });
 }
 
 function recordedCommand(bin: string, args: string[], parentPrompt: string): string[] {
