@@ -491,34 +491,42 @@ describe("host capability honesty", () => {
  * chosen here.
  */
 describe("the licence files the distribution is obliged to carry", () => {
+  const SHIPPED_PROVENANCE_LICENCES = [
+    "provenance/licenses/BayramAnnakov_claude-reflect.LICENSE",
+    "provenance/licenses/BuilderIO_skills.LICENSE",
+    "provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE",
+    "provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE",
+    "provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE",
+    "provenance/licenses/addyosmani_agent-skills.LICENSE",
+    "provenance/licenses/cursor_plugins.LICENSE",
+    "provenance/licenses/google_elephant-goldfish-model.LICENSE",
+    "provenance/licenses/mattpocock_skills.LICENSE",
+    "provenance/licenses/mizchi_jev-lint.LICENSE",
+    "provenance/licenses/obra_superpowers.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    "provenance/licenses/warpdotdev_common-skills.LICENSE",
+  ] as const;
+  const HELD_PROVENANCE_LICENCES = [
+    "provenance/licenses/caveman-ai_blocks.LICENSE",
+    "provenance/licenses/caveman-ai_blocks.NOTICE",
+    "provenance/licenses/tester-army_e2e.LICENSE",
+    "provenance/licenses/tester-army_e2e.NOTICE",
+  ] as const;
+
   test("every host bundle carries each licence path NOTICE cites", () => {
-    const MISSING_ON_MAIN = [
-      "provenance/licenses/google_elephant-goldfish-model.LICENSE",
-      "provenance/licenses/cursor_plugins.LICENSE",
-    ] as const;
     const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
     expect(notice).toContain(NOT_BUNDLED_HEADING);
     const cited = shippingCitedLicencePaths(notice);
     const held = heldCitedLicencePaths(notice);
-    expect(cited).toEqual(expect.arrayContaining([...MISSING_ON_MAIN]));
+    expect(cited.filter((path) => path.startsWith("provenance/licenses/"))).toEqual([...SHIPPED_PROVENANCE_LICENCES]);
     expect(cited.some((path) => path.includes("eslint-stylistic"))).toBe(false);
-    expect(held).toEqual(
-      expect.arrayContaining([
-        "provenance/licenses/caveman-ai_blocks.LICENSE",
-        "provenance/licenses/caveman-ai_blocks.NOTICE",
-        "provenance/licenses/tester-army_e2e.LICENSE",
-        "provenance/licenses/tester-army_e2e.NOTICE",
-      ]),
-    );
+    expect(held).toEqual([...HELD_PROVENANCE_LICENCES]);
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("repo catalog did not load");
     for (const host of HOST_IDS) {
       const plan = planBundle({ root: REPO, catalog }, host, {});
-      for (const path of MISSING_ON_MAIN) {
-        const published = relocateForHost(host, path);
-        expect(plan.files.get(published)?.contents).toBe(readFileSync(join(REPO, path), "utf8"));
-        if (host === "cursor") expect(plan.files.has(path)).toBe(false);
-      }
+      expect(hasErrors(plan.issues)).toBe(false);
       for (const path of cited) {
         const published = relocateForHost(host, path);
         expect(plan.files.get(published)?.contents).toBe(readFileSync(join(REPO, citedSource(path)), "utf8"));
@@ -539,6 +547,23 @@ describe("the licence files the distribution is obliged to carry", () => {
       expect(plan.files.has("tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE")).toBe(false);
     }
   }, 120_000);
+
+  test("moving one shipped provenance licence under Not-bundled changes the pinned lists", () => {
+    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
+    const moved = SHIPPED_PROVENANCE_LICENCES[0];
+    const without = notice.replace(`${moved}\n`, "");
+    expect(without).not.toBe(notice);
+    const heading = `${NOT_BUNDLED_HEADING}\n`;
+    const at = without.indexOf(heading);
+    expect(at).toBeGreaterThan(-1);
+    const scratch = `${without.slice(0, at + heading.length)}\n${moved}\n${without.slice(at + heading.length)}`;
+    expect(shippingCitedLicencePaths(scratch).filter((path) => path.startsWith("provenance/licenses/"))).not.toEqual([
+      ...SHIPPED_PROVENANCE_LICENCES,
+    ]);
+    expect(heldCitedLicencePaths(scratch)).not.toEqual([...HELD_PROVENANCE_LICENCES]);
+    expect(shippingCitedLicencePaths(scratch)).not.toContain(moved);
+    expect(heldCitedLicencePaths(scratch)).toContain(moved);
+  });
 
   test("every host's bundle carries them, byte-identical to the source tree's", () => {
     // Iterated over HOST_IDS rather than written twice. The defect this package
@@ -981,6 +1006,57 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(issue?.severity).toBe("error");
     expect(issue?.message).toContain(adaptationPath);
     expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(licencePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
+
+  test("a lock notice_file with a ./ prefix and different case still maps a held notice", () => {
+    const noticePath = "provenance/licenses/orphan-held.NOTICE";
+    const lockPath = "./provenance/licenses/ORPHAN-HELD.NOTICE";
+    const adaptationPath = "skills/alpha/SKILL.md";
+    const adaptationSource = "orphan-held@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:NOTICE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${noticePath}\n`,
+      [noticePath]: "orphan notice\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: orphan-held",
+        "    path: .donors/orphan-held",
+        `    notice_file: "${lockPath}"`,
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === noticePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(noticePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === noticePath)).toBe(true);
+  });
+
+  test("a held licence listed under Not-bundled that is not on disk fails", () => {
+    const licencePath = "provenance/licenses/ghost-held.LICENSE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`,
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: ghost-held",
+        "    path: .donors/ghost-held",
+        `    license_file: ${licencePath}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("not on disk");
     expect(plan.files.has(licencePath)).toBe(false);
     expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
   });
