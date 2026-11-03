@@ -85,6 +85,13 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(skill).toContain("Off stores none");
   });
 
+  test("complete admits a cited unavailable on-mode read", () => {
+    const phrase = "cites a finished cold read, or an unavailable read with its reason";
+    expect(skill.replace(/\s+/g, " ")).toContain(phrase);
+    expect(contract.replace(/\s+/g, " ")).toContain(phrase);
+    expect(packagedBody().replace(/\s+/g, " ")).toContain(phrase);
+  });
+
   test("the scorer formula is unchanged and still only raises the seed", () => {
     expect(scorer).not.toContain("cold_read");
     expect(scorer).not.toContain("cold-read");
