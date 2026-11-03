@@ -735,6 +735,38 @@ describe("finding rules", () => {
     });
     expect(rulesOf(run(doc))).not.toContain("finding.low-confidence-security-is-adjudicated-not-filtered");
   });
+
+  test("two findings against duplicate headings with different evidence cannot share a fingerprint value", () => {
+    // AT-15 through the doc-review path: the heading helper refuses the merge,
+    // and the fingerprint rule refuses two findings that would have shared the
+    // merged identity while carrying different evidence.
+    const a = finding({
+      fingerprint: {
+        value: `sha256:${"f".repeat(64)}`,
+        inputs: {
+          rule: "Requirements",
+          symbol_or_path: "spec.md",
+          evidence_digest: `sha256:${"1".repeat(64)}`,
+        },
+      },
+      evidence: [{ location: { revision: "a".repeat(40), path: "spec.md" }, observation: "auth retries unbounded" }],
+    });
+    const b = finding({
+      id: "finding-2",
+      fingerprint: {
+        value: `sha256:${"f".repeat(64)}`,
+        inputs: {
+          rule: "Requirements",
+          symbol_or_path: "spec.md",
+          evidence_digest: `sha256:${"2".repeat(64)}`,
+        },
+      },
+      evidence: [
+        { location: { revision: "a".repeat(40), path: "spec.md" }, observation: "payments retries unbounded" },
+      ],
+    });
+    expect(rulesOf(run(a, [b]))).toContain("finding.fingerprint-stable-across-line-moves");
+  });
 });
 
 const FINGERPRINT_INPUTS = {

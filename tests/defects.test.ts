@@ -367,14 +367,44 @@ describe("the contract and the file are both authorities, and an absent one is s
 describe("the section index is built from the contract's own headings", () => {
   test("a subsection's text is inside its parent's, so a parent citation resolves it", () => {
     const index = contractSections(CONTRACT);
-    expect([...index.keys()].sort()).toEqual(["12", "5", "5.1"]);
-    expect(index.get("5")).toContain("A row keyed `target:` is skipped");
-    expect(index.get("5.1")).toContain("A row keyed `target:` is skipped");
-    expect(index.get("12")).not.toContain("A row keyed `target:` is skipped");
+    expect(index.duplicates).toEqual([]);
+    expect([...index.sections.keys()].sort()).toEqual(["12", "5", "5.1"]);
+    expect(index.sections.get("5")).toContain("A row keyed `target:` is skipped");
+    expect(index.sections.get("5.1")).toContain("A row keyed `target:` is skipped");
+    expect(index.sections.get("12")).not.toContain("A row keyed `target:` is skipped");
     // And the other direction, which is the same rule read downwards: a section
     // stops at the next heading at its own level or above, so §5.1 does not
     // reach past its parent into §12.
-    expect(index.get("5.1")).not.toContain("A protocol is shared phase logic");
+    expect(index.sections.get("5.1")).not.toContain("A protocol is shared phase logic");
+  });
+
+  test("a repeated section number refuses rather than last-wins merging a quotation fingerprint", () => {
+    // AT-15 through the defects path, not only the heading helper. The
+    // quotation is the entry's fingerprint. It is unique to the *second* §5,
+    // so a last-wins Map.set would resolve it and report nothing.
+    const duplicated = [
+      "# Authoring",
+      "",
+      "## 5. Provenance law",
+      "",
+      IN_SECTION_5,
+      "",
+      "## 5. Bodies",
+      "",
+      IN_SECTION_12,
+      "",
+    ].join("\n");
+    const ctx = ctxFor({
+      "AUTHORING.md": duplicated,
+      [DEFECTS_FILE]: defects(entry("last-wins bait", "§5 requires:", IN_SECTION_12)),
+    });
+    expect(contractSections(duplicated).duplicates).toEqual([{ number: "5", lines: [3, 7] }]);
+    const issues = checkContractDefects(ctx);
+    const errors = issues.filter((i) => i.severity === "error");
+    expect(errors.map((i) => i.rule)).toEqual(["defects.duplicate-section-number"]);
+    expect(errors[0]?.file).toBe("AUTHORING.md");
+    expect(errors[0]?.message).toMatch(/§5 appears 2 times/);
+    expect(issues.filter((i) => i.rule === "defects.entry-quotation-dangling")).toEqual([]);
   });
 });
 
@@ -395,7 +425,8 @@ describe("against the repository's own contract and defects file", () => {
   /** A sentence §10 genuinely contains, taken from the contract at run time. */
   function quotableFromSectionTen(): string {
     const index = contractSections(readFileSync(join(repo, "AUTHORING.md"), "utf8"));
-    const section = index.get("10");
+    expect(index.duplicates).toEqual([]);
+    const section = index.sections.get("10");
     if (section === undefined) throw new Error("AUTHORING.md has no §10");
     const line = section.split("\n").find((l) => l.trim().length > 60 && !l.startsWith("#") && !l.startsWith(">"));
     if (line === undefined) throw new Error("§10 has no quotable line");
@@ -405,6 +436,11 @@ describe("against the repository's own contract and defects file", () => {
   test("the repository's own CONTRACT-DEFECTS.md passes", () => {
     const ctx = realCtx(readFileSync(join(repo, "CONTRACT-DEFECTS.md"), "utf8"));
     expect(checkContractDefects(ctx).filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  test("the repository contract has unique section numbers", () => {
+    const index = contractSections(readFileSync(join(repo, "AUTHORING.md"), "utf8"));
+    expect(index.duplicates).toEqual([]);
   });
 
   test("an entry against the real §10 resolves, and the same entry with one word changed does not", () => {

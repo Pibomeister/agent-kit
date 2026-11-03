@@ -2417,13 +2417,18 @@ describe("runner guards", () => {
     transcript.push("Refusal: third fix cycle on one finding → `cap-reached` with two cycles recorded.");
   });
 
-  test("resume cannot decrease consumed repair counters", () => {
+  test("resume cannot decrease consumed repair or usage counters", () => {
     const f = ready();
     expect(f.runner.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("complete");
     expect(f.runner.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("complete");
+    expect(f.runner.charge("toy-run", "alignment_questions", 1).status).toBe("complete");
     expect(f.runner.status("toy-run").budget_consumption["fix_cycles:finding-a"]).toBe(2);
+    expect(f.runner.status("toy-run").budget_consumption["alignment_questions"]).toBe(1);
     const restarted = new Runner(f.privateDir, f.worker, root);
+    // Mutation `run.budget_consumption = {}` in load() zeros both the repair
+    // key and the usage key and fails the two assertions that follow.
     expect(restarted.status("toy-run").budget_consumption["fix_cycles:finding-a"]).toBe(2);
+    expect(restarted.status("toy-run").budget_consumption["alignment_questions"]).toBe(1);
     expect(restarted.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("cap-reached");
   });
 

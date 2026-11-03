@@ -76,6 +76,11 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+export interface ContractSectionIndex {
+  readonly sections: Map<string, string>;
+  readonly duplicates: ReadonlyArray<{ readonly number: string; readonly lines: readonly number[] }>;
+}
+
 /**
  * Every numbered section of the contract, mapped to its own text.
  *
@@ -84,6 +89,9 @@ function collapse(text: string): string {
  * parent resolves a quotation taken from the child -- which is the behaviour
  * §10 needs, since an entry may cite either.
  *
+ * A repeated section number is refused (AT-15), never last-wins merged. The
+ * duplicated numbers are named and omitted from the map.
+ *
  * Stated that way on purpose. An earlier version carried a second clause capping
  * a `###` at the very next heading whatever its level. It could never fire,
  * because `CONTRACT_HEADING` indexes only `##` and `###` and the next heading is
@@ -91,7 +99,7 @@ function collapse(text: string): string {
  * a deeper level was indexed it would have fired and been wrong, truncating a
  * section at its own child.
  */
-export function contractSections(text: string): Map<string, string> {
+export function contractSections(text: string): ContractSectionIndex {
   const lines = text.split("\n");
   const marks: Array<{ line: number; level: number; number: string }> = [];
   for (const [index, line] of lines.entries()) {
@@ -100,8 +108,21 @@ export function contractSections(text: string): Map<string, string> {
     marks.push({ line: index, level: (match[1] ?? "").length, number: match[2] ?? "" });
   }
 
+  const occurrences = new Map<string, number[]>();
+  for (const mark of marks) {
+    const at = occurrences.get(mark.number) ?? [];
+    at.push(mark.line + 1);
+    occurrences.set(mark.number, at);
+  }
+  const duplicates: Array<{ number: string; lines: number[] }> = [];
+  for (const [number, at] of occurrences) {
+    if (at.length > 1) duplicates.push({ number, lines: at });
+  }
+  const duplicated = new Set(duplicates.map((entry) => entry.number));
+
   const sections = new Map<string, string>();
   for (const [index, mark] of marks.entries()) {
+    if (duplicated.has(mark.number)) continue;
     let end = lines.length;
     for (const later of marks.slice(index + 1)) {
       if (later.level <= mark.level) {
@@ -111,7 +132,7 @@ export function contractSections(text: string): Map<string, string> {
     }
     sections.set(mark.number, lines.slice(mark.line, end).join("\n"));
   }
-  return sections;
+  return { sections, duplicates };
 }
 
 interface Entry {
@@ -243,7 +264,7 @@ export function checkContractDefects(ctx: CheckContext): Issue[] {
 
   const open = found.filter((entry) => entry.section === OPEN_HEADING);
   const contract = readTextIfPresent(join(ctx.root, CONTRACT_FILE));
-  const sections = contract === null ? null : contractSections(contract);
+  const indexed = contract === null ? null : contractSections(contract);
 
   for (const entry of open) {
     // §10: "Every entry quotes the instruction it is filed against." Counting
@@ -260,6 +281,21 @@ export function checkContractDefects(ctx: CheckContext): Issue[] {
       );
     }
   }
+
+  if (indexed !== null && indexed.duplicates.length > 0) {
+    for (const duplicate of indexed.duplicates) {
+      issues.push(
+        error(
+          "defects.duplicate-section-number",
+          CONTRACT_FILE,
+          `§${duplicate.number} appears ${duplicate.lines.length} times (lines ${duplicate.lines.join(", ")}); section identity cannot resolve it uniquely. A last-wins map would silently merge them.`,
+          duplicate.lines[0],
+        ),
+      );
+    }
+    return issues;
+  }
+  const sections = indexed?.sections ?? null;
 
   if (sections === null || sections.size === 0) {
     // Which kind of skip this is depends on whether anything went unexamined.

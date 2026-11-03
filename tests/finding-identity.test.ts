@@ -61,4 +61,79 @@ describe("finding identity: duplicate section titles refuse rather than silently
     if (missing.ok) throw new Error("missing heading must not resolve");
     expect(missing.reason).toBe("missing");
   });
+
+  test("case and punctuation differences do not match and are not duplicates", () => {
+    const mixed = [
+      "# Spec",
+      "",
+      "## 1. Safety",
+      "Exact title.",
+      "",
+      "## C++",
+      "Plus plus.",
+      "",
+      "## C",
+      "See.",
+      "",
+      "## Setup",
+      "Capital.",
+      "",
+      "## setup",
+      "Lower.",
+      "",
+    ].join("\n");
+    const punctuated = resolveFindingSectionIdentity(mixed, "1 safety");
+    expect(punctuated.ok).toBe(false);
+    if (punctuated.ok) throw new Error("normalized punctuation must not match an exact title");
+    expect(punctuated.reason).toBe("missing");
+
+    const cpp = resolveFindingSectionIdentity(mixed, "C++");
+    const c = resolveFindingSectionIdentity(mixed, "C");
+    expect(cpp.ok).toBe(true);
+    expect(c.ok).toBe(true);
+    if (!cpp.ok || !c.ok) throw new Error("C++ and C must each resolve uniquely");
+    expect(c.body).toContain("See.");
+    expect(cpp.body).toContain("Plus plus.");
+
+    const setup = resolveFindingSectionIdentity(mixed, "Setup");
+    const setupLower = resolveFindingSectionIdentity(mixed, "setup");
+    expect(setup.ok).toBe(true);
+    expect(setupLower.ok).toBe(true);
+    if (!setup.ok || !setupLower.ok) throw new Error("Setup and setup must each resolve uniquely");
+    expect(setup.body).toContain("Capital.");
+    expect(setupLower.body).toContain("Lower.");
+  });
+
+  test("heading-like lines inside fenced code are not headings", () => {
+    const fenced = [
+      "# Spec",
+      "",
+      "## Requirements",
+      "",
+      "Auth must reject expired tokens.",
+      "",
+      "```markdown",
+      "## Requirements",
+      "sample",
+      "```",
+      "",
+      "~~~",
+      "## Requirements",
+      "tilde sample",
+      "~~~",
+      "",
+      "## Unique",
+      "",
+      "After fences.",
+      "",
+    ].join("\n");
+    const requirements = resolveFindingSectionIdentity(fenced, "Requirements");
+    expect(requirements.ok).toBe(true);
+    if (!requirements.ok) throw new Error("fenced duplicates must not make a unique heading ambiguous");
+    expect(requirements.line).toBe(3);
+    expect(requirements.body).toContain("Auth must reject expired tokens.");
+    expect(requirements.body).toContain("sample");
+    expect(requirements.body).toContain("tilde sample");
+    expect(requirements.body).not.toContain("After fences.");
+  });
 });

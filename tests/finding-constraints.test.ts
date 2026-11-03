@@ -340,16 +340,20 @@ describe("only independent verification evidence closes a finding", () => {
   });
 
   test("applied does not imply resolved", () => {
-    // Plan §7 / AT-12: a patch that has been applied or marked fixed is not a
-    // closed finding. Those labels are not statuses this schema accepts, and
-    // `resolved` without an independent closure_receipt is an invalid
-    // transition. Either way the finding stays unresolved / errors.
-    for (const status of ["applied", "fixed"]) {
-      expect(findingErrors({ status, authorization_ref: AUTHORIZED }).length).toBeGreaterThan(0);
-      expect(artifactRules({ status, authorization_ref: AUTHORIZED })).not.toContain("finding.self-closed");
-    }
-    expect(reason(RESOLVED)).toMatch(/closure_receipt/);
-    expect(findingErrors({ status: "awaiting-verification" })).toEqual([]);
+    // Plan §7 / AT-12: a suggested_fix with a diff is the schema's applied-patch
+    // evidence. Recording it does not close the finding. Status `resolved`
+    // without an independent closure_receipt is still an invalid transition;
+    // awaiting-verification with the same fix recorded is valid and not closed.
+    const applied = {
+      suggested_fix: {
+        summary: SUGGESTED_FIX.summary,
+        diff: "--- a/src/p.ts\n+++ b/src/p.ts\n@@ -1 +1,3 @@\n+if (user == null) return;\n return user.profile.name;\n",
+      },
+    };
+    expect(findingErrors({ ...applied, status: "awaiting-verification" })).toEqual([]);
+    expect(reason({ ...applied, ...RESOLVED })).toMatch(/closure_receipt/);
+    expect(artifactRules({ ...applied, ...RESOLVED })).not.toContain("finding.self-closed");
+    expect(findingErrors({ ...applied, ...RESOLVED, closure_receipt: RECEIPT })).toEqual([]);
   });
 });
 

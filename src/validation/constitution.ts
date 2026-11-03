@@ -286,6 +286,19 @@ export function loadArticles(ctx: CheckContext, root: string, validate: Validate
 
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 
+function spanProblem(text: string | null, span: SourceSpan): string | null {
+  if (text === null) return `its document ${span.document} is not a file inside the registry`;
+  const resolved = resolveFindingSectionIdentity(text, span.section);
+  if (!resolved.ok) {
+    return resolved.reason === "missing"
+      ? `${span.document} has no heading '${span.section}'`
+      : `${span.document} ${resolved.error}`;
+  }
+  return squash(resolved.body).includes(squash(span.quote))
+    ? null
+    : `the quote is not in ${span.document} under '${span.section}'`;
+}
+
 /**
  * Each source span an article carries, its own and its exceptions', checked
  * against the document: the document exists inside the registry, the section is
@@ -298,17 +311,7 @@ function checkSpans(ctx: CheckContext, root: string, { path: file, article }: Lo
   return spans.flatMap((span) => {
     const path = resolve(root, span.document);
     const text = isInside(path, root) ? readTextIfPresent(path) : null;
-    const resolved = text === null ? null : resolveFindingSectionIdentity(text, span.section);
-    const problem =
-      text === null || resolved === null
-        ? `its document ${span.document} is not a file inside the registry`
-        : !resolved.ok
-          ? resolved.reason === "missing"
-            ? `${span.document} has no heading '${span.section}'`
-            : `${span.document} ${resolved.error}`
-          : squash(resolved.body).includes(squash(span.quote))
-            ? null
-            : `the quote is not in ${span.document} under '${span.section}'`;
+    const problem = spanProblem(text, span);
     return problem === null
       ? []
       : [
