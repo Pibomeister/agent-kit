@@ -126,7 +126,7 @@ references:
 
 schemas:
   baseline: 14
-  catalog: 37
+  catalog: 38
   expansions:
     - ids: [case]
       reason: >-
@@ -201,6 +201,11 @@ schemas:
         A work trail leaves two run records, the implementer's stretch and the independent audit
         of it, and publishArtifact carries only schema ids, so each needed a declared shape.
       commits: [f92da557]
+    - ids: [cold-read]
+      reason: >-
+        An independent ticket cold read needs a declared run-artifact shape so a project that
+        turns review.cold_read on can cite the record from the implementation ticket.
+      commits: [82646648]
 
 profiles:
   baseline: 4

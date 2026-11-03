@@ -1069,6 +1069,24 @@ function reviewRules(rc: RuleContext): void {
     }
   }
 
+  const RULE_PARAPHRASE = "review.comprehension-paraphrase-stored-by-hash";
+  for (const [i, lane] of lanes.entries()) {
+    if (lane === null) continue;
+    if (str(lane["role"]) !== "doc-review/comprehension") continue;
+    if (str(lane["state"]) !== "covered") continue;
+    const paraphrase = obj(lane["paraphrase"]);
+    const proposes = paraphrase === null ? null : str(paraphrase["proposes"]);
+    const existing = paraphrase === null ? null : str(paraphrase["existing_system"]);
+    const hash = str(obj(lane["raw_output"])?.["hash"]);
+    if (proposes === null || existing === null || hash === null) {
+      fail(
+        rc,
+        RULE_PARAPHRASE,
+        `lane ${str(lane["role"]) ?? `#${i}`} is covered without paraphrase.proposes, paraphrase.existing_system and raw_output.hash; the restatement is stored by that hash, not by synthesis`,
+      );
+    }
+  }
+
   const RULE_UNAVAILABLE = "review.unavailable-required-lane-blocks-approval";
   const TIMEOUT_REASON = /\b(timeout|timed\s*out)\b/i;
   const blocked = lanes.filter((l) => {
@@ -1328,8 +1346,134 @@ function verificationRules(rc: RuleContext): void {
   }
 }
 
+// --------------------------------------------------------------------- ticket
+
+function ticketRules(rc: RuleContext): void {
+  const RULE = "ticket.cold-read-ref-required-when-on";
+  const { doc } = rc;
+  if (str(doc["type"]) !== "implementation") return;
+
+  // Envelope `project` is a `{ id }` object on real artifacts and a string in some fixtures.
+  const projectField = doc["project"];
+  const projectRecord = obj(projectField);
+  const wanted = projectRecord === null ? str(projectField) : str(projectRecord["id"]);
+  const matches: IndexedDoc[] = [];
+  if (wanted !== null) {
+    for (const entry of rc.index.all) {
+      if (entry.schema !== "project") continue;
+      if (str(obj(entry.doc["identity"])?.["id"]) === wanted) matches.push(entry);
+    }
+  }
+  // Missing review object, missing key, and unknown values are off: the default, and no behaviour change.
+  if (matches.length === 0) return;
+  let anyOn = false;
+  for (const entry of matches) {
+    if (str(obj(entry.doc["review"])?.["cold_read"]) === "on") anyOn = true;
+  }
+  if (!anyOn) return;
+  if (matches.length > 1) {
+    fail(
+      rc,
+      RULE,
+      `ticket project ${wanted} matches ${matches.length} project records; identity.id must be unique when review.cold_read is on`,
+    );
+    return;
+  }
+
+  const ref = obj(doc["cold_read_ref"]);
+  const refId = ref === null ? null : str(ref["id"]);
+  const refHash = ref === null ? null : str(ref["hash"]);
+  if (refId === null || refHash === null) {
+    fail(rc, RULE, "an implementation ticket in a project with review.cold_read on has no cold_read_ref");
+    return;
+  }
+
+  const cited: IndexedDoc[] = [];
+  for (const entry of rc.index.all) {
+    if (str(entry.doc["id"]) !== refId) continue;
+    if (artifactHash(entry.doc) !== refHash) continue;
+    cited.push(entry);
+  }
+  if (cited.length !== 1) {
+    fail(rc, RULE, `cold_read_ref ${refId} matches ${cited.length} indexed documents at hash ${refHash}`);
+    return;
+  }
+  const read = cited[0];
+  if (read === undefined || read.schema !== "cold-read") {
+    fail(rc, RULE, `cold_read_ref ${refId} indexes schema ${read?.schema ?? "none"}, not cold-read`);
+    return;
+  }
+  const status = str(read.doc["status"]);
+  if (status !== "complete" && status !== "unavailable") {
+    fail(rc, RULE, `cold_read_ref ${refId} has status ${status ?? "missing"}, not complete or unavailable`);
+    return;
+  }
+  const ticketRef = obj(read.doc["ticket"]);
+  const readTicketId = ticketRef === null ? null : str(ticketRef["id"]);
+  const thisId = str(doc["id"]);
+  if (readTicketId === null || thisId === null || readTicketId !== thisId) {
+    fail(
+      rc,
+      RULE,
+      `cold_read_ref ${refId} was a read of ticket ${readTicketId ?? "none"}, not ${thisId ?? "this ticket"}`,
+    );
+    return;
+  }
+  const recordedHash = ticketRef === null ? null : str(ticketRef["hash"]);
+  if (recordedHash === null) {
+    fail(rc, RULE, `cold_read_ref ${refId} records no ticket.hash`);
+    return;
+  }
+  const body = { ...doc };
+  delete body["cold_read_ref"];
+  const expected = artifactHash(body);
+  if (recordedHash !== expected) {
+    fail(rc, RULE, `cold_read_ref ${refId} records ticket hash ${recordedHash}, not ${expected}`);
+  }
+}
+
+// ------------------------------------------------------------------ cold-read
+
+function coldReadRules(rc: RuleContext): void {
+  const RULE = "cold-read.proposed-absent-is-not-a-finding";
+  const claims = new Map<string, string>();
+  for (const claim of arr(rc.doc["claims"]).map(obj)) {
+    if (claim === null) continue;
+    const id = str(claim["id"]);
+    const kind = str(claim["kind"]);
+    if (id === null || kind === null) continue;
+    if (claims.has(id)) {
+      fail(rc, RULE, `claim id ${id} is duplicated`);
+      continue;
+    }
+    claims.set(id, kind);
+  }
+  for (const [i, decision] of arr(rc.doc["decisions"]).entries()) {
+    const record = obj(decision);
+    if (record === null) continue;
+    if (str(record["kind"]) !== "absent") continue;
+    const claim = str(record["claim"]);
+    if (claim === null) {
+      fail(rc, RULE, `decisions[${i}] is kind absent with no claim`);
+      continue;
+    }
+    if (!claims.has(claim)) {
+      fail(rc, RULE, `decisions[${i}] cites unknown claim ${claim}`);
+      continue;
+    }
+    if (claims.get(claim) === "proposed") {
+      fail(
+        rc,
+        RULE,
+        `decisions[${i}] treats claim ${claim} as absent, but that claim is proposed; proposed code is not a finding for being missing at the stated revision`,
+      );
+    }
+  }
+}
+
 const RULES: Record<string, (rc: RuleContext) => void> = {
   charter: charterRules,
+  "cold-read": coldReadRules,
   decision: decisionRules,
   dossier: dossierRules,
   event: eventRules,
@@ -1337,6 +1481,7 @@ const RULES: Record<string, (rc: RuleContext) => void> = {
   lesson: lessonRules,
   project: projectRules,
   review: reviewRules,
+  ticket: ticketRules,
   verification: verificationRules,
 };
 
