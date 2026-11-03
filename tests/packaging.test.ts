@@ -43,6 +43,7 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
+import { fileHeader } from "../src/packaging/licences.ts";
 import {
   BUILD_RECORD_FILE,
   GATE_FILE,
@@ -245,7 +246,21 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
   "evals/alpha/does-not-start-unasked/case.yaml":
     'schema_version: "1.1"\nname: does-not-start-unasked\ntags: [negative]\n',
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
-  NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
+  NOTICE: [
+    "agent-kit",
+    "Copyright (c) 2026 A Person",
+    "",
+    "Adapted from MIT-licensed projects.",
+    "LICENSES/ajv.LICENSE",
+    "LICENSES/ajv-formats.LICENSE",
+    "LICENSES/fast-deep-equal.LICENSE",
+    "LICENSES/fast-uri.LICENSE",
+    "LICENSES/json-schema-traverse.LICENSE",
+    "LICENSES/yaml.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    "",
+  ].join("\n"),
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
   // Stubs for the licence texts bin/ak inlines. The real texts are read from
   // the installed packages; these exist so a fixture can still build.
@@ -264,18 +279,30 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
  * from `node_modules/`: that directory is gitignored and the packager's walk
  * skips it, so a copy there would not be in the distribution.
  */
-const REQUIRED_LICENCES: ReadonlyArray<readonly [string, string]> = [
-  ["NOTICE", "NOTICE"],
-  ["LICENSE", "LICENSE"],
-  ["node_modules/ajv/LICENSE", "LICENSES/ajv.LICENSE"],
-  ["node_modules/ajv-formats/LICENSE", "LICENSES/ajv-formats.LICENSE"],
-  ["node_modules/fast-deep-equal/LICENSE", "LICENSES/fast-deep-equal.LICENSE"],
-  ["node_modules/fast-uri/LICENSE", "LICENSES/fast-uri.LICENSE"],
-  ["node_modules/json-schema-traverse/LICENSE", "LICENSES/json-schema-traverse.LICENSE"],
-  ["node_modules/yaml/LICENSE", "LICENSES/yaml.LICENSE"],
-  ["provenance/licenses/thedotmack_claude-mem.LICENSE", "provenance/licenses/thedotmack_claude-mem.LICENSE"],
-  ["provenance/licenses/thedotmack_claude-mem.NOTICE", "provenance/licenses/thedotmack_claude-mem.NOTICE"],
-];
+function licencePathsIn(text: string): string[] {
+  const cited =
+    /(?:provenance\/licenses\/[A-Za-z0-9_.+-]+\.(?:LICENSE|NOTICE)|LICENSES\/(?:@[A-Za-z0-9_.+-]+\/)?[A-Za-z0-9_.+-]+\.LICENSE)(?![A-Za-z0-9])/g;
+  return [...new Set(text.match(cited) ?? [])].toSorted();
+}
+
+function citedSource(path: string): string {
+  const prefix = "LICENSES/";
+  const suffix = ".LICENSE";
+  if (path.startsWith(prefix) && path.endsWith(suffix)) {
+    const name = path.slice(prefix.length, -suffix.length);
+    return `node_modules/${name}/LICENSE`;
+  }
+  return path;
+}
+
+function obligedPairs(notice: string): ReadonlyArray<readonly [string, string]> {
+  const pairs: Array<readonly [string, string]> = [
+    ["NOTICE", "NOTICE"],
+    ["LICENSE", "LICENSE"],
+  ];
+  for (const path of licencePathsIn(notice)) pairs.push([citedSource(path), path]);
+  return pairs;
+}
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   const files = Object.fromEntries(Object.entries({ ...BASE, ...overrides }).filter(([key]) => !drop.includes(key)));
@@ -455,6 +482,40 @@ describe("host capability honesty", () => {
  * chosen here.
  */
 describe("the licence files the distribution is obliged to carry", () => {
+  test("every host bundle carries each licence path NOTICE cites", () => {
+    const MISSING_ON_MAIN = [
+      "provenance/licenses/google_elephant-goldfish-model.LICENSE",
+      "provenance/licenses/cursor_plugins.LICENSE",
+    ] as const;
+    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
+    const cited = licencePathsIn(notice);
+    expect(cited).toEqual(expect.arrayContaining([...MISSING_ON_MAIN]));
+    expect(cited.some((path) => path.includes("eslint-stylistic"))).toBe(false);
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repo catalog did not load");
+    for (const host of HOST_IDS) {
+      const plan = planBundle({ root: REPO, catalog }, host, {});
+      for (const path of MISSING_ON_MAIN) {
+        const published = relocateForHost(host, path);
+        expect(plan.files.get(published)?.contents).toBe(readFileSync(join(REPO, path), "utf8"));
+        if (host === "cursor") expect(plan.files.has(path)).toBe(false);
+      }
+      for (const path of cited) {
+        const published = relocateForHost(host, path);
+        expect(plan.files.get(published)?.contents).toBe(readFileSync(join(REPO, citedSource(path)), "utf8"));
+        if (host === "cursor") expect(plan.files.has(path)).toBe(false);
+      }
+      for (const file of plan.files.values()) {
+        for (const headerPath of licencePathsIn(fileHeader(file.contents))) {
+          expect(plan.files.has(relocateForHost(host, headerPath)), `${host} ${file.path} cites ${headerPath}`).toBe(
+            true,
+          );
+        }
+      }
+      expect(plan.files.has("tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE")).toBe(false);
+    }
+  }, 120_000);
+
   test("every host's bundle carries them, byte-identical to the source tree's", () => {
     // Iterated over HOST_IDS rather than written twice. The defect this package
     // has already produced once is two host manifests disagreeing about the
@@ -462,7 +523,7 @@ describe("the licence files the distribution is obliged to carry", () => {
     const ctx = ctxFor();
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
-      for (const [source, path] of REQUIRED_LICENCES) {
+      for (const [source, path] of obligedPairs(BASE["NOTICE"] ?? "")) {
         const published = relocateForHost(host, path);
         expect(`${host}:${published}=${plan.files.get(published)?.contents}`).toBe(
           `${host}:${published}=${BASE[source]}`,
@@ -472,7 +533,7 @@ describe("the licence files the distribution is obliged to carry", () => {
   });
 
   test("a bundle missing any inlined component's licence file fails rather than shipping without it", () => {
-    for (const [source, path] of REQUIRED_LICENCES) {
+    for (const [source, path] of obligedPairs(BASE["NOTICE"] ?? "")) {
       if (source === "NOTICE" || source === "LICENSE") continue;
       const plan = planBundle(ctxFor({}, [source]), "claude-code", {});
       const issue = plan.issues.find((i) => i.rule === "packaging.licence-file-missing" && i.file === source);
@@ -557,7 +618,8 @@ describe("the licence files the distribution is obliged to carry", () => {
     const script = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get("bin/ak")?.contents ?? "";
     expect(script.startsWith("#!/usr/bin/env bun\n")).toBe(true);
     const missing: string[] = [];
-    for (const [source, path] of REQUIRED_LICENCES) {
+    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
+    for (const [source, path] of obligedPairs(notice)) {
       const text = readFileSync(join(REPO, source), "utf8").replace(/\n$/, "");
       if (!script.includes(`// --- ${path} ---`)) missing.push(`${path}: heading`);
       for (const line of text.split("\n")) {
@@ -570,6 +632,49 @@ describe("the licence files the distribution is obliged to carry", () => {
       expect(script).not.toContain(`// --- provenance/licenses/ajv-validator_${pkg}.LICENSE ---`);
     }
     expect(missing).toEqual([]);
+  });
+
+  test("NOTICE citing a licence file that is not on disk fails, omits the path, and leaves it out of the banner", () => {
+    const plan = planBundle(
+      ctxFor({
+        NOTICE: `${BASE["NOTICE"] ?? ""}provenance/licenses/absent.LICENSE\nLICENSES/left-pad.LICENSE\n`,
+        "src/maintenance/cli.ts": 'import pad from "left-pad";\nconsole.log(pad("x"));\n',
+        "node_modules/left-pad/package.json": '{"name":"left-pad","main":"index.js"}\n',
+        "node_modules/left-pad/index.js": "module.exports = (s) => ` ${s}`;\n",
+        "node_modules/left-pad/LICENSE": "WTFPL\n",
+      }),
+      "claude-code",
+      {},
+    );
+    const missing = plan.issues.filter((issue) => issue.rule === "packaging.licence-file-missing");
+    expect(missing.map((issue) => issue.file)).toEqual(["provenance/licenses/absent.LICENSE"]);
+    expect(plan.files.has("provenance/licenses/absent.LICENSE")).toBe(false);
+    expect(plan.files.get("bin/ak")?.contents ?? "").not.toContain("// --- provenance/licenses/absent.LICENSE ---");
+  }, 30_000);
+
+  test("a shipped file header citation ships the licence, and the same path under a markdown heading does not", () => {
+    const text = "header licence\n";
+    const cited = planBundle(
+      ctxFor({
+        "roles/implementer/ROLE.md": "// provenance/licenses/from-header.LICENSE\n\n# Implementer\n",
+        "provenance/licenses/from-header.LICENSE": text,
+      }),
+      "claude-code",
+      {},
+    );
+    expect(cited.files.get("provenance/licenses/from-header.LICENSE")?.contents).toBe(text);
+    expect(cited.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+
+    const body = planBundle(
+      ctxFor({
+        "roles/implementer/ROLE.md": "# Implementer\n\nprovenance/licenses/from-header.LICENSE\n",
+        "provenance/licenses/from-header.LICENSE": text,
+      }),
+      "claude-code",
+      {},
+    );
+    expect(body.files.has("provenance/licenses/from-header.LICENSE")).toBe(false);
+    expect(body.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
   });
 
   test("the failure names the file that is missing, not the pair", () => {

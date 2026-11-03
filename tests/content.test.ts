@@ -55,7 +55,16 @@ describe("model and pricing denylist", () => {
     "node_modules/ajv-formats/LICENSE",
   ])("a shipped license rejects a denylisted term: %s", (file) => {
     const text = "Copyright notice\nPricing: $3/1M output\n";
-    const ctx = ctxFor({ [file]: text, "provenance/licenses/donor.LICENSE": text });
+    const npmName = /^node_modules\/(.+)\/LICENSE$/.exec(file)?.[1];
+    let notice = "agent-kit\n";
+    if (file === "NOTICE") notice = text;
+    else if (npmName !== undefined) notice = `agent-kit\nLICENSES/${npmName}.LICENSE\n`;
+    else if (file !== "LICENSE") notice = `agent-kit\n${file}\n`;
+    const planted =
+      file === "NOTICE"
+        ? { "provenance/licenses/donor.LICENSE": text, NOTICE: notice }
+        : { "provenance/licenses/donor.LICENSE": text, NOTICE: notice, [file]: text };
+    const ctx = ctxFor(planted);
     expect(checkContent(ctx).filter((issue) => issue.rule === "content.denylist")).toEqual([
       expect.objectContaining({ file, line: 2, severity: "error" }),
     ]);

@@ -14,7 +14,7 @@ import {
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
 import { schemaRefs } from "../src/packaging/mentions.ts";
-import { BUILD_RECORD_FILE, LICENCE_FILES, planBundle } from "../src/packaging/plan.ts";
+import { BUILD_RECORD_FILE, planBundle } from "../src/packaging/plan.ts";
 import { writeBundles } from "../src/packaging/build.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
 import { extractRelativeLinks, resolveFromFile } from "../src/util/links.ts";
@@ -23,6 +23,12 @@ import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { checkBundleLinks } from "../src/validation/links.ts";
 import { parseJson, type JsonValue } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
+
+function licencePathsIn(text: string): string[] {
+  const cited =
+    /(?:provenance\/licenses\/[A-Za-z0-9_.+-]+\.(?:LICENSE|NOTICE)|LICENSES\/(?:@[A-Za-z0-9_.+-]+\/)?[A-Za-z0-9_.+-]+\.LICENSE)(?![A-Za-z0-9])/g;
+  return [...new Set(text.match(cited) ?? [])].toSorted();
+}
 
 const root = join(import.meta.dir, "..");
 const { catalog } = loadCatalog(root);
@@ -298,14 +304,6 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
       "profiles/core.yaml": "id: core\nskills: [alpha]\n",
       NOTICE: "agent-kit\n",
       LICENSE: "MIT License\n",
-      "node_modules/ajv/LICENSE": "Copyright\n",
-      "node_modules/ajv-formats/LICENSE": "Copyright\n",
-      "node_modules/fast-deep-equal/LICENSE": "Copyright\n",
-      "node_modules/fast-uri/LICENSE": "Copyright\n",
-      "node_modules/json-schema-traverse/LICENSE": "Copyright\n",
-      "node_modules/yaml/LICENSE": "Copyright\n",
-      "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\n",
-      "provenance/licenses/thedotmack_claude-mem.NOTICE": "Claude-Mem\n",
     });
     const { catalog: fixtureCatalog } = loadCatalog(tree);
     if (fixtureCatalog === null) throw new Error("fixture catalog missing");
@@ -367,11 +365,12 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
     expect(cursor.files.get(".cursor/roles/trail-auditor/ROLE.md")?.contents).toContain(
       "](../../templates/trail-audit.example.json)",
     );
-    for (const licence of LICENCE_FILES) {
-      const path = relocateForHost("cursor", licence.path);
-      expect(path.startsWith(".cursor/licenses/")).toBe(true);
-      expect(`${path}:${present.has(path)}`).toBe(`${path}:true`);
-      expect(present.has(licence.path)).toBe(false);
+    const notice = readFileSync(join(root, "NOTICE"), "utf8");
+    for (const path of licencePathsIn(notice)) {
+      const published = relocateForHost("cursor", path);
+      expect(published.startsWith(".cursor/licenses/")).toBe(true);
+      expect(`${published}:${present.has(published)}`).toBe(`${published}:true`);
+      expect(present.has(path)).toBe(false);
     }
     expect(present.has("LICENSE")).toBe(false);
     expect(present.has("NOTICE")).toBe(false);

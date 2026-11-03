@@ -15,9 +15,10 @@ import { loadHostCapabilities, relocateForHost, rewriteExplicitStarts, type Host
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { linkMentions, mentionResolver, schemaRefs, type MentionResolver } from "./mentions.ts";
+import { licenceBanner, licenceClosure } from "./licences.ts";
 import { resolveProfile } from "./profiles.ts";
 
-/** Trees excluded from dependency copying; LICENCE_FILES explicitly ships selected licence texts. */
+/** Trees excluded from dependency copying. The closure ships cited licence texts. These prefixes stay excluded from that copying. */
 const SOURCE_ONLY_PREFIXES = [
   "research/",
   "provenance/",
@@ -59,9 +60,9 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
  */
 const MARKETPLACE_FILE = ".claude-plugin/marketplace.json";
 
-type MaintenanceScript = { script: string; inlined: string[] | null };
+type MaintenanceBody = { body: string; inlined: string[] | null };
 
-const maintenanceScripts = new Map<string, MaintenanceScript | null>();
+const maintenanceBodies = new Map<string, MaintenanceBody | null>();
 
 const STOP_HOOK_FILE = "hooks/hooks.json";
 const STOP_HOOK_COMMANDS: Partial<Record<HostId, string>> = {
@@ -69,12 +70,12 @@ const STOP_HOOK_COMMANDS: Partial<Record<HostId, string>> = {
   codex: '"${PLUGIN_ROOT}/bin/ak" semantic-lint hook --host codex',
 };
 
-function maintenanceScript(root: string): MaintenanceScript | null {
-  const cached = maintenanceScripts.get(root);
+function maintenanceBody(root: string): MaintenanceBody | null {
+  const cached = maintenanceBodies.get(root);
   if (cached !== undefined) return cached;
-  const script = buildMaintenanceScript(root);
-  maintenanceScripts.set(root, script);
-  return script;
+  const built = buildMaintenanceScript(root);
+  maintenanceBodies.set(root, built);
+  return built;
 }
 
 /**
@@ -104,7 +105,7 @@ export function inlinedSetFromMetafile(text: string): string[] | null {
   return [...names].toSorted();
 }
 
-function buildMaintenanceScript(root: string): MaintenanceScript | null {
+function buildMaintenanceScript(root: string): MaintenanceBody | null {
   const source = join(root, "src/maintenance/cli.ts");
   if (!existsSync(source)) return null;
   const scratch = join(root, ".work");
@@ -134,7 +135,7 @@ function buildMaintenanceScript(root: string): MaintenanceScript | null {
     }
     const body = readFileSync(outfile, "utf8").replace(/^#![^\n]*\n/, "");
     const inlined = inlinedSetFromMetafile(metadata);
-    return { script: `#!/usr/bin/env bun\n${licenceBanner(root)}${body}`, inlined };
+    return { body, inlined };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -240,77 +241,6 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
   cursor: ".cursor-plugin/ak.json",
 };
 
-/**
- * The licence files every bundle carries, copied verbatim.
- *
- * `source` is where the text is read. `path` is where the bundle ships it.
- * NOTICE and LICENSE stay at the bundle root on claude-code and codex: both
- * host contracts specify those two names at that place
- * (`adapters/claude-code/CONTRACT.md` §1, `adapters/codex/CONTRACT.md` §2).
- * Cursor relocates the same rows under `.cursor/licenses/` so a vendored
- * `.cursor/` overlay never writes the consuming repo's LICENSE, NOTICE or
- * LICENSES/. The other rows are the licence texts of
- * code inlined into `bin/ak` or `bin/ak-gate.mjs` (NOTICE). An installed
- * package keeps its text under `node_modules/`, and that path cannot be the
- * bundle path: gitignore drops it, and the packager's file walk skips it, so
- * the distributed copy would not contain the text. claude-mem's texts stay at their provenance paths,
- * the paths they hold in the source tree.
- *
- * A licensing obligation rather than bundle tidiness. The MIT donors' licence
- * requires the copyright notice and the permission notice accompany every
- * copy, Apache-2.0 §4(a) requires claude-mem's licence accompany the files
- * adapted from it, the inlined packages require the same of their own texts,
- * and `dist/` is the copy that gets distributed. Absence is an `error()` for
- * that reason -- a build that quietly omits them reports success over a
- * distribution that may not lawfully be distributed, which is the worst shape
- * this package has a name for.
- *
- * Emitted from here, once, for every host rather than per adapter. Two
- * bundles disagreeing about their own licensing is the defect this package
- * has already produced once in a different field.
- */
-export const LICENCE_FILES: ReadonlyArray<{ source: string; path: string }> = [
-  { source: "NOTICE", path: "NOTICE" },
-  { source: "LICENSE", path: "LICENSE" },
-  { source: "node_modules/ajv/LICENSE", path: "LICENSES/ajv.LICENSE" },
-  { source: "node_modules/ajv-formats/LICENSE", path: "LICENSES/ajv-formats.LICENSE" },
-  { source: "node_modules/fast-deep-equal/LICENSE", path: "LICENSES/fast-deep-equal.LICENSE" },
-  { source: "node_modules/fast-uri/LICENSE", path: "LICENSES/fast-uri.LICENSE" },
-  { source: "node_modules/json-schema-traverse/LICENSE", path: "LICENSES/json-schema-traverse.LICENSE" },
-  { source: "node_modules/yaml/LICENSE", path: "LICENSES/yaml.LICENSE" },
-  {
-    source: "provenance/licenses/thedotmack_claude-mem.LICENSE",
-    path: "provenance/licenses/thedotmack_claude-mem.LICENSE",
-  },
-  {
-    source: "provenance/licenses/thedotmack_claude-mem.NOTICE",
-    path: "provenance/licenses/thedotmack_claude-mem.NOTICE",
-  },
-];
-
-/**
- * Comment block prepended to the built `bin/ak` and `bin/ak-gate.mjs`.
- *
- * The plugin bundles ship the same texts as files. The curl install of `bin/ak`
- * is that one file and has no neighbour to carry them, and `bun build` drops
- * the copyright comments from the inlined packages. `ak-gate.mjs` inlines ajv
- * the same way and is the file a session runs with `node` when it has only the
- * bundle, so it carries the same block.
- */
-function licenceBanner(root: string): string {
-  const lines = [
-    "// Licence texts for this file and the third-party code inlined into it.",
-    "// Each block is also copied into the plugin bundles at the path in its heading.",
-  ];
-  for (const licence of LICENCE_FILES) {
-    const text = readTextIfPresent(join(root, licence.source));
-    if (text === null) continue;
-    lines.push(`// --- ${licence.path} ---`);
-    for (const line of text.replace(/\n$/, "").split("\n")) lines.push(line.length === 0 ? "//" : `// ${line}`);
-  }
-  return `${lines.join("\n")}\n`;
-}
-
 const GATE_SOURCE = "src/lifecycle/gate.ts";
 export const GATE_FILE = "bin/ak-gate.mjs";
 /** The skills whose text runs `../../bin/ak-gate.mjs`; a bundle with any of them carries the gate. */
@@ -354,7 +284,7 @@ function gateScript(root: string, source: string, adapterIds: readonly string[])
       { cwd: root, encoding: "utf8" },
     );
     if (built.status !== 0) throw new Error(built.stderr || "gate build failed");
-    const script = `${licenceBanner(root)}// Generated by ak build from ${GATE_SOURCE}. Do not edit. Run it with no arguments for usage.\n${readFileSync(outfile, "utf8")}`;
+    const script = readFileSync(outfile, "utf8");
     gateScripts.set(key, script);
     return script;
   } finally {
@@ -1007,64 +937,15 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     }
   }
 
-  for (const licence of LICENCE_FILES) {
-    const text = readTextIfPresent(join(ctx.root, licence.source));
-    if (text === null) {
-      const remedy = licence.source.startsWith("node_modules/")
-        ? `Install dependencies so ${licence.source} is present.`
-        : `Restore ${licence.source}.`;
-      issues.push(
-        error(
-          "packaging.licence-file-missing",
-          licence.source,
-          `${licence.source} is missing, so the bundle cannot carry it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. ${remedy}`,
-        ),
-      );
-      continue;
-    }
-    const path = relocateForHost(host, licence.path);
-    files.set(path, { path, contents: text, source: licence.source });
-  }
-
   const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
   if (memMode !== null) {
     const memPath = relocateForHost(host, CLAUDE_MEM_MODE_FILE);
     files.set(memPath, { path: memPath, contents: memMode, source: CLAUDE_MEM_MODE_FILE });
   }
 
+  let maintenance: MaintenanceBody | null = null;
   try {
-    const built = maintenanceScript(root);
-    if (built !== null) {
-      const akPath = relocateForHost(host, "bin/ak");
-      files.set(akPath, { path: akPath, contents: built.script });
-      const stop = STOP_HOOK_COMMANDS[host];
-      // The semantic lint Stop hook rides on bin/ak, so it ships only with it, in the two hosts that run plugin hooks.
-      if (stop !== undefined)
-        files.set(STOP_HOOK_FILE, {
-          path: STOP_HOOK_FILE,
-          contents: `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: stop, timeout: 30 }] }] } }, null, 2)}\n`,
-        });
-      if (built.inlined === null) {
-        issues.push(
-          error(
-            "packaging.inlined-set-unproven",
-            "src/maintenance/cli.ts",
-            "bin/ak's bundler metafile does not name any inlined node_modules package. An absent, malformed, or empty inputs object, or inputs that match no package, leaves the build unable to show that every inlined package has a licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. The build refuses.",
-          ),
-        );
-      } else {
-        for (const name of built.inlined) {
-          if (LICENCE_FILES.some((licence) => licence.source.startsWith(`node_modules/${name}/`))) continue;
-          issues.push(
-            error(
-              "packaging.licence-file-missing",
-              `node_modules/${name}`,
-              `bin/ak inlines ${name}, and LICENCE_FILES has no row for its licence text, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Add a LICENCE_FILES row for ${name}'s licence file and name it in NOTICE.`,
-            ),
-          );
-        }
-      }
-    }
+    maintenance = maintenanceBody(root);
   } catch (cause) {
     issues.push(
       error(
@@ -1073,6 +954,42 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         cause instanceof Error ? cause.message : String(cause),
       ),
     );
+  }
+
+  const closure = licenceClosure(
+    root,
+    [...files.values()].map((file) => ({ file: file.source ?? file.path, text: file.contents })),
+    maintenance?.inlined ?? [],
+  );
+  for (const problem of closure.problems) {
+    issues.push(error("packaging.licence-file-missing", problem.source, problem.message));
+  }
+  for (const duty of closure.duties) {
+    const path = relocateForHost(host, duty.path);
+    files.set(path, { path, contents: duty.text, source: duty.source });
+  }
+  if (maintenance !== null) {
+    const akPath = relocateForHost(host, "bin/ak");
+    files.set(akPath, {
+      path: akPath,
+      contents: `#!/usr/bin/env bun\n${licenceBanner(closure.duties)}${maintenance.body}`,
+    });
+    const stop = STOP_HOOK_COMMANDS[host];
+    // The semantic lint Stop hook rides on bin/ak, so it ships only with it, in the two hosts that run plugin hooks.
+    if (stop !== undefined)
+      files.set(STOP_HOOK_FILE, {
+        path: STOP_HOOK_FILE,
+        contents: `${JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: stop, timeout: 30 }] }] } }, null, 2)}\n`,
+      });
+    if (maintenance.inlined === null) {
+      issues.push(
+        error(
+          "packaging.inlined-set-unproven",
+          "src/maintenance/cli.ts",
+          "bin/ak's bundler metafile does not name any inlined node_modules package. An absent, malformed, or empty inputs object, or inputs that match no package, leaves the build unable to show that every inlined package has a licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. The build refuses.",
+        ),
+      );
+    }
   }
 
   // The lifecycle gate travels with the lifecycle: a session with only this bundle records and checks
@@ -1092,7 +1009,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
         const gatePath = relocateForHost(host, GATE_FILE);
         files.set(gatePath, {
           path: gatePath,
-          contents: gateScript(root, text, listDirs(join(root, "adapters"))),
+          contents: `${licenceBanner(closure.duties)}// Generated by ak build from ${GATE_SOURCE}. Do not edit. Run it with no arguments for usage.\n${gateScript(root, text, listDirs(join(root, "adapters")))}`,
           source: GATE_SOURCE,
         });
       } catch (cause) {
