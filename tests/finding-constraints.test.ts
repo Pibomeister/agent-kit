@@ -338,6 +338,23 @@ describe("only independent verification evidence closes a finding", () => {
     expect(findingErrors(independent)).toEqual([]);
     expect(artifactRules(independent)).not.toContain("finding.self-closed");
   });
+
+  test("applied does not imply resolved", () => {
+    // Plan §7 / AT-12: a suggested_fix with a diff is the schema's applied-patch
+    // evidence. Recording it does not close the finding. Status `resolved`
+    // without an independent closure_receipt is still an invalid transition;
+    // awaiting-verification with the same fix recorded is valid and not closed.
+    const applied = {
+      suggested_fix: {
+        summary: SUGGESTED_FIX.summary,
+        diff: "--- a/src/p.ts\n+++ b/src/p.ts\n@@ -1 +1,3 @@\n+if (user == null) return;\n return user.profile.name;\n",
+      },
+    };
+    expect(findingErrors({ ...applied, status: "awaiting-verification" })).toEqual([]);
+    expect(reason({ ...applied, ...RESOLVED })).toMatch(/closure_receipt/);
+    expect(artifactRules({ ...applied, ...RESOLVED })).not.toContain("finding.self-closed");
+    expect(findingErrors({ ...applied, ...RESOLVED, closure_receipt: RECEIPT })).toEqual([]);
+  });
 });
 
 describe("a reopened finding says why it came back", () => {
