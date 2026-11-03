@@ -930,6 +930,51 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(plan.files.has(noticePath)).toBe(false);
     expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === noticePath)).toBe(true);
   });
+
+  test("a held licence with no lock donor fails the held-licence guard", () => {
+    const licencePath = "provenance/licenses/orphan-held.LICENSE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`,
+      [licencePath]: "MIT License\nCopyright (c) 2026 orphan\n",
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("upstream.lock.yaml");
+    expect(plan.files.has(licencePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
+
+  test("a lock license_file in a different case still maps a held licence", () => {
+    const licencePath = "provenance/licenses/orphan-held.LICENSE";
+    const lockPath = "provenance/licenses/ORPHAN-HELD.LICENSE";
+    const adaptationPath = "skills/alpha/SKILL.md";
+    const adaptationSource = "orphan-held@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:LICENSE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`,
+      [licencePath]: "MIT License\nCopyright (c) 2026 orphan\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: orphan-held",
+        "    path: .donors/orphan-held",
+        `    license_file: ${lockPath}`,
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(licencePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
 });
 
 describe("bundle planning", () => {
