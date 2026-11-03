@@ -94,14 +94,15 @@ describe("council seats", () => {
     ],
   };
 
-  test("a valid answer is never replaced by a substitute, whatever it chose", async () => {
+  test("bounded retry does not replace an unfavorable seat answer", async () => {
     const launched: string[] = [];
     const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
       launched.push(launcher.actor);
       return Promise.resolve(ok(launcher.actor === "v1" ? "no" : "yes"));
     });
     expect(launched).toEqual(["v1"]);
-    expect(result).toMatchObject({ ok: true, answer: { choice: "no" } });
+    expect(result).toMatchObject({ ok: true, launcher: { actor: "v1" }, answer: { choice: "no" } });
+    expect(result.ok ? result.attempts : []).toEqual([{ actor: "v1", model_requested: "unspecified" }]);
   });
 
   test("a seat whose descendant holds the pipes times out on time and the substitute answers", async () => {
@@ -133,6 +134,62 @@ describe("council seats", () => {
     );
     expect(result).toMatchObject({ ok: true, launcher: { actor: "v2" }, attempts: [{ actor: "v1" }, { actor: "v2" }] });
     expect(JSON.stringify(result)).toContain("not an option");
+  });
+
+  test("transport or format failures still retry within the bound", async () => {
+    const fail = {
+      exit: {
+        exitCode: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("connection reset"),
+      },
+      format: {
+        exitCode: 0,
+        stdout: Buffer.from("not-json"),
+        stderr: Buffer.from(""),
+      },
+    };
+    for (const [kind, first] of Object.entries(fail)) {
+      const launched: string[] = [];
+      const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
+        launched.push(launcher.actor);
+        return Promise.resolve(launcher.actor === "v1" ? first : ok("yes"));
+      });
+      expect(launched, kind).toEqual(["v1", "v2"]);
+      expect(result, kind).toMatchObject({
+        ok: true,
+        launcher: { actor: "v2" },
+        answer: { choice: "yes" },
+        attempts: [{ actor: "v1" }, { actor: "v2" }],
+      });
+      expect(JSON.stringify(result), kind).toMatch(kind === "exit" ? /exited 1/ : /invalid answer|JSON/);
+    }
+  });
+
+  test("the retry budget is not exceeded", async () => {
+    const long: CouncilSeat = {
+      seat: "veto",
+      chain: [
+        { actor: "v1", lineage: ["v1"], command: ["first"] },
+        { actor: "v2", lineage: ["v2"], command: ["second"] },
+        { actor: "v3", lineage: ["v3"], command: ["third"] },
+      ],
+    };
+    const launched: string[] = [];
+    const result = await launchSeat(long, "{}", ["yes", "no"], (launcher) => {
+      launched.push(launcher.actor);
+      return Promise.resolve({
+        exitCode: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("transport"),
+      });
+    });
+    expect(launched).toEqual(["v1", "v2", "v3"]);
+    expect(result).toMatchObject({
+      ok: false,
+      attempts: [{ actor: "v1" }, { actor: "v2" }, { actor: "v3" }],
+    });
+    expect(result.ok ? -1 : result.attempts.length).toBe(long.chain.length);
   });
 
   test("a launcher sees only the base environment and the names its roster entry lists", () => {

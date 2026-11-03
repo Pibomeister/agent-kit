@@ -66,6 +66,7 @@ import {
   resolvePolicy,
   resolveRepo,
 } from "./unattended.ts";
+import { isDesignReport } from "./design-report.ts";
 import { verificationValidator } from "./verification-schema.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
@@ -1117,6 +1118,16 @@ function evaluateEvidence(
       receipt = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
     } catch {
       reasons.push({ code: "malformed", detail: `receipt ${ref.id} is not JSON`, evidence: ref.id });
+      continue;
+    }
+    // Named before the verification-shape check so the refusal is `design-report`, not a
+    // generic malformed verification document.
+    if (isDesignReport(receipt)) {
+      reasons.push({
+        code: "design-report",
+        detail: `receipt ${ref.id} is a design-review artifact, not a verifier receipt`,
+        evidence: ref.id,
+      });
       continue;
     }
     if (receipt.schema_version !== 1) {

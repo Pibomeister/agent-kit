@@ -790,7 +790,33 @@ describe("ak lifecycle check, standalone", () => {
     expect(strengthened.err).toContain("refused: evidence unavailable");
   });
 
-  test("an opened task with receipt-backed verification is allowed and keeps a decision", () => {
+  test("a design report offered as the only verification evidence is refused", () => {
+    const dir = repo();
+    const ticketPath = ticket(dir, "design-report-only");
+    const run = openedRun(dir, ticketPath);
+    record(dir, "build-checks", "review-full", "review-readiness");
+    expect(ak(dir, "record", "--gate", "verify").code).toBe(0);
+    const reportDir = mkdtempSync(join(tmpdir(), "ak-design-report-"));
+    const reportPath = join(reportDir, "design-report.json");
+    writeFileSync(
+      reportPath,
+      `${JSON.stringify({
+        schema: "review",
+        schema_version: 1,
+        id: "design-report-1",
+        mode: "full",
+        verdict: "approved",
+      })}\n`,
+    );
+    plant(dir, run, reportPath);
+    const checked = ak(dir, "check");
+    expect(checked.code).toBe(1);
+    expect(checked.err).toContain("evidence design-report");
+    expect(checked.err).toContain("design-review artifact, not a verifier receipt");
+    expect(checked.err).not.toContain("evidence malformed");
+  });
+
+  test("a runtime verifier receipt covers the criterion that a design report cannot", () => {
     const dir = repo();
     const ticketPath = ticket(dir, "evidenced-task");
     const opened = ak(dir, "open", "--ticket", ticketPath);
