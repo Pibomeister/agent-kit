@@ -2,15 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
   mkdirSync,
   symlinkSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
@@ -277,6 +281,80 @@ function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error("fixture has no catalog");
   return { root, catalog };
+}
+
+/**
+ * `--out` replaces its target wholesale. These cases are the refuse-only
+ * guard: a miss would `rmSync` `/`, `$HOME`, or the tree under test. HOME and
+ * cwd are temp directories; the real home and this checkout are never the
+ * `--out` argument. packaging.test.ts runs serially (`integration-files.txt`).
+ */
+const OUT_SENTINEL = "ak-out-sentinel.txt";
+const SENTINEL_BODY = "must-not-be-deleted\n";
+
+function isolatedDir(prefix: string): string {
+  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+}
+
+function writeSentinel(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, OUT_SENTINEL);
+  writeFileSync(path, SENTINEL_BODY);
+  return path;
+}
+
+function sentinelHolds(path: string): boolean {
+  return existsSync(path) && readFileSync(path, "utf8") === SENTINEL_BODY;
+}
+
+function withHomeAndCwd<T>(home: string, cwd: string, fn: () => T): T {
+  const previousHome = process.env.HOME;
+  const previousCwd = process.cwd();
+  mkdirSync(home, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  process.env.HOME = home;
+  process.chdir(cwd);
+  try {
+    return fn();
+  } finally {
+    process.chdir(previousCwd);
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+  }
+}
+
+function withOutGuard<T>(fn: (env: { sandbox: string; home: string; work: string }) => T): T {
+  const sandbox = isolatedDir("ak-out-");
+  const home = join(sandbox, "home");
+  const work = join(sandbox, "work");
+  mkdirSync(home);
+  mkdirSync(work);
+  try {
+    return withHomeAndCwd(home, work, () => fn({ sandbox, home, work }));
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+
+function cursorOut(ctx: ReturnType<typeof ctxFor>, out: string) {
+  return writeBundles(ctx, { hosts: ["cursor"], out });
+}
+
+function expectCursorBundle(dir: string) {
+  expect(existsSync(join(dir, ".cursor/skills/alpha/SKILL.md"))).toBe(true);
+  expect(existsSync(join(dir, BUILD_RECORD_FILE.cursor))).toBe(true);
+}
+
+function expectRefused(result: ReturnType<typeof writeBundles>, fragment: string, sentinel: string, target: string) {
+  expectError(result.issues, "packaging.out-refused", fragment);
+  expect(sentinelHolds(sentinel)).toBe(true);
+  expect(existsSync(join(target, ".cursor/skills/alpha/SKILL.md"))).toBe(false);
+}
+
+function nestRepo(parent: string, ctx: ReturnType<typeof ctxFor>): ReturnType<typeof ctxFor> {
+  const repo = join(parent, "repo");
+  cpSync(ctx.root, repo, { recursive: true });
+  return { root: realpathSync(repo), catalog: ctx.catalog };
 }
 
 const gateFixture = (
@@ -2522,6 +2600,160 @@ describe("ak build and --check", () => {
     expect(existsSync(join(out, ".cursor/skills/alpha/SKILL.md"))).toBe(true);
     expect(existsSync(join(ctx.root, "dist/cursor"))).toBe(false);
     expect(existsSync(join(ctx.root, "dist/claude-code"))).toBe(false);
+  });
+
+  test("--out refuses the filesystem root and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const sentinel = writeSentinel(sandbox);
+      expectRefused(cursorOut(ctx, "/"), "filesystem root", sentinel, "/");
+    });
+  });
+
+  test("--out refuses $HOME and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ home }) => {
+      const sentinel = writeSentinel(home);
+      expectRefused(cursorOut(ctx, home), "$HOME", sentinel, home);
+    });
+  });
+
+  test("--out refuses an ancestor of $HOME and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const wrap = join(sandbox, "homewrap");
+      mkdirSync(wrap);
+      const nestedHome = join(wrap, "nested-home");
+      mkdirSync(nestedHome);
+      const sentinel = writeSentinel(wrap);
+      writeSentinel(nestedHome);
+      withHomeAndCwd(nestedHome, join(sandbox, "work"), () => {
+        expectRefused(cursorOut(ctx, wrap), "$HOME", sentinel, wrap);
+        expect(sentinelHolds(join(nestedHome, OUT_SENTINEL))).toBe(true);
+      });
+    });
+  });
+
+  test("--out refuses the repository root and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(() => {
+      const sentinel = writeSentinel(ctx.root);
+      expectRefused(cursorOut(ctx, ctx.root), "repository root", sentinel, ctx.root);
+    });
+  });
+
+  test("--out refuses an ancestor of the repository root and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const wrap = join(sandbox, "wrap");
+      mkdirSync(wrap);
+      const nested = nestRepo(wrap, ctx);
+      const sentinel = writeSentinel(wrap);
+      writeSentinel(nested.root);
+      expectRefused(cursorOut(nested, wrap), "repository root", sentinel, wrap);
+      expect(sentinelHolds(join(nested.root, OUT_SENTINEL))).toBe(true);
+    });
+  });
+
+  test("--out refuses the current directory ('.') and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ work }) => {
+      const sentinel = writeSentinel(work);
+      expectRefused(cursorOut(ctx, "."), "current directory", sentinel, work);
+    });
+  });
+
+  test("--out refuses '..' (an ancestor of cwd) and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const parent = join(sandbox, "parent");
+      const here = join(parent, "here");
+      mkdirSync(here, { recursive: true });
+      const sentinel = writeSentinel(parent);
+      writeSentinel(here);
+      withHomeAndCwd(join(sandbox, "home"), here, () => {
+        expectRefused(cursorOut(ctx, ".."), "current directory", sentinel, parent);
+        expect(sentinelHolds(join(here, OUT_SENTINEL))).toBe(true);
+      });
+    });
+  });
+
+  test("--out refuses a non-empty directory without a build record and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const occupied = join(sandbox, "occupied");
+      mkdirSync(occupied);
+      const sentinel = writeSentinel(occupied);
+      writeFileSync(join(occupied, "keep.txt"), "keep\n");
+      expectRefused(cursorOut(ctx, occupied), "not a previous agent-kit bundle", sentinel, occupied);
+      expect(readFileSync(join(occupied, "keep.txt"), "utf8")).toBe("keep\n");
+    });
+  });
+
+  test("--out refuses a symlink that resolves into a forbidden directory and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox, home }) => {
+      const sentinel = writeSentinel(home);
+      const link = join(sandbox, "link-to-home");
+      symlinkSync(home, link);
+      expectRefused(cursorOut(ctx, link), "$HOME", sentinel, home);
+      expect(existsSync(link)).toBe(true);
+    });
+  });
+
+  test("--out allows an empty directory", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const empty = join(sandbox, "empty");
+      mkdirSync(empty);
+      const built = cursorOut(ctx, empty);
+      expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(empty);
+    });
+  });
+
+  test("--out allows a directory that already holds this host's build record", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "prior");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(out);
+      writeFileSync(join(out, "stale.txt"), "replaced\n");
+      const second = cursorOut(ctx, out);
+      expect(second.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(out);
+      expect(existsSync(join(out, "stale.txt"))).toBe(false);
+    });
+  });
+
+  test("a relative --out is resolved from process.cwd(), not ctx.root", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ work }) => {
+      const built = cursorOut(ctx, "rel-out");
+      expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(join(work, "rel-out"));
+      expect(existsSync(join(ctx.root, "rel-out"))).toBe(false);
+    });
+  });
+
+  test("--check --out verifies that directory rather than dist/<host>", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "checked");
+      const built = cursorOut(ctx, out);
+      expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expect(checkBundles(ctx, { hosts: ["cursor"], out }).filter((i) => i.severity === "error")).toEqual([]);
+      expectError(checkBundles(ctx, { hosts: ["cursor"] }), "packaging.dist-missing", "absent from dist/");
+      writeFileSync(join(out, ".cursor/skills/alpha/SKILL.md"), "tampered\n");
+      const stale = expectError(
+        checkBundles(ctx, { hosts: ["cursor"], out }),
+        "packaging.dist-stale",
+        "Content differs",
+      );
+      expect(stale.file).toContain(out);
+      expect(stale.file.startsWith("dist/")).toBe(false);
+    });
   });
 
   test("--check passes immediately after a build", () => {
