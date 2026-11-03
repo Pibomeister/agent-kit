@@ -2172,6 +2172,10 @@ describe("review.comprehension-shadow-findings-stay-fyi", () => {
     expect(rulesOf(run(review(), [project({ review: { comprehension: "maybe" } })]))).toContain(RULE_SHADOW);
   });
 
+  test("a non-string comprehension mode is refused", () => {
+    expect(rulesOf(run(review(), [project({ review: { comprehension: true } })]))).toContain(RULE_SHADOW);
+  });
+
   test("duplicate records where one project is missing the comprehension key and the other is on are refused", () => {
     expect(
       rulesOf(run(review(), [project(), project({ id: "project-2", review: { comprehension: "on" } })])),
