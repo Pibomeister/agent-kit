@@ -73,13 +73,13 @@
     },
     "bundle/claude-code:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89695,
-      "tokens": 22396
+      "bytes": 93175,
+      "tokens": 23266
     },
     "bundle/claude-code:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 28528,
-      "tokens": 7118
+      "bytes": 29350,
+      "tokens": 7324
     },
     "bundle/claude-code:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -276,6 +276,11 @@
       "bytes": 9103,
       "tokens": 2275
     },
+    "bundle/claude-code:references/shared/roles/doc-review/comprehension/ROLE.md": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6823,
+      "tokens": 1706
+    },
     "bundle/claude-code:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
       "bytes": 8575,
@@ -433,8 +438,8 @@
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24473,
-      "tokens": 6119
+      "bytes": 24920,
+      "tokens": 6230
     },
     "bundle/claude-code:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -573,8 +578,8 @@
     },
     "bundle/claude-code:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 17146,
-      "tokens": 4279
+      "bytes": 19978,
+      "tokens": 4987
     },
     "bundle/claude-code:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -928,13 +933,13 @@
     },
     "bundle/codex:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89695,
-      "tokens": 22396
+      "bytes": 93175,
+      "tokens": 23266
     },
     "bundle/codex:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 28528,
-      "tokens": 7118
+      "bytes": 29350,
+      "tokens": 7324
     },
     "bundle/codex:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1131,6 +1136,11 @@
       "bytes": 9103,
       "tokens": 2275
     },
+    "bundle/codex:references/shared/roles/doc-review/comprehension/ROLE.md": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6823,
+      "tokens": 1706
+    },
     "bundle/codex:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
       "bytes": 8575,
@@ -1288,8 +1298,8 @@
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24473,
-      "tokens": 6119
+      "bytes": 24920,
+      "tokens": 6230
     },
     "bundle/codex:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -1428,8 +1438,8 @@
     },
     "bundle/codex:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 17146,
-      "tokens": 4279
+      "bytes": 19978,
+      "tokens": 4987
     },
     "bundle/codex:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -1783,13 +1793,13 @@
     },
     "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89695,
-      "tokens": 22396
+      "bytes": 93175,
+      "tokens": 23266
     },
     "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 28528,
-      "tokens": 7118
+      "bytes": 29350,
+      "tokens": 7324
     },
     "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -1986,6 +1996,11 @@
       "bytes": 9103,
       "tokens": 2275
     },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/comprehension/ROLE.md": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6823,
+      "tokens": 1706
+    },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
       "bytes": 8575,
@@ -2143,8 +2158,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24473,
-      "tokens": 6119
+      "bytes": 24920,
+      "tokens": 6230
     },
     "bundle/cursor:.cursor/references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -2278,8 +2293,8 @@
     },
     "bundle/cursor:.cursor/skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 17146,
-      "tokens": 4279
+      "bytes": 19978,
+      "tokens": 4987
     },
     "bundle/cursor:.cursor/skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -2638,13 +2653,13 @@
     },
     "bundle/droid:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89695,
-      "tokens": 22396
+      "bytes": 93175,
+      "tokens": 23266
     },
     "bundle/droid:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 28528,
-      "tokens": 7118
+      "bytes": 29350,
+      "tokens": 7324
     },
     "bundle/droid:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -2841,6 +2856,11 @@
       "bytes": 9103,
       "tokens": 2275
     },
+    "bundle/droid:references/shared/roles/doc-review/comprehension/ROLE.md": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6823,
+      "tokens": 1706
+    },
     "bundle/droid:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
       "bytes": 8575,
@@ -2998,8 +3018,8 @@
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24473,
-      "tokens": 6119
+      "bytes": 24920,
+      "tokens": 6230
     },
     "bundle/droid:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -3138,8 +3158,8 @@
     },
     "bundle/droid:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 17146,
-      "tokens": 4279
+      "bytes": 19978,
+      "tokens": 4987
     },
     "bundle/droid:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -3493,13 +3513,13 @@
     },
     "bundle/grok:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89695,
-      "tokens": 22396
+      "bytes": 93175,
+      "tokens": 23266
     },
     "bundle/grok:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 28528,
-      "tokens": 7118
+      "bytes": 29350,
+      "tokens": 7324
     },
     "bundle/grok:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -3696,6 +3716,11 @@
       "bytes": 9103,
       "tokens": 2275
     },
+    "bundle/grok:references/shared/roles/doc-review/comprehension/ROLE.md": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6823,
+      "tokens": 1706
+    },
     "bundle/grok:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
       "bytes": 8575,
@@ -3853,8 +3878,8 @@
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24473,
-      "tokens": 6119
+      "bytes": 24920,
+      "tokens": 6230
     },
     "bundle/grok:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -3993,8 +4018,8 @@
     },
     "bundle/grok:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 17146,
-      "tokens": 4279
+      "bytes": 19978,
+      "tokens": 4987
     },
     "bundle/grok:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -4348,13 +4373,13 @@
     },
     "bundle/kimi:references/shared/policies/resolved-conflicts.yaml": {
       "file": "policies/resolved-conflicts.yaml",
-      "bytes": 89695,
-      "tokens": 22396
+      "bytes": 93175,
+      "tokens": 23266
     },
     "bundle/kimi:references/shared/policies/review.yaml": {
       "file": "policies/review.yaml",
-      "bytes": 28528,
-      "tokens": 7118
+      "bytes": 29350,
+      "tokens": 7324
     },
     "bundle/kimi:references/shared/protocols/apply-findings/PROTOCOL.md": {
       "file": "protocols/apply-findings/PROTOCOL.md",
@@ -4551,6 +4576,11 @@
       "bytes": 9103,
       "tokens": 2275
     },
+    "bundle/kimi:references/shared/roles/doc-review/comprehension/ROLE.md": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6823,
+      "tokens": 1706
+    },
     "bundle/kimi:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
       "bytes": 8575,
@@ -4708,8 +4738,8 @@
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24473,
-      "tokens": 6119
+      "bytes": 24920,
+      "tokens": 6230
     },
     "bundle/kimi:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -4848,8 +4878,8 @@
     },
     "bundle/kimi:skills/doc-review/SKILL.md": {
       "file": "skills/doc-review/SKILL.md",
-      "bytes": 17146,
-      "tokens": 4279
+      "bytes": 19978,
+      "tokens": 4987
     },
     "bundle/kimi:skills/doubt-driven/SKILL.md": {
       "file": "skills/doubt-driven/SKILL.md",
@@ -5300,6 +5330,11 @@
       "file": "roles/doc-review/coherence/ROLE.md",
       "bytes": 8790,
       "tokens": 2196
+    },
+    "role:doc-review/comprehension": {
+      "file": "roles/doc-review/comprehension/ROLE.md",
+      "bytes": 6566,
+      "tokens": 1642
     },
     "role:doc-review/design-lens": {
       "file": "roles/doc-review/design-lens/ROLE.md",

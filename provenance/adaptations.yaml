@@ -401,6 +401,12 @@ adaptations:
   - path: roles/doc-review/coherence/ROLE.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-doc-review/references/personas/coherence-reviewer.md
     rationale: "Internal consistency only: contradictions between passages, terminology drift, and ambiguity where two careful readers diverge. The donor's own document identifier scheme and unified-requirements artifacts are excluded, per that dossier's conflicts section."
+  - path: roles/doc-review/comprehension/ROLE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/comprehension.md
+    rationale: The naive-reader question, the paraphrase-first order under the two headings, the rule that an unparaphrasable section is a finding, the scan of the rest of the document before flagging a term, and the bar that general engineering terms are never flagged. Donor severity vocabulary and Goldfish framing are replaced by the finding schema, catalog id, and the two mandated Never rows. Shadow, off and on are the calling skill's, not this seat's.
+  - path: roles/doc-review/comprehension/ROLE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:skills/egm-resolve/SKILL.md
+    rationale: The four resolutions of a comprehension gap, including "do not contest a comprehension gap" and "do not add context only to satisfy a reviewer." Author contest is dropped. Rejection is reserved to the human. ESCALATE becomes the existing adjudication outcome escalated.
   - path: roles/doc-review/design-lens/ROLE.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-doc-review/references/personas/design-lens-reviewer.md
     rationale: Missing design decisions — information architecture, interaction and error states, user flows — found by dimensional rating rather than by taste, and the generic-output risk the donor names.
@@ -671,6 +677,12 @@ adaptations:
   - path: skills/doc-review/SKILL.md
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-doc-review/SKILL.md
     rationale: The phase structure from intake through panel dispatch to synthesis and presentation, the classify-by-content rule for requirements versus plan, and the completion condition. The donor's configured artifact root is dropped because the knowledgebase resolves location, and the donor's cross-provider pass is dropped as a multi-vendor feature this package does not carry.
+  - path: skills/doc-review/SKILL.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/comprehension.md
+    rationale: The naive-reader seating, paraphrase-first order, and the rule that an unparaphrasable section is a finding. Off, shadow and on, raw_output.hash on every lane, and FYI-only shadow printing are this package's routing, not the donor's. (phase 1b, GS-004h)
+  - path: skills/doc-review/SKILL.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:skills/egm-resolve/SKILL.md
+    rationale: The four resolutions of a comprehension gap, including the ban on contesting a comprehension finding on the author's word. (phase 1b, GS-004h)
   - path: skills/doc-review/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-doc-review/references/decision-primer.md
     rationale: The prior-round input and the disposition record output, declared as the two layers the primer and the durable record occupy.
@@ -689,6 +701,12 @@ adaptations:
   - path: skills/doc-review/skill.yaml
     source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:skills/ce-doc-review/SKILL.md
     rationale: The triggers and the classify-by-content input, and the completion condition restated as this skill's complete stop condition.
+  - path: skills/doc-review/skill.yaml
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/comprehension.md
+    rationale: The comprehension hard gates and the off/shadow/on seating declared as this skill's own gates. (phase 1b, GS-004h)
+  - path: skills/doc-review/skill.yaml
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:skills/egm-resolve/SKILL.md
+    rationale: The four-resolution gate declared on the execution contract. (phase 1b, GS-004h)
   - path: skills/doubt-driven/SKILL.md
     source: addy@c004a74784a08295d52749b04cda634125b9a581:skills/doubt-driven-development/SKILL.md
     rationale: The non-triviality test, the claim, extract, doubt, reconcile and stop cycle, the adversarial prompt, the artifact-and-contract-only rule, the classification precedence, the three-cycle bound, the doubt-theater signal and the rationalizations. The cross- model escalation becomes an offered second independent reviewer context, with every named product and shell invocation removed. The in-place fix becomes a finding returned to the artifact's owner, and a durable result goes through recordDecision.

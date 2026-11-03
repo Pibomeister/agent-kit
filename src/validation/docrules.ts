@@ -1087,6 +1087,94 @@ function reviewRules(rc: RuleContext): void {
     }
   }
 
+  const RULE_SHADOW = "review.comprehension-shadow-findings-stay-fyi";
+  const projectField = doc["project"];
+  const projectRecord = obj(projectField);
+  const wanted = projectRecord === null ? str(projectField) : str(projectRecord["id"]);
+  const projects: IndexedDoc[] = [];
+  if (wanted !== null) {
+    for (const entry of rc.index.all) {
+      if (entry.schema !== "project") continue;
+      if (str(obj(entry.doc["identity"])?.["id"]) === wanted) projects.push(entry);
+    }
+  }
+  if (projects.length > 0) {
+    const modes = projects.map((p) => str(obj(p.doc["review"])?.["comprehension"]) ?? "off");
+    const anyShadow = modes.some((m) => m === "shadow");
+    const anyOn = modes.some((m) => m === "on");
+    if (anyShadow && !anyOn) {
+      if (projects.length > 1) {
+        fail(
+          rc,
+          RULE_SHADOW,
+          `review project ${wanted} matches ${projects.length} project records; identity.id must be unique when review.comprehension is shadow`,
+        );
+      } else {
+        const cited = new Set<string>();
+        const blockers = new Set<string>();
+        for (const item of arr(doc["findings"])) {
+          const id = str(obj(item)?.["id"]);
+          if (id !== null) cited.add(id);
+        }
+        for (const item of arr(doc["unresolved_blockers"])) {
+          const id = str(obj(item)?.["id"]);
+          if (id !== null) {
+            cited.add(id);
+            blockers.add(id);
+          }
+        }
+        for (const lane of lanes) {
+          if (lane === null) continue;
+          for (const item of arr(lane["findings"])) {
+            const id = str(obj(item)?.["id"]);
+            if (id !== null) cited.add(id);
+          }
+        }
+        for (const [i, lane] of lanes.entries()) {
+          if (lane === null) continue;
+          if (str(lane["role"]) !== "doc-review/comprehension") continue;
+          if (lane["required"] === true) {
+            fail(
+              rc,
+              RULE_SHADOW,
+              `lane ${str(lane["role"]) ?? `#${i}`} is required while review.comprehension is shadow; a required unavailable lane would change the verdict`,
+            );
+          }
+          if (str(lane["state"]) !== "covered") continue;
+          const laneVerdict = str(lane["verdict"]);
+          if (laneVerdict !== null && laneVerdict !== "approve" && laneVerdict !== "no-opinion") {
+            fail(
+              rc,
+              RULE_SHADOW,
+              `lane ${str(lane["role"]) ?? `#${i}`} verdict is ${laneVerdict} while review.comprehension is shadow; shadow findings do not change the verdict`,
+            );
+          }
+        }
+        for (const entry of rc.index.all) {
+          if (entry.schema !== "finding") continue;
+          const id = str(entry.doc["id"]);
+          if (id === null || !cited.has(id)) continue;
+          if (str(entry.doc["lane"]) !== "doc-review/comprehension") continue;
+          const cls = str(entry.doc["autofix_class"]);
+          if (cls !== "advisory") {
+            fail(
+              rc,
+              RULE_SHADOW,
+              `finding ${id} from doc-review/comprehension has autofix_class ${cls ?? "missing"} while review.comprehension is shadow; shadow findings stay advisory`,
+            );
+          }
+          if (blockers.has(id)) {
+            fail(
+              rc,
+              RULE_SHADOW,
+              `finding ${id} from doc-review/comprehension is in unresolved_blockers while review.comprehension is shadow; shadow findings do not block`,
+            );
+          }
+        }
+      }
+    }
+  }
+
   const RULE_UNAVAILABLE = "review.unavailable-required-lane-blocks-approval";
   const TIMEOUT_REASON = /\b(timeout|timed\s*out)\b/i;
   const blocked = lanes.filter((l) => {

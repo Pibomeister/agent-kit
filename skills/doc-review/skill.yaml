@@ -76,6 +76,12 @@ inputs:
     summary: >-
       The project's declared risk, where it declares one. Absent, the conditional seats are
       selected from artifact evidence alone.
+  - id: comprehension-mode
+    schema: project
+    required: false
+    summary: >-
+      The project's review.comprehension setting: off, shadow or on, default off. A missing
+      review object, or a missing key, is off. (phase 1b, GS-004h)
 
 outputs:
   - id: review-record
@@ -125,6 +131,10 @@ hard_gates:
     (operator-attested) and reviewed as a delta; an unrecorded one is refused.
   - A security-lens finding is never dropped by the confidence gate; it stays visible and is
     adjudicated.
+  - A comprehension finding is never rejected on the author's word; the four resolutions in
+    ruling `comprehension-gap-not-contestable` are the only ones.
+  - In shadow, comprehension findings stay under FYI, never enter the other buckets, and do not
+    change the verdict.
 
 stop_conditions:
   - complete when every selected lane is accounted for in the lane table, every retained finding
@@ -229,12 +239,29 @@ provenance:
       adaptation: >-
         The deduplication key only, as the worked example of a document-shaped fingerprint that is
         content-derived rather than positional.
+    - donor: egm
+      commit: 403d8881d62022490637d740657b33f01e321ea8
+      path: agents/comprehension.md
+      license: Apache-2.0
+      adaptation: >-
+        The naive-reader seating, paraphrase-first order, and the rule that an unparaphrasable
+        section is a finding. Donor severity vocabulary is replaced by the finding schema.
+        Off, shadow and on are this skill's routing, not the donor's. (phase 1b, GS-004h)
+    - donor: egm
+      commit: 403d8881d62022490637d740657b33f01e321ea8
+      path: skills/egm-resolve/SKILL.md
+      license: Apache-2.0
+      adaptation: >-
+        The four resolutions of a comprehension gap, including the ban on contesting a
+        comprehension finding on the author's word. (phase 1b, GS-004h)
   resolved_conflicts:
     - panel-composition-by-declared-risk
     - safe-auto-restricted-per-seat
     - required-lane-failure-is-unavailable
     - low-confidence-security-adjudicated
     - central-kb-owns-project-artifacts
+    - comprehension-seat-stays-naive
+    - comprehension-gap-not-contestable
 
 tests:
   - id: drafted-spec-gets-a-panel
