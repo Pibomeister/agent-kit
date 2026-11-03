@@ -269,6 +269,7 @@
     "schemas/case.schema.json",
     "schemas/catalog.schema.json",
     "schemas/charter.schema.json",
+    "schemas/cold-read.schema.json",
     "schemas/common.schema.json",
     "schemas/constitution-article.schema.json",
     "schemas/decision.schema.json",

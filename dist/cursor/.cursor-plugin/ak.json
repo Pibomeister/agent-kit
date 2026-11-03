@@ -310,6 +310,7 @@
     ".cursor/schemas/case.schema.json",
     ".cursor/schemas/catalog.schema.json",
     ".cursor/schemas/charter.schema.json",
+    ".cursor/schemas/cold-read.schema.json",
     ".cursor/schemas/common.schema.json",
     ".cursor/schemas/constitution-article.schema.json",
     ".cursor/schemas/decision.schema.json",
