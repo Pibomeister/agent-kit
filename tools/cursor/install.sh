@@ -2,6 +2,9 @@
 # Cloud Agent install: pin Bun to the version CI uses, then frozen-lockfile deps.
 # Same pin as .github/workflows/ci.yml oven-sh/setup-bun bun-version.
 # Linux zips and hashes are tools/cursor/bun-v1.3.14.sha256 (SHASUMS256.txt on that tag).
+# May append one marked PATH line to ~/.profile, or to ~/.bash_profile if that
+# file exists, only when ~/.bun/bin/bun is 1.3.14 and a login shell cannot
+# already find that version.
 set -euo pipefail
 PIN=1.3.14
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -9,6 +12,11 @@ ROOT=$(cd "$HERE/../.." && pwd)
 SUMS=$HERE/bun-v${PIN}.sha256
 export PATH="${HOME}/.bun/bin:${PATH}"
 BASH_BIN=$(command -v bash)
+if [ -f "${HOME}/.bash_profile" ]; then
+  dest=${HOME}/.bash_profile
+else
+  dest=${HOME}/.profile
+fi
 
 need_cmd() {
   for c in "$@"; do
@@ -70,10 +78,12 @@ link_bun() {
 # Cloud Agent install/start are bash -l. Stock Ubuntu ~/.bashrc returns early
 # when not interactive, so PATH belongs in ~/.profile (or ~/.bash_profile).
 persist_login_path() {
-  if [ -f "${HOME}/.bash_profile" ]; then
-    dest=${HOME}/.bash_profile
-  else
-    dest=${HOME}/.profile
+  bun_bin=${HOME}/.bun/bin/bun
+  if [ ! -x "$bun_bin" ] || [ "$("$bun_bin" --version)" != "$PIN" ]; then
+    return 0
+  fi
+  if login_finds_bun; then
+    return 0
   fi
   marker="# agent-kit bun PATH"
   line='export PATH="$HOME/.bun/bin:$PATH"'
@@ -82,6 +92,7 @@ persist_login_path() {
   fi
   mkdir -p "$(dirname "$dest")"
   printf '\n%s\n%s\n' "$marker" "$line" >>"$dest"
+  echo "appended bun PATH to $dest" >&2
 }
 
 login_finds_bun() {
@@ -105,7 +116,7 @@ if [ "$(bun --version)" != "$PIN" ]; then
   exit 1
 fi
 if ! login_finds_bun; then
-  echo "bun $PIN is not on PATH in a login shell. Wrote PATH to ${HOME}/.profile (or .bash_profile). Later shells would not find bun." >&2
+  echo "bun $PIN is not on PATH in a login shell ($dest)" >&2
   exit 1
 fi
 

@@ -4,7 +4,7 @@
 # Usage: tools/cursor/self-host.sh --vendor | --check
 # ROOT is this script's repository, not $PWD, so rm -rf cannot escape it.
 set -euo pipefail
-HERE=$(cd "$(dirname "$0")" && pwd)
+HERE=$(dirname "$(readlink -f "$0")")
 ROOT=$(cd "$HERE/../.." && pwd)
 BUNDLE=$ROOT/dist/cursor
 OVERLAY=$ROOT/.cursor
@@ -21,6 +21,7 @@ usage() {
 
 [ $# -eq 1 ] || usage
 cd "$ROOT"
+shopt -s dotglob nullglob
 
 rm_overlay_entry() {
   dst=$1
@@ -54,27 +55,18 @@ vendor() {
     exit 1
   fi
   mkdir -p "$OVERLAY"
-  saved=
-  if [ -f "$OVERLAY/environment.json" ]; then
-    saved=$(mktemp)
-    cp -a "$OVERLAY/environment.json" "$saved"
-  fi
   for src in "$BUNDLE/.cursor"/*; do
-    [ -e "$src" ] || continue
-    copy_tree "$src" "$OVERLAY/$(basename "$src")"
+    name=$(basename "$src")
+    [ "$name" = environment.json ] && continue
+    copy_tree "$src" "$OVERLAY/$name"
   done
   for dst in "$OVERLAY"/*; do
-    [ -e "$dst" ] || continue
     name=$(basename "$dst")
     [ "$name" = environment.json ] && continue
     if [ ! -e "$BUNDLE/.cursor/$name" ]; then
       rm_overlay_entry "$dst"
     fi
   done
-  if [ -n "$saved" ]; then
-    cp -a "$saved" "$OVERLAY/environment.json"
-    rm -f "$saved"
-  fi
 }
 
 check() {
@@ -82,7 +74,29 @@ check() {
     echo "missing $BUNDLE/.cursor (no rebuild). Re-vendor with: $FIX" >&2
     exit 1
   fi
-  if ! diff -rq -x environment.json "$BUNDLE/.cursor" "$OVERLAY"; then
+  drifted=0
+  for src in "$BUNDLE/.cursor"/*; do
+    name=$(basename "$src")
+    [ "$name" = environment.json ] && continue
+    dst=$OVERLAY/$name
+    if [ ! -e "$dst" ]; then
+      echo "Only in $BUNDLE/.cursor: $name" >&2
+      drifted=1
+      continue
+    fi
+    if ! diff -rq "$src" "$dst"; then
+      drifted=1
+    fi
+  done
+  for dst in "$OVERLAY"/*; do
+    name=$(basename "$dst")
+    [ "$name" = environment.json ] && continue
+    if [ ! -e "$BUNDLE/.cursor/$name" ]; then
+      echo "Only in $OVERLAY: $name" >&2
+      drifted=1
+    fi
+  done
+  if [ "$drifted" -ne 0 ]; then
     echo "Cursor overlay drifted. Re-vendor with: $FIX" >&2
     exit 1
   fi
