@@ -2791,6 +2791,30 @@ describe("ak build and --check", () => {
     });
   });
 
+  test.skipIf(process.getuid?.() === 0)(
+    "--out refuses when a subdirectory cannot be inspected and deletes nothing",
+    () => {
+      const ctx = ctxFor();
+      withOutGuard(({ sandbox }) => {
+        const out = join(sandbox, "locked");
+        const first = cursorOut(ctx, out);
+        expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+        const locked = join(out, ".cursor/skills");
+        const sentinel = writeSentinel(locked);
+        try {
+          chmodSync(locked, 0o000);
+          const second = cursorOut(ctx, out);
+          expectError(second.issues, "packaging.out-refused", "could not inspect");
+          expect(second.issues[0]?.message).toContain(locked);
+        } finally {
+          chmodSync(locked, 0o755);
+        }
+        expect(sentinelHolds(sentinel)).toBe(true);
+        expectCursorBundle(out);
+      });
+    },
+  );
+
   test("--out refuses grok over a claude-code bundle that shares the record path and deletes nothing", () => {
     const ctx = ctxFor();
     withOutGuard(({ sandbox }) => {

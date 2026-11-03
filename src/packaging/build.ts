@@ -124,9 +124,10 @@ export function outRefusal(
     return `--out '${dest}' holds an agent-kit bundle for host '${record.hostId}', not '${host}'`;
   }
   if (record.outputs !== null) {
-    const extras = extraBundleEntries(target, record.outputs);
-    if (extras.length === 0) return null;
-    return `--out '${dest}' contains entries not written by the previous agent-kit bundle: ${formatExtras(extras)}`;
+    const walked = extraBundleEntries(target, record.outputs);
+    if ("inspect" in walked) return `--out '${dest}' could not inspect '${walked.inspect}'`;
+    if (walked.extras.length === 0) return null;
+    return `--out '${dest}' contains entries not written by the previous agent-kit bundle: ${formatExtras(walked.extras)}`;
   }
   if (emittedPaths === undefined) return null;
   const expected = topLevelNames(emittedPaths);
@@ -184,7 +185,14 @@ function listedCovers(rel: string, outputs: ReadonlyArray<string>): boolean {
   return false;
 }
 
-function extraBundleEntries(target: string, outputs: ReadonlyArray<string>): string[] {
+function isMissing(cause: unknown): boolean {
+  return cause instanceof Error && "code" in cause && cause.code === "ENOENT";
+}
+
+function extraBundleEntries(
+  target: string,
+  outputs: ReadonlyArray<string>,
+): { extras: string[] } | { inspect: string } {
   const extras: string[] = [];
   const stack = [target];
   while (stack.length > 0) {
@@ -193,8 +201,10 @@ function extraBundleEntries(target: string, outputs: ReadonlyArray<string>): str
     let names: string[];
     try {
       names = readdirSync(dir);
-    } catch {
-      continue;
+    } catch (cause) {
+      // The target root not existing is not an inspect failure; anything else is.
+      if (dir === target && isMissing(cause)) return { extras: [] };
+      return { inspect: dir };
     }
     for (const name of names) {
       const full = join(dir, name);
@@ -205,12 +215,12 @@ function extraBundleEntries(target: string, outputs: ReadonlyArray<string>): str
         // would walk `/` or recurse on `loop -> .` until the path is too long.
         if (st.isDirectory() && !st.isSymbolicLink()) stack.push(full);
       } catch {
-        continue;
+        return { inspect: full };
       }
       if (!listedCovers(rel, outputs)) extras.push(rel);
     }
   }
-  return extras.toSorted();
+  return { extras: extras.toSorted() };
 }
 
 function formatExtras(entries: ReadonlyArray<string>): string {
