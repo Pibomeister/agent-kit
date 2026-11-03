@@ -1,0 +1,2 @@
+{"type":"thread.started","thread_id":"thread_child_cccc"}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"CHILD_C"}]}}

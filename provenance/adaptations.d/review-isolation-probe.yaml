@@ -1,0 +1,13 @@
+# Provenance fragment for the review-isolation probe's child-session joining.
+# Adapted from EGM tests/integration/test_claude.py and test_codex.py.
+# Apache-2.0: each row states what was changed, as section 4(b) requires of a modified file.
+
+adaptations:
+  - path: src/review-isolation-probe/children.ts
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:tests/integration/test_claude.py
+    rationale: >-
+      Adapt native child-session discovery under the parent session's subagents directory and Agent-tool launch arguments (resume must be absent or false). Do not fall back to the parent session jsonl. Host spawn arguments are evidence; self-authored resume and fork fields are not.
+  - path: src/review-isolation-probe/children.ts
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:tests/integration/test_codex.py
+    rationale: >-
+      Adapt child-thread joining from SubAgentActivity started agent_thread_id and spawn_agent fork_context/fork_turns inspection. Exclude the parent thread.started id. File reads remain CommandExecution, not a Read tool.
