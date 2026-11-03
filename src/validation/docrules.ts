@@ -1103,7 +1103,7 @@ function reviewRules(rc: RuleContext): void {
     const modes = projects.map((p) => {
       const raw = obj(p.doc["review"])?.["comprehension"];
       if (raw === undefined || raw === null) return "off";
-      return str(raw) ?? "off";
+      return str(raw) ?? JSON.stringify(raw);
     });
     for (const mode of modes) {
       if (!COMPREHENSION_MODES.has(mode)) {
