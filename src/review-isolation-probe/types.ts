@@ -55,8 +55,10 @@ export interface ArmEvidence {
   /** True/false when the host spawn args name a fresh spawn; null when they were not observed. */
   freshSubagent: boolean | null;
   childPrompt: string | null;
-  /** True when a PreToolUse event is in the child transcript or the arm's hook log. */
+  /** True when a PreToolUse event is in the child transcript or a child-session hook log. */
   preToolUseFired: boolean | null;
+  /** Last assistant message in the child transcript, for exact-answer arms. */
+  finalAnswerText: string;
 }
 
 export interface ArmResult {

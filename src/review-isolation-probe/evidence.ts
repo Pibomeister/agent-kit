@@ -42,6 +42,11 @@ interface LooseObject {
   parsed_cmd?: LooseObject[];
   kind?: string;
   agent_thread_id?: string;
+  agent_id?: string;
+  agentId?: string;
+  session_id?: string;
+  transcript_path?: string;
+  hook_event_name?: string;
   cwd?: string;
   text?: string;
   role?: string;
@@ -73,6 +78,11 @@ const looseObject: ValidateFunction<LooseObject> = ajv.compile({
     aggregated_output: { type: "string" },
     kind: { type: "string" },
     agent_thread_id: { type: "string" },
+    agent_id: { type: "string" },
+    agentId: { type: "string" },
+    session_id: { type: "string" },
+    transcript_path: { type: "string" },
+    hook_event_name: { type: "string" },
     cwd: { type: "string" },
     role: { type: "string" },
   },
@@ -239,6 +249,21 @@ function launchFresh(launch: string): LaunchFresh {
 
 export interface EvidenceExtras {
   preToolUseLog?: string | null;
+  childIds?: readonly string[];
+  parentSessionId?: string | null;
+}
+
+function childHookFired(log: string, childIds: readonly string[], parentSessionId: string | null): boolean {
+  for (const line of log.split("\n")) {
+    if (line.trim() === "") continue;
+    const event = parseLine(line);
+    if (event === null) continue;
+    const agent = event.agent_id ?? event.agentId;
+    if (agent === undefined || agent === "") continue;
+    if (parentSessionId !== null && agent === parentSessionId) continue;
+    if (childIds.length === 0 || childIds.includes(agent)) return true;
+  }
+  return false;
 }
 
 /** Parse the child's transcript and launch configuration. Empty inputs are valid: they mean "not observed". */
@@ -257,6 +282,7 @@ export function readEvidence(
   let fresh: boolean | null = null;
   let childPrompt: string | null = null;
   let preToolUseFired: boolean | null = null;
+  let finalAnswerText = "";
 
   if (transcript !== null && transcript !== "") {
     wholeParts.push(transcript);
@@ -270,7 +296,9 @@ export function readEvidence(
         continue;
       }
       parsed += 1;
-      if (line.includes("PreToolUse") || line.includes('"hookEventName"')) preToolUseFired = true;
+      if (line.includes("PreToolUse") || line.includes('"hookEventName"') || line.includes('"hook_event_name"')) {
+        preToolUseFired = true;
+      }
       const type = event.type ?? "";
       const subtype = event.subtype;
       const payload = event.payload;
@@ -285,7 +313,11 @@ export function readEvidence(
       if (assistantMessage) {
         const bits: string[] = [];
         collectText(event, bits);
-        for (const bit of bits) answers.push(bit);
+        if (bits.length > 0) {
+          const text = bits.join("\n");
+          answers.push(text);
+          finalAnswerText = text;
+        }
         collectTouches(event, touches);
         // Tool uses are context (what the child was allowed to do), not its answer.
         const content = event.message?.content ?? event.content;
@@ -298,7 +330,10 @@ export function readEvidence(
       }
       if (payloadType === "task_complete") {
         const last = payload?.last_agent_message;
-        if (last !== undefined) answers.push(last);
+        if (last !== undefined) {
+          answers.push(last);
+          finalAnswerText = last;
+        }
         continue;
       }
       collectTouches(event, touches);
@@ -341,7 +376,8 @@ export function readEvidence(
   else if (launchFreshness === true || fresh === true) combinedFresh = true;
   let hookFired = preToolUseFired;
   if (extras.preToolUseLog !== undefined && extras.preToolUseLog !== null && extras.preToolUseLog.trim() !== "") {
-    hookFired = true;
+    const fromChild = childHookFired(extras.preToolUseLog, extras.childIds ?? [], extras.parentSessionId ?? null);
+    if (fromChild) hookFired = true;
   }
   return {
     transcriptPresent: transcript !== null && transcript !== "",
@@ -355,5 +391,6 @@ export function readEvidence(
     freshSubagent: combinedFresh,
     childPrompt,
     preToolUseFired: hookFired,
+    finalAnswerText,
   };
 }

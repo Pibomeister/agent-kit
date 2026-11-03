@@ -199,6 +199,8 @@ export function runProbe(argv: readonly string[], env: NodeJS.ProcessEnv, io: Pr
     let transcript: string | null = null;
     let launch: string | null = null;
     let preToolUseLog: string | null = null;
+    let childIds: readonly string[] = [];
+    let parentSessionId: string | null = null;
     if (fixtureDir !== null) {
       const loaded = fixtureArm(fixtureDir, arm, plantedMarker, absoluteRole, planted.transcriptPath);
       transcript = loaded.transcript;
@@ -214,17 +216,24 @@ export function runProbe(argv: readonly string[], env: NodeJS.ProcessEnv, io: Pr
       transcript = dispatched.childTranscript;
       launch = dispatched.launchConfig;
       preToolUseLog = dispatched.preToolUseLog;
+      childIds = dispatched.childIds;
+      parentSessionId = dispatched.parentSessionId;
       writeFileSync(join(armDir, "launch.json"), dispatched.launchConfig);
       if (dispatched.childTranscript !== null) writeFileSync(join(armDir, "child.jsonl"), dispatched.childTranscript);
     }
 
-    const evidence = readEvidence(transcript, launch, { preToolUseLog });
+    const evidence = readEvidence(transcript, launch, {
+      preToolUseLog,
+      childIds,
+      parentSessionId,
+    });
     const decided = decideArm(
       arm,
       usedMarker,
       evidence,
       { rolePath: absoluteRole, transcriptPath: planted.transcriptPath, workspace: planted.workspace },
       { plantedHalves: planted.plantedHalves, unplantable: planted.unplantable },
+      hostArg,
     );
     if (transcript !== null) writeFileSync(join(armDir, "child.observed.jsonl"), transcript);
     if (launch !== null) writeFileSync(join(armDir, "launch.observed.json"), launch);

@@ -127,7 +127,7 @@ describe("verdict logic", () => {
     expect(decided.reason).toContain("AGENTS.md");
   });
 
-  test("role-file-denied requires a denied read and exactly RESOURCE_UNREADABLE", () => {
+  test("role-file-denied requires a denied read and the whole final answer exactly RESOURCE_UNREADABLE", () => {
     const denied = readEvidence(
       [
         `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${ROLE}"}}]}}`,
@@ -147,7 +147,7 @@ describe("verdict logic", () => {
     expect(decideArm("transcript-on-disk", marker, allowed, at).kind).toBe("fail");
   });
 
-  test("a denied role-file read whose answer is not exactly RESOURCE_UNREADABLE fails", () => {
+  test("a denied role-file read whose final answer is not exactly RESOURCE_UNREADABLE fails", () => {
     const denied = readEvidence(
       [
         `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${ROLE}"}}]}}`,
@@ -157,6 +157,16 @@ describe("verdict logic", () => {
       `{"source":"host-spawn","resume":false}`,
     );
     expect(decideArm("role-file-denied", null, denied, at).kind).toBe("fail");
+    const lastLineOnly = readEvidence(
+      [
+        `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${ROLE}"}}]}}`,
+        `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"1","is_error":true,"content":"nope"}]}}`,
+        `{"type":"assistant","message":{"content":[{"type":"text","text":"I tried.\\nRESOURCE_UNREADABLE"}]}}`,
+      ].join("\n"),
+      `{"source":"host-spawn","resume":false}`,
+    );
+    expect(lastLineOnly.finalAnswerText.trim()).not.toBe("RESOURCE_UNREADABLE");
+    expect(decideArm("role-file-denied", null, lastLineOnly, at).kind).toBe("fail");
   });
 
   test("host spawn arguments that are absent make a clean leak arm unobservable, not a pass", () => {
@@ -235,6 +245,69 @@ describe("verdict logic", () => {
       null,
     );
     expect(decideArm("transcript-on-disk", marker, allowed, at).kind).toBe("fail");
+    const unplantable = {
+      plantedHalves: [],
+      unplantable: [{ half: "r3.5-pre-tool-use-guard", reason: "codex" }],
+    };
+    expect(decideArm("transcript-on-disk", marker, denied, at, unplantable, "codex").kind).toBe("unobservable");
+    expect(decideArm("transcript-on-disk", marker, allowed, at, unplantable, "codex").kind).toBe("unobservable");
+  });
+
+  test("PreToolUse fired counts only hook payloads from the child session", () => {
+    const transcript = [
+      `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${transcriptPath}"}}]}}`,
+      `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"1","is_error":true,"content":"denied"}]}}`,
+      `{"type":"assistant","message":{"content":[{"type":"text","text":"RESOURCE_UNREADABLE"}]}}`,
+    ].join("\n");
+    const parentLog = JSON.stringify({
+      session_id: "parent-session",
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: "/tmp/other.md" },
+    });
+    const childLog = JSON.stringify({
+      session_id: "parent-session",
+      agent_id: "child-agent",
+      hook_event_name: "PreToolUse",
+      tool_name: "Read",
+      tool_input: { file_path: transcriptPath },
+    });
+    const parentOnly = readEvidence(transcript, `{"source":"host-spawn","resume":false}`, {
+      preToolUseLog: parentLog,
+      childIds: ["child-agent"],
+      parentSessionId: "parent-session",
+    });
+    expect(parentOnly.preToolUseFired).not.toBe(true);
+    expect(decideArm("transcript-on-disk", marker, parentOnly, at).reason).not.toContain(
+      "PreToolUse fired for the subagent call",
+    );
+    const childHook = readEvidence(transcript, `{"source":"host-spawn","resume":false}`, {
+      preToolUseLog: `${parentLog}\n${childLog}`,
+      childIds: ["child-agent"],
+      parentSessionId: "parent-session",
+    });
+    expect(childHook.preToolUseFired).toBe(true);
+    expect(decideArm("transcript-on-disk", marker, childHook, at).reason).toContain(
+      "PreToolUse fired for the subagent call",
+    );
+  });
+
+  test("a Claude leak-arm pass names that freshness is the absence of resume/fork", () => {
+    const evidence = readEvidence(
+      `{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[{"type":"text","text":"UNKNOWN"}]}}\n`,
+      `{"source":"host-spawn","resume":false,"childPrompt":"clean"}`,
+    );
+    const decided = decideArm(
+      "parent-turn",
+      marker,
+      evidence,
+      at,
+      { plantedHalves: [], unplantable: [] },
+      "claude-code",
+    );
+    expect(decided.kind).toBe("pass");
+    expect(decided.reason).toContain("absence of resume/fork");
+    expect(decided.reason).toContain("not a positive attestation");
   });
 });
 
@@ -270,6 +343,7 @@ describe("fixture driver note writing", () => {
     expect(r.report.hostVersion).toContain("not invoked");
     const byId = new Map(r.report.arms.map((arm) => [arm.id, arm]));
     expect(byId.get("parent-turn")?.verdict).toBe("pass");
+    expect(byId.get("parent-turn")?.reason).toContain("absence of resume/fork");
     expect(byId.get("hooks-and-memory")?.verdict).toBe("unobservable");
     expect(byId.get("hooks-and-memory")?.reason).toContain("memory-plugin");
     expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
@@ -283,6 +357,7 @@ describe("fixture driver note writing", () => {
     expect(existsSync(note)).toBe(true);
     const text = readFileSync(note, "utf8");
     expect(text).toContain("Child sessions under");
+    expect(text).toContain("absence of resume/fork");
     expect(text).toContain("| parent-turn |");
     expect(text).toContain("| role-file-denied |");
     expect(renderNote(r.report)).toContain("unobservable");
@@ -323,6 +398,8 @@ describe("fixture driver note writing", () => {
     if (r.report === null) throw new Error("expected a verdict file");
     expect(r.stderr).toContain("CS-12");
     expect(readFileSync(r.report.notePath, "utf8")).toContain("CommandExecution");
+    const byId = new Map(r.report.arms.map((arm) => [arm.id, arm]));
+    expect(byId.get("transcript-on-disk")?.verdict).toBe("unobservable");
   });
 
   test("answer-only fixtures pass the leak arm because the child's answer is ignored", () => {
@@ -486,6 +563,36 @@ describe("review-round-1 fixtures", () => {
     expect(decideArm("role-file-denied", null, evidence, at).kind).toBe("fail");
   });
 
+  test("two Claude subagent files join on the Agent tool id, or are unobservable if unjoined", () => {
+    const work = processScratch("ak-review-iso-twosub-");
+    made.push(work);
+    const workspace = join(work, "ws");
+    mkdirSync(workspace);
+    const configDir = join(work, "config");
+    const sessionId = "session-two";
+    const sub = join(configDir, "projects", claudeProjectSlug(workspace), sessionId, "subagents");
+    mkdirSync(sub, { recursive: true });
+    const fixture = join(REVIEW_R1, "two-subagents");
+    writeFileSync(join(sub, "agent-wanted.jsonl"), readFileSync(join(fixture, "subagents/agent-wanted.jsonl")));
+    writeFileSync(join(sub, "agent-other.jsonl"), readFileSync(join(fixture, "subagents/agent-other.jsonl")));
+    const joined = findClaudeChild(
+      configDir,
+      workspace,
+      sessionId,
+      readFileSync(join(fixture, "parent.jsonl"), "utf8"),
+    );
+    expect(joined).not.toBeNull();
+    expect(joined).toContain("CHILD_WANTED");
+    expect(joined).not.toContain("CHILD_OTHER");
+    const unjoined = findClaudeChild(
+      configDir,
+      workspace,
+      sessionId,
+      readFileSync(join(fixture, "parent-unjoined.jsonl"), "utf8"),
+    );
+    expect(unjoined).toBeNull();
+  });
+
   test("(f) a relative or short touch path must not match the role file", () => {
     const transcript = readFileSync(join(REVIEW_R1, "f-short-touch/child.jsonl"), "utf8");
     const evidence = readEvidence(transcript, `{"source":"host-spawn","resume":false}`);
@@ -531,6 +638,7 @@ describe("plantArm stays inside the temp workspace", () => {
     expect(readFileSync(planted.settingsPath, "utf8")).toContain("PreToolUse");
     const hook = readFileSync(join(planted.workspace, "pre-tool-use.sh"), "utf8");
     expect(hook).toContain("guard hook pre-tool-use");
+    expect(hook).toContain('"agent_id":');
     expect(hook).toContain(join(planted.workspace, "review-session.policy.json"));
     expect(planted.plantedHalves).toContain("r3.5-pre-tool-use-guard");
     expect(readFileSync(join(REPO, "templates/guard/review-session.policy.json"), "utf8")).toContain(

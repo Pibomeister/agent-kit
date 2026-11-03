@@ -27,6 +27,15 @@ export function renderNote(report: ProbeReport): string {
     "is not the verdict. A pass means that channel did not leak at this host version; it does not mean",
     "no other channel does. Where the host does not expose the channel, the arm is `unobservable`,",
     "never a pass.",
+  ];
+  if (report.host === "claude-code") {
+    lines.push(
+      "",
+      "On Claude Code, a fresh spawn is the absence of resume/fork in the Agent input, not a",
+      "positive attestation, so a pass does not claim the host attested freshness.",
+    );
+  }
+  lines.push(
     "",
     "## Instrument",
     "",
@@ -51,7 +60,7 @@ export function renderNote(report: ProbeReport): string {
     "",
     "### Channels",
     "",
-  ];
+  );
   for (const arm of report.arms) {
     lines.push(`- **${arm.id}:** ${profile.channels[arm.id]}`);
   }

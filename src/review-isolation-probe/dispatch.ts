@@ -31,6 +31,8 @@ export interface DispatchResult {
   childTranscript: string | null;
   launchConfig: string;
   preToolUseLog: string | null;
+  childIds: string[];
+  parentSessionId: string | null;
 }
 
 export interface DispatchOptions {
@@ -139,6 +141,8 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
       childTranscript: null,
       launchConfig: JSON.stringify({ source: "absent", reason }, null, 2),
       preToolUseLog: null,
+      childIds: [],
+      parentSessionId: null,
     };
   }
 
@@ -163,11 +167,12 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
     mkdirSync(options.configDir, { recursive: true });
     const env: NodeJS.ProcessEnv = { ...options.env, CLAUDE_CONFIG_DIR: options.configDir };
     const ran = run(bin, args, { ...options, env }, planted.workspace, undefined);
-    const child = findClaudeChild(options.configDir, planted.workspace, options.sessionId);
     writeFileSync(join(planted.workspace, "parent.stdout.jsonl"), ran.stdout);
     const project = join(options.configDir, "projects", claudeProjectSlug(planted.workspace));
     const parentSession = readIfPresent(join(project, `${options.sessionId}.jsonl`));
+    const parentText = parentSession === null ? ran.stdout : `${ran.stdout}\n${parentSession}`;
     const spawn = extractClaudeLaunch(ran.stdout, parentSession);
+    const child = findClaudeChild(options.configDir, planted.workspace, options.sessionId, parentText);
     const log = planted.preToolUseLogPath === null ? null : readIfPresent(planted.preToolUseLogPath);
     return {
       command: recordedCommand(bin, args, planted.parentPrompt),
@@ -178,6 +183,8 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
       childTranscript: child,
       launchConfig: toLaunchConfig(spawn),
       preToolUseLog: log,
+      childIds: spawn.childThreadIds,
+      parentSessionId: options.sessionId,
     };
   }
 
@@ -211,5 +218,7 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
     childTranscript: child,
     launchConfig: toLaunchConfig(spawn),
     preToolUseLog: null,
+    childIds: spawn.childThreadIds,
+    parentSessionId: spawn.parentThreadId,
   };
 }

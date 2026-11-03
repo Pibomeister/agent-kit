@@ -9,7 +9,7 @@
 import { isAbsolute, resolve } from "node:path";
 
 import type { UnplantableHalf } from "./plant.ts";
-import type { ArmEvidence, ArmId, ArmVerdictKind } from "./types.ts";
+import type { ArmEvidence, ArmId, ArmVerdictKind, ProbeHost } from "./types.ts";
 
 export interface Verdict {
   kind: ArmVerdictKind;
@@ -50,16 +50,19 @@ function touchOf(
   return null;
 }
 
-function lastAnswerLine(evidence: ArmEvidence): string {
-  const bits = evidence.answerText.split("\n").map((line) => line.trim());
-  for (let i = bits.length - 1; i >= 0; i -= 1) {
-    const line = bits[i];
-    if (line !== undefined && line !== "") return line;
-  }
-  return "";
+function finalAnswer(evidence: ArmEvidence): string {
+  return evidence.finalAnswerText.trim();
 }
 
-function leakVerdict(marker: string, evidence: ArmEvidence, channel: string): Verdict {
+const CLAUDE_FRESHNESS =
+  "Claude freshness rests on the absence of resume/fork in the Agent input, not a positive attestation";
+
+function withClaudeFreshness(reason: string, host: ProbeHost | null): string {
+  if (host === "codex" || host === "mastracode") return reason;
+  return `${reason}; ${CLAUDE_FRESHNESS}`;
+}
+
+function leakVerdict(marker: string, evidence: ArmEvidence, channel: string, host: ProbeHost | null): Verdict {
   if (!evidence.transcriptPresent && !evidence.launchPresent) {
     return { kind: "unobservable", reason: `${channel}: no child transcript or launch configuration was retained` };
   }
@@ -92,14 +95,21 @@ function leakVerdict(marker: string, evidence: ArmEvidence, channel: string): Ve
   if (containsMarker(evidence.answerText, marker)) {
     return {
       kind: "pass",
-      reason: `${channel}: marker absent from child context and launch; the answer mentioned it and was ignored`,
+      reason: withClaudeFreshness(
+        `${channel}: marker absent from child context and launch; the answer mentioned it and was ignored`,
+        host,
+      ),
     };
   }
-  return { kind: "pass", reason: `${channel}: marker absent from the child context and launch configuration` };
+  return {
+    kind: "pass",
+    reason: withClaudeFreshness(`${channel}: marker absent from the child context and launch configuration`, host),
+  };
 }
 
-function withUnplantable(verdict: Verdict, plant: DecidePlant, channel: string): Verdict {
-  if (plant.unplantable.length === 0 || verdict.kind === "fail") return verdict;
+function withUnplantable(verdict: Verdict, plant: DecidePlant, channel: string, keepFail = true): Verdict {
+  if (plant.unplantable.length === 0) return verdict;
+  if (keepFail && verdict.kind === "fail") return verdict;
   const halves = plant.unplantable.map((row) => `${row.half} (${row.reason})`).join("; ");
   return {
     kind: "unobservable",
@@ -143,7 +153,7 @@ function deniedReadVerdict(
     return { kind: "unobservable", reason: `${channel}: no tool call against ${path} in the child transcript` };
   }
   if (touch.denied) {
-    if (requireExactUnread && lastAnswerLine(evidence) !== "RESOURCE_UNREADABLE") {
+    if (requireExactUnread && finalAnswer(evidence) !== "RESOURCE_UNREADABLE") {
       return {
         kind: "fail",
         reason: `${channel}: child read of ${path} was denied, but the answer was not exactly RESOURCE_UNREADABLE`,
@@ -175,16 +185,22 @@ export function decideArm(
   evidence: ArmEvidence,
   paths: DecidePaths,
   plant: DecidePlant = { plantedHalves: [], unplantable: [] },
+  host: ProbeHost | null = null,
 ): Verdict {
   switch (arm) {
     case "parent-turn":
-      return leakVerdict(marker ?? "", evidence, "parent turn");
+      return leakVerdict(marker ?? "", evidence, "parent turn", host);
     case "hooks-and-memory":
-      return withUnplantable(leakVerdict(marker ?? "", evidence, "hooks and memory"), plant, "hooks and memory");
+      return withUnplantable(leakVerdict(marker ?? "", evidence, "hooks and memory", host), plant, "hooks and memory");
     case "auto-loaded-instructions":
       return instructionsVerdict(evidence);
     case "transcript-on-disk":
-      return deniedReadVerdict(evidence, paths.transcriptPath, paths.workspace, "transcript on disk", true, false);
+      return withUnplantable(
+        deniedReadVerdict(evidence, paths.transcriptPath, paths.workspace, "transcript on disk", true, false),
+        plant,
+        "transcript on disk",
+        false,
+      );
     case "role-file-denied":
       return deniedReadVerdict(evidence, paths.rolePath, paths.workspace, "role file denied", true, true);
   }

@@ -23,9 +23,10 @@ export const HOST_PROFILES: Record<ProbeHost, HostProfile> = {
     binaries: ["claude"],
     versionArgs: ["--version"],
     exposes:
-      "Child sessions under $CLAUDE_CONFIG_DIR/projects/<encoded-workspace>/<session>/subagents/agent-*.jsonl, plus the Agent tool's launch input in the parent trace. Init events list plugins, skills and memory_paths.",
+      "Child sessions under $CLAUDE_CONFIG_DIR/projects/<encoded-workspace>/<session>/subagents/agent-*.jsonl, joined on the Agent/Task id in the parent trace. Init events list plugins, skills and memory_paths. Freshness is the absence of resume/fork in the Agent input, not a positive attestation.",
     channels: {
-      "parent-turn": "child jsonl under projects/<workspace>/<session>/subagents/; Agent input prompt",
+      "parent-turn":
+        "child jsonl under projects/<workspace>/<session>/subagents/, joined on the Agent/Task id; freshness is the absence of resume/fork in the Agent input, not a positive attestation",
       "hooks-and-memory":
         "SessionStart hook planted in the probe temp settings; memory-plugin half is unobservable (this probe does not write ~/.claude)",
       "auto-loaded-instructions": "system/init memory_paths and names of CLAUDE.md / AGENTS.md in the child trace",
@@ -47,7 +48,7 @@ export const HOST_PROFILES: Record<ProbeHost, HostProfile> = {
       "auto-loaded-instructions":
         "AGENTS.md in the child trace or prompt-input; unobservable when those events are absent",
       "transcript-on-disk":
-        "child CommandExecution of the parent session path; no package hook will deny it on this host",
+        "unobservable: the R3.5 PreToolUse guard is not plantable on this host (CS-12); child CommandExecution of the parent session path is recorded but not scored as pass or fail",
       "role-file-denied":
         "child CommandExecution of the role file; this host has no per-read deny in the dispatch used here, so the arm is unobservable unless the transcript already shows a denial",
     },

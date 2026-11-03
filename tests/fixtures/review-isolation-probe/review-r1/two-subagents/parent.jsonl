@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"wanted","name":"Agent","input":{"prompt":"review this","resume":false}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"wanted","agent_id":"wanted","content":"done"}]}}
