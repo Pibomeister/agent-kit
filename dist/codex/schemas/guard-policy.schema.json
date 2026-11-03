@@ -7,6 +7,10 @@
   "additionalProperties": false,
   "required": ["version", "protected_paths", "destructive_commands", "secret_paths", "path_tiers", "governed_paths"],
   "properties": {
+    "schema": {
+      "description": "Optional marker so a copy under templates/ declares the catalog schema it validates against. A project-owned policy file omits it; the loader still accepts that file.",
+      "const": "guard-policy"
+    },
     "version": {
       "description": "The policy's own version, so a deny can be traced to the policy that produced it.",
       "$ref": "common.schema.json#/$defs/semver"
