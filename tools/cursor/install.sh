@@ -8,8 +8,19 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 SUMS=$HERE/bun-v${PIN}.sha256
 export PATH="${HOME}/.bun/bin:${PATH}"
+BASH_BIN=$(command -v bash)
+
+need_cmd() {
+  for c in "$@"; do
+    if ! command -v "$c" >/dev/null 2>&1; then
+      echo "need $c on PATH to download bun $PIN" >&2
+      exit 1
+    fi
+  done
+}
 
 install_bun() {
+  need_cmd curl unzip sha256sum
   arch=$(uname -m)
   case $arch in
     x86_64) asset=bun-linux-x64.zip ;;
@@ -56,10 +67,34 @@ link_bun() {
   fi
 }
 
+# Cloud Agent install/start are bash -l. Stock Ubuntu ~/.bashrc returns early
+# when not interactive, so PATH belongs in ~/.profile (or ~/.bash_profile).
+persist_login_path() {
+  if [ -f "${HOME}/.bash_profile" ]; then
+    dest=${HOME}/.bash_profile
+  else
+    dest=${HOME}/.profile
+  fi
+  marker="# agent-kit bun PATH"
+  line='export PATH="$HOME/.bun/bin:$PATH"'
+  if [ -f "$dest" ] && grep -Fqx "$marker" "$dest"; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$dest")"
+  printf '\n%s\n%s\n' "$marker" "$line" >>"$dest"
+}
+
+login_finds_bun() {
+  u=$(id -un)
+  env -i HOME="$HOME" USER="$u" LOGNAME="$u" TERM="${TERM:-dumb}" \
+    "$BASH_BIN" -l -c 'command -v bun >/dev/null && [ "$(bun --version)" = "'"$PIN"'" ]'
+}
+
 if ! command -v bun >/dev/null 2>&1 || [ "$(bun --version)" != "$PIN" ]; then
   install_bun
 fi
 link_bun
+persist_login_path
 
 if ! command -v bun >/dev/null 2>&1; then
   echo "bun is not on PATH after install" >&2
@@ -67,6 +102,10 @@ if ! command -v bun >/dev/null 2>&1; then
 fi
 if [ "$(bun --version)" != "$PIN" ]; then
   echo "bun $(bun --version) is not the pinned ${PIN}" >&2
+  exit 1
+fi
+if ! login_finds_bun; then
+  echo "bun $PIN is not on PATH in a login shell. Wrote PATH to ${HOME}/.profile (or .bash_profile). Later shells would not find bun." >&2
   exit 1
 fi
 
