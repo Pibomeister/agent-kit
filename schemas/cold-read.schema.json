@@ -135,6 +135,21 @@
       "description": "An unavailable read states why, and cannot be read as coverage.",
       "if": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] },
       "then": { "required": ["reason"] }
+    },
+    {
+      "description": "status unavailable if and only if state is unavailable.",
+      "if": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] },
+      "then": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] }
+    },
+    {
+      "description": "state unavailable if and only if status is unavailable.",
+      "if": { "properties": { "state": { "const": "unavailable" } }, "required": ["state"] },
+      "then": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] }
+    },
+    {
+      "description": "status complete requires state covered.",
+      "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+      "then": { "properties": { "state": { "const": "covered" } }, "required": ["state"] }
     }
   ]
 }

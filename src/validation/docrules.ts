@@ -1357,26 +1357,72 @@ function ticketRules(rc: RuleContext): void {
   const projectField = doc["project"];
   const projectRecord = obj(projectField);
   const wanted = projectRecord === null ? str(projectField) : str(projectRecord["id"]);
-  let project: IndexedDoc | null = null;
+  const matches: IndexedDoc[] = [];
   if (wanted !== null) {
     for (const entry of rc.index.all) {
       if (entry.schema !== "project") continue;
-      const identity = str(obj(entry.doc["identity"])?.["id"]);
-      const envelope = obj(entry.doc["project"]);
-      const envelopeId = envelope === null ? str(entry.doc["project"]) : str(envelope["id"]);
-      if (identity === wanted || envelopeId === wanted) {
-        project = entry;
-        break;
-      }
+      if (str(obj(entry.doc["identity"])?.["id"]) === wanted) matches.push(entry);
     }
   }
   // Missing review object, missing key, and unknown values are off: the default, and no behaviour change.
-  const review = project === null ? null : obj(project.doc["review"]);
-  const coldRead = review === null ? null : str(review["cold_read"]);
-  if (coldRead !== "on") return;
+  if (matches.length === 0) return;
+  let anyOn = false;
+  for (const entry of matches) {
+    if (str(obj(entry.doc["review"])?.["cold_read"]) === "on") anyOn = true;
+  }
+  if (!anyOn) return;
+  if (matches.length > 1) {
+    fail(
+      rc,
+      RULE,
+      `ticket project ${wanted} matches ${matches.length} project records; identity.id must be unique when review.cold_read is on`,
+    );
+    return;
+  }
 
-  if (obj(doc["cold_read_ref"]) !== null && str(obj(doc["cold_read_ref"])?.["hash"]) !== null) return;
-  fail(rc, RULE, "an implementation ticket in a project with review.cold_read on has no cold_read_ref");
+  const ref = obj(doc["cold_read_ref"]);
+  const refId = ref === null ? null : str(ref["id"]);
+  const refHash = ref === null ? null : str(ref["hash"]);
+  if (refId === null || refHash === null) {
+    fail(rc, RULE, "an implementation ticket in a project with review.cold_read on has no cold_read_ref");
+    return;
+  }
+
+  const cited: IndexedDoc[] = [];
+  for (const entry of rc.index.all) {
+    if (str(entry.doc["id"]) !== refId) continue;
+    if (artifactHash(entry.doc) !== refHash) continue;
+    cited.push(entry);
+  }
+  if (cited.length !== 1) {
+    fail(rc, RULE, `cold_read_ref ${refId} matches ${cited.length} indexed documents at hash ${refHash}`);
+    return;
+  }
+  const read = cited[0];
+  if (read === undefined || read.schema !== "cold-read") {
+    fail(rc, RULE, `cold_read_ref ${refId} indexes schema ${read?.schema ?? "none"}, not cold-read`);
+    return;
+  }
+  const ticketRef = obj(read.doc["ticket"]);
+  const readTicketId = ticketRef === null ? null : str(ticketRef["id"]);
+  const thisId = str(doc["id"]);
+  if (readTicketId === null || thisId === null || readTicketId !== thisId) {
+    fail(
+      rc,
+      RULE,
+      `cold_read_ref ${refId} was a read of ticket ${readTicketId ?? "none"}, not ${thisId ?? "this ticket"}`,
+    );
+    return;
+  }
+  const recordedHash = ticketRef === null ? null : str(ticketRef["hash"]);
+  if (recordedHash !== null) {
+    const body = { ...doc };
+    delete body["cold_read_ref"];
+    const expected = artifactHash(body);
+    if (recordedHash !== expected) {
+      fail(rc, RULE, `cold_read_ref ${refId} records ticket hash ${recordedHash}, not ${expected}`);
+    }
+  }
 }
 
 // ------------------------------------------------------------------ cold-read
@@ -1388,14 +1434,26 @@ function coldReadRules(rc: RuleContext): void {
     if (claim === null) continue;
     const id = str(claim["id"]);
     const kind = str(claim["kind"]);
-    if (id !== null && kind !== null) claims.set(id, kind);
+    if (id === null || kind === null) continue;
+    if (claims.has(id)) {
+      fail(rc, RULE, `claim id ${id} is duplicated`);
+      continue;
+    }
+    claims.set(id, kind);
   }
   for (const [i, decision] of arr(rc.doc["decisions"]).entries()) {
     const record = obj(decision);
     if (record === null) continue;
     if (str(record["kind"]) !== "absent") continue;
     const claim = str(record["claim"]);
-    if (claim === null) continue;
+    if (claim === null) {
+      fail(rc, RULE, `decisions[${i}] is kind absent with no claim`);
+      continue;
+    }
+    if (!claims.has(claim)) {
+      fail(rc, RULE, `decisions[${i}] cites unknown claim ${claim}`);
+      continue;
+    }
     if (claims.get(claim) === "proposed") {
       fail(
         rc,

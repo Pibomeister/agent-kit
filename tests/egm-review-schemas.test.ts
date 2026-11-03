@@ -184,7 +184,11 @@ describe("cold-read schema", () => {
 
   test("status complete requires state covered", () => {
     const completeUnavailable = updated(
-      updated(updated(coldReadExample, ["state"], () => "unavailable"), ["status"], () => "complete"),
+      updated(
+        updated(coldReadExample, ["state"], () => "unavailable"),
+        ["status"],
+        () => "complete",
+      ),
       ["reason"],
       () => "The host could not start a separate reader context.",
     );

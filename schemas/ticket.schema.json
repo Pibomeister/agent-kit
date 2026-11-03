@@ -241,6 +241,7 @@
       "allOf": [
         { "$ref": "common.schema.json#/$defs/artifact_ref" },
         {
+          "required": ["schema"],
           "properties": { "schema": { "const": "cold-read" } }
         }
       ],

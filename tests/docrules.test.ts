@@ -1726,7 +1726,7 @@ function onProject(extra: Doc = {}): Doc {
   return project({ review: { cold_read: "on" }, ...extra });
 }
 
-function citedRead(forTicket: Doc, extra: Doc = {}): { read: Doc; ref: { id: string; schema: string; hash: string } } {
+function citedRead(forTicket: Doc, extra: Doc = {}) {
   const subject = { ...forTicket };
   delete subject.cold_read_ref;
   const read = coldRead({
@@ -1828,7 +1828,10 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     const { read } = citedRead(ticket());
     expect(
       rulesOf(
-        run(ticket({ cold_read_ref: { id: String(read["id"]), schema: "cold-read", hash: HASH } }), [onProject(), read]),
+        run(ticket({ cold_read_ref: { id: String(read["id"]), schema: "cold-read", hash: HASH } }), [
+          onProject(),
+          read,
+        ]),
       ),
     ).toContain(RULE_COLD_REF);
   });
@@ -1871,9 +1874,9 @@ describe("ticket.cold-read-ref-required-when-on", () => {
 
   test("two project records with the same identity.id fail when review.cold_read is on", () => {
     const { read, ref } = citedRead(ticket());
-    expect(
-      rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), onProject({ id: "project-2" }), read])),
-    ).toContain(RULE_COLD_REF);
+    expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), onProject({ id: "project-2" }), read]))).toContain(
+      RULE_COLD_REF,
+    );
   });
 
   test("duplicate identity.id project records stay off when none is on", () => {
