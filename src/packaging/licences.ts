@@ -184,6 +184,10 @@ function unmappedHeldLicence(file: string): string {
   return `${file} is listed as not bundled, and provenance/upstream.lock.yaml records no donor for it, so the held-licence guard cannot tell whether adapted code would ship without that licence text. Name ${file} as license_file or notice_file on a lock donor, or move it out of the not-bundled NOTICE section.`;
 }
 
+function missingHeldLicence(file: string): string {
+  return `${file} is listed as not bundled, and it is not on disk, so the held-licence record names a text that is not there. Restore ${file}.`;
+}
+
 function unreadProvenance(source: string, reason: "missing" | "unparseable" | "invalid"): string {
   if (reason === "missing") {
     return `${source} is missing, so the held-licence guard cannot tell which provenance texts belong to adapted donors. Restore ${source}.`;
@@ -431,6 +435,10 @@ export function licenceClosure(
     rowsByDonor.set(parsed.donor, rows);
   }
   for (const file of held) {
+    if (readTextIfPresent(join(root, file)) === null) {
+      problems.push({ source: file, message: missingHeldLicence(file) });
+      continue;
+    }
     const donors = donorsByLicence.get(licenceKey(file));
     if (donors === undefined) {
       problems.push({ source: file, message: unmappedHeldLicence(file) });
