@@ -1,6 +1,10 @@
 import { join } from "node:path";
 
+import Ajv2020 from "ajv/dist/2020.js";
+import { parse as parseYaml } from "yaml";
+
 import { readTextIfPresent, walkFiles } from "../util/fs.ts";
+import { parseDonorSource } from "../validation/provenance.ts";
 
 /** A licence text this bundle must carry. `path` is the bundle path before host relocation. */
 export interface LicenceDuty {
@@ -172,6 +176,105 @@ function undemandedLicence(source: string): string {
   return `${source} is present under provenance/licenses and no citation demands it, so a matcher miss would leave it out of the bundle. Cite ${source} from NOTICE or a shipped file header.`;
 }
 
+function heldAdaptedLicence(file: string, path: string, source: string): string {
+  return `${file} is listed as not bundled, and provenance/adaptations.yaml records ${path} from ${source}, so the bundle would carry derived code without that licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Move ${file} out of the not-bundled NOTICE section.`;
+}
+
+interface DonorLicencePin {
+  id: string;
+  path?: string;
+  license_file?: string;
+  notice_file?: string;
+}
+
+interface AdaptationRow {
+  path: string;
+  source?: string;
+}
+
+const isLockDonors = new Ajv2020({ strict: false }).compile<{ donors: DonorLicencePin[] }>({
+  type: "object",
+  required: ["donors"],
+  properties: {
+    donors: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["id"],
+        properties: {
+          id: { type: "string" },
+          path: { type: "string" },
+          license_file: { type: "string" },
+          notice_file: { type: "string" },
+        },
+        additionalProperties: true,
+      },
+    },
+  },
+  additionalProperties: true,
+});
+
+const isAdaptationsDoc = new Ajv2020({ strict: false }).compile<{ adaptations: AdaptationRow[] }>({
+  type: "object",
+  required: ["adaptations"],
+  properties: {
+    adaptations: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["path"],
+        properties: {
+          path: { type: "string" },
+          source: { type: "string" },
+        },
+        additionalProperties: true,
+      },
+    },
+  },
+  additionalProperties: true,
+});
+
+function readLockDonors(root: string): DonorLicencePin[] {
+  const text = readTextIfPresent(join(root, "provenance/upstream.lock.yaml"));
+  if (text === null) return [];
+  try {
+    const parsed: unknown = parseYaml(text);
+    return isLockDonors(parsed) ? parsed.donors : [];
+  } catch {
+    return [];
+  }
+}
+
+/** `license_file` / `notice_file` from the lock. Else NOTICE's `provenance/licenses/<clone-dir>.LICENSE` spelling. */
+function donorLicenceFiles(root: string): Map<string, string[]> {
+  const files = new Map<string, string[]>();
+  for (const entry of readLockDonors(root)) {
+    const listed = [];
+    if (entry.license_file !== undefined) listed.push(entry.license_file);
+    if (entry.notice_file !== undefined) listed.push(entry.notice_file);
+    if (listed.length === 0 && entry.path !== undefined) {
+      const base = entry.path
+        .split("/")
+        .filter((part) => part.length > 0)
+        .at(-1);
+      if (base !== undefined && base.length > 0) listed.push(`provenance/licenses/${base}.LICENSE`);
+    }
+    files.set(entry.id, listed);
+  }
+  return files;
+}
+
+function loadAdaptationsDocument(root: string): AdaptationRow[] {
+  const text = readTextIfPresent(join(root, "provenance/adaptations.yaml"));
+  if (text === null) return [];
+  try {
+    const parsed: unknown = parseYaml(text);
+    return isAdaptationsDoc(parsed) ? parsed.adaptations : [];
+  } catch {
+    return [];
+  }
+}
+
 function dutyRank(path: string): number {
   if (path === "NOTICE") return 0;
   if (path === "LICENSE") return 1;
@@ -243,6 +346,34 @@ export function licenceClosure(
   }
 
   const held = new Set(citedLicencePaths(splitNotice(noticeText).held));
+  const donorsByLicence = new Map<string, string[]>();
+  for (const [donor, files] of donorLicenceFiles(root)) {
+    for (const file of files) {
+      const ids = donorsByLicence.get(file) ?? [];
+      ids.push(donor);
+      donorsByLicence.set(file, ids);
+    }
+  }
+  const rowsByDonor = new Map<string, { path: string; source: string }[]>();
+  for (const row of loadAdaptationsDocument(root)) {
+    if (row.source === undefined) continue;
+    const parsed = parseDonorSource(row.source);
+    if (parsed === null) continue;
+    const rows = rowsByDonor.get(parsed.donor) ?? [];
+    rows.push({ path: row.path, source: row.source });
+    rowsByDonor.set(parsed.donor, rows);
+  }
+  for (const file of held) {
+    for (const donor of donorsByLicence.get(file) ?? []) {
+      const rows = rowsByDonor.get(donor);
+      if (rows === undefined) continue;
+      const [row] = rows.toSorted(
+        (left, right) => comparePath(left.path, right.path) || comparePath(left.source, right.source),
+      );
+      if (row === undefined) continue;
+      problems.push({ source: file, message: heldAdaptedLicence(file, row.path, row.source) });
+    }
+  }
   for (const file of walkFiles(root, "provenance/licenses")) {
     if (demanded.has(file) || held.has(file)) continue;
     problems.push({ source: file, message: undemandedLicence(file) });
