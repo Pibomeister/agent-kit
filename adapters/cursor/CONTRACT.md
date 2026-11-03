@@ -180,7 +180,10 @@ IDE plugin smoke (local, not Cloud Automations): copy the bundle to
 ([plugins reference](https://cursor.com/docs/reference/plugins)). Remote
 marketplace publication is unverified.
 
-`ak doctor` and `ak update` do not manage this host.
+`ak doctor` and `ak update` do not manage this host. The isolation-probe version
+check runs only where `research/host-facts/` holds a `review-isolation-cursor.md`
+note with a real host version: then doctor compares `cursor-agent --version`
+(WARN on mismatch, PASS on match). Missing host or missing note emits no finding.
 
 ---
 
