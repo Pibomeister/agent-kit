@@ -737,6 +737,34 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(plan.files.get("provenance/licenses/outside-deny.LICENSE")?.contents).toBe(licence);
     expect(flagged).toBe(true);
   });
+
+  test("a licence listed only under the not-bundled NOTICE heading stays out until a shipped file cites it", () => {
+    const heading = "Not bundled. Licence texts held in this repository and not copied into dist/:";
+    const held = "held licence text\n";
+    const notice = `${BASE["NOTICE"] ?? ""}\n${heading}\n\nprovenance/licenses/held.LICENSE\n`;
+    const idle = ctxFor({
+      NOTICE: notice,
+      "provenance/licenses/held.LICENSE": held,
+    });
+    const idlePlan = planBundle(idle, "claude-code", {});
+    expect(idlePlan.files.has("provenance/licenses/held.LICENSE")).toBe(false);
+    expect(idlePlan.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+    expect(
+      checkContent(idle).some((row) => row.severity === "error" && row.file === "provenance/licenses/held.LICENSE"),
+    ).toBe(false);
+
+    const cited = planBundle(
+      ctxFor({
+        NOTICE: notice,
+        "provenance/licenses/held.LICENSE": held,
+        "roles/implementer/ROLE.md": "// provenance/licenses/held.LICENSE\n\n# Implementer\n",
+      }),
+      "claude-code",
+      {},
+    );
+    expect(cited.files.get("provenance/licenses/held.LICENSE")?.contents).toBe(held);
+    expect(cited.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+  });
 });
 
 describe("bundle planning", () => {
