@@ -673,10 +673,26 @@ describe("plantArm stays inside the temp workspace", () => {
       "secret.claude-session-store",
     );
     expect(readFileSync(planted.settingsPath, "utf8")).toContain("PreToolUse");
-    const hook = readFileSync(join(planted.workspace, "pre-tool-use.sh"), "utf8");
+    const hookPath = join(planted.workspace, "pre-tool-use.sh");
+    const hook = readFileSync(hookPath, "utf8");
     expect(hook).toContain("guard hook pre-tool-use");
     expect(hook).toContain('"agent_id":');
+    expect(hook).toContain("status=$?");
+    expect(hook).toContain('exit "$status"');
     expect(hook).toContain(join(planted.workspace, "review-session.policy.json"));
+    const mutated = hook.replace(/printf '%s\\n' "\$payload" \|[^\n]+/, 'sh -c "exit 2"');
+    expect(mutated).not.toBe(hook);
+    const probe = join(planted.workspace, "pre-tool-use-status.sh");
+    writeFileSync(probe, mutated);
+    chmodSync(probe, 0o755);
+    const payload = JSON.stringify({
+      tool_name: "Read",
+      agent_id: "child-1",
+      tool_input: { file_path: "ROLE.md" },
+    });
+    const result = spawnSync("sh", [probe], { encoding: "utf8", input: payload });
+    expect(result.status).toBe(2);
+    expect(readFileSync(planted.preToolUseLogPath ?? "", "utf8")).toContain("child-1");
     expect(planted.plantedHalves).toContain("r3.5-pre-tool-use-guard");
     expect(readFileSync(join(REPO, "templates/guard/review-session.policy.json"), "utf8")).toContain(
       "**/.claude/projects/**",

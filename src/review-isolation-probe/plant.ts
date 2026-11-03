@@ -76,10 +76,12 @@ function writePreToolUseHook(workspace: string, policyPath: string, logPath: str
 log=${JSON.stringify(logPath)}
 payload=$(cat)
 printf '%s\\n' "$payload" | ${JSON.stringify(bun)} ${JSON.stringify(cli)} guard hook pre-tool-use --policy ${JSON.stringify(policyPath)} --host claude-code --root ${JSON.stringify(workspace)}
+status=$?
 # Claude Code sends agent_id only inside a subagent; parent Reads omit it.
 case "$payload" in
   *'"agent_id":'*) printf '%s\\n' "$payload" >> "$log" ;;
 esac
+exit "$status"
 `,
   );
   chmodSync(script, 0o755);
