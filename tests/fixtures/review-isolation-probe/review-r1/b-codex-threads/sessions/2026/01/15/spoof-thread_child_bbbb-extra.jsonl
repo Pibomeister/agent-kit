@@ -1,0 +1,2 @@
+{"type":"thread.started","thread_id":"thread_child_bbbbX"}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"SUBSTRING_SPOOF"}]}}

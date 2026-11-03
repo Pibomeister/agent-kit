@@ -144,6 +144,17 @@ donors:
     license: MIT
     copyright: "Copyright (c) 2026 Denver Technologies, Inc."
     license_file: provenance/licenses/warpdotdev_common-skills.LICENSE
+  # Research pin. The review-isolation probe adapts child-session joining from
+  # tests/integration/test_claude.py and test_codex.py; no EGM plugin ships.
+  - id: egm
+    repo: google/elephant-goldfish-model
+    url: https://github.com/google/elephant-goldfish-model
+    path: .donors/google_elephant-goldfish-model
+    commit: 403d8881d62022490637d740657b33f01e321ea8
+    commit_date: "2026-10-30T08:43:28Z"
+    license: Apache-2.0
+    copyright: "Copyright 2026 Google LLC"
+    license_file: provenance/licenses/google_elephant-goldfish-model.LICENSE
 # ---------------------------------------------------------------------------
 # Local sources: third-party or design material held in-repo rather than at a
 # donor pin. This block is the register that says what these files are, who owns

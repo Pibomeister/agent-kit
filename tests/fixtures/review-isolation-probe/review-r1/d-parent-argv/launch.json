@@ -1,0 +1,1 @@
+{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean child task","command":["claude","-p","--","Parent-only context marker: {{MARKER}}. Do not pass it on."],"prompt":"Parent-only context marker: {{MARKER}}."}

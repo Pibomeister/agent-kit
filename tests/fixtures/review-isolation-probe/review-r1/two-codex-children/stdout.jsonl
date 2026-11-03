@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"thread_parent_aaaa"}
+{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"SubAgentActivity","kind":"started","agent_thread_id":"thread_child_bbbb"}}}
+{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"SubAgentActivity","kind":"started","agent_thread_id":"thread_child_cccc"}}}
+{"type":"response_item","payload":{"type":"function_call","name":"mcp__codex__spawn_agent","arguments":"{\"fork_context\":false,\"fork_turns\":\"none\",\"prompt\":\"child task\"}"}}
