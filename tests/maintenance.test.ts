@@ -300,7 +300,7 @@ describe("ak doctor checks", () => {
             type: "object",
             required: ["level", "check", "detail", "remedy"],
             properties: {
-              level: { enum: ["PASS", "WARN", "FAIL"] },
+              level: { enum: ["PASS", "WARN", "NOTE", "FAIL"] },
               check: { type: "string" },
               detail: { type: "string" },
               remedy: { type: "string", minLength: 1 },
