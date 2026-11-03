@@ -26,9 +26,11 @@ export const HOST_PROFILES: Record<ProbeHost, HostProfile> = {
       "Child sessions under $CLAUDE_CONFIG_DIR/projects/<encoded-workspace>/<session>/subagents/agent-*.jsonl, plus the Agent tool's launch input in the parent trace. Init events list plugins, skills and memory_paths.",
     channels: {
       "parent-turn": "child jsonl under projects/<workspace>/<session>/subagents/; Agent input prompt",
-      "hooks-and-memory": "child jsonl and init/memory_paths; SessionStart additionalContext in the child trace",
+      "hooks-and-memory":
+        "SessionStart hook planted in the probe temp settings; memory-plugin half is unobservable (this probe does not write ~/.claude)",
       "auto-loaded-instructions": "system/init memory_paths and names of CLAUDE.md / AGENTS.md in the child trace",
-      "transcript-on-disk": "child Read tool_result is_error against the parent session jsonl",
+      "transcript-on-disk":
+        "child Read of workspace/.claude/projects/** ; R3.5 PreToolUse guard in the arm's temp settings",
       "role-file-denied": "child Read tool_result is_error against the role file",
     },
   },
@@ -40,7 +42,8 @@ export const HOST_PROFILES: Record<ProbeHost, HostProfile> = {
       "Child threads as $CODEX_HOME/sessions/**/*<thread_id>.jsonl, joined from SubAgentActivity started events. spawn_agent arguments (fork_context / fork_turns) are the launch configuration. File reads appear as CommandExecution, not a Read tool. The package guard does not cover this host (CS-12), so the transcript-on-disk channel is observed only as a child command, never as a denied hook.",
     channels: {
       "parent-turn": "child session jsonl and spawn_agent arguments",
-      "hooks-and-memory": "child session jsonl; launch -c features.hooks / features.memories",
+      "hooks-and-memory":
+        "unobservable: Codex has no SessionStart plant in the probe temp workspace, and this probe does not write ~/.codex",
       "auto-loaded-instructions":
         "AGENTS.md in the child trace or prompt-input; unobservable when those events are absent",
       "transcript-on-disk":

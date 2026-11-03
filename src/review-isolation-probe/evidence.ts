@@ -7,6 +7,7 @@
  */
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 
+import { extractSpawn, freshnessOf } from "./children.ts";
 import type { ArmEvidence, ToolTouch } from "./types.ts";
 
 interface LooseObject {
@@ -80,6 +81,7 @@ const looseObject: ValidateFunction<LooseObject> = ajv.compile({
 const isString: ValidateFunction<string> = ajv.compile({ type: "string", minLength: 1 });
 
 interface LaunchConfig {
+  source?: string;
   prompt?: string;
   childPrompt?: string;
   resume?: boolean;
@@ -91,6 +93,7 @@ const isLaunchConfig: ValidateFunction<LaunchConfig> = ajv.compile({
   type: "object",
   additionalProperties: true,
   properties: {
+    source: { type: "string" },
     prompt: { type: "string" },
     childPrompt: { type: "string" },
     resume: { type: "boolean" },
@@ -148,30 +151,6 @@ function recordLoaded(event: LooseObject, loaded: string[]): void {
   }
 }
 
-function spawnFresh(event: LooseObject, current: boolean | null): boolean | null {
-  const name = event.name ?? "";
-  const isAgent = name === "Agent" || name.endsWith("spawn_agent") || name === "spawn_agent";
-  const input = event.input;
-  const argsText = event.arguments;
-  let body: LooseObject | null = input ?? null;
-  if (body === null && argsText !== undefined) {
-    try {
-      // SAFETY: JSON.parse is any; looseObject is the contract before use.
-      const parsed = JSON.parse(argsText) as unknown;
-      body = looseObject(parsed) ? parsed : null;
-    } catch {
-      body = null;
-    }
-  }
-  if (!isAgent && body === null) return current;
-  const resume = body?.resume === true;
-  const forkTurns = body?.fork_turns;
-  const forkContext = body?.fork_context;
-  const forked = forkContext === true || (forkTurns !== undefined && forkTurns !== "none");
-  if (isAgent || body !== null) return !resume && !forked;
-  return current;
-}
-
 function collectTouches(event: LooseObject, touches: ToolTouch[]): void {
   const content = event.message?.content ?? event.content;
   if (Array.isArray(content)) {
@@ -210,21 +189,6 @@ function collectTouches(event: LooseObject, touches: ToolTouch[]): void {
   }
 }
 
-function childPromptOf(event: LooseObject): string | null {
-  const input = event.input;
-  if (input?.prompt !== undefined) return input.prompt;
-  if (event.arguments !== undefined) {
-    try {
-      // SAFETY: JSON.parse is any; looseObject is the contract before use.
-      const parsed = JSON.parse(event.arguments) as unknown;
-      if (looseObject(parsed) && parsed.prompt !== undefined) return parsed.prompt;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 interface ChildFacingLaunch {
   childPrompt: string | null;
   resume?: boolean;
@@ -240,8 +204,7 @@ interface LaunchFresh {
 }
 
 function childFacingPrompt(value: LaunchConfig): string | null {
-  if (value.childPrompt !== undefined) return value.childPrompt;
-  return value.prompt ?? null;
+  return value.childPrompt ?? null;
 }
 
 function launchFresh(launch: string): LaunchFresh {
@@ -251,7 +214,11 @@ function launchFresh(launch: string): LaunchFresh {
     if (!isLaunchConfig(value)) return { fresh: null, prompt: null, text: launch, parsed: false };
     const resume = value.resume === true;
     const forked = value.fork_context === true || (value.fork_turns !== undefined && value.fork_turns !== "none");
-    const named = value.resume !== undefined || value.fork_context !== undefined || value.fork_turns !== undefined;
+    const observed =
+      value.source === "host-spawn" ||
+      value.resume !== undefined ||
+      value.fork_context !== undefined ||
+      value.fork_turns !== undefined;
     const childPrompt = childFacingPrompt(value);
     const facing: ChildFacingLaunch = {
       childPrompt,
@@ -260,7 +227,7 @@ function launchFresh(launch: string): LaunchFresh {
       fork_turns: value.fork_turns,
     };
     return {
-      fresh: named ? !resume && !forked : null,
+      fresh: observed ? !resume && !forked : null,
       prompt: childPrompt,
       text: JSON.stringify(facing),
       parsed: true,
@@ -270,8 +237,16 @@ function launchFresh(launch: string): LaunchFresh {
   }
 }
 
+export interface EvidenceExtras {
+  preToolUseLog?: string | null;
+}
+
 /** Parse the child's transcript and launch configuration. Empty inputs are valid: they mean "not observed". */
-export function readEvidence(transcript: string | null, launchConfig: string | null): ArmEvidence {
+export function readEvidence(
+  transcript: string | null,
+  launchConfig: string | null,
+  extras: EvidenceExtras = {},
+): ArmEvidence {
   const wholeParts: string[] = [];
   const context: string[] = [];
   const answers: string[] = [];
@@ -281,6 +256,7 @@ export function readEvidence(transcript: string | null, launchConfig: string | n
   let unparsed = 0;
   let fresh: boolean | null = null;
   let childPrompt: string | null = null;
+  let preToolUseFired: boolean | null = null;
 
   if (transcript !== null && transcript !== "") {
     wholeParts.push(transcript);
@@ -294,6 +270,7 @@ export function readEvidence(transcript: string | null, launchConfig: string | n
         continue;
       }
       parsed += 1;
+      if (line.includes("PreToolUse") || line.includes('"hookEventName"')) preToolUseFired = true;
       const type = event.type ?? "";
       const subtype = event.subtype;
       const payload = event.payload;
@@ -310,9 +287,6 @@ export function readEvidence(transcript: string | null, launchConfig: string | n
         collectText(event, bits);
         for (const bit of bits) answers.push(bit);
         collectTouches(event, touches);
-        fresh = spawnFresh(event, fresh);
-        const prompt = childPromptOf(event);
-        if (prompt !== null) childPrompt = prompt;
         // Tool uses are context (what the child was allowed to do), not its answer.
         const content = event.message?.content ?? event.content;
         if (Array.isArray(content)) {
@@ -328,15 +302,6 @@ export function readEvidence(transcript: string | null, launchConfig: string | n
         continue;
       }
       collectTouches(event, touches);
-      fresh = spawnFresh(event, fresh);
-      const prompt = childPromptOf(event);
-      if (prompt !== null) childPrompt = prompt;
-      if (payload !== undefined) {
-        const item = payload.item;
-        if (item?.type === "SubAgentActivity") {
-          if (item.kind === "started") fresh = fresh ?? true;
-        }
-      }
       context.push(line);
       recordLoaded(event, loaded);
     }
@@ -362,7 +327,22 @@ export function readEvidence(transcript: string | null, launchConfig: string | n
     if (looksLikeInstruction(touch.path) && touch.succeeded) pushUnique(loaded, touch.path);
   }
 
+  if (transcript !== null && transcript !== "") {
+    const fromHost = extractSpawn(transcript);
+    const hostFresh = freshnessOf(fromHost);
+    if (hostFresh === false) fresh = false;
+    else if (fresh === null) fresh = hostFresh;
+    if (fromHost.childPrompt !== null) childPrompt = childPrompt ?? fromHost.childPrompt;
+  }
+
   const partitioned = parsed > 0 && unparsed === 0;
+  let combinedFresh: boolean | null = null;
+  if (launchFreshness === false || fresh === false) combinedFresh = false;
+  else if (launchFreshness === true || fresh === true) combinedFresh = true;
+  let hookFired = preToolUseFired;
+  if (extras.preToolUseLog !== undefined && extras.preToolUseLog !== null && extras.preToolUseLog.trim() !== "") {
+    hookFired = true;
+  }
   return {
     transcriptPresent: transcript !== null && transcript !== "",
     launchPresent: launchConfig !== null && launchConfig !== "",
@@ -372,7 +352,8 @@ export function readEvidence(transcript: string | null, launchConfig: string | n
     wholeText: wholeParts.join("\n"),
     loadedFiles: loaded,
     toolTouches: touches,
-    freshSubagent: launchFreshness ?? fresh,
+    freshSubagent: combinedFresh,
     childPrompt,
+    preToolUseFired: hookFired,
   };
 }

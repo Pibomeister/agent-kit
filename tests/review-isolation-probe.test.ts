@@ -3,12 +3,15 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { extractSpawn, findClaudeChild, findCodexChild } from "../src/review-isolation-probe/children.ts";
 import { readEvidence } from "../src/review-isolation-probe/evidence.ts";
+import { claudeProjectSlug } from "../src/review-isolation-probe/hosts.ts";
 import { isMarker, newMarker } from "../src/review-isolation-probe/marker.ts";
 import { renderNote } from "../src/review-isolation-probe/note.ts";
+import { plantArm } from "../src/review-isolation-probe/plant.ts";
 import { parseProbeReport, runProbe } from "../src/review-isolation-probe/run.ts";
 import type { ProbeReport } from "../src/review-isolation-probe/types.ts";
-import { decideArm } from "../src/review-isolation-probe/verdict.ts";
+import { decideArm, type DecidePaths } from "../src/review-isolation-probe/verdict.ts";
 import { processScratch } from "./helpers/process-tmp.ts";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -93,23 +96,24 @@ describe("marker generation", () => {
 describe("verdict logic", () => {
   const marker = `MARKER_${"ab".repeat(16)}`;
   const transcriptPath = "/tmp/parent-session.jsonl";
+  const at: DecidePaths = { rolePath: ROLE, transcriptPath, workspace: "/tmp" };
 
   test("a leak in child context fails; a marker only in the answer does not", () => {
     const leaked = readEvidence(`{"type":"user","message":{"content":"${marker}"}}\n`, null);
-    expect(decideArm("parent-turn", marker, leaked, ROLE, transcriptPath).kind).toBe("fail");
+    expect(decideArm("parent-turn", marker, leaked, at).kind).toBe("fail");
     const answerOnly = readEvidence(
       `{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[{"type":"text","text":"${marker}"}]}}\n`,
-      `{"resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean"}`,
     );
-    const decided = decideArm("parent-turn", marker, answerOnly, ROLE, transcriptPath);
+    const decided = decideArm("parent-turn", marker, answerOnly, at);
     expect(decided.kind).toBe("pass");
     expect(decided.reason).toContain("answer mentioned it");
   });
 
   test("missing transcript and launch is unobservable, not a pass", () => {
     const empty = readEvidence(null, null);
-    expect(decideArm("parent-turn", marker, empty, ROLE, transcriptPath).kind).toBe("unobservable");
-    expect(decideArm("hooks-and-memory", marker, empty, ROLE, transcriptPath).kind).toBe("unobservable");
+    expect(decideArm("parent-turn", marker, empty, at).kind).toBe("unobservable");
+    expect(decideArm("hooks-and-memory", marker, empty, at).kind).toBe("unobservable");
   });
 
   test("auto-loaded instructions are recorded with the files that arrived", () => {
@@ -117,22 +121,22 @@ describe("verdict logic", () => {
       `{"type":"system","subtype":"init","memory_paths":["/work/CLAUDE.md","/work/AGENTS.md"]}\n`,
       null,
     );
-    const decided = decideArm("auto-loaded-instructions", marker, evidence, ROLE, transcriptPath);
+    const decided = decideArm("auto-loaded-instructions", marker, evidence, at);
     expect(decided.kind).toBe("recorded");
     expect(decided.reason).toContain("CLAUDE.md");
     expect(decided.reason).toContain("AGENTS.md");
   });
 
-  test("role-file-denied and transcript-on-disk score the tool result, not the answer", () => {
+  test("role-file-denied requires a denied read and exactly RESOURCE_UNREADABLE", () => {
     const denied = readEvidence(
       [
         `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${ROLE}"}}]}}`,
         `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"1","is_error":true,"content":"nope"}]}}`,
-        `{"type":"assistant","message":{"content":[{"type":"text","text":"I made up RESOURCE_UNREADABLE"}]}}`,
+        `{"type":"assistant","message":{"content":[{"type":"text","text":"RESOURCE_UNREADABLE"}]}}`,
       ].join("\n"),
-      `{"resume":false}`,
+      `{"source":"host-spawn","resume":false}`,
     );
-    expect(decideArm("role-file-denied", null, denied, ROLE, transcriptPath).kind).toBe("pass");
+    expect(decideArm("role-file-denied", null, denied, at).kind).toBe("pass");
     const allowed = readEvidence(
       [
         `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${transcriptPath}"}}]}}`,
@@ -140,43 +144,84 @@ describe("verdict logic", () => {
       ].join("\n"),
       null,
     );
-    expect(decideArm("transcript-on-disk", marker, allowed, ROLE, transcriptPath).kind).toBe("fail");
+    expect(decideArm("transcript-on-disk", marker, allowed, at).kind).toBe("fail");
+  });
+
+  test("a denied role-file read whose answer is not exactly RESOURCE_UNREADABLE fails", () => {
+    const denied = readEvidence(
+      [
+        `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"${ROLE}"}}]}}`,
+        `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"1","is_error":true,"content":"nope"}]}}`,
+        `{"type":"assistant","message":{"content":[{"type":"text","text":"I could not read it"}]}}`,
+      ].join("\n"),
+      `{"source":"host-spawn","resume":false}`,
+    );
+    expect(decideArm("role-file-denied", null, denied, at).kind).toBe("fail");
+  });
+
+  test("host spawn arguments that are absent make a clean leak arm unobservable, not a pass", () => {
+    const evidence = readEvidence(
+      `{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[{"type":"text","text":"UNKNOWN"}]}}\n`,
+      `{"source":"absent"}`,
+    );
+    const decided = decideArm("parent-turn", marker, evidence, at);
+    expect(decided.kind).toBe("unobservable");
+    expect(decided.reason).toContain("spawn arguments were not observed");
+  });
+
+  test("an unplantable hooks-and-memory half is unobservable even when the planted half is clean", () => {
+    const evidence = readEvidence(
+      `{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[{"type":"text","text":"UNKNOWN"}]}}\n`,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+    );
+    const decided = decideArm("hooks-and-memory", marker, evidence, at, {
+      plantedHalves: ["session-start-hook"],
+      unplantable: [{ half: "memory-plugin", reason: "MEMORY.md is not auto-loaded" }],
+    });
+    expect(decided.kind).toBe("unobservable");
+    expect(decided.reason).toContain("memory-plugin");
   });
 
   test("a resume or fork in the launch configuration fails a leak arm", () => {
-    const evidence = readEvidence(`{"type":"system","subtype":"init"}\n`, `{"resume":true,"childPrompt":"x"}`);
-    expect(decideArm("parent-turn", marker, evidence, ROLE, transcriptPath).kind).toBe("fail");
+    const evidence = readEvidence(
+      `{"type":"system","subtype":"init"}\n`,
+      `{"source":"host-spawn","resume":true,"childPrompt":"x"}`,
+    );
+    expect(decideArm("parent-turn", marker, evidence, at).kind).toBe("fail");
   });
 
   test("an unparsed transcript that contains the marker is unobservable", () => {
     const evidence = readEvidence(`plain text holding ${marker}\n`, null);
-    expect(decideArm("hooks-and-memory", marker, evidence, ROLE, transcriptPath).kind).toBe("unobservable");
+    expect(decideArm("hooks-and-memory", marker, evidence, at).kind).toBe("unobservable");
   });
 
   test("a parent prompt recorded in the launch JSON is not a child-context leak", () => {
     const evidence = readEvidence(
       `{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[{"type":"text","text":"UNKNOWN"}]}}\n`,
-      `{"resume":false,"fork_turns":"none","childPrompt":"clean","prompt":"parent-only ${marker}"}`,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean","prompt":"parent-only ${marker}"}`,
     );
-    expect(decideArm("parent-turn", marker, evidence, ROLE, transcriptPath).kind).toBe("pass");
+    expect(decideArm("parent-turn", marker, evidence, at).kind).toBe("pass");
   });
 
   test("a clean launch without a child transcript is unobservable, not a pass", () => {
-    const evidence = readEvidence(null, `{"resume":false,"fork_turns":"none","childPrompt":"clean"}`);
-    expect(decideArm("parent-turn", marker, evidence, ROLE, transcriptPath).kind).toBe("unobservable");
+    const evidence = readEvidence(
+      null,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+    );
+    expect(decideArm("parent-turn", marker, evidence, at).kind).toBe("unobservable");
   });
 
   test("Codex assistant output is the answer; user input_text is context", () => {
     const answerOnly = readEvidence(
       `{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"${marker}"}]}}\n`,
-      `{"resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean"}`,
     );
-    expect(decideArm("parent-turn", marker, answerOnly, ROLE, transcriptPath).kind).toBe("pass");
+    expect(decideArm("parent-turn", marker, answerOnly, at).kind).toBe("pass");
     const leaked = readEvidence(
       `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"${marker}"}]}}\n`,
-      `{"resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean"}`,
     );
-    expect(decideArm("parent-turn", marker, leaked, ROLE, transcriptPath).kind).toBe("fail");
+    expect(decideArm("parent-turn", marker, leaked, at).kind).toBe("fail");
   });
 
   test("transcript-on-disk on Codex scores CommandExecution, not the answer", () => {
@@ -184,12 +229,12 @@ describe("verdict logic", () => {
       `{"type":"event_msg","payload":{"item":{"type":"CommandExecution","status":"failed","exit_code":1,"aggregated_output":"","parsed_cmd":[{"type":"read","path":"${transcriptPath}"}]}}}\n{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"RESOURCE_UNREADABLE"}]}}\n`,
       null,
     );
-    expect(decideArm("transcript-on-disk", marker, denied, ROLE, transcriptPath).kind).toBe("pass");
+    expect(decideArm("transcript-on-disk", marker, denied, at).kind).toBe("pass");
     const allowed = readEvidence(
       `{"type":"event_msg","payload":{"item":{"type":"CommandExecution","status":"completed","exit_code":0,"aggregated_output":"${marker}","parsed_cmd":[{"type":"read","path":"${transcriptPath}"}]}}}\n`,
       null,
     );
-    expect(decideArm("transcript-on-disk", marker, allowed, ROLE, transcriptPath).kind).toBe("fail");
+    expect(decideArm("transcript-on-disk", marker, allowed, at).kind).toBe("fail");
   });
 });
 
@@ -225,7 +270,8 @@ describe("fixture driver note writing", () => {
     expect(r.report.hostVersion).toContain("not invoked");
     const byId = new Map(r.report.arms.map((arm) => [arm.id, arm]));
     expect(byId.get("parent-turn")?.verdict).toBe("pass");
-    expect(byId.get("hooks-and-memory")?.verdict).toBe("pass");
+    expect(byId.get("hooks-and-memory")?.verdict).toBe("unobservable");
+    expect(byId.get("hooks-and-memory")?.reason).toContain("memory-plugin");
     expect(byId.get("auto-loaded-instructions")?.verdict).toBe("recorded");
     expect(byId.get("auto-loaded-instructions")?.reason).toContain("CLAUDE.md");
     expect(byId.get("transcript-on-disk")?.verdict).toBe("pass");
@@ -332,7 +378,8 @@ const encoded = process.cwd().replace(/[^A-Za-z0-9]/g, "-");
 const sub = join(projects, encoded, session, "subagents");
 mkdirSync(sub, { recursive: true });
 const role = process.env.AK_PROBE_ROLE ?? "ROLE.md";
-writeFileSync(join(sub, "agent-1.jsonl"), JSON.stringify({type:"assistant",message:{content:[{type:"tool_use",id:"1",name:"Read",input:{file_path:role}}]}}) + "\\n" + JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"1",is_error:true,content:"denied"}]}}) + "\\n" + JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"I will pretend I saw a marker"}]}}) + "\\n");
+writeFileSync(join(sub, "agent-1.jsonl"), JSON.stringify({type:"assistant",message:{content:[{type:"tool_use",id:"1",name:"Read",input:{file_path:role}}]}}) + "\\n" + JSON.stringify({type:"user",message:{content:[{type:"tool_result",tool_use_id:"1",is_error:true,content:"denied"}]}}) + "\\n" + JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"RESOURCE_UNREADABLE"}]}}) + "\\n");
+console.log(JSON.stringify({type:"assistant",message:{content:[{type:"tool_use",name:"Agent",input:{prompt:"child task",resume:false,fork_turns:"none"}}]}}));
 process.exit(0);
 `;
     writeFileSync(join(bin, "claude"), stub);
@@ -362,5 +409,133 @@ process.exit(0);
     expect(report.commands).toEqual([]);
     for (const arm of report.arms) expect(arm.verdict).toBe("unobservable");
     expect(sink.stderr()).toContain("No adapter");
+  });
+});
+
+const REVIEW_R1 = join(FIXTURES, "review-r1");
+
+function fillFixture(text: string, marker: string): string {
+  return text.replaceAll("{{MARKER}}", marker).replaceAll("{{ROLE}}", ROLE);
+}
+
+describe("review-round-1 fixtures", () => {
+  const marker = `MARKER_${"cd".repeat(16)}`;
+  const at: DecidePaths = { rolePath: ROLE, transcriptPath: "/tmp/parent-session.jsonl", workspace: "/tmp/arm-work" };
+
+  test("(a) a forked or resumed spawn in the host transcript must not pass", () => {
+    const transcript = readFileSync(join(REVIEW_R1, "a-forked-spawn/child.jsonl"), "utf8");
+    const launch = readFileSync(join(REVIEW_R1, "a-forked-spawn/launch.json"), "utf8");
+    const evidence = readEvidence(transcript, launch);
+    expect(evidence.freshSubagent).toBe(false);
+    expect(decideArm("parent-turn", marker, evidence, at).kind).toBe("fail");
+    const forked = readEvidence(
+      `{"type":"response_item","payload":{"type":"function_call","name":"spawn_agent","arguments":"{\\"fork_context\\":true,\\"prompt\\":\\"x\\"}"}}\n`,
+      null,
+    );
+    expect(decideArm("parent-turn", marker, forked, at).kind).toBe("fail");
+  });
+
+  test("(b) a Codex stream with parent and child threads selects the child", () => {
+    const home = join(REVIEW_R1, "b-codex-threads");
+    const stdout = readFileSync(join(home, "stdout.jsonl"), "utf8");
+    const child = findCodexChild(home, stdout);
+    expect(child).not.toBeNull();
+    expect(child).toContain("CHILD_THREAD");
+    expect(child).not.toContain("PARENT_THREAD_ONLY");
+    expect(child).not.toContain("UNRELATED_JSONL");
+    const spawn = extractSpawn(`${stdout}\n${child ?? ""}`);
+    expect(spawn.childThreadIds).toEqual(["thread_child_bbbb"]);
+    expect(spawn.parentThreadId).toBe("thread_parent_aaaa");
+  });
+
+  test("(c) Claude with no subagent file is unobservable", () => {
+    const work = processScratch("ak-review-iso-nosub-");
+    made.push(work);
+    const workspace = join(work, "ws");
+    mkdirSync(workspace);
+    const configDir = join(work, "config");
+    const sessionId = "session-parent-only";
+    const project = join(configDir, "projects", claudeProjectSlug(workspace));
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(project, `${sessionId}.jsonl`),
+      readFileSync(join(REVIEW_R1, "c-claude-parent-only/parent.jsonl")),
+    );
+    expect(findClaudeChild(configDir, workspace, sessionId)).toBeNull();
+    const evidence = readEvidence(
+      null,
+      `{"source":"host-spawn","resume":false,"fork_turns":"none","childPrompt":"clean"}`,
+    );
+    expect(decideArm("parent-turn", marker, evidence, at).kind).toBe("unobservable");
+  });
+
+  test("(d) the parent-turn marker only in the parent argv must not fail", () => {
+    const transcript = readFileSync(join(REVIEW_R1, "d-parent-argv/child.jsonl"), "utf8");
+    const launch = fillFixture(readFileSync(join(REVIEW_R1, "d-parent-argv/launch.json"), "utf8"), marker);
+    const evidence = readEvidence(transcript, launch);
+    expect(evidence.contextText).not.toContain(marker);
+    expect(decideArm("parent-turn", marker, evidence, at).kind).toBe("pass");
+  });
+
+  test("(e) role-file denied but the answer is not exactly RESOURCE_UNREADABLE must fail", () => {
+    const transcript = fillFixture(
+      readFileSync(join(REVIEW_R1, "e-role-denied-wrong-answer/child.jsonl"), "utf8"),
+      marker,
+    );
+    const evidence = readEvidence(transcript, `{"source":"host-spawn","resume":false}`);
+    expect(decideArm("role-file-denied", null, evidence, at).kind).toBe("fail");
+  });
+
+  test("(f) a relative or short touch path must not match the role file", () => {
+    const transcript = readFileSync(join(REVIEW_R1, "f-short-touch/child.jsonl"), "utf8");
+    const evidence = readEvidence(transcript, `{"source":"host-spawn","resume":false}`);
+    expect(decideArm("role-file-denied", null, evidence, at).kind).toBe("unobservable");
+    const relative = readEvidence(
+      [
+        `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"1","name":"Read","input":{"file_path":"ROLE.md"}}]}}`,
+        `{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"1","is_error":true,"content":"denied"}]}}`,
+        `{"type":"assistant","message":{"content":[{"type":"text","text":"RESOURCE_UNREADABLE"}]}}`,
+      ].join("\n"),
+      `{"source":"host-spawn","resume":false}`,
+    );
+    expect(decideArm("role-file-denied", null, relative, at).kind).toBe("unobservable");
+  });
+});
+
+describe("plantArm stays inside the temp workspace", () => {
+  test("hooks-and-memory plants a Claude SessionStart hook, writes no MEMORY.md, and scores the rest unplantable", () => {
+    const work = processScratch("ak-review-iso-plant-");
+    made.push(work);
+    const claude = plantArm("claude-code", "hooks-and-memory", join(work, "claude"), `MARKER_${"ee".repeat(16)}`, ROLE);
+    expect(existsSync(join(claude.workspace, "MEMORY.md"))).toBe(false);
+    expect(existsSync(join(claude.workspace, "session-start.sh"))).toBe(true);
+    expect(readFileSync(claude.settingsPath, "utf8")).toContain("SessionStart");
+    expect(claude.plantedHalves).toContain("session-start-hook");
+    expect(claude.unplantable.some((row) => row.half === "memory-plugin")).toBe(true);
+    const codex = plantArm("codex", "hooks-and-memory", join(work, "codex"), `MARKER_${"ff".repeat(16)}`, ROLE);
+    expect(existsSync(join(codex.workspace, "MEMORY.md"))).toBe(false);
+    expect(existsSync(join(codex.workspace, "session-start.sh"))).toBe(false);
+    expect(codex.unplantable.some((row) => row.half === "session-start-hook")).toBe(true);
+    expect(codex.unplantable.some((row) => row.half === "memory-plugin")).toBe(true);
+  });
+
+  test("transcript-on-disk wires the R3.5 PreToolUse guard into the arm's temp settings only", () => {
+    const work = processScratch("ak-review-iso-guard-");
+    made.push(work);
+    const planted = plantArm("claude-code", "transcript-on-disk", join(work, "arm"), `MARKER_${"aa".repeat(16)}`, ROLE);
+    expect(planted.preToolUseLogPath).not.toBeNull();
+    expect(existsSync(join(planted.workspace, "review-session.policy.json"))).toBe(true);
+    expect(readFileSync(join(planted.workspace, "review-session.policy.json"), "utf8")).toContain(
+      "secret.claude-session-store",
+    );
+    expect(readFileSync(planted.settingsPath, "utf8")).toContain("PreToolUse");
+    const hook = readFileSync(join(planted.workspace, "pre-tool-use.sh"), "utf8");
+    expect(hook).toContain("guard hook pre-tool-use");
+    expect(hook).toContain(join(planted.workspace, "review-session.policy.json"));
+    expect(planted.plantedHalves).toContain("r3.5-pre-tool-use-guard");
+    expect(readFileSync(join(REPO, "templates/guard/review-session.policy.json"), "utf8")).toContain(
+      "**/.claude/projects/**",
+    );
+    expect(planted.transcriptPath.startsWith(join(planted.workspace, ".claude", "projects"))).toBe(true);
   });
 });

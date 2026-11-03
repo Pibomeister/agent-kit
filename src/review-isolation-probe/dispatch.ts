@@ -1,22 +1,26 @@
 /**
  * Live host invocation for one arm. Tests stub the binaries on PATH; the
  * fixture driver never calls this.
+ *
+ * Launch configuration is parsed from the host's own output. resume / fork_*
+ * are never self-authored.
  */
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, mkdirSync, readdirSync, readFileSync, writeFileSync, type Dirent } from "node:fs";
+import { accessSync, constants, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 
+import {
+  extractClaudeLaunch,
+  extractCodexLaunch,
+  findClaudeChild,
+  findCodexChild,
+  toLaunchConfig,
+} from "./children.ts";
 import { claudeProjectSlug, profileFor } from "./hosts.ts";
 import type { PlantedArm } from "./plant.ts";
 import type { ProbeHost } from "./types.ts";
 
-const ajv = new Ajv2020({ strict: false });
-const threadEvent: ValidateFunction<{ thread_id?: string }> = ajv.compile({
-  type: "object",
-  additionalProperties: true,
-  properties: { thread_id: { type: "string", minLength: 1 } },
-});
+export { findClaudeChild, findCodexChild, extractSpawn, extractClaudeLaunch, extractCodexLaunch } from "./children.ts";
 
 export interface DispatchResult {
   command: string[];
@@ -26,6 +30,7 @@ export interface DispatchResult {
   timedOut: boolean;
   childTranscript: string | null;
   launchConfig: string;
+  preToolUseLog: string | null;
 }
 
 export interface DispatchOptions {
@@ -33,16 +38,6 @@ export interface DispatchOptions {
   env: NodeJS.ProcessEnv;
   configDir: string;
   sessionId: string;
-}
-
-interface ChildLaunch {
-  host: ProbeHost;
-  command: string[];
-  childPrompt: string;
-  resume: boolean;
-  fork_context: boolean;
-  fork_turns: string;
-  reason?: string;
 }
 
 function isExecutable(path: string): boolean {
@@ -103,64 +98,6 @@ function readIfPresent(path: string): string | null {
   }
 }
 
-function firstJsonl(dir: string): string | null {
-  try {
-    const names = readdirSync(dir);
-    for (const name of names) {
-      if (name.endsWith(".jsonl")) return join(dir, name);
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function findClaudeChild(configDir: string, workspace: string, sessionId: string): string | null {
-  const project = join(configDir, "projects", claudeProjectSlug(workspace));
-  const nested = firstJsonl(join(project, sessionId, "subagents"));
-  if (nested !== null) return readIfPresent(nested);
-  // Some host versions drop agent-*.jsonl directly under the project.
-  const loose = firstJsonl(join(project, "subagents"));
-  if (loose !== null) return readIfPresent(loose);
-  return readIfPresent(join(project, `${sessionId}.jsonl`));
-}
-
-function findCodexChild(codexHome: string, stdout: string): string | null {
-  let thread: string | null = null;
-  for (const line of stdout.split("\n")) {
-    if (!line.includes("thread_id")) continue;
-    try {
-      const value: unknown = JSON.parse(line);
-      if (threadEvent(value) && value.thread_id !== undefined) thread = value.thread_id;
-    } catch {
-      continue;
-    }
-  }
-  const stack = [join(codexHome, "sessions")];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    if (dir === undefined) break;
-    let entries: Dirent[] = [];
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(path);
-        continue;
-      }
-      if (entry.name.endsWith(".jsonl") && (thread === null || entry.name.includes(thread))) {
-        const text = readIfPresent(path);
-        if (text !== null) return text;
-      }
-    }
-  }
-  return null;
-}
-
 export function hostVersion(host: ProbeHost, env: NodeJS.ProcessEnv): string {
   const profile = profileFor(host);
   const bin = which(profile.binaries, env.PATH);
@@ -175,17 +112,17 @@ export function hostVersion(host: ProbeHost, env: NodeJS.ProcessEnv): string {
   return text === "" ? `${bin} (no version output)` : (text.split("\n")[0] ?? text);
 }
 
+function recordedCommand(bin: string, args: string[], parentPrompt: string): string[] {
+  const recorded: string[] = [bin];
+  for (const arg of args) {
+    recorded.push(arg === parentPrompt ? "(parent prompt omitted from evidence)" : arg);
+  }
+  return recorded;
+}
+
 export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: DispatchOptions): DispatchResult {
   const profile = profileFor(host);
   const bin = which(profile.binaries, options.env.PATH);
-  const launch: ChildLaunch = {
-    host,
-    command: [],
-    childPrompt: planted.childPrompt,
-    resume: false,
-    fork_context: false,
-    fork_turns: "none",
-  };
   writeFileSync(join(planted.workspace, "parent.prompt.txt"), planted.parentPrompt);
 
   if (host === "mastracode" || bin === null) {
@@ -200,7 +137,8 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
       code: 0,
       timedOut: false,
       childTranscript: null,
-      launchConfig: JSON.stringify({ ...launch, reason }, null, 2),
+      launchConfig: JSON.stringify({ source: "absent", reason }, null, 2),
+      preToolUseLog: null,
     };
   }
 
@@ -222,20 +160,24 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
       "--",
       planted.parentPrompt,
     ];
-    launch.command = [bin, ...args];
     mkdirSync(options.configDir, { recursive: true });
     const env: NodeJS.ProcessEnv = { ...options.env, CLAUDE_CONFIG_DIR: options.configDir };
     const ran = run(bin, args, { ...options, env }, planted.workspace, undefined);
     const child = findClaudeChild(options.configDir, planted.workspace, options.sessionId);
     writeFileSync(join(planted.workspace, "parent.stdout.jsonl"), ran.stdout);
+    const project = join(options.configDir, "projects", claudeProjectSlug(planted.workspace));
+    const parentSession = readIfPresent(join(project, `${options.sessionId}.jsonl`));
+    const spawn = extractClaudeLaunch(ran.stdout, parentSession);
+    const log = planted.preToolUseLogPath === null ? null : readIfPresent(planted.preToolUseLogPath);
     return {
-      command: launch.command,
+      command: recordedCommand(bin, args, planted.parentPrompt),
       stdout: ran.stdout,
       stderr: ran.stderr,
       code: ran.code,
       timedOut: ran.timedOut,
       childTranscript: child,
-      launchConfig: JSON.stringify(launch, null, 2),
+      launchConfig: toLaunchConfig(spawn),
+      preToolUseLog: log,
     };
   }
 
@@ -254,19 +196,20 @@ export function dispatchArm(host: ProbeHost, planted: PlantedArm, options: Dispa
     planted.workspace,
     "-",
   ];
-  launch.command = [bin, ...args];
   const codexHome = join(options.configDir, "codex");
   mkdirSync(codexHome, { recursive: true });
   const env: NodeJS.ProcessEnv = { ...options.env, CODEX_HOME: codexHome };
   const ran = run(bin, args, { ...options, env }, planted.workspace, planted.parentPrompt);
   const child = findCodexChild(codexHome, ran.stdout);
+  const spawn = extractCodexLaunch(codexHome, ran.stdout);
   return {
-    command: launch.command,
+    command: recordedCommand(bin, args, planted.parentPrompt),
     stdout: ran.stdout,
     stderr: ran.stderr,
     code: ran.code,
     timedOut: ran.timedOut,
     childTranscript: child,
-    launchConfig: JSON.stringify(launch, null, 2),
+    launchConfig: toLaunchConfig(spawn),
+    preToolUseLog: null,
   };
 }

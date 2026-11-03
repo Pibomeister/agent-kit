@@ -2,7 +2,8 @@
  * Shared types for the review-isolation probe (PRD R3.1–R3.4).
  *
  * Verdicts are measurements of one host version, not attestations for later
- * runs, and they never rest on the child's answer text.
+ * runs. The child's answer is never sufficient; role-file-denied also requires
+ * it to be exactly RESOURCE_UNREADABLE after a denied read.
  */
 
 export const HOSTS = ["claude-code", "codex", "mastracode"] as const;
@@ -51,9 +52,11 @@ export interface ArmEvidence {
   wholeText: string;
   loadedFiles: string[];
   toolTouches: ToolTouch[];
-  /** True/false when the launch config names a fresh spawn; null when it does not say. */
+  /** True/false when the host spawn args name a fresh spawn; null when they were not observed. */
   freshSubagent: boolean | null;
   childPrompt: string | null;
+  /** True when a PreToolUse event is in the child transcript or the arm's hook log. */
+  preToolUseFired: boolean | null;
 }
 
 export interface ArmResult {

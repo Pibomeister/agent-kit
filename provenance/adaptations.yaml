@@ -1355,6 +1355,12 @@ adaptations:
   - path: src/lifecycle/gate.ts
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L257-308
     rationale: The deterministic predicate copies and re-hashes every artifact, rejects self-verification and enforces recipe and surface-kind coverage.
+  - path: src/review-isolation-probe/children.ts
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:tests/integration/test_claude.py
+    rationale: Adapt native child-session discovery under the parent session's subagents directory and Agent-tool launch arguments (resume must be absent or false). Do not fall back to the parent session jsonl. Host spawn arguments are evidence; self-authored resume and fork fields are not.
+  - path: src/review-isolation-probe/children.ts
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:tests/integration/test_codex.py
+    rationale: Adapt child-thread joining from SubAgentActivity started agent_thread_id and spawn_agent fork_context/fork_turns inspection. Exclude the parent thread.started id. File reads remain CommandExecution, not a Read tool.
   - path: src/semantic-lint/client.ts
     source: jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:src/jev.ts
     rationale: Adapt the batched systemone wire contract and injectable transport. Replace environment credentials, aliases, pacing and broad retry loops with a pinned optional command child, private attempt receipts, cancellation, short deadlines and one retry.
