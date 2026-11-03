@@ -1,6 +1,7 @@
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readlinkSync,
@@ -198,7 +199,14 @@ function extraBundleEntries(target: string, outputs: ReadonlyArray<string>): str
     for (const name of names) {
       const full = join(dir, name);
       const rel = toPosix(relative(target, full));
-      if (isDir(full)) stack.push(full);
+      try {
+        const st = lstatSync(full);
+        // lstat, not stat: a symlink is one extra (or listed) leaf. Following it
+        // would walk `/` or recurse on `loop -> .` until the path is too long.
+        if (st.isDirectory() && !st.isSymbolicLink()) stack.push(full);
+      } catch {
+        continue;
+      }
       if (!listedCovers(rel, outputs)) extras.push(rel);
     }
   }

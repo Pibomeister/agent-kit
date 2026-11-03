@@ -2753,6 +2753,44 @@ describe("ak build and --check", () => {
     });
   });
 
+  test("--out treats a self-loop symlink as a leaf extra and finishes quickly", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "looped");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      symlinkSync(".", join(out, "loop"));
+      const started = Date.now();
+      const second = cursorOut(ctx, out);
+      expect(Date.now() - started).toBeLessThan(2000);
+      expectError(second.issues, "packaging.out-refused", "not written by the previous agent-kit bundle");
+      expect(second.issues[0]?.message).toContain("loop");
+      expectCursorBundle(out);
+    });
+  });
+
+  test("--out treats a symlink to an outside directory as a leaf extra and does not touch it", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "linked");
+      const outside = join(sandbox, "outside");
+      mkdirSync(outside);
+      const sentinel = writeSentinel(outside);
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      symlinkSync(outside, join(out, "link-out"));
+      const started = Date.now();
+      const second = cursorOut(ctx, out);
+      expect(Date.now() - started).toBeLessThan(2000);
+      expectError(second.issues, "packaging.out-refused", "not written by the previous agent-kit bundle");
+      expect(second.issues[0]?.message).toContain("link-out");
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expect(readdirSync(outside)).toEqual([OUT_SENTINEL]);
+      expect(existsSync(join(outside, ".cursor"))).toBe(false);
+      expectCursorBundle(out);
+    });
+  });
+
   test("--out refuses grok over a claude-code bundle that shares the record path and deletes nothing", () => {
     const ctx = ctxFor();
     withOutGuard(({ sandbox }) => {
