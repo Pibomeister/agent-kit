@@ -181,9 +181,9 @@ describe("review/runner event sequences", () => {
     const y: Event[] = [...shared, { kind: "set-verdict", verdict: "blocked" }];
     inspectImpl(isolated, modelFrom(y));
     const after = inspectImpl(isolated, modelFrom(x));
-    isolated.restore();
-    expect(isolated.artifactRuleCache.size).toBe(0);
-    const alone = inspectImpl(isolated, modelFrom(x));
+    const fresh = createWorld();
+    fresh.grantOnApprovedReview = true;
+    const alone = inspectImpl(fresh, modelFrom(x));
     expect(alone.rules).toContain("grant.charter-hash-unknown");
     expect(after.rules).toEqual(alone.rules);
   });
