@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":"parent passed {{MARKER}}"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"{{MARKER}}"}]}}
