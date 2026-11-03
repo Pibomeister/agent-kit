@@ -1119,6 +1119,17 @@ function evaluateEvidence(
       reasons.push({ code: "malformed", detail: `receipt ${ref.id} is not JSON`, evidence: ref.id });
       continue;
     }
+    // A design-review artifact is not a verifier receipt (AT-24). Named before
+    // the verification-shape check so the refusal is `design-report`, not a
+    // generic malformed verification document.
+    if (receipt.schema === "review") {
+      reasons.push({
+        code: "design-report",
+        detail: `receipt ${ref.id} is a design-review artifact, not a verifier receipt`,
+        evidence: ref.id,
+      });
+      continue;
+    }
     if (receipt.schema_version !== 1) {
       reasons.push({
         code: "unsupported-version",

@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFil
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
+import Ajv2020 from "ajv/dist/2020.js";
 
 import { artifactHash, sha256Hex } from "../util/hash.ts";
 import { unknownSelector } from "../util/suggest.ts";
@@ -73,6 +74,23 @@ const ID = /^[a-z0-9][a-z0-9-]*$/;
 const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
+
+const isDesignReport = new Ajv2020({ strict: false }).compile<{ schema: "review" }>({
+  type: "object",
+  required: ["schema"],
+  properties: { schema: { const: "review" } },
+});
+
+/** Bytes offered as verify evidence that are actually a design-review artifact (AT-24). */
+function isDesignReportBytes(bytes: Buffer): boolean {
+  let value: unknown;
+  try {
+    value = JSON.parse(bytes.toString());
+  } catch {
+    return false;
+  }
+  return isDesignReport(value);
+}
 const EFFECTS = new Set([
   "remote-push",
   "pr-open",
@@ -1080,8 +1098,21 @@ export class Runner {
       })
     )
       return this.refuse(run, card, "runner:trusted-evidence", "Required trusted evidence is missing or stale");
-    if (card.operation === "ship.prepare" && !card.evidence.some((e) => run.evidence[e]?.kind === "verify"))
-      return this.refuse(run, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+    if (card.operation === "ship.prepare") {
+      const verifyEvidence = card.evidence.flatMap((evidenceId) => {
+        const found = run.evidence[evidenceId];
+        return found?.kind === "verify" ? [found] : [];
+      });
+      if (verifyEvidence.length === 0)
+        return this.refuse(
+          run,
+          card,
+          "runner:trusted-evidence",
+          "Ship requires runner-collected verification evidence",
+        );
+      if (verifyEvidence.every((found) => isDesignReportBytes(this.evidenceStore.read(found.ref))))
+        return this.refuse(run, card, "runner:design-report", "A design report is not a verifier receipt");
+    }
     const reached = this.capReached(run, step);
     if (reached !== null) return this.cap(run, card, reached.limit, reached.value);
     const lastHumanRuling = run.decisions.findLast(
