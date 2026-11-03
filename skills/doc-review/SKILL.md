@@ -90,13 +90,15 @@ authority to apply a correction rides on the caller's authorization, recorded on
    that did not activate and why.
 5. Dispatch each selected lane into its own independent context with the snapshot, its own
    relevant context and the shell rule: deletes and container removals run standalone on literal
-   scratch paths, or as `docker run --rm`, never inside a compound command or script. Store each
-   lane's complete output as a run artifact and set `raw_output.hash` before synthesis reads it.
-   `doc-review/comprehension` is a new instance every round, with no prior-finding packet and no
-   earlier paraphrase (ruling `comprehension-seat-stays-naive`). In `shadow` the lane is not
-   required, so an unavailable run cannot block. A lane's suppressed sections come from that
-   lane's own rules — a plan with a validated origin suppresses different sections in each seat,
-   and they are not flattened into one shared rule.
+   scratch paths, or as `docker run --rm`, never inside a compound command or script. When the
+   comprehension setting is `shadow` or `on`, store each lane's complete output as a run artifact
+   and set `raw_output.hash` before synthesis reads it. Off, a missing setting, and an unknown
+   value leave this step as dispatch only. `doc-review/comprehension` is a new instance every
+   round, with no prior-finding packet and no earlier paraphrase (ruling
+   `comprehension-seat-stays-naive`). In `shadow` the lane is not required, so an unavailable run
+   cannot block. A lane's suppressed sections come from that lane's own rules — a plan with a
+   validated origin suppresses different sections in each seat, and they are not flattened into
+   one shared rule.
 6. Collect results. A lane that returned no finding is `covered` with no finding. A lane that could
    not run, or could not be given its context, is `unavailable` with a reason (ruling
    `required-lane-failure-is-unavailable`).

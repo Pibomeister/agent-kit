@@ -2161,6 +2161,41 @@ describe("review.comprehension-shadow-findings-stay-fyi", () => {
     });
     expect(rulesOf(run(doc, [project({ review: { comprehension: "off" } }), item]))).not.toContain(RULE_SHADOW);
   });
+
+  test("duplicate project records with mixed shadow and on are refused", () => {
+    expect(
+      rulesOf(run(review(), [shadowProject(), project({ id: "project-2", review: { comprehension: "on" } })])),
+    ).toContain(RULE_SHADOW);
+  });
+
+  test("an unknown comprehension mode is refused", () => {
+    expect(rulesOf(run(review(), [project({ review: { comprehension: "maybe" } })]))).toContain(RULE_SHADOW);
+  });
+
+  test("duplicate records where one project is missing the comprehension key and the other is on are refused", () => {
+    expect(
+      rulesOf(run(review(), [project(), project({ id: "project-2", review: { comprehension: "on" } })])),
+    ).toContain(RULE_SHADOW);
+  });
+
+  test("a comprehension finding filed under another lane value is still refused in shadow", () => {
+    const item = comprehensionFinding({ lane: "doc-review/coherence", autofix_class: "manual" });
+    const ref = { id: String(item["id"]), hash: artifactHash(item) };
+    const doc = withComprehension({ findings: [ref] }, { findings: [ref] });
+    expect(rulesOf(run(doc, [shadowProject(), item]))).toContain(RULE_SHADOW);
+  });
+});
+
+describe("doc-review step 5 raw_output.hash instruction", () => {
+  test("every lane stores raw_output.hash only when the comprehension setting is shadow or on", () => {
+    const skill = readFileSync(join(import.meta.dir, "../skills/doc-review/SKILL.md"), "utf8");
+    const match = /^5\. [\s\S]*?(?=^6\. )/m.exec(skill);
+    const step5 = match?.[0] ?? "";
+    expect(step5).toContain("raw_output.hash");
+    const hashSentence = step5.split(/(?<=\.)\s+/).find((part) => part.includes("raw_output.hash")) ?? "";
+    expect(hashSentence).toMatch(/shadow/);
+    expect(hashSentence).toMatch(/`on`/);
+  });
 });
 
 describe("cold-read.proposed-absent-is-not-a-finding", () => {
