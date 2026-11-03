@@ -112,9 +112,10 @@ export interface World {
   cancelled: boolean;
   publishedAfterCancel: boolean;
   /** Harness injector: restore() must not clear these. */
-  omitRules: string[];
+  submitTimeoutAsCovered: boolean;
   zeroBudgetAfterRestart: boolean;
   allowPublishAfterCancel: boolean;
+  grantOnApprovedReview: boolean;
   artifactRuleCache: Map<string, string[]>;
 }
 
@@ -364,9 +365,10 @@ export function createWorld(): World {
     lastChargeStatus: null,
     cancelled: false,
     publishedAfterCancel: false,
-    omitRules: [],
+    submitTimeoutAsCovered: false,
     zeroBudgetAfterRestart: false,
     allowPublishAfterCancel: false,
+    grantOnApprovedReview: false,
     artifactRuleCache: new Map(),
     restore() {
       writeFileSync(runPath, runSnap);
@@ -390,6 +392,7 @@ export function createWorld(): World {
       this.lastChargeStatus = null;
       this.cancelled = false;
       this.publishedAfterCancel = false;
+      this.artifactRuleCache.clear();
     },
   };
   return world;
@@ -462,9 +465,11 @@ export function applyImpl(world: World, event: Event): void {
     }
     case "publish": {
       if (world.allowPublishAfterCancel && world.cancelled && !world.publishedAfterCancel) {
-        world.lastPublishError = null;
-        world.publishedAfterCancel = true;
-        return;
+        const path = join(world.privateDir, `${world.runId}.json`);
+        const run = world.runner.status(world.runId);
+        run.run_state = "building";
+        delete run.cancellation;
+        writeFileSync(path, `${JSON.stringify(run, null, 2)}\n`);
       }
       const input = HASH_A;
       const err = caughtMessage(() => {
@@ -688,11 +693,22 @@ function pushRules(into: string[], issues: readonly { rule: string }[]): void {
   for (const issue of issues) into.push(issue.rule);
 }
 
-function artifactRules(world: World, model: Model, findings: readonly FindingDocument[], ticket: TicketDoc): string[] {
+type ReviewForArtifacts = ReviewDocument & { artifact_probe?: { charter_hash: string } };
+
+function artifactRules(
+  world: World,
+  model: Model,
+  review: ReviewForArtifacts,
+  findings: readonly FindingDocument[],
+  ticket: TicketDoc,
+): string[] {
   const resolved = findings.some((doc) => doc.status === "resolved");
   const stale = model.approvalHash !== model.currentHash;
+  // Open findings and a current ticket approval cannot fire approval.stale,
+  // finding.self-closed, finding.closed-without-receipt, grant.charter-hash-unknown,
+  // or ticket.decision-dispatched-as-implementation on these templates.
   if (!resolved && !stale) return [];
-  const key = artifactHash({ findings, ticket });
+  const key = artifactHash({ review, findings, ticket });
   const cached = world.artifactRuleCache.get(key);
   if (cached !== undefined) return cached;
   const rules: string[] = [];
@@ -707,7 +723,11 @@ export function inspectImpl(world: World, model: Model): ImplView {
   unlinkIfPresent(join(templates, "review-probe.json"));
   unlinkIfPresent(join(templates, "finding-a.json"));
   unlinkIfPresent(join(templates, "finding-b.json"));
-  const review = reviewDoc(model);
+  const submitted = world.submitTimeoutAsCovered ? rewriteTimeoutLanes(reviewDoc(model)) : reviewDoc(model);
+  const review =
+    world.grantOnApprovedReview && model.verdict === "approved"
+      ? { ...submitted, artifact_probe: { charter_hash: HASH_A } }
+      : submitted;
   const findings = model.findings.map(findingDoc);
   const ticket = ticketDoc(model.approvalHash === model.currentHash);
   writeFileSync(join(templates, "review.json"), JSON.stringify(review));
@@ -718,28 +738,26 @@ export function inspectImpl(world: World, model: Model): ImplView {
 
   const rules: string[] = [];
   const indexed = indexDocuments([
-    { file: "templates/review.json", doc: review },
+    { file: "templates/review.json", doc: submitted },
     ...findings.map((doc) => ({ file: `templates/${doc.id}.json`, doc })),
   ]);
-  pushRules(rules, checkDocument("templates/review.json", review, indexed));
+  pushRules(rules, checkDocument("templates/review.json", submitted, indexed));
   const validateReview = world.schemas.validatorFor("review");
-  if (validateReview !== undefined && !validateReview(review)) rules.push("schemas.document-invalid");
-  rules.push(...artifactRules(world, model, findings, ticket));
+  if (validateReview !== undefined && !validateReview(submitted)) rules.push("schemas.document-invalid");
+  rules.push(...artifactRules(world, model, review, findings, ticket));
   for (const finding of findings) {
     pushRules(rules, checkDocument(`templates/${finding.id}.json`, finding, indexed));
   }
   const probeRules: string[] = [];
   if (model.attemptedLaneRewrite) {
-    const probe = rewriteTimeoutLanes(review);
+    const probe = rewriteTimeoutLanes(submitted);
     writeFileSync(join(templates, "review-probe.json"), JSON.stringify(probe));
     pushRules(probeRules, checkDocument("templates/review-probe.json", probe, indexed));
   }
-  const omitted = world.omitRules;
-  const shared = omitted.length === 0 ? rules : rules.filter((rule) => !omitted.includes(rule));
   return {
-    rules: shared,
+    rules,
     probeRules,
-    lanes: review.lanes,
+    lanes: submitted.lanes,
     findingsSoftened: findings.some((doc) => doc.synthesis !== undefined),
   };
 }

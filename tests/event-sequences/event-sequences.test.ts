@@ -34,7 +34,8 @@ import { check as fcCheck, defaultReportMessage, property } from "fast-check";
 import { loadCorpus } from "./corpus.ts";
 import { failuresOf, formatEvents, PROBE_TIMEOUT_GAP, suiteFailures } from "./evaluate.ts";
 import { CRITICAL, NUM_RUNS, PINNED_SEED, sequenceArb } from "./generator.ts";
-import { createWorld } from "./impl.ts";
+import { applyImpl, createWorld, inspectImpl, type World } from "./impl.ts";
+import { applyEvent, initialModel } from "./model.ts";
 import { isFiniteNumber } from "./parse.ts";
 import type { Event } from "./types.ts";
 
@@ -148,15 +149,13 @@ describe("review/runner event sequences", () => {
 
   test("harness: dropping the unavailable rule surfaces the timeout failure", () => {
     const broken = createWorld();
-    broken.omitRules = ["review.unavailable-required-lane-blocks-approval"];
-    const failures = failuresOf(
-      [
-        { kind: "unavailable-lane", role: "code-review/security", reason: "timeout" },
-        { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
-        { kind: "set-verdict", verdict: "approved" },
-      ],
-      broken,
-    );
+    broken.submitTimeoutAsCovered = true;
+    const events: Event[] = [
+      { kind: "unavailable-lane", role: "code-review/security", reason: "timeout" },
+      { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
+      { kind: "set-verdict", verdict: "approved" },
+    ];
+    const failures = failuresOf(events, broken);
     expect(failures.length).toBeGreaterThan(0);
     expect(
       failures.some((failure) =>
@@ -165,6 +164,28 @@ describe("review/runner event sequences", () => {
         ),
       ),
     ).toBe(true);
+    const view = inspectSequence(broken, events);
+    expect(view.rules).not.toContain("review.unavailable-required-lane-blocks-approval");
+    expect(view.rules).not.toContain("schemas.document-invalid");
+  });
+
+  test("artifact rules for X after Y match X alone when findings and ticket match", () => {
+    const isolated = createWorld();
+    isolated.grantOnApprovedReview = true;
+    const shared: Event[] = [
+      { kind: "resolve-finding", findingId: "finding-a", closer: "verifier", independent: true },
+      { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
+      { kind: "cover-lane", role: "code-review/security", filledBy: "supervisor-2" },
+    ];
+    const x: Event[] = [...shared, { kind: "set-verdict", verdict: "approved" }];
+    const y: Event[] = [...shared, { kind: "set-verdict", verdict: "blocked" }];
+    inspectImpl(isolated, modelFrom(y));
+    const after = inspectImpl(isolated, modelFrom(x));
+    isolated.restore();
+    expect(isolated.artifactRuleCache.size).toBe(0);
+    const alone = inspectImpl(isolated, modelFrom(x));
+    expect(alone.rules).toContain("grant.charter-hash-unknown");
+    expect(after.rules).toEqual(alone.rules);
   });
 
   test("harness: a forced publish after cancel is a cancel failure", () => {
@@ -173,6 +194,7 @@ describe("review/runner event sequences", () => {
     const failures = failuresOf([{ kind: "cancel" }, { kind: "publish" }, { kind: "publish" }], broken);
     expect(failures.length).toBeGreaterThan(0);
     expect(failures.some((failure) => failure.includes("cancelled run published a current result"))).toBe(true);
+    expect(Object.keys(broken.runner.status(broken.runId).effects).length).toBeGreaterThan(0);
   });
 
   test(`generated sequences hold plan §7 properties (${NUM_RUNS} runs)`, () => {
@@ -228,4 +250,20 @@ afterAll(() => {
 
 function joinRoot(): string {
   return join(import.meta.dir, "..", "..");
+}
+
+function inspectSequence(target: World, events: readonly Event[]) {
+  target.restore();
+  const model = initialModel();
+  for (const event of events) {
+    applyEvent(model, event);
+    applyImpl(target, event);
+  }
+  return inspectImpl(target, model);
+}
+
+function modelFrom(events: readonly Event[]) {
+  const model = initialModel();
+  for (const event of events) applyEvent(model, event);
+  return model;
 }
