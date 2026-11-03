@@ -679,7 +679,7 @@ adaptations:
     rationale: The phase structure from intake through panel dispatch to synthesis and presentation, the classify-by-content rule for requirements versus plan, and the completion condition. The donor's configured artifact root is dropped because the knowledgebase resolves location, and the donor's cross-provider pass is dropped as a multi-vendor feature this package does not carry.
   - path: skills/doc-review/SKILL.md
     source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/comprehension.md
-    rationale: The naive-reader seating, paraphrase-first order, and the rule that an unparaphrasable section is a finding. Off, shadow and on, raw_output.hash on every lane, and FYI-only shadow printing are this package's routing, not the donor's. (phase 1b, GS-004h)
+    rationale: The naive-reader seating, paraphrase-first order, and the rule that an unparaphrasable section is a finding. Off, shadow and on, raw_output.hash on every lane when review.comprehension is shadow or on, and FYI-only shadow printing are this package's routing, not the donor's. (phase 1b, GS-004h)
   - path: skills/doc-review/SKILL.md
     source: egm@403d8881d62022490637d740657b33f01e321ea8:skills/egm-resolve/SKILL.md
     rationale: The four resolutions of a comprehension gap, including the ban on contesting a comprehension finding on the author's word. (phase 1b, GS-004h)

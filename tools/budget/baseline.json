@@ -278,8 +278,8 @@
     },
     "bundle/claude-code:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6823,
-      "tokens": 1706
+      "bytes": 6907,
+      "tokens": 1727
     },
     "bundle/claude-code:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -438,8 +438,8 @@
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24920,
-      "tokens": 6230
+      "bytes": 24972,
+      "tokens": 6243
     },
     "bundle/claude-code:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -1138,8 +1138,8 @@
     },
     "bundle/codex:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6823,
-      "tokens": 1706
+      "bytes": 6907,
+      "tokens": 1727
     },
     "bundle/codex:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -1298,8 +1298,8 @@
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24920,
-      "tokens": 6230
+      "bytes": 24972,
+      "tokens": 6243
     },
     "bundle/codex:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -1998,8 +1998,8 @@
     },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6823,
-      "tokens": 1706
+      "bytes": 6907,
+      "tokens": 1727
     },
     "bundle/cursor:.cursor/references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -2158,8 +2158,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24920,
-      "tokens": 6230
+      "bytes": 24972,
+      "tokens": 6243
     },
     "bundle/cursor:.cursor/references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -2858,8 +2858,8 @@
     },
     "bundle/droid:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6823,
-      "tokens": 1706
+      "bytes": 6907,
+      "tokens": 1727
     },
     "bundle/droid:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -3018,8 +3018,8 @@
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24920,
-      "tokens": 6230
+      "bytes": 24972,
+      "tokens": 6243
     },
     "bundle/droid:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -3718,8 +3718,8 @@
     },
     "bundle/grok:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6823,
-      "tokens": 1706
+      "bytes": 6907,
+      "tokens": 1727
     },
     "bundle/grok:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -3878,8 +3878,8 @@
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24920,
-      "tokens": 6230
+      "bytes": 24972,
+      "tokens": 6243
     },
     "bundle/grok:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -4578,8 +4578,8 @@
     },
     "bundle/kimi:references/shared/roles/doc-review/comprehension/ROLE.md": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6823,
-      "tokens": 1706
+      "bytes": 6907,
+      "tokens": 1727
     },
     "bundle/kimi:references/shared/roles/doc-review/design-lens/ROLE.md": {
       "file": "roles/doc-review/design-lens/ROLE.md",
@@ -4738,8 +4738,8 @@
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 24920,
-      "tokens": 6230
+      "bytes": 24972,
+      "tokens": 6243
     },
     "bundle/kimi:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -5333,8 +5333,8 @@
     },
     "role:doc-review/comprehension": {
       "file": "roles/doc-review/comprehension/ROLE.md",
-      "bytes": 6566,
-      "tokens": 1642
+      "bytes": 6650,
+      "tokens": 1663
     },
     "role:doc-review/design-lens": {
       "file": "roles/doc-review/design-lens/ROLE.md",

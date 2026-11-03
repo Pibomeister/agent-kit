@@ -2178,6 +2178,21 @@ describe("review.comprehension-shadow-findings-stay-fyi", () => {
     ).toContain(RULE_SHADOW);
   });
 
+  test("duplicate project records that are all off stay valid", () => {
+    expect(
+      rulesOf(
+        run(review(), [
+          project({ review: { comprehension: "off" } }),
+          project({ id: "project-2", review: { comprehension: "off" } }),
+        ]),
+      ),
+    ).not.toContain(RULE_SHADOW);
+  });
+
+  test("duplicate project records that all omit the comprehension key stay valid", () => {
+    expect(rulesOf(run(review(), [project(), project({ id: "project-2" })]))).not.toContain(RULE_SHADOW);
+  });
+
   test("a comprehension finding filed under another lane value is still refused in shadow", () => {
     const item = comprehensionFinding({ lane: "doc-review/coherence", autofix_class: "manual" });
     const ref = { id: String(item["id"]), hash: artifactHash(item) };
