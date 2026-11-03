@@ -1,0 +1,2 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r1","name":"Read","input":{"file_path":"{{ROLE}}"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r1","is_error":false,"content":"role body"}]}}

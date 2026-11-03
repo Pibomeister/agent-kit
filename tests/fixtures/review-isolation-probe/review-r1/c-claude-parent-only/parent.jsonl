@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":"parent session PARENT_SESSION_ONLY"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"parent reply"}]}}
