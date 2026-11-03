@@ -10,6 +10,7 @@ import {
   evidenceDigest,
   indexDocuments,
 } from "../src/validation/docrules.ts";
+import { resolveFindingSectionIdentity } from "../src/validation/headings.ts";
 import { artifactHash } from "../src/util/hash.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { parseJson, updated, type JsonValue, type Path } from "./helpers/json.ts";
@@ -737,9 +738,20 @@ describe("finding rules", () => {
   });
 
   test("two findings against duplicate headings with different evidence cannot share a fingerprint value", () => {
-    // AT-15 through the doc-review path: the heading helper refuses the merge,
-    // and the fingerprint rule refuses two findings that would have shared the
-    // merged identity while carrying different evidence.
+    const document = [
+      "# Spec",
+      "",
+      "## Requirements",
+      "Auth must reject expired tokens.",
+      "",
+      "## Requirements",
+      "Payments must bound retries.",
+      "",
+    ].join("\n");
+    const resolved = resolveFindingSectionIdentity(document, "Requirements");
+    expect(resolved.ok).toBe(false);
+    if (resolved.ok) throw new Error("duplicate headings must not produce an identity");
+    expect(resolved.reason).toBe("ambiguous");
     const a = finding({
       fingerprint: {
         value: `sha256:${"f".repeat(64)}`,
@@ -1301,6 +1313,43 @@ describe("review rules", () => {
             reason,
             seat: { filled_by: "reviewer-b", independent_of_author: true },
           },
+        ],
+      });
+      expect(rulesOf(run(doc))).toContain("review.unavailable-required-lane-blocks-approval");
+    },
+  );
+
+  test.each(["covered", "skipped"] as const)(
+    "review.unavailable-required-lane-blocks-approval refuses a required timeout recorded as %s without coverage evidence",
+    (state) => {
+      const timedOut =
+        state === "covered"
+          ? {
+              role: "code-review/security",
+              required: true,
+              state,
+              verdict: "approve",
+              reason: "timeout",
+              seat: { filled_by: "reviewer-b", independent_of_author: true },
+            }
+          : {
+              role: "code-review/security",
+              required: true,
+              state,
+              verdict: "no-opinion",
+              reason: "timeout",
+              seat: { filled_by: "reviewer-b", independent_of_author: true },
+            };
+      const doc = review({
+        lanes: [
+          {
+            role: "code-review/correctness",
+            required: true,
+            state: "covered",
+            verdict: "approve",
+            seat: { filled_by: "reviewer-a", independent_of_author: true },
+          },
+          timedOut,
         ],
       });
       expect(rulesOf(run(doc))).toContain("review.unavailable-required-lane-blocks-approval");

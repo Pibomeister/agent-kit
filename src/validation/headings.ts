@@ -1,22 +1,24 @@
 /**
  * Finding identity for a document section heading (AT-15 / FR-07).
  *
- * Span resolution and duplicate counting match the trimmed heading title
- * exactly. Normalization is only the identity key of a uniquely resolved
- * heading. Two sections that share a heading title cannot be that section:
- * `findIndex` / last-wins silently merge them into one identity. This
- * resolver refuses that merge. A unique heading still resolves; a missing
- * heading is missing; a repeated heading is an error that names every
- * occurrence. Heading-like lines inside fenced code (backticks or tildes)
- * are not headings.
+ * Span resolution and duplicate counting match the heading title exactly, the
+ * way the document wrote it. Normalization is only the identity key of a
+ * uniquely resolved heading. Two sections that share a heading title cannot
+ * be that section: `findIndex` / last-wins silently merge them into one
+ * identity. This resolver refuses that merge. A unique heading still resolves;
+ * a missing heading is missing; a repeated heading is an error that names
+ * every occurrence. Heading-like lines inside fenced code are not headings.
  */
 
 const HEADING = /^#{1,6}\s+(.*?)\s*#*\s*$/;
-const FENCE_OPEN = /^\s*(`{3,}|~{3,})/;
+const FENCE_LINE = /^( {0,3})([`~]{3,})(.*)$/;
 
 export type HeadingResolution =
   | { ok: true; heading: string; line: number; body: string; identity: string }
   | { ok: false; heading: string; reason: "missing" | "ambiguous"; lines: number[]; error: string };
+
+/** CommonMark fence currently open: the marker character and its length. */
+export type FenceState = { readonly char: "`" | "~"; readonly len: number };
 
 /** Lowercase, strip punctuation, collapse whitespace — the identity key, not the lookup. */
 export function normalizeHeading(text: string): string {
@@ -35,33 +37,54 @@ function headingLevel(line: string): number {
   return /^#+/.exec(line)?.[0].length ?? 0;
 }
 
-function fenceMarker(line: string): "`" | "~" | null {
-  const ch = FENCE_OPEN.exec(line)?.[1]?.[0];
-  return ch === "`" || ch === "~" ? ch : null;
+/**
+ * A CommonMark fence line, or null. Opening and closing share the shape:
+ * 0–3 spaces of indent, three or more backticks or tildes, then an info
+ * string. A backtick fence whose info contains a backtick is not a fence.
+ */
+function parseFenceLine(line: string): { char: "`" | "~"; len: number; info: string } | null {
+  const match = FENCE_LINE.exec(line);
+  if (match === null) return null;
+  const marker = match[2] ?? "";
+  const char = marker[0];
+  if (char !== "`" && char !== "~") return null;
+  const rest = match[3] ?? "";
+  if (char === "`" && rest.includes("`")) return null;
+  return { char, len: marker.length, info: rest.trim() };
 }
 
-function nextFence(line: string, fence: "`" | "~" | null): "`" | "~" | null {
-  const marker = fenceMarker(line);
-  if (marker === null) return fence;
-  if (fence === null) return marker;
-  return fence === marker ? null : fence;
+/**
+ * Advance fence state for one line. A closer must use the same character, be
+ * at least as long as the opener, and carry no info string.
+ */
+export function fenceAfter(line: string, fence: FenceState | null): FenceState | null {
+  const parsed = parseFenceLine(line);
+  if (fence === null) {
+    return parsed === null ? null : { char: parsed.char, len: parsed.len };
+  }
+  if (parsed !== null && parsed.char === fence.char && parsed.len >= fence.len && parsed.info.length === 0) {
+    return null;
+  }
+  return fence;
 }
 
-/** 1-based lines whose trimmed heading title equals `heading` exactly. */
+/** True when this line opens, continues, or closes a fenced region. */
+function inFence(line: string, fence: FenceState | null) {
+  const next = fenceAfter(line, fence);
+  return { skip: fence !== null || next !== null, next };
+}
+
+/** 1-based lines whose heading title equals `heading` exactly. */
 export function headingOccurrences(markdown: string, heading: string): number[] {
-  const wanted = heading.trim();
   const lines: number[] = [];
-  let fence: "`" | "~" | null = null;
+  let fence: FenceState | null = null;
   for (const [i, raw] of markdown.split("\n").entries()) {
     const line = raw ?? "";
-    const marker = fenceMarker(line);
-    if (marker !== null) {
-      fence = nextFence(line, fence);
-      continue;
-    }
-    if (fence !== null) continue;
+    const region = inFence(line, fence);
+    fence = region.next;
+    if (region.skip) continue;
     const title = headingTitle(line);
-    if (title !== null && title.trim() === wanted) lines.push(i + 1);
+    if (title !== null && title === heading) lines.push(i + 1);
   }
   return lines;
 }
@@ -70,15 +93,12 @@ function sectionBody(markdown: string, at: number): string {
   const lines = markdown.split("\n");
   const start = at - 1;
   const level = headingLevel(lines[start] ?? "");
-  let fence: "`" | "~" | null = null;
+  let fence: FenceState | null = null;
   const end = lines.findIndex((line, i) => {
     if (i <= start) return false;
-    const marker = fenceMarker(line);
-    if (marker !== null) {
-      fence = nextFence(line, fence);
-      return false;
-    }
-    if (fence !== null) return false;
+    const region = inFence(line, fence);
+    fence = region.next;
+    if (region.skip) return false;
     return headingTitle(line) !== null && headingLevel(line) <= level;
   });
   return lines.slice(start + 1, end === -1 ? undefined : end).join("\n");
@@ -87,11 +107,11 @@ function sectionBody(markdown: string, at: number): string {
 /**
  * Resolve a finding's section heading against the document it cites.
  *
- * Unique heading: identity is the normalized heading, optionally joined with
- * a normalized finding title. Repeated heading: refused, never first-match
- * and never last-wins. Lookup is the exact trimmed title.
+ * Unique heading: identity is the normalized heading. Repeated heading:
+ * refused, never first-match and never last-wins. Lookup is the exact title
+ * the caller passed, compared to the document heading the ATX regex captured.
  */
-export function resolveFindingSectionIdentity(markdown: string, heading: string, title?: string): HeadingResolution {
+export function resolveFindingSectionIdentity(markdown: string, heading: string): HeadingResolution {
   const lines = headingOccurrences(markdown, heading);
   const [line, ...rest] = lines;
   if (line === undefined) {
@@ -112,7 +132,5 @@ export function resolveFindingSectionIdentity(markdown: string, heading: string,
       error: `heading '${heading}' appears ${lines.length} times (lines ${lines.join(", ")}); finding identity cannot resolve it uniquely`,
     };
   }
-  const identity =
-    title === undefined ? normalizeHeading(heading) : `${normalizeHeading(heading)}\0${normalizeHeading(title)}`;
-  return { ok: true, heading, line, body: sectionBody(markdown, line), identity };
+  return { ok: true, heading, line, body: sectionBody(markdown, line), identity: normalizeHeading(heading) };
 }

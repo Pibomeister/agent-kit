@@ -21,8 +21,8 @@ describe("finding identity: duplicate section titles refuse rather than silently
   ].join("\n");
 
   test("two sections with the same heading title refuse rather than share one identity", () => {
-    const first = resolveFindingSectionIdentity(document, "Requirements", "missing acceptance");
-    const second = resolveFindingSectionIdentity(document, "Requirements", "missing acceptance");
+    const first = resolveFindingSectionIdentity(document, "Requirements");
+    const second = resolveFindingSectionIdentity(document, "Requirements");
     expect(first.ok).toBe(false);
     expect(second.ok).toBe(false);
     if (first.ok || second.ok) throw new Error("silent merge: duplicate headings produced an identity");
@@ -45,8 +45,8 @@ describe("finding identity: duplicate section titles refuse rather than silently
       "Bound retries.",
       "",
     ].join("\n");
-    const auth = resolveFindingSectionIdentity(unique, "Auth", "missing acceptance");
-    const payments = resolveFindingSectionIdentity(unique, "Payments", "missing acceptance");
+    const auth = resolveFindingSectionIdentity(unique, "Auth");
+    const payments = resolveFindingSectionIdentity(unique, "Payments");
     expect(auth.ok).toBe(true);
     expect(payments.ok).toBe(true);
     if (!auth.ok || !payments.ok) throw new Error("unique headings must resolve");
@@ -104,6 +104,18 @@ describe("finding identity: duplicate section titles refuse rather than silently
     expect(setupLower.body).toContain("Lower.");
   });
 
+  test("the requested heading is compared as given, not trimmed", () => {
+    const spec = ["# Spec", "", "## Requirements", "", "Body.", ""].join("\n");
+    const padded = resolveFindingSectionIdentity(spec, " Requirements");
+    expect(padded.ok).toBe(false);
+    if (padded.ok) throw new Error("a padded request must not match a document heading");
+    expect(padded.reason).toBe("missing");
+    const trailing = resolveFindingSectionIdentity(spec, "Requirements ");
+    expect(trailing.ok).toBe(false);
+    if (trailing.ok) throw new Error("a trailing-space request must not match a document heading");
+    expect(trailing.reason).toBe("missing");
+  });
+
   test("heading-like lines inside fenced code are not headings", () => {
     const fenced = [
       "# Spec",
@@ -135,5 +147,33 @@ describe("finding identity: duplicate section titles refuse rather than silently
     expect(requirements.body).toContain("sample");
     expect(requirements.body).toContain("tilde sample");
     expect(requirements.body).not.toContain("After fences.");
+  });
+
+  test("a longer fence does not close on a shorter inner fence", () => {
+    const nested = [
+      "# Spec",
+      "",
+      "## Requirements",
+      "",
+      "Auth must reject expired tokens.",
+      "",
+      "````",
+      "```ts",
+      "## Requirements",
+      "console.log(1)",
+      "```",
+      "````",
+      "",
+      "## Unique",
+      "",
+      "After the nested fence.",
+      "",
+    ].join("\n");
+    const requirements = resolveFindingSectionIdentity(nested, "Requirements");
+    expect(requirements.ok).toBe(true);
+    if (!requirements.ok) throw new Error("an inner ```ts must not close a ```` fence");
+    expect(requirements.line).toBe(3);
+    expect(requirements.body).toContain("console.log(1)");
+    expect(requirements.body).not.toContain("After the nested fence.");
   });
 });

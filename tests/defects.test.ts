@@ -401,10 +401,73 @@ describe("the section index is built from the contract's own headings", () => {
     expect(contractSections(duplicated).duplicates).toEqual([{ number: "5", lines: [3, 7] }]);
     const issues = checkContractDefects(ctx);
     const errors = issues.filter((i) => i.severity === "error");
-    expect(errors.map((i) => i.rule)).toEqual(["defects.duplicate-section-number"]);
-    expect(errors[0]?.file).toBe("AUTHORING.md");
-    expect(errors[0]?.message).toMatch(/§5 appears 2 times/);
+    expect(errors.map((i) => i.rule).toSorted()).toEqual([
+      "defects.duplicate-section-number",
+      "defects.entry-citation-unresolvable",
+    ]);
+    expect(errors.find((i) => i.rule === "defects.duplicate-section-number")?.file).toBe("AUTHORING.md");
+    expect(errors.find((i) => i.rule === "defects.duplicate-section-number")?.message).toMatch(/§5 appears 2 times/);
     expect(issues.filter((i) => i.rule === "defects.entry-quotation-dangling")).toEqual([]);
+  });
+
+  test("a duplicate number and an unrelated bad quotation are both reported", () => {
+    const mixed = [
+      "# Authoring",
+      "",
+      "## 5. Provenance law",
+      "",
+      IN_SECTION_5,
+      "",
+      "## 5. Duplicate",
+      "",
+      "other",
+      "",
+      "## 12. Bodies",
+      "",
+      IN_SECTION_12,
+      "",
+    ].join("\n");
+    const ctx = ctxFor({
+      "AUTHORING.md": mixed,
+      [DEFECTS_FILE]: defects(
+        [entry("dup", "§5 requires:", IN_SECTION_5), entry("bad", "§12 requires:", "not in the contract")].join("\n"),
+      ),
+    });
+    const rules = checkContractDefects(ctx)
+      .filter((i) => i.severity === "error")
+      .map((i) => i.rule)
+      .toSorted();
+    expect(rules).toEqual([
+      "defects.duplicate-section-number",
+      "defects.entry-citation-unresolvable",
+      "defects.entry-quotation-dangling",
+    ]);
+  });
+
+  test("a numbered heading inside a fenced sample is not a contract section", () => {
+    const fenced = [
+      "# Authoring",
+      "",
+      "## 5. Provenance law",
+      "",
+      IN_SECTION_5,
+      "",
+      "````",
+      "```ts",
+      "## 5. Bodies",
+      IN_SECTION_12,
+      "```",
+      "````",
+      "",
+      "## 12. Bodies",
+      "",
+      IN_SECTION_12,
+      "",
+    ].join("\n");
+    const index = contractSections(fenced);
+    expect(index.duplicates).toEqual([]);
+    expect([...index.sections.keys()].toSorted()).toEqual(["12", "5"]);
+    expect(rulesFor(entry("cites five", "§5 requires:", IN_SECTION_5), fenced)).toEqual([]);
   });
 });
 

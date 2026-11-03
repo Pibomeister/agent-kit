@@ -34,6 +34,7 @@ import { join } from "node:path";
 
 import { readTextIfPresent } from "../util/fs.ts";
 import type { CheckContext } from "./context.ts";
+import { fenceAfter, type FenceState } from "./headings.ts";
 import { error, note, skipped, unavailable, type Issue } from "./types.ts";
 
 /** §10: the file lives at the repository root, and that placement is the mechanism. */
@@ -90,7 +91,9 @@ export interface ContractSectionIndex {
  * §10 needs, since an entry may cite either.
  *
  * A repeated section number is refused (AT-15), never last-wins merged. The
- * duplicated numbers are named and omitted from the map.
+ * duplicated numbers are named and omitted from the map, and quotation checks
+ * still run against every other entry. Numbered headings inside fenced code
+ * are not sections.
  *
  * Stated that way on purpose. An earlier version carried a second clause capping
  * a `###` at the very next heading whatever its level. It could never fire,
@@ -102,7 +105,12 @@ export interface ContractSectionIndex {
 export function contractSections(text: string): ContractSectionIndex {
   const lines = text.split("\n");
   const marks: Array<{ line: number; level: number; number: string }> = [];
+  let fence: FenceState | null = null;
   for (const [index, line] of lines.entries()) {
+    const next = fenceAfter(line, fence);
+    const skip = fence !== null || next !== null;
+    fence = next;
+    if (skip) continue;
     const match = CONTRACT_HEADING.exec(line);
     if (match === null) continue;
     marks.push({ line: index, level: (match[1] ?? "").length, number: match[2] ?? "" });
@@ -282,7 +290,7 @@ export function checkContractDefects(ctx: CheckContext): Issue[] {
     }
   }
 
-  if (indexed !== null && indexed.duplicates.length > 0) {
+  if (indexed !== null) {
     for (const duplicate of indexed.duplicates) {
       issues.push(
         error(
@@ -293,11 +301,10 @@ export function checkContractDefects(ctx: CheckContext): Issue[] {
         ),
       );
     }
-    return issues;
   }
   const sections = indexed?.sections ?? null;
 
-  if (sections === null || sections.size === 0) {
+  if (sections === null || (sections.size === 0 && (indexed?.duplicates.length ?? 0) === 0)) {
     // Which kind of skip this is depends on whether anything went unexamined.
     // With no open entry the subject is absent and there was nothing to resolve,
     // so the run still passes. With open entries sitting in the tree, they are

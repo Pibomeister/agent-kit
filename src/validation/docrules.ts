@@ -1070,7 +1070,14 @@ function reviewRules(rc: RuleContext): void {
   }
 
   const RULE_UNAVAILABLE = "review.unavailable-required-lane-blocks-approval";
-  const blocked = lanes.filter((l) => l !== null && l["required"] === true && str(l["state"]) === "unavailable");
+  // A timeout is unavailable even when the record filed it as covered or
+  // skipped: those states claim the seat returned, and a timed-out seat did not.
+  const TIMEOUT_REASON = /timeout|timed\s*out/i;
+  const blocked = lanes.filter((l) => {
+    if (l === null || l["required"] !== true) return false;
+    if (str(l["state"]) === "unavailable") return true;
+    return TIMEOUT_REASON.test(str(l["reason"]) ?? "");
+  });
   if (blocked.length > 0 && verdict === "approved") {
     fail(
       rc,
