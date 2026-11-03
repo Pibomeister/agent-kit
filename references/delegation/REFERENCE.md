@@ -251,8 +251,8 @@ Load this section at super-bound step 13. The scorer formula does not change. No
 live probe evidence (phase 1b, GS-004i).
 
 **Mode.** Read `review.cold_read` from the one indexed project record for this ticket. A missing
-review object, a missing key, an unknown value, a missing project, or a project that is not
-indexed is off. Off dispatches nothing, stores nothing, and leaves the author's type-check as the
+review object, a missing key, an unknown value, a missing project, or an unindexed project is
+off. Off dispatches nothing, stores nothing, and leaves the author's type-check as the
 zero-context gate.
 
 **Skip.** A ticket on the text-only single-slice light route above skips this dispatch. When the
@@ -283,4 +283,6 @@ the class. Keep the author's type-check as the zero-context gate.
 
 **On.** Cite the stored record from `cold_read_ref` as evidence for the `spec` factor and the
 readiness criteria, then re-run the scorer command from step 10. An unavailable read, with the
-reason, is cited and published. It does not change the class.
+reason, is cited and published. It does not change the class. The author's empty-context check
+decides the outcome: reshape it, or reclassify it `type: decision` and send it back. Do not
+change the scorer inputs.
