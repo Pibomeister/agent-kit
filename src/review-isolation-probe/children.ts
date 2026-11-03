@@ -363,8 +363,8 @@ function jsonlMatching(codexHome: string, threadId: string): string | null {
 
 /**
  * Child session joined from SubAgentActivity started / spawn_agent, never the
- * parent thread.started id. Null when no child thread id is observed, or when
- * more than one distinct child id is observed and none joins uniquely.
+ * parent thread.started id. With several child ids, the single id whose
+ * session file exists on disk wins. Null when zero or several files match.
  */
 export function findCodexChild(codexHome: string, stdout: string): string | null {
   const fromStdout = extractSpawn(stdout);
