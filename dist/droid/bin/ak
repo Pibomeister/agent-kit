@@ -35813,10 +35813,10 @@ var init_cli5 = __esm(() => {
 init_common_schema();
 var import_ajv16 = __toESM(require_ajv(), 1);
 var import__202012 = __toESM(require_2020(), 1);
-import { spawnSync as spawnSync5 } from "child_process";
-import { existsSync as existsSync40, readFileSync as readFileSync38, realpathSync as realpathSync17 } from "fs";
+import { spawnSync as spawnSync6 } from "child_process";
+import { existsSync as existsSync40, readFileSync as readFileSync39, realpathSync as realpathSync17 } from "fs";
 import { homedir as homedir6 } from "os";
-import { basename as basename21, isAbsolute as isAbsolute18, join as join48, relative as relative15 } from "path";
+import { basename as basename21, isAbsolute as isAbsolute18, join as join50, relative as relative15 } from "path";
 // schemas/tracker-binding.schema.json
 var tracker_binding_schema_default = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -42389,6 +42389,222 @@ var isHookDoc = ajv9.compile({
 var isCommand = ajv9.compile({ type: "string" });
 if (false) {}
 
+// src/maintenance/host-probe-version.ts
+import { readdirSync as readdirSync13, readFileSync as readFileSync38 } from "fs";
+import { join as join49 } from "path";
+
+// src/review-isolation-probe/host-cli.ts
+import { spawnSync as spawnSync5 } from "child_process";
+import { accessSync as accessSync2, constants as constants2 } from "fs";
+import { join as join48 } from "path";
+var VERSION_TIMEOUT_MS = 5000;
+var HOST_VERSION_NOT_ON_PATH = "not on PATH";
+var HOST_VERSION_FIXTURE = "fixture (host CLI not invoked)";
+var NO_OUTPUT_SUFFIX = " (no version output)";
+function hostVersionNoOutput(bin) {
+  return `${bin}${NO_OUTPUT_SUFFIX}`;
+}
+function isHostVersionPlaceholder(value) {
+  return value === HOST_VERSION_NOT_ON_PATH || value === HOST_VERSION_FIXTURE || value.endsWith(NO_OUTPUT_SUFFIX);
+}
+function isExecutable(path) {
+  try {
+    accessSync2(path, constants2.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function which(names, pathEnv) {
+  const path = pathEnv ?? "";
+  for (const name of names) {
+    if (name.includes("/")) {
+      if (isExecutable(name))
+        return name;
+      continue;
+    }
+    for (const dir of path.split(":")) {
+      if (dir === "")
+        continue;
+      const candidate = join48(dir, name);
+      if (isExecutable(candidate))
+        return candidate;
+    }
+  }
+  return null;
+}
+function spawnTimedOut(error2) {
+  if (error2 === undefined)
+    return false;
+  return error2.code === "ETIMEDOUT";
+}
+function captureHostVersion(binaries, versionArgs, options) {
+  const env = options.env;
+  const timeoutMs = options.timeoutMs ?? VERSION_TIMEOUT_MS;
+  const bin = which(binaries, env.PATH);
+  if (bin === null)
+    return HOST_VERSION_NOT_ON_PATH;
+  const result2 = spawnSync5(bin, [...versionArgs], {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+    env
+  });
+  if (options.requireZeroExit && (spawnTimedOut(result2.error) || result2.status !== 0)) {
+    return hostVersionNoOutput(bin);
+  }
+  const text3 = (result2.stdout ?? "").trim() || (result2.stderr ?? "").trim();
+  return text3 === "" ? hostVersionNoOutput(bin) : text3.split(`
+`)[0] ?? text3;
+}
+
+// src/review-isolation-probe/hosts.ts
+var HOST_PROFILES = {
+  "claude-code": {
+    id: "claude-code",
+    binaries: ["claude"],
+    versionArgs: ["--version"],
+    exposes: "Child sessions under $CLAUDE_CONFIG_DIR/projects/<encoded-workspace>/<session>/subagents/agent-*.jsonl, joined on the Agent/Task id in the parent trace. Init events list plugins, skills and memory_paths. Freshness is the absence of resume/fork in the Agent input, not a positive attestation.",
+    channels: {
+      "parent-turn": "child jsonl under projects/<workspace>/<session>/subagents/, joined on the Agent/Task id; freshness is the absence of resume/fork in the Agent input, not a positive attestation",
+      "hooks-and-memory": "SessionStart hook planted in the probe temp settings; memory-plugin half is unobservable (this probe does not write ~/.claude)",
+      "auto-loaded-instructions": "system/init memory_paths and names of CLAUDE.md / AGENTS.md in the child trace",
+      "transcript-on-disk": "child Read of workspace/.claude/projects/** ; R3.5 PreToolUse guard in the arm's temp settings",
+      "role-file-denied": "child Read tool_result is_error against the role file"
+    }
+  },
+  codex: {
+    id: "codex",
+    binaries: ["codex"],
+    versionArgs: ["--version"],
+    exposes: "Child threads as $CODEX_HOME/sessions/**/*<thread_id>.jsonl, joined from SubAgentActivity started events. spawn_agent arguments (fork_context / fork_turns) are the launch configuration. File reads appear as CommandExecution, not a Read tool. The package guard does not cover this host (CS-12), so the transcript-on-disk channel is observed only as a child command, never as a denied hook.",
+    channels: {
+      "parent-turn": "child session jsonl and spawn_agent arguments",
+      "hooks-and-memory": "unobservable: Codex has no SessionStart plant in the probe temp workspace, and this probe does not write ~/.codex",
+      "auto-loaded-instructions": "AGENTS.md in the child trace or prompt-input; unobservable when those events are absent",
+      "transcript-on-disk": "unobservable: the R3.5 PreToolUse guard is not plantable on this host (CS-12); child CommandExecution of the parent session path is recorded but not scored as pass or fail",
+      "role-file-denied": "child CommandExecution of the role file; this host has no per-read deny in the dispatch used here, so the arm is unobservable unless the transcript already shows a denial"
+    }
+  },
+  mastracode: {
+    id: "mastracode",
+    binaries: ["mastracode", "mastra"],
+    versionArgs: ["--version"],
+    exposes: "No adapter and no CLI dispatch path in this package. Review seats would be read-only custom subagents (createMastraCode({ subagents })), or AcpAgent with persistSession false if observational memory is shared. Child transcripts are not a documented session-store path here; arms stay unobservable until a fixture or an operator-supplied child transcript is provided.",
+    channels: {
+      "parent-turn": "unobservable unless a child transcript is supplied",
+      "hooks-and-memory": "the arm to watch (observational memory); unobservable without a child transcript that shows injection",
+      "auto-loaded-instructions": "unobservable without a child transcript or launch config naming those files",
+      "transcript-on-disk": "unobservable; no session-store path is documented for this host in the package",
+      "role-file-denied": "unobservable without a child transcript that records a denied role-file read"
+    }
+  }
+};
+function profileFor(host) {
+  return HOST_PROFILES[host];
+}
+
+// src/review-isolation-probe/types.ts
+var HOSTS2 = ["claude-code", "codex", "mastracode"];
+
+// src/maintenance/host-probe-version.ts
+var DOCTOR_PROBE_HOSTS = [...HOSTS2, "cursor"];
+var DATE_DIR = /^\d{4}-\d{2}-\d{2}$/;
+var HOST_VERSION_ROW = /^\| Host version \| (.*) \|$/m;
+var CURSOR_BINARIES = ["cursor-agent"];
+var CURSOR_VERSION_ARGS = ["--version"];
+function binariesFor(host) {
+  if (host === "cursor")
+    return CURSOR_BINARIES;
+  return profileFor(host).binaries;
+}
+function versionArgsFor(host) {
+  if (host === "cursor")
+    return CURSOR_VERSION_ARGS;
+  return profileFor(host).versionArgs;
+}
+function checkName(host) {
+  return `${host} isolation probe`;
+}
+function parseProbedHostVersion(note2) {
+  const match = HOST_VERSION_ROW.exec(note2.replaceAll(`\r
+`, `
+`));
+  const raw = match?.[1]?.trim();
+  if (raw === undefined || raw === "")
+    return null;
+  const version2 = raw.replaceAll("\\|", "|");
+  return isHostVersionPlaceholder(version2) ? null : version2;
+}
+function readLatestProbedHostVersion(factsRoot, host) {
+  const dates = [];
+  try {
+    for (const entry of readdirSync13(factsRoot, { withFileTypes: true })) {
+      if (entry.isDirectory() && DATE_DIR.test(entry.name))
+        dates.push(entry.name);
+    }
+  } catch {
+    return null;
+  }
+  for (const date of dates.toSorted().toReversed()) {
+    const path = join49(factsRoot, date, `review-isolation-${host}.md`);
+    try {
+      const version2 = parseProbedHostVersion(readFileSync38(path, "utf8"));
+      if (version2 !== null)
+        return { date, version: version2, path };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+function checkProbedHostVersion(host, installed, probedVersion, probedDate) {
+  const check2 = checkName(host);
+  const when = ` (${probedDate})`;
+  if (installed === probedVersion) {
+    return {
+      level: "PASS",
+      check: check2,
+      detail: `installed ${installed} matches last probed ${probedVersion}${when}`,
+      remedy: "No action needed."
+    };
+  }
+  const remedy = host === "cursor" ? "Re-probe Cursor's review isolation and record a new research/host-facts/<date>/review-isolation-cursor.md note for this version. Probe results apply only to the version they recorded." : `Re-run scripts/review-isolation-probe.sh ${host} on this host version. Probe results apply only to the version they recorded.`;
+  return {
+    level: "WARN",
+    check: check2,
+    detail: `installed ${installed} differs from last probed ${probedVersion}${when}`,
+    remedy
+  };
+}
+function hostsToCheck(factsRoot) {
+  const pairs = [];
+  for (const host of DOCTOR_PROBE_HOSTS) {
+    const probed = readLatestProbedHostVersion(factsRoot, host);
+    if (probed !== null)
+      pairs.push({ host, probed });
+  }
+  return pairs;
+}
+function probedHostVersionFindings(factsRoot, readInstalled) {
+  const items2 = [];
+  for (const { host, probed } of hostsToCheck(factsRoot)) {
+    const installed = readInstalled(host);
+    if (installed === null)
+      continue;
+    items2.push(checkProbedHostVersion(host, installed, probed.version, probed.date));
+  }
+  return items2;
+}
+function readInstalledHostVersion(host, env = process.env, timeoutMs = VERSION_TIMEOUT_MS) {
+  const captured = captureHostVersion(binariesFor(host), versionArgsFor(host), {
+    requireZeroExit: true,
+    env,
+    timeoutMs
+  });
+  return isHostVersionPlaceholder(captured) ? null : captured;
+}
+
 // src/maintenance/cli.ts
 var ajv10 = new import_ajv16.default;
 var pluginSchema = {
@@ -42468,7 +42684,7 @@ function finding(level, check2, detail, remedy) {
 }
 function command(binary2, args, cwd = process.cwd(), env = process.env, timeoutMs = COMMAND_TIMEOUT_MS) {
   const safeEnv = binary2 === "git" ? Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_"))) : env;
-  const run2 = spawnSync5(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
+  const run2 = spawnSync6(binary2, args, { cwd, encoding: "utf8", env: safeEnv, timeout: timeoutMs });
   return { ok: run2.status === 0, output: (run2.stdout || run2.stderr || run2.error?.message || "").trim() };
 }
 function parseJson3(source, validate) {
@@ -42518,9 +42734,9 @@ function isCodexSource(source, ref) {
   return ref === "published" && (source === "Pibomeister/agent-kit" || source === "https://github.com/Pibomeister/agent-kit.git" || source === "https://github.com/Pibomeister/agent-kit");
 }
 function codexSourceConfigured() {
-  const file = join48(process.env.CODEX_HOME ?? join48(homedir6(), ".codex"), "config.toml");
+  const file = join50(process.env.CODEX_HOME ?? join50(homedir6(), ".codex"), "config.toml");
   try {
-    const value = Bun.TOML.parse(readFileSync38(file, "utf8"));
+    const value = Bun.TOML.parse(readFileSync39(file, "utf8"));
     if (!validCodexConfig(value))
       return false;
     const source = value.marketplaces?.["agent-kit"];
@@ -42559,10 +42775,10 @@ function checkSource(host, published, configured = true, failure) {
 }
 function checkProjectEnablement(project) {
   const top = command("git", ["rev-parse", "--show-toplevel"], project);
-  const file = join48(top.ok ? top.output : project, ".claude", "settings.json");
+  const file = join50(top.ok ? top.output : project, ".claude", "settings.json");
   let settings;
   try {
-    settings = parseJson3(readFileSync38(file, "utf8"), validSettings);
+    settings = parseJson3(readFileSync39(file, "utf8"), validSettings);
   } catch {
     return finding("WARN", "project enablement", "no readable .claude/settings.json", `Set enabledPlugins["${ID2}"] to true in ${file}.`);
   }
@@ -42573,7 +42789,7 @@ function checkProjectEnablement(project) {
 }
 function findBindingRoot(start) {
   const root = findProjectRoot(start);
-  return existsSync40(join48(root, BINDING_FILE)) ? root : null;
+  return existsSync40(join50(root, BINDING_FILE)) ? root : null;
 }
 function parseBinding(root) {
   if (!root)
@@ -42585,7 +42801,7 @@ function parseBinding(root) {
   if (loaded.binding === null) {
     const issue = loaded.issues[0];
     return {
-      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join48(root, BINDING_FILE)}, then run ak tracker check.`),
+      finding: finding("FAIL", "tracker binding", issue?.message ?? "invalid binding", `Repair ${join50(root, BINDING_FILE)}, then run ak tracker check.`),
       binding: null
     };
   }
@@ -42628,11 +42844,11 @@ function checkLinearis(root, backend) {
   const topResult = command("git", ["rev-parse", "--show-toplevel"], root);
   const top = topResult.ok ? realpathSync17(topResult.output) : realpathSync17(root);
   for (const base2 of new Set([root, top])) {
-    const binary2 = join48(base2, "node_modules", ".bin", "linearis");
+    const binary2 = join50(base2, "node_modules", ".bin", "linearis");
     if (!existsSync40(binary2))
       continue;
     const target = realpathSync17(binary2);
-    if ([root, top].every((folder) => relative15(join48(realpathSync17(folder), "node_modules"), target).startsWith("..")))
+    if ([root, top].every((folder) => relative15(join50(realpathSync17(folder), "node_modules"), target).startsWith("..")))
       return finding("FAIL", "linearis", "project binary resolves outside the dependency tree", "Install linearis in this project's node_modules.");
     const version2 = command(binary2, ["--version"], root, { ...process.env, NO_UPDATE_NOTIFIER: "1" });
     if (version2.ok && version2.output === "2026.8.0")
@@ -42645,7 +42861,7 @@ async function manifest(host, root = ROOT, timeoutMs = FETCH_TIMEOUT_MS) {
   const suffix = `dist/${host}/.${host === "codex" ? "codex" : "claude"}-plugin/plugin.json`;
   try {
     if (isAbsolute18(root)) {
-      const value = parseJson3(readFileSync38(join48(root, suffix), "utf8"), validManifest);
+      const value = parseJson3(readFileSync39(join50(root, suffix), "utf8"), validManifest);
       return { value, failure: value ? undefined : { reason: "invalid" } };
     } else {
       const response = await fetch(`${root}/${suffix}`, { signal: AbortSignal.timeout(timeoutMs) });
@@ -42697,12 +42913,13 @@ async function doctor2(json = false) {
     hasCodex || codexConfigured ? checkSource("Codex", codexSource.value, codexConfigured, codexSource.failure) : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
+    ...probedHostVersionFindings(join50(hostRoot, "research/host-facts"), (host) => readInstalledHostVersion(host, process.env)),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
     checkLinearis(root, binding.binding?.backend ?? null),
     checkKnowledgebase(process.cwd()),
-    checkSemanticLint(join48(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
+    checkSemanticLint(join50(homedir6(), semantic_lint_default.key_file), process.env.AK_JEV_ENABLED)
   ];
   if (!hasClaude && !hasCodex) {
     items2.push(finding("FAIL", "installation", "ak is absent from both hosts", "Install ak from the published marketplace in Claude Code or Codex."));
@@ -42719,8 +42936,8 @@ async function maintenanceCommandNotice() {
   if (!path || basename21(path) !== "ak")
     return null;
   try {
-    const current2 = readFileSync38(path, "utf8");
-    const published = isAbsolute18(ROOT) ? readFileSync38(join48(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
+    const current2 = readFileSync39(path, "utf8");
+    const published = isAbsolute18(ROOT) ? readFileSync39(join50(ROOT, "dist/claude-code/bin/ak"), "utf8") : await (async () => {
       const response = await fetch(`${ROOT}/dist/claude-code/bin/ak`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
       });
