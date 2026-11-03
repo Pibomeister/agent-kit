@@ -1,0 +1,35 @@
+{
+  "name": "ak",
+  "version": "0.1.82",
+  "description": "One engineering lifecycle, amalgamated from eleven donors: ten MIT, one Apache-2.0.",
+  "author": {
+    "name": "agent-kit maintainers"
+  },
+  "license": "MIT",
+  "skills": [
+    "./.cursor/skills/super-align",
+    "./.cursor/skills/super-bound",
+    "./.cursor/skills/super-scout",
+    "./.cursor/skills/super-build",
+    "./.cursor/skills/super-verify",
+    "./.cursor/skills/super-review",
+    "./.cursor/skills/super-ship",
+    "./.cursor/skills/codebase-design",
+    "./.cursor/skills/verify",
+    "./.cursor/skills/visual-edit",
+    "./.cursor/skills/compound",
+    "./.cursor/skills/doc-review",
+    "./.cursor/skills/receiving-review",
+    "./.cursor/skills/diagnose",
+    "./.cursor/skills/doubt-driven",
+    "./.cursor/skills/simplify",
+    "./.cursor/skills/research",
+    "./.cursor/skills/source-driven",
+    "./.cursor/skills/explain",
+    "./.cursor/skills/prototype",
+    "./.cursor/skills/handoff",
+    "./.cursor/skills/wait-what",
+    "./.cursor/skills/wayfind"
+  ],
+  "agents": "./.cursor/agents/"
+}

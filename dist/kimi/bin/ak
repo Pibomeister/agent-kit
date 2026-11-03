@@ -16030,7 +16030,7 @@ var init_load = __esm(() => {
 
 // src/packaging/hosts.ts
 function explicitStartForHost(host, namespace, skillId) {
-  if (host === "grok" || host === "droid")
+  if (host === "grok" || host === "droid" || host === "cursor")
     return `/${skillId}`;
   if (host === "kimi")
     return `/skill:${skillId}`;
