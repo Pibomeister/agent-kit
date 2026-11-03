@@ -23,14 +23,23 @@ function writeIfAbsent(root: string, rel: string, contents: string): void {
   writeFileSync(full, contents);
 }
 
+/** `provenance: false` skips the empty lock and adaptations file. */
+export interface TreeOptions {
+  provenance?: boolean;
+}
+
 /** Build a throwaway repo root from a path -> contents map. */
-export function makeTree(files: Record<string, string>): string {
+export function makeTree(files: Record<string, string>, options: TreeOptions = {}): string {
   const root = processScratch("ak-tree-");
-  for (const [rel, contents] of Object.entries({
-    "provenance/upstream.lock.yaml": EMPTY_LOCK,
-    "provenance/adaptations.yaml": EMPTY_ADAPTATIONS,
-    ...files,
-  })) {
+  const seeded =
+    options.provenance === false
+      ? files
+      : {
+          "provenance/upstream.lock.yaml": EMPTY_LOCK,
+          "provenance/adaptations.yaml": EMPTY_ADAPTATIONS,
+          ...files,
+        };
+  for (const [rel, contents] of Object.entries(seeded)) {
     const full = join(root, rel);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, contents);
@@ -157,12 +166,14 @@ function substituteInPlace(dir: string, from: string, to: string): void {
 }
 
 /** Copy a committed fixture tree to a temp root, substituting the denied strings. */
-export function materializeFixture(relPath: string): string {
+export function materializeFixture(relPath: string, options: TreeOptions = {}): string {
   const source = join(import.meta.dir, "..", "fixtures", relPath);
   const root = processScratch("ak-fixture-");
   cpSync(source, root, { recursive: true });
-  writeIfAbsent(root, "provenance/upstream.lock.yaml", EMPTY_LOCK);
-  writeIfAbsent(root, "provenance/adaptations.yaml", EMPTY_ADAPTATIONS);
+  if (options.provenance !== false) {
+    writeIfAbsent(root, "provenance/upstream.lock.yaml", EMPTY_LOCK);
+    writeIfAbsent(root, "provenance/adaptations.yaml", EMPTY_ADAPTATIONS);
+  }
   substituteInPlace(root, DENY_MARKER, sampleModelTerm());
   substituteInPlace(root, PLACEHOLDER_MARKER, samplePlaceholderTerm());
   return root;

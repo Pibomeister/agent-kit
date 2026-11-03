@@ -764,9 +764,17 @@ describe("the licence files the distribution is obliged to carry", () => {
   test("a licence listed only under the not-bundled NOTICE heading stays out until a shipped file cites it", () => {
     const held = "held licence text\n";
     const notice = `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\nprovenance/licenses/held.LICENSE\n`;
+    const lock = [
+      "donors:",
+      "  - id: held",
+      "    path: .donors/held",
+      "    license_file: provenance/licenses/held.LICENSE",
+      "",
+    ].join("\n");
     const idle = ctxFor({
       NOTICE: notice,
       "provenance/licenses/held.LICENSE": held,
+      "provenance/upstream.lock.yaml": lock,
     });
     const idlePlan = planBundle(idle, "claude-code", {});
     expect(idlePlan.files.has("provenance/licenses/held.LICENSE")).toBe(false);
@@ -779,6 +787,7 @@ describe("the licence files the distribution is obliged to carry", () => {
       ctxFor({
         NOTICE: notice,
         "provenance/licenses/held.LICENSE": held,
+        "provenance/upstream.lock.yaml": lock,
         "roles/implementer/ROLE.md": "// provenance/licenses/held.LICENSE\n\n# Implementer\n",
       }),
       "claude-code",
@@ -974,6 +983,27 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(issue?.message).toContain(adaptationSource);
     expect(plan.files.has(licencePath)).toBe(false);
     expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
+
+  test("makeTree can omit provenance files so a missing lock fails through the helper", () => {
+    const root = makeTree(
+      {
+        "catalog.yaml": CATALOG,
+        "package.json": packageJson(PACKAGE_JSON),
+        NOTICE: BASE["NOTICE"] ?? "",
+        LICENSE: BASE["LICENSE"] ?? "",
+      },
+      { provenance: false },
+    );
+    const { catalog } = loadCatalog(root);
+    if (catalog === null) throw new Error("fixture has no catalog");
+    const plan = planBundle({ root, catalog }, "claude-code", {});
+    expect(plan.issues.some((row) => row.severity === "error" && row.file === "provenance/upstream.lock.yaml")).toBe(
+      true,
+    );
+    expect(plan.issues.some((row) => row.severity === "error" && row.file === "provenance/adaptations.yaml")).toBe(
+      true,
+    );
   });
 });
 

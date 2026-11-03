@@ -180,6 +180,10 @@ function heldAdaptedLicence(file: string, path: string, source: string): string 
   return `${file} is listed as not bundled, and provenance/adaptations.yaml records ${path} from ${source}, so the bundle would carry derived code without that licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Move ${file} out of the not-bundled NOTICE section.`;
 }
 
+function unmappedHeldLicence(file: string): string {
+  return `${file} is listed as not bundled, and provenance/upstream.lock.yaml records no donor for it, so the held-licence guard cannot tell whether adapted code would ship without that licence text. Name ${file} as license_file or notice_file on a lock donor, or move it out of the not-bundled NOTICE section.`;
+}
+
 function unreadProvenance(source: string, reason: "missing" | "unparseable" | "invalid"): string {
   if (reason === "missing") {
     return `${source} is missing, so the held-licence guard cannot tell which provenance texts belong to adapted donors. Restore ${source}.`;
@@ -198,6 +202,10 @@ function normalizeLicencePath(path: string): string {
   let out = path.replaceAll("\\", "/");
   while (out.startsWith("./")) out = out.slice(2);
   return out;
+}
+
+function licenceKey(path: string): string {
+  return normalizeLicencePath(path).toLowerCase();
 }
 
 interface DonorLicencePin {
@@ -395,9 +403,10 @@ export function licenceClosure(
   const donorsByLicence = new Map<string, string[]>();
   for (const [donor, files] of donorFiles.value) {
     for (const file of files) {
-      const ids = donorsByLicence.get(file) ?? [];
+      const key = licenceKey(file);
+      const ids = donorsByLicence.get(key) ?? [];
       if (!ids.includes(donor)) ids.push(donor);
-      donorsByLicence.set(file, ids);
+      donorsByLicence.set(key, ids);
     }
   }
   const adaptations = loadAdaptationsDocument(root);
@@ -422,7 +431,12 @@ export function licenceClosure(
     rowsByDonor.set(parsed.donor, rows);
   }
   for (const file of held) {
-    for (const donor of donorsByLicence.get(file) ?? []) {
+    const donors = donorsByLicence.get(licenceKey(file));
+    if (donors === undefined) {
+      problems.push({ source: file, message: unmappedHeldLicence(file) });
+      continue;
+    }
+    for (const donor of donors) {
       const rows = rowsByDonor.get(donor);
       if (rows === undefined) continue;
       const [row] = rows.toSorted(
