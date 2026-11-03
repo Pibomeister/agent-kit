@@ -1803,10 +1803,10 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     );
   });
 
-  test("a light-route implementation ticket does not require cold_read_ref when on", () => {
+  test("an implementation ticket whose approval note says the light route was taken still requires cold_read_ref when on", () => {
     expect(
       rulesOf(run(ticket({ approvals: [lightRouteApproval()] }), [project({ review: { cold_read: "on" } })])),
-    ).not.toContain(RULE_COLD_REF);
+    ).toContain(RULE_COLD_REF);
   });
 
   test("a ticket with no project document in the index is treated as off", () => {

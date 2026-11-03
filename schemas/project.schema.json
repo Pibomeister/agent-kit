@@ -417,7 +417,7 @@
           "default": "off"
         },
         "cold_read": {
-          "description": "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: the read is required except on the text-only single-slice light route, and an unavailable read may raise the class. Default off. Not yet backed by live probe evidence (phase 1a, GS-004e).",
+          "description": "Whether super-bound dispatches an independent cold read of each implementation ticket. off: no read. shadow: the read runs and is stored, and listed decisions are printed, but nothing reclassifies the ticket or reaches delegation evidence. on: every implementation ticket requires a cold_read_ref, and an unavailable read may raise the class. A light-route exemption is a later follow-up. Default off. Not yet backed by live probe evidence (phase 1a, GS-004e).",
           "enum": ["off", "shadow", "on"],
           "default": "off"
         }

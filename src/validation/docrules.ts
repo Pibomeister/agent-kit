@@ -1375,21 +1375,8 @@ function ticketRules(rc: RuleContext): void {
   const coldRead = review === null ? null : str(review["cold_read"]);
   if (coldRead !== "on") return;
 
-  // The light-route procedure records that claim on an approval note; it adds no ticket field.
-  const lightRoute = arr(doc["approvals"])
-    .map(obj)
-    .some((approval) => {
-      const note = approval === null ? null : str(approval["note"]);
-      return note !== null && /light route was taken/i.test(note);
-    });
-  if (lightRoute) return;
-
   if (obj(doc["cold_read_ref"]) !== null && str(obj(doc["cold_read_ref"])?.["hash"]) !== null) return;
-  fail(
-    rc,
-    RULE,
-    "an implementation ticket in a project with review.cold_read on has no cold_read_ref; the independent read is required except on the text-only single-slice light route",
-  );
+  fail(rc, RULE, "an implementation ticket in a project with review.cold_read on has no cold_read_ref");
 }
 
 // ------------------------------------------------------------------ cold-read
