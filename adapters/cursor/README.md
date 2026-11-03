@@ -48,7 +48,7 @@ REPO="${REPO:?set REPO to the consuming checkout}"
 
 mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
   "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
-  "$REPO/.cursor/bin"
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses"
 
 rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
 rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
@@ -56,13 +56,20 @@ rsync -a "$BUNDLE/.cursor/rules/"      "$REPO/.cursor/rules/"
 rsync -a "$BUNDLE/.cursor/roles/"      "$REPO/.cursor/roles/"
 rsync -a "$BUNDLE/.cursor/references/" "$REPO/.cursor/references/"
 rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
+rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
 rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
+rsync -a "$BUNDLE/.cursor/licenses/"   "$REPO/.cursor/licenses/"
 cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
 ```
 
-Merge `$BUNDLE/AGENTS.md` into the consuming repo's root `AGENTS.md`. Do not
-replace an existing root `AGENTS.md`. Nested `.cursor/AGENTS.md` would only
-apply while the agent works on files under `.cursor/`.
+Licence and attribution files ship at `.cursor/licenses/` (`LICENSE`, `NOTICE`,
+`LICENSES/*`, `provenance/licenses/*`). Vendor steps never write the consuming
+repo's root `LICENSE`, `NOTICE` or `LICENSES/`. `rsync` of those trees is
+additive: it does not delete `.cursor/environment.json`, `.cursor/hooks.json`
+or `.cursor/mcp.json`. Merge `$BUNDLE/AGENTS.md` into the consuming repo's
+root `AGENTS.md`. Do not replace an existing root `AGENTS.md`. Nested
+`.cursor/AGENTS.md` would only apply while the agent works on files under
+`.cursor/`.
 
 Emitted paths the host reads:
 
@@ -99,5 +106,6 @@ On the target branch or pull request:
    subagent a clean context window; it does not attest isolation.
 5. The author does not sit a reviewer seat and does not close a finding.
 
-`ak doctor` and `ak update` do not manage Cursor. Re-run the build and rsync to
-refresh a vendored copy.
+`ak doctor` and `ak update` do not manage Cursor. The isolation-probe version
+check runs only where `research/host-facts/` holds a review-isolation note with
+a real host version. Re-run the build and rsync to refresh a vendored copy.

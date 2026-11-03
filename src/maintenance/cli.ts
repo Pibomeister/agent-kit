@@ -26,6 +26,7 @@ import { runRunner } from "../runner/cli.ts";
 import { readKeyFile } from "../semantic-lint/key.ts";
 import pin from "../../provenance/semantic-lint.json" with { type: "json" };
 import { hookMain } from "../../tools/hooks/semantic-lint.ts";
+import { probedHostVersionFindings, readInstalledHostVersion } from "./host-probe-version.ts";
 
 type Level = "PASS" | "WARN" | "FAIL";
 export interface Finding {
@@ -533,6 +534,9 @@ async function doctor(json = false): Promise<number> {
       : finding("WARN", "Codex marketplace source", "not configured", "Add Pibomeister/agent-kit --ref published."),
     checkPlugin("Claude Code", claude, claudeSource.value?.version ?? null),
     checkPlugin("Codex", codex, codexSource.value?.version ?? null),
+    ...probedHostVersionFindings(join(hostRoot, "research/host-facts"), (host) =>
+      readInstalledHostVersion(host, process.env),
+    ),
     checkProjectEnablement(process.cwd()),
     binding.finding,
     checkToken(root, binding.binding),
