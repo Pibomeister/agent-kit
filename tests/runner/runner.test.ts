@@ -2444,6 +2444,93 @@ describe("runner guards", () => {
     transcript.push("Restart: replaying a decided card returns its recorded result; ledger remains one entry.");
   });
 
+  test("a design report collected as verify evidence cannot authorize ship", () => {
+    const f = ready();
+    for (const [id, operation, covers] of [
+      ["align", "align.run", "align-answer"],
+      ["bound", "bound.run", "spec-approval"],
+      ["build", "build.dispatch", "build-go"],
+    ] as const) {
+      card(f, id, operation, covers);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    const report = join(f.privateDir, "design-report.json");
+    writeFileSync(report, JSON.stringify({ schema: "review", schema_version: 1, id: "design-report-1" }));
+    f.runner.collect("toy-run", "verify", report, f.revision, "verify");
+    f.runner.verify("toy-run", "verify");
+    for (const [id, operation, covers] of [
+      ["review", "review.full", "finding-adjudication"],
+      ["readiness", "review.readiness", "finding-adjudication"],
+    ] as const) {
+      card(f, id, operation, covers);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    f.runner.prepare("toy-run", {
+      id: "ship",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open PR?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    f.runner.judge("toy-run", "ship", "seat-a", "supervisor-1", "ship-a", "yes", []);
+    f.runner.judge("toy-run", "ship", "seat-b", "supervisor-2", "ship-b", "yes", []);
+    expect(f.runner.decide("toy-run", "ship")).toMatchObject({
+      status: "needs-input",
+      escalation: { charter_rule: "runner:design-report" },
+    });
+  });
+
+  test("a runtime verifier receipt collected as verify evidence can authorize ship", () => {
+    const f = ready();
+    for (const [id, operation, covers] of [
+      ["align", "align.run", "align-answer"],
+      ["bound", "bound.run", "spec-approval"],
+      ["build", "build.dispatch", "build-go"],
+    ] as const) {
+      card(f, id, operation, covers);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    const verification = join(f.privateDir, "verification.json");
+    writeFileSync(
+      verification,
+      JSON.stringify({
+        schema: "verification",
+        schema_version: 1,
+        id: "verification-runtime-1",
+        status: "passed",
+        kind: "command",
+        exit_status: 0,
+        command: { argv: ["bun", "test"] },
+        output_digest: `sha256:${"d".repeat(64)}`,
+      }),
+    );
+    f.runner.collect("toy-run", "verify", verification, f.revision, "verify");
+    f.runner.verify("toy-run", "verify");
+    for (const [id, operation, covers] of [
+      ["review", "review.full", "finding-adjudication"],
+      ["readiness", "review.readiness", "finding-adjudication"],
+    ] as const) {
+      card(f, id, operation, covers);
+      expect(f.runner.decide("toy-run", id).status).toBe("complete");
+    }
+    f.runner.prepare("toy-run", {
+      id: "ship",
+      operation: "ship.prepare",
+      grant: { charter_hash: f.charter.immutability.hash, covers: "ship-pr" },
+      question: "Open PR?",
+      options: ["yes", "no"],
+      approve: "yes",
+      evidence: ["verify"],
+      artifact_hash: `sha256:${"b".repeat(64)}`,
+    });
+    f.runner.judge("toy-run", "ship", "seat-a", "supervisor-1", "ship-a", "yes", []);
+    f.runner.judge("toy-run", "ship", "seat-b", "supervisor-2", "ship-b", "yes", []);
+    expect(f.runner.decide("toy-run", "ship").status).toBe("complete");
+  });
+
   test("a charter-approved toy autopilot reaches the open PR checkpoint", () => {
     const f = ready();
     for (const [id, operation, covers] of [
