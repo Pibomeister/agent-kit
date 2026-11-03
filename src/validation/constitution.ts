@@ -31,6 +31,7 @@ import { parse as parseYaml } from "yaml";
 
 import { exists, isDir, isInside, readTextIfPresent, toPosix } from "../util/fs.ts";
 import type { CheckContext } from "./context.ts";
+import { resolveFindingSectionIdentity } from "./headings.ts";
 import { compileSchemas } from "./schemas.ts";
 import { error, skipped, unavailable, type Issue } from "./types.ts";
 
@@ -283,38 +284,34 @@ export function loadArticles(ctx: CheckContext, root: string, validate: Validate
   return { articles, ids, issues };
 }
 
-/** The text under a heading of a Markdown document, up to the next heading at its level or above. */
-function sectionText(document: string, section: string): string | null {
-  const lines = document.split("\n");
-  const at = lines.findIndex((line) => /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line)?.[1] === section);
-  if (at === -1) return null;
-  const level = /^#+/.exec(lines[at] ?? "")?.[0].length ?? 0;
-  const end = lines.findIndex((line, i) => i > at && (/^(#{1,6})\s/.exec(line)?.[1]?.length ?? 7) <= level);
-  return lines.slice(at + 1, end === -1 ? undefined : end).join("\n");
-}
-
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+
+function spanProblem(text: string | null, span: SourceSpan): string | null {
+  if (text === null) return `its document ${span.document} is not a file inside the registry`;
+  const resolved = resolveFindingSectionIdentity(text, span.section);
+  if (!resolved.ok) {
+    return resolved.reason === "missing"
+      ? `${span.document} has no heading '${span.section}'`
+      : `${span.document} ${resolved.error}`;
+  }
+  return squash(resolved.body).includes(squash(span.quote))
+    ? null
+    : `the quote is not in ${span.document} under '${span.section}'`;
+}
 
 /**
  * Each source span an article carries, its own and its exceptions', checked
  * against the document: the document exists inside the registry, the section is
  * one of its headings, and the quote is the source's own words under it.
  * Whitespace is compared loosely, since a wrapped line is the same words.
+ * Duplicate headings are refused rather than first-match merged (AT-15).
  */
 function checkSpans(ctx: CheckContext, root: string, { path: file, article }: LoadedArticle): Issue[] {
   const spans = [article.source, ...(article.exceptions ?? []).flatMap((e) => e.source ?? [])];
   return spans.flatMap((span) => {
     const path = resolve(root, span.document);
     const text = isInside(path, root) ? readTextIfPresent(path) : null;
-    const body = text === null ? null : sectionText(text, span.section);
-    const problem =
-      text === null
-        ? `its document ${span.document} is not a file inside the registry`
-        : body === null
-          ? `${span.document} has no heading '${span.section}'`
-          : squash(body).includes(squash(span.quote))
-            ? null
-            : `the quote is not in ${span.document} under '${span.section}'`;
+    const problem = spanProblem(text, span);
     return problem === null
       ? []
       : [
