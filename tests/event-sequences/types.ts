@@ -52,6 +52,43 @@ export type Event =
   | { kind: "claim-isolation"; isolation: "runner-attested" | "host-unattested" | "self-attested" }
   | { kind: "fill-seat-with-author"; role: LaneRole };
 
+export const EVENT_KINDS = [
+  "cover-lane",
+  "unavailable-lane",
+  "skip-lane",
+  "set-verdict",
+  "charge-fix-cycle",
+  "record-extension",
+  "force-full-mode",
+  "apply-patch",
+  "resolve-finding",
+  "change-bytes",
+  "resume",
+  "restart",
+  "rename-run",
+  "move-line",
+  "cancel",
+  "publish",
+  "complete-seat",
+  "decide",
+  "synthesize",
+  "claim-isolation",
+  "fill-seat-with-author",
+] as const;
+
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+/** True when `value` is an event whose `kind` is in the Event union. */
+export function isEvent(value: unknown): value is Event {
+  if (value === null || Array.isArray(value) || !(value instanceof Object)) return false;
+  if (!("kind" in value)) return false;
+  return EVENT_KINDS.some((kind) => kind === value.kind);
+}
+
+export function isEventArray(value: unknown): value is Event[] {
+  return Array.isArray(value) && value.every(isEvent);
+}
+
 export interface Lane {
   role: LaneRole;
   required: boolean;
@@ -60,8 +97,10 @@ export interface Lane {
   verdict: "approve" | "request-changes" | "block" | "no-opinion" | null;
   filledBy: string | null;
   independentOfAuthor: boolean;
+  contextIsolated: boolean;
   rawOutputPresent: boolean;
   conflictingEvidence: boolean;
+  timeoutCoverAttempted: boolean;
 }
 
 export interface Finding {

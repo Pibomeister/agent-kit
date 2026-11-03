@@ -98,10 +98,27 @@ export const eventArb: Arbitrary<Event> = oneof(
   { weight: 1, arbitrary: role.map((laneRole): Event => ({ kind: "fill-seat-with-author", role: laneRole })) },
 );
 
+const timeoutThenCover: Arbitrary<Event[]> = tuple(role, reason, actor).map(([laneRole, unavailable, filledBy]) => [
+  { kind: "unavailable-lane" as const, role: laneRole, reason: unavailable },
+  { kind: "cover-lane" as const, role: laneRole, filledBy },
+]);
+
 /** Bounded length: the plan raises run count, not sequence length. Eight keeps the 1,000-run suite under a minute. */
-export const sequenceArb: Arbitrary<Event[]> = array(eventArb, { minLength: 3, maxLength: 8 });
+export const sequenceArb: Arbitrary<Event[]> = oneof(
+  { weight: 3, arbitrary: array(eventArb, { minLength: 3, maxLength: 8 }) },
+  {
+    weight: 2,
+    arbitrary: tuple(timeoutThenCover, array(eventArb, { minLength: 1, maxLength: 5 })).map(([pair, rest]) => [
+      ...pair,
+      ...rest,
+    ]),
+  },
+);
 
 export const NUM_RUNS = 1000;
+
+/** Pinned default seed so CI is deterministic. Override with AK_EVENT_SEQ_SEED, or set AK_EVENT_SEQ_RANDOM=1. */
+export const PINNED_SEED = 20261103;
 
 /**
  * Named sequences that kill the plan §7 critical mutations. Always executed, not only when
@@ -113,6 +130,30 @@ export const CRITICAL: ReadonlyArray<{ name: string; events: Event[] }> = [
     events: [
       { kind: "unavailable-lane", role: "code-review/security", reason: "timeout" },
       { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
+      { kind: "set-verdict", verdict: "approved" },
+    ],
+  },
+  {
+    name: "timeout-then-cover-same-lane-is-still-unavailable",
+    events: [
+      { kind: "unavailable-lane", role: "code-review/security", reason: "timeout" },
+      { kind: "cover-lane", role: "code-review/security", filledBy: "supervisor-1" },
+      { kind: "set-verdict", verdict: "approved" },
+    ],
+  },
+  {
+    name: "skipped-required-lane-blocks-approval",
+    events: [
+      { kind: "skip-lane", role: "code-review/security", withReason: true },
+      { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
+      { kind: "set-verdict", verdict: "approved" },
+    ],
+  },
+  {
+    name: "matching-hashes-do-not-fire-stale",
+    events: [
+      { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
+      { kind: "cover-lane", role: "code-review/security", filledBy: "supervisor-2" },
       { kind: "set-verdict", verdict: "approved" },
     ],
   },
@@ -230,6 +271,15 @@ export const CRITICAL: ReadonlyArray<{ name: string; events: Event[] }> = [
     events: [
       { kind: "claim-isolation", isolation: "self-attested" },
       { kind: "fill-seat-with-author", role: "code-review/correctness" },
+      { kind: "set-verdict", verdict: "approved" },
+    ],
+  },
+  {
+    name: "host-unattested-isolation-is-not-authority",
+    events: [
+      { kind: "claim-isolation", isolation: "host-unattested" },
+      { kind: "cover-lane", role: "code-review/correctness", filledBy: "supervisor-1" },
+      { kind: "cover-lane", role: "code-review/security", filledBy: "supervisor-2" },
       { kind: "set-verdict", verdict: "approved" },
     ],
   },

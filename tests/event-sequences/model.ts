@@ -20,7 +20,7 @@ import {
 const HASH_A = `sha256:${"a".repeat(64)}`;
 const HASH_B = `sha256:${"b".repeat(64)}`;
 
-function lane(role: LaneRole): Lane {
+function blankLane(role: LaneRole): Lane {
   return {
     role,
     required: true,
@@ -29,8 +29,10 @@ function lane(role: LaneRole): Lane {
     verdict: null,
     filledBy: null,
     independentOfAuthor: true,
+    contextIsolated: true,
     rawOutputPresent: false,
     conflictingEvidence: false,
+    timeoutCoverAttempted: false,
   };
 }
 
@@ -49,7 +51,7 @@ function finding(id: FindingId): Finding {
 
 export function initialModel(): Model {
   return {
-    lanes: LANE_ROLES.map(lane),
+    lanes: LANE_ROLES.map(blankLane),
     verdict: "changes-requested",
     mode: "full",
     fixUsed: 0,
@@ -88,6 +90,20 @@ function findingOf(model: Model, id: FindingId): Finding {
 
 function timeoutReason(reason: string | null): boolean {
   return reason !== null && /timeout|timed out/i.test(reason);
+}
+
+function authorClaimedIsolation(model: Model): boolean {
+  return model.isolationClaim === "self-attested" || model.isolationClaim === "host-unattested";
+}
+
+function applyIsolation(item: Lane, model: Model): void {
+  if (!authorClaimedIsolation(model)) return;
+  item.independentOfAuthor = false;
+  item.contextIsolated = false;
+}
+
+function timeoutUnavailable(item: Lane): boolean {
+  return item.state === "unavailable" && timeoutReason(item.reason);
 }
 
 function humanExtensions(model: Model): number {
@@ -146,6 +162,11 @@ export function applyEvent(model: Model, event: Event): void {
   switch (event.kind) {
     case "cover-lane": {
       const target = laneOf(model, event.role);
+      if (timeoutUnavailable(target)) {
+        // Timeout/unavailable is never coverage: a later cover does not erase the gap.
+        target.timeoutCoverAttempted = true;
+        return;
+      }
       target.state = "covered";
       target.reason = null;
       target.verdict = "approve";
@@ -153,6 +174,7 @@ export function applyEvent(model: Model, event: Event): void {
       target.independentOfAuthor = event.filledBy !== IMPLEMENTER;
       target.rawOutputPresent = true;
       target.conflictingEvidence = event.role.includes("security");
+      applyIsolation(target, model);
       return;
     }
     case "unavailable-lane": {
@@ -161,14 +183,20 @@ export function applyEvent(model: Model, event: Event): void {
       target.reason = event.reason;
       target.verdict = "no-opinion";
       target.rawOutputPresent = false;
+      applyIsolation(target, model);
       return;
     }
     case "skip-lane": {
       const target = laneOf(model, event.role);
+      if (timeoutUnavailable(target)) {
+        target.timeoutCoverAttempted = true;
+        return;
+      }
       target.state = "skipped";
       target.reason = event.withReason ? "stack does not apply" : null;
       target.verdict = "no-opinion";
       target.rawOutputPresent = false;
+      applyIsolation(target, model);
       return;
     }
     case "set-verdict":
@@ -216,10 +244,9 @@ export function applyEvent(model: Model, event: Event): void {
     case "resume":
     case "restart":
     case "rename-run":
-      snapshotFloor(model);
-      return;
     case "move-line":
-      findingOf(model, event.findingId).line += 7;
+      snapshotFloor(model);
+      if (event.kind === "move-line") findingOf(model, event.findingId).line += 7;
       return;
     case "cancel":
       model.cancelled = true;
@@ -270,13 +297,22 @@ export function applyEvent(model: Model, event: Event): void {
       }
       return;
     }
-    case "claim-isolation":
+    case "claim-isolation": {
       model.isolationClaim = event.isolation;
+      const authorClaimed = event.isolation === "self-attested" || event.isolation === "host-unattested";
+      if (authorClaimed) {
+        for (const item of model.lanes) {
+          item.independentOfAuthor = false;
+          item.contextIsolated = false;
+        }
+      }
       return;
+    }
     case "fill-seat-with-author": {
       const target = laneOf(model, event.role);
       target.filledBy = "builder";
       target.independentOfAuthor = false;
+      applyIsolation(target, model);
       model.authorFilledRole = event.role;
       return;
     }
@@ -289,15 +325,21 @@ export function observe(model: Model): Observation {
   const unavailableRequired = required.filter((item) => item.state === "unavailable");
   const timeoutLane = required.find((item) => timeoutReason(item.reason));
   const human = humanExtensions(model);
-  const thirdLegal =
-    model.fixUsed <= FIX_CYCLE_CAP + human && (model.fixUsed <= FIX_CYCLE_CAP || (human > 0 && model.mode === "delta"));
+  const atCap = model.fixUsed >= FIX_CYCLE_CAP;
+  const thirdLegal = !atCap || (human > 0 && model.mode === "delta" && model.fixUsed <= FIX_CYCLE_CAP + human);
+  const isolationOk = model.isolationClaim === null || model.isolationClaim === "runner-attested";
+  const authorSat = required.some(
+    (item) => !item.independentOfAuthor || item.filledBy === IMPLEMENTER || item.filledBy === "builder",
+  );
   const approvalLegal =
     model.verdict !== "approved" ||
     (uncovered.length === 0 &&
       unavailableRequired.length === 0 &&
       thirdLegal &&
       model.approvalHash === model.currentHash &&
-      model.authorFilledRole === null);
+      model.authorFilledRole === null &&
+      !authorSat &&
+      isolationOk);
   const resolved = model.findings.filter((item) => item.status === "resolved");
   const closureLegal = resolved.every((item) => item.independentReceipt && item.closer === "verifier");
   let countersDecreased = false;
@@ -316,9 +358,7 @@ export function observe(model: Model): Observation {
     countersDecreased,
     publishAfterCancel: model.publishedAfterCancel,
     seatsIndependent: seatsAreIndependent(model.judgments),
-    isolationFromAuthorFlag:
-      model.isolationClaim === "self-attested" ||
-      (model.isolationClaim === "host-unattested" && model.authorFilledRole !== null),
+    isolationFromAuthorFlag: model.isolationClaim === "self-attested" || model.isolationClaim === "host-unattested",
     synthesisErasedConflict: model.findings.some((item) => item.synthesisSoftened),
     synthesisChangedLaneState:
       model.attemptedLaneRewrite && timeoutLane !== undefined && timeoutLane.state !== "unavailable",

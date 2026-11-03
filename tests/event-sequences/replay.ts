@@ -10,12 +10,18 @@ import { check as fcCheck, defaultReportMessage, property } from "fast-check";
 import { failuresOf, formatEvents } from "./evaluate.ts";
 import { NUM_RUNS, sequenceArb } from "./generator.ts";
 import { createWorld } from "./impl.ts";
-import type { Event } from "./types.ts";
+import { isFiniteNumber } from "./parse.ts";
+import { isEventArray, type Event } from "./types.ts";
 
 function flag(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name);
   if (index < 0) return undefined;
   return argv[index + 1];
+}
+
+function usage(): void {
+  console.error("usage: bun tests/event-sequences/replay.ts --seed <n> [--path <path>] [--runs <n>]");
+  console.error("       bun tests/event-sequences/replay.ts --events '<json>'");
 }
 
 function replayEvents(events: readonly Event[]): number {
@@ -53,10 +59,6 @@ function replaySeed(seed: number, path: string | undefined, runs: number): numbe
   return 1;
 }
 
-function isEventArray(value: unknown): value is Event[] {
-  return Array.isArray(value);
-}
-
 const eventsFlag = flag(process.argv, "--events");
 const seedFlag = flag(process.argv, "--seed");
 const pathFlag = flag(process.argv, "--path");
@@ -64,18 +66,30 @@ const runsFlag = flag(process.argv, "--runs");
 
 let code = 0;
 if (eventsFlag !== undefined) {
-  const parsed: unknown = JSON.parse(eventsFlag);
-  if (!isEventArray(parsed)) {
-    console.error("--events must be a JSON array of events");
+  try {
+    const parsed: unknown = JSON.parse(eventsFlag);
+    if (!isEventArray(parsed)) {
+      console.error("--events must be a JSON array of events whose kind is in the Event union");
+      usage();
+      code = 2;
+    } else code = replayEvents(parsed);
+  } catch {
+    console.error("invalid --events JSON");
+    usage();
     code = 2;
-  } else code = replayEvents(parsed);
+  }
 } else if (seedFlag !== undefined) {
   const seed = Number(seedFlag);
-  const runs = runsFlag === undefined || runsFlag === "" ? NUM_RUNS : Number(runsFlag);
-  code = replaySeed(seed, pathFlag, Number.isFinite(runs) ? runs : 1);
+  if (!isFiniteNumber(seed)) {
+    console.error("--seed must be a finite number");
+    usage();
+    code = 2;
+  } else {
+    const runs = runsFlag === undefined || runsFlag === "" ? NUM_RUNS : Number(runsFlag);
+    code = replaySeed(seed, pathFlag, isFiniteNumber(runs) ? runs : 1);
+  }
 } else {
-  console.error("usage: bun tests/event-sequences/replay.ts --seed <n> [--path <path>] [--runs <n>]");
-  console.error("       bun tests/event-sequences/replay.ts --events '<json>'");
+  usage();
   code = 2;
 }
 process.exit(code);

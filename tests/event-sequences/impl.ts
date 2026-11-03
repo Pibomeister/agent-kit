@@ -1,12 +1,40 @@
 /**
  * Drive the real runner and validators with the same events the reference model sees.
+ *
+ * Real runner paths: charge, ledger (resume), new Runner+status (restart),
+ * copy-run-to-new-id (rename / move-line), cancel, effect (publish), judge, decide.
+ *
+ * Real validator paths: review/finding/ticket documents through checkDocument,
+ * checkArtifacts, and the review schema validator.
+ *
+ * Limits (no product API, not claimed):
+ * - There is no Runner operation for cover-lane, skip-lane, unavailable-lane,
+ *   set-verdict, record-extension, force-full-mode, synthesize, claim-isolation,
+ *   fill-seat-with-author, apply-patch, resolve-finding, change-bytes, or
+ *   move-line-as-a-line-edit. Those events are applied to documents and checked
+ *   with the validators above. move-line also rehomes the run under a new id so
+ *   the budget comparison still goes through Runner state.
+ * - checkDocument does not inspect a covered lane's prior timeout reason.
+ *   Timeout-as-coverage is enforced by leaving the lane `unavailable`
+ *   (review.unavailable-required-lane-blocks-approval) and by the schema pin
+ *   that approved ⇒ every required lane is covered.
+ * - There is no docrule for `context_isolated: false`. Author-claimed isolation
+ *   is encoded as `context_isolated: false` and `independent_of_author: false`;
+ *   the firing rules are review.seat-filled-by-someone-other-than-the-author
+ *   and the schema const on independent_of_author.
+ * - A verifier-closed finding with independent: false is schema-invalid
+ *   (`closure_receipt.independent` const true). Applied≠resolved is asserted
+ *   via finding.self-closed and finding.closed-without-receipt only.
+ * - Synthesize does not rewrite lane execution state in the product. A probe
+ *   document that covers a timeout lane is submitted so the gap is visible;
+ *   the honest document still carries `unavailable` and must block approval.
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../../src/catalog/load.ts";
 import { Runner } from "../../src/runner/core.ts";
-import type { StandingGrant } from "../../src/runner/types.ts";
+import type { Run, StandingGrant } from "../../src/runner/types.ts";
 import { artifactHash } from "../../src/util/hash.ts";
 import { checkArtifacts } from "../../src/validation/artifacts.ts";
 import type { CheckContext } from "../../src/validation/context.ts";
@@ -34,11 +62,17 @@ package:
   namespace: "/ak:"
   default_profile: core
 `;
+const AT = "2026-09-19T10:00:00Z";
+const REVISION = "a".repeat(40);
 
 export interface World {
   runner: Runner;
-  twin: Runner;
+  privateDir: string;
+  workerRoot: string;
+  kitRoot: string;
   runId: string;
+  isolationClaim: "runner-attested" | "host-unattested" | "self-attested" | null;
+  renameSeq: number;
   restore: () => void;
   ctx: CheckContext;
   schemas: SchemaSet;
@@ -47,7 +81,7 @@ export interface World {
   lastChargeStatus: string | null;
 }
 
-interface LaneRecord {
+export interface LaneRecord {
   role: string;
   required: true;
   state: string;
@@ -111,7 +145,7 @@ interface ReviewDocument {
   schema: string;
   schema_version: number;
   id: string;
-  project: string;
+  project: { id: string };
   run_id: null;
   created_by: { role: string };
   inputs: never[];
@@ -128,6 +162,18 @@ interface ReviewDocument {
   verdict: string;
   last_head_verified?: { repo: string; revision: string };
   delta_scope?: { boundary: string; affected_behavior: string[] };
+  packet?: {
+    prior_review: { id: string; hash: string };
+    original_findings: Array<{ id: string; hash: string }>;
+    fix_diff: string;
+  };
+  continuity?: { mode: string; independent_of_author: boolean };
+}
+
+export interface ImplView {
+  rules: string[];
+  lanes: LaneRecord[];
+  findingsSoftened: boolean;
 }
 
 function standingGrant(hash: string, runId: string): StandingGrant {
@@ -236,7 +282,6 @@ export function createWorld(): World {
   mkdirSync(join(worker, ".runner-requests"));
   const charter = writeCharter(privateDir, 3);
   const runner = new Runner(privateDir, worker, ROOT);
-  const twin = new Runner(privateDir, worker, ROOT);
   runner.start("toy-run", charter.path, IMPLEMENTER, revision, standingGrant(charter.hash, "toy-run"));
   const log = join(privateDir, "log.txt");
   writeFileSync(log, "independently collected verification");
@@ -262,21 +307,28 @@ export function createWorld(): World {
   writeFileSync(join(artifactRoot, "templates", "finding.json"), "{}");
   const loaded = loadCatalog(artifactRoot);
   if (loaded.catalog === null) throw new Error("event-sequence artifact tree has no catalog");
-  return {
+  const world: World = {
     runner,
-    twin,
+    privateDir,
+    workerRoot: worker,
+    kitRoot: ROOT,
     runId: "toy-run",
+    isolationClaim: null,
+    renameSeq: 0,
     ctx: { root: artifactRoot, catalog: loaded.catalog },
     schemas: compileSchemas(ROOT),
     lastSeatError: null,
     lastPublishError: null,
     lastChargeStatus: null,
-    restore: () => {
+    restore() {
       writeFileSync(runPath, runSnap);
       if (ledgerSnap !== null) writeFileSync(ledgerPath, ledgerSnap);
       if (existsSync(decisionPath)) unlinkSync(decisionPath);
+      this.runId = "toy-run";
+      this.isolationClaim = null;
     },
   };
+  return world;
 }
 
 export function caughtMessage(run: () => void): string | null {
@@ -289,12 +341,20 @@ export function caughtMessage(run: () => void): string | null {
 }
 
 export function liveBudget(world: World): BudgetEntry[] {
-  const run = world.twin.status(world.runId);
+  const run = world.runner.status(world.runId);
   const entries: BudgetEntry[] = [];
   for (const [key, used] of Object.entries(run.budget_consumption)) {
     if (isFiniteNumber(used)) entries.push({ key, used });
   }
   return entries;
+}
+
+function rehomeRun(world: World, nextId: string): void {
+  const current: Run = structuredClone(world.runner.status(world.runId));
+  current.id = nextId;
+  writeFileSync(join(world.privateDir, `${nextId}.json`), `${JSON.stringify(current, null, 2)}\n`);
+  world.runId = nextId;
+  world.runner.status(nextId);
 }
 
 export function applyImpl(world: World, event: Event): void {
@@ -307,9 +367,19 @@ export function applyImpl(world: World, event: Event): void {
       return;
     }
     case "resume":
+      world.runner.ledger(world.runId);
+      return;
     case "restart":
+      world.runner = new Runner(world.privateDir, world.workerRoot, world.kitRoot);
+      world.runner.status(world.runId);
+      return;
     case "rename-run":
-      world.twin.status(world.runId);
+      world.renameSeq += 1;
+      rehomeRun(world, `toy-run-r${world.renameSeq}`);
+      return;
+    case "move-line":
+      world.renameSeq += 1;
+      rehomeRun(world, `toy-run-${event.findingId}-l${world.renameSeq}`);
       return;
     case "cancel":
       caughtMessage(() => {
@@ -342,6 +412,9 @@ export function applyImpl(world: World, event: Event): void {
         world.runner.decide(world.runId, "card-1");
       });
       return;
+    case "claim-isolation":
+      world.isolationClaim = event.isolation;
+      return;
     default:
       return;
   }
@@ -351,7 +424,7 @@ function laneRecord(lane: Lane): LaneRecord {
   const seat = {
     filled_by: lane.filledBy ?? "reviewer-a",
     independent_of_author: lane.independentOfAuthor,
-    context_isolated: true,
+    context_isolated: lane.contextIsolated,
   };
   if (lane.state === "covered") {
     return {
@@ -377,10 +450,9 @@ function laneRecord(lane: Lane): LaneRecord {
 }
 
 function findingDoc(finding: Finding): FindingDocument {
-  const at = "2026-09-19T10:00:00Z";
   const location = {
     repo: "demo",
-    revision: "a".repeat(40),
+    revision: REVISION,
     path: "src/p.ts",
     line_range: { start: finding.line, end: finding.line },
   };
@@ -393,10 +465,10 @@ function findingDoc(finding: Finding): FindingDocument {
     created_by: { role: finding.author },
     inputs: [],
     source_revision: null,
-    created_at: at,
+    created_at: AT,
     status: finding.status,
     title: "A caller dereferences a value the callee may return null for",
-    lane: "correctness",
+    lane: "code-review/correctness",
     fingerprint: {
       value: HASH_A,
       inputs: { rule: "null-deref", symbol_or_path: "src/p.ts", evidence_digest: HASH_B },
@@ -412,16 +484,19 @@ function findingDoc(finding: Finding): FindingDocument {
   if (finding.status === "resolved" || finding.status === "awaiting-verification") {
     doc.authorization_ref = {
       kind: "explicit",
-      approval: { artifact_hash: HASH_A, by: "human", authority: "explicit", at },
+      approval: { artifact_hash: HASH_A, by: "human", authority: "explicit", at: AT },
     };
   }
   if (finding.status === "resolved") {
-    doc.closure_receipt = {
-      verification: { id: "verification-1", schema: "verification", hash: HASH_B },
-      closed_by: finding.closer ?? AUTHOR_ROLE,
-      independent: finding.independentReceipt,
-      at,
-    };
+    const authorClosed = finding.closer === "implementer" || finding.closer === finding.author;
+    if (authorClosed || finding.independentReceipt) {
+      doc.closure_receipt = {
+        verification: { id: "verification-1", schema: "verification", hash: HASH_B },
+        closed_by: finding.closer ?? AUTHOR_ROLE,
+        independent: true,
+        at: AT,
+      };
+    }
   }
   if (finding.synthesisSoftened) {
     doc.synthesis = {
@@ -445,15 +520,15 @@ function reviewDoc(model: Model): ReviewDocument {
     schema: "review",
     schema_version: 1,
     id: "review-1",
-    project: "demo",
+    project: { id: "demo" },
     run_id: null,
     created_by: { role: "runner" },
     inputs: [],
-    source_revision: { repo: "app", revision: "a".repeat(40) },
+    source_revision: { repo: "app", revision: REVISION },
     created_at: "2026-09-19T00:00:00Z",
     status: "complete",
     mode: model.mode,
-    comparison_base: { repo: "app", revision: "a".repeat(40) },
+    comparison_base: { repo: "app", revision: REVISION },
     reviewed_head: { repo: "app", revision: "b".repeat(40) },
     snapshot: { hash: model.snapshotHash, immutable: true, reviewers_may_edit_source: false },
     authorship: { implementer: "builder", spec_approver: "planner" },
@@ -464,71 +539,110 @@ function reviewDoc(model: Model): ReviewDocument {
   if (model.mode === "delta") {
     doc.last_head_verified = { repo: "app", revision: "c".repeat(40) };
     doc.delta_scope = { boundary: "affected-behavior", affected_behavior: ["login"] };
+    doc.packet = {
+      prior_review: { id: "review-0", hash: HASH_A },
+      original_findings: [{ id: "finding-a", hash: HASH_B }],
+      fix_diff: HASH_A,
+    };
+    doc.continuity = { mode: "same-seat", independent_of_author: true };
   }
   return doc;
 }
 
-export function reviewRules(model: Model): string[] {
-  const doc = reviewDoc(model);
-  const findings = model.findings.map((item, i) => ({
-    file: `templates/finding-${i}.json`,
-    doc: findingDoc(item),
-  }));
-  return checkDocument(
-    "templates/review.json",
-    doc,
-    indexDocuments([{ file: "templates/review.json", doc }, ...findings]),
-  ).map((issue) => issue.rule);
+interface TicketDoc {
+  schema: string;
+  schema_version: number;
+  id: string;
+  project: { id: string };
+  run_id: null;
+  created_by: { role: string };
+  inputs: never[];
+  source_revision: null;
+  created_at: string;
+  status: string;
+  type: string;
+  goal: string;
+  approvals: Array<{ artifact_hash: string; by: string; authority: string; at: string }>;
 }
 
-export function findingRules(world: World, model: Model): string[] {
+function ticketDoc(approvalCurrent: boolean): TicketDoc {
+  const base = {
+    schema: "ticket",
+    schema_version: 1,
+    id: "ticket-1",
+    project: { id: "demo" },
+    run_id: null,
+    created_by: { role: "implementer" },
+    inputs: [],
+    source_revision: null,
+    created_at: AT,
+    status: "draft",
+    type: "decision",
+    goal: "the goal it was approved with",
+  };
+  const current = approvalCurrent ? base : { ...base, goal: "a different goal added after approval" };
+  return {
+    ...current,
+    approvals: [{ artifact_hash: artifactHash(base), by: "human", authority: "explicit", at: "2026-09-19T11:00:00Z" }],
+  };
+}
+
+function rewriteTimeoutLanes(doc: ReviewDocument): ReviewDocument {
+  const rewritten = structuredClone(doc);
+  rewritten.lanes = rewritten.lanes.map((lane) => {
+    if (lane.state !== "unavailable" || lane.reason === undefined || !isTimeoutReason(lane.reason)) return lane;
+    return {
+      role: lane.role,
+      required: true as const,
+      state: "covered",
+      seat: lane.seat,
+      verdict: "approve",
+      raw_output: { id: `raw-${lane.role.replaceAll("/", "-")}`, hash: HASH_A },
+    };
+  });
+  return rewritten;
+}
+
+function pushRules(into: string[], issues: readonly { rule: string }[]): void {
+  for (const issue of issues) into.push(issue.rule);
+}
+
+export function inspectImpl(world: World, model: Model): ImplView {
+  const templates = join(world.ctx.root, "templates");
+  const leftoverFinding = join(templates, "finding.json");
+  if (existsSync(leftoverFinding)) unlinkSync(leftoverFinding);
+  const leftoverProbe = join(templates, "review-probe.json");
+  if (existsSync(leftoverProbe)) unlinkSync(leftoverProbe);
+  const review = reviewDoc(model);
+  const findings = model.findings.map(findingDoc);
+  writeFileSync(join(templates, "review.json"), JSON.stringify(review));
+  for (const finding of findings) {
+    writeFileSync(join(templates, `${finding.id}.json`), JSON.stringify(finding));
+  }
+  writeFileSync(join(templates, "ticket.json"), JSON.stringify(ticketDoc(model.approvalHash === model.currentHash)));
+
   const rules: string[] = [];
-  for (const finding of model.findings) {
-    const doc = findingDoc(finding);
-    writeFileSync(join(world.ctx.root, "templates", "finding.json"), JSON.stringify(doc));
-    const ticketPath = join(world.ctx.root, "templates", "ticket.json");
-    if (existsSync(ticketPath)) unlinkSync(ticketPath);
-    for (const issue of checkArtifacts(world.ctx)) {
-      if (issue.file === "templates/finding.json") rules.push(issue.rule);
-    }
-    for (const issue of checkDocument(
-      "templates/finding.json",
-      doc,
-      indexDocuments([{ file: "templates/finding.json", doc }]),
-    )) {
-      rules.push(issue.rule);
-    }
-    const validate = world.schemas.validatorFor("finding");
-    if (validate !== undefined && !validate(doc)) rules.push("schemas.document-invalid");
+  const indexed = indexDocuments([
+    { file: "templates/review.json", doc: review },
+    ...findings.map((doc) => ({ file: `templates/${doc.id}.json`, doc })),
+  ]);
+  pushRules(rules, checkDocument("templates/review.json", review, indexed));
+  const validateReview = world.schemas.validatorFor("review");
+  if (validateReview !== undefined && !validateReview(review)) rules.push("schemas.document-invalid");
+  pushRules(rules, checkArtifacts(world.ctx));
+  for (const finding of findings) {
+    pushRules(rules, checkDocument(`templates/${finding.id}.json`, finding, indexed));
   }
-  if (model.approvalHash !== model.currentHash) {
-    const artifact = {
-      schema: "ticket",
-      schema_version: 1,
-      id: "ticket-1",
-      project: { id: "demo" },
-      run_id: null,
-      created_by: { role: "implementer" },
-      inputs: [],
-      source_revision: null,
-      created_at: "2026-09-19T10:00:00Z",
-      status: "draft",
-      type: "decision",
-      goal: "the goal it was approved with",
-    };
-    const changed = {
-      ...artifact,
-      goal: "a different goal added after approval",
-      approvals: [
-        { artifact_hash: artifactHash(artifact), by: "human", authority: "explicit", at: "2026-09-19T11:00:00Z" },
-      ],
-    };
-    writeFileSync(join(world.ctx.root, "templates", "ticket.json"), JSON.stringify(changed));
-    for (const issue of checkArtifacts(world.ctx)) {
-      if (issue.rule === "approval.stale") rules.push(issue.rule);
-    }
+  if (model.attemptedLaneRewrite) {
+    const probe = rewriteTimeoutLanes(review);
+    writeFileSync(join(templates, "review-probe.json"), JSON.stringify(probe));
+    pushRules(rules, checkDocument("templates/review-probe.json", probe, indexed));
   }
-  return rules;
+  return {
+    rules,
+    lanes: review.lanes,
+    findingsSoftened: findings.some((doc) => doc.synthesis !== undefined),
+  };
 }
 
 export function timeoutStillBlocks(model: Model, rules: readonly string[]): boolean {

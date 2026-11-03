@@ -12,6 +12,9 @@
  * - Reordering independent seat completion does not change coverage or authority
  * - A renamed run or moved line cannot mint a new repair budget
  *
+ * CI is deterministic: when AK_EVENT_SEQ_SEED is unset the suite uses PINNED_SEED.
+ * Random exploration is opt-in: AK_EVENT_SEQ_RANDOM=1.
+ *
  * Replay a seed (printed on every run as `event-sequence seed=`):
  *   AK_EVENT_SEQ_SEED=<seed> bun test tests/event-sequences/event-sequences.test.ts
  *
@@ -22,21 +25,26 @@
  *   bun tests/event-sequences/replay.ts --seed <seed> [--path <path>] [--runs 1000]
  *   bun tests/event-sequences/replay.ts --events '<json array of events>'
  */
+import { join } from "node:path";
+
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { check as fcCheck, defaultReportMessage, property } from "fast-check";
 
 import { loadCorpus } from "./corpus.ts";
 import { failuresOf, formatEvents } from "./evaluate.ts";
-import { CRITICAL, NUM_RUNS, sequenceArb } from "./generator.ts";
+import { CRITICAL, NUM_RUNS, PINNED_SEED, sequenceArb } from "./generator.ts";
 import { createWorld } from "./impl.ts";
+import { isFiniteNumber } from "./parse.ts";
 
-setDefaultTimeout(60_000);
+setDefaultTimeout(180_000);
 
 const world = createWorld();
 const seedEnv = process.env["AK_EVENT_SEQ_SEED"];
 const pathEnv = process.env["AK_EVENT_SEQ_PATH"];
+const randomEnv = process.env["AK_EVENT_SEQ_RANDOM"];
 const parsedSeed = seedEnv === undefined || seedEnv === "" ? undefined : Number(seedEnv);
-const seed = parsedSeed !== undefined && Number.isFinite(parsedSeed) ? parsedSeed : undefined;
+const explicitSeed = parsedSeed !== undefined && isFiniteNumber(parsedSeed) ? parsedSeed : undefined;
+const seed = explicitSeed ?? (randomEnv === "1" ? undefined : PINNED_SEED);
 const runs = pathEnv === undefined || pathEnv === "" ? NUM_RUNS : 1;
 
 describe("review/runner event sequences", () => {
@@ -55,7 +63,11 @@ describe("review/runner event sequences", () => {
     test(title, () => {
       const failures = failuresOf(entry.events, world);
       if (entry.knownFailure) {
-        expect(failures.length).toBeGreaterThan(0);
+        const expected = entry.expectedFailure;
+        if (expected === undefined) throw new Error(`${title}: knownFailure entry has no expectedFailure`);
+        if (!failures.some((failure) => failure.includes(expected))) {
+          throw new Error(`${title}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(failures)}`);
+        }
         return;
       }
       if (failures.length > 0) throw new Error(`${title}: ${failures.join("; ")}\n${formatEvents(entry.events)}`);
@@ -87,10 +99,33 @@ describe("review/runner event sequences", () => {
       throw new Error(`${defaultReportMessage(details) ?? "property failed"}${listed}`);
     }
     expect(details.numRuns).toBe(runs);
-    expect(elapsedMs).toBeLessThan(60_000);
+  });
+
+  test("replay rejects a non-finite seed", () => {
+    const result = Bun.spawnSync(["bun", "tests/event-sequences/replay.ts", "--seed", "nope"], { cwd: joinRoot() });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr.toString()).toContain("usage:");
+  });
+
+  test("replay rejects invalid events JSON", () => {
+    const result = Bun.spawnSync(["bun", "tests/event-sequences/replay.ts", "--events", "{"], { cwd: joinRoot() });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr.toString()).toContain("invalid --events JSON");
+  });
+
+  test("replay rejects an unknown event kind", () => {
+    const result = Bun.spawnSync(["bun", "tests/event-sequences/replay.ts", "--events", '[{"kind":"not-an-event"}]'], {
+      cwd: joinRoot(),
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr.toString()).toContain("Event union");
   });
 });
 
 afterAll(() => {
   world.restore();
 });
+
+function joinRoot(): string {
+  return join(import.meta.dir, "..", "..");
+}

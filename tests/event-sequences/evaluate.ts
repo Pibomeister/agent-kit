@@ -1,6 +1,15 @@
 import { applyEvent, initialModel, isTimeoutReason, modelSeatsIndependent, observe } from "./model.ts";
-import { applyImpl, findingRules, liveBudget, reviewRules, timeoutStillBlocks, type World } from "./impl.ts";
-import type { BudgetEntry, Event, SeatJudgment } from "./types.ts";
+import { applyImpl, inspectImpl, liveBudget, timeoutStillBlocks, type ImplView, type World } from "./impl.ts";
+import type { BudgetEntry, Event, Lane, SeatJudgment } from "./types.ts";
+
+const APPROVAL_BLOCKS = [
+  "review.unavailable-required-lane-blocks-approval",
+  "review.third-fix-cycle-stops",
+  "review.seat-filled-by-someone-other-than-the-author",
+  "review.security-seat-not-filled-by-implementer-or-spec-approver",
+  "schemas.document-invalid",
+  "approval.stale",
+] as const;
 
 function used(entries: readonly BudgetEntry[], key: string): number {
   return entries.find((entry) => entry.key === key)?.used ?? 0;
@@ -61,6 +70,20 @@ function seatPairError(world: World, first: Event, second: Event): string | null
   return world.lastSeatError;
 }
 
+function approvalBlocks(rules: readonly string[]): string[] {
+  return APPROVAL_BLOCKS.filter((rule) => rules.includes(rule));
+}
+
+function timeoutCoveredInDoc(modelLanes: readonly Lane[], view: ImplView): boolean {
+  for (const lane of modelLanes) {
+    const timeout = (lane.reason !== null && isTimeoutReason(lane.reason)) || lane.timeoutCoverAttempted;
+    if (!timeout) continue;
+    const submitted = view.lanes.find((item) => item.role === lane.role);
+    if (submitted?.state === "covered") return true;
+  }
+  return false;
+}
+
 /**
  * Apply `events` to the reference model and the real runner/validators.
  * Returns human-readable property failures; empty means the sequence holds.
@@ -74,7 +97,12 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
   let floor: BudgetEntry[] = [];
   const failures: string[] = [];
   for (const event of events) {
-    if (event.kind === "resume" || event.kind === "restart" || event.kind === "rename-run") {
+    if (
+      event.kind === "resume" ||
+      event.kind === "restart" ||
+      event.kind === "rename-run" ||
+      event.kind === "move-line"
+    ) {
       floor = mergeFloor(floor, liveBudget(world));
     }
     applyEvent(model, event);
@@ -87,40 +115,55 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
         failures.push("independent seats were refused: ".concat(seatError));
       }
     }
-    if (event.kind === "resume" || event.kind === "restart" || event.kind === "rename-run") {
+    if (
+      event.kind === "resume" ||
+      event.kind === "restart" ||
+      event.kind === "rename-run" ||
+      event.kind === "move-line"
+    ) {
       const dropped = budgetDropped(floor, liveBudget(world));
       if (dropped !== null) failures.push(dropped);
     }
   }
   const obs = observe(model);
-  const rules = [...reviewRules(model), ...findingRules(world, model)];
+  const view = inspectImpl(world, model);
+  const rules = view.rules;
   const live = liveBudget(world);
 
-  if (obs.timeoutTreatedAsCoverage) failures.push("model treated a timeout/unavailable lane as coverage");
+  if (timeoutCoveredInDoc(model.lanes, view)) {
+    failures.push("timeout treated as coverage in the submitted review document");
+  }
   if (!timeoutStillBlocks(model, rules)) {
     failures.push(
       "approved a required timeout/unavailable lane; review.unavailable-required-lane-blocks-approval did not fire",
     );
   }
-  const unavailableApproved =
-    model.verdict === "approved" && model.lanes.some((lane) => lane.required && lane.state === "unavailable");
-  if (unavailableApproved && !rules.includes("review.unavailable-required-lane-blocks-approval")) {
-    failures.push("approved while a required lane is unavailable; coverage rule silent");
+
+  if (model.verdict === "approved" && !obs.approvalLegal) {
+    if (approvalBlocks(rules).length === 0) {
+      failures.push("illegal approval raised no blocking review rule");
+    }
+  }
+  if (model.verdict === "approved" && obs.approvalLegal) {
+    const blocking = approvalBlocks(rules);
+    if (blocking.length > 0) {
+      failures.push(`legal approval raised blocking rule: ${blocking.join(", ")}`);
+    }
   }
 
   if (!obs.thirdCycleLegal && model.verdict === "approved" && !rules.includes("review.third-fix-cycle-stops")) {
     failures.push("third fix cycle approved without a recorded human extension");
   }
   if (obs.appliedImpliesResolved) {
-    const closed =
-      rules.includes("finding.self-closed") ||
-      rules.includes("finding.closed-without-receipt") ||
-      rules.includes("schemas.document-invalid");
+    const closed = rules.includes("finding.self-closed") || rules.includes("finding.closed-without-receipt");
     if (!closed) failures.push("applied/resolved without an independent closure receipt");
   }
 
   if (!obs.approvalCurrent && !rules.includes("approval.stale")) {
     failures.push("changed bytes kept a current approval (approval.stale silent)");
+  }
+  if (obs.approvalCurrent && rules.includes("approval.stale")) {
+    failures.push("matching hashes fired approval.stale");
   }
   if (obs.publishAfterCancel && world.lastPublishError === null) {
     failures.push("cancelled run published a current result");
@@ -142,18 +185,28 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
       rules.includes("review.security-seat-not-filled-by-implementer-or-spec-approver");
     if (!seatRule) failures.push("author-controlled seating established a review seat");
   }
-  if (obs.synthesisErasedConflict && !rules.includes("finding.synthesis-may-only-worsen-a-grade")) {
+  if (obs.isolationFromAuthorFlag) {
+    const encoded = view.lanes.length > 0 && view.lanes.every((item) => !item.seat.context_isolated);
+    if (!encoded) failures.push("author-claimed isolation was not encoded as context_isolated false");
+    if (!rules.includes("schemas.document-invalid")) {
+      failures.push("author-claimed isolation did not fail the independent_of_author pin");
+    }
+    const isolationRule =
+      rules.includes("review.seat-filled-by-someone-other-than-the-author") ||
+      rules.includes("schemas.document-invalid");
+    if (!isolationRule) failures.push("author-claimed isolation did not fire an isolation/authority rule");
+  }
+  if (view.findingsSoftened && !rules.includes("finding.synthesis-may-only-worsen-a-grade")) {
     failures.push("synthesis softened a grade without finding.synthesis-may-only-worsen-a-grade");
   }
-  if (obs.synthesisChangedLaneState) {
-    failures.push("synthesis rewrote a timeout lane into coverage");
-  }
-  const timeoutUnavailable = model.lanes.filter(
-    (lane) => lane.state === "unavailable" && lane.reason !== null && isTimeoutReason(lane.reason),
-  );
-  if (model.attemptedLaneRewrite && timeoutUnavailable.length > 0 && model.verdict === "approved") {
-    if (!rules.includes("review.unavailable-required-lane-blocks-approval")) {
-      failures.push("a synthesis rewrite left timeout-unavailable as approval coverage");
+  if (model.attemptedLaneRewrite) {
+    const timeoutUnavailable = model.lanes.filter(
+      (lane) => lane.state === "unavailable" && lane.reason !== null && isTimeoutReason(lane.reason),
+    );
+    if (timeoutUnavailable.length > 0 && model.verdict === "approved") {
+      if (!rules.includes("review.unavailable-required-lane-blocks-approval")) {
+        failures.push("a synthesis rewrite left timeout-unavailable as approval coverage");
+      }
     }
   }
 
@@ -162,7 +215,8 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
       failures.push(`impl budget ${entry.key}=${used(live, entry.key)} behind model ${entry.used}`);
     }
   }
-  if (obs.countersDecreased) failures.push("model counters decreased across resume");
+  const dropped = budgetDropped(model.budgetFloor, live);
+  if (dropped !== null) failures.push(dropped);
 
   const closedByAuthor = model.findings.some(
     (item) => item.status === "resolved" && (item.closer === "implementer" || item.closer === item.author),
