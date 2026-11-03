@@ -14,6 +14,7 @@ import {
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
 import { schemaRefs } from "../src/packaging/mentions.ts";
+import { shippingCitedLicencePaths } from "../src/packaging/licences.ts";
 import { BUILD_RECORD_FILE, planBundle } from "../src/packaging/plan.ts";
 import { writeBundles } from "../src/packaging/build.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
@@ -25,9 +26,7 @@ import { parseJson, type JsonValue } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 function licencePathsIn(text: string): string[] {
-  const cited =
-    /(?:provenance\/licenses\/[A-Za-z0-9_.+-]+\.(?:LICENSE|NOTICE)|LICENSES\/(?:@[A-Za-z0-9_.+-]+\/)?[A-Za-z0-9_.+-]+\.LICENSE)(?![A-Za-z0-9])/g;
-  return [...new Set(text.match(cited) ?? [])].toSorted();
+  return shippingCitedLicencePaths(text);
 }
 
 const root = join(import.meta.dir, "..");

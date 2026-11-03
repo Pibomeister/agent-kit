@@ -48,6 +48,9 @@ const CITED_PATH =
 
 const ROOTS = ["NOTICE", "LICENSE"] as const;
 
+/** Exact NOTICE line that starts the held-not-copied list. Citations after it do not ship. */
+export const NOT_BUNDLED_HEADING = "Not bundled. Licence texts held in this repository and not copied into dist/:";
+
 const CITATION_TEXT = /(?:^|\/)(?:LICENSE|NOTICE)$|\.(?:LICENSE|NOTICE|md|ya?ml|json|ts|js|mjs|txt|tmpl)$/;
 
 /** Byte-stable path order. `localeCompare` follows the locale and is not a build input. */
@@ -60,6 +63,22 @@ export function comparePath(left: string, right: string): number {
 function citedLicencePaths(text: string): string[] {
   CITED_PATH.lastIndex = 0;
   return text.match(CITED_PATH) ?? [];
+}
+
+function splitNotice(text: string) {
+  const index = text.indexOf(NOT_BUNDLED_HEADING);
+  if (index === -1) return { shipping: text, held: "" };
+  return { shipping: text.slice(0, index), held: text.slice(index) };
+}
+
+/** Licence paths NOTICE demands into the bundle. Paths under the not-bundled heading are omitted. */
+export function shippingCitedLicencePaths(text: string): string[] {
+  return [...new Set(citedLicencePaths(splitNotice(text).shipping))].toSorted(comparePath);
+}
+
+/** Licence paths NOTICE holds in-repo and does not copy into dist/, unless a shipped header cites them. */
+export function heldCitedLicencePaths(text: string): string[] {
+  return [...new Set(citedLicencePaths(splitNotice(text).held))].toSorted(comparePath);
 }
 
 function isSourceOnly(file: string): boolean {
@@ -169,6 +188,7 @@ export function licenceClosure(
   const covered = new Set<string>();
   const demanded = new Set<string>();
   const queue: string[] = [];
+  let noticeText = "";
 
   for (const filename of ROOTS) {
     const text = readTextIfPresent(join(root, filename));
@@ -178,7 +198,8 @@ export function licenceClosure(
     }
     duties.push({ source: filename, path: filename, text });
     if (filename === "NOTICE") {
-      for (const path of citedLicencePaths(text)) queue.push(path);
+      noticeText = text;
+      for (const path of citedLicencePaths(splitNotice(text).shipping)) queue.push(path);
     }
   }
 
@@ -221,8 +242,9 @@ export function licenceClosure(
     problems.push({ source: `node_modules/${name}`, message: uncitedInlined(name) });
   }
 
+  const held = new Set(citedLicencePaths(splitNotice(noticeText).held));
   for (const file of walkFiles(root, "provenance/licenses")) {
-    if (demanded.has(file)) continue;
+    if (demanded.has(file) || held.has(file)) continue;
     problems.push({ source: file, message: undemandedLicence(file) });
   }
 

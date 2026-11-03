@@ -43,7 +43,12 @@ import {
   loadAdapterSupplies,
   loadInstallConfig,
 } from "../src/packaging/install.ts";
-import { fileHeader } from "../src/packaging/licences.ts";
+import {
+  NOT_BUNDLED_HEADING,
+  fileHeader,
+  heldCitedLicencePaths,
+  shippingCitedLicencePaths,
+} from "../src/packaging/licences.ts";
 import { checkContent } from "../src/validation/content.ts";
 import {
   BUILD_RECORD_FILE,
@@ -301,7 +306,7 @@ function obligedPairs(notice: string): ReadonlyArray<readonly [string, string]> 
     ["NOTICE", "NOTICE"],
     ["LICENSE", "LICENSE"],
   ];
-  for (const path of licencePathsIn(notice)) pairs.push([citedSource(path), path]);
+  for (const path of shippingCitedLicencePaths(notice)) pairs.push([citedSource(path), path]);
   return pairs;
 }
 
@@ -489,9 +494,19 @@ describe("the licence files the distribution is obliged to carry", () => {
       "provenance/licenses/cursor_plugins.LICENSE",
     ] as const;
     const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
-    const cited = licencePathsIn(notice);
+    expect(notice).toContain(NOT_BUNDLED_HEADING);
+    const cited = shippingCitedLicencePaths(notice);
+    const held = heldCitedLicencePaths(notice);
     expect(cited).toEqual(expect.arrayContaining([...MISSING_ON_MAIN]));
     expect(cited.some((path) => path.includes("eslint-stylistic"))).toBe(false);
+    expect(held).toEqual(
+      expect.arrayContaining([
+        "provenance/licenses/caveman-ai_blocks.LICENSE",
+        "provenance/licenses/caveman-ai_blocks.NOTICE",
+        "provenance/licenses/tester-army_e2e.LICENSE",
+        "provenance/licenses/tester-army_e2e.NOTICE",
+      ]),
+    );
     const { catalog } = loadCatalog(REPO);
     if (catalog === null) throw new Error("repo catalog did not load");
     for (const host of HOST_IDS) {
@@ -506,8 +521,13 @@ describe("the licence files the distribution is obliged to carry", () => {
         expect(plan.files.get(published)?.contents).toBe(readFileSync(join(REPO, citedSource(path)), "utf8"));
         if (host === "cursor") expect(plan.files.has(path)).toBe(false);
       }
+      for (const path of held) {
+        expect(plan.files.has(relocateForHost(host, path)), `${host} shipped held ${path}`).toBe(false);
+        expect(plan.files.has(path)).toBe(false);
+      }
       for (const file of plan.files.values()) {
         for (const headerPath of licencePathsIn(fileHeader(file.contents))) {
+          if (held.includes(headerPath)) continue;
           expect(plan.files.has(relocateForHost(host, headerPath)), `${host} ${file.path} cites ${headerPath}`).toBe(
             true,
           );
@@ -739,9 +759,8 @@ describe("the licence files the distribution is obliged to carry", () => {
   });
 
   test("a licence listed only under the not-bundled NOTICE heading stays out until a shipped file cites it", () => {
-    const heading = "Not bundled. Licence texts held in this repository and not copied into dist/:";
     const held = "held licence text\n";
-    const notice = `${BASE["NOTICE"] ?? ""}\n${heading}\n\nprovenance/licenses/held.LICENSE\n`;
+    const notice = `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\nprovenance/licenses/held.LICENSE\n`;
     const idle = ctxFor({
       NOTICE: notice,
       "provenance/licenses/held.LICENSE": held,
