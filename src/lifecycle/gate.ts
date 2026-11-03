@@ -48,6 +48,7 @@ import {
 import { hostname, tmpdir, userInfo } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { artifactHash } from "../util/hash.ts";
 import { defaultMarkersPath, runPublishScan } from "./publish-scan.ts";
 import {
   checkMergeGate,
@@ -1264,7 +1265,11 @@ function evaluateEvidence(
       const target = object(correction.supersedes);
       if (target === undefined || (target.schema !== undefined && target.schema !== "verification")) return [];
       if (correction.status !== "passed" && correction.status !== "failed") return [];
-      const original = validReceipts.find(({ ref }) => ref.id === target.id && ref.hash === target.hash);
+      // Store refs bind the original bytes; artifact refs use the schema's canonical JSON hash.
+      const original = validReceipts.find(
+        ({ ref, receipt }) =>
+          ref.id === target.id && (ref.hash === target.hash || artifactHash(receipt) === target.hash),
+      );
       if (original === undefined || original.receipt.check !== correction.check) return [];
       const covered = strings(correction.supports) ?? [];
       return (strings(original.receipt.supports) ?? []).every((criterion) => covered.includes(criterion))

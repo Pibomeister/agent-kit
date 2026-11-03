@@ -21,7 +21,7 @@ import { UNJUDGEABLE } from "../../src/guard/evaluate.ts";
 import { decodeClaudeCode, encodeClaudeCode, type LinkResolver } from "../../src/guard/hosts/claude-code.ts";
 import { loadGuardPolicy } from "../../src/guard/policy.ts";
 import { planBundle } from "../../src/packaging/plan.ts";
-import { HOST_IDS } from "../../src/packaging/hosts.ts";
+import { HOST_IDS, packagedBinFile } from "../../src/packaging/hosts.ts";
 import { processScratch } from "../helpers/process-tmp.ts";
 
 /**
@@ -695,8 +695,9 @@ test("source and packaged entrypoints enforce the guard from an isolated install
     const entries = [join(ROOT, "src", "cli.ts"), join(ROOT, "src", "maintenance", "cli.ts")];
     for (const host of HOST_IDS) {
       const plan = planBundle({ root: ROOT, catalog }, host, {});
-      const script = plan.files.get("bin/ak");
-      if (script === undefined) throw new Error(`no bin/ak for ${host}: ${JSON.stringify(plan.issues)}`);
+      const script = plan.files.get(packagedBinFile(host, "ak"));
+      if (script === undefined)
+        throw new Error(`no ${packagedBinFile(host, "ak")} for ${host}: ${JSON.stringify(plan.issues)}`);
       const entry = join(work, host, "bin", "ak");
       mkdirSync(dirname(entry), { recursive: true });
       writeFileSync(entry, script.contents);

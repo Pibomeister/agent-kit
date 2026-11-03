@@ -8,6 +8,12 @@ adaptations:
   - path: adapters/codex/CONTRACT.md
     source: local:verifier-seat-design-report@sha256:19f676e5ce53035aaa7c25653d743119aacfa5c15879421021b63100e9110dea#L147-182
     rationale: Native child sessions inherit the same host-unattested independence limit as the other shipped host.
+  - path: adapters/cursor/CONTRACT.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:.cursor-plugin/plugin.json
+    rationale: The donor's parallel per-host manifest directory for Cursor is the pattern this adapter copies for `.cursor-plugin/plugin.json` identity. Discovery paths, Cloud Agent vendoring, reviewer subagents and the `/<id>` gate are verified against Cursor's published docs in the contract rather than guessed from the donor tree.
+  - path: adapters/cursor/README.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:.cursor-plugin/plugin.json
+    rationale: Downstream install surface for the same Cursor plugin identity the donor ships. The rsync overlay into `.cursor/skills` and `.cursor/agents` is this package's Cloud Agent path, not a donor command.
   - path: adapters/grok/CONTRACT.md
     source: local:grok-host-packaging-decision@sha256:43a98fce39b02a79d26bf61e6f05cdb958446ad764b4e21af12ab1cd606f5e4d#L4-4
     rationale: The generated host variant, unchanged authored sources and eval selection, native authority rendering, offline probes and deferred expansion acceptance become the Grok contract.

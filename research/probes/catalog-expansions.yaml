@@ -213,8 +213,15 @@ profiles:
 
 adapters:
   baseline: 4
-  catalog: 11
+  catalog: 12
   expansions:
+    - ids: [cursor]
+      reason: >-
+        Cursor IDE and Cloud Agents load project skills from .cursor/skills and custom
+        subagents from .cursor/agents, so the packager needs a native host contract
+        rather than a Claude-compatible layout.
+      commits: [39f533f6]
+      docs: [adapters/cursor/CONTRACT.md, adapters/cursor/README.md]
     - ids: [grok]
       reason: >-
         Grok uses the existing Claude-compatible packager with native explicit-start rendering
