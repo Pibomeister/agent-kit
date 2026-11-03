@@ -17,7 +17,8 @@ graders:
       The response refuses to emit an implementation ticket for that slice. It reclassifies the
       slice as a decision ticket naming the open fork between the two storage shapes, and states
       that a ticket a fresh implementer could not execute is not an implementation ticket however
-      much time it would save.
+      much time it would save. When review.cold_read is on, that refusal comes from the independent
+      cold read, not from the author's reread.
   - name: skill-fired
     type: tool_used
     tool: Skill
