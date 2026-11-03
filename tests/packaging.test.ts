@@ -2,16 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  cpSync,
   existsSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
   mkdirSync,
   symlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
@@ -21,7 +25,15 @@ import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { checkCompleteness } from "../src/validation/completeness.ts";
-import { HOST_IDS, RESTRICTIONS, explicitStartPattern, loadHostCapabilities } from "../src/packaging/hosts.ts";
+import {
+  HOST_IDS,
+  RESTRICTIONS,
+  explicitStartPattern,
+  loadHostCapabilities,
+  packagedBinFile,
+  packagedSkillFile,
+  type HostId,
+} from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
 import {
   INSTALL_FILE,
@@ -43,6 +55,7 @@ import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
 import { expectError } from "./helpers/issues.ts";
+import { parseJson, type JsonValue } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 const HEAD = (name: string) => `---\nname: ${name}\ndescription: Use when asked.\n---\n`;
@@ -271,6 +284,87 @@ function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   return { root, catalog };
 }
 
+/**
+ * `--out` replaces its target wholesale. These cases are the refuse-only
+ * guard: a miss would `rmSync` `/`, `$HOME`, or the tree under test. HOME and
+ * cwd are temp directories; the real home and this checkout are never the
+ * `--out` argument. packaging.test.ts runs serially (`integration-files.txt`).
+ */
+const OUT_SENTINEL = "ak-out-sentinel.txt";
+const SENTINEL_BODY = "must-not-be-deleted\n";
+
+function isolatedDir(prefix: string): string {
+  return realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+}
+
+function writeSentinel(dir: string): string {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, OUT_SENTINEL);
+  writeFileSync(path, SENTINEL_BODY);
+  return path;
+}
+
+function sentinelHolds(path: string): boolean {
+  return existsSync(path) && readFileSync(path, "utf8") === SENTINEL_BODY;
+}
+
+function withHomeAndCwd<T>(home: string, cwd: string, fn: () => T): T {
+  const previousHome = process.env.HOME;
+  const previousCwd = process.cwd();
+  mkdirSync(home, { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  process.env.HOME = home;
+  process.chdir(cwd);
+  try {
+    return fn();
+  } finally {
+    process.chdir(previousCwd);
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+  }
+}
+
+function withOutGuard<T>(fn: (env: { sandbox: string; home: string; work: string }) => T): T {
+  const sandbox = isolatedDir("ak-out-");
+  const home = join(sandbox, "home");
+  const work = join(sandbox, "work");
+  mkdirSync(home);
+  mkdirSync(work);
+  try {
+    return withHomeAndCwd(home, work, () => fn({ sandbox, home, work }));
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+
+function cursorOut(ctx: ReturnType<typeof ctxFor>, out: string) {
+  return writeBundles(ctx, { hosts: ["cursor"], out });
+}
+
+function expectCursorBundle(dir: string) {
+  expect(existsSync(join(dir, ".cursor/skills/alpha/SKILL.md"))).toBe(true);
+  expect(existsSync(join(dir, BUILD_RECORD_FILE.cursor))).toBe(true);
+}
+
+function expectRefused(result: ReturnType<typeof writeBundles>, fragment: string, sentinel: string, target: string) {
+  expectError(result.issues, "packaging.out-refused", fragment);
+  expect(sentinelHolds(sentinel)).toBe(true);
+  expect(existsSync(join(target, ".cursor/skills/alpha/SKILL.md"))).toBe(false);
+}
+
+function nestRepo(parent: string, ctx: ReturnType<typeof ctxFor>): ReturnType<typeof ctxFor> {
+  const repo = join(parent, "repo");
+  cpSync(ctx.root, repo, { recursive: true });
+  return { root: realpathSync(repo), catalog: ctx.catalog };
+}
+
+function recordWithoutOutputs(recordPath: string): JsonValue {
+  const listed = parseJson(readFileSync(recordPath, "utf8"));
+  if (!(listed instanceof Object) || Array.isArray(listed)) throw new Error("build record is not an object");
+  const { outputs: _dropped, ...rest } = listed;
+  return rest;
+}
+
 const gateFixture = (
   schema: string,
   source = "const BUNDLED_ADAPTER_IDS: readonly string[] = [];\nconsole.log('gate');\n",
@@ -301,7 +395,7 @@ function recordOf(plan: ReturnType<typeof planBundle>) {
 }
 
 function packagedSkillText(plan: ReturnType<typeof planBundle>, id: string): string {
-  const text = plan.files.get(`skills/${id}/SKILL.md`)?.contents;
+  const text = plan.files.get(packagedSkillFile(plan.host, id))?.contents;
   if (text === undefined) throw new Error(`${plan.host} did not package ${id}`);
   return text;
 }
@@ -316,7 +410,7 @@ function packagedSkillPaths(plan: ReturnType<typeof planBundle>): string[] {
 
 describe("host capability honesty", () => {
   test("supported hosts are declared and the restriction vocabulary is closed", () => {
-    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi", "droid"]);
+    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi", "droid", "cursor"]);
     expect([...RESTRICTIONS]).toContain("no-model-invocation");
     expect([...RESTRICTIONS]).toContain("tool-allowlist-enforced");
   });
@@ -551,7 +645,12 @@ describe("bundle planning", () => {
       "host",
       "install",
       "modes",
+      "outputs",
       "profile",
+    ]);
+    const listed = parseJson(plan.files.get(".claude-plugin/ak.json")?.contents ?? "{}");
+    expect(listed instanceof Object && !Array.isArray(listed) ? listed["outputs"] : null).toEqual([
+      ...plan.files.keys(),
     ]);
   });
 
@@ -2410,7 +2509,7 @@ describe("ak build and --check", () => {
       );
       const built = writeBundles(ctx, {});
       for (const host of HOST_IDS) {
-        const executablePath = join(ctx.root, "dist", host, "bin/ak");
+        const executablePath = join(ctx.root, "dist", host, packagedBinFile(host, "ak"));
         expect(existsSync(executablePath) && readFileSync(executablePath, "utf8").includes(marker)).toBe(false);
       }
       expectError(built.issues, "packaging.maintenance-build-failed", "inlined schema leaves its source tree");
@@ -2444,7 +2543,7 @@ describe("ak build and --check", () => {
       const built = writeBundles(ctx, {});
       expect(built.issues.filter((issue) => issue.severity === "error")).toEqual([]);
       for (const host of HOST_IDS) {
-        const script = readFileSync(join(ctx.root, "dist", host, "bin/ak"), "utf8");
+        const script = readFileSync(join(ctx.root, "dist", host, packagedBinFile(host, "ak")), "utf8");
         expect(script).toContain(marker);
         expect(script).not.toContain("UNUSED_EXTERNAL_SCHEMA");
         expect(existsSync(join(ctx.root, "dist", host, "schemas/unused.schema.json"))).toBe(false);
@@ -2499,6 +2598,304 @@ describe("ak build and --check", () => {
     expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(readFileSync(join(ctx.root, "dist/claude-code/.claude-plugin/plugin.json"), "utf8")).toContain("alpha");
     expect(readFileSync(join(ctx.root, "dist/codex/skills/alpha/SKILL.md"), "utf8")).toContain("name: alpha");
+    expect(readFileSync(join(ctx.root, "dist/cursor/.cursor/skills/alpha/SKILL.md"), "utf8")).toContain("name: alpha");
+  });
+
+  test("--out requires exactly one host and replaces that directory, not dist/<host>", () => {
+    const ctx = ctxFor();
+    const many = writeBundles(ctx, { out: join(ctx.root, "bundle-out") });
+    expectError(many.issues, "packaging.out-requires-one-host", "--host");
+    expect(existsSync(join(ctx.root, "bundle-out"))).toBe(false);
+
+    const out = join(ctx.root, "bundle-out");
+    const built = writeBundles(ctx, { hosts: ["cursor"], out });
+    expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(existsSync(join(out, ".cursor/skills/alpha/SKILL.md"))).toBe(true);
+    expect(existsSync(join(ctx.root, "dist/cursor"))).toBe(false);
+    expect(existsSync(join(ctx.root, "dist/claude-code"))).toBe(false);
+  });
+
+  test("--out refuses the filesystem root and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const sentinel = writeSentinel(sandbox);
+      expectRefused(cursorOut(ctx, "/"), "filesystem root", sentinel, "/");
+    });
+  });
+
+  test("--out refuses $HOME and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ home }) => {
+      const sentinel = writeSentinel(home);
+      expectRefused(cursorOut(ctx, home), "$HOME", sentinel, home);
+    });
+  });
+
+  test("--out refuses an ancestor of $HOME and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const wrap = join(sandbox, "homewrap");
+      mkdirSync(wrap);
+      const nestedHome = join(wrap, "nested-home");
+      mkdirSync(nestedHome);
+      const sentinel = writeSentinel(wrap);
+      writeSentinel(nestedHome);
+      withHomeAndCwd(nestedHome, join(sandbox, "work"), () => {
+        expectRefused(cursorOut(ctx, wrap), "$HOME", sentinel, wrap);
+        expect(sentinelHolds(join(nestedHome, OUT_SENTINEL))).toBe(true);
+      });
+    });
+  });
+
+  test("--out refuses the repository root and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(() => {
+      const sentinel = writeSentinel(ctx.root);
+      expectRefused(cursorOut(ctx, ctx.root), "repository root", sentinel, ctx.root);
+    });
+  });
+
+  test("--out refuses an ancestor of the repository root and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const wrap = join(sandbox, "wrap");
+      mkdirSync(wrap);
+      const nested = nestRepo(wrap, ctx);
+      const sentinel = writeSentinel(wrap);
+      writeSentinel(nested.root);
+      expectRefused(cursorOut(nested, wrap), "repository root", sentinel, wrap);
+      expect(sentinelHolds(join(nested.root, OUT_SENTINEL))).toBe(true);
+    });
+  });
+
+  test("--out refuses the current directory ('.') and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ work }) => {
+      const sentinel = writeSentinel(work);
+      expectRefused(cursorOut(ctx, "."), "current directory", sentinel, work);
+    });
+  });
+
+  test("--out refuses '..' (an ancestor of cwd) and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const parent = join(sandbox, "parent");
+      const here = join(parent, "here");
+      mkdirSync(here, { recursive: true });
+      const sentinel = writeSentinel(parent);
+      writeSentinel(here);
+      withHomeAndCwd(join(sandbox, "home"), here, () => {
+        expectRefused(cursorOut(ctx, ".."), "current directory", sentinel, parent);
+        expect(sentinelHolds(join(here, OUT_SENTINEL))).toBe(true);
+      });
+    });
+  });
+
+  test("--out refuses a non-empty directory without a build record and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const occupied = join(sandbox, "occupied");
+      mkdirSync(occupied);
+      const sentinel = writeSentinel(occupied);
+      writeFileSync(join(occupied, "keep.txt"), "keep\n");
+      expectRefused(cursorOut(ctx, occupied), "not a previous agent-kit bundle", sentinel, occupied);
+      expect(readFileSync(join(occupied, "keep.txt"), "utf8")).toBe("keep\n");
+    });
+  });
+
+  test("--out refuses a symlink that resolves into a forbidden directory and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox, home }) => {
+      const sentinel = writeSentinel(home);
+      const link = join(sandbox, "link-to-home");
+      symlinkSync(home, link);
+      expectRefused(cursorOut(ctx, link), "$HOME", sentinel, home);
+      expect(existsSync(link)).toBe(true);
+    });
+  });
+
+  test("--out allows an empty directory", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const empty = join(sandbox, "empty");
+      mkdirSync(empty);
+      const built = cursorOut(ctx, empty);
+      expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(empty);
+    });
+  });
+
+  test("--out allows a clean previous bundle for this host", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "prior");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(out);
+      const second = cursorOut(ctx, out);
+      expect(second.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(out);
+    });
+  });
+
+  test("--out refuses a previous bundle that still holds an extra user file and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "dirty");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const sentinel = writeSentinel(out);
+      const second = cursorOut(ctx, out);
+      expectError(second.issues, "packaging.out-refused", "not written by the previous agent-kit bundle");
+      expect(second.issues[0]?.message).toContain(OUT_SENTINEL);
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expectCursorBundle(out);
+    });
+  });
+
+  test("--out treats a self-loop symlink as a leaf extra and finishes quickly", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "looped");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      symlinkSync(".", join(out, "loop"));
+      const second = cursorOut(ctx, out);
+      expectError(second.issues, "packaging.out-refused", "not written by the previous agent-kit bundle");
+      expect(second.issues[0]?.message).toContain("loop");
+      expectCursorBundle(out);
+    });
+  }, 15_000);
+
+  test("--out treats a symlink to an outside directory as a leaf extra and does not touch it", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "linked");
+      const outside = join(sandbox, "outside");
+      mkdirSync(outside);
+      const sentinel = writeSentinel(outside);
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      symlinkSync(outside, join(out, "link-out"));
+      const second = cursorOut(ctx, out);
+      expectError(second.issues, "packaging.out-refused", "not written by the previous agent-kit bundle");
+      expect(second.issues[0]?.message).toContain("link-out");
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expect(readdirSync(outside)).toEqual([OUT_SENTINEL]);
+      expect(existsSync(join(outside, ".cursor"))).toBe(false);
+      expectCursorBundle(out);
+    });
+  }, 15_000);
+
+  test.skipIf(process.getuid?.() === 0)(
+    "--out refuses when a subdirectory cannot be inspected and deletes nothing",
+    () => {
+      const ctx = ctxFor();
+      withOutGuard(({ sandbox }) => {
+        const out = join(sandbox, "locked");
+        const first = cursorOut(ctx, out);
+        expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+        const locked = join(out, ".cursor/skills");
+        const sentinel = writeSentinel(locked);
+        try {
+          chmodSync(locked, 0o000);
+          const second = cursorOut(ctx, out);
+          expectError(second.issues, "packaging.out-refused", "could not inspect");
+          expect(second.issues[0]?.message).toContain(locked);
+        } finally {
+          chmodSync(locked, 0o755);
+        }
+        expect(sentinelHolds(sentinel)).toBe(true);
+        expectCursorBundle(out);
+      });
+    },
+  );
+
+  test("--out refuses grok over a claude-code bundle that shares the record path and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "shared");
+      const first = writeBundles(ctx, { hosts: ["claude-code"], out });
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const keep = join(out, "NOTICE");
+      const before = readFileSync(keep, "utf8");
+      const sentinel = writeSentinel(sandbox);
+      const second = writeBundles(ctx, { hosts: ["grok"], out });
+      expectError(second.issues, "packaging.out-refused", "host 'claude-code', not 'grok'");
+      expect(readFileSync(keep, "utf8")).toBe(before);
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expect(existsSync(join(out, ".claude-plugin/plugin.json"))).toBe(true);
+    });
+  });
+
+  test("--out refuses an unreadable build record and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "broken");
+      mkdirSync(join(out, ".cursor-plugin"), { recursive: true });
+      writeFileSync(join(out, BUILD_RECORD_FILE.cursor), "not-json\n");
+      const sentinel = writeSentinel(out);
+      expectRefused(cursorOut(ctx, out), "unreadable build record", sentinel, out);
+    });
+  });
+
+  test("--out allows a legacy record without outputs when top-level names match the plan", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "legacy");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const recordPath = join(out, BUILD_RECORD_FILE.cursor);
+      writeFileSync(recordPath, `${JSON.stringify(recordWithoutOutputs(recordPath), null, 2)}\n`);
+      const second = cursorOut(ctx, out);
+      expect(second.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(out);
+    });
+  });
+
+  test("--out refuses a legacy record whose directory has an extra top-level file and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "legacy-extra");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const recordPath = join(out, BUILD_RECORD_FILE.cursor);
+      writeFileSync(recordPath, `${JSON.stringify(recordWithoutOutputs(recordPath), null, 2)}\n`);
+      const sentinel = writeSentinel(out);
+      const second = cursorOut(ctx, out);
+      expectError(second.issues, "packaging.out-refused", "legacy build record");
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expectCursorBundle(out);
+    });
+  });
+
+  test("a relative --out is resolved from process.cwd(), not ctx.root", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ work }) => {
+      const built = cursorOut(ctx, "rel-out");
+      expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(join(work, "rel-out"));
+      expect(existsSync(join(ctx.root, "rel-out"))).toBe(false);
+    });
+  });
+
+  test("--check --out verifies that directory rather than dist/<host>", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "checked");
+      const built = cursorOut(ctx, out);
+      expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expect(checkBundles(ctx, { hosts: ["cursor"], out }).filter((i) => i.severity === "error")).toEqual([]);
+      expectError(checkBundles(ctx, { hosts: ["cursor"] }), "packaging.dist-missing", "absent from dist/");
+      writeFileSync(join(out, ".cursor/skills/alpha/SKILL.md"), "tampered\n");
+      const stale = expectError(
+        checkBundles(ctx, { hosts: ["cursor"], out }),
+        "packaging.dist-stale",
+        "Content differs",
+      );
+      expect(stale.file).toContain(out);
+      expect(stale.file.startsWith("dist/")).toBe(false);
+    });
   });
 
   test("--check passes immediately after a build", () => {
@@ -3035,10 +3432,19 @@ function run(cwd: string, script: string): string {
   return result.stdout;
 }
 
-function shebangPrograms(root: string, host: string): string[] {
-  return readdirSync(join(root, "dist", host, "bin"))
-    .map((name) => join(root, "dist", host, "bin", name))
+function shebangPrograms(root: string, host: HostId): string[] {
+  const dir = join(root, "dist", host, dirname(packagedBinFile(host, "ak")));
+  return readdirSync(dir)
+    .map((name) => join(dir, name))
     .filter((path) => readFileSync(path, "utf8").startsWith("#!"));
+}
+
+function isPackagedBin(path: string): boolean {
+  return path.startsWith("bin/") || path.startsWith(".cursor/bin/");
+}
+
+function packagedBinName(path: string): string {
+  return path.replace(/^(?:\.cursor\/)?bin\//, "");
 }
 
 describe("the executable bit on bin/ programs", () => {
@@ -3047,7 +3453,9 @@ describe("the executable bit on bin/ programs", () => {
     expect(writeBundles(ctx, {}).issues.filter((i) => i.severity === "error")).toEqual([]);
     for (const host of HOST_IDS) {
       const programs = shebangPrograms(ctx.root, host);
-      expect(programs.map((path) => path.slice(ctx.root.length + 1))).toContain(`dist/${host}/bin/ak`);
+      expect(programs.map((path) => path.slice(ctx.root.length + 1))).toContain(
+        `dist/${host}/${packagedBinFile(host, "ak")}`,
+      );
       for (const path of programs) expect(`${path}:${executable(path)}`).toBe(`${path}:true`);
     }
     expect(checkBundles(ctx, {}).filter((i) => i.severity === "error")).toEqual([]);
@@ -3076,7 +3484,7 @@ describe("the executable bit on bin/ programs", () => {
     run(release, "git add -A");
     expect(sh(REPO, `${EXEC_BITS} ${JSON.stringify(release)}`).status).toBe(0);
     for (const host of HOST_IDS) {
-      expect(run(release, `git ls-files -s dist/${host}/bin/ak`).split(" ")[0]).toBe("100755");
+      expect(run(release, `git ls-files -s dist/${host}/${packagedBinFile(host, "ak")}`).split(" ")[0]).toBe("100755");
     }
   }, 60_000);
 
@@ -3119,13 +3527,13 @@ describe("the executable bit on bin/ programs", () => {
     if (catalog === null) throw new Error("repository has no catalog");
     for (const host of HOST_IDS) {
       const plan = planBundle({ root: REPO, catalog }, host, {});
-      const programs = [...plan.files.values()].filter((file) => file.path.startsWith("bin/"));
+      const programs = [...plan.files.values()].filter((file) => isPackagedBin(file.path));
       const commands: string[] = [];
       for (const file of plan.files.values()) {
         if (file.path.startsWith("evals/") || !/\.(md|json|ya?ml)$/.test(file.path)) continue;
         // A description names `ak-gate.mjs bypass check` for routing, and so does a policy row;
         // the bodies that run it run it with node.
-        if (/^(references\/shared\/)?policies\//.test(file.path)) continue;
+        if (/^(?:\.cursor\/)?(?:references\/shared\/)?policies\//.test(file.path)) continue;
         const text = file.path.endsWith(".md") ? parseFrontmatter(file.contents).body : file.contents;
         for (const span of text.matchAll(/`([^`\n]+)`/g)) commands.push(span[1] ?? "");
         for (const hook of file.contents.matchAll(/"command"\s*:\s*"([^"]+)"/g)) commands.push(hook[1] ?? "");
@@ -3135,8 +3543,8 @@ describe("the executable bit on bin/ programs", () => {
           const head = command.trim().split(/\s+/)[0] ?? "";
           return head === name || head === `bin/${name}` || head.endsWith(`/bin/${name}`);
         });
-      const direct = programs.filter((file) => runs(file.path.slice("bin/".length)));
-      expect(direct.map((file) => `${host}:${file.path}`)).toContain(`${host}:bin/ak`);
+      const direct = programs.filter((file) => runs(packagedBinName(file.path)));
+      expect(direct.map((file) => `${host}:${file.path}`)).toContain(`${host}:${packagedBinFile(host, "ak")}`);
       for (const file of direct) expect(`${host}:${file.path}:${isExecutable(file)}`).toBe(`${host}:${file.path}:true`);
     }
   }, 120_000);
@@ -3163,6 +3571,7 @@ describe("semantic lint Stop hook in the plugin bundles", () => {
       grok: undefined,
       kimi: undefined,
       droid: undefined,
+      cursor: undefined,
     });
   }, 60_000);
 
