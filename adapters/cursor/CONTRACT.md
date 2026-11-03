@@ -37,16 +37,17 @@ dist/cursor/
 │   ├── skills/<id>/references/
 │   ├── agents/<role>.md       # custom subagents for catalog roles
 │   ├── rules/ak-super-review.mdc
-│   ├── roles/, references/, schemas/, bin/, catalog.yaml
-├── AGENTS.md                  # merge into the consuming repo root
-├── LICENSES/, provenance/licenses/
-└── NOTICE, LICENSE
+│   ├── roles/, references/, schemas/, templates/, licenses/, bin/, catalog.yaml
+└── AGENTS.md                  # merge into the consuming repo root
 ```
 
 The content tree is nested under `.cursor/` so that copying `.cursor/skills/` and
 `.cursor/agents/` onto a consuming repository is the layout Cloud Agents clone
 with the repo. Relative links inside packaged skills are rewritten for that
-nesting. Plugin manifests and licence texts stay at the bundle root.
+nesting. Plugin manifests and `AGENTS.md` stay at the bundle root. Licence
+texts (`LICENSE`, `NOTICE`, `LICENSES/*`, `provenance/licenses/*`) live under
+`.cursor/licenses/` so a `.cursor/` rsync carries them without writing the
+consuming repo's root `LICENSE`, `NOTICE` or `LICENSES/`.
 
 **Verified (docs):** project skills are `.cursor/skills/<name>/SKILL.md`
 ([skills](https://cursor.com/docs/skills)). Cloud Automations load repository
@@ -144,18 +145,33 @@ bun run ak build --host cursor --out /tmp/ak-cursor
 Vendor into a consuming repository (Cloud Agents and IDE agents in that repo):
 
 ```bash
-rsync -a dist/cursor/.cursor/skills/   "$REPO/.cursor/skills/"
-rsync -a dist/cursor/.cursor/agents/   "$REPO/.cursor/agents/"
-rsync -a dist/cursor/.cursor/rules/    "$REPO/.cursor/rules/"
-rsync -a dist/cursor/.cursor/roles/    "$REPO/.cursor/roles/"
-rsync -a dist/cursor/.cursor/references/ "$REPO/.cursor/references/"
-rsync -a dist/cursor/.cursor/schemas/  "$REPO/.cursor/schemas/"
-rsync -a dist/cursor/.cursor/bin/      "$REPO/.cursor/bin/"
-# merge dist/cursor/AGENTS.md into the repo-root AGENTS.md; do not overwrite
+BUNDLE="${BUNDLE:-dist/cursor}"   # or the --out directory
+REPO="${REPO:?set REPO to the consuming checkout}"
+
+mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
+  "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses"
+
+rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
+rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
+rsync -a "$BUNDLE/.cursor/rules/"      "$REPO/.cursor/rules/"
+rsync -a "$BUNDLE/.cursor/roles/"      "$REPO/.cursor/roles/"
+rsync -a "$BUNDLE/.cursor/references/" "$REPO/.cursor/references/"
+rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
+rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
+rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
+rsync -a "$BUNDLE/.cursor/licenses/"   "$REPO/.cursor/licenses/"
+cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
 ```
 
-`rsync` of those trees is additive: it does not delete
-`.cursor/environment.json`, `.cursor/hooks.json` or `.cursor/mcp.json`.
+Licence and attribution files ship at `.cursor/licenses/` (`LICENSE`, `NOTICE`,
+`LICENSES/*`, `provenance/licenses/*`). Vendor steps never write the consuming
+repo's root `LICENSE`, `NOTICE` or `LICENSES/`. `rsync` of those trees is
+additive: it does not delete `.cursor/environment.json`, `.cursor/hooks.json`
+or `.cursor/mcp.json`. Merge `$BUNDLE/AGENTS.md` into the consuming repo's
+root `AGENTS.md`. Do not replace an existing root `AGENTS.md`. Nested
+`.cursor/AGENTS.md` would only apply while the agent works on files under
+`.cursor/`.
 
 IDE plugin smoke (local, not Cloud Automations): copy the bundle to
 `~/.cursor/plugins/local/ak` and reload
@@ -188,6 +204,11 @@ packaging suite:
    this host's build record. A legacy build record without `outputs` is matched
    only at the top level. Default `ak build` still writes `dist/<host>`.
 5. **`ak validate`** — the tree with this adapter present is clean.
+6. **Vendor closure** — every relative link in the built cursor bundle
+   resolves to a file the bundle carries, including `.cursor/templates/`
+   files that agents and roles name. `LICENSE`, `NOTICE`, `LICENSES/` and
+   `provenance/licenses/` (including the claude-mem NOTICE) are present
+   under `.cursor/licenses/`, not at the bundle or repo root.
 
 Live Cloud Agent discovery, slash expansion retaining the leading `/<id>`, and
 subagent `readonly` enforcement are **unverified** in a session. They are
