@@ -238,6 +238,14 @@ describe("ak doctor host-version probe check", () => {
     expect(withCursor).toHaveLength(1);
     expect(withCursor[0]?.level).toBe("WARN");
   });
+
+  test("a cursor version mismatch does not name the probe script", () => {
+    const finding = checkProbedHostVersion("cursor", "cursor-agent 0.2.0", "cursor-agent 0.1.0", "2026-11-03");
+    expect(finding.level).toBe("WARN");
+    expect(finding.remedy).not.toContain("scripts/review-isolation-probe.sh");
+    expect(finding.remedy).toContain("Re-probe Cursor's review isolation");
+    expect(finding.remedy).toContain("research/host-facts/<date>/review-isolation-cursor.md");
+  });
 });
 
 describe("installed host version detection (stub binaries, not real host CLIs)", () => {
