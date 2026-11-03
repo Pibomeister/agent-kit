@@ -9,9 +9,10 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import Ajv from "ajv";
 
-import { isDir, isInside, readTextIfPresent, walkFiles } from "../util/fs.ts";
+import { isDir, isInside, readTextIfPresent, toPosix, walkFiles } from "../util/fs.ts";
 import type { CheckContext } from "../validation/context.ts";
 import { error, type Issue } from "../validation/types.ts";
 import { ADAPTATIONS_FILE, loadAdaptationFragments, renderAdaptations } from "../validation/provenance.ts";
@@ -25,8 +26,10 @@ export interface BuildOptions extends PlanOptions {
    * from `process.cwd()`, not the repository root. The directory is replaced
    * wholesale; `outRefusal` refuses `/`, `$HOME` and its ancestors, the
    * repository root and its ancestors, the current directory and its ancestors,
-   * a symlink that realpath's into one of those, and a non-empty directory that
-   * is not a previous bundle for this host.
+   * a symlink that realpath's into one of those, a non-empty directory that
+   * is not a previous bundle for this host, a previous bundle whose record
+   * names a different host, and a previous bundle that still holds entries
+   * this host did not write.
    */
   out?: string;
 }
@@ -73,13 +76,24 @@ function canonicalWritePath(path: string): string {
   }
 }
 
+/** How many extra paths the refuse message names before it stops listing. */
+const EXTRA_ENTRY_SAMPLE = 5;
+
 /**
  * Why `--out` may not replace `dest`, or null when it may. Refuse-only: an
- * empty or nonexistent directory, or one holding this host's build record, is
- * allowed. Location checks use the realpath, so a symlink cannot hide `/`,
- * `$HOME`, the repository root, or the current directory.
+ * empty or nonexistent directory, or a previous bundle for this host whose
+ * on-disk entries are only what that build wrote, is allowed. Location checks
+ * use the realpath, so a symlink cannot hide `/`, `$HOME`, the repository
+ * root, or the current directory. `emittedPaths` is the plan about to be
+ * written: a legacy record that does not list outputs is allowed only when
+ * the directory's top-level names match those paths.
  */
-export function outRefusal(dest: string, host: HostId, repoRoot: string): string | null {
+export function outRefusal(
+  dest: string,
+  host: HostId,
+  repoRoot: string,
+  emittedPaths?: ReadonlyArray<string>,
+): string | null {
   const target = canonicalWritePath(dest);
   if (target === "/") return `--out '${dest}' would replace the filesystem root`;
   const home = process.env.HOME;
@@ -95,9 +109,107 @@ export function outRefusal(dest: string, host: HostId, repoRoot: string): string
   }
   if (!existsSync(target)) return null;
   if (!isDir(target)) return `--out '${dest}' would replace a file, not a bundle directory`;
-  if (readdirSync(target).length === 0) return null;
-  if (existsSync(join(target, BUILD_RECORD_FILE[host]))) return null;
-  return `--out '${dest}' names a non-empty directory that is not a previous agent-kit bundle for this host (${BUILD_RECORD_FILE[host]})`;
+  const topLevel = readdirSync(target);
+  if (topLevel.length === 0) return null;
+  const recordPath = join(target, BUILD_RECORD_FILE[host]);
+  if (!existsSync(recordPath)) {
+    return `--out '${dest}' names a non-empty directory that is not a previous agent-kit bundle for this host (${BUILD_RECORD_FILE[host]})`;
+  }
+  const record = parseBuildRecord(readTextIfPresent(recordPath) ?? "");
+  if (!record.ok) {
+    return `--out '${dest}' has an unreadable build record (${BUILD_RECORD_FILE[host]})`;
+  }
+  if (record.hostId !== host) {
+    return `--out '${dest}' holds an agent-kit bundle for host '${record.hostId}', not '${host}'`;
+  }
+  if (record.outputs !== null) {
+    const extras = extraBundleEntries(target, record.outputs);
+    if (extras.length === 0) return null;
+    return `--out '${dest}' contains entries not written by the previous agent-kit bundle: ${formatExtras(extras)}`;
+  }
+  if (emittedPaths === undefined) return null;
+  const expected = topLevelNames(emittedPaths);
+  const extraTop = topLevel.filter((name) => !expected.has(name)).toSorted();
+  if (extraTop.length > 0) {
+    return `--out '${dest}' has a legacy build record and top-level entries that are not this host's bundle: ${formatExtras(extraTop)}`;
+  }
+  const missingTop = [...expected].filter((name) => !topLevel.includes(name)).toSorted();
+  if (missingTop.length > 0) {
+    return `--out '${dest}' has a legacy build record whose top-level entries do not match this host's bundle: missing ${formatExtras(missingTop)}`;
+  }
+  return null;
+}
+
+const buildRecordValidator = new Ajv({ strict: false }).compile<{ host: { id: string }; outputs?: string[] }>({
+  type: "object",
+  required: ["host"],
+  additionalProperties: true,
+  properties: {
+    host: {
+      type: "object",
+      required: ["id"],
+      additionalProperties: true,
+      properties: { id: { type: "string", minLength: 1 } },
+    },
+    outputs: { type: "array", items: { type: "string" } },
+  },
+});
+
+function parseBuildRecord(text: string): { ok: true; hostId: string; outputs: string[] | null } | { ok: false } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false };
+  }
+  if (!buildRecordValidator(parsed)) return { ok: false };
+  return { ok: true, hostId: parsed.host.id, outputs: parsed.outputs === undefined ? null : parsed.outputs };
+}
+
+function topLevelNames(paths: ReadonlyArray<string>): Set<string> {
+  const names = new Set<string>();
+  for (const path of paths) {
+    const slash = path.indexOf("/");
+    names.add(slash === -1 ? path : path.slice(0, slash));
+  }
+  return names;
+}
+
+/** True when `rel` is a listed output, a directory holding one, or nested under one. */
+function listedCovers(rel: string, outputs: ReadonlyArray<string>): boolean {
+  for (const out of outputs) {
+    if (rel === out || rel.startsWith(`${out}/`) || out.startsWith(`${rel}/`)) return true;
+  }
+  return false;
+}
+
+function extraBundleEntries(target: string, outputs: ReadonlyArray<string>): string[] {
+  const extras: string[] = [];
+  const stack = [target];
+  while (stack.length > 0) {
+    const dir = stack.pop();
+    if (dir === undefined) break;
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const full = join(dir, name);
+      const rel = toPosix(relative(target, full));
+      if (isDir(full)) stack.push(full);
+      if (!listedCovers(rel, outputs)) extras.push(rel);
+    }
+  }
+  return extras.toSorted();
+}
+
+function formatExtras(entries: ReadonlyArray<string>): string {
+  const shown = entries.slice(0, EXTRA_ENTRY_SAMPLE).map((entry) => `'${entry}'`);
+  const rest = entries.length - shown.length;
+  if (rest <= 0) return shown.join(", ");
+  return `${shown.join(", ")}, and ${rest} more`;
 }
 
 function outRequiresOneHost(): Issue {
@@ -108,8 +220,8 @@ function outRequiresOneHost(): Issue {
   );
 }
 
-function refuseOut(dest: string, host: HostId, repoRoot: string): Issue | null {
-  const reason = outRefusal(dest, host, repoRoot);
+function refuseOut(dest: string, host: HostId, repoRoot: string, emittedPaths?: ReadonlyArray<string>): Issue | null {
+  const reason = outRefusal(dest, host, repoRoot, emittedPaths);
   return reason === null ? null : error("packaging.out-refused", "ak build", reason);
 }
 
@@ -162,13 +274,13 @@ function selectedHosts(options: BuildOptions): ReadonlyArray<HostId> {
   return options.hosts ?? HOST_IDS;
 }
 
-function outGuard(ctx: CheckContext, options: BuildOptions): Issue | null {
+function outGuard(ctx: CheckContext, options: BuildOptions, emittedPaths?: ReadonlyArray<string>): Issue | null {
   if (options.out === undefined) return null;
   const selected = selectedHosts(options);
   if (selected.length !== 1) return outRequiresOneHost();
   const host = selected[0];
   if (host === undefined) return outRequiresOneHost();
-  return refuseOut(bundleOutDir(ctx, host, options), host, ctx.root);
+  return refuseOut(bundleOutDir(ctx, host, options), host, ctx.root, emittedPaths);
 }
 
 export function writeBundles(ctx: CheckContext, options: BuildOptions): BuildResult {
@@ -182,6 +294,10 @@ export function writeBundles(ctx: CheckContext, options: BuildOptions): BuildRes
   for (const plan of plans) {
     const dest = bundleOutDir(ctx, plan.host, options);
     const outRoot = options.out === undefined ? dest : canonicalWritePath(dest);
+    if (options.out !== undefined) {
+      const late = refuseOut(outRoot, plan.host, ctx.root, [...plan.files.keys()]);
+      if (late !== null) return { issues: [late], profile };
+    }
     rmSync(outRoot, { recursive: true, force: true });
     for (const file of plan.files.values()) {
       const target = join(outRoot, file.path);
@@ -205,8 +321,18 @@ export function checkBundles(ctx: CheckContext, options: BuildOptions): Issue[] 
   const guarded = outGuard(ctx, options);
   if (guarded !== null) return [guarded];
   const issues: Issue[] = [];
+  const plans = planAll(ctx, options);
+  if (options.out !== undefined) {
+    const plan = plans[0];
+    const host = selectedHosts(options)[0];
+    if (plan !== undefined && host !== undefined) {
+      const dest = canonicalWritePath(bundleOutDir(ctx, host, options));
+      const late = refuseOut(dest, host, ctx.root, [...plan.files.keys()]);
+      if (late !== null) return [late];
+    }
+  }
 
-  for (const plan of planAll(ctx, options)) {
+  for (const plan of plans) {
     issues.push(...plan.issues);
     const destPath = bundleOutDir(ctx, plan.host, options);
     const dest = options.out === undefined ? destPath : canonicalWritePath(destPath);

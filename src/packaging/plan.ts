@@ -1118,8 +1118,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
           : MARKETPLACE_FILE;
     files.set(marketplaceFile, { path: marketplaceFile, contents: marketplace(ctx) });
   }
-  files.set(BUILD_RECORD_FILE[host], {
-    path: BUILD_RECORD_FILE[host],
+  if (host === "cursor") emitCursorOverlay(ctx, files, excluded);
+  const recordPath = BUILD_RECORD_FILE[host];
+  const outputs = [...files.keys(), recordPath].toSorted((left, right) => left.localeCompare(right));
+  files.set(recordPath, {
+    path: recordPath,
     contents: buildRecord(
       host,
       membership.profile,
@@ -1128,9 +1131,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       decisions,
       capabilities.enforces,
       capabilities.notes,
+      outputs,
     ),
   });
-  if (host === "cursor") emitCursorOverlay(ctx, files, excluded);
 
   return { host, profile: membership.profile, files: sortFiles(files), decisions, issues };
 }
@@ -1563,6 +1566,7 @@ function buildRecord(
   decisions: ReadonlyArray<HostDecision>,
   enforces: ReadonlySet<string>,
   notes: ReadonlyArray<string>,
+  outputs: ReadonlyArray<string>,
 ): string {
   const record = {
     profile,
@@ -1589,6 +1593,12 @@ function buildRecord(
       .filter((d) => d.rejected.length > 0)
       .map((d) => ({ skill: d.skill, unenforceable: d.unenforceable }))
       .toArray(),
+    /**
+     * Every path this build wrote. `--out` refuses to replace a directory that
+     * holds this record plus any entry that is not one of these paths or a
+     * directory that only exists to hold them.
+     */
+    outputs: [...outputs],
   };
   return `${JSON.stringify(record, null, 2)}\n`;
 }
