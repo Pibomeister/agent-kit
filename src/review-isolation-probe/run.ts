@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 
-import { dispatchArm, hostVersion } from "./dispatch.ts";
+import { dispatchArm, HOST_VERSION_FIXTURE, hostVersion } from "./dispatch.ts";
 import { readEvidence } from "./evidence.ts";
 import { profileFor } from "./hosts.ts";
 import { newMarker } from "./marker.ts";
@@ -188,7 +188,7 @@ export function runProbe(argv: readonly string[], env: NodeJS.ProcessEnv, io: Pr
 
   const commands: string[] = [];
   const arms: ArmResult[] = [];
-  const version = driver === "fixture" ? "fixture (host CLI not invoked)" : hostVersion(hostArg, env);
+  const version = driver === "fixture" ? HOST_VERSION_FIXTURE : hostVersion(hostArg, env);
 
   for (const arm of ARM_IDS) {
     const plantedMarker = newMarker();
