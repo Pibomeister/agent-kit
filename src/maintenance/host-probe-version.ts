@@ -112,11 +112,15 @@ export function checkProbedHostVersion(
       remedy: "No action needed.",
     };
   }
+  const remedy =
+    host === "cursor"
+      ? "Re-probe Cursor's review isolation and record a new research/host-facts/<date>/review-isolation-cursor.md note for this version. Probe results apply only to the version they recorded."
+      : `Re-run scripts/review-isolation-probe.sh ${host} on this host version. Probe results apply only to the version they recorded.`;
   return {
     level: "WARN",
     check,
     detail: `installed ${installed} differs from last probed ${probedVersion}${when}`,
-    remedy: `Re-run scripts/review-isolation-probe.sh ${host} on this host version. Probe results apply only to the version they recorded.`,
+    remedy,
   };
 }
 
