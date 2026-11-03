@@ -784,6 +784,39 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(cited.files.get("provenance/licenses/held.LICENSE")?.contents).toBe(held);
     expect(cited.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
   });
+
+  test("moving a shipped donor licence into the not-bundled NOTICE section fails", () => {
+    const licencePath = "provenance/licenses/mizchi_jev-lint.LICENSE";
+    const adaptationPath = "tools/hooks/semantic-lint.ts";
+    const adaptationSource = "jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:.jev-lint/hooks/pre-commit";
+    const notice = `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`;
+    const ctx = ctxFor({
+      NOTICE: notice,
+      [licencePath]: "MIT License\nCopyright (c) 2026 mizchi\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: jev-lint",
+        "    path: .donors/mizchi_jev-lint",
+        `    license_file: ${licencePath}`,
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(licencePath)).toBe(false);
+    const content = checkContent(ctx).find((row) => row.file === licencePath && row.severity === "error");
+    expect(content?.message).toContain(adaptationPath);
+    expect(content?.message).toContain(adaptationSource);
+  });
 });
 
 describe("bundle planning", () => {
