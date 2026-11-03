@@ -31,8 +31,8 @@ catalog differs from code review; meaning-changing forks cannot be silently sett
 - Deciding what the document should say. A document whose direction is unsettled goes back to a
   human-started alignment run, not to a review panel.
 - A document that has not been drafted. There is nothing to review, and an outline is not a draft.
-- A third fix round on a document whose forks keep bouncing. Two rounds is the cap, and the third
-  is a human's call.
+- A third fix round on a document whose forks keep bouncing, with no recorded human extension.
+  Two rounds is the cap; a cycle past it is a human's call, recorded and reviewed as a delta.
 
 ## Authority
 
@@ -143,8 +143,10 @@ Gate: a previously rejected finding is re-raised only on changed evidence. An un
 quote does not establish unchanged evidence, and neither does a differently worded restatement of
 the same concern.
 
-Gate: at most two fix rounds. The third does not run; the run returns the open forks and stops
-([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json), `fix_cycles`).
+Gate: at most two fix rounds. The third request stops with the open forks attached
+([`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json), `fix_cycles`). A cycle a human authorizes after the cap is recorded
+in `fix_cycles.extensions` (`authorized_by: human`, operator-attested, and when) and reviewed as a
+`delta`; without that entry it is refused.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|
@@ -152,7 +154,7 @@ Gate: at most two fix rounds. The third does not run; the run returns the open f
 | "One lane timed out and the other five agree, so the review is effectively complete." | A lane that did not run produced no evidence, and five agreements about other things are not that lane's result. | Record it `unavailable` with the reason and let it block the approval verdict. |
 | "We rejected this in round one and the document still says the same thing, so I'll suppress it again." | Suppression rides on the rejection's evidence still being current, not on the document being unchanged. The constraints or the facts may have moved under it. | Check what the rejection rested on. If any of it moved, re-raise the finding. |
 | "This is a clean one-line patch with an obvious fix, so I'll mark it automatic from the feasibility lane." | The restriction is on emission by a seat, not on how tidy the fix looks. Only [`doc-review/coherence`](../../references/shared/roles/doc-review/coherence/ROLE.md)'s own closed pattern list qualifies. | Emit it `gated_auto` and let it go through the grouped confirmation. |
-| "Round two did not settle the fork, but it is close — one more round will finish it." | A fork that survived two rounds is not converging; it is a decision nobody in the run has the authority to make. | Stop at two, return the open fork, and hand it to a human. |
+| "Round two did not settle the fork, but it is close — one more round will finish it." | A fork that survived two rounds is not converging; it is a decision nobody in the run has the authority to make. | Stop at two and return the open fork, unless a recorded human extension authorizes a delta. |
 
 ## Outputs
 
@@ -192,15 +194,16 @@ returns, read before the write and confirmed after it ([`adapters/runner-contrac
   `blocked` is a completed review with a blocking result, not an incomplete one.
 - `needs-input` — there is no document, its identity cannot be computed, or a later round was
   started without the prior round's findings.
-- `cap-reached` — two fix rounds are used and a Decision is still open. Returns the open forks and
-  the review as it stands.
+- `cap-reached` — two fix rounds are used, a Decision is still open, and no recorded human
+  extension authorizes another. Returns the open forks and the review as it stands.
 - `cancelled` — the caller ended the run before the panel returned.
 - `failed` — the knowledgebase is unreachable, or a publication's read-back cannot be performed.
 
 ## Limits
 
-- Fix rounds: 2 (gate). The cap is structural in [`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json), whose `fix_cycles`
-  admits no value above two, so no configuration buys a third.
+- Fix rounds: 2 (gate). [`schemas/review.schema.json`](../../references/shared/schemas/review.schema.json) `fix_cycles`. `allowed` admits no value above
+  two, so no configuration raises the cap; a third cycle runs only on a recorded human extension
+  in `fix_cycles.extensions`, reviewed as a `delta`.
 - Confidence anchors: 0 and 25 are dropped before any bucket, 50 never enters the walk-through,
   and the security exception above overrides both.
 - Evidence overlap for a fingerprint match: more than half. The figure calibrates a matching
