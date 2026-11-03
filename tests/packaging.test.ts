@@ -32,6 +32,7 @@ import {
   loadHostCapabilities,
   packagedBinFile,
   packagedSkillFile,
+  relocateForHost,
   type HostId,
 } from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
@@ -462,7 +463,10 @@ describe("the licence files the distribution is obliged to carry", () => {
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
       for (const [source, path] of REQUIRED_LICENCES) {
-        expect(`${host}:${path}=${plan.files.get(path)?.contents}`).toBe(`${host}:${path}=${BASE[source]}`);
+        const published = relocateForHost(host, path);
+        expect(`${host}:${published}=${plan.files.get(published)?.contents}`).toBe(
+          `${host}:${published}=${BASE[source]}`,
+        );
       }
     }
   });

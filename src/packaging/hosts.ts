@@ -45,20 +45,21 @@ export function packagedBinFile(host: HostId, name: string): string {
 
 /**
  * Relocate a bundle-relative path for this host. Cursor nests the content tree
- * under `.cursor/` so a vendored overlay is what Cloud Agents clone-discover,
- * while plugin manifests and licence texts stay at the bundle root.
+ * under `.cursor/` so a vendored overlay is what Cloud Agents clone-discover.
+ * Plugin manifests and AGENTS.md stay at the bundle root. Licence texts live
+ * under `.cursor/licenses/` so a `.cursor/` rsync carries them without writing
+ * the consuming repo's LICENSE, NOTICE or LICENSES/.
  */
 export function relocateForHost(host: HostId, path: string): string {
   if (host !== "cursor") return path;
+  if (path.startsWith(".cursor-plugin/") || path === "AGENTS.md") return path;
   if (
-    path.startsWith(".cursor-plugin/") ||
     path.startsWith("LICENSES/") ||
-    path.startsWith("provenance/") ||
+    path.startsWith("provenance/licenses/") ||
     path === "NOTICE" ||
-    path === "LICENSE" ||
-    path === "AGENTS.md"
+    path === "LICENSE"
   ) {
-    return path;
+    return `.cursor/licenses/${path}`;
   }
   return `.cursor/${path}`;
 }
