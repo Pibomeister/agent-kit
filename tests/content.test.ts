@@ -20,7 +20,12 @@ skills:
 `;
 
 function ctxFor(files: Record<string, string>) {
-  const root = makeTree({ "catalog.yaml": CATALOG, ...files });
+  const root = makeTree({
+    "catalog.yaml": CATALOG,
+    "provenance/upstream.lock.yaml": "donors: []\n",
+    "provenance/adaptations.yaml": "adaptations: []\n",
+    ...files,
+  });
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error("fixture has no catalog");
   return { root, catalog };

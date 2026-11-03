@@ -4,7 +4,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
 import { readTextIfPresent, walkFiles } from "../util/fs.ts";
-import { parseDonorSource } from "../validation/provenance.ts";
+import { parseDonorSource, parseLocalAdaptationSource } from "../validation/provenance.ts";
 
 /** A licence text this bundle must carry. `path` is the bundle path before host relocation. */
 export interface LicenceDuty {
@@ -180,6 +180,26 @@ function heldAdaptedLicence(file: string, path: string, source: string): string 
   return `${file} is listed as not bundled, and provenance/adaptations.yaml records ${path} from ${source}, so the bundle would carry derived code without that licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Move ${file} out of the not-bundled NOTICE section.`;
 }
 
+function unreadProvenance(source: string, reason: "missing" | "unparseable" | "invalid"): string {
+  if (reason === "missing") {
+    return `${source} is missing, so the held-licence guard cannot tell which provenance texts belong to adapted donors. Restore ${source}.`;
+  }
+  if (reason === "unparseable") {
+    return `${source} is not YAML, so the held-licence guard cannot read it. Fix the YAML.`;
+  }
+  return `${source} does not match its schema, so the held-licence guard cannot read it.`;
+}
+
+function unparsedAdaptation(path: string, source: string): string {
+  return `provenance/adaptations.yaml records ${path} from ${source}, which is not a donor@commit:path pin, so the held-licence guard cannot tell which licence it belongs to.`;
+}
+
+function normalizeLicencePath(path: string): string {
+  let out = path.replaceAll("\\", "/");
+  while (out.startsWith("./")) out = out.slice(2);
+  return out;
+}
+
 interface DonorLicencePin {
   id: string;
   path?: string;
@@ -234,44 +254,68 @@ const isAdaptationsDoc = new Ajv2020({ strict: false }).compile<{ adaptations: A
   additionalProperties: true,
 });
 
-function readLockDonors(root: string): DonorLicencePin[] {
-  const text = readTextIfPresent(join(root, "provenance/upstream.lock.yaml"));
-  if (text === null) return [];
+interface ProvenanceRead<T> {
+  value: T;
+  problem: LicenceProblem | null;
+}
+
+function readLockDonors(root: string): ProvenanceRead<DonorLicencePin[]> {
+  const source = "provenance/upstream.lock.yaml";
+  const text = readTextIfPresent(join(root, source));
+  if (text === null) return { value: [], problem: { source, message: unreadProvenance(source, "missing") } };
   try {
     const parsed: unknown = parseYaml(text);
-    return isLockDonors(parsed) ? parsed.donors : [];
+    if (!isLockDonors(parsed)) {
+      return { value: [], problem: { source, message: unreadProvenance(source, "invalid") } };
+    }
+    return { value: parsed.donors, problem: null };
   } catch {
-    return [];
+    return { value: [], problem: { source, message: unreadProvenance(source, "unparseable") } };
   }
 }
 
+function companionNotice(licencePath: string, root: string): string | null {
+  if (!licencePath.endsWith(".LICENSE")) return null;
+  const notice = `${licencePath.slice(0, -".LICENSE".length)}.NOTICE`;
+  return readTextIfPresent(join(root, notice)) === null ? null : notice;
+}
+
 /** `license_file` / `notice_file` from the lock. Else NOTICE's `provenance/licenses/<clone-dir>.LICENSE` spelling. */
-function donorLicenceFiles(root: string): Map<string, string[]> {
+function donorLicenceFiles(root: string): ProvenanceRead<Map<string, string[]>> {
+  const read = readLockDonors(root);
   const files = new Map<string, string[]>();
-  for (const entry of readLockDonors(root)) {
+  for (const entry of read.value) {
     const listed = [];
-    if (entry.license_file !== undefined) listed.push(entry.license_file);
-    if (entry.notice_file !== undefined) listed.push(entry.notice_file);
+    if (entry.license_file !== undefined) listed.push(normalizeLicencePath(entry.license_file));
+    if (entry.notice_file !== undefined) listed.push(normalizeLicencePath(entry.notice_file));
     if (listed.length === 0 && entry.path !== undefined) {
-      const base = entry.path
+      const base = normalizeLicencePath(entry.path)
         .split("/")
         .filter((part) => part.length > 0)
         .at(-1);
       if (base !== undefined && base.length > 0) listed.push(`provenance/licenses/${base}.LICENSE`);
     }
+    for (const file of listed.slice()) {
+      const notice = companionNotice(file, root);
+      if (notice !== null && !listed.includes(notice)) listed.push(notice);
+    }
     files.set(entry.id, listed);
   }
-  return files;
+  return { value: files, problem: read.problem };
 }
 
-function loadAdaptationsDocument(root: string): AdaptationRow[] {
-  const text = readTextIfPresent(join(root, "provenance/adaptations.yaml"));
-  if (text === null) return [];
+function loadAdaptationsDocument(root: string): ProvenanceRead<AdaptationRow[]> {
+  const source = "provenance/adaptations.yaml";
+  const text = readTextIfPresent(join(root, source));
+  if (text === null) return { value: [], problem: { source, message: unreadProvenance(source, "missing") } };
   try {
     const parsed: unknown = parseYaml(text);
-    return isAdaptationsDoc(parsed) ? parsed.adaptations : [];
+    if (!isAdaptationsDoc(parsed)) {
+      return { value: [], problem: { source, message: unreadProvenance(source, "invalid") } };
+    }
+    return { value: parsed.adaptations, problem: null };
   } catch {
-    return [];
+    return { value: [], problem: { source, message: unreadProvenance(source, "unparseable") } };
   }
 }
 
@@ -346,19 +390,33 @@ export function licenceClosure(
   }
 
   const held = new Set(citedLicencePaths(splitNotice(noticeText).held));
+  const donorFiles = donorLicenceFiles(root);
+  if (donorFiles.problem !== null) problems.push(donorFiles.problem);
   const donorsByLicence = new Map<string, string[]>();
-  for (const [donor, files] of donorLicenceFiles(root)) {
+  for (const [donor, files] of donorFiles.value) {
     for (const file of files) {
       const ids = donorsByLicence.get(file) ?? [];
-      ids.push(donor);
+      if (!ids.includes(donor)) ids.push(donor);
       donorsByLicence.set(file, ids);
     }
   }
+  const adaptations = loadAdaptationsDocument(root);
+  if (adaptations.problem !== null) problems.push(adaptations.problem);
   const rowsByDonor = new Map<string, { path: string; source: string }[]>();
-  for (const row of loadAdaptationsDocument(root)) {
-    if (row.source === undefined) continue;
+  for (const row of adaptations.value) {
+    if (row.source === undefined) {
+      problems.push({
+        source: "provenance/adaptations.yaml",
+        message: unparsedAdaptation(row.path, "(missing source)"),
+      });
+      continue;
+    }
     const parsed = parseDonorSource(row.source);
-    if (parsed === null) continue;
+    if (parsed === null) {
+      if (parseLocalAdaptationSource(row.source) !== null) continue;
+      problems.push({ source: "provenance/adaptations.yaml", message: unparsedAdaptation(row.path, row.source) });
+      continue;
+    }
     const rows = rowsByDonor.get(parsed.donor) ?? [];
     rows.push({ path: row.path, source: row.source });
     rowsByDonor.set(parsed.donor, rows);

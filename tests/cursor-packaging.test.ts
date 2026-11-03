@@ -303,6 +303,8 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
       "profiles/core.yaml": "id: core\nskills: [alpha]\n",
       NOTICE: "agent-kit\n",
       LICENSE: "MIT License\n",
+      "provenance/upstream.lock.yaml": "donors: []\n",
+      "provenance/adaptations.yaml": "adaptations: []\n",
     });
     const { catalog: fixtureCatalog } = loadCatalog(tree);
     if (fixtureCatalog === null) throw new Error("fixture catalog missing");
