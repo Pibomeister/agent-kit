@@ -138,6 +138,15 @@ describe("ticket.cold_read_ref", () => {
       }),
     ).toBe(false);
   });
+
+  test("cold_read_ref without schema is rejected", () => {
+    expect(
+      validateTicket({
+        ...ticketExample,
+        cold_read_ref: { id: "example-cold-read-1", hash: HASH },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("cold-read schema", () => {
@@ -171,5 +180,22 @@ describe("cold-read schema", () => {
     const withoutParaphrase = updated(withReason, ["paraphrase"], () => undefined);
     expect(validateColdRead(withoutParaphrase)).toBe(true);
     expect(validateColdRead(updated(withoutParaphrase, ["reason"], () => undefined))).toBe(false);
+  });
+
+  test("status complete requires state covered", () => {
+    const completeUnavailable = updated(
+      updated(updated(coldReadExample, ["state"], () => "unavailable"), ["status"], () => "complete"),
+      ["reason"],
+      () => "The host could not start a separate reader context.",
+    );
+    expect(validateColdRead(completeUnavailable)).toBe(false);
+  });
+
+  test("status unavailable requires state unavailable", () => {
+    expect(validateColdRead(updated(coldReadExample, ["status"], () => "unavailable"))).toBe(false);
+  });
+
+  test("status draft with state covered remains valid", () => {
+    expect(validateColdRead(updated(coldReadExample, ["status"], () => "draft"))).toBe(true);
   });
 });
