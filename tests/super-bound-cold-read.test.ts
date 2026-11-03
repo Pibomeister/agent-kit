@@ -20,14 +20,27 @@ const reference = readFileSync(join(REPO, "references/delegation/REFERENCE.md"),
 const contract = readFileSync(join(REPO, "skills/super-bound/skill.yaml"), "utf8");
 const scorer = readFileSync(join(REPO, "src/delegation.ts"), "utf8");
 
-function packagedBody(): string {
+function packagedFile(path: string): string {
   const { catalog } = loadCatalog(REPO);
   if (catalog === null) throw new Error("no catalog");
   const { files } = planBundle({ root: REPO, catalog }, "claude-code", {});
-  const packed = files.get("skills/super-bound/SKILL.md");
-  if (packed === undefined) throw new Error("the bundle lacks super-bound");
+  const packed = files.get(path);
+  if (packed === undefined) throw new Error(`the bundle lacks ${path}`);
   return packed.contents;
 }
+
+function packagedBody(): string {
+  return packagedFile("skills/super-bound/SKILL.md");
+}
+
+function packagedReference(): string {
+  return packagedFile("references/shared/references/delegation/REFERENCE.md");
+}
+
+const OFF_TRIGGERS =
+  "missing review object, a missing key, an unknown value, a missing project, or an unindexed project";
+
+const UNAVAILABLE_FALLBACK = "When that read is unavailable, the author check decides";
 
 const PROJECT: DelegationProject = {
   guidance: {
@@ -90,6 +103,22 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(skill.replace(/\s+/g, " ")).toContain(phrase);
     expect(contract.replace(/\s+/g, " ")).toContain(phrase);
     expect(packagedBody().replace(/\s+/g, " ")).toContain(phrase);
+  });
+
+  test("off triggers match in the skill and in the source and packaged delegation note", () => {
+    expect(skill.replace(/\s+/g, " ")).toContain(OFF_TRIGGERS);
+    expect(reference.replace(/\s+/g, " ")).toContain(OFF_TRIGGERS);
+    expect(packagedReference().replace(/\s+/g, " ")).toContain(OFF_TRIGGERS);
+  });
+
+  test("an unavailable on-mode read falls back to the author empty-context check", () => {
+    expect(skill.replace(/\s+/g, " ")).toContain(UNAVAILABLE_FALLBACK);
+    expect(contract.replace(/\s+/g, " ")).toContain(UNAVAILABLE_FALLBACK);
+    expect(packagedBody().replace(/\s+/g, " ")).toContain(UNAVAILABLE_FALLBACK);
+    const note = reference.replace(/\s+/g, " ");
+    expect(note).toContain("author's empty-context check decides the outcome");
+    expect(note).toContain("reshape it, or reclassify it `type: decision` and send it back");
+    expect(packagedReference().replace(/\s+/g, " ")).toContain("author's empty-context check decides the outcome");
   });
 
   test("the scorer formula is unchanged and still only raises the seed", () => {
