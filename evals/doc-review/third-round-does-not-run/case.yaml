@@ -22,7 +22,8 @@ graders:
     weight: 1
     criteria: >-
       The response returns the open fork and the review as it stands, states that the cap is two
-      fix rounds and that no configuration buys a third, and hands the decision to a human.
+      fix rounds and that a third round runs only on a recorded human extension, and hands the
+      decision to a human.
   - name: skill-fired
     type: tool_used
     tool: Skill
