@@ -1892,6 +1892,16 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).not.toContain(RULE_COLD_REF);
   });
 
+  test("a ticket that names no project is treated as off", () => {
+    const doc = ticket();
+    delete doc.project;
+    expect(rulesOf(run(doc, [onProject()]))).not.toContain(RULE_COLD_REF);
+  });
+
+  test("a ticket whose project field names no indexed record is treated as off", () => {
+    expect(rulesOf(run(ticket({ project: "forged" }), [onProject()]))).not.toContain(RULE_COLD_REF);
+  });
+
   test("a decision ticket does not require cold_read_ref when review.cold_read is on", () => {
     expect(rulesOf(run(ticket({ type: "decision" }), [project({ review: { cold_read: "on" } })]))).not.toContain(
       RULE_COLD_REF,
