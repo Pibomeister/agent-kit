@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -61,6 +61,22 @@ function alive(pid: number): boolean {
     return false;
   }
 }
+
+type Spawned = ReturnType<typeof Bun.spawn>;
+const liveChildren = new Set<Spawned>();
+
+async function reap(child: Spawned): Promise<void> {
+  child.kill("SIGKILL");
+  await child.exited.catch(() => undefined);
+  liveChildren.delete(child);
+}
+
+afterAll(async () => {
+  await Promise.all([...liveChildren].map(reap));
+});
+
+const HANG_UNTIL_REAPED =
+  "const fs=require('node:fs');const parent=process.ppid;const deadline=Date.now()+120000;const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{try{process.kill(parent,0)}catch{process.exit(0)}if(Date.now()>deadline||process.ppid!==parent)process.exit(0)},200)";
 
 describe("ak council run", () => {
   test("three approvals approve, and the record logs requested and served models and grants nothing", async () => {
@@ -220,7 +236,15 @@ describe("ak council run", () => {
       const s = setup();
       const pidFile = join(s.dir, "descendant.pid");
       const hung = updated(record(s.config), ["pair", 0, "chain"], () => [
-        { actor: "a", lineage: ["a"], command: ["sh", "-c", `sleep 300 & echo $! > ${pidFile}; wait`] },
+        {
+          actor: "a",
+          lineage: ["a"],
+          command: [
+            "sh",
+            "-c",
+            `node -e ${JSON.stringify(HANG_UNTIL_REAPED)} ${JSON.stringify(pidFile)} & echo $! > ${JSON.stringify(pidFile)}; wait`,
+          ],
+        },
       ]);
       writeFileSync(s.config, JSON.stringify(hung), { mode: 0o600 });
       const child = Bun.spawn(["bun", "src/cli.ts", "council", "run", "--card", s.card, "--council-config", s.config], {
@@ -228,6 +252,7 @@ describe("ak council run", () => {
         stdout: "ignore",
         stderr: "ignore",
       });
+      liveChildren.add(child);
       try {
         while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") await Bun.sleep(25);
         const descendant = Number(readFileSync(pidFile, "utf8").trim());
@@ -238,7 +263,7 @@ describe("ak council run", () => {
         while (Date.now() < deadline && alive(descendant)) await Bun.sleep(25);
         expect(alive(descendant)).toBe(false);
       } finally {
-        child.kill("SIGKILL");
+        await reap(child);
       }
     }, 60_000);
 

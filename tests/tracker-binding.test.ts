@@ -358,7 +358,7 @@ describe("the secret stays in the folder and out of git", () => {
     const bin = processScratch("ak-slow-git-");
     writeFileSync(
       join(bin, "git"),
-      `#!/bin/sh\nfor a in "$@"; do [ "$a" = log ] && exec sleep 30; done\nexec ${Bun.which("git")} "$@"\n`,
+      `#!/bin/sh\nfor a in "$@"; do [ "$a" = log ] && exec node -e 'const p=process.ppid;const d=Date.now()+30000;setInterval(()=>{try{process.kill(p,0)}catch{process.exit(0)}if(Date.now()>d||process.ppid!==p)process.exit(0)},200)'; done\nexec ${Bun.which("git")} "$@"\n`,
     );
     chmodSync(join(bin, "git"), 0o755);
     const saved = process.env["PATH"];

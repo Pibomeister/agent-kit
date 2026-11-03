@@ -396,9 +396,14 @@ describe("ak learn hook session-start --host through the CLI", () => {
             stdout: "pipe",
             stderr: "pipe",
           });
-          const stdout = await new Response(child.stdout).text();
-          expect(await child.exited).toBe(0);
-          return stdout;
+          try {
+            const stdout = await new Response(child.stdout).text();
+            expect(await child.exited).toBe(0);
+            return stdout;
+          } finally {
+            child.kill("SIGKILL");
+            await child.exited.catch(() => undefined);
+          }
         }),
       );
       expect(outputs.filter((stdout) => stdout !== "")).toHaveLength(1);

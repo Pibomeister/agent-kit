@@ -109,7 +109,14 @@ describe("council seats", () => {
     const started = Date.now();
     const result = await launchSeat(seat, "{}", ["yes", "no"], (launcher) => {
       if (launcher.actor === "v2") return Promise.resolve(ok("yes"));
-      const child = Bun.spawn(["sh", "-c", "sleep 30 & wait"], { stdout: "pipe", stderr: "pipe", detached: true });
+      const child = Bun.spawn(
+        [
+          "node",
+          "-e",
+          "const parent=process.ppid;const deadline=Date.now()+30000;setInterval(()=>{try{process.kill(parent,0)}catch{process.exit(0)}if(Date.now()>deadline||process.ppid!==parent)process.exit(0)},200)",
+        ],
+        { stdout: "pipe", stderr: "pipe", detached: true },
+      );
       return collectDetached(child, live, 500, "launcher");
     });
     expect(Date.now() - started).toBeLessThan(20_000);

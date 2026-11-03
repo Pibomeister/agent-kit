@@ -289,11 +289,16 @@ import { loadConfig } from ${JSON.stringify(join(core, "config.ts"))};
 console.log(projectKey(loadConfig({ CLAUDE_CONFIG_DIR: ${JSON.stringify(config.configDir)} }), ${JSON.stringify(root)}));`,
     );
     const children = Array.from({ length: 4 }, () => Bun.spawn([process.execPath, file], { stdout: "pipe" }));
-    const keys = await Promise.all(children.map(async (child) => (await new Response(child.stdout).text()).trim()));
-    expect(new Set(keys).size).toBe(1);
-    expect(keys[0]).toMatch(/^[0-9a-f]{12}$/);
-    expect(projectKey(config, root)).toBe(keys[0] ?? "");
-    expect(statSync(join(config.runtimeDir, ".salt")).mode & 0o777).toBe(0o600);
+    try {
+      const keys = await Promise.all(children.map(async (child) => (await new Response(child.stdout).text()).trim()));
+      expect(new Set(keys).size).toBe(1);
+      expect(keys[0]).toMatch(/^[0-9a-f]{12}$/);
+      expect(projectKey(config, root)).toBe(keys[0] ?? "");
+      expect(statSync(join(config.runtimeDir, ".salt")).mode & 0o777).toBe(0o600);
+    } finally {
+      for (const child of children) child.kill("SIGKILL");
+      await Promise.allSettled(children.map((child) => child.exited));
+    }
   });
 
   test("a malformed salt yields no key and is left as it was", () => {

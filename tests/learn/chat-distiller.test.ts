@@ -28,12 +28,17 @@ async function invoke(url: string, overrides: NodeJS.ProcessEnv = {}) {
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [code, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { code, stdout, stderr };
+  try {
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    return { code, stdout, stderr };
+  } finally {
+    child.kill("SIGKILL");
+    await child.exited.catch(() => undefined);
+  }
 }
 
 describe("the direct chat binding", () => {

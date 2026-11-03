@@ -35,7 +35,24 @@ setDefaultTimeout(30_000);
 const root = join(import.meta.dir, "..", "..");
 const RUNNER_CALL_TIMEOUT_MS = 25_000;
 const CONTENDED_RUNNER_CALL_TIMEOUT_MS = 120_000;
-const runnerCallChildren = new Set<ReturnType<typeof Bun.spawn>>();
+type LiveChild = ReturnType<typeof spawnLive>;
+const runnerCallChildren = new Set<LiveChild>();
+const liveChildren = new Set<LiveChild>();
+
+function spawnLive(
+  cmd: string[],
+  options: { cwd?: string; env?: NodeJS.ProcessEnv; stdout?: "pipe"; stderr?: "pipe" },
+) {
+  const child = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...options });
+  liveChildren.add(child);
+  void child.exited.finally(() => liveChildren.delete(child));
+  return child;
+}
+
+/** Hang until killed, the parent exits, or 120s pass — never an unbounded sleep. */
+const HANG_UNTIL_REAPED =
+  "const fs=require('node:fs');const parent=process.ppid;const deadline=Date.now()+120000;const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{try{process.kill(parent,0)}catch{process.exit(0)}if(Date.now()>deadline||process.ppid!==parent)process.exit(0)},200)";
+
 // Bun lists every directory above its cwd when it starts, and the live service starts each consumer,
 // launcher and verifier in its state directory. A crowded macOS $TMPDIR makes each start there cost
 // about a second, so fixtures live under a private root that this file removes when it ends.
@@ -79,7 +96,7 @@ function spawnRunnerCli(
   token: string,
   timeoutMs = RUNNER_CALL_TIMEOUT_MS,
 ) {
-  const child = Bun.spawn(
+  const child = spawnLive(
     ["bun", join(root, "src", "cli.ts"), "runner", "call", verb, "--json", request, "--socket", socket],
     { cwd: root, env: { ...process.env, AK_RUNNER_TOKEN: token }, stdout: "pipe", stderr: "pipe" },
   );
@@ -108,6 +125,11 @@ afterEach(async () => {
   for (const child of runnerCallChildren) child.kill("SIGKILL");
   await Promise.allSettled([...runnerCallChildren].map((child) => child.exited));
   runnerCallChildren.clear();
+});
+afterAll(async () => {
+  for (const child of liveChildren) child.kill("SIGKILL");
+  await Promise.allSettled([...liveChildren].map((child) => child.exited));
+  liveChildren.clear();
 });
 
 const transcript: string[] = [
@@ -425,7 +447,7 @@ describe("runner guards", () => {
     const socket = join(f.privateDir, "silent.sock");
     const request = join(f.requestDir, "silent.json");
     writeFileSync(request, JSON.stringify({ run: "toy-run" }));
-    const silent = Bun.spawn(
+    const silent = spawnLive(
       ["node", "-e", "require('node:net').createServer(()=>{}).listen(process.argv[1])", socket],
       { cwd: root, stdout: "pipe", stderr: "pipe" },
     );
@@ -471,16 +493,11 @@ describe("runner guards", () => {
           seat,
           actor: `supervisor-${seat}`,
           lineage: [`supervisor-${seat}`],
-          command: [
-            "node",
-            "-e",
-            "const fs=require('node:fs');const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setTimeout(()=>{},300000)",
-            launcherPid,
-          ],
+          command: ["node", "-e", HANG_UNTIL_REAPED, launcherPid],
         })),
       }),
     );
-    const server = Bun.spawn(
+    const server = spawnLive(
       [
         "bun",
         "src/cli.ts",
@@ -668,7 +685,7 @@ describe("runner guards", () => {
         ],
       }),
     );
-    const service = Bun.spawn(
+    const service = spawnLive(
       [
         "bun",
         "src/cli.ts",
@@ -729,9 +746,16 @@ describe("runner guards", () => {
     const eventConfig = join(f.privateDir, "event.json");
     writeFileSync(
       eventConfig,
-      JSON.stringify({ timeout_ms: 300_000, command: ["sh", "-c", `sleep 300 & echo $! > ${pidFile}; wait`] }),
+      JSON.stringify({
+        timeout_ms: 300_000,
+        command: [
+          "sh",
+          "-c",
+          `node -e ${JSON.stringify(HANG_UNTIL_REAPED)} ${JSON.stringify(pidFile)} & echo $! > ${JSON.stringify(pidFile)}; wait`,
+        ],
+      }),
     );
-    const service = Bun.spawn(
+    const service = spawnLive(
       [
         "bun",
         "src/cli.ts",
@@ -832,7 +856,7 @@ describe("runner guards", () => {
       stdout: "pipe" as const,
       stderr: "pipe" as const,
     };
-    let service = Bun.spawn(launch, options);
+    let service = spawnLive(launch, options);
     try {
       await waitForPath(socket, service);
       const request = join(f.requestDir, "event.json");
@@ -860,7 +884,7 @@ describe("runner guards", () => {
           ],
         }),
       );
-      service = Bun.spawn(launch, options);
+      service = spawnLive(launch, options);
       await waitForPath(socket, service);
       await waitForPath(delivered, service);
       expect(readFileSync(delivered, "utf8")).toBe("wake-1");
@@ -952,7 +976,7 @@ describe("runner guards", () => {
         ],
       }),
     );
-    const service = Bun.spawn(
+    const service = spawnLive(
       [
         "bun",
         "src/cli.ts",
@@ -1259,7 +1283,7 @@ describe("runner guards", () => {
         ],
       }),
     );
-    const service = Bun.spawn(
+    const service = spawnLive(
       [
         "bun",
         cliEntry,
@@ -1461,7 +1485,7 @@ describe("runner guards", () => {
       stdout: "pipe" as const,
       stderr: "pipe" as const,
     };
-    let server = Bun.spawn(launch, serverOptions);
+    let server = spawnLive(launch, serverOptions);
     try {
       await waitForPath(socket, server);
       const firstmateHome = process.env["AK_RUNNER_STOCK_FM_HOME"];
@@ -1642,7 +1666,7 @@ describe("runner guards", () => {
       expect(finalLedger.entries).toHaveLength(6);
       server.kill("SIGKILL");
       await server.exited;
-      server = Bun.spawn(launch, serverOptions);
+      server = spawnLive(launch, serverOptions);
       for (let attempt = 0; attempt < 15; attempt += 1) {
         if (call("status", workerToken).exitCode === 0) break;
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -2106,7 +2130,7 @@ describe("runner guards", () => {
     chmodSync(shim, 0o700);
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
-    const server = Bun.spawn(
+    const server = spawnLive(
       [
         "bun",
         join(root, "src", "cli.ts"),
@@ -2972,7 +2996,7 @@ describe("runner guards", () => {
     const workerToken = "b".repeat(48);
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
-    const server = Bun.spawn(
+    const server = spawnLive(
       [
         "bun",
         join(root, "src", "cli.ts"),
@@ -3106,7 +3130,7 @@ describe("runner guards", () => {
         ],
       }),
     );
-    const server = Bun.spawn(
+    const server = spawnLive(
       [
         "bun",
         "src/cli.ts",
@@ -3491,7 +3515,7 @@ describe("council blind veto", () => {
     const workerToken = "b".repeat(48);
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
-    const server = Bun.spawn(
+    const server = spawnLive(
       [
         "bun",
         join(root, "src", "cli.ts"),
@@ -3624,7 +3648,7 @@ describe("council blind veto", () => {
     const workerToken = "b".repeat(48);
     const adminTokenFile = join(f.privateDir, "admin.token");
     writeFileSync(adminTokenFile, adminToken, { mode: 0o600 });
-    const server = Bun.spawn(
+    const server = spawnLive(
       [
         "bun",
         join(root, "src", "cli.ts"),
