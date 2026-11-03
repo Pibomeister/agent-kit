@@ -2,9 +2,10 @@
 # Cloud Agent install: pin Bun to the version CI uses, then frozen-lockfile deps.
 # Same pin as .github/workflows/ci.yml oven-sh/setup-bun bun-version.
 # Linux zips and hashes are tools/cursor/bun-v1.3.14.sha256 (SHASUMS256.txt on that tag).
-# May append one marked PATH line to ~/.profile, or to ~/.bash_profile if that
-# file exists, only when ~/.bun/bin/bun is 1.3.14 and a login shell cannot
-# already find that version.
+# May append one marked PATH line to the first of ~/.bash_profile,
+# ~/.bash_login, ~/.profile that exists (bash -l order; ~/.profile if none
+# exist), only when ~/.bun/bin/bun is 1.3.14 and a login shell cannot already
+# find that version.
 set -euo pipefail
 PIN=1.3.14
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -14,6 +15,8 @@ export PATH="${HOME}/.bun/bin:${PATH}"
 BASH_BIN=$(command -v bash)
 if [ -f "${HOME}/.bash_profile" ]; then
   dest=${HOME}/.bash_profile
+elif [ -f "${HOME}/.bash_login" ]; then
+  dest=${HOME}/.bash_login
 else
   dest=${HOME}/.profile
 fi
@@ -76,7 +79,7 @@ link_bun() {
 }
 
 # Cloud Agent install/start are bash -l. Stock Ubuntu ~/.bashrc returns early
-# when not interactive, so PATH belongs in ~/.profile (or ~/.bash_profile).
+# when not interactive, so PATH belongs in the login file bash actually reads.
 persist_login_path() {
   bun_bin=${HOME}/.bun/bin/bun
   if [ ! -x "$bun_bin" ] || [ "$("$bun_bin" --version)" != "$PIN" ]; then

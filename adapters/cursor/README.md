@@ -120,6 +120,7 @@ the maintainer guide. After a packaging change run
 when the committed copy differs from a fresh `ak build --host cursor`.
 `.cursor/environment.json` is repo-owned and is not part of the overlay.
 `tools/cursor/install.sh` (the Cloud Agent `install` command) may append one
-marked PATH line to `~/.profile`, or to `~/.bash_profile` if that file exists.
-It does that only when `~/.bun/bin/bun` is 1.3.14 and a login shell cannot
-already find that version.
+marked PATH line to the first of `~/.bash_profile`, `~/.bash_login`,
+`~/.profile` that exists, which is the order `bash -l` reads. If none of those
+files exist, it writes `~/.profile`. It does that only when `~/.bun/bin/bun` is
+1.3.14 and a login shell cannot already find that version.
