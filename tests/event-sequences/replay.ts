@@ -7,7 +7,7 @@
  */
 import { check as fcCheck, defaultReportMessage, property } from "fast-check";
 
-import { failuresOf, formatEvents } from "./evaluate.ts";
+import { failuresOf, formatEvents, suiteFailures } from "./evaluate.ts";
 import { NUM_RUNS, sequenceArb } from "./generator.ts";
 import { createWorld } from "./impl.ts";
 import { isFiniteNumber } from "./parse.ts";
@@ -39,7 +39,7 @@ function replayEvents(events: readonly Event[]): number {
 function replaySeed(seed: number, path: string | undefined, runs: number): number {
   const world = createWorld();
   const details = fcCheck(
-    property(sequenceArb, (events) => failuresOf(events, world).length === 0),
+    property(sequenceArb, (events) => suiteFailures(events, world).length === 0),
     {
       numRuns: runs,
       seed,

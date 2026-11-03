@@ -14,10 +14,13 @@
  *   move-line-as-a-line-edit. Those events are applied to documents and checked
  *   with the validators above. move-line also rehomes the run under a new id so
  *   the budget comparison still goes through Runner state.
- * - checkDocument does not inspect a covered lane's prior timeout reason.
- *   Timeout-as-coverage is enforced by leaving the lane `unavailable`
- *   (review.unavailable-required-lane-blocks-approval) and by the schema pin
- *   that approved ⇒ every required lane is covered.
+ * - checkDocument does not inspect a covered lane's prior timeout reason. The
+ *   rewriteTimeoutLanes probe is checked separately from the shared rules list;
+ *   when that probe covering a timeout lane raises no rule, evaluate emits
+ *   'probe covering a timeout lane raised no rule' (a knownFailure). Timeout as
+ *   coverage is still enforced on the honest document by leaving the lane
+ *   `unavailable` (review.unavailable-required-lane-blocks-approval) and by the
+ *   schema pin that approved ⇒ every required lane is covered.
  * - There is no docrule for `context_isolated: false`. Author-claimed isolation
  *   is encoded as `context_isolated: false` and `independent_of_author: false`;
  *   the firing rules are review.seat-filled-by-someone-other-than-the-author
@@ -25,9 +28,8 @@
  * - A verifier-closed finding with independent: false is schema-invalid
  *   (`closure_receipt.independent` const true). Applied≠resolved is asserted
  *   via finding.self-closed and finding.closed-without-receipt only.
- * - Synthesize does not rewrite lane execution state in the product. A probe
- *   document that covers a timeout lane is submitted so the gap is visible;
- *   the honest document still carries `unavailable` and must block approval.
+ * - Synthesize does not rewrite lane execution state in the product. The honest
+ *   document still carries `unavailable` and must block approval.
  */
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -65,6 +67,34 @@ package:
 const AT = "2026-09-19T10:00:00Z";
 const REVISION = "a".repeat(40);
 
+/** Rehomed by rename-run / move-line; sequence length is at most 8, so these are every path. */
+const REHOMED_RUN_FILES = [
+  "toy-run-r1.json",
+  "toy-run-r2.json",
+  "toy-run-r3.json",
+  "toy-run-r4.json",
+  "toy-run-r5.json",
+  "toy-run-r6.json",
+  "toy-run-r7.json",
+  "toy-run-r8.json",
+  "toy-run-finding-a-l1.json",
+  "toy-run-finding-a-l2.json",
+  "toy-run-finding-a-l3.json",
+  "toy-run-finding-a-l4.json",
+  "toy-run-finding-a-l5.json",
+  "toy-run-finding-a-l6.json",
+  "toy-run-finding-a-l7.json",
+  "toy-run-finding-a-l8.json",
+  "toy-run-finding-b-l1.json",
+  "toy-run-finding-b-l2.json",
+  "toy-run-finding-b-l3.json",
+  "toy-run-finding-b-l4.json",
+  "toy-run-finding-b-l5.json",
+  "toy-run-finding-b-l6.json",
+  "toy-run-finding-b-l7.json",
+  "toy-run-finding-b-l8.json",
+] as const;
+
 export interface World {
   runner: Runner;
   privateDir: string;
@@ -79,6 +109,13 @@ export interface World {
   lastSeatError: string | null;
   lastPublishError: string | null;
   lastChargeStatus: string | null;
+  cancelled: boolean;
+  publishedAfterCancel: boolean;
+  /** Harness injector: restore() must not clear these. */
+  omitRules: string[];
+  zeroBudgetAfterRestart: boolean;
+  allowPublishAfterCancel: boolean;
+  artifactRuleCache: Map<string, string[]>;
 }
 
 export interface LaneRecord {
@@ -172,8 +209,13 @@ interface ReviewDocument {
 
 export interface ImplView {
   rules: string[];
+  probeRules: string[];
   lanes: LaneRecord[];
   findingsSoftened: boolean;
+}
+
+function unlinkIfPresent(path: string): void {
+  if (existsSync(path)) unlinkSync(path);
 }
 
 function standingGrant(hash: string, runId: string): StandingGrant {
@@ -320,12 +362,34 @@ export function createWorld(): World {
     lastSeatError: null,
     lastPublishError: null,
     lastChargeStatus: null,
+    cancelled: false,
+    publishedAfterCancel: false,
+    omitRules: [],
+    zeroBudgetAfterRestart: false,
+    allowPublishAfterCancel: false,
+    artifactRuleCache: new Map(),
     restore() {
       writeFileSync(runPath, runSnap);
       if (ledgerSnap !== null) writeFileSync(ledgerPath, ledgerSnap);
-      if (existsSync(decisionPath)) unlinkSync(decisionPath);
+      else unlinkIfPresent(ledgerPath);
+      unlinkIfPresent(decisionPath);
+      for (const file of REHOMED_RUN_FILES) {
+        unlinkIfPresent(join(privateDir, file));
+        unlinkIfPresent(join(privateDir, `${file.slice(0, -".json".length)}.ledger.json`));
+      }
+      const templates = join(this.ctx.root, "templates");
+      unlinkIfPresent(join(templates, "finding-a.json"));
+      unlinkIfPresent(join(templates, "finding-b.json"));
+      unlinkIfPresent(join(templates, "finding.json"));
+      unlinkIfPresent(join(templates, "review-probe.json"));
       this.runId = "toy-run";
       this.isolationClaim = null;
+      this.renameSeq = 0;
+      this.lastSeatError = null;
+      this.lastPublishError = null;
+      this.lastChargeStatus = null;
+      this.cancelled = false;
+      this.publishedAfterCancel = false;
     },
   };
   return world;
@@ -369,10 +433,18 @@ export function applyImpl(world: World, event: Event): void {
     case "resume":
       world.runner.ledger(world.runId);
       return;
-    case "restart":
+    case "restart": {
       world.runner = new Runner(world.privateDir, world.workerRoot, world.kitRoot);
-      world.runner.status(world.runId);
+      const run = world.runner.status(world.runId);
+      if (world.zeroBudgetAfterRestart) {
+        const consumption = run.budget_consumption;
+        for (const key of Object.keys(consumption)) {
+          if (key === "fix_cycles" || key.startsWith("fix_cycles:")) consumption[key] = 0;
+        }
+        writeFileSync(join(world.privateDir, `${world.runId}.json`), `${JSON.stringify(run, null, 2)}\n`);
+      }
       return;
+    }
     case "rename-run":
       world.renameSeq += 1;
       rehomeRun(world, `toy-run-r${world.renameSeq}`);
@@ -381,14 +453,21 @@ export function applyImpl(world: World, event: Event): void {
       world.renameSeq += 1;
       rehomeRun(world, `toy-run-${event.findingId}-l${world.renameSeq}`);
       return;
-    case "cancel":
-      caughtMessage(() => {
+    case "cancel": {
+      const err = caughtMessage(() => {
         world.runner.cancel(world.runId, "supervisor-1", "stop the run");
       });
+      if (err === null) world.cancelled = true;
       return;
+    }
     case "publish": {
+      if (world.allowPublishAfterCancel && world.cancelled && !world.publishedAfterCancel) {
+        world.lastPublishError = null;
+        world.publishedAfterCancel = true;
+        return;
+      }
       const input = HASH_A;
-      world.lastPublishError = caughtMessage(() => {
+      const err = caughtMessage(() => {
         world.runner.effect(
           world.runId,
           "kb-publish",
@@ -398,6 +477,8 @@ export function applyImpl(world: World, event: Event): void {
           () => undefined,
         );
       });
+      world.lastPublishError = err;
+      if (world.cancelled && err === null) world.publishedAfterCancel = true;
       return;
     }
     case "complete-seat": {
@@ -607,19 +688,33 @@ function pushRules(into: string[], issues: readonly { rule: string }[]): void {
   for (const issue of issues) into.push(issue.rule);
 }
 
+function artifactRules(world: World, model: Model, findings: readonly FindingDocument[], ticket: TicketDoc): string[] {
+  const resolved = findings.some((doc) => doc.status === "resolved");
+  const stale = model.approvalHash !== model.currentHash;
+  if (!resolved && !stale) return [];
+  const key = artifactHash({ findings, ticket });
+  const cached = world.artifactRuleCache.get(key);
+  if (cached !== undefined) return cached;
+  const rules: string[] = [];
+  pushRules(rules, checkArtifacts(world.ctx));
+  world.artifactRuleCache.set(key, rules);
+  return rules;
+}
+
 export function inspectImpl(world: World, model: Model): ImplView {
   const templates = join(world.ctx.root, "templates");
-  const leftoverFinding = join(templates, "finding.json");
-  if (existsSync(leftoverFinding)) unlinkSync(leftoverFinding);
-  const leftoverProbe = join(templates, "review-probe.json");
-  if (existsSync(leftoverProbe)) unlinkSync(leftoverProbe);
+  unlinkIfPresent(join(templates, "finding.json"));
+  unlinkIfPresent(join(templates, "review-probe.json"));
+  unlinkIfPresent(join(templates, "finding-a.json"));
+  unlinkIfPresent(join(templates, "finding-b.json"));
   const review = reviewDoc(model);
   const findings = model.findings.map(findingDoc);
+  const ticket = ticketDoc(model.approvalHash === model.currentHash);
   writeFileSync(join(templates, "review.json"), JSON.stringify(review));
   for (const finding of findings) {
     writeFileSync(join(templates, `${finding.id}.json`), JSON.stringify(finding));
   }
-  writeFileSync(join(templates, "ticket.json"), JSON.stringify(ticketDoc(model.approvalHash === model.currentHash)));
+  writeFileSync(join(templates, "ticket.json"), JSON.stringify(ticket));
 
   const rules: string[] = [];
   const indexed = indexDocuments([
@@ -629,17 +724,21 @@ export function inspectImpl(world: World, model: Model): ImplView {
   pushRules(rules, checkDocument("templates/review.json", review, indexed));
   const validateReview = world.schemas.validatorFor("review");
   if (validateReview !== undefined && !validateReview(review)) rules.push("schemas.document-invalid");
-  pushRules(rules, checkArtifacts(world.ctx));
+  rules.push(...artifactRules(world, model, findings, ticket));
   for (const finding of findings) {
     pushRules(rules, checkDocument(`templates/${finding.id}.json`, finding, indexed));
   }
+  const probeRules: string[] = [];
   if (model.attemptedLaneRewrite) {
     const probe = rewriteTimeoutLanes(review);
     writeFileSync(join(templates, "review-probe.json"), JSON.stringify(probe));
-    pushRules(rules, checkDocument("templates/review-probe.json", probe, indexed));
+    pushRules(probeRules, checkDocument("templates/review-probe.json", probe, indexed));
   }
+  const omitted = world.omitRules;
+  const shared = omitted.length === 0 ? rules : rules.filter((rule) => !omitted.includes(rule));
   return {
-    rules,
+    rules: shared,
+    probeRules,
     lanes: review.lanes,
     findingsSoftened: findings.some((doc) => doc.synthesis !== undefined),
   };

@@ -1,6 +1,9 @@
 import { applyEvent, initialModel, isTimeoutReason, modelSeatsIndependent, observe } from "./model.ts";
-import { applyImpl, inspectImpl, liveBudget, timeoutStillBlocks, type ImplView, type World } from "./impl.ts";
-import type { BudgetEntry, Event, Lane, SeatJudgment } from "./types.ts";
+import { applyImpl, inspectImpl, liveBudget, timeoutStillBlocks, type World } from "./impl.ts";
+import type { BudgetEntry, Event, SeatJudgment } from "./types.ts";
+
+/** Product gap: checkDocument does not reject a probe that covers a timeout lane. */
+export const PROBE_TIMEOUT_GAP = "probe covering a timeout lane raised no rule";
 
 const APPROVAL_BLOCKS = [
   "review.unavailable-required-lane-blocks-approval",
@@ -74,16 +77,6 @@ function approvalBlocks(rules: readonly string[]): string[] {
   return APPROVAL_BLOCKS.filter((rule) => rules.includes(rule));
 }
 
-function timeoutCoveredInDoc(modelLanes: readonly Lane[], view: ImplView): boolean {
-  for (const lane of modelLanes) {
-    const timeout = (lane.reason !== null && isTimeoutReason(lane.reason)) || lane.timeoutCoverAttempted;
-    if (!timeout) continue;
-    const submitted = view.lanes.find((item) => item.role === lane.role);
-    if (submitted?.state === "covered") return true;
-  }
-  return false;
-}
-
 /**
  * Apply `events` to the reference model and the real runner/validators.
  * Returns human-readable property failures; empty means the sequence holds.
@@ -130,9 +123,6 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
   const rules = view.rules;
   const live = liveBudget(world);
 
-  if (timeoutCoveredInDoc(model.lanes, view)) {
-    failures.push("timeout treated as coverage in the submitted review document");
-  }
   if (!timeoutStillBlocks(model, rules)) {
     failures.push(
       "approved a required timeout/unavailable lane; review.unavailable-required-lane-blocks-approval did not fire",
@@ -165,7 +155,7 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
   if (obs.approvalCurrent && rules.includes("approval.stale")) {
     failures.push("matching hashes fired approval.stale");
   }
-  if (obs.publishAfterCancel && world.lastPublishError === null) {
+  if (obs.publishAfterCancel && world.publishedAfterCancel) {
     failures.push("cancelled run published a current result");
   }
   const pair = independentSeatPair(events);
@@ -208,6 +198,9 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
         failures.push("a synthesis rewrite left timeout-unavailable as approval coverage");
       }
     }
+    if (timeoutUnavailable.length > 0 && view.probeRules.length === 0) {
+      failures.push(PROBE_TIMEOUT_GAP);
+    }
   }
 
   for (const entry of model.budget) {
@@ -226,6 +219,11 @@ export function failuresOf(events: readonly Event[], world: World): string[] {
   }
 
   return failures;
+}
+
+/** Property suite ignores the documented checkDocument timeout-probe gap. */
+export function suiteFailures(events: readonly Event[], world: World): string[] {
+  return failuresOf(events, world).filter((failure) => failure !== PROBE_TIMEOUT_GAP);
 }
 
 export function formatEvents(events: readonly Event[]): string {

@@ -103,7 +103,7 @@ const timeoutThenCover: Arbitrary<Event[]> = tuple(role, reason, actor).map(([la
   { kind: "cover-lane" as const, role: laneRole, filledBy },
 ]);
 
-/** Bounded length: the plan raises run count, not sequence length. Eight keeps the 1,000-run suite under a minute. */
+/** Bounded length: the plan raises run count, not sequence length. Eight: 1,000 runs measured 87 s dedicated, 92 s in the parallel suite; elapsedMs is logged against a 300 s budget. */
 export const sequenceArb: Arbitrary<Event[]> = oneof(
   { weight: 3, arbitrary: array(eventArb, { minLength: 3, maxLength: 8 }) },
   {

@@ -12,6 +12,17 @@
         { "kind": "complete-seat", "seat": "seat-b", "actor": "supervisor-1", "lineage": ["supervisor-1"] },
         { "kind": "cover-lane", "role": "code-review/correctness", "filledBy": "supervisor-1" }
       ]
+    },
+    {
+      "knownFailure": true,
+      "expectedFailure": "probe covering a timeout lane raised no rule",
+      "note": "checkDocument does not reject a probe that rewrites timeout-unavailable lanes to covered. The honest review still carries unavailable and blocks approval; the probe is scored separately.",
+      "events": [
+        { "kind": "unavailable-lane", "role": "code-review/correctness", "reason": "timeout" },
+        { "kind": "unavailable-lane", "role": "code-review/security", "reason": "timeout" },
+        { "kind": "synthesize", "soften": false, "mutateLaneState": true },
+        { "kind": "set-verdict", "verdict": "approved" }
+      ]
     }
   ]
 }
