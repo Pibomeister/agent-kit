@@ -1,13 +1,13 @@
 #!/bin/sh
 # Refuses a publish whose staged bundle carries a bin/ program without the executable bit.
-# A file directly under dist/<host>/bin/ that starts with a shebang is run by its path: the
+# A file directly under dist/<host>/bin/ (or dist/<host>/.cursor/bin/ for Cursor) that starts with a shebang is run by its path: the
 # skills run `ak …`, and a shell refuses a 100644 bin/ak with "Permission denied" on every
 # install. ak build writes these files 0755 (isExecutable in src/packaging/plan.ts); this
 # checks that the mode survived into the index the publish commit is made from.
 # Usage, from the repository root: tools/publish/exec-bits.sh <release-worktree>
 set -eu
 release="$1"
-staged="$(git -C "$release" ls-files -s -- ':(glob)dist/*/bin/*')"
+staged="$(git -C "$release" ls-files -s -- ':(glob)dist/*/bin/*' ':(glob)dist/*/.cursor/bin/*')"
 failed=0
 while read -r mode blob _ path; do
   [ -n "$path" ] || continue

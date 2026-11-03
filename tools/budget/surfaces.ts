@@ -61,7 +61,7 @@ const FIRSTMATE_TEXTS = [
 const BUNDLE_PROFILE = "all";
 
 /** Bundle paths an agent reads: skill entry text, the references behind it and the shared material. */
-const AGENT_FACING = /^(skills|references)\//;
+const AGENT_FACING = /^(?:\.cursor\/)?(skills|references)\//;
 
 function read(root: string, file: string): string {
   return readFileSync(join(root, file), "utf8");
@@ -90,7 +90,7 @@ function bundleSurfaces(root: string): Surface[] {
       const listing: string[] = [];
       for (const file of files) {
         out.push({ id: `bundle/${host}:${file.path}`, file: file.source ?? file.path, text: file.contents });
-        if (/^skills\/[^/]+\/SKILL\.md$/.test(file.path)) {
+        if (/^(?:\.cursor\/)?skills\/[^/]+\/SKILL\.md$/.test(file.path)) {
           const { data } = parseFrontmatter(file.contents);
           listing.push(`- ${String(data["name"])}: ${String(data["description"])}\n`);
         }

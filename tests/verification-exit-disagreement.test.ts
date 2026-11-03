@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
-import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { HOST_IDS, packagedSkillFile } from "../src/packaging/hosts.ts";
 import { planBundle } from "../src/packaging/plan.ts";
 import { checkDocument, indexDocuments } from "../src/validation/docrules.ts";
 import { checkSchemas, compileSchemas } from "../src/validation/schemas.ts";
@@ -144,7 +144,7 @@ describe("verification receipt without acceptance criteria", () => {
     if (catalog === null) throw new Error("repository has no catalog");
     for (const host of HOST_IDS) {
       const plan = planBundle({ root: ROOT, catalog }, host, {});
-      const shipped = plan.files.get("skills/visual-edit/assets/receipt.example.json")?.contents;
+      const shipped = plan.files.get(packagedSkillFile(host, "visual-edit", "assets/receipt.example.json"))?.contents;
       if (shipped === undefined) throw new Error(`${host} bundle carries no visual-edit receipt template`);
       const template = parseReceipt(shipped);
       expect(template.kind).toBe("probe");

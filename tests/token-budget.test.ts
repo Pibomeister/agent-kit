@@ -13,7 +13,7 @@ import { existsSync, lstatSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
-import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { HOST_IDS, packagedSkillFile } from "../src/packaging/hosts.ts";
 import {
   applyUpdate,
   compare,
@@ -77,7 +77,7 @@ describe("this tree's agent-facing text", () => {
         ...catalog
           .bySection("skills")
           .filter((entry) => entry.status === "authored")
-          .map((entry) => `bundle/${host}:skills/${entry.id}/SKILL.md`),
+          .map((entry) => `bundle/${host}:${packagedSkillFile(host, entry.id)}`),
       ]),
     ];
     expect(expected.filter((id) => !ids.has(id))).toEqual([]);
