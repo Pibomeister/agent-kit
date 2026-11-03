@@ -1113,31 +1113,43 @@ describe("ak lifecycle check, standalone", () => {
       expect(checked.err).toContain("evidence malformed");
     });
   }
-  test("a new receipt corrects a failed receipt by its exact hash without changing the original", () => {
-    const dir = repo();
-    const ticketPath = ticket(dir, "corrected-failure");
-    const run = openedRun(dir, ticketPath);
-    record(dir, "build-checks", "review-full", "review-readiness");
-    const original = receipt(dir, run, ticketPath, { id: "verification-original", status: "failed", exit_status: 1 });
-    const originalBytes = readFileSync(original);
-    const originalHash = `sha256:${createHash("sha256").update(originalBytes).digest("hex")}`;
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", original).code).toBe(0);
+  test.each(["canonical", "file-bytes"] as const)(
+    "a new receipt corrects a failed receipt by its %s hash without changing the original",
+    (hashDomain) => {
+      const dir = repo();
+      const ticketPath = ticket(dir, "corrected-failure");
+      const run = openedRun(dir, ticketPath);
+      record(dir, "build-checks", "review-full", "review-readiness");
+      const original = receipt(dir, run, ticketPath, {
+        id: "verification-original",
+        status: "failed",
+        exit_status: 1,
+        approvals: [
+          { artifact_hash: `sha256:${"a".repeat(64)}`, by: "human", authority: "explicit", at: "2026-09-29T00:00:00Z" },
+        ],
+      });
+      const originalBytes = readFileSync(original);
+      const originalHash = `sha256:${createHash("sha256").update(originalBytes).digest("hex")}`;
+      const canonicalHash = artifactHash(JSON.parse(originalBytes.toString()));
+      expect(canonicalHash).not.toBe(originalHash);
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", original).code).toBe(0);
 
-    const corrected = receipt(dir, run, ticketPath, {
-      id: "verification-corrected",
-      supersedes: { id: "verification-original", hash: originalHash },
-    });
-    expect(ak(dir, "record", "--gate", "verify", "--receipt", corrected).code).toBe(0);
-    const stored = readFileSync(join(defaultEvidenceDir(dir), run, "artifacts", originalHash.slice(7)));
-    expect(stored).toEqual(originalBytes);
-    expect(`sha256:${createHash("sha256").update(stored).digest("hex")}`).toBe(originalHash);
-    const checked = ak(dir, "check", "--json");
-    expect(checked.code).toBe(0);
-    expect(JSON.parse(checked.out.join("\n"))).toMatchObject({
-      outcome: "allowed",
-      inputs: { evidence: [{ id: "verification-original", hash: originalHash }, { id: "verification-corrected" }] },
-    });
-  });
+      const corrected = receipt(dir, run, ticketPath, {
+        id: "verification-corrected",
+        supersedes: { id: "verification-original", hash: hashDomain === "canonical" ? canonicalHash : originalHash },
+      });
+      expect(ak(dir, "record", "--gate", "verify", "--receipt", corrected).code).toBe(0);
+      const stored = readFileSync(join(defaultEvidenceDir(dir), run, "artifacts", originalHash.slice(7)));
+      expect(stored).toEqual(originalBytes);
+      expect(`sha256:${createHash("sha256").update(stored).digest("hex")}`).toBe(originalHash);
+      const checked = ak(dir, "check", "--evidence", "--json");
+      expect(checked.code, checked.err || checked.out.join("\n")).toBe(0);
+      expect(JSON.parse(checked.out.join("\n"))).toMatchObject({
+        outcome: "allowed",
+        inputs: { evidence: [{ id: "verification-original", hash: originalHash }, { id: "verification-corrected" }] },
+      });
+    },
+  );
 
   test("a correction naming a different hash leaves the failed receipt effective", () => {
     const dir = repo();
@@ -1436,6 +1448,25 @@ describe("ak lifecycle check, standalone", () => {
     }
   });
 
+  test("a fresh follow-up run must record and check its own build-checks", () => {
+    const dir = repo();
+    open(dir, "first-task");
+    record(dir, ...PRE_SHIP_GATES);
+    const followUp = open(dir, "follow-up");
+    record(dir, "verify", "review-full", "review-readiness");
+    const omitted = ak(dir, "check", "--evidence", "--gates", "verify,review-full,review-delta,review-readiness");
+    expect(omitted.code).toBe(1);
+    expect(omitted.err).toContain("ship decision did not check required gate build-checks");
+    const missing = ak(dir, "check", "--evidence");
+    expect(missing.code).toBe(1);
+    expect(missing.err).toContain(`gate build-checks has no current evidence (no record for run ${followUp}`);
+    record(dir, "build-checks");
+    expect(ak(dir, "check", "--evidence").code).toBe(0);
+    expect(ak(dir, "check", "--evidence", "--gates", "verify,review-full,review-delta,review-readiness").err).toContain(
+      "ship decision did not check required gate build-checks",
+    );
+  });
+
   test("a closed strengthened run rejects squash reuse and a newly opened run sees none of its records", () => {
     const dir = repo();
     const first = open(dir, "task-1");
@@ -1709,6 +1740,36 @@ console.log(JSON.stringify(cases.map(({ doc }) => verificationShapeReasons(doc).
       const opened = node("open", "--ticket", ticketPath);
       expect(opened.exitCode).toBe(0);
       expect(opened.stdout.toString()).toMatch(/^opened run feature-[0-9a-f]{12}\n$/);
+      const run = opened.stdout
+        .toString()
+        .trim()
+        .replace(/^opened run /, "");
+      for (const gate of ["build-checks", "review-full", "review-readiness"])
+        expect(node("record", "--gate", gate).exitCode).toBe(0);
+      const original = receipt(dir, run, ticketPath, {
+        id: "verification-original",
+        status: "failed",
+        exit_status: 1,
+      });
+      expect(node("record", "--gate", "verify", "--receipt", original).exitCode).toBe(0);
+      const intermediate = receipt(dir, run, ticketPath, {
+        id: "verification-intermediate",
+        status: "failed",
+        exit_status: 1,
+        supersedes: { id: "verification-original", hash: artifactHash(JSON.parse(readFileSync(original, "utf8"))) },
+      });
+      expect(node("record", "--gate", "verify", "--receipt", intermediate).exitCode).toBe(0);
+      const corrected = receipt(dir, run, ticketPath, {
+        id: "verification-corrected",
+        supersedes: {
+          id: "verification-intermediate",
+          hash: artifactHash(JSON.parse(readFileSync(intermediate, "utf8"))),
+        },
+      });
+      expect(node("record", "--gate", "verify", "--receipt", corrected).exitCode).toBe(0);
+      const correctedCheck = node("check", "--evidence", "--json");
+      expect(correctedCheck.exitCode, correctedCheck.stdout.toString()).toBe(0);
+      expect(JSON.parse(correctedCheck.stdout.toString())).toMatchObject({ outcome: "allowed" });
       const identity = ["--class", "green", "--author-kind", "agent"];
       expect(node("record", "--gate", "verify", "--run", host, ...identity, "--host", "sonnet-4").exitCode).toBe(2);
       expect(node("record", "--gate", "verify", "--run", host, ...identity, "--host", host).exitCode).toBe(0);
