@@ -100,6 +100,14 @@ Its human-started commands use `/<id>`. See the [Droid host contract](adapters/d
 for isolated local installation and acceptance limits. Installation is model-free verified;
 live acceptance remains separate for each served binding, and `ak update` does not manage Droid.
 
+Cursor IDE and Cloud Agents use the native bundle at `dist/cursor`, built with
+`bun run ak build --host cursor` (or `--out <dir>` for a dedicated directory).
+Human-started skills use `/<id>`. Vendor `.cursor/skills/` and `.cursor/agents/`
+into the consuming repository so Cloud Agents load them from the clone. See the
+[Cursor host README](adapters/cursor/README.md) for the exact rsync commands and
+[contract](adapters/cursor/CONTRACT.md) for discovery paths and super-review seating.
+`ak update` does not manage Cursor.
+
 ## Guard hook
 
 The Claude Code and Codex bundles and `ak firstmate install` register an advisory

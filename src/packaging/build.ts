@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 import { readTextIfPresent, walkFiles } from "../util/fs.ts";
 import type { CheckContext } from "../validation/context.ts";
@@ -10,6 +10,12 @@ import { isExecutable, planBundle, type BundlePlan, type PlanOptions } from "./p
 
 export interface BuildOptions extends PlanOptions {
   hosts?: ReadonlyArray<HostId>;
+  /**
+   * Replace `dist/<host>` for a single-host write. The directory is replaced
+   * wholesale, so it must be a dedicated bundle directory, never a consuming
+   * repository root.
+   */
+  out?: string;
 }
 
 export function planAll(ctx: CheckContext, options: BuildOptions): BundlePlan[] {
@@ -60,14 +66,32 @@ export interface BuildResult {
   profile: string;
 }
 
+function bundleOutDir(ctx: CheckContext, host: HostId, options: BuildOptions): string {
+  if (options.out === undefined) return join(ctx.root, distDir(host));
+  return isAbsolute(options.out) ? options.out : join(ctx.root, options.out);
+}
+
 export function writeBundles(ctx: CheckContext, options: BuildOptions): BuildResult {
+  const selected = options.hosts ?? HOST_IDS;
+  if (options.out !== undefined && selected.length !== 1) {
+    return {
+      issues: [
+        error(
+          "packaging.out-requires-one-host",
+          "ak build",
+          "--out writes one bundle directory and needs exactly one --host. Default ak build still writes dist/<host> for every host.",
+        ),
+      ],
+      profile: "all",
+    };
+  }
   const plans = planAll(ctx, options);
   const issues = plans.flatMap((plan) => plan.issues);
   const profile = plans.at(-1)?.profile ?? "all";
   // A failure in any host must leave every installed bundle intact.
   if (issues.some((issue) => issue.severity === "error")) return { issues: collapseDuplicates(issues), profile };
   for (const plan of plans) {
-    const outRoot = join(ctx.root, distDir(plan.host));
+    const outRoot = bundleOutDir(ctx, plan.host, options);
     rmSync(outRoot, { recursive: true, force: true });
     for (const file of plan.files.values()) {
       const target = join(outRoot, file.path);

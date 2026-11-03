@@ -11,7 +11,7 @@ import {
   mkdirSync,
   symlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 
@@ -21,7 +21,15 @@ import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { compileSchemas } from "../src/validation/schemas.ts";
 import { checkCompleteness } from "../src/validation/completeness.ts";
-import { HOST_IDS, RESTRICTIONS, explicitStartPattern, loadHostCapabilities } from "../src/packaging/hosts.ts";
+import {
+  HOST_IDS,
+  RESTRICTIONS,
+  explicitStartPattern,
+  loadHostCapabilities,
+  packagedBinFile,
+  packagedSkillFile,
+  type HostId,
+} from "../src/packaging/hosts.ts";
 import { MODE_CEILING_CHECK } from "../src/packaging/capability-table.ts";
 import {
   INSTALL_FILE,
@@ -301,7 +309,7 @@ function recordOf(plan: ReturnType<typeof planBundle>) {
 }
 
 function packagedSkillText(plan: ReturnType<typeof planBundle>, id: string): string {
-  const text = plan.files.get(`skills/${id}/SKILL.md`)?.contents;
+  const text = plan.files.get(packagedSkillFile(plan.host, id))?.contents;
   if (text === undefined) throw new Error(`${plan.host} did not package ${id}`);
   return text;
 }
@@ -316,7 +324,7 @@ function packagedSkillPaths(plan: ReturnType<typeof planBundle>): string[] {
 
 describe("host capability honesty", () => {
   test("supported hosts are declared and the restriction vocabulary is closed", () => {
-    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi", "droid"]);
+    expect([...HOST_IDS]).toEqual(["claude-code", "codex", "grok", "kimi", "droid", "cursor"]);
     expect([...RESTRICTIONS]).toContain("no-model-invocation");
     expect([...RESTRICTIONS]).toContain("tool-allowlist-enforced");
   });
@@ -2410,7 +2418,7 @@ describe("ak build and --check", () => {
       );
       const built = writeBundles(ctx, {});
       for (const host of HOST_IDS) {
-        const executablePath = join(ctx.root, "dist", host, "bin/ak");
+        const executablePath = join(ctx.root, "dist", host, packagedBinFile(host, "ak"));
         expect(existsSync(executablePath) && readFileSync(executablePath, "utf8").includes(marker)).toBe(false);
       }
       expectError(built.issues, "packaging.maintenance-build-failed", "inlined schema leaves its source tree");
@@ -2444,7 +2452,7 @@ describe("ak build and --check", () => {
       const built = writeBundles(ctx, {});
       expect(built.issues.filter((issue) => issue.severity === "error")).toEqual([]);
       for (const host of HOST_IDS) {
-        const script = readFileSync(join(ctx.root, "dist", host, "bin/ak"), "utf8");
+        const script = readFileSync(join(ctx.root, "dist", host, packagedBinFile(host, "ak")), "utf8");
         expect(script).toContain(marker);
         expect(script).not.toContain("UNUSED_EXTERNAL_SCHEMA");
         expect(existsSync(join(ctx.root, "dist", host, "schemas/unused.schema.json"))).toBe(false);
@@ -2499,6 +2507,21 @@ describe("ak build and --check", () => {
     expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(readFileSync(join(ctx.root, "dist/claude-code/.claude-plugin/plugin.json"), "utf8")).toContain("alpha");
     expect(readFileSync(join(ctx.root, "dist/codex/skills/alpha/SKILL.md"), "utf8")).toContain("name: alpha");
+    expect(readFileSync(join(ctx.root, "dist/cursor/.cursor/skills/alpha/SKILL.md"), "utf8")).toContain("name: alpha");
+  });
+
+  test("--out requires exactly one host and replaces that directory, not dist/<host>", () => {
+    const ctx = ctxFor();
+    const many = writeBundles(ctx, { out: join(ctx.root, "bundle-out") });
+    expectError(many.issues, "packaging.out-requires-one-host", "--host");
+    expect(existsSync(join(ctx.root, "bundle-out"))).toBe(false);
+
+    const out = join(ctx.root, "bundle-out");
+    const built = writeBundles(ctx, { hosts: ["cursor"], out });
+    expect(built.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(existsSync(join(out, ".cursor/skills/alpha/SKILL.md"))).toBe(true);
+    expect(existsSync(join(ctx.root, "dist/cursor"))).toBe(false);
+    expect(existsSync(join(ctx.root, "dist/claude-code"))).toBe(false);
   });
 
   test("--check passes immediately after a build", () => {
@@ -3035,10 +3058,19 @@ function run(cwd: string, script: string): string {
   return result.stdout;
 }
 
-function shebangPrograms(root: string, host: string): string[] {
-  return readdirSync(join(root, "dist", host, "bin"))
-    .map((name) => join(root, "dist", host, "bin", name))
+function shebangPrograms(root: string, host: HostId): string[] {
+  const dir = join(root, "dist", host, dirname(packagedBinFile(host, "ak")));
+  return readdirSync(dir)
+    .map((name) => join(dir, name))
     .filter((path) => readFileSync(path, "utf8").startsWith("#!"));
+}
+
+function isPackagedBin(path: string): boolean {
+  return path.startsWith("bin/") || path.startsWith(".cursor/bin/");
+}
+
+function packagedBinName(path: string): string {
+  return path.replace(/^(?:\.cursor\/)?bin\//, "");
 }
 
 describe("the executable bit on bin/ programs", () => {
@@ -3047,7 +3079,9 @@ describe("the executable bit on bin/ programs", () => {
     expect(writeBundles(ctx, {}).issues.filter((i) => i.severity === "error")).toEqual([]);
     for (const host of HOST_IDS) {
       const programs = shebangPrograms(ctx.root, host);
-      expect(programs.map((path) => path.slice(ctx.root.length + 1))).toContain(`dist/${host}/bin/ak`);
+      expect(programs.map((path) => path.slice(ctx.root.length + 1))).toContain(
+        `dist/${host}/${packagedBinFile(host, "ak")}`,
+      );
       for (const path of programs) expect(`${path}:${executable(path)}`).toBe(`${path}:true`);
     }
     expect(checkBundles(ctx, {}).filter((i) => i.severity === "error")).toEqual([]);
@@ -3076,7 +3110,7 @@ describe("the executable bit on bin/ programs", () => {
     run(release, "git add -A");
     expect(sh(REPO, `${EXEC_BITS} ${JSON.stringify(release)}`).status).toBe(0);
     for (const host of HOST_IDS) {
-      expect(run(release, `git ls-files -s dist/${host}/bin/ak`).split(" ")[0]).toBe("100755");
+      expect(run(release, `git ls-files -s dist/${host}/${packagedBinFile(host, "ak")}`).split(" ")[0]).toBe("100755");
     }
   }, 60_000);
 
@@ -3119,13 +3153,13 @@ describe("the executable bit on bin/ programs", () => {
     if (catalog === null) throw new Error("repository has no catalog");
     for (const host of HOST_IDS) {
       const plan = planBundle({ root: REPO, catalog }, host, {});
-      const programs = [...plan.files.values()].filter((file) => file.path.startsWith("bin/"));
+      const programs = [...plan.files.values()].filter((file) => isPackagedBin(file.path));
       const commands: string[] = [];
       for (const file of plan.files.values()) {
         if (file.path.startsWith("evals/") || !/\.(md|json|ya?ml)$/.test(file.path)) continue;
         // A description names `ak-gate.mjs bypass check` for routing, and so does a policy row;
         // the bodies that run it run it with node.
-        if (/^(references\/shared\/)?policies\//.test(file.path)) continue;
+        if (/^(?:\.cursor\/)?(?:references\/shared\/)?policies\//.test(file.path)) continue;
         const text = file.path.endsWith(".md") ? parseFrontmatter(file.contents).body : file.contents;
         for (const span of text.matchAll(/`([^`\n]+)`/g)) commands.push(span[1] ?? "");
         for (const hook of file.contents.matchAll(/"command"\s*:\s*"([^"]+)"/g)) commands.push(hook[1] ?? "");
@@ -3135,8 +3169,8 @@ describe("the executable bit on bin/ programs", () => {
           const head = command.trim().split(/\s+/)[0] ?? "";
           return head === name || head === `bin/${name}` || head.endsWith(`/bin/${name}`);
         });
-      const direct = programs.filter((file) => runs(file.path.slice("bin/".length)));
-      expect(direct.map((file) => `${host}:${file.path}`)).toContain(`${host}:bin/ak`);
+      const direct = programs.filter((file) => runs(packagedBinName(file.path)));
+      expect(direct.map((file) => `${host}:${file.path}`)).toContain(`${host}:${packagedBinFile(host, "ak")}`);
       for (const file of direct) expect(`${host}:${file.path}:${isExecutable(file)}`).toBe(`${host}:${file.path}:true`);
     }
   }, 120_000);
@@ -3163,6 +3197,7 @@ describe("semantic lint Stop hook in the plugin bundles", () => {
       grok: undefined,
       kimi: undefined,
       droid: undefined,
+      cursor: undefined,
     });
   }, 60_000);
 

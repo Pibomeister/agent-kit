@@ -56,7 +56,7 @@ const USAGE = [
   "",
   "  ak validate [--profile <id>] [--project <record>] [--host <id>] [--json]  check the tree against catalog.yaml",
   "  ak validate --skill-style                  print only the skill-authoring style warnings",
-  "  ak build [--check] [--profile <id>|all] [--project <record>] [--host <id>]  emit dist/<host> for all hosts, or one",
+  "  ak build [--check] [--profile <id>|all] [--project <record>] [--host <id>] [--out <dir>]  emit dist/<host> for all hosts, or one host to --out",
   "  ak attach <path-or-artifact> [--json]      select the packs an artifact activates",
   "  ak delegation <ticket> --project <path>   compute the evidenced delegation record",
   "  ak lifecycle open|record|check …           task-bound lifecycle gates for super-ship",
@@ -100,7 +100,7 @@ const COMMANDS = [
   "council",
 ];
 
-const VALUE_FLAGS = new Set(["profile", "host", "project"]);
+const VALUE_FLAGS = new Set(["profile", "host", "project", "out"]);
 
 function parse(argv: readonly string[]): Parsed {
   const positional: string[] = [];
@@ -202,6 +202,7 @@ function buildOptions(parsed: Parsed): BuildOptions {
     profile: parsed.values.get("profile"),
     project: parsed.values.get("project"),
     hosts: host === undefined ? undefined : HOST_IDS.filter((id): id is HostId => id === host),
+    out: parsed.values.get("out"),
   };
 }
 
@@ -216,6 +217,9 @@ function unknownSelectors(parsed: Parsed, cwd: string): string[] {
   const problems: string[] = [];
   const host = parsed.values.get("host");
   if (host !== undefined && !HOST_IDS.some((id) => id === host)) problems.push(unknownSelector("host", host, HOST_IDS));
+  if (parsed.values.get("out") !== undefined && host === undefined) {
+    problems.push("--out requires --host <id> so the bundle is written to one directory");
+  }
   const profile = parsed.values.get("profile");
   if (profile !== undefined) {
     const { catalog } = loadCatalog(cwd);
@@ -295,7 +299,10 @@ function build(parsed: Parsed, options: CliOptions): number {
 
   const built = writeBundles(ctx, opts);
   const code = report(options.io, built.issues, "ak build", install);
-  if (code === 0) options.io.out(`ak build: wrote dist/ for profile ${built.profile}`);
+  if (code === 0) {
+    const dest = opts.out ?? "dist/";
+    options.io.out(`ak build: wrote ${dest} for profile ${built.profile}`);
+  }
   return code;
 }
 

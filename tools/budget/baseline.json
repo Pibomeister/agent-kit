@@ -1711,6 +1711,861 @@
       "bytes": 7483,
       "tokens": 1871
     },
+    "bundle/cursor:.cursor/references/shared/adapters/claude-code/CONTRACT.md": {
+      "file": "adapters/claude-code/CONTRACT.md",
+      "bytes": 21387,
+      "tokens": 5318
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/codex/CONTRACT.md": {
+      "file": "adapters/codex/CONTRACT.md",
+      "bytes": 22511,
+      "tokens": 5603
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/firstmate/CONTRACT.md": {
+      "file": "adapters/firstmate/CONTRACT.md",
+      "bytes": 21116,
+      "tokens": 5275
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/CONTRACT.md": {
+      "file": "adapters/knowledgebase/CONTRACT.md",
+      "bytes": 25176,
+      "tokens": 6247
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/knowledgebase/backends/local-git.md": {
+      "file": "adapters/knowledgebase/backends/local-git.md",
+      "bytes": 13568,
+      "tokens": 3385
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/runner-contract/CONTRACT.md": {
+      "file": "adapters/runner-contract/CONTRACT.md",
+      "bytes": 34960,
+      "tokens": 8711
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/tracker/CONTRACT.md": {
+      "file": "adapters/tracker/CONTRACT.md",
+      "bytes": 22142,
+      "tokens": 5503
+    },
+    "bundle/cursor:.cursor/references/shared/adapters/tracker/backends/linear-linearis.md": {
+      "file": "adapters/tracker/backends/linear-linearis.md",
+      "bytes": 17559,
+      "tokens": 4379
+    },
+    "bundle/cursor:.cursor/references/shared/docs/decisions/0013-model-starts-super-review.md": {
+      "file": "docs/decisions/0013-model-starts-super-review.md",
+      "bytes": 2749,
+      "tokens": 687
+    },
+    "bundle/cursor:.cursor/references/shared/docs/decisions/0014-unattended-lifecycle-policy.md": {
+      "file": "docs/decisions/0014-unattended-lifecycle-policy.md",
+      "bytes": 5726,
+      "tokens": 1431
+    },
+    "bundle/cursor:.cursor/references/shared/packs/pack-delete/PACK.md": {
+      "file": "packs/pack-delete/PACK.md",
+      "bytes": 7495,
+      "tokens": 1869
+    },
+    "bundle/cursor:.cursor/references/shared/policies/authority-defaults.yaml": {
+      "file": "policies/authority-defaults.yaml",
+      "bytes": 17801,
+      "tokens": 4443
+    },
+    "bundle/cursor:.cursor/references/shared/policies/invocation.yaml": {
+      "file": "policies/invocation.yaml",
+      "bytes": 25322,
+      "tokens": 6329
+    },
+    "bundle/cursor:.cursor/references/shared/policies/limits.yaml": {
+      "file": "policies/limits.yaml",
+      "bytes": 9798,
+      "tokens": 2445
+    },
+    "bundle/cursor:.cursor/references/shared/policies/resolved-conflicts.yaml": {
+      "file": "policies/resolved-conflicts.yaml",
+      "bytes": 89695,
+      "tokens": 22396
+    },
+    "bundle/cursor:.cursor/references/shared/policies/review.yaml": {
+      "file": "policies/review.yaml",
+      "bytes": 28528,
+      "tokens": 7118
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/apply-findings/PROTOCOL.md": {
+      "file": "protocols/apply-findings/PROTOCOL.md",
+      "bytes": 10412,
+      "tokens": 2600
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/attach-pack/PROTOCOL.md": {
+      "file": "protocols/attach-pack/PROTOCOL.md",
+      "bytes": 8235,
+      "tokens": 2059
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/consensus-plan-gate/PROTOCOL.md": {
+      "file": "protocols/consensus-plan-gate/PROTOCOL.md",
+      "bytes": 7838,
+      "tokens": 1955
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/evidence-gate/PROTOCOL.md": {
+      "file": "protocols/evidence-gate/PROTOCOL.md",
+      "bytes": 11680,
+      "tokens": 2920
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/invocation-authority.md": {
+      "file": "protocols/invocation-authority.md",
+      "bytes": 8514,
+      "tokens": 2128
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/phase-operations/PROTOCOL.md": {
+      "file": "protocols/phase-operations/PROTOCOL.md",
+      "bytes": 9579,
+      "tokens": 2389
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/review-delta/PROTOCOL.md": {
+      "file": "protocols/review-delta/PROTOCOL.md",
+      "bytes": 13535,
+      "tokens": 3382
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/tdd/PROTOCOL.md": {
+      "file": "protocols/tdd/PROTOCOL.md",
+      "bytes": 9162,
+      "tokens": 2286
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/work-trail/PROTOCOL.md": {
+      "file": "protocols/work-trail/PROTOCOL.md",
+      "bytes": 22808,
+      "tokens": 5702
+    },
+    "bundle/cursor:.cursor/references/shared/protocols/worktree-ownership/PROTOCOL.md": {
+      "file": "protocols/worktree-ownership/PROTOCOL.md",
+      "bytes": 8748,
+      "tokens": 2184
+    },
+    "bundle/cursor:.cursor/references/shared/references/codebase-design-vocabulary/DEEPENING.md": {
+      "file": "references/codebase-design-vocabulary/DEEPENING.md",
+      "bytes": 2789,
+      "tokens": 696
+    },
+    "bundle/cursor:.cursor/references/shared/references/codebase-design-vocabulary/DESIGN-IT-TWICE.md": {
+      "file": "references/codebase-design-vocabulary/DESIGN-IT-TWICE.md",
+      "bytes": 2743,
+      "tokens": 684
+    },
+    "bundle/cursor:.cursor/references/shared/references/codebase-design-vocabulary/REFERENCE.md": {
+      "file": "references/codebase-design-vocabulary/REFERENCE.md",
+      "bytes": 6543,
+      "tokens": 1632
+    },
+    "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
+      "file": "references/delegation/REFERENCE.md",
+      "bytes": 17012,
+      "tokens": 4249
+    },
+    "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
+      "file": "references/domain-modeling/REFERENCE.md",
+      "bytes": 8088,
+      "tokens": 2017
+    },
+    "bundle/cursor:.cursor/references/shared/references/engineering-principles/REFERENCE.md": {
+      "file": "references/engineering-principles/REFERENCE.md",
+      "bytes": 13691,
+      "tokens": 3423
+    },
+    "bundle/cursor:.cursor/references/shared/references/knowledgebase-binding/REFERENCE.md": {
+      "file": "references/knowledgebase-binding/REFERENCE.md",
+      "bytes": 6066,
+      "tokens": 1515
+    },
+    "bundle/cursor:.cursor/references/shared/references/prose-quality/REFERENCE.md": {
+      "file": "references/prose-quality/REFERENCE.md",
+      "bytes": 13278,
+      "tokens": 3319
+    },
+    "bundle/cursor:.cursor/references/shared/references/read-economy/REFERENCE.md": {
+      "file": "references/read-economy/REFERENCE.md",
+      "bytes": 1371,
+      "tokens": 343
+    },
+    "bundle/cursor:.cursor/references/shared/references/tracker-of-record/REFERENCE.md": {
+      "file": "references/tracker-of-record/REFERENCE.md",
+      "bytes": 9408,
+      "tokens": 2351
+    },
+    "bundle/cursor:.cursor/references/shared/references/unattended-lifecycle/REFERENCE.md": {
+      "file": "references/unattended-lifecycle/REFERENCE.md",
+      "bytes": 8432,
+      "tokens": 2108
+    },
+    "bundle/cursor:.cursor/references/shared/references/verification-evidence/REFERENCE.md": {
+      "file": "references/verification-evidence/REFERENCE.md",
+      "bytes": 6622,
+      "tokens": 1656
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/adversarial/ROLE.md": {
+      "file": "roles/code-review/adversarial/ROLE.md",
+      "bytes": 10544,
+      "tokens": 2630
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/agent-native/ROLE.md": {
+      "file": "roles/code-review/agent-native/ROLE.md",
+      "bytes": 8978,
+      "tokens": 2241
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/api-contract/ROLE.md": {
+      "file": "roles/code-review/api-contract/ROLE.md",
+      "bytes": 8862,
+      "tokens": 2212
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/correctness/ROLE.md": {
+      "file": "roles/code-review/correctness/ROLE.md",
+      "bytes": 8775,
+      "tokens": 2191
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/data-migration/ROLE.md": {
+      "file": "roles/code-review/data-migration/ROLE.md",
+      "bytes": 9529,
+      "tokens": 2380
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/frontend-races/ROLE.md": {
+      "file": "roles/code-review/frontend-races/ROLE.md",
+      "bytes": 8574,
+      "tokens": 2141
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/learnings/ROLE.md": {
+      "file": "roles/code-review/learnings/ROLE.md",
+      "bytes": 9657,
+      "tokens": 2413
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/maintainability/ROLE.md": {
+      "file": "roles/code-review/maintainability/ROLE.md",
+      "bytes": 9791,
+      "tokens": 2438
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/performance/ROLE.md": {
+      "file": "roles/code-review/performance/ROLE.md",
+      "bytes": 7887,
+      "tokens": 1971
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/previous-comments/ROLE.md": {
+      "file": "roles/code-review/previous-comments/ROLE.md",
+      "bytes": 8433,
+      "tokens": 2105
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/project-standards/ROLE.md": {
+      "file": "roles/code-review/project-standards/ROLE.md",
+      "bytes": 8799,
+      "tokens": 2198
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/reliability/ROLE.md": {
+      "file": "roles/code-review/reliability/ROLE.md",
+      "bytes": 7712,
+      "tokens": 1925
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/security/ROLE.md": {
+      "file": "roles/code-review/security/ROLE.md",
+      "bytes": 9903,
+      "tokens": 2472
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/swift-ios/ROLE.md": {
+      "file": "roles/code-review/swift-ios/ROLE.md",
+      "bytes": 9217,
+      "tokens": 2301
+    },
+    "bundle/cursor:.cursor/references/shared/roles/code-review/testing/ROLE.md": {
+      "file": "roles/code-review/testing/ROLE.md",
+      "bytes": 9424,
+      "tokens": 2350
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/adversarial-document/ROLE.md": {
+      "file": "roles/doc-review/adversarial-document/ROLE.md",
+      "bytes": 10201,
+      "tokens": 2547
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/coherence/ROLE.md": {
+      "file": "roles/doc-review/coherence/ROLE.md",
+      "bytes": 9103,
+      "tokens": 2275
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/design-lens/ROLE.md": {
+      "file": "roles/doc-review/design-lens/ROLE.md",
+      "bytes": 8575,
+      "tokens": 2141
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/feasibility/ROLE.md": {
+      "file": "roles/doc-review/feasibility/ROLE.md",
+      "bytes": 8893,
+      "tokens": 2221
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/product-lens/ROLE.md": {
+      "file": "roles/doc-review/product-lens/ROLE.md",
+      "bytes": 8939,
+      "tokens": 2233
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/scope-guardian/ROLE.md": {
+      "file": "roles/doc-review/scope-guardian/ROLE.md",
+      "bytes": 9093,
+      "tokens": 2271
+    },
+    "bundle/cursor:.cursor/references/shared/roles/doc-review/security-lens/ROLE.md": {
+      "file": "roles/doc-review/security-lens/ROLE.md",
+      "bytes": 8383,
+      "tokens": 2094
+    },
+    "bundle/cursor:.cursor/references/shared/roles/implementer/ROLE.md": {
+      "file": "roles/implementer/ROLE.md",
+      "bytes": 8365,
+      "tokens": 2088
+    },
+    "bundle/cursor:.cursor/references/shared/roles/plan-review/architect/ROLE.md": {
+      "file": "roles/plan-review/architect/ROLE.md",
+      "bytes": 6183,
+      "tokens": 1545
+    },
+    "bundle/cursor:.cursor/references/shared/roles/plan-review/critic/ROLE.md": {
+      "file": "roles/plan-review/critic/ROLE.md",
+      "bytes": 6957,
+      "tokens": 1738
+    },
+    "bundle/cursor:.cursor/references/shared/roles/plan-review/planner/ROLE.md": {
+      "file": "roles/plan-review/planner/ROLE.md",
+      "bytes": 5772,
+      "tokens": 1441
+    },
+    "bundle/cursor:.cursor/references/shared/roles/reviewer-spec/ROLE.md": {
+      "file": "roles/reviewer-spec/ROLE.md",
+      "bytes": 9454,
+      "tokens": 2358
+    },
+    "bundle/cursor:.cursor/references/shared/roles/reviewer-standards/ROLE.md": {
+      "file": "roles/reviewer-standards/ROLE.md",
+      "bytes": 8595,
+      "tokens": 2146
+    },
+    "bundle/cursor:.cursor/references/shared/roles/supervisor/ROLE.md": {
+      "file": "roles/supervisor/ROLE.md",
+      "bytes": 7648,
+      "tokens": 1911
+    },
+    "bundle/cursor:.cursor/references/shared/roles/trail-auditor/ROLE.md": {
+      "file": "roles/trail-auditor/ROLE.md",
+      "bytes": 10388,
+      "tokens": 2597
+    },
+    "bundle/cursor:.cursor/references/shared/roles/verifier/ROLE.md": {
+      "file": "roles/verifier/ROLE.md",
+      "bytes": 5800,
+      "tokens": 1450
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/charter.schema.json": {
+      "file": "schemas/charter.schema.json",
+      "bytes": 17569,
+      "tokens": 4392
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/common.schema.json": {
+      "file": "schemas/common.schema.json",
+      "bytes": 24329,
+      "tokens": 6082
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/decision.schema.json": {
+      "file": "schemas/decision.schema.json",
+      "bytes": 15418,
+      "tokens": 3853
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/dossier.schema.json": {
+      "file": "schemas/dossier.schema.json",
+      "bytes": 12234,
+      "tokens": 3058
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/evaluation.schema.json": {
+      "file": "schemas/evaluation.schema.json",
+      "bytes": 18728,
+      "tokens": 4682
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/event.schema.json": {
+      "file": "schemas/event.schema.json",
+      "bytes": 11307,
+      "tokens": 2827
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/finding.schema.json": {
+      "file": "schemas/finding.schema.json",
+      "bytes": 27347,
+      "tokens": 6837
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/firstmate-binding.schema.json": {
+      "file": "schemas/firstmate-binding.schema.json",
+      "bytes": 9225,
+      "tokens": 2306
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/install.schema.json": {
+      "file": "schemas/install.schema.json",
+      "bytes": 2846,
+      "tokens": 711
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/kb-backends/local-git.schema.json": {
+      "file": "schemas/kb-backends/local-git.schema.json",
+      "bytes": 941,
+      "tokens": 236
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/kb-binding.schema.json": {
+      "file": "schemas/kb-binding.schema.json",
+      "bytes": 2258,
+      "tokens": 564
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/lesson.schema.json": {
+      "file": "schemas/lesson.schema.json",
+      "bytes": 11015,
+      "tokens": 2754
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/map.schema.json": {
+      "file": "schemas/map.schema.json",
+      "bytes": 4156,
+      "tokens": 1039
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/memory-run.schema.json": {
+      "file": "schemas/memory-run.schema.json",
+      "bytes": 3188,
+      "tokens": 797
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/pack.schema.json": {
+      "file": "schemas/pack.schema.json",
+      "bytes": 12177,
+      "tokens": 3045
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/plan-record.schema.json": {
+      "file": "schemas/plan-record.schema.json",
+      "bytes": 7896,
+      "tokens": 1974
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/project.schema.json": {
+      "file": "schemas/project.schema.json",
+      "bytes": 21189,
+      "tokens": 5297
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
+      "file": "schemas/review.schema.json",
+      "bytes": 22641,
+      "tokens": 5661
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/run-ledger.schema.json": {
+      "file": "schemas/run-ledger.schema.json",
+      "bytes": 4883,
+      "tokens": 1220
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/ship-evidence.schema.json": {
+      "file": "schemas/ship-evidence.schema.json",
+      "bytes": 8211,
+      "tokens": 2053
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/skill.schema.json": {
+      "file": "schemas/skill.schema.json",
+      "bytes": 21351,
+      "tokens": 5338
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/ticket.schema.json": {
+      "file": "schemas/ticket.schema.json",
+      "bytes": 13480,
+      "tokens": 3370
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
+      "file": "schemas/tracker-backends/linear-linearis.schema.json",
+      "bytes": 770,
+      "tokens": 193
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/tracker-binding.schema.json": {
+      "file": "schemas/tracker-binding.schema.json",
+      "bytes": 3570,
+      "tokens": 893
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/trail-audit.schema.json": {
+      "file": "schemas/trail-audit.schema.json",
+      "bytes": 9607,
+      "tokens": 2402
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/trail.schema.json": {
+      "file": "schemas/trail.schema.json",
+      "bytes": 4460,
+      "tokens": 1115
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/verification-recipe.schema.json": {
+      "file": "schemas/verification-recipe.schema.json",
+      "bytes": 3687,
+      "tokens": 922
+    },
+    "bundle/cursor:.cursor/references/shared/schemas/verification.schema.json": {
+      "file": "schemas/verification.schema.json",
+      "bytes": 19313,
+      "tokens": 4828
+    },
+    "bundle/cursor:.cursor/references/shared/templates/guard/review-session.policy.json": {
+      "file": "templates/guard/review-session.policy.json",
+      "bytes": 405,
+      "tokens": 102
+    },
+    "bundle/cursor:.cursor/references/shared/templates/trail-audit.example.json": {
+      "file": "templates/trail-audit.example.json",
+      "bytes": 3001,
+      "tokens": 751
+    },
+    "bundle/cursor:.cursor/references/shared/templates/trail.example.json": {
+      "file": "templates/trail.example.json",
+      "bytes": 2325,
+      "tokens": 582
+    },
+    "bundle/cursor:.cursor/skills/autopilot/SKILL.md": {
+      "file": "skills/autopilot/SKILL.md",
+      "bytes": 17111,
+      "tokens": 4271
+    },
+    "bundle/cursor:.cursor/skills/autopilot/references/checkpoints.md": {
+      "file": "skills/autopilot/references/checkpoints.md",
+      "bytes": 4239,
+      "tokens": 1060
+    },
+    "bundle/cursor:.cursor/skills/babysit-pr/SKILL.md": {
+      "file": "skills/babysit-pr/SKILL.md",
+      "bytes": 16372,
+      "tokens": 4088
+    },
+    "bundle/cursor:.cursor/skills/bakeoff/SKILL.md": {
+      "file": "skills/bakeoff/SKILL.md",
+      "bytes": 10212,
+      "tokens": 2550
+    },
+    "bundle/cursor:.cursor/skills/bakeoff/references/judging.md": {
+      "file": "skills/bakeoff/references/judging.md",
+      "bytes": 5825,
+      "tokens": 1456
+    },
+    "bundle/cursor:.cursor/skills/codebase-design/SKILL.md": {
+      "file": "skills/codebase-design/SKILL.md",
+      "bytes": 7858,
+      "tokens": 1963
+    },
+    "bundle/cursor:.cursor/skills/compound-refresh/SKILL.md": {
+      "file": "skills/compound-refresh/SKILL.md",
+      "bytes": 8272,
+      "tokens": 2064
+    },
+    "bundle/cursor:.cursor/skills/compound/SKILL.md": {
+      "file": "skills/compound/SKILL.md",
+      "bytes": 9242,
+      "tokens": 2309
+    },
+    "bundle/cursor:.cursor/skills/deprecate/SKILL.md": {
+      "file": "skills/deprecate/SKILL.md",
+      "bytes": 10173,
+      "tokens": 2540
+    },
+    "bundle/cursor:.cursor/skills/deprecate/assets/deprecation-notice.md": {
+      "file": "skills/deprecate/assets/deprecation-notice.md",
+      "bytes": 1134,
+      "tokens": 284
+    },
+    "bundle/cursor:.cursor/skills/deprecate/references/migration-patterns.md": {
+      "file": "skills/deprecate/references/migration-patterns.md",
+      "bytes": 4086,
+      "tokens": 1021
+    },
+    "bundle/cursor:.cursor/skills/diagnose/SKILL.md": {
+      "file": "skills/diagnose/SKILL.md",
+      "bytes": 17479,
+      "tokens": 4364
+    },
+    "bundle/cursor:.cursor/skills/diagnose/references/feedback-loops.md": {
+      "file": "skills/diagnose/references/feedback-loops.md",
+      "bytes": 3459,
+      "tokens": 861
+    },
+    "bundle/cursor:.cursor/skills/doc-review/SKILL.md": {
+      "file": "skills/doc-review/SKILL.md",
+      "bytes": 17146,
+      "tokens": 4279
+    },
+    "bundle/cursor:.cursor/skills/doubt-driven/SKILL.md": {
+      "file": "skills/doubt-driven/SKILL.md",
+      "bytes": 9497,
+      "tokens": 2372
+    },
+    "bundle/cursor:.cursor/skills/explain/SKILL.md": {
+      "file": "skills/explain/SKILL.md",
+      "bytes": 7335,
+      "tokens": 1833
+    },
+    "bundle/cursor:.cursor/skills/handoff/SKILL.md": {
+      "file": "skills/handoff/SKILL.md",
+      "bytes": 10051,
+      "tokens": 2509
+    },
+    "bundle/cursor:.cursor/skills/ideate/SKILL.md": {
+      "file": "skills/ideate/SKILL.md",
+      "bytes": 8901,
+      "tokens": 2224
+    },
+    "bundle/cursor:.cursor/skills/ideate/references/frameworks.md": {
+      "file": "skills/ideate/references/frameworks.md",
+      "bytes": 4356,
+      "tokens": 1089
+    },
+    "bundle/cursor:.cursor/skills/improve-architecture/SKILL.md": {
+      "file": "skills/improve-architecture/SKILL.md",
+      "bytes": 9349,
+      "tokens": 2335
+    },
+    "bundle/cursor:.cursor/skills/improve-architecture/references/linting.md": {
+      "file": "skills/improve-architecture/references/linting.md",
+      "bytes": 5347,
+      "tokens": 1337
+    },
+    "bundle/cursor:.cursor/skills/improve-architecture/references/survey.md": {
+      "file": "skills/improve-architecture/references/survey.md",
+      "bytes": 5776,
+      "tokens": 1440
+    },
+    "bundle/cursor:.cursor/skills/pov/SKILL.md": {
+      "file": "skills/pov/SKILL.md",
+      "bytes": 9864,
+      "tokens": 2462
+    },
+    "bundle/cursor:.cursor/skills/pov/references/independent-peers.md": {
+      "file": "skills/pov/references/independent-peers.md",
+      "bytes": 4105,
+      "tokens": 1027
+    },
+    "bundle/cursor:.cursor/skills/product-pulse/SKILL.md": {
+      "file": "skills/product-pulse/SKILL.md",
+      "bytes": 8789,
+      "tokens": 2196
+    },
+    "bundle/cursor:.cursor/skills/product-pulse/assets/report-template.md": {
+      "file": "skills/product-pulse/assets/report-template.md",
+      "bytes": 2294,
+      "tokens": 570
+    },
+    "bundle/cursor:.cursor/skills/product-pulse/references/run.md": {
+      "file": "skills/product-pulse/references/run.md",
+      "bytes": 3599,
+      "tokens": 900
+    },
+    "bundle/cursor:.cursor/skills/product-pulse/references/setup.md": {
+      "file": "skills/product-pulse/references/setup.md",
+      "bytes": 2741,
+      "tokens": 686
+    },
+    "bundle/cursor:.cursor/skills/prototype/SKILL.md": {
+      "file": "skills/prototype/SKILL.md",
+      "bytes": 9970,
+      "tokens": 2490
+    },
+    "bundle/cursor:.cursor/skills/prototype/references/logic.md": {
+      "file": "skills/prototype/references/logic.md",
+      "bytes": 3926,
+      "tokens": 982
+    },
+    "bundle/cursor:.cursor/skills/prototype/references/ui.md": {
+      "file": "skills/prototype/references/ui.md",
+      "bytes": 3761,
+      "tokens": 941
+    },
+    "bundle/cursor:.cursor/skills/receiving-review/SKILL.md": {
+      "file": "skills/receiving-review/SKILL.md",
+      "bytes": 14799,
+      "tokens": 3698
+    },
+    "bundle/cursor:.cursor/skills/research/SKILL.md": {
+      "file": "skills/research/SKILL.md",
+      "bytes": 8077,
+      "tokens": 2016
+    },
+    "bundle/cursor:.cursor/skills/simplify/SKILL.md": {
+      "file": "skills/simplify/SKILL.md",
+      "bytes": 8310,
+      "tokens": 2075
+    },
+    "bundle/cursor:.cursor/skills/simplify/references/personas/code-quality.md": {
+      "file": "skills/simplify/references/personas/code-quality.md",
+      "bytes": 2615,
+      "tokens": 654
+    },
+    "bundle/cursor:.cursor/skills/simplify/references/personas/code-reuse.md": {
+      "file": "skills/simplify/references/personas/code-reuse.md",
+      "bytes": 1466,
+      "tokens": 367
+    },
+    "bundle/cursor:.cursor/skills/simplify/references/personas/efficiency.md": {
+      "file": "skills/simplify/references/personas/efficiency.md",
+      "bytes": 1357,
+      "tokens": 340
+    },
+    "bundle/cursor:.cursor/skills/source-driven/SKILL.md": {
+      "file": "skills/source-driven/SKILL.md",
+      "bytes": 7891,
+      "tokens": 1970
+    },
+    "bundle/cursor:.cursor/skills/source-driven/references/citation-formats.md": {
+      "file": "skills/source-driven/references/citation-formats.md",
+      "bytes": 4093,
+      "tokens": 1024
+    },
+    "bundle/cursor:.cursor/skills/strategy/SKILL.md": {
+      "file": "skills/strategy/SKILL.md",
+      "bytes": 8516,
+      "tokens": 2127
+    },
+    "bundle/cursor:.cursor/skills/strategy/assets/strategy-template.md": {
+      "file": "skills/strategy/assets/strategy-template.md",
+      "bytes": 1906,
+      "tokens": 474
+    },
+    "bundle/cursor:.cursor/skills/strategy/references/interview.md": {
+      "file": "skills/strategy/references/interview.md",
+      "bytes": 6467,
+      "tokens": 1616
+    },
+    "bundle/cursor:.cursor/skills/strategy/references/update-run.md": {
+      "file": "skills/strategy/references/update-run.md",
+      "bytes": 3194,
+      "tokens": 799
+    },
+    "bundle/cursor:.cursor/skills/super-align/SKILL.md": {
+      "file": "skills/super-align/SKILL.md",
+      "bytes": 15719,
+      "tokens": 3922
+    },
+    "bundle/cursor:.cursor/skills/super-bound/SKILL.md": {
+      "file": "skills/super-bound/SKILL.md",
+      "bytes": 21769,
+      "tokens": 5435
+    },
+    "bundle/cursor:.cursor/skills/super-build/SKILL.md": {
+      "file": "skills/super-build/SKILL.md",
+      "bytes": 25195,
+      "tokens": 6293
+    },
+    "bundle/cursor:.cursor/skills/super-review/SKILL.md": {
+      "file": "skills/super-review/SKILL.md",
+      "bytes": 25631,
+      "tokens": 6401
+    },
+    "bundle/cursor:.cursor/skills/super-review/references/delta.md": {
+      "file": "skills/super-review/references/delta.md",
+      "bytes": 5566,
+      "tokens": 1390
+    },
+    "bundle/cursor:.cursor/skills/super-review/references/panel.md": {
+      "file": "skills/super-review/references/panel.md",
+      "bytes": 12222,
+      "tokens": 3050
+    },
+    "bundle/cursor:.cursor/skills/super-scout/SKILL.md": {
+      "file": "skills/super-scout/SKILL.md",
+      "bytes": 13987,
+      "tokens": 3493
+    },
+    "bundle/cursor:.cursor/skills/super-ship/SKILL.md": {
+      "file": "skills/super-ship/SKILL.md",
+      "bytes": 23049,
+      "tokens": 5759
+    },
+    "bundle/cursor:.cursor/skills/super-ship/assets/independent-review.yml": {
+      "file": "skills/super-ship/assets/independent-review.yml",
+      "bytes": 6825,
+      "tokens": 1707
+    },
+    "bundle/cursor:.cursor/skills/super-ship/references/transport-direct.md": {
+      "file": "skills/super-ship/references/transport-direct.md",
+      "bytes": 18945,
+      "tokens": 4731
+    },
+    "bundle/cursor:.cursor/skills/super-ship/references/transport-no-mistakes.md": {
+      "file": "skills/super-ship/references/transport-no-mistakes.md",
+      "bytes": 6115,
+      "tokens": 1528
+    },
+    "bundle/cursor:.cursor/skills/super-verify/SKILL.md": {
+      "file": "skills/super-verify/SKILL.md",
+      "bytes": 19607,
+      "tokens": 4897
+    },
+    "bundle/cursor:.cursor/skills/triage/SKILL.md": {
+      "file": "skills/triage/SKILL.md",
+      "bytes": 10560,
+      "tokens": 2634
+    },
+    "bundle/cursor:.cursor/skills/triage/assets/agent-brief.md": {
+      "file": "skills/triage/assets/agent-brief.md",
+      "bytes": 1619,
+      "tokens": 405
+    },
+    "bundle/cursor:.cursor/skills/triage/assets/triage-notes.md": {
+      "file": "skills/triage/assets/triage-notes.md",
+      "bytes": 493,
+      "tokens": 124
+    },
+    "bundle/cursor:.cursor/skills/triage/references/rejections.md": {
+      "file": "skills/triage/references/rejections.md",
+      "bytes": 2604,
+      "tokens": 649
+    },
+    "bundle/cursor:.cursor/skills/triage/references/roles.md": {
+      "file": "skills/triage/references/roles.md",
+      "bytes": 2453,
+      "tokens": 610
+    },
+    "bundle/cursor:.cursor/skills/ultraqa/SKILL.md": {
+      "file": "skills/ultraqa/SKILL.md",
+      "bytes": 14246,
+      "tokens": 3557
+    },
+    "bundle/cursor:.cursor/skills/ultraqa/references/adversarial-cases.md": {
+      "file": "skills/ultraqa/references/adversarial-cases.md",
+      "bytes": 4150,
+      "tokens": 1037
+    },
+    "bundle/cursor:.cursor/skills/verify/SKILL.md": {
+      "file": "skills/verify/SKILL.md",
+      "bytes": 10393,
+      "tokens": 2594
+    },
+    "bundle/cursor:.cursor/skills/visual-edit/SKILL.md": {
+      "file": "skills/visual-edit/SKILL.md",
+      "bytes": 10218,
+      "tokens": 2555
+    },
+    "bundle/cursor:.cursor/skills/visual-edit/assets/receipt.example.json": {
+      "file": "skills/visual-edit/assets/receipt.example.json",
+      "bytes": 1478,
+      "tokens": 370
+    },
+    "bundle/cursor:.cursor/skills/visual-edit/references/receipt.md": {
+      "file": "skills/visual-edit/references/receipt.md",
+      "bytes": 3082,
+      "tokens": 771
+    },
+    "bundle/cursor:.cursor/skills/wait-what/SKILL.md": {
+      "file": "skills/wait-what/SKILL.md",
+      "bytes": 5518,
+      "tokens": 1379
+    },
+    "bundle/cursor:.cursor/skills/wayfind/SKILL.md": {
+      "file": "skills/wayfind/SKILL.md",
+      "bytes": 13861,
+      "tokens": 3459
+    },
+    "bundle/cursor:.cursor/skills/writing-skills/SKILL.md": {
+      "file": "skills/writing-skills/SKILL.md",
+      "bytes": 9708,
+      "tokens": 2424
+    },
+    "bundle/cursor:.cursor/skills/writing-skills/references/authoring-discipline.md": {
+      "file": "skills/writing-skills/references/authoring-discipline.md",
+      "bytes": 7483,
+      "tokens": 1871
+    },
+    "bundle/cursor:skill-listing": {
+      "file": "skills/*/SKILL.md (description)",
+      "bytes": 20170,
+      "tokens": 5041
+    },
     "bundle/droid:references/shared/adapters/claude-code/CONTRACT.md": {
       "file": "adapters/claude-code/CONTRACT.md",
       "bytes": 21387,

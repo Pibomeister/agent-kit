@@ -25,7 +25,7 @@ schema_version: 1
 package:
   id: ak
   name: agent-kit
-  version: 0.1.80
+  version: 0.1.81
   # Canonical explicit-start namespace. Host adapters render this plus a skill
   # id into the host's native form when packaging (ADR-0011).
   namespace: "/ak:"
@@ -1215,7 +1215,7 @@ profiles:
       compound-refresh read its ledgers. Never required: every skill works without it.
 
 # ---------------------------------------------------------------------------
-# Adapters — 8. Host and evidence-source contracts.
+# Adapters — 12. Host and evidence-source contracts.
 # Arch 4 also sketched issue-tracker and repository-events directories. repository-events is
 # folded into runner-contract, which owns the event-delivery capability
 # (schemas/common.schema.json#/$defs/capability); splitting it out would create an adapter with no
@@ -1245,6 +1245,12 @@ adapters:
     batch: 1
     status: authored
     summary: Native Factory plugin packaging with explicit human starts and separate acceptance per served binding.
+  - id: cursor
+    batch: 1
+    status: authored
+    summary: >-
+      Cursor IDE and Cloud Agent bundle: project skills under .cursor/skills, reviewer
+      subagents under .cursor/agents, and an explicit-start /<id> gate. Isolation is partial.
   - id: runner-contract
     batch: 1
     status: authored
