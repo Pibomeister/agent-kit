@@ -69,7 +69,7 @@ export function fenceAfter(line: string, fence: FenceState | null): FenceState |
 }
 
 /** True when this line opens, continues, or closes a fenced region. */
-function inFence(line: string, fence: FenceState | null) {
+export function inFence(line: string, fence: FenceState | null) {
   const next = fenceAfter(line, fence);
   return { skip: fence !== null || next !== null, next };
 }

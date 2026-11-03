@@ -738,7 +738,7 @@ describe("finding rules", () => {
   });
 
   test("two findings against duplicate headings with different evidence cannot share a fingerprint value", () => {
-    const document = [
+    const duplicates = [
       "# Spec",
       "",
       "## Requirements",
@@ -748,34 +748,42 @@ describe("finding rules", () => {
       "Payments must bound retries.",
       "",
     ].join("\n");
-    const resolved = resolveFindingSectionIdentity(document, "Requirements");
-    expect(resolved.ok).toBe(false);
-    if (resolved.ok) throw new Error("duplicate headings must not produce an identity");
-    expect(resolved.reason).toBe("ambiguous");
+    const refused = resolveFindingSectionIdentity(duplicates, "Requirements");
+    expect(refused.ok).toBe(false);
+    if (refused.ok) throw new Error("duplicate headings must not produce an identity");
+    expect(refused.reason).toBe("ambiguous");
+
+    const unique = ["# Spec", "", "## Auth", "Reject expired tokens.", "", "## Payments", "Bound retries.", ""].join(
+      "\n",
+    );
+    const auth = resolveFindingSectionIdentity(unique, "Auth");
+    const payments = resolveFindingSectionIdentity(unique, "Payments");
+    expect(auth.ok).toBe(true);
+    expect(payments.ok).toBe(true);
+    if (!auth.ok || !payments.ok) throw new Error("unique headings must resolve");
+    const shared = `sha256:${"f".repeat(64)}`;
     const a = finding({
       fingerprint: {
-        value: `sha256:${"f".repeat(64)}`,
+        value: shared,
         inputs: {
-          rule: "Requirements",
+          rule: auth.identity,
           symbol_or_path: "spec.md",
           evidence_digest: `sha256:${"1".repeat(64)}`,
         },
       },
-      evidence: [{ location: { revision: "a".repeat(40), path: "spec.md" }, observation: "auth retries unbounded" }],
+      evidence: [{ location: { revision: "a".repeat(40), path: "spec.md" }, observation: auth.body.trim() }],
     });
     const b = finding({
       id: "finding-2",
       fingerprint: {
-        value: `sha256:${"f".repeat(64)}`,
+        value: shared,
         inputs: {
-          rule: "Requirements",
+          rule: payments.identity,
           symbol_or_path: "spec.md",
           evidence_digest: `sha256:${"2".repeat(64)}`,
         },
       },
-      evidence: [
-        { location: { revision: "a".repeat(40), path: "spec.md" }, observation: "payments retries unbounded" },
-      ],
+      evidence: [{ location: { revision: "a".repeat(40), path: "spec.md" }, observation: payments.body.trim() }],
     });
     expect(rulesOf(run(a, [b]))).toContain("finding.fingerprint-stable-across-line-moves");
   });
@@ -1294,7 +1302,7 @@ describe("review rules", () => {
   });
 
   test.each(["timeout", "timed out", "lane timed out waiting for a seat"])(
-    "review.unavailable-required-lane-blocks-approval treats required-lane %s as unavailable, not empty coverage",
+    "regression: review.unavailable-required-lane-blocks-approval still treats required-lane state unavailable with reason %s as blocking",
     (reason) => {
       const doc = review({
         lanes: [
@@ -1355,6 +1363,30 @@ describe("review rules", () => {
       expect(rulesOf(run(doc))).toContain("review.unavailable-required-lane-blocks-approval");
     },
   );
+
+  test("a covered lane with raw_output and a reason that mentions timeouts still approves", () => {
+    const doc = review({
+      lanes: [
+        {
+          role: "code-review/correctness",
+          required: true,
+          state: "covered",
+          verdict: "approve",
+          seat: { filled_by: "reviewer-a", independent_of_author: true },
+        },
+        {
+          role: "code-review/security",
+          required: true,
+          state: "covered",
+          verdict: "approve",
+          reason: "no retries or timeouts in this diff",
+          seat: { filled_by: "reviewer-b", independent_of_author: true },
+          raw_output: { id: "raw-security", hash: `sha256:${"a".repeat(64)}` },
+        },
+      ],
+    });
+    expect(rulesOf(run(doc))).not.toContain("review.unavailable-required-lane-blocks-approval");
+  });
 
   test("review.third-fix-cycle-stops catches a third cycle", () => {
     expect(rulesOf(run(review({ fix_cycles: { allowed: 2, used: 3 } })))).toContain("review.third-fix-cycle-stops");

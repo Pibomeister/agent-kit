@@ -34,7 +34,7 @@ import { join } from "node:path";
 
 import { readTextIfPresent } from "../util/fs.ts";
 import type { CheckContext } from "./context.ts";
-import { fenceAfter, type FenceState } from "./headings.ts";
+import { inFence, type FenceState } from "./headings.ts";
 import { error, note, skipped, unavailable, type Issue } from "./types.ts";
 
 /** §10: the file lives at the repository root, and that placement is the mechanism. */
@@ -107,10 +107,9 @@ export function contractSections(text: string): ContractSectionIndex {
   const marks: Array<{ line: number; level: number; number: string }> = [];
   let fence: FenceState | null = null;
   for (const [index, line] of lines.entries()) {
-    const next = fenceAfter(line, fence);
-    const skip = fence !== null || next !== null;
-    fence = next;
-    if (skip) continue;
+    const region = inFence(line, fence);
+    fence = region.next;
+    if (region.skip) continue;
     const match = CONTRACT_HEADING.exec(line);
     if (match === null) continue;
     marks.push({ line: index, level: (match[1] ?? "").length, number: match[2] ?? "" });
