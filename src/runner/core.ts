@@ -4,10 +4,10 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFil
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { ValidateFunction } from "ajv";
-import Ajv2020 from "ajv/dist/2020.js";
 
 import { artifactHash, sha256Hex } from "../util/hash.ts";
 import { unknownSelector } from "../util/suggest.ts";
+import { isDesignReport } from "../lifecycle/design-report.ts";
 import type { Snapshot } from "../lifecycle/gate.ts";
 import { compileSchemas } from "../validation/schemas.ts";
 import { PrivateFileEvidenceStore } from "./evidence.ts";
@@ -75,21 +75,12 @@ const EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 const HUMAN_REFUSAL = "no";
 const HUMAN_RETRY = "retry";
 
-const isDesignReport = new Ajv2020({ strict: false }).compile<{ schema: "review" }>({
-  type: "object",
-  required: ["schema"],
-  properties: { schema: { const: "review" } },
-});
-
-/** Bytes offered as verify evidence that are actually a design-review artifact (AT-24). */
 function isDesignReportBytes(bytes: Buffer): boolean {
-  let value: unknown;
   try {
-    value = JSON.parse(bytes.toString());
+    return isDesignReport(JSON.parse(bytes.toString()));
   } catch {
     return false;
   }
-  return isDesignReport(value);
 }
 const EFFECTS = new Set([
   "remote-push",

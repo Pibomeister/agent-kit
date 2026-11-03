@@ -66,6 +66,7 @@ import {
   resolvePolicy,
   resolveRepo,
 } from "./unattended.ts";
+import { isDesignReport } from "./design-report.ts";
 import { verificationValidator } from "./verification-schema.ts";
 
 // ── unknown selectors ────────────────────────────────────────────────────────
@@ -1119,10 +1120,9 @@ function evaluateEvidence(
       reasons.push({ code: "malformed", detail: `receipt ${ref.id} is not JSON`, evidence: ref.id });
       continue;
     }
-    // A design-review artifact is not a verifier receipt (AT-24). Named before
-    // the verification-shape check so the refusal is `design-report`, not a
+    // Named before the verification-shape check so the refusal is `design-report`, not a
     // generic malformed verification document.
-    if (receipt.schema === "review") {
+    if (isDesignReport(receipt)) {
       reasons.push({
         code: "design-report",
         detail: `receipt ${ref.id} is a design-review artifact, not a verifier receipt`,
