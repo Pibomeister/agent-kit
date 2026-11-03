@@ -4,8 +4,27 @@ Copyright (c) 2026 Eduardo Picazo
 The installable catalog adapts material from the following eleven donors: ten under
 the MIT License and one, claude-mem, under the Apache License 2.0. Each adapted
 file is recorded in provenance/adaptations.yaml with its exact donor@commit:path
-source and a note of what was changed. Full license texts are in
-provenance/licenses/.
+source and a note of what was changed. Full license texts that accompany this copy
+are:
+
+provenance/licenses/BayramAnnakov_claude-reflect.LICENSE
+provenance/licenses/BuilderIO_skills.LICENSE
+provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE
+provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE
+provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE
+provenance/licenses/addyosmani_agent-skills.LICENSE
+provenance/licenses/caveman-ai_blocks.LICENSE
+provenance/licenses/caveman-ai_blocks.NOTICE
+provenance/licenses/cursor_plugins.LICENSE
+provenance/licenses/google_elephant-goldfish-model.LICENSE
+provenance/licenses/mattpocock_skills.LICENSE
+provenance/licenses/mizchi_jev-lint.LICENSE
+provenance/licenses/obra_superpowers.LICENSE
+provenance/licenses/tester-army_e2e.LICENSE
+provenance/licenses/tester-army_e2e.NOTICE
+provenance/licenses/thedotmack_claude-mem.LICENSE
+provenance/licenses/thedotmack_claude-mem.NOTICE
+provenance/licenses/warpdotdev_common-skills.LICENSE
 
 The optional source-checkout semantic hook also adapts client and hook mechanics
 from mizchi, Copyright (c) 2026 mizchi<Kotaro Chikuba>, under the MIT License.

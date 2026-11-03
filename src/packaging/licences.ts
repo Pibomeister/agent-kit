@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { readTextIfPresent } from "../util/fs.ts";
+import { readTextIfPresent, walkFiles } from "../util/fs.ts";
 
 /** A licence text this bundle must carry. `path` is the bundle path before host relocation. */
 export interface LicenceDuty {
@@ -23,14 +23,65 @@ export interface LicenceClosure {
   readonly coveredPackages: readonly string[];
 }
 
+export interface CitationFile {
+  readonly file: string;
+  readonly text: string;
+}
+
+/** Trees excluded from dependency copying and from the citation walk, except the gate source. */
+export const SOURCE_ONLY_PREFIXES = [
+  "research/",
+  "provenance/",
+  "src/",
+  "tests/",
+  "dist/",
+  ".donors/",
+  ".work/",
+  "node_modules/",
+] as const;
+
+/** Gate source whose header can cite licences before the compiled file is inserted. */
+export const GATE_SOURCE_FILE = "src/lifecycle/gate.ts";
+
 const CITED_PATH =
   /(?:provenance\/licenses\/[A-Za-z0-9_.+-]+\.(?:LICENSE|NOTICE)|LICENSES\/(?:@[A-Za-z0-9_.+-]+\/)?[A-Za-z0-9_.+-]+\.LICENSE)(?![A-Za-z0-9])/g;
 
 const ROOTS = ["NOTICE", "LICENSE"] as const;
 
+const CITATION_TEXT = /(?:^|\/)(?:LICENSE|NOTICE)$|\.(?:LICENSE|NOTICE|md|ya?ml|json|ts|js|mjs|txt|tmpl)$/;
+
+/** Byte-stable path order. `localeCompare` follows the locale and is not a build input. */
+export function comparePath(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
 function citedLicencePaths(text: string): string[] {
   CITED_PATH.lastIndex = 0;
   return text.match(CITED_PATH) ?? [];
+}
+
+function isSourceOnly(file: string): boolean {
+  return SOURCE_ONLY_PREFIXES.some((prefix) => file.startsWith(prefix));
+}
+
+/**
+ * Files whose headers (and NOTICE/LICENSE bodies) feed licence citations.
+ * `ak validate` and `ak build` call this so they scan the same set.
+ */
+export function listCitationSources(root: string): CitationFile[] {
+  const byFile = new Map<string, string>();
+  for (const file of walkFiles(root, ".")) {
+    if (isSourceOnly(file) || !CITATION_TEXT.test(file)) continue;
+    const text = readTextIfPresent(join(root, file));
+    if (text !== null) byFile.set(file, text);
+  }
+  const gateText = readTextIfPresent(join(root, GATE_SOURCE_FILE));
+  if (gateText !== null) byFile.set(GATE_SOURCE_FILE, gateText);
+  return [...byFile.entries()]
+    .map(([file, text]) => ({ file, text }))
+    .toSorted((left, right) => comparePath(left.file, right.file));
 }
 
 /** Comment or HTML prefix. A YAML `---` line is frontmatter, so it ends the prefix. */
@@ -46,6 +97,14 @@ export function fileHeader(text: string): string {
       const line = lines[index] ?? "";
       index += 1;
       if (line.includes("-->")) break;
+    }
+    return lines.slice(start, index).join("\n");
+  }
+  if ((lines[index] ?? "").trimStart().startsWith("/*")) {
+    while (index < lines.length) {
+      const line = lines[index] ?? "";
+      index += 1;
+      if (line.includes("*/")) break;
     }
     return lines.slice(start, index).join("\n");
   }
@@ -83,7 +142,15 @@ function missingLicence(source: string): string {
 }
 
 function uncitedInlined(name: string): string {
-  return `bin/ak inlines ${name}, and NOTICE does not cite LICENSES/${name}.LICENSE, so neither the bundle nor bin/ak carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Cite LICENSES/${name}.LICENSE from NOTICE. The bytes are read from node_modules/${name}/LICENSE.`;
+  return `The bundle inlines ${name}, and NOTICE does not cite LICENSES/${name}.LICENSE, so neither the bundle nor the inlined file carries it. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. Cite LICENSES/${name}.LICENSE from NOTICE. The bytes are read from node_modules/${name}/LICENSE.`;
+}
+
+function dottedPackage(name: string): string {
+  return `LICENSES/${name}.LICENSE names a package that starts with '.', so the path is not a licence file this bundle can carry.`;
+}
+
+function undemandedLicence(source: string): string {
+  return `${source} is present under provenance/licenses and no citation demands it, so a matcher miss would leave it out of the bundle. Cite ${source} from NOTICE or a shipped file header.`;
 }
 
 function dutyRank(path: string): number {
@@ -127,6 +194,10 @@ export function licenceClosure(
     if (bundlePath === undefined || demanded.has(bundlePath)) continue;
     demanded.add(bundlePath);
     const packageName = npmPackageName(bundlePath);
+    if (packageName !== null && packageName.startsWith(".")) {
+      problems.push({ source: bundlePath, message: dottedPackage(packageName) });
+      continue;
+    }
     if (packageName !== null) covered.add(packageName);
     const source = licenceSource(bundlePath);
     const text = readTextIfPresent(join(root, source));
@@ -142,18 +213,27 @@ export function licenceClosure(
   for (const name of inlinedPackages) {
     if (seenInlined.has(name)) continue;
     seenInlined.add(name);
+    if (name.startsWith(".")) {
+      problems.push({ source: `node_modules/${name}`, message: dottedPackage(name) });
+      continue;
+    }
     if (demanded.has(`LICENSES/${name}.LICENSE`)) continue;
     problems.push({ source: `node_modules/${name}`, message: uncitedInlined(name) });
   }
 
+  for (const file of walkFiles(root, "provenance/licenses")) {
+    if (demanded.has(file)) continue;
+    problems.push({ source: file, message: undemandedLicence(file) });
+  }
+
   const orderedDuties = duties.toSorted(
-    (left, right) => dutyRank(left.path) - dutyRank(right.path) || left.path.localeCompare(right.path),
+    (left, right) => dutyRank(left.path) - dutyRank(right.path) || comparePath(left.path, right.path),
   );
-  const orderedProblems = problems.toSorted((left, right) => left.source.localeCompare(right.source));
+  const orderedProblems = problems.toSorted((left, right) => comparePath(left.source, right.source));
   return {
     duties: orderedDuties,
     problems: orderedProblems,
-    coveredPackages: [...covered].toSorted((left, right) => left.localeCompare(right)),
+    coveredPackages: [...covered].toSorted(comparePath),
   };
 }
 

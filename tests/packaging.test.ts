@@ -675,7 +675,9 @@ describe("the licence files the distribution is obliged to carry", () => {
       {},
     );
     expect(body.files.has("provenance/licenses/from-header.LICENSE")).toBe(false);
-    expect(body.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+    expect(
+      body.issues.filter((issue) => issue.rule === "packaging.licence-file-missing").map((issue) => issue.file),
+    ).toEqual(["provenance/licenses/from-header.LICENSE"]);
   });
 
   test("the failure names the file that is missing, not the pair", () => {
@@ -708,15 +710,15 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(issue?.severity).toBe("error");
     expect(plan.files.has("provenance/licenses/orphan.LICENSE")).toBe(false);
     expect(
-      checkContent(ctx).some(
-        (row) => row.severity === "error" && row.file === "provenance/licenses/orphan.LICENSE",
-      ),
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/licenses/orphan.LICENSE"),
     ).toBe(true);
   });
 
   test("a package name that starts with a dot is rejected", () => {
     const plan = planBundle(ctxFor({ NOTICE: `${BASE["NOTICE"] ?? ""}LICENSES/..LICENSE\n` }), "claude-code", {});
-    const issue = plan.issues.find((row) => row.rule === "packaging.licence-file-missing" && row.file === "LICENSES/..LICENSE");
+    const issue = plan.issues.find(
+      (row) => row.rule === "packaging.licence-file-missing" && row.file === "LICENSES/..LICENSE",
+    );
     expect(issue?.severity).toBe("error");
     expect(plan.files.has("LICENSES/..LICENSE")).toBe(false);
   });

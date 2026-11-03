@@ -15,20 +15,14 @@ import { loadHostCapabilities, relocateForHost, rewriteExplicitStarts, type Host
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { linkMentions, mentionResolver, schemaRefs, type MentionResolver } from "./mentions.ts";
-import { licenceBanner, licenceClosure } from "./licences.ts";
+import {
+  GATE_SOURCE_FILE,
+  SOURCE_ONLY_PREFIXES,
+  licenceBanner,
+  licenceClosure,
+  listCitationSources,
+} from "./licences.ts";
 import { resolveProfile } from "./profiles.ts";
-
-/** Trees excluded from dependency copying. The closure ships cited licence texts. These prefixes stay excluded from that copying. */
-const SOURCE_ONLY_PREFIXES = [
-  "research/",
-  "provenance/",
-  "src/",
-  "tests/",
-  "dist/",
-  ".donors/",
-  ".work/",
-  "node_modules/",
-];
 
 /** Where the packager parks a copied shared dependency, preserving its source layout. */
 export const SHARED_ROOT = "references/shared";
@@ -241,7 +235,6 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
   cursor: ".cursor-plugin/ak.json",
 };
 
-const GATE_SOURCE = "src/lifecycle/gate.ts";
 export const GATE_FILE = "bin/ak-gate.mjs";
 /** The skills whose text runs `../../bin/ak-gate.mjs`; a bundle with any of them carries the gate. */
 const GATE_SKILLS = [
@@ -255,10 +248,12 @@ const GATE_SKILLS = [
   "verify",
 ];
 
-const gateScripts = new Map<string, string>();
+type GateBuild = { script: string; inlined: string[] | null };
+
+const gateScripts = new Map<string, GateBuild>();
 
 /** Bundle the schema-derived validator and its runtime helpers for ordinary Node. */
-function gateScript(root: string, source: string, adapterIds: readonly string[]): string {
+function gateScript(root: string, source: string, adapterIds: readonly string[]): GateBuild {
   const key = JSON.stringify([
     root,
     source,
@@ -277,7 +272,7 @@ function gateScript(root: string, source: string, adapterIds: readonly string[])
       process.execPath,
       [
         join(import.meta.dir, "../lifecycle/build-gate.ts"),
-        join(root, GATE_SOURCE),
+        join(root, GATE_SOURCE_FILE),
         outfile,
         JSON.stringify(adapterIds),
       ],
@@ -285,8 +280,13 @@ function gateScript(root: string, source: string, adapterIds: readonly string[])
     );
     if (built.status !== 0) throw new Error(built.stderr || "gate build failed");
     const script = readFileSync(outfile, "utf8");
-    gateScripts.set(key, script);
-    return script;
+    const metaText = readTextIfPresent(`${outfile}.meta.json`);
+    const compiled = {
+      script,
+      inlined: metaText === null ? null : (inlinedSetFromMetafile(metaText) ?? []),
+    };
+    gateScripts.set(key, compiled);
+    return compiled;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -956,11 +956,49 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     );
   }
 
-  const closure = licenceClosure(
-    root,
-    [...files.values()].map((file) => ({ file: file.source ?? file.path, text: file.contents })),
-    maintenance?.inlined ?? [],
-  );
+  // The lifecycle gate travels with the lifecycle: a session with only this bundle records and checks
+  // gates with `node bin/ak-gate.mjs`, the same code `ak lifecycle` runs (src/lifecycle/gate.ts).
+  // Built before licence closure so the source header and inlined package set feed the same demand set.
+  let gateBuilt: GateBuild | null = null;
+  const gateNeeded = GATE_SKILLS.some((name) => emitted.includes(name));
+  const gateText = readTextIfPresent(join(root, GATE_SOURCE_FILE));
+  if (gateNeeded) {
+    if (gateText === null) {
+      issues.push(
+        error(
+          "packaging.gate-source-missing",
+          GATE_SOURCE_FILE,
+          `${GATE_SOURCE_FILE} is missing, so the bundle cannot carry the lifecycle gate its super-* skills record and check.`,
+        ),
+      );
+    } else {
+      try {
+        gateBuilt = gateScript(root, gateText, listDirs(join(root, "adapters")));
+        if (gateBuilt.inlined === null) {
+          issues.push(
+            error(
+              "packaging.inlined-set-unproven",
+              GATE_SOURCE_FILE,
+              "bin/ak-gate.mjs's bundler metafile does not name any inlined node_modules package. An absent, malformed, or empty inputs object, or inputs that match no package, leaves the build unable to show that every inlined package has a licence text. A licence requires its text to accompany every copy, and dist/ is a copy that gets distributed. The build refuses.",
+            ),
+          );
+        }
+      } catch (cause) {
+        issues.push(
+          error(
+            "packaging.gate-build-failed",
+            GATE_SOURCE_FILE,
+            cause instanceof Error ? cause.message : String(cause),
+          ),
+        );
+      }
+    }
+  }
+
+  const closure = licenceClosure(root, listCitationSources(root), [
+    ...(maintenance?.inlined ?? []),
+    ...(gateBuilt?.inlined ?? []),
+  ]);
   for (const problem of closure.problems) {
     issues.push(error("packaging.licence-file-missing", problem.source, problem.message));
   }
@@ -992,32 +1030,13 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     }
   }
 
-  // The lifecycle gate travels with the lifecycle: a session with only this bundle records and checks
-  // gates with `node bin/ak-gate.mjs`, the same code `ak lifecycle` runs (src/lifecycle/gate.ts).
-  if (GATE_SKILLS.some((name) => emitted.includes(name))) {
-    const text = readTextIfPresent(join(root, GATE_SOURCE));
-    if (text === null) {
-      issues.push(
-        error(
-          "packaging.gate-source-missing",
-          GATE_SOURCE,
-          `${GATE_SOURCE} is missing, so the bundle cannot carry the lifecycle gate its super-* skills record and check.`,
-        ),
-      );
-    } else {
-      try {
-        const gatePath = relocateForHost(host, GATE_FILE);
-        files.set(gatePath, {
-          path: gatePath,
-          contents: `${licenceBanner(closure.duties)}// Generated by ak build from ${GATE_SOURCE}. Do not edit. Run it with no arguments for usage.\n${gateScript(root, text, listDirs(join(root, "adapters")))}`,
-          source: GATE_SOURCE,
-        });
-      } catch (cause) {
-        issues.push(
-          error("packaging.gate-build-failed", GATE_SOURCE, cause instanceof Error ? cause.message : String(cause)),
-        );
-      }
-    }
+  if (gateBuilt !== null) {
+    const gatePath = relocateForHost(host, GATE_FILE);
+    files.set(gatePath, {
+      path: gatePath,
+      contents: `${licenceBanner(closure.duties)}// Generated by ak build from ${GATE_SOURCE_FILE}. Do not edit. Run it with no arguments for usage.\n${gateBuilt.script}`,
+      source: GATE_SOURCE_FILE,
+    });
   }
 
   issues.push(...checkManifestIdentity(ctx.catalog.package));

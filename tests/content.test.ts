@@ -60,10 +60,7 @@ describe("model and pricing denylist", () => {
     if (file === "NOTICE") notice = text;
     else if (npmName !== undefined) notice = `agent-kit\nLICENSES/${npmName}.LICENSE\n`;
     else if (file !== "LICENSE") notice = `agent-kit\n${file}\n`;
-    const planted =
-      file === "NOTICE"
-        ? { "provenance/licenses/donor.LICENSE": text, NOTICE: notice }
-        : { "provenance/licenses/donor.LICENSE": text, NOTICE: notice, [file]: text };
+    const planted = file === "NOTICE" ? { NOTICE: notice } : { NOTICE: notice, [file]: text };
     const ctx = ctxFor(planted);
     expect(checkContent(ctx).filter((issue) => issue.rule === "content.denylist")).toEqual([
       expect.objectContaining({ file, line: 2, severity: "error" }),

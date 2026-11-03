@@ -9,7 +9,7 @@ import {
   matchTerms,
   type ScanTerm,
 } from "../denylist.ts";
-import { licenceClosure } from "../packaging/licences.ts";
+import { comparePath, licenceClosure, listCitationSources } from "../packaging/licences.ts";
 import { readTextIfPresent, walkFiles } from "../util/fs.ts";
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
@@ -126,19 +126,18 @@ export function checkContent(ctx: CheckContext): Issue[] {
   const { root } = ctx;
 
   const denyFiles = collect(root, SCAN_DIRS, SCAN_FILES);
-  const shippedTexts: { file: string; text: string }[] = [];
-  for (const file of denyFiles) {
-    const text = readTextIfPresent(join(root, file));
-    if (text !== null) shippedTexts.push({ file, text });
-  }
-  const dutySources = new Set(licenceClosure(root, shippedTexts, []).duties.map((duty) => duty.source));
+  const closure = licenceClosure(root, listCitationSources(root), []);
+  const dutySources = new Set(closure.duties.map((duty) => duty.source));
   const scanSet = new Set(denyFiles);
   for (const source of dutySources) scanSet.add(source);
-  const scanFiles = [...scanSet].toSorted((left, right) => left.localeCompare(right));
+  const scanFiles = [...scanSet].toSorted(comparePath);
   const bodyFiles = collect(root, AUTHORED_BODY_DIRS);
   const skillFiles = collect(root, SKILL_BODY_DIRS);
 
   return [
+    ...closure.problems
+      .filter((problem) => problem.source !== "NOTICE" && problem.source !== "LICENSE")
+      .map((problem) => error("packaging.licence-file-missing", problem.source, problem.message)),
     ...scan(
       root,
       scanFiles,
