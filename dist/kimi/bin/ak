@@ -39267,6 +39267,14 @@ import { createHash as createHash11 } from "crypto";
 import { existsSync as existsSync38, mkdirSync as mkdirSync24, readFileSync as readFileSync31, realpathSync as realpathSync11, renameSync as renameSync5, writeFileSync as writeFileSync15 } from "fs";
 import { basename as basename19, dirname as dirname21, isAbsolute as isAbsolute14, join as join43, relative as relative11, resolve as resolve16 } from "path";
 
+// src/lifecycle/design-report.ts
+function isNonArrayObject(value) {
+  return !Array.isArray(value) && Object(value) === value;
+}
+function isDesignReport(value) {
+  return isNonArrayObject(value) && "schema" in value && value.schema === "review";
+}
+
 // src/runner/evidence.ts
 import { mkdirSync as mkdirSync23, readFileSync as readFileSync29, realpathSync as realpathSync8, writeFileSync as writeFileSync14 } from "fs";
 import { isAbsolute as isAbsolute11, join as join41, relative as relative8 } from "path";
@@ -39797,6 +39805,13 @@ var ID = /^[a-z0-9][a-z0-9-]*$/;
 var EVENT_KEY = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
 var HUMAN_REFUSAL = "no";
 var HUMAN_RETRY = "retry";
+function isDesignReportBytes(bytes) {
+  try {
+    return isDesignReport(JSON.parse(bytes.toString()));
+  } catch {
+    return false;
+  }
+}
 var EFFECTS = new Set([
   "remote-push",
   "pr-open",
@@ -40620,8 +40635,16 @@ class Runner {
       return found === undefined || found.revision !== run2.revision || found.diff_hash !== run2.diff_hash || digest(this.evidenceStore.read(found.ref)) !== found.hash;
     }))
       return this.refuse(run2, card, "runner:trusted-evidence", "Required trusted evidence is missing or stale");
-    if (card.operation === "ship.prepare" && !card.evidence.some((e2) => run2.evidence[e2]?.kind === "verify"))
-      return this.refuse(run2, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+    if (card.operation === "ship.prepare") {
+      const verifyEvidence = card.evidence.flatMap((evidenceId) => {
+        const found = run2.evidence[evidenceId];
+        return found?.kind === "verify" ? [found] : [];
+      });
+      if (verifyEvidence.length === 0)
+        return this.refuse(run2, card, "runner:trusted-evidence", "Ship requires runner-collected verification evidence");
+      if (verifyEvidence.every((found) => isDesignReportBytes(this.evidenceStore.read(found.ref))))
+        return this.refuse(run2, card, "runner:design-report", "A design report is not a verifier receipt");
+    }
     const reached = this.capReached(run2, step);
     if (reached !== null)
       return this.cap(run2, card, reached.limit, reached.value);
