@@ -1306,7 +1306,7 @@ describe("a forged grant cannot ride a genuine grant's hash", () => {
       [
         "bun",
         "-e",
-        `const fs=require("node:fs");const [l,a,b]=process.argv.slice(1);const parent=process.ppid;const deadline=Date.now()+8000;for(let i=0;;i++){if(Date.now()>deadline)process.exit(0);if(process.ppid!==parent)process.exit(0);try{process.kill(parent,0)}catch{process.exit(0)}const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l)}`,
+        `const fs=require("node:fs");const [l,a,b]=process.argv.slice(1);const parent=process.ppid;const deadline=Date.now()+8000;for(let i=0;;i++){if(i%256===0){if(Date.now()>deadline)process.exit(0);if(process.ppid!==parent)process.exit(0);try{process.kill(parent,0)}catch{process.exit(0)}}const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l)}`,
         link,
         s.grantPath,
         forged,

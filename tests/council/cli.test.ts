@@ -75,8 +75,9 @@ afterAll(async () => {
   await Promise.all([...liveChildren].map(reap));
 });
 
+/** Hang until killed, argv[2] (the test runner) exits, or 120s pass. Immediate ppid is not watched. */
 const HANG_UNTIL_REAPED =
-  "const fs=require('node:fs');const parent=process.ppid;const deadline=Date.now()+120000;const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{try{process.kill(parent,0)}catch{process.exit(0)}if(Date.now()>deadline||process.ppid!==parent)process.exit(0)},200)";
+  "const fs=require('node:fs');const keeper=Number(process.argv[2]);const deadline=Date.now()+120000;const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{if(Date.now()>deadline)process.exit(0);try{process.kill(keeper,0)}catch{process.exit(0)}},200)";
 
 describe("ak council run", () => {
   test("three approvals approve, and the record logs requested and served models and grants nothing", async () => {
@@ -242,7 +243,7 @@ describe("ak council run", () => {
           command: [
             "sh",
             "-c",
-            `node -e ${JSON.stringify(HANG_UNTIL_REAPED)} ${JSON.stringify(pidFile)} & echo $! > ${JSON.stringify(pidFile)}; wait`,
+            `node -e ${JSON.stringify(HANG_UNTIL_REAPED)} ${JSON.stringify(pidFile)} ${process.pid} & echo $! > ${JSON.stringify(pidFile)}; wait`,
           ],
         },
       ]);
