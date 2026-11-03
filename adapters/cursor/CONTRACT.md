@@ -185,7 +185,8 @@ packaging suite:
    current directory; `--check --out` verifies that directory. The write refuses
    `/`, `$HOME` and its ancestors, the repository root and its ancestors, cwd
    and its ancestors, a symlink into those, and a non-empty directory without
-   this host's build record. Default `ak build` still writes `dist/<host>`.
+   this host's build record. A legacy build record without `outputs` is matched
+   only at the top level. Default `ak build` still writes `dist/<host>`.
 5. **`ak validate`** — the tree with this adapter present is clean.
 
 Live Cloud Agent discovery, slash expansion retaining the leading `/<id>`, and

@@ -27,7 +27,8 @@ repository root. The directory is **replaced**. `ak build` refuses `--out` of
 current directory or an ancestor of it, a symlink that resolves into one of
 those, or a non-empty directory that is not a previous agent-kit bundle for
 that host (`.cursor-plugin/ak.json`). An empty directory, a nonexistent path,
-or a directory that already holds that build record is allowed.
+or a directory that already holds that build record is allowed. A legacy
+record that does not list `outputs` is matched only at the top level.
 
 `--out` requires `--host`. Combine `--check` with `--out` to verify that
 directory rather than `dist/cursor`. A default `ak build` with no `--host`
