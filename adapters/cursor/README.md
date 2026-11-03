@@ -48,7 +48,8 @@ REPO="${REPO:?set REPO to the consuming checkout}"
 
 mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
   "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
-  "$REPO/.cursor/bin"
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/LICENSES" \
+  "$REPO/provenance/licenses"
 
 rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
 rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
@@ -56,13 +57,19 @@ rsync -a "$BUNDLE/.cursor/rules/"      "$REPO/.cursor/rules/"
 rsync -a "$BUNDLE/.cursor/roles/"      "$REPO/.cursor/roles/"
 rsync -a "$BUNDLE/.cursor/references/" "$REPO/.cursor/references/"
 rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
+rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
 rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
+rsync -a "$BUNDLE/LICENSES/"           "$REPO/LICENSES/"
+rsync -a "$BUNDLE/provenance/licenses/" "$REPO/provenance/licenses/"
 cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
+cp -n "$BUNDLE/LICENSE" "$BUNDLE/NOTICE" "$REPO/"
 ```
 
 Merge `$BUNDLE/AGENTS.md` into the consuming repo's root `AGENTS.md`. Do not
 replace an existing root `AGENTS.md`. Nested `.cursor/AGENTS.md` would only
-apply while the agent works on files under `.cursor/`.
+apply while the agent works on files under `.cursor/`. `LICENSE` and `NOTICE`
+stay at the bundle root, as in the claude-code and codex bundles; `cp -n`
+leaves an existing consuming-repo copy in place.
 
 Emitted paths the host reads:
 

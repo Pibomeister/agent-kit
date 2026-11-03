@@ -12,9 +12,11 @@ import {
   packagedSkillFile,
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
-import { BUILD_RECORD_FILE, planBundle } from "../src/packaging/plan.ts";
+import { schemaRefs } from "../src/packaging/mentions.ts";
+import { BUILD_RECORD_FILE, LICENCE_FILES, planBundle } from "../src/packaging/plan.ts";
 import { writeBundles } from "../src/packaging/build.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
+import { extractRelativeLinks, resolveFromFile } from "../src/util/links.ts";
 import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { checkBundleLinks } from "../src/validation/links.ts";
@@ -327,4 +329,50 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
     expect(existsSync(join(tree, "dist/cursor"))).toBe(false);
     expect(readFileSync(join(out, ".cursor-plugin/plugin.json"), "utf8")).toContain("./.cursor/skills/alpha");
   });
+
+  test("every relative link in the Cursor bundle resolves inside it, and the licence files are present", () => {
+    const cursor = planBundle(ctx, "cursor", { profile: "all" });
+    expect(cursor.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const present = new Set(cursor.files.keys());
+    const dirs = new Set<string>();
+    for (const path of present) {
+      const parts = path.split("/");
+      for (let i = 1; i < parts.length; i += 1) dirs.add(parts.slice(0, i).join("/"));
+    }
+    const dangling: string[] = [];
+    for (const file of cursor.files.values()) {
+      if (file.path.endsWith(".schema.json")) {
+        for (const ref of schemaRefs(file.path, file.contents)) {
+          if (!present.has(ref)) dangling.push(`${file.path} $ref ${ref}`);
+        }
+        continue;
+      }
+      if (!/\.(?:md|mdc)$/.test(file.path)) continue;
+      for (const link of extractRelativeLinks(file.contents)) {
+        const resolved = resolveFromFile(file.path, link.target);
+        if (resolved === null) {
+          dangling.push(`${file.path} -> ${link.target} (escapes bundle)`);
+          continue;
+        }
+        if (present.has(resolved) || dirs.has(resolved)) continue;
+        dangling.push(`${file.path} -> ${link.target} (${resolved})`);
+      }
+    }
+    expect(dangling).toEqual([]);
+    expect(present.has(".cursor/templates/trail-audit.example.json")).toBe(true);
+    expect(cursor.files.get(agentPath("trail-auditor"))?.contents).toContain(
+      "](../templates/trail-audit.example.json)",
+    );
+    expect(cursor.files.get(".cursor/roles/trail-auditor/ROLE.md")?.contents).toContain(
+      "](../../templates/trail-audit.example.json)",
+    );
+    for (const licence of LICENCE_FILES) {
+      expect(`${licence.path}:${present.has(licence.path)}`).toBe(`${licence.path}:true`);
+    }
+    const gate = cursor.files.get(".cursor/bin/ak-gate.mjs")?.contents ?? "";
+    expect(gate.startsWith("// Licence texts for this file")).toBe(true);
+    expect(gate).toContain("// --- LICENSE ---");
+    expect(gate).toContain("// --- NOTICE ---");
+    expect(gate).toContain("// --- provenance/licenses/thedotmack_claude-mem.NOTICE ---");
+  }, 120_000);
 });

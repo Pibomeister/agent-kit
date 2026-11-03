@@ -37,7 +37,7 @@ dist/cursor/
 │   ├── skills/<id>/references/
 │   ├── agents/<role>.md       # custom subagents for catalog roles
 │   ├── rules/ak-super-review.mdc
-│   ├── roles/, references/, schemas/, bin/, catalog.yaml
+│   ├── roles/, references/, schemas/, templates/, bin/, catalog.yaml
 ├── AGENTS.md                  # merge into the consuming repo root
 ├── LICENSES/, provenance/licenses/
 └── NOTICE, LICENSE
@@ -150,8 +150,12 @@ rsync -a dist/cursor/.cursor/rules/    "$REPO/.cursor/rules/"
 rsync -a dist/cursor/.cursor/roles/    "$REPO/.cursor/roles/"
 rsync -a dist/cursor/.cursor/references/ "$REPO/.cursor/references/"
 rsync -a dist/cursor/.cursor/schemas/  "$REPO/.cursor/schemas/"
+rsync -a dist/cursor/.cursor/templates/ "$REPO/.cursor/templates/"
 rsync -a dist/cursor/.cursor/bin/      "$REPO/.cursor/bin/"
-# merge dist/cursor/AGENTS.md into the repo-root AGENTS.md; do not overwrite
+# licence/attribution files sit at the bundle root, as in claude-code and codex:
+rsync -a dist/cursor/LICENSES/         "$REPO/LICENSES/"
+rsync -a dist/cursor/provenance/licenses/ "$REPO/provenance/licenses/"
+# merge LICENSE, NOTICE and dist/cursor/AGENTS.md into the repo root; do not overwrite
 ```
 
 `rsync` of those trees is additive: it does not delete
@@ -188,6 +192,10 @@ packaging suite:
    this host's build record. A legacy build record without `outputs` is matched
    only at the top level. Default `ak build` still writes `dist/<host>`.
 5. **`ak validate`** — the tree with this adapter present is clean.
+6. **Vendor closure** — every relative link in the built cursor bundle
+   resolves to a file the bundle carries, including `.cursor/templates/`
+   files that agents and roles name. `LICENSE`, `NOTICE`, `LICENSES/` and
+   `provenance/licenses/` (including the claude-mem NOTICE) are present.
 
 Live Cloud Agent discovery, slash expansion retaining the leading `/<id>`, and
 subagent `readonly` enforcement are **unverified** in a session. They are
