@@ -680,6 +680,8 @@ describe("plantArm stays inside the temp workspace", () => {
   test("transcript-on-disk wires the R3.5 PreToolUse guard into the arm's temp settings only", () => {
     const work = processScratch("ak-review-iso-guard-");
     made.push(work);
+    const home = join(work, "home");
+    mkdirSync(home);
     const planted = plantArm("claude-code", "transcript-on-disk", join(work, "arm"), `MARKER_${"aa".repeat(16)}`, ROLE);
     expect(planted.preToolUseLogPath).not.toBeNull();
     expect(existsSync(join(planted.workspace, "review-session.policy.json"))).toBe(true);
@@ -701,16 +703,40 @@ describe("plantArm stays inside the temp workspace", () => {
       cwd: planted.workspace,
       tool_input: { file_path: planted.transcriptPath },
     });
-    const fromGuard = spawnSync("sh", [hookPath], { encoding: "utf8", input: payload });
-    expect(fromGuard.status).toBe(0);
-    expect(fromGuard.stdout).toContain("permissionDecision");
-    const guardExit2 = spawnSync("sh", [hookPath], {
+    const hookEnv = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: home };
+    const fromGuard = spawnSync("sh", [hookPath], {
       encoding: "utf8",
       input: payload,
-      env: { ...process.env, BUN_OPTIONS: "--eval process.exit(2)" },
+      env: hookEnv,
+      timeout: 20_000,
+      killSignal: "SIGKILL",
+    });
+    expect(fromGuard.status).toBe(0);
+    expect(fromGuard.stdout).toContain("permissionDecision");
+    const stub = join(work, "bun-exit-2");
+    writeFileSync(stub, "#!/bin/sh\nexit 2\n");
+    chmodSync(stub, 0o755);
+    const plantedExit2 = plantArm(
+      "claude-code",
+      "transcript-on-disk",
+      join(work, "arm-exit-2"),
+      `MARKER_${"aa".repeat(16)}`,
+      ROLE,
+      { bun: stub },
+    );
+    const exit2Hook = join(plantedExit2.workspace, "pre-tool-use.sh");
+    expect(readFileSync(exit2Hook, "utf8")).toContain(stub);
+    expect(readFileSync(exit2Hook, "utf8")).toContain("status=$?");
+    const guardExit2 = spawnSync("sh", [exit2Hook], {
+      encoding: "utf8",
+      input: payload,
+      env: hookEnv,
+      timeout: 20_000,
+      killSignal: "SIGKILL",
     });
     expect(guardExit2.status).toBe(2);
     expect(readFileSync(planted.preToolUseLogPath ?? "", "utf8")).toContain("child-1");
+    expect(readFileSync(plantedExit2.preToolUseLogPath ?? "", "utf8")).toContain("child-1");
     expect(planted.plantedHalves).toContain("r3.5-pre-tool-use-guard");
     expect(readFileSync(join(REPO, "templates/guard/review-session.policy.json"), "utf8")).toContain(
       "**/.claude/projects/**",

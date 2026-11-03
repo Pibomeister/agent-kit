@@ -66,9 +66,8 @@ printf '%s\\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additiona
   return script;
 }
 
-function writePreToolUseHook(workspace: string, policyPath: string, logPath: string): string {
+function writePreToolUseHook(workspace: string, policyPath: string, logPath: string, bun: string): string {
   const script = join(workspace, "pre-tool-use.sh");
-  const bun = process.execPath;
   const cli = join(REPO, "src/cli.ts");
   writeFileSync(
     script,
@@ -109,7 +108,14 @@ function claudeSettings(hooks: ClaudeHooks, denyRole: string | null): string {
 }
 
 /** Write the files one arm plants into `workspace`. Live dispatch then points the host at that tree. */
-export function plantArm(host: ProbeHost, arm: ArmId, workspace: string, marker: string, rolePath: string): PlantedArm {
+export function plantArm(
+  host: ProbeHost,
+  arm: ArmId,
+  workspace: string,
+  marker: string,
+  rolePath: string,
+  options: { bun?: string } = {},
+): PlantedArm {
   mkdirSync(workspace, { recursive: true });
   const cfg = join(workspace, "cfg");
   mkdirSync(cfg, { recursive: true });
@@ -161,7 +167,7 @@ export function plantArm(host: ProbeHost, arm: ArmId, workspace: string, marker:
         copyFileSync(GUARD_POLICY, policyPath);
         preToolUseLogPath = join(workspace, "pretooluse.log");
         writeFileSync(preToolUseLogPath, "");
-        preToolUse = writePreToolUseHook(workspace, policyPath, preToolUseLogPath);
+        preToolUse = writePreToolUseHook(workspace, policyPath, preToolUseLogPath, options.bun ?? process.execPath);
         plantedHalves.push("r3.5-pre-tool-use-guard");
       } else {
         unplantable.push({
