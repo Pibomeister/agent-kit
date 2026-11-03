@@ -75,9 +75,40 @@ afterAll(async () => {
   await Promise.all([...liveChildren].map(reap));
 });
 
-/** Hang until killed, argv[2] (the test runner) exits, or 120s pass. Immediate ppid is not watched. */
-const HANG_UNTIL_REAPED =
-  "const fs=require('node:fs');const keeper=Number(process.argv[2]);const deadline=Date.now()+120000;const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{if(Date.now()>deadline)process.exit(0);try{process.kill(keeper,0)}catch{process.exit(0)}},200)";
+/** Hang until killed, argv[3] (the test runner) exits, or 120s pass. Immediate ppid is not watched. Writes argv[2] atomically. */
+const HANG_UNTIL_REAPED = `const fs = require("node:fs");
+const pidFile = process.argv[2];
+const keeper = Number(process.argv[3]);
+const deadline = Date.now() + 120000;
+const tmp = pidFile + "." + process.pid;
+fs.writeFileSync(tmp, String(process.pid));
+fs.renameSync(tmp, pidFile);
+setInterval(function () {
+  if (Date.now() > deadline) process.exit(0);
+  try {
+    process.kill(keeper, 0);
+  } catch {
+    process.exit(0);
+  }
+}, 200);
+`;
+
+function writeHangHelper(dir: string): string {
+  const script = join(dir, "hang-until-reaped.js");
+  writeFileSync(script, HANG_UNTIL_REAPED);
+  return script;
+}
+
+function shQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function readLivePid(pidFile: string): number {
+  const pid = Number(readFileSync(pidFile, "utf8").trim());
+  expect(Number.isInteger(pid) && pid > 0).toBe(true);
+  expect(alive(pid)).toBe(true);
+  return pid;
+}
 
 describe("ak council run", () => {
   test("three approvals approve, and the record logs requested and served models and grants nothing", async () => {
@@ -236,15 +267,12 @@ describe("ak council run", () => {
     test(`${signal} ends a hung seat's whole process group`, async () => {
       const s = setup();
       const pidFile = join(s.dir, "descendant.pid");
+      const hang = writeHangHelper(s.dir);
       const hung = updated(record(s.config), ["pair", 0, "chain"], () => [
         {
           actor: "a",
           lineage: ["a"],
-          command: [
-            "sh",
-            "-c",
-            `node -e ${JSON.stringify(HANG_UNTIL_REAPED)} ${JSON.stringify(pidFile)} ${process.pid} & echo $! > ${JSON.stringify(pidFile)}; wait`,
-          ],
+          command: ["sh", "-c", `node ${shQuote(hang)} ${shQuote(pidFile)} ${process.pid} & wait`],
         },
       ]);
       writeFileSync(s.config, JSON.stringify(hung), { mode: 0o600 });
@@ -255,9 +283,15 @@ describe("ak council run", () => {
       });
       liveChildren.add(child);
       try {
-        while (!existsSync(pidFile) || readFileSync(pidFile, "utf8").trim() === "") await Bun.sleep(25);
-        const descendant = Number(readFileSync(pidFile, "utf8").trim());
-        expect(() => process.kill(descendant, 0)).not.toThrow();
+        const ready = Date.now() + 10_000;
+        while (Date.now() < ready) {
+          if (existsSync(pidFile)) {
+            const pid = Number(readFileSync(pidFile, "utf8").trim());
+            if (Number.isInteger(pid) && pid > 0 && alive(pid)) break;
+          }
+          await Bun.sleep(25);
+        }
+        const descendant = readLivePid(pidFile);
         child.kill(signal);
         expect(await child.exited).toBe(code);
         const deadline = Date.now() + 10_000;

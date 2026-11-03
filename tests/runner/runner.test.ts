@@ -49,9 +49,40 @@ function spawnLive(
   return child;
 }
 
-/** Hang until killed, argv[2] (the test runner) exits, or 120s pass. Immediate ppid is not watched. */
-const HANG_UNTIL_REAPED =
-  "const fs=require('node:fs');const keeper=Number(process.argv[2]);const deadline=Date.now()+120000;const tmp=`${process.argv[1]}.${process.pid}`;fs.writeFileSync(tmp,String(process.pid));fs.renameSync(tmp,process.argv[1]);setInterval(()=>{if(Date.now()>deadline)process.exit(0);try{process.kill(keeper,0)}catch{process.exit(0)}},200)";
+/** Hang until killed, argv[3] (the test runner) exits, or 120s pass. Immediate ppid is not watched. Writes argv[2] atomically. */
+const HANG_UNTIL_REAPED = `const fs = require("node:fs");
+const pidFile = process.argv[2];
+const keeper = Number(process.argv[3]);
+const deadline = Date.now() + 120000;
+const tmp = pidFile + "." + process.pid;
+fs.writeFileSync(tmp, String(process.pid));
+fs.renameSync(tmp, pidFile);
+setInterval(function () {
+  if (Date.now() > deadline) process.exit(0);
+  try {
+    process.kill(keeper, 0);
+  } catch {
+    process.exit(0);
+  }
+}, 200);
+`;
+
+function writeHangHelper(dir: string): string {
+  const script = join(dir, "hang-until-reaped.js");
+  writeFileSync(script, HANG_UNTIL_REAPED);
+  return script;
+}
+
+function shQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function readLivePid(pidFile: string): number {
+  const pid = Number(readFileSync(pidFile, "utf8").trim());
+  expect(Number.isInteger(pid) && pid > 0).toBe(true);
+  expect(() => process.kill(pid, 0)).not.toThrow();
+  return pid;
+}
 
 // Bun lists every directory above its cwd when it starts, and the live service starts each consumer,
 // launcher and verifier in its state directory. A crowded macOS $TMPDIR makes each start there cost
@@ -467,6 +498,7 @@ describe("runner guards", () => {
     const socket = join(f.privateDir, "runner.sock");
     const seatConfig = join(f.privateDir, "seats.json");
     const launcherPid = join(f.privateDir, "launcher.pid");
+    const hang = writeHangHelper(f.privateDir);
     const adminToken = "a".repeat(48);
     const workerToken = "b".repeat(48);
     const adminTokenFile = join(f.privateDir, "admin.token");
@@ -493,7 +525,7 @@ describe("runner guards", () => {
           seat,
           actor: `supervisor-${seat}`,
           lineage: [`supervisor-${seat}`],
-          command: ["node", "-e", HANG_UNTIL_REAPED, launcherPid, String(process.pid)],
+          command: ["node", hang, launcherPid, String(process.pid)],
         })),
       }),
     );
@@ -547,7 +579,7 @@ describe("runner guards", () => {
       writeFileSync(request, JSON.stringify({ run: "toy-run", card_id: "align" }));
       decision = spawnRunnerCli("decide", request, socket, workerToken, CONTENDED_RUNNER_CALL_TIMEOUT_MS);
       await awaitPath(launcherPid, decision);
-      const pid = Number(readFileSync(launcherPid, "utf8"));
+      const pid = readLivePid(launcherPid);
       server.kill();
       const stopped = await Promise.race([server.exited.then(() => true), Bun.sleep(60_000).then(() => false)]);
       if (!stopped) {
@@ -743,16 +775,13 @@ describe("runner guards", () => {
     const tokenFile = join(f.privateDir, "admin.token");
     writeFileSync(tokenFile, adminToken, { mode: 0o600 });
     const pidFile = join(f.privateDir, "descendant.pid");
+    const hang = writeHangHelper(f.privateDir);
     const eventConfig = join(f.privateDir, "event.json");
     writeFileSync(
       eventConfig,
       JSON.stringify({
         timeout_ms: 300_000,
-        command: [
-          "sh",
-          "-c",
-          `node -e ${JSON.stringify(HANG_UNTIL_REAPED)} ${JSON.stringify(pidFile)} ${process.pid} & echo $! > ${JSON.stringify(pidFile)}; wait`,
-        ],
+        command: ["sh", "-c", `node ${shQuote(hang)} ${shQuote(pidFile)} ${process.pid} & wait`],
       }),
     );
     const service = spawnLive(
@@ -786,8 +815,18 @@ describe("runner guards", () => {
       const request = join(f.requestDir, "event.json");
       writeFileSync(request, JSON.stringify({ run: "toy-run", key: "wake-1", payload: "check" }));
       expect(callRunnerCli("event", request, socket, adminToken).exitCode).toBe(0);
-      await waitUntil("the adapter to start", () => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim() !== "");
-      const descendant = Number(readFileSync(pidFile, "utf8").trim());
+      await waitUntil("the adapter to start", () => {
+        if (!existsSync(pidFile)) return false;
+        const pid = Number(readFileSync(pidFile, "utf8").trim());
+        if (!Number.isInteger(pid) || pid <= 0) return false;
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      const descendant = readLivePid(pidFile);
       const alive = () => {
         try {
           process.kill(descendant, 0);
