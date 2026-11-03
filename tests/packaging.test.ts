@@ -44,6 +44,13 @@ import {
   loadInstallConfig,
 } from "../src/packaging/install.ts";
 import {
+  NOT_BUNDLED_HEADING,
+  fileHeader,
+  heldCitedLicencePaths,
+  shippingCitedLicencePaths,
+} from "../src/packaging/licences.ts";
+import { checkContent } from "../src/validation/content.ts";
+import {
   BUILD_RECORD_FILE,
   GATE_FILE,
   inlinedSetFromMetafile,
@@ -57,7 +64,7 @@ import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
 import { expectError } from "./helpers/issues.ts";
 import { parseJson, type JsonValue } from "./helpers/json.ts";
-import { makeTree } from "./helpers/tree.ts";
+import { EMPTY_ADAPTATIONS, EMPTY_LOCK, makeTree } from "./helpers/tree.ts";
 
 const HEAD = (name: string) => `---\nname: ${name}\ndescription: Use when asked.\n---\n`;
 
@@ -245,7 +252,21 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
   "evals/alpha/does-not-start-unasked/case.yaml":
     'schema_version: "1.1"\nname: does-not-start-unasked\ntags: [negative]\n',
   "evals/beta/runs-when-asked/case.yaml": 'schema_version: "1.1"\nname: runs-when-asked\ntags: [positive]\n',
-  NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n\nAdapted from MIT-licensed projects.\n",
+  NOTICE: [
+    "agent-kit",
+    "Copyright (c) 2026 A Person",
+    "",
+    "Adapted from MIT-licensed projects.",
+    "LICENSES/ajv.LICENSE",
+    "LICENSES/ajv-formats.LICENSE",
+    "LICENSES/fast-deep-equal.LICENSE",
+    "LICENSES/fast-uri.LICENSE",
+    "LICENSES/json-schema-traverse.LICENSE",
+    "LICENSES/yaml.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    "",
+  ].join("\n"),
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n\nPermission is hereby granted, free of charge...\n",
   // Stubs for the licence texts bin/ak inlines. The real texts are read from
   // the installed packages; these exist so a fixture can still build.
@@ -257,6 +278,8 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
   "node_modules/yaml/LICENSE": "Copyright Eemeli Aro\n",
   "provenance/licenses/thedotmack_claude-mem.LICENSE": "Apache License\nVersion 2.0, January 2004\n",
   "provenance/licenses/thedotmack_claude-mem.NOTICE": "Claude-Mem\nCopyright 2026 Alex Newman\n",
+  "provenance/upstream.lock.yaml": EMPTY_LOCK,
+  "provenance/adaptations.yaml": EMPTY_ADAPTATIONS,
 };
 
 /**
@@ -264,22 +287,35 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
  * from `node_modules/`: that directory is gitignored and the packager's walk
  * skips it, so a copy there would not be in the distribution.
  */
-const REQUIRED_LICENCES: ReadonlyArray<readonly [string, string]> = [
-  ["NOTICE", "NOTICE"],
-  ["LICENSE", "LICENSE"],
-  ["node_modules/ajv/LICENSE", "LICENSES/ajv.LICENSE"],
-  ["node_modules/ajv-formats/LICENSE", "LICENSES/ajv-formats.LICENSE"],
-  ["node_modules/fast-deep-equal/LICENSE", "LICENSES/fast-deep-equal.LICENSE"],
-  ["node_modules/fast-uri/LICENSE", "LICENSES/fast-uri.LICENSE"],
-  ["node_modules/json-schema-traverse/LICENSE", "LICENSES/json-schema-traverse.LICENSE"],
-  ["node_modules/yaml/LICENSE", "LICENSES/yaml.LICENSE"],
-  ["provenance/licenses/thedotmack_claude-mem.LICENSE", "provenance/licenses/thedotmack_claude-mem.LICENSE"],
-  ["provenance/licenses/thedotmack_claude-mem.NOTICE", "provenance/licenses/thedotmack_claude-mem.NOTICE"],
-];
+function licencePathsIn(text: string): string[] {
+  const cited =
+    /(?:provenance\/licenses\/[A-Za-z0-9_.+-]+\.(?:LICENSE|NOTICE)|LICENSES\/(?:@[A-Za-z0-9_.+-]+\/)?[A-Za-z0-9_.+-]+\.LICENSE)(?![A-Za-z0-9])/g;
+  return [...new Set(text.match(cited) ?? [])].toSorted();
+}
+
+function citedSource(path: string): string {
+  const prefix = "LICENSES/";
+  const suffix = ".LICENSE";
+  if (path.startsWith(prefix) && path.endsWith(suffix)) {
+    const name = path.slice(prefix.length, -suffix.length);
+    return `node_modules/${name}/LICENSE`;
+  }
+  return path;
+}
+
+function obligedPairs(notice: string): ReadonlyArray<readonly [string, string]> {
+  const pairs: Array<readonly [string, string]> = [
+    ["NOTICE", "NOTICE"],
+    ["LICENSE", "LICENSE"],
+  ];
+  for (const path of shippingCitedLicencePaths(notice)) pairs.push([citedSource(path), path]);
+  return pairs;
+}
 
 function ctxFor(overrides: Record<string, string> = {}, drop: string[] = []) {
   const files = Object.fromEntries(Object.entries({ ...BASE, ...overrides }).filter(([key]) => !drop.includes(key)));
   const root = makeTree(files);
+  for (const rel of drop) rmSync(join(root, rel), { force: true });
   const { catalog } = loadCatalog(root);
   if (catalog === null) throw new Error("fixture has no catalog");
   return { root, catalog };
@@ -455,6 +491,80 @@ describe("host capability honesty", () => {
  * chosen here.
  */
 describe("the licence files the distribution is obliged to carry", () => {
+  const SHIPPED_PROVENANCE_LICENCES = [
+    "provenance/licenses/BayramAnnakov_claude-reflect.LICENSE",
+    "provenance/licenses/BuilderIO_skills.LICENSE",
+    "provenance/licenses/EveryInc_compound-engineering-plugin.LICENSE",
+    "provenance/licenses/Yeachan-Heo_oh-my-claudecode.LICENSE",
+    "provenance/licenses/Yeachan-Heo_oh-my-codex.LICENSE",
+    "provenance/licenses/addyosmani_agent-skills.LICENSE",
+    "provenance/licenses/cursor_plugins.LICENSE",
+    "provenance/licenses/google_elephant-goldfish-model.LICENSE",
+    "provenance/licenses/mattpocock_skills.LICENSE",
+    "provenance/licenses/mizchi_jev-lint.LICENSE",
+    "provenance/licenses/obra_superpowers.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    "provenance/licenses/warpdotdev_common-skills.LICENSE",
+  ] as const;
+  const HELD_PROVENANCE_LICENCES = [
+    "provenance/licenses/caveman-ai_blocks.LICENSE",
+    "provenance/licenses/caveman-ai_blocks.NOTICE",
+    "provenance/licenses/tester-army_e2e.LICENSE",
+    "provenance/licenses/tester-army_e2e.NOTICE",
+  ] as const;
+
+  test("every host bundle carries each licence path NOTICE cites", () => {
+    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
+    expect(notice).toContain(NOT_BUNDLED_HEADING);
+    const cited = shippingCitedLicencePaths(notice);
+    const held = heldCitedLicencePaths(notice);
+    expect(cited.filter((path) => path.startsWith("provenance/licenses/"))).toEqual([...SHIPPED_PROVENANCE_LICENCES]);
+    expect(cited.some((path) => path.includes("eslint-stylistic"))).toBe(false);
+    expect(held).toEqual([...HELD_PROVENANCE_LICENCES]);
+    const { catalog } = loadCatalog(REPO);
+    if (catalog === null) throw new Error("repo catalog did not load");
+    for (const host of HOST_IDS) {
+      const plan = planBundle({ root: REPO, catalog }, host, {});
+      expect(hasErrors(plan.issues)).toBe(false);
+      for (const path of cited) {
+        const published = relocateForHost(host, path);
+        expect(plan.files.get(published)?.contents).toBe(readFileSync(join(REPO, citedSource(path)), "utf8"));
+        if (host === "cursor") expect(plan.files.has(path)).toBe(false);
+      }
+      for (const path of held) {
+        expect(plan.files.has(relocateForHost(host, path)), `${host} shipped held ${path}`).toBe(false);
+        expect(plan.files.has(path)).toBe(false);
+      }
+      for (const file of plan.files.values()) {
+        for (const headerPath of licencePathsIn(fileHeader(file.contents))) {
+          if (held.includes(headerPath)) continue;
+          expect(plan.files.has(relocateForHost(host, headerPath)), `${host} ${file.path} cites ${headerPath}`).toBe(
+            true,
+          );
+        }
+      }
+      expect(plan.files.has("tools/oxlint/anti-slop/vendor/eslint-stylistic/LICENSE")).toBe(false);
+    }
+  }, 120_000);
+
+  test("moving one shipped provenance licence under Not-bundled changes the pinned lists", () => {
+    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
+    const moved = SHIPPED_PROVENANCE_LICENCES[0];
+    const without = notice.replace(`${moved}\n`, "");
+    expect(without).not.toBe(notice);
+    const heading = `${NOT_BUNDLED_HEADING}\n`;
+    const at = without.indexOf(heading);
+    expect(at).toBeGreaterThan(-1);
+    const scratch = `${without.slice(0, at + heading.length)}\n${moved}\n${without.slice(at + heading.length)}`;
+    expect(shippingCitedLicencePaths(scratch).filter((path) => path.startsWith("provenance/licenses/"))).not.toEqual([
+      ...SHIPPED_PROVENANCE_LICENCES,
+    ]);
+    expect(heldCitedLicencePaths(scratch)).not.toEqual([...HELD_PROVENANCE_LICENCES]);
+    expect(shippingCitedLicencePaths(scratch)).not.toContain(moved);
+    expect(heldCitedLicencePaths(scratch)).toContain(moved);
+  });
+
   test("every host's bundle carries them, byte-identical to the source tree's", () => {
     // Iterated over HOST_IDS rather than written twice. The defect this package
     // has already produced once is two host manifests disagreeing about the
@@ -462,7 +572,7 @@ describe("the licence files the distribution is obliged to carry", () => {
     const ctx = ctxFor();
     for (const host of HOST_IDS) {
       const plan = planBundle(ctx, host, {});
-      for (const [source, path] of REQUIRED_LICENCES) {
+      for (const [source, path] of obligedPairs(BASE["NOTICE"] ?? "")) {
         const published = relocateForHost(host, path);
         expect(`${host}:${published}=${plan.files.get(published)?.contents}`).toBe(
           `${host}:${published}=${BASE[source]}`,
@@ -472,7 +582,7 @@ describe("the licence files the distribution is obliged to carry", () => {
   });
 
   test("a bundle missing any inlined component's licence file fails rather than shipping without it", () => {
-    for (const [source, path] of REQUIRED_LICENCES) {
+    for (const [source, path] of obligedPairs(BASE["NOTICE"] ?? "")) {
       if (source === "NOTICE" || source === "LICENSE") continue;
       const plan = planBundle(ctxFor({}, [source]), "claude-code", {});
       const issue = plan.issues.find((i) => i.rule === "packaging.licence-file-missing" && i.file === source);
@@ -557,7 +667,8 @@ describe("the licence files the distribution is obliged to carry", () => {
     const script = planBundle({ root: REPO, catalog }, "claude-code", {}).files.get("bin/ak")?.contents ?? "";
     expect(script.startsWith("#!/usr/bin/env bun\n")).toBe(true);
     const missing: string[] = [];
-    for (const [source, path] of REQUIRED_LICENCES) {
+    const notice = readFileSync(join(REPO, "NOTICE"), "utf8");
+    for (const [source, path] of obligedPairs(notice)) {
       const text = readFileSync(join(REPO, source), "utf8").replace(/\n$/, "");
       if (!script.includes(`// --- ${path} ---`)) missing.push(`${path}: heading`);
       for (const line of text.split("\n")) {
@@ -572,6 +683,51 @@ describe("the licence files the distribution is obliged to carry", () => {
     expect(missing).toEqual([]);
   });
 
+  test("NOTICE citing a licence file that is not on disk fails, omits the path, and leaves it out of the banner", () => {
+    const plan = planBundle(
+      ctxFor({
+        NOTICE: `${BASE["NOTICE"] ?? ""}provenance/licenses/absent.LICENSE\nLICENSES/left-pad.LICENSE\n`,
+        "src/maintenance/cli.ts": 'import pad from "left-pad";\nconsole.log(pad("x"));\n',
+        "node_modules/left-pad/package.json": '{"name":"left-pad","main":"index.js"}\n',
+        "node_modules/left-pad/index.js": "module.exports = (s) => ` ${s}`;\n",
+        "node_modules/left-pad/LICENSE": "WTFPL\n",
+      }),
+      "claude-code",
+      {},
+    );
+    const missing = plan.issues.filter((issue) => issue.rule === "packaging.licence-file-missing");
+    expect(missing.map((issue) => issue.file)).toEqual(["provenance/licenses/absent.LICENSE"]);
+    expect(plan.files.has("provenance/licenses/absent.LICENSE")).toBe(false);
+    expect(plan.files.get("bin/ak")?.contents ?? "").not.toContain("// --- provenance/licenses/absent.LICENSE ---");
+  }, 30_000);
+
+  test("a shipped file header citation ships the licence, and the same path under a markdown heading does not", () => {
+    const text = "header licence\n";
+    const cited = planBundle(
+      ctxFor({
+        "roles/implementer/ROLE.md": "// provenance/licenses/from-header.LICENSE\n\n# Implementer\n",
+        "provenance/licenses/from-header.LICENSE": text,
+      }),
+      "claude-code",
+      {},
+    );
+    expect(cited.files.get("provenance/licenses/from-header.LICENSE")?.contents).toBe(text);
+    expect(cited.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+
+    const body = planBundle(
+      ctxFor({
+        "roles/implementer/ROLE.md": "# Implementer\n\nprovenance/licenses/from-header.LICENSE\n",
+        "provenance/licenses/from-header.LICENSE": text,
+      }),
+      "claude-code",
+      {},
+    );
+    expect(body.files.has("provenance/licenses/from-header.LICENSE")).toBe(false);
+    expect(
+      body.issues.filter((issue) => issue.rule === "packaging.licence-file-missing").map((issue) => issue.file),
+    ).toEqual(["provenance/licenses/from-header.LICENSE"]);
+  });
+
   test("the failure names the file that is missing, not the pair", () => {
     // Reported per file. One message covering both would leave a reader who
     // has a NOTICE and no LICENSE unable to tell which of the two to write,
@@ -579,6 +735,351 @@ describe("the licence files the distribution is obliged to carry", () => {
     const plan = planBundle(ctxFor({}, ["LICENSE"]), "claude-code", {});
     const missing = plan.issues.filter((i) => i.rule === "packaging.licence-file-missing");
     expect(missing.map((i) => i.file)).toEqual(["LICENSE"]);
+  });
+
+  test("a licence cited only from the gate source header is demanded", () => {
+    const text = "gate header licence\n";
+    const ctx = gateFixture(
+      readFileSync(join(REPO, "schemas/verification.schema.json"), "utf8"),
+      "// provenance/licenses/from-gate.LICENSE\nconst BUNDLED_ADAPTER_IDS: readonly string[] = [];\nconsole.log('gate');\n",
+    );
+    writeFileSync(join(ctx.root, "provenance/licenses/from-gate.LICENSE"), text);
+    const plan = planBundle(ctx, "claude-code", {});
+    expect(plan.files.get("provenance/licenses/from-gate.LICENSE")?.contents).toBe(text);
+    expect(plan.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+  }, 60_000);
+
+  test("a provenance licence file that no citation demands fails the build and validate", () => {
+    const ctx = ctxFor({ "provenance/licenses/orphan.LICENSE": "orphan text\n" });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find(
+      (row) => row.rule === "packaging.licence-file-missing" && row.file === "provenance/licenses/orphan.LICENSE",
+    );
+    expect(issue?.severity).toBe("error");
+    expect(plan.files.has("provenance/licenses/orphan.LICENSE")).toBe(false);
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/licenses/orphan.LICENSE"),
+    ).toBe(true);
+  });
+
+  test("a package name that starts with a dot is rejected", () => {
+    const plan = planBundle(ctxFor({ NOTICE: `${BASE["NOTICE"] ?? ""}LICENSES/..LICENSE\n` }), "claude-code", {});
+    const issue = plan.issues.find(
+      (row) => row.rule === "packaging.licence-file-missing" && row.file === "LICENSES/..LICENSE",
+    );
+    expect(issue?.severity).toBe("error");
+    expect(plan.files.has("LICENSES/..LICENSE")).toBe(false);
+  });
+
+  test("validate and the build collect a citation from a shipped file outside the deny set", () => {
+    const licence = "Copyright notice\nPricing: $3/1M output\n";
+    const ctx = ctxFor({
+      "vendor/note.md": "// provenance/licenses/outside-deny.LICENSE\n",
+      "provenance/licenses/outside-deny.LICENSE": licence,
+      "skills/alpha/SKILL.md": `${BASE["skills/alpha/SKILL.md"] ?? ""}See [note](../../vendor/note.md).\n`,
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const flagged = checkContent(ctx).some(
+      (row) => row.rule === "content.denylist" && row.file === "provenance/licenses/outside-deny.LICENSE",
+    );
+    expect(plan.files.get("provenance/licenses/outside-deny.LICENSE")?.contents).toBe(licence);
+    expect(flagged).toBe(true);
+  });
+
+  test("a licence listed only under the not-bundled NOTICE heading stays out until a shipped file cites it", () => {
+    const held = "held licence text\n";
+    const notice = `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\nprovenance/licenses/held.LICENSE\n`;
+    const lock = [
+      "donors:",
+      "  - id: held",
+      "    path: .donors/held",
+      "    license_file: provenance/licenses/held.LICENSE",
+      "",
+    ].join("\n");
+    const idle = ctxFor({
+      NOTICE: notice,
+      "provenance/licenses/held.LICENSE": held,
+      "provenance/upstream.lock.yaml": lock,
+    });
+    const idlePlan = planBundle(idle, "claude-code", {});
+    expect(idlePlan.files.has("provenance/licenses/held.LICENSE")).toBe(false);
+    expect(idlePlan.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+    expect(
+      checkContent(idle).some((row) => row.severity === "error" && row.file === "provenance/licenses/held.LICENSE"),
+    ).toBe(false);
+
+    const cited = planBundle(
+      ctxFor({
+        NOTICE: notice,
+        "provenance/licenses/held.LICENSE": held,
+        "provenance/upstream.lock.yaml": lock,
+        "roles/implementer/ROLE.md": "// provenance/licenses/held.LICENSE\n\n# Implementer\n",
+      }),
+      "claude-code",
+      {},
+    );
+    expect(cited.files.get("provenance/licenses/held.LICENSE")?.contents).toBe(held);
+    expect(cited.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+  });
+
+  test("moving a shipped donor licence into the not-bundled NOTICE section fails", () => {
+    const licencePath = "provenance/licenses/mizchi_jev-lint.LICENSE";
+    const adaptationPath = "tools/hooks/semantic-lint.ts";
+    const adaptationSource = "jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:.jev-lint/hooks/pre-commit";
+    const notice = `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`;
+    const ctx = ctxFor({
+      NOTICE: notice,
+      [licencePath]: "MIT License\nCopyright (c) 2026 mizchi\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: jev-lint",
+        "    path: .donors/mizchi_jev-lint",
+        `    license_file: ${licencePath}`,
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(licencePath)).toBe(false);
+    const content = checkContent(ctx).find((row) => row.file === licencePath && row.severity === "error");
+    expect(content?.message).toContain(adaptationPath);
+    expect(content?.message).toContain(adaptationSource);
+  });
+
+  test("a missing upstream lock fails the held-licence guard", () => {
+    const ctx = ctxFor({}, ["provenance/upstream.lock.yaml"]);
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/upstream.lock.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/upstream.lock.yaml"),
+    ).toBe(true);
+  });
+
+  test("a malformed upstream lock fails the held-licence guard", () => {
+    const ctx = ctxFor({ "provenance/upstream.lock.yaml": "donors: [\n" });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/upstream.lock.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/upstream.lock.yaml"),
+    ).toBe(true);
+  });
+
+  test("an upstream lock that fails its schema fails the held-licence guard", () => {
+    const ctx = ctxFor({ "provenance/upstream.lock.yaml": "schema_version: 1\n" });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/upstream.lock.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/upstream.lock.yaml"),
+    ).toBe(true);
+  });
+
+  test("a missing adaptations file fails the held-licence guard", () => {
+    const ctx = ctxFor({}, ["provenance/adaptations.yaml"]);
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/adaptations.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/adaptations.yaml"),
+    ).toBe(true);
+  });
+
+  test("a malformed adaptations file fails the held-licence guard", () => {
+    const ctx = ctxFor({ "provenance/adaptations.yaml": "adaptations: [\n" });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/adaptations.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/adaptations.yaml"),
+    ).toBe(true);
+  });
+
+  test("an adaptations file that fails its schema fails the held-licence guard", () => {
+    const ctx = ctxFor({ "provenance/adaptations.yaml": "schema_version: 1\n" });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/adaptations.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/adaptations.yaml"),
+    ).toBe(true);
+  });
+
+  test("an adaptations row whose source is not a donor pin fails the held-licence guard", () => {
+    const ctx = ctxFor({
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        "  - path: skills/alpha/SKILL.md",
+        "    source: not-a-donor-pin",
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === "provenance/adaptations.yaml");
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("skills/alpha/SKILL.md");
+    expect(issue?.message).toContain("not-a-donor-pin");
+    expect(
+      checkContent(ctx).some((row) => row.severity === "error" && row.file === "provenance/adaptations.yaml"),
+    ).toBe(true);
+  });
+
+  test("a held NOTICE maps to the donor of its LICENSE after lock paths are normalised", () => {
+    const licencePath = "provenance/licenses/mizchi_jev-lint.LICENSE";
+    const noticePath = "provenance/licenses/mizchi_jev-lint.NOTICE";
+    const adaptationPath = "tools/hooks/semantic-lint.ts";
+    const adaptationSource = "jev-lint@af58a3bd20693f828ff6353e3543c0ab5bb7bad4:.jev-lint/hooks/pre-commit";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${noticePath}\n`,
+      [licencePath]: "MIT License\nCopyright (c) 2026 mizchi\n",
+      [noticePath]: "mizchi notice\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: jev-lint",
+        "    path: .donors/mizchi_jev-lint",
+        '    license_file: "./provenance\\\\licenses\\\\mizchi_jev-lint.LICENSE"',
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === noticePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(plan.files.has(noticePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === noticePath)).toBe(true);
+  });
+
+  test("a held licence with no lock donor fails the held-licence guard", () => {
+    const licencePath = "provenance/licenses/orphan-held.LICENSE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`,
+      [licencePath]: "MIT License\nCopyright (c) 2026 orphan\n",
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("upstream.lock.yaml");
+    expect(plan.files.has(licencePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
+
+  test("a lock license_file in a different case still maps a held licence", () => {
+    const licencePath = "provenance/licenses/orphan-held.LICENSE";
+    const lockPath = "provenance/licenses/ORPHAN-HELD.LICENSE";
+    const adaptationPath = "skills/alpha/SKILL.md";
+    const adaptationSource = "orphan-held@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:LICENSE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`,
+      [licencePath]: "MIT License\nCopyright (c) 2026 orphan\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: orphan-held",
+        "    path: .donors/orphan-held",
+        `    license_file: ${lockPath}`,
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(licencePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
+
+  test("a lock notice_file with a ./ prefix and different case still maps a held notice", () => {
+    const noticePath = "provenance/licenses/orphan-held.NOTICE";
+    const lockPath = "./provenance/licenses/ORPHAN-HELD.NOTICE";
+    const adaptationPath = "skills/alpha/SKILL.md";
+    const adaptationSource = "orphan-held@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:NOTICE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${noticePath}\n`,
+      [noticePath]: "orphan notice\n",
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: orphan-held",
+        "    path: .donors/orphan-held",
+        `    notice_file: "${lockPath}"`,
+        "",
+      ].join("\n"),
+      "provenance/adaptations.yaml": [
+        "adaptations:",
+        `  - path: ${adaptationPath}`,
+        `    source: ${adaptationSource}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === noticePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain(adaptationPath);
+    expect(issue?.message).toContain(adaptationSource);
+    expect(plan.files.has(noticePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === noticePath)).toBe(true);
+  });
+
+  test("a held licence listed under Not-bundled that is not on disk fails", () => {
+    const licencePath = "provenance/licenses/ghost-held.LICENSE";
+    const ctx = ctxFor({
+      NOTICE: `${BASE["NOTICE"] ?? ""}\n${NOT_BUNDLED_HEADING}\n\n${licencePath}\n`,
+      "provenance/upstream.lock.yaml": [
+        "donors:",
+        "  - id: ghost-held",
+        "    path: .donors/ghost-held",
+        `    license_file: ${licencePath}`,
+        "",
+      ].join("\n"),
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find((row) => row.file === licencePath);
+    expect(issue?.severity).toBe("error");
+    expect(issue?.message).toContain("not on disk");
+    expect(plan.files.has(licencePath)).toBe(false);
+    expect(checkContent(ctx).some((row) => row.severity === "error" && row.file === licencePath)).toBe(true);
+  });
+
+  test("makeTree can omit provenance files so a missing lock fails through the helper", () => {
+    const root = makeTree(
+      {
+        "catalog.yaml": CATALOG,
+        "package.json": packageJson(PACKAGE_JSON),
+        NOTICE: BASE["NOTICE"] ?? "",
+        LICENSE: BASE["LICENSE"] ?? "",
+      },
+      { provenance: false },
+    );
+    const { catalog } = loadCatalog(root);
+    if (catalog === null) throw new Error("fixture has no catalog");
+    const plan = planBundle({ root, catalog }, "claude-code", {});
+    expect(plan.issues.some((row) => row.severity === "error" && row.file === "provenance/upstream.lock.yaml")).toBe(
+      true,
+    );
+    expect(plan.issues.some((row) => row.severity === "error" && row.file === "provenance/adaptations.yaml")).toBe(
+      true,
+    );
   });
 });
 
