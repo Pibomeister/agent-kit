@@ -94,7 +94,14 @@ omitted (`isolated-worktree`, `isolated-review-context`, `independent-context`) 
 status on this host at all until a parse of the table went looking for them.
 
 What differs on this host is not which capabilities are supplied but which **restrictions** the
-host can enforce. None of the rows below is a `capability` value:
+host can enforce. None of the rows below is a `capability` value.
+
+The review-session guard (`templates/guard/review-session.policy.json`, for
+`ak guard hook pre-tool-use`) denies reads of Claude Code's session store. Codex guard support
+is deferred to CS-12 (`research/briefs/constitution-support-plan.md`), so on this host the
+transcript-on-disk channel stays uncovered: a review seat can still read the parent's session
+transcript, and no package hook denies it. The guard is feedback, not a security boundary on
+either host; a missing or crashing hook lets the call through.
 
 Native child sessions are useful fresh execution contexts but do not attest what the child saw or
 its excluded lineage. The inherited `independent-context: not-provided` status means host-only

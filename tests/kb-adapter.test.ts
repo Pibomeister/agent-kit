@@ -852,12 +852,13 @@ describe("publishArtifact, run-artifact placement", () => {
       invalidPublish = await preparePublish("malformed-review.json");
     });
 
-    afterAll(() => {
+    afterAll(async () => {
       for (const pending of [publish, invalidPublish]) {
         if (!pending) continue;
         if (!pending.sent) closeSync(pending.input);
       }
-      for (const child of children) if (child.exitCode === null) child.kill();
+      for (const child of children) if (child.exitCode === null) child.kill("SIGKILL");
+      await Promise.allSettled(children.map((child) => child.exited));
       if (bundledCliDir) rmSync(bundledCliDir, { recursive: true, force: true });
       if (fx?.scratch) rmSync(fx.scratch, { recursive: true, force: true });
     });

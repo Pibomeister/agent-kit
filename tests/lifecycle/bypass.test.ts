@@ -5,7 +5,7 @@
  * Every case is a temp repository with a linked worktree standing in for the worker's, a temp
  * supervisor home outside both, and a temp ledger handed to `main` in place of the account's.
  */
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -40,6 +40,19 @@ import { artifactHash } from "../../src/util/hash.ts";
 import { makeTree } from "../helpers/tree.ts";
 
 const REPO = join(import.meta.dir, "..", "..");
+
+type Spawned = ReturnType<typeof Bun.spawn>;
+const racers = new Set<Spawned>();
+
+async function reap(child: Spawned): Promise<void> {
+  child.kill("SIGKILL");
+  await child.exited.catch(() => undefined);
+  racers.delete(child);
+}
+
+afterAll(async () => {
+  await Promise.all([...racers].map(reap));
+});
 
 function git(cwd: string, ...args: string[]): string {
   const p = Bun.spawnSync(["git", ...args], {
@@ -1293,43 +1306,46 @@ describe("a forged grant cannot ride a genuine grant's hash", () => {
       [
         "bun",
         "-e",
-        `const fs=require("node:fs");const [l,a,b]=process.argv.slice(1);for(let i=0;;i++){const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l)}`,
+        `const fs=require("node:fs");const [l,a,b]=process.argv.slice(1);const parent=process.ppid;const deadline=Date.now()+8000;for(let i=0;;i++){if(i%256===0){if(Date.now()>deadline)process.exit(0);if(process.ppid!==parent)process.exit(0);try{process.kill(parent,0)}catch{process.exit(0)}}const t=l+".t";try{fs.unlinkSync(t)}catch{};fs.symlinkSync(i%2?a:b,t);fs.renameSync(t,l)}`,
         link,
         s.grantPath,
         forged,
       ],
       { stdout: "ignore", stderr: "ignore" },
     );
-    await Bun.sleep(100);
-    const later = new Date(Date.now() + 48 * 3_600_000);
-    const reasons = new Map<string, number>();
-    let passed = 0;
-    const until = Date.now() + 1500;
-    while (Date.now() < until) {
-      const r = checkBypass({
-        grant: link,
-        task: "T-1",
-        phase: "super-align",
-        cwd: s.worktree,
-        project: s.worktree,
-        ledger: s.ledger,
-        now: () => later,
-      });
-      if (r.ok) passed += 1;
-      else {
-        const kind = r.reason.includes("expired")
-          ? "expired"
-          : r.reason.includes("registered")
-            ? "not registered"
-            : "other";
-        reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
+    racers.add(flipper);
+    try {
+      await Bun.sleep(100);
+      const later = new Date(Date.now() + 48 * 3_600_000);
+      const reasons = new Map<string, number>();
+      let passed = 0;
+      const until = Date.now() + 1500;
+      while (Date.now() < until) {
+        const r = checkBypass({
+          grant: link,
+          task: "T-1",
+          phase: "super-align",
+          cwd: s.worktree,
+          project: s.worktree,
+          ledger: s.ledger,
+          now: () => later,
+        });
+        if (r.ok) passed += 1;
+        else {
+          const kind = r.reason.includes("expired")
+            ? "expired"
+            : r.reason.includes("registered")
+              ? "not registered"
+              : "other";
+          reasons.set(kind, (reasons.get(kind) ?? 0) + 1);
+        }
       }
+      expect(passed).toBe(0);
+      expect(reasons.get("expired") ?? 0).toBeGreaterThan(0);
+      expect(reasons.get("not registered") ?? 0).toBeGreaterThan(0);
+    } finally {
+      await reap(flipper);
     }
-    flipper.kill();
-    await flipper.exited;
-    expect(passed).toBe(0);
-    expect(reasons.get("expired") ?? 0).toBeGreaterThan(0);
-    expect(reasons.get("not registered") ?? 0).toBeGreaterThan(0);
   });
 });
 

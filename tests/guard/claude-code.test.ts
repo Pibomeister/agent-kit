@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { stringify } from "yaml";
 
 import { runCli } from "../../src/cli.ts";
@@ -618,13 +618,25 @@ describe("ak guard hook", () => {
   });
 });
 
+const hookChildren = new Set<ReturnType<typeof spawn>>();
+
+afterAll(() => {
+  for (const child of hookChildren) {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
+  hookChildren.clear();
+});
+
 /** The real entrypoint, stdin and all, as Claude Code runs it. */
 function spawnHook(): ReturnType<typeof spawn> {
-  return spawn(process.execPath, [join(ROOT, "src", "cli.ts"), "guard", ...HOOK], {
+  const child = spawn(process.execPath, [join(ROOT, "src", "cli.ts"), "guard", ...HOOK], {
     cwd: ROOT,
     env: { ...process.env, ...ENV },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  hookChildren.add(child);
+  child.once("close", () => hookChildren.delete(child));
+  return child;
 }
 
 function collect(stream: NodeJS.ReadableStream | null): () => string {
@@ -638,12 +650,16 @@ function collect(stream: NodeJS.ReadableStream | null): () => string {
 describe("the hook process", () => {
   test("reads the payload from stdin and answers a deny on stdout with exit 0", async () => {
     const child = spawnHook();
-    const stdout = collect(child.stdout);
-    const done = new Promise<number | null>((resolve) => child.on("close", (code) => resolve(code)));
-    child.stdin?.end(readFileSync(join(CASES, "bypass-git-dash-C-push-force.stdin")));
-    expect(await done).toBe(0);
-    expect(stdout()).toContain('"permissionDecision":"deny"');
-    expect(stdout()).toContain("destructive.git-push-force");
+    try {
+      const stdout = collect(child.stdout);
+      const done = new Promise<number | null>((resolve) => child.on("close", (code) => resolve(code)));
+      child.stdin?.end(readFileSync(join(CASES, "bypass-git-dash-C-push-force.stdin")));
+      expect(await done).toBe(0);
+      expect(stdout()).toContain('"permissionDecision":"deny"');
+      expect(stdout()).toContain("destructive.git-push-force");
+    } finally {
+      child.kill("SIGKILL");
+    }
   }, 30_000);
 
   test("a hook that has not answered when the host's timeout fires has printed nothing, so the call runs", async () => {
@@ -654,14 +670,20 @@ describe("the hook process", () => {
     expect(timeout?.expected.decision).toBe("fail-open");
     expect(existsSync(join(RECEIPTS, "claude-code-1-hook-failures.md"))).toBe(true);
     const child = spawnHook();
-    const stdout = collect(child.stdout);
-    const done = new Promise<NodeJS.Signals | null>((resolve) => child.on("close", (_code, signal) => resolve(signal)));
-    // Claude Code closes stdin once the payload is written; one that never closes stands for a hook still running.
-    child.stdin?.write(timeout?.stdin ?? "");
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-    child.kill("SIGTERM");
-    expect(await done).toBe("SIGTERM");
-    expect(stdout()).toBe("");
+    try {
+      const stdout = collect(child.stdout);
+      const done = new Promise<NodeJS.Signals | null>((resolve) =>
+        child.on("close", (_code, signal) => resolve(signal)),
+      );
+      // Claude Code closes stdin once the payload is written; one that never closes stands for a hook still running.
+      child.stdin?.write(timeout?.stdin ?? "");
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      child.kill("SIGTERM");
+      expect(await done).toBe("SIGTERM");
+      expect(stdout()).toBe("");
+    } finally {
+      child.kill("SIGKILL");
+    }
   }, 30_000);
 });
 

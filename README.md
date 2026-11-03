@@ -129,10 +129,19 @@ unreadable judged inputs, other payload events, PowerShell and caught guard erro
 A deny writes `hookSpecificOutput.permissionDecision: "deny"` and its reason to stdout with exit 0.
 An allow is silence with exit 0; the encoder never emits `allow` or `ask`. Unknown hook events or
 hosts exit 1 without a verdict. A missing or unknown `ak guard` verb prints usage and exits 2.
-The guard is feedback, not a security boundary: a missing, timed-out or crashing hook lets the call
-through on Claude Code ([host evidence](research/host-facts/2026-10-03/claude-code-1-hook-failures.md)).
-No hook is wired automatically. Codex support is deferred to CS-12; setup, the `guard` profile and
-block logging are deferred to CS-13 in the [implementation plan](research/briefs/constitution-support-plan.md).
+
+[`templates/guard/review-session.policy.json`](templates/guard/review-session.policy.json)
+lists Claude Code's session store (`**/.claude/projects/**`) under `secret_paths` so a review
+seat's read of the author's transcript is denied. It does not match the host's own memory
+files (`CLAUDE.md`, `~/.claude/memory/`, `~/.claude/settings.json` and other paths under
+`~/.claude/` outside `projects/`). Nothing wires this file automatically; pass it as
+`--policy`. See [`templates/guard/README.md`](templates/guard/README.md).
+
+The guard is feedback, not a security boundary. A missing, timed-out or crashing hook lets
+the call through on Claude Code ([host evidence](research/host-facts/2026-10-03/claude-code-1-hook-failures.md));
+the deny is a signal, not confinement. Codex guard support is deferred to CS-12, so on Codex
+the transcript-on-disk channel stays uncovered. Setup, the `guard` profile and block logging
+are deferred to CS-13 in the [implementation plan](research/briefs/constitution-support-plan.md).
 
 ## The spine: seven super skills
 

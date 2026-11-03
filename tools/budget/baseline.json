@@ -8,8 +8,8 @@
     },
     "bundle/claude-code:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 21946,
-      "tokens": 5462
+      "bytes": 22511,
+      "tokens": 5603
     },
     "bundle/claude-code:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
@@ -486,6 +486,11 @@
       "bytes": 19313,
       "tokens": 4828
     },
+    "bundle/claude-code:references/shared/templates/guard/review-session.policy.json": {
+      "file": "templates/guard/review-session.policy.json",
+      "bytes": 405,
+      "tokens": 102
+    },
     "bundle/claude-code:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
       "bytes": 3001,
@@ -858,8 +863,8 @@
     },
     "bundle/codex:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 21946,
-      "tokens": 5462
+      "bytes": 22511,
+      "tokens": 5603
     },
     "bundle/codex:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
@@ -1336,6 +1341,11 @@
       "bytes": 19313,
       "tokens": 4828
     },
+    "bundle/codex:references/shared/templates/guard/review-session.policy.json": {
+      "file": "templates/guard/review-session.policy.json",
+      "bytes": 405,
+      "tokens": 102
+    },
     "bundle/codex:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
       "bytes": 3001,
@@ -1708,8 +1718,8 @@
     },
     "bundle/droid:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 21946,
-      "tokens": 5462
+      "bytes": 22511,
+      "tokens": 5603
     },
     "bundle/droid:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
@@ -2186,6 +2196,11 @@
       "bytes": 19313,
       "tokens": 4828
     },
+    "bundle/droid:references/shared/templates/guard/review-session.policy.json": {
+      "file": "templates/guard/review-session.policy.json",
+      "bytes": 405,
+      "tokens": 102
+    },
     "bundle/droid:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
       "bytes": 3001,
@@ -2558,8 +2573,8 @@
     },
     "bundle/grok:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 21946,
-      "tokens": 5462
+      "bytes": 22511,
+      "tokens": 5603
     },
     "bundle/grok:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
@@ -3036,6 +3051,11 @@
       "bytes": 19313,
       "tokens": 4828
     },
+    "bundle/grok:references/shared/templates/guard/review-session.policy.json": {
+      "file": "templates/guard/review-session.policy.json",
+      "bytes": 405,
+      "tokens": 102
+    },
     "bundle/grok:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
       "bytes": 3001,
@@ -3408,8 +3428,8 @@
     },
     "bundle/kimi:references/shared/adapters/codex/CONTRACT.md": {
       "file": "adapters/codex/CONTRACT.md",
-      "bytes": 21946,
-      "tokens": 5462
+      "bytes": 22511,
+      "tokens": 5603
     },
     "bundle/kimi:references/shared/adapters/firstmate/CONTRACT.md": {
       "file": "adapters/firstmate/CONTRACT.md",
@@ -3885,6 +3905,11 @@
       "file": "schemas/verification.schema.json",
       "bytes": 19313,
       "tokens": 4828
+    },
+    "bundle/kimi:references/shared/templates/guard/review-session.policy.json": {
+      "file": "templates/guard/review-session.policy.json",
+      "bytes": 405,
+      "tokens": 102
     },
     "bundle/kimi:references/shared/templates/trail-audit.example.json": {
       "file": "templates/trail-audit.example.json",
