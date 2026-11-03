@@ -363,7 +363,7 @@
           "items": { "$ref": "common.schema.json#/$defs/artifact_ref" }
         },
         "paraphrase": {
-          "description": "The comprehension seat's restatement of the document under two headings, stored with this lane's raw_output hash so synthesis cannot replace it. Required only when the lane role is doc-review/comprehension and the lane is covered. Other lanes omit it. Not yet backed by live probe evidence (phase 1a, GS-004e).",
+          "description": "The comprehension seat's restatement of the document under two headings, stored with this lane's raw_output hash so synthesis cannot replace it. Required only when the lane role is doc-review/comprehension and the lane is covered. Other lanes omit it. Not yet backed by live probe evidence (phase 1b, GS-004g).",
           "type": "object",
           "additionalProperties": false,
           "required": ["proposes", "existing_system"],
@@ -408,7 +408,7 @@
           }
         },
         {
-          "description": "A covered comprehension lane carries both paraphrase headings and the hash of the stored raw output. Other lanes stay valid without paraphrase, so existing review documents remain valid. Not yet backed by live probe evidence (phase 1a, GS-004e).",
+          "description": "A covered comprehension lane carries both paraphrase headings and the hash of the stored raw output. Other lanes stay valid without paraphrase, so existing review documents remain valid. Not yet backed by live probe evidence (phase 1b, GS-004g).",
           "if": {
             "properties": {
               "role": { "const": "doc-review/comprehension" },
