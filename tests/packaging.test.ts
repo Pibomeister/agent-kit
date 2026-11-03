@@ -44,6 +44,7 @@ import {
   loadInstallConfig,
 } from "../src/packaging/install.ts";
 import { fileHeader } from "../src/packaging/licences.ts";
+import { checkContent } from "../src/validation/content.ts";
 import {
   BUILD_RECORD_FILE,
   GATE_FILE,
@@ -684,6 +685,55 @@ describe("the licence files the distribution is obliged to carry", () => {
     const plan = planBundle(ctxFor({}, ["LICENSE"]), "claude-code", {});
     const missing = plan.issues.filter((i) => i.rule === "packaging.licence-file-missing");
     expect(missing.map((i) => i.file)).toEqual(["LICENSE"]);
+  });
+
+  test("a licence cited only from the gate source header is demanded", () => {
+    const text = "gate header licence\n";
+    const ctx = gateFixture(
+      readFileSync(join(REPO, "schemas/verification.schema.json"), "utf8"),
+      "// provenance/licenses/from-gate.LICENSE\nconst BUNDLED_ADAPTER_IDS: readonly string[] = [];\nconsole.log('gate');\n",
+    );
+    writeFileSync(join(ctx.root, "provenance/licenses/from-gate.LICENSE"), text);
+    const plan = planBundle(ctx, "claude-code", {});
+    expect(plan.files.get("provenance/licenses/from-gate.LICENSE")?.contents).toBe(text);
+    expect(plan.issues.filter((issue) => issue.rule === "packaging.licence-file-missing")).toEqual([]);
+  }, 60_000);
+
+  test("a provenance licence file that no citation demands fails the build and validate", () => {
+    const ctx = ctxFor({ "provenance/licenses/orphan.LICENSE": "orphan text\n" });
+    const plan = planBundle(ctx, "claude-code", {});
+    const issue = plan.issues.find(
+      (row) => row.rule === "packaging.licence-file-missing" && row.file === "provenance/licenses/orphan.LICENSE",
+    );
+    expect(issue?.severity).toBe("error");
+    expect(plan.files.has("provenance/licenses/orphan.LICENSE")).toBe(false);
+    expect(
+      checkContent(ctx).some(
+        (row) => row.severity === "error" && row.file === "provenance/licenses/orphan.LICENSE",
+      ),
+    ).toBe(true);
+  });
+
+  test("a package name that starts with a dot is rejected", () => {
+    const plan = planBundle(ctxFor({ NOTICE: `${BASE["NOTICE"] ?? ""}LICENSES/..LICENSE\n` }), "claude-code", {});
+    const issue = plan.issues.find((row) => row.rule === "packaging.licence-file-missing" && row.file === "LICENSES/..LICENSE");
+    expect(issue?.severity).toBe("error");
+    expect(plan.files.has("LICENSES/..LICENSE")).toBe(false);
+  });
+
+  test("validate and the build collect a citation from a shipped file outside the deny set", () => {
+    const licence = "Copyright notice\nPricing: $3/1M output\n";
+    const ctx = ctxFor({
+      "vendor/note.md": "// provenance/licenses/outside-deny.LICENSE\n",
+      "provenance/licenses/outside-deny.LICENSE": licence,
+      "skills/alpha/SKILL.md": `${BASE["skills/alpha/SKILL.md"] ?? ""}See [note](../../vendor/note.md).\n`,
+    });
+    const plan = planBundle(ctx, "claude-code", {});
+    const flagged = checkContent(ctx).some(
+      (row) => row.rule === "content.denylist" && row.file === "provenance/licenses/outside-deny.LICENSE",
+    );
+    expect(plan.files.get("provenance/licenses/outside-deny.LICENSE")?.contents).toBe(licence);
+    expect(flagged).toBe(true);
   });
 });
 
