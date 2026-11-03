@@ -1,7 +1,7 @@
 # Execution contract for doc-review (schemas/skill.schema.json).
 # Prose mirror: skills/doc-review/SKILL.md. The two are one statement in two forms.
 id: doc-review
-version: 0.1.0
+version: 0.2.0
 kind: standalone
 invocation: M
 summary: >-
@@ -22,7 +22,7 @@ non_triggers:
   - Deciding what the document should say; an unsettled direction goes to a human-started
     alignment run.
   - A document that has not been drafted; an outline is not a draft.
-  - A third fix round on forks that keep bouncing.
+  - A third fix round on forks that keep bouncing, with no recorded human extension.
 
 prerequisites:
   - kind: artifact
@@ -120,7 +120,9 @@ hard_gates:
     another seat or by synthesis.
   - A previously rejected finding is re-raised only on changed evidence; an unchanged document
     quote does not establish unchanged evidence.
-  - At most two fix rounds; the third does not run and the open forks are returned instead.
+  - At most two fix rounds; the third request stops and the open forks are returned. A cycle a
+    human authorizes after the cap is recorded in fix_cycles.extensions as authorized by human
+    (operator-attested) and reviewed as a delta; an unrecorded one is refused.
   - A security-lens finding is never dropped by the confidence gate; it stays visible and is
     adjudicated.
 
@@ -130,7 +132,8 @@ stop_conditions:
     blocked verdict is a completed review with a blocking result, not an incomplete one.
   - needs-input when there is no document, its identity cannot be computed, or a later round was
     started without the prior round's findings.
-  - cap-reached when two fix rounds are used and a Decision is still open.
+  - cap-reached when two fix rounds are used, a Decision is still open, and no recorded human
+    extension authorizes another.
   - cancelled when the caller ended the run before the panel returned.
   - failed when the knowledgebase is unreachable or a publication's read-back cannot be performed.
 
@@ -140,10 +143,10 @@ failure_outcomes:
       findings.
     next_permitted_action: Return the blocking item; do not review a document the run cannot name.
   - status: cap-reached
-    meaning: Two fix rounds are spent and a fork is still open.
+    meaning: Two fix rounds are spent and a fork is still open, with no recorded human extension.
     next_permitted_action: >-
-      Return the open forks and the review as it stands; a third round is a human's call, not this
-      skill's.
+      Return the open forks and the review as it stands. A cycle a human authorizes after the cap
+      is recorded in fix_cycles.extensions and reviewed as a delta.
   - status: cancelled
     meaning: The caller ended the run before the panel returned.
     next_permitted_action: Publish nothing and apply no correction.
@@ -306,11 +309,11 @@ tests:
   - id: third-round-does-not-run
     kind: adversarial
     given: >-
-      Two fix rounds are spent, one fork is still open, and the caller asks for one more round on
-      the grounds that the last exchange nearly settled it.
+      Two fix rounds are spent, one fork is still open, no human extension is recorded, and the
+      caller asks for one more round on the grounds that the last exchange nearly settled it.
     expect: >-
       The gate holds. The skill returns the open fork and the review as it stands, states that the
-      cap is two rounds, and does not run a third.
+      cap is two rounds, and does not run a third without a recorded human extension.
 
   - id: interrupted-publish-resumes-on-the-idempotency-key
     kind: resumability
