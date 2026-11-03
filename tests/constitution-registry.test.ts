@@ -165,6 +165,31 @@ describe("a registry the record names", () => {
     expect(issues[0]?.message).toMatch(/has no heading '9\. Nowhere'/);
   });
 
+  test("two sections with the same heading title refuse rather than silently merge", () => {
+    const issues = brokenRegistry((_articles, dir) => {
+      const source = join(dir, "..", "source", "constitution.md");
+      writeFileSync(source, `${readFileSync(source, "utf8")}\n## 1. Safety\nA second safety heading.\n`);
+    });
+    expect(errorRules(issues)).toContain("constitution.source-span-unresolved");
+    expect(issues.some((i) => /cannot resolve it uniquely/.test(i.message))).toBe(true);
+  });
+
+  test("a section title that differs only in punctuation does not resolve", () => {
+    const issues = brokenRegistry((articles) => {
+      articleOf(articles, "SAFE-002").setIn(["source", "section"], "1 safety");
+    });
+    expect(errorRules(issues)).toEqual(["constitution.source-span-unresolved"]);
+    expect(issues[0]?.message).toMatch(/has no heading '1 safety'/);
+  });
+
+  test("a heading-like line inside a fenced sample does not make the real heading ambiguous", () => {
+    const issues = brokenRegistry((_articles, dir) => {
+      const source = join(dir, "..", "source", "constitution.md");
+      writeFileSync(source, `${readFileSync(source, "utf8")}\n\`\`\`\n## 1. Safety\nA sample.\n\`\`\`\n`);
+    });
+    expect(issues.filter((i) => i.rule === "constitution.source-span-unresolved")).toEqual([]);
+  });
+
   test("an article in a file not named by its id fails constitution.article-file-name", () => {
     const issues = brokenRegistry((articles, dir) => {
       articles.delete("CODE-001");

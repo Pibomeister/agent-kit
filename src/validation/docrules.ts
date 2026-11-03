@@ -1070,7 +1070,16 @@ function reviewRules(rc: RuleContext): void {
   }
 
   const RULE_UNAVAILABLE = "review.unavailable-required-lane-blocks-approval";
-  const blocked = lanes.filter((l) => l !== null && l["required"] === true && str(l["state"]) === "unavailable");
+  const TIMEOUT_REASON = /\b(timeout|timed\s*out)\b/i;
+  const blocked = lanes.filter((l) => {
+    if (l === null || l["required"] !== true) return false;
+    const state = str(l["state"]);
+    if (state === "unavailable") return true;
+    if (state !== "covered" && state !== "skipped") return false;
+    const raw = obj(l["raw_output"]);
+    if (raw !== null && (str(raw["id"]) !== null || str(raw["hash"]) !== null)) return false;
+    return TIMEOUT_REASON.test(str(l["reason"]) ?? "");
+  });
   if (blocked.length > 0 && verdict === "approved") {
     fail(
       rc,
