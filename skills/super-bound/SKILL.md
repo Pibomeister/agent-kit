@@ -270,8 +270,8 @@ performed is `failed`, never complete.
 
 - `complete` — the specification is approved at its hash, every acceptance criterion is covered by a
   ticket, every implementation ticket carries the three evidence blocks, every on-mode
-  implementation ticket cites a finished cold read, and every published artifact's read-back
-  matched what was sent.
+  implementation ticket cites a finished cold read, or an unavailable read with its reason, and
+  every published artifact's read-back matched what was sent.
 - `needs-input` — a start by neither the typed command nor a validated grant, which returns the
   command to type and nothing else; no approved alignment result, an approval bound to a different
   revision, missing project guidance or grant at `bound.run`, a failed scorer, an unresolved

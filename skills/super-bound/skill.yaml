@@ -176,8 +176,8 @@ hard_gates:
 stop_conditions:
   - complete when the specification is approved at its hash, every acceptance criterion is covered
     by a ticket, every implementation ticket carries its three evidence blocks, every on-mode
-    implementation ticket cites a finished cold read, and every published artifact's read-back
-    matched what was sent.
+    implementation ticket cites a finished cold read, or an unavailable read with its reason, and
+    every published artifact's read-back matched what was sent.
   - needs-input when the run was started by neither the typed command nor a validated grant, there
     is no approved alignment result, the approval binds to a different revision, project guidance
     or a grant is missing, the scorer fails, readiness remains vague, an assumption remains open,
