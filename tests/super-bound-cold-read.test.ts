@@ -51,15 +51,19 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
   test("the source skill and the packaged skill both dispatch only in shadow or on", () => {
     const packed = packagedBody();
     for (const body of [skill, packed]) {
-      expect(body).toContain("review.cold_read");
-      expect(body).toContain("Off keeps the author type-check");
-      expect(body).toContain("Shadow and on dispatch one cold reader");
-      expect(body).toContain("text-only single-slice light route skips the dispatch");
-      expect(body).toContain("off and shadow do not change the class or the scorer");
+      const text = body.replace(/\s+/g, " ");
+      expect(text).toContain("review.cold_read");
+      expect(text).toContain("Off keeps the author type-check");
+      expect(text).toContain("Shadow and on dispatch one cold reader");
+      expect(text).toContain("text-only single-slice light route skips the dispatch");
+      expect(text).toContain("reshape it, or reclassify it");
+      expect(text).toContain("cannot be published until GS-004j");
+      expect(text).toContain("Off and shadow do not change the class or the scorer");
+      expect(text).not.toContain("green-to-yellow-agent");
     }
   });
 
-  test("the delegation note states claims, readiness, rewrite cap, shadow, and the on-mode raise", () => {
+  test("the delegation note states claims, readiness, rewrite cap, shadow, and unavailable handling", () => {
     const note = reference.replace(/\s+/g, " ");
     expect(note).toContain("## Independent cold read of a ticket");
     expect(note).toContain("labelled `exists` or `proposed`");
@@ -67,8 +71,9 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(note).toContain("at most twice per ticket");
     expect(note).toContain("Do not reclassify the ticket");
     expect(note).toContain("Do not add the read to spec-factor or readiness evidence");
-    expect(note).toContain("seed `yellow-agent`");
-    expect(note).toContain("Off and shadow do not seed from the read");
+    expect(note).not.toContain("seed `yellow-agent`");
+    expect(note).toContain("is cited and published");
+    expect(note).toContain("It does not change the class");
     expect(note).toContain("Step 13 skips the independent cold read on this route");
     expect(note).toContain("(phase 1b, GS-004i)");
   });

@@ -283,7 +283,4 @@ the class. Keep the author's type-check as the zero-context gate.
 
 **On.** Cite the stored record from `cold_read_ref` as evidence for the `spec` factor and the
 readiness criteria, then re-run the scorer command from step 10. An unavailable read, with the
-reason, still lets the ticket be published. If that ticket's class is `green`, seed
-`yellow-agent` and re-run the scorer. That seed is project guidance raising the class, not a
-hand-derived class (ruling `delegation-class-is-authority-not-finding`). Off and shadow do not
-seed from the read.
+reason, is cited and published. It does not change the class.

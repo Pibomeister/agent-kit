@@ -148,11 +148,14 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
 13. Read `review.cold_read` from the indexed project record. A missing review object, missing key,
     unknown value, or unindexed project is off. Off keeps the author type-check. An implementer
     opening the ticket with an empty context window who still cannot do it is not holding an
-    implementation ticket. A ticket on the text-only single-slice light route skips the dispatch.
-    Shadow and on dispatch one cold reader per remaining implementation ticket, in parallel, each
-    in its own context. Follow [the delegation reference](../../references/delegation/REFERENCE.md)
-    under "Independent cold read of a ticket" for the packet, claims, readiness observations,
-    rewrite cap, shadow print, citation, unavailable handling and the green-to-yellow-agent raise.
+    implementation ticket: reshape it, or reclassify it `type: decision` and send it back. Off and
+    shadow keep that action; on uses the independent read. A ticket on the text-only single-slice
+    light route skips the dispatch. In on mode the GS-004g validator still requires `cold_read_ref`,
+    so a light-route implementation ticket cannot be published until GS-004j. Shadow and on dispatch
+    one cold reader per remaining implementation ticket, in parallel, each in its own context.
+    Follow [the delegation reference](../../references/delegation/REFERENCE.md) under "Independent
+    cold read of a ticket" for the packet, claims, readiness observations, rewrite cap, shadow
+    print, citation and unavailable handling.
 14. Self-review the mechanical checks, then publish: every acceptance criterion is covered by a
     ticket, no ticket carries an unfinished-content marker or a "same as the earlier ticket"
     instruction, and each ticket's produced names and types match the next one's consumed names
@@ -164,10 +167,9 @@ a ticket whose class makes a human the author keeps that class. Record the `boun
 Gate: a decision ticket is never emitted as executable work. A ticket that fails the zero-context
 check is reclassified, never shipped as an implementation ticket because the deadline is close.
 When `review.cold_read` is on, that check is the independent cold read, not the author's reread.
-Off and shadow keep the author type-check as the outcome gate. An unavailable read when on raises
-a green class to `yellow-agent` through project guidance (ruling
-`delegation-class-is-authority-not-finding`); off and shadow do not change the class or the scorer
-inputs.
+Off and shadow keep the author type-check as the outcome gate. An unavailable read when on is
+cited and published; it does not change the class. Off and shadow do not change the class or the
+scorer inputs.
 
 Gate: every ticket carries exact scorer output, all six named `readiness` criteria plus
 `vague_terms`, and `assumptions` items using `text` and `resolved_as`. Vagueness, an open assumption

@@ -134,7 +134,7 @@ hard_gates:
   - A decision ticket is never emitted as executable work; a ticket that fails the zero-context
     check is reclassified, not shipped. When review.cold_read is on, that check is the independent
     cold read. Off and shadow keep the author type-check as the outcome gate. An unavailable read
-    when on raises green to yellow-agent through project guidance; off and shadow do not change
+    when on is cited and published; it does not change the class. Off and shadow do not change
     class or scorer inputs.
   - Every ticket carries all six named readiness criteria plus vague_terms, assumptions items using
     text and resolved_as, and exact successful ak delegation output; missing evidence stops after
