@@ -236,6 +236,16 @@
         }
       }
     },
+    "cold_read_ref": {
+      "description": "Hash-bound pointer to the independent cold-read artifact for this implementation ticket. Required only when the project record's review.cold_read is on, the ticket type is implementation, and the ticket is not on the text-only single-slice light route. Off, shadow, a missing review object, a decision ticket, and a light-route ticket do not require it. A ticket is on the light route when an approval note records that the light route was taken, which is the existing approval surface that procedure already fills; no ticket field is added for the claim. Not yet backed by live probe evidence (phase 1a, GS-004e).",
+      "allOf": [
+        { "$ref": "common.schema.json#/$defs/artifact_ref" },
+        {
+          "properties": { "schema": { "const": "cold-read" } }
+        }
+      ],
+      "x-validator-rule": "ticket.cold-read-ref-required-when-on"
+    },
     "decision": {
       "description": "Present only on decision tickets.",
       "type": "object",

@@ -1707,3 +1707,159 @@ describe("verification rules", () => {
     expect(rulesOf(run(receipt, [rev]))).toContain("verification.receipt-stale-when-revision-differs-from-head");
   });
 });
+
+// ---------------------------------------------------------- EGM 1b review ---
+
+const HASH = `sha256:${"a".repeat(64)}`;
+const RULE_COLD_REF = "ticket.cold-read-ref-required-when-on";
+const RULE_PARAPHRASE = "review.comprehension-paraphrase-stored-by-hash";
+const RULE_PROPOSED = "cold-read.proposed-absent-is-not-a-finding";
+
+function ticket(extra: Doc = {}): Doc {
+  return envelope("ticket", "ticket-1", {
+    type: "implementation",
+    ...extra,
+  });
+}
+
+function lightRouteApproval(): Doc {
+  return {
+    artifact_hash: HASH,
+    by: "human",
+    authority: "explicit",
+    at: "2026-09-19T00:00:00Z",
+    note: "The light route was taken. Per-path claim: README.md changes no required behaviour.",
+  };
+}
+
+function coveredComprehension(extra: Doc = {}): Doc {
+  return {
+    role: "doc-review/comprehension",
+    required: true,
+    state: "covered",
+    verdict: "approve",
+    seat: { filled_by: "reader-a", independent_of_author: true },
+    paraphrase: {
+      proposes: "The loader reads every configured directory.",
+      existing_system: "The loader reads only the first configured directory.",
+    },
+    raw_output: { id: "raw-comprehension", hash: HASH },
+    ...extra,
+  };
+}
+
+function reviewLanes(doc: Doc): unknown[] {
+  const lanes = doc["lanes"];
+  return Array.isArray(lanes) ? lanes : [];
+}
+
+function coldRead(extra: Doc = {}): Doc {
+  return envelope("cold-read", "cold-read-1", {
+    status: "complete",
+    ticket: { id: "ticket-1", schema: "ticket", hash: HASH },
+    paraphrase: "Load every configured artifact directory.",
+    decisions: [],
+    unresolved_terms: [],
+    claims: [
+      { id: "existing-loader", target: "src/loader/artifacts.ts", kind: "exists", observed: "present" },
+      { id: "new-walk", target: "src/loader/walk.ts", kind: "proposed", observed: "absent" },
+    ],
+    readiness: {
+      acceptance_criteria: { found: true, where: "AC-1" },
+      interfaces: { found: true, where: "loadArtifacts" },
+      examples: { found: false },
+      non_goals: { found: true, where: "ticket non_goals" },
+      existing_pattern: { found: true, where: "src/loader/artifacts.ts" },
+      verification_path: { found: true, where: "loader-suite" },
+    },
+    state: "covered",
+    ...extra,
+  });
+}
+
+describe("ticket.cold-read-ref-required-when-on", () => {
+  test("a missing review object equals off and does not require cold_read_ref", () => {
+    expect(rulesOf(run(ticket(), [project()]))).not.toContain(RULE_COLD_REF);
+  });
+
+  test.each(["off", "shadow"] as const)("review.cold_read %s does not require cold_read_ref", (mode) => {
+    expect(rulesOf(run(ticket(), [project({ review: { cold_read: mode } })]))).not.toContain(RULE_COLD_REF);
+  });
+
+  test("an implementation ticket requires cold_read_ref only when review.cold_read is on", () => {
+    expect(rulesOf(run(ticket(), [project({ review: { cold_read: "on" } })]))).toContain(RULE_COLD_REF);
+    expect(
+      rulesOf(
+        run(ticket({ cold_read_ref: { id: "cold-read-1", schema: "cold-read", hash: HASH } }), [
+          project({ review: { cold_read: "on" } }),
+        ]),
+      ),
+    ).not.toContain(RULE_COLD_REF);
+  });
+
+  test("a decision ticket does not require cold_read_ref when review.cold_read is on", () => {
+    expect(rulesOf(run(ticket({ type: "decision" }), [project({ review: { cold_read: "on" } })]))).not.toContain(
+      RULE_COLD_REF,
+    );
+  });
+
+  test("a light-route implementation ticket does not require cold_read_ref when on", () => {
+    expect(
+      rulesOf(run(ticket({ approvals: [lightRouteApproval()] }), [project({ review: { cold_read: "on" } })])),
+    ).not.toContain(RULE_COLD_REF);
+  });
+
+  test("a ticket with no project document in the index is treated as off", () => {
+    expect(rulesOf(run(ticket()))).not.toContain(RULE_COLD_REF);
+  });
+});
+
+describe("review.comprehension-paraphrase-stored-by-hash", () => {
+  test("a covered comprehension lane without paraphrase or raw_output.hash is refused", () => {
+    const lanes = reviewLanes(review());
+    const missing = review({
+      lanes: [
+        lanes[0],
+        lanes[1],
+        { role: "doc-review/comprehension", required: true, state: "covered", verdict: "approve" },
+      ],
+    });
+    expect(rulesOf(run(missing))).toContain(RULE_PARAPHRASE);
+  });
+
+  test("a covered comprehension lane stores paraphrase by hash", () => {
+    const lanes = reviewLanes(review());
+    const doc = review({
+      lanes: [lanes[0], lanes[1], coveredComprehension()],
+    });
+    expect(rulesOf(run(doc)).filter((r) => r.startsWith("review."))).toEqual([]);
+  });
+
+  test("an existing review without a comprehension lane stays valid", () => {
+    expect(rulesOf(run(review())).filter((r) => r.startsWith("review."))).toEqual([]);
+  });
+});
+
+describe("cold-read.proposed-absent-is-not-a-finding", () => {
+  test("a proposed claim that is absent is not a finding", () => {
+    expect(rulesOf(run(coldRead())).filter((r) => r.startsWith("cold-read."))).toEqual([]);
+  });
+
+  test("recording proposed-absent as an absence decision is refused", () => {
+    const doc = coldRead({
+      decisions: [{ text: "walk.ts is missing", claim: "new-walk", kind: "absent" }],
+    });
+    expect(rulesOf(run(doc))).toContain(RULE_PROPOSED);
+  });
+
+  test("an exists claim that is absent may be recorded as a decision", () => {
+    const doc = coldRead({
+      claims: [
+        { id: "existing-helper", target: "src/loader/missing.ts", kind: "exists", observed: "absent" },
+        { id: "new-walk", target: "src/loader/walk.ts", kind: "proposed", observed: "absent" },
+      ],
+      decisions: [{ text: "the named helper is not in the tree", claim: "existing-helper", kind: "absent" }],
+    });
+    expect(rulesOf(run(doc))).not.toContain(RULE_PROPOSED);
+  });
+});

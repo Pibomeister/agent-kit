@@ -353,8 +353,8 @@
     },
     "bundle/claude-code:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24329,
-      "tokens": 6082
+      "bytes": 24350,
+      "tokens": 6087
     },
     "bundle/claude-code:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -428,13 +428,13 @@
     },
     "bundle/claude-code:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 21189,
-      "tokens": 5297
+      "bytes": 22819,
+      "tokens": 5705
     },
     "bundle/claude-code:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 22641,
-      "tokens": 5661
+      "bytes": 24473,
+      "tokens": 6119
     },
     "bundle/claude-code:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -453,8 +453,8 @@
     },
     "bundle/claude-code:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 13480,
-      "tokens": 3370
+      "bytes": 14386,
+      "tokens": 3597
     },
     "bundle/claude-code:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -1208,8 +1208,8 @@
     },
     "bundle/codex:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24329,
-      "tokens": 6082
+      "bytes": 24350,
+      "tokens": 6087
     },
     "bundle/codex:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -1283,13 +1283,13 @@
     },
     "bundle/codex:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 21189,
-      "tokens": 5297
+      "bytes": 22819,
+      "tokens": 5705
     },
     "bundle/codex:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 22641,
-      "tokens": 5661
+      "bytes": 24473,
+      "tokens": 6119
     },
     "bundle/codex:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -1308,8 +1308,8 @@
     },
     "bundle/codex:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 13480,
-      "tokens": 3370
+      "bytes": 14386,
+      "tokens": 3597
     },
     "bundle/codex:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -2063,8 +2063,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24329,
-      "tokens": 6082
+      "bytes": 24350,
+      "tokens": 6087
     },
     "bundle/cursor:.cursor/references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -2138,13 +2138,13 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 21189,
-      "tokens": 5297
+      "bytes": 22819,
+      "tokens": 5705
     },
     "bundle/cursor:.cursor/references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 22641,
-      "tokens": 5661
+      "bytes": 24473,
+      "tokens": 6119
     },
     "bundle/cursor:.cursor/references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -2163,8 +2163,8 @@
     },
     "bundle/cursor:.cursor/references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 13480,
-      "tokens": 3370
+      "bytes": 14386,
+      "tokens": 3597
     },
     "bundle/cursor:.cursor/references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -2918,8 +2918,8 @@
     },
     "bundle/droid:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24329,
-      "tokens": 6082
+      "bytes": 24350,
+      "tokens": 6087
     },
     "bundle/droid:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -2993,13 +2993,13 @@
     },
     "bundle/droid:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 21189,
-      "tokens": 5297
+      "bytes": 22819,
+      "tokens": 5705
     },
     "bundle/droid:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 22641,
-      "tokens": 5661
+      "bytes": 24473,
+      "tokens": 6119
     },
     "bundle/droid:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -3018,8 +3018,8 @@
     },
     "bundle/droid:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 13480,
-      "tokens": 3370
+      "bytes": 14386,
+      "tokens": 3597
     },
     "bundle/droid:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -3773,8 +3773,8 @@
     },
     "bundle/grok:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24329,
-      "tokens": 6082
+      "bytes": 24350,
+      "tokens": 6087
     },
     "bundle/grok:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -3848,13 +3848,13 @@
     },
     "bundle/grok:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 21189,
-      "tokens": 5297
+      "bytes": 22819,
+      "tokens": 5705
     },
     "bundle/grok:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 22641,
-      "tokens": 5661
+      "bytes": 24473,
+      "tokens": 6119
     },
     "bundle/grok:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -3873,8 +3873,8 @@
     },
     "bundle/grok:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 13480,
-      "tokens": 3370
+      "bytes": 14386,
+      "tokens": 3597
     },
     "bundle/grok:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
@@ -4628,8 +4628,8 @@
     },
     "bundle/kimi:references/shared/schemas/common.schema.json": {
       "file": "schemas/common.schema.json",
-      "bytes": 24329,
-      "tokens": 6082
+      "bytes": 24350,
+      "tokens": 6087
     },
     "bundle/kimi:references/shared/schemas/decision.schema.json": {
       "file": "schemas/decision.schema.json",
@@ -4703,13 +4703,13 @@
     },
     "bundle/kimi:references/shared/schemas/project.schema.json": {
       "file": "schemas/project.schema.json",
-      "bytes": 21189,
-      "tokens": 5297
+      "bytes": 22819,
+      "tokens": 5705
     },
     "bundle/kimi:references/shared/schemas/review.schema.json": {
       "file": "schemas/review.schema.json",
-      "bytes": 22641,
-      "tokens": 5661
+      "bytes": 24473,
+      "tokens": 6119
     },
     "bundle/kimi:references/shared/schemas/run-ledger.schema.json": {
       "file": "schemas/run-ledger.schema.json",
@@ -4728,8 +4728,8 @@
     },
     "bundle/kimi:references/shared/schemas/ticket.schema.json": {
       "file": "schemas/ticket.schema.json",
-      "bytes": 13480,
-      "tokens": 3370
+      "bytes": 14386,
+      "tokens": 3597
     },
     "bundle/kimi:references/shared/schemas/tracker-backends/linear-linearis.schema.json": {
       "file": "schemas/tracker-backends/linear-linearis.schema.json",
