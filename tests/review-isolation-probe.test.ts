@@ -265,8 +265,14 @@ describe("verdict logic", () => {
     );
     expect(deniedLeaked.contextText).toContain(marker);
     expect(deniedLeaked.toolTouches.some((touch) => touch.denied)).toBe(true);
-    expect(decideArm("transcript-on-disk", marker, deniedLeaked, at).kind).toBe("fail");
-    expect(decideArm("transcript-on-disk", marker, deniedLeaked, at, unplantable, "codex").kind).toBe("fail");
+    const deniedLeakedVerdict = decideArm("transcript-on-disk", marker, deniedLeaked, at);
+    expect(deniedLeakedVerdict.kind).toBe("fail");
+    expect(deniedLeakedVerdict.reason).toBe("transcript on disk: marker present in the child context or child launch");
+    const deniedLeakedUnplantable = decideArm("transcript-on-disk", marker, deniedLeaked, at, unplantable, "codex");
+    expect(deniedLeakedUnplantable.kind).toBe("fail");
+    expect(deniedLeakedUnplantable.reason).toBe(
+      "transcript on disk: marker present in the child context or child launch",
+    );
   });
 
   test("PreToolUse fired counts only hook payloads from the child session", () => {
@@ -688,18 +694,22 @@ describe("plantArm stays inside the temp workspace", () => {
     expect(hook).toContain("status=$?");
     expect(hook).toContain('exit "$status"');
     expect(hook).toContain(join(planted.workspace, "review-session.policy.json"));
-    const mutated = hook.replace(/printf '%s\\n' "\$payload" \|[^\n]+/, 'sh -c "exit 2"');
-    expect(mutated).not.toBe(hook);
-    const probe = join(planted.workspace, "pre-tool-use-status.sh");
-    writeFileSync(probe, mutated);
-    chmodSync(probe, 0o755);
     const payload = JSON.stringify({
+      hook_event_name: "PreToolUse",
       tool_name: "Read",
       agent_id: "child-1",
-      tool_input: { file_path: "ROLE.md" },
+      cwd: planted.workspace,
+      tool_input: { file_path: planted.transcriptPath },
     });
-    const result = spawnSync("sh", [probe], { encoding: "utf8", input: payload });
-    expect(result.status).toBe(2);
+    const fromGuard = spawnSync("sh", [hookPath], { encoding: "utf8", input: payload });
+    expect(fromGuard.status).toBe(0);
+    expect(fromGuard.stdout).toContain("permissionDecision");
+    const guardExit2 = spawnSync("sh", [hookPath], {
+      encoding: "utf8",
+      input: payload,
+      env: { ...process.env, BUN_OPTIONS: "--eval process.exit(2)" },
+    });
+    expect(guardExit2.status).toBe(2);
     expect(readFileSync(planted.preToolUseLogPath ?? "", "utf8")).toContain("child-1");
     expect(planted.plantedHalves).toContain("r3.5-pre-tool-use-guard");
     expect(readFileSync(join(REPO, "templates/guard/review-session.policy.json"), "utf8")).toContain(
