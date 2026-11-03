@@ -23,7 +23,7 @@ import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
 import { checkBundleLinks } from "../src/validation/links.ts";
 import { parseJson, type JsonValue } from "./helpers/json.ts";
-import { makeTree } from "./helpers/tree.ts";
+import { EMPTY_ADAPTATIONS, EMPTY_LOCK, makeTree } from "./helpers/tree.ts";
 
 function licencePathsIn(text: string): string[] {
   return shippingCitedLicencePaths(text);
@@ -303,8 +303,8 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
       "profiles/core.yaml": "id: core\nskills: [alpha]\n",
       NOTICE: "agent-kit\n",
       LICENSE: "MIT License\n",
-      "provenance/upstream.lock.yaml": "donors: []\n",
-      "provenance/adaptations.yaml": "adaptations: []\n",
+      "provenance/upstream.lock.yaml": EMPTY_LOCK,
+      "provenance/adaptations.yaml": EMPTY_ADAPTATIONS,
     });
     const { catalog: fixtureCatalog } = loadCatalog(tree);
     if (fixtureCatalog === null) throw new Error("fixture catalog missing");

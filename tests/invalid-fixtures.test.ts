@@ -237,7 +237,7 @@ describe("the positive fixture", () => {
 
   test("the notes it does emit name the absent inputs rather than crashing", () => {
     const run = runValidation(materializeFixture("valid/minimal"));
-    expect(run.issues.map((i) => i.rule)).toContain("provenance.lock-unavailable");
+    expect(run.issues.map((i) => i.rule)).toContain("provenance.adaptations-unavailable");
     expect(run.issues.map((i) => i.rule)).toContain("policy.invocation-unavailable");
   });
 

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { checkContent, DENYLIST_EXEMPT_PREFIXES, contentScanRoots } from "../src/validation/content.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
 import { DENY_TERMS, SCANNER_DEFINITION_FILE } from "../src/denylist.ts";
-import { makeTree } from "./helpers/tree.ts";
+import { EMPTY_ADAPTATIONS, EMPTY_LOCK, makeTree } from "./helpers/tree.ts";
 import { sampleModelTerm } from "./helpers/tree.ts";
 
 const CATALOG = `schema_version: 1
@@ -22,8 +22,8 @@ skills:
 function ctxFor(files: Record<string, string>) {
   const root = makeTree({
     "catalog.yaml": CATALOG,
-    "provenance/upstream.lock.yaml": "donors: []\n",
-    "provenance/adaptations.yaml": "adaptations: []\n",
+    "provenance/upstream.lock.yaml": EMPTY_LOCK,
+    "provenance/adaptations.yaml": EMPTY_ADAPTATIONS,
     ...files,
   });
   const { catalog } = loadCatalog(root);
