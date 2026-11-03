@@ -150,7 +150,8 @@ REPO="${REPO:?set REPO to the consuming checkout}"
 
 mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
   "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
-  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses"
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses" \
+  "$REPO/.cursor/adapters"
 
 rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
 rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
@@ -161,6 +162,7 @@ rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
 rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
 rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
 rsync -a "$BUNDLE/.cursor/licenses/"   "$REPO/.cursor/licenses/"
+rsync -a "$BUNDLE/.cursor/adapters/"   "$REPO/.cursor/adapters/"
 cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
 ```
 

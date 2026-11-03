@@ -17,6 +17,7 @@
     "tools/oxlint/anti-slop/**",
     ".donors/**",
     "dist/**",
+    ".cursor/**",
     ".work/**",
     ".lavish/**",
     ".omc/**",

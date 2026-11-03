@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadCatalog } from "../src/catalog/load.ts";
@@ -14,9 +14,10 @@ import {
   rewriteExplicitStarts,
 } from "../src/packaging/hosts.ts";
 import { schemaRefs } from "../src/packaging/mentions.ts";
-import { BUILD_RECORD_FILE, LICENCE_FILES, planBundle } from "../src/packaging/plan.ts";
+import { BUILD_RECORD_FILE, LICENCE_FILES, isExecutable, planBundle } from "../src/packaging/plan.ts";
 import { writeBundles } from "../src/packaging/build.ts";
 import { parseFrontmatter } from "../src/util/frontmatter.ts";
+import { walkFiles } from "../src/util/fs.ts";
 import { extractRelativeLinks, resolveFromFile } from "../src/util/links.ts";
 import { splitSections } from "../src/validation/bodies.ts";
 import { firstNumberedItem } from "../src/validation/human-start.ts";
@@ -384,5 +385,32 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
     expect(gate).toContain("// --- LICENSE ---");
     expect(gate).toContain("// --- NOTICE ---");
     expect(gate).toContain("// --- provenance/licenses/thedotmack_claude-mem.NOTICE ---");
+  }, 120_000);
+
+  test("the committed .cursor overlay matches a fresh default Cursor plan except environment.json", () => {
+    const cursor = planBundle(ctx, "cursor", {});
+    expect(cursor.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const planned = [...cursor.files.keys()].filter((path) => path.startsWith(".cursor/")).toSorted();
+    const extras = walkFiles(root, ".cursor").filter((path) => path !== ".cursor/environment.json");
+    expect(extras).toEqual(planned);
+    expect(JSON.parse(readFileSync(join(root, ".cursor/environment.json"), "utf8"))).toEqual({
+      name: "agent-kit",
+      install: "bash tools/cursor/install.sh",
+    });
+    expect(existsSync(join(root, ".cursor/skills/super-review/SKILL.md"))).toBe(true);
+    const missing: string[] = [];
+    const stale: string[] = [];
+    const notExecutable: string[] = [];
+    for (const file of cursor.files.values()) {
+      if (!file.path.startsWith(".cursor/")) continue;
+      const disk = join(root, file.path);
+      if (!existsSync(disk)) {
+        missing.push(file.path);
+        continue;
+      }
+      if (readFileSync(disk, "utf8") !== file.contents) stale.push(file.path);
+      if (isExecutable(file) && (statSync(disk).mode & 0o111) === 0) notExecutable.push(file.path);
+    }
+    expect({ missing, stale, notExecutable }).toEqual({ missing: [], stale: [], notExecutable: [] });
   }, 120_000);
 });

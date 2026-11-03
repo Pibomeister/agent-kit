@@ -41,6 +41,7 @@ jobs:
           AK_REQUIRE_DONORS: "1"
       - run: bun run validate
       - run: bun run build
+      - run: tools/cursor/self-host.sh --check
       # The publish job refuses the same thing after merge; this refuses it while the PR can still change.
       - name: Refuse a bundle change without a version bump
         run: tools/publish/version-gate.sh dist

@@ -32,6 +32,7 @@ jobs:
       - run: bun run ak validate
       - run: bun run ak build
       - run: bun run ak build --check
+      - run: tools/cursor/self-host.sh --check
       - run: tools/publish/version-gate.sh dist
       - run: tar -czf published-bundle.tar.gz dist
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

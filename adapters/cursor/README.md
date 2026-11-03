@@ -48,7 +48,8 @@ REPO="${REPO:?set REPO to the consuming checkout}"
 
 mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
   "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
-  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses"
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses" \
+  "$REPO/.cursor/adapters"
 
 rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
 rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
@@ -59,6 +60,7 @@ rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
 rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
 rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
 rsync -a "$BUNDLE/.cursor/licenses/"   "$REPO/.cursor/licenses/"
+rsync -a "$BUNDLE/.cursor/adapters/"   "$REPO/.cursor/adapters/"
 cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
 ```
 
@@ -108,3 +110,12 @@ On the target branch or pull request:
 
 `ak doctor` and `ak update` do not manage Cursor. Re-run the build and rsync to
 refresh a vendored copy.
+
+## Self-host on this repository
+
+agent-kit vendors that overlay into `.cursor/` so a Cloud Agent cloning this
+repo discovers the skills without a separate install. Root `AGENTS.md` stays
+the maintainer guide. After a packaging change run
+`tools/cursor/self-host.sh --vendor`. `tools/cursor/self-host.sh --check` fails
+when the committed copy differs from a fresh `ak build --host cursor`.
+`.cursor/environment.json` is repo-owned and is not part of the overlay.
