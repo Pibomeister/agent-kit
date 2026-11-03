@@ -1403,6 +1403,11 @@ function ticketRules(rc: RuleContext): void {
     fail(rc, RULE, `cold_read_ref ${refId} indexes schema ${read?.schema ?? "none"}, not cold-read`);
     return;
   }
+  const status = str(read.doc["status"]);
+  if (status !== "complete" && status !== "unavailable") {
+    fail(rc, RULE, `cold_read_ref ${refId} has status ${status ?? "missing"}, not complete or unavailable`);
+    return;
+  }
   const ticketRef = obj(read.doc["ticket"]);
   const readTicketId = ticketRef === null ? null : str(ticketRef["id"]);
   const thisId = str(doc["id"]);
@@ -1415,13 +1420,15 @@ function ticketRules(rc: RuleContext): void {
     return;
   }
   const recordedHash = ticketRef === null ? null : str(ticketRef["hash"]);
-  if (recordedHash !== null) {
-    const body = { ...doc };
-    delete body["cold_read_ref"];
-    const expected = artifactHash(body);
-    if (recordedHash !== expected) {
-      fail(rc, RULE, `cold_read_ref ${refId} records ticket hash ${recordedHash}, not ${expected}`);
-    }
+  if (recordedHash === null) {
+    fail(rc, RULE, `cold_read_ref ${refId} records no ticket.hash`);
+    return;
+  }
+  const body = { ...doc };
+  delete body["cold_read_ref"];
+  const expected = artifactHash(body);
+  if (recordedHash !== expected) {
+    fail(rc, RULE, `cold_read_ref ${refId} records ticket hash ${recordedHash}, not ${expected}`);
   }
 }
 
