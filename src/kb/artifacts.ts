@@ -3,6 +3,7 @@ import type { ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 
 import charterSchema from "../../schemas/charter.schema.json" with { type: "json" };
+import coldReadSchema from "../../schemas/cold-read.schema.json" with { type: "json" };
 import commonSchema from "../../schemas/common.schema.json" with { type: "json" };
 import decisionSchema from "../../schemas/decision.schema.json" with { type: "json" };
 import dossierSchema from "../../schemas/dossier.schema.json" with { type: "json" };
@@ -41,6 +42,7 @@ export interface RunArtifact {
  */
 const ARTIFACT_SCHEMAS = {
   charter: charterSchema,
+  "cold-read": coldReadSchema,
   decision: decisionSchema,
   dossier: dossierSchema,
   evaluation: evaluationSchema,
@@ -67,7 +69,7 @@ type AjvInstance = InstanceType<typeof Ajv2020>;
 
 let compiled: AjvInstance | null = null;
 
-/** Built on first use: nineteen schemas are not worth compiling for a `check`. */
+/** Built on first use: twenty schemas are not worth compiling for a `check`. */
 function instance(): AjvInstance {
   if (compiled !== null) return compiled;
   const ajv = new Ajv2020({ strict: false, allErrors: true, validateFormats: true });

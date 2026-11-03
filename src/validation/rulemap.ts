@@ -180,6 +180,13 @@ export const SCHEMA_RULE_IMPLEMENTATIONS: Readonly<Record<string, RuleImplementa
   "review.material-change-establishes-a-new-baseline": ["review.material-change-establishes-a-new-baseline"],
   "review.unavailable-required-lane-blocks-approval": ["review.unavailable-required-lane-blocks-approval"],
   "review.seat-filled-by-someone-other-than-the-author": ["review.seat-filled-by-someone-other-than-the-author"],
+  "review.comprehension-paraphrase-stored-by-hash": ["review.comprehension-paraphrase-stored-by-hash"],
+
+  // ticket.schema.json
+  "ticket.cold-read-ref-required-when-on": ["ticket.cold-read-ref-required-when-on"],
+
+  // cold-read.schema.json
+  "cold-read.proposed-absent-is-not-a-finding": ["cold-read.proposed-absent-is-not-a-finding"],
 
   // skill.schema.json
   "skill.user-invoked-never-starts-user-invoked": ["skill.user-invoked-never-starts-user-invoked"],

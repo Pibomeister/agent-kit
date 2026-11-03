@@ -1,0 +1,74 @@
+{
+  "schema": "cold-read",
+  "schema_version": 1,
+  "id": "example-cold-read-1",
+  "project": {
+    "id": "example-project",
+    "repo": "example-org/example-service"
+  },
+  "run_id": "example-run-1",
+  "created_by": {
+    "role": "orchestrator",
+    "skill": "super-bound",
+    "operation": "bound.ticket"
+  },
+  "inputs": [
+    {
+      "id": "example-ticket-1",
+      "schema": "ticket",
+      "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "source_revision": {
+    "repo": "example-org/example-service",
+    "revision": "0000000000000000000000000000000000000000"
+  },
+  "created_at": "2026-09-19T09:00:00Z",
+  "status": "complete",
+  "ticket": {
+    "id": "example-ticket-1",
+    "schema": "ticket",
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "paraphrase": "Load every configured artifact directory instead of only the first, and skip a missing directory without failing the run.",
+  "decisions": [],
+  "unresolved_terms": [],
+  "claims": [
+    {
+      "id": "existing-loader",
+      "target": "src/loader/artifacts.ts",
+      "kind": "exists",
+      "observed": "present"
+    },
+    {
+      "id": "new-directory-walk",
+      "target": "src/loader/walk.ts",
+      "kind": "proposed",
+      "observed": "absent"
+    }
+  ],
+  "readiness": {
+    "acceptance_criteria": {
+      "found": true,
+      "where": "ticket acceptance_criteria AC-1 and AC-2"
+    },
+    "interfaces": {
+      "found": true,
+      "where": "write_ownership.interfaces loadArtifacts"
+    },
+    "examples": { "found": false },
+    "non_goals": {
+      "found": true,
+      "where": "ticket non_goals"
+    },
+    "existing_pattern": {
+      "found": true,
+      "where": "src/loader/artifacts.ts loadArtifacts"
+    },
+    "verification_path": {
+      "found": true,
+      "where": "verification loader-suite"
+    }
+  },
+  "state": "covered"
+}
