@@ -195,6 +195,19 @@ describe("cold-read schema", () => {
     expect(validateColdRead(completeUnavailable)).toBe(false);
   });
 
+  test.each(["complete", "draft"] as const)("state unavailable with status %s is rejected", (status) => {
+    const mismatched = updated(
+      updated(
+        updated(coldReadExample, ["state"], () => "unavailable"),
+        ["status"],
+        () => status,
+      ),
+      ["reason"],
+      () => "The host could not start a separate reader context.",
+    );
+    expect(validateColdRead(mismatched)).toBe(false);
+  });
+
   test("status unavailable requires state unavailable", () => {
     expect(validateColdRead(updated(coldReadExample, ["status"], () => "unavailable"))).toBe(false);
   });

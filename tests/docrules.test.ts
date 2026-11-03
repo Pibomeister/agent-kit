@@ -1892,6 +1892,34 @@ describe("ticket.cold-read-ref-required-when-on", () => {
     expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).not.toContain(RULE_COLD_REF);
   });
 
+  test("a cited draft cold-read is refused when on", () => {
+    const { read, ref } = citedRead(ticket(), { status: "draft" });
+    expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a cited cold-read with no status is refused when on", () => {
+    const { read } = citedRead(ticket());
+    delete read.status;
+    const ref = { id: String(read["id"]), schema: "cold-read", hash: artifactHash(read) };
+    expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a read that records no ticket.hash is refused when on", () => {
+    const { read, ref } = citedRead(ticket(), { ticket: { id: "ticket-1", schema: "ticket" } });
+    expect(rulesOf(run(ticket({ cold_read_ref: ref }), [onProject(), read]))).toContain(RULE_COLD_REF);
+  });
+
+  test("a read whose ticket.hash is from an older ticket body is refused when on", () => {
+    const older = ticket({ title: "older body" });
+    const read = coldRead({
+      ticket: { id: "ticket-1", schema: "ticket", hash: artifactHash(older) },
+    });
+    const ref = { id: String(read["id"]), schema: "cold-read", hash: artifactHash(read) };
+    expect(rulesOf(run(ticket({ title: "newer body", cold_read_ref: ref }), [onProject(), read]))).toContain(
+      RULE_COLD_REF,
+    );
+  });
+
   test("a ticket that names no project is treated as off", () => {
     const doc = ticket();
     delete doc.project;
