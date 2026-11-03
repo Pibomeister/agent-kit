@@ -55,6 +55,7 @@ import { runCli } from "../src/cli.ts";
 import { writeBundles, checkBundles } from "../src/packaging/build.ts";
 import { hasBlockingSkips, hasErrors } from "../src/validation/types.ts";
 import { expectError } from "./helpers/issues.ts";
+import { parseJson, type JsonValue } from "./helpers/json.ts";
 import { makeTree } from "./helpers/tree.ts";
 
 const HEAD = (name: string) => `---\nname: ${name}\ndescription: Use when asked.\n---\n`;
@@ -357,6 +358,13 @@ function nestRepo(parent: string, ctx: ReturnType<typeof ctxFor>): ReturnType<ty
   return { root: realpathSync(repo), catalog: ctx.catalog };
 }
 
+function recordWithoutOutputs(recordPath: string): JsonValue {
+  const listed = parseJson(readFileSync(recordPath, "utf8"));
+  if (!(listed instanceof Object) || Array.isArray(listed)) throw new Error("build record is not an object");
+  const { outputs: _dropped, ...rest } = listed;
+  return rest;
+}
+
 const gateFixture = (
   schema: string,
   source = "const BUNDLED_ADAPTER_IDS: readonly string[] = [];\nconsole.log('gate');\n",
@@ -637,7 +645,12 @@ describe("bundle planning", () => {
       "host",
       "install",
       "modes",
+      "outputs",
       "profile",
+    ]);
+    const listed = parseJson(plan.files.get(".claude-plugin/ak.json")?.contents ?? "{}");
+    expect(listed instanceof Object && !Array.isArray(listed) ? listed["outputs"] : null).toEqual([
+      ...plan.files.keys(),
     ]);
   });
 
@@ -2712,18 +2725,89 @@ describe("ak build and --check", () => {
     });
   });
 
-  test("--out allows a directory that already holds this host's build record", () => {
+  test("--out allows a clean previous bundle for this host", () => {
     const ctx = ctxFor();
     withOutGuard(({ sandbox }) => {
       const out = join(sandbox, "prior");
       const first = cursorOut(ctx, out);
       expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
       expectCursorBundle(out);
-      writeFileSync(join(out, "stale.txt"), "replaced\n");
       const second = cursorOut(ctx, out);
       expect(second.issues.filter((i) => i.severity === "error")).toEqual([]);
       expectCursorBundle(out);
-      expect(existsSync(join(out, "stale.txt"))).toBe(false);
+    });
+  });
+
+  test("--out refuses a previous bundle that still holds an extra user file and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "dirty");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const sentinel = writeSentinel(out);
+      const second = cursorOut(ctx, out);
+      expectError(second.issues, "packaging.out-refused", "not written by the previous agent-kit bundle");
+      expect(second.issues[0]?.message).toContain(OUT_SENTINEL);
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expectCursorBundle(out);
+    });
+  });
+
+  test("--out refuses grok over a claude-code bundle that shares the record path and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "shared");
+      const first = writeBundles(ctx, { hosts: ["claude-code"], out });
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const keep = join(out, "NOTICE");
+      const before = readFileSync(keep, "utf8");
+      const sentinel = writeSentinel(sandbox);
+      const second = writeBundles(ctx, { hosts: ["grok"], out });
+      expectError(second.issues, "packaging.out-refused", "host 'claude-code', not 'grok'");
+      expect(readFileSync(keep, "utf8")).toBe(before);
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expect(existsSync(join(out, ".claude-plugin/plugin.json"))).toBe(true);
+    });
+  });
+
+  test("--out refuses an unreadable build record and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "broken");
+      mkdirSync(join(out, ".cursor-plugin"), { recursive: true });
+      writeFileSync(join(out, BUILD_RECORD_FILE.cursor), "not-json\n");
+      const sentinel = writeSentinel(out);
+      expectRefused(cursorOut(ctx, out), "unreadable build record", sentinel, out);
+    });
+  });
+
+  test("--out allows a legacy record without outputs when top-level names match the plan", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "legacy");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const recordPath = join(out, BUILD_RECORD_FILE.cursor);
+      writeFileSync(recordPath, `${JSON.stringify(recordWithoutOutputs(recordPath), null, 2)}\n`);
+      const second = cursorOut(ctx, out);
+      expect(second.issues.filter((i) => i.severity === "error")).toEqual([]);
+      expectCursorBundle(out);
+    });
+  });
+
+  test("--out refuses a legacy record whose directory has an extra top-level file and deletes nothing", () => {
+    const ctx = ctxFor();
+    withOutGuard(({ sandbox }) => {
+      const out = join(sandbox, "legacy-extra");
+      const first = cursorOut(ctx, out);
+      expect(first.issues.filter((i) => i.severity === "error")).toEqual([]);
+      const recordPath = join(out, BUILD_RECORD_FILE.cursor);
+      writeFileSync(recordPath, `${JSON.stringify(recordWithoutOutputs(recordPath), null, 2)}\n`);
+      const sentinel = writeSentinel(out);
+      const second = cursorOut(ctx, out);
+      expectError(second.issues, "packaging.out-refused", "legacy build record");
+      expect(sentinelHolds(sentinel)).toBe(true);
+      expectCursorBundle(out);
     });
   });
 
