@@ -4,9 +4,9 @@ import { parse as parseYaml } from "yaml";
 import { readTextIfPresent } from "../util/fs.ts";
 import { error, type Issue } from "../validation/types.ts";
 
-export type HostId = "claude-code" | "codex" | "grok" | "kimi" | "droid";
+export type HostId = "claude-code" | "codex" | "grok" | "kimi" | "droid" | "cursor";
 
-export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", "kimi", "droid"];
+export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", "kimi", "droid", "cursor"];
 
 /**
  * Render the explicit human start a packaged skill recognizes on this host.
@@ -22,9 +22,45 @@ export const HOST_IDS: ReadonlyArray<HostId> = ["claude-code", "codex", "grok", 
  * skill by its bare `/<id>` (adapters/droid/CONTRACT.md §2).
  */
 export function explicitStartForHost(host: HostId, namespace: string, skillId: string): string {
-  if (host === "grok" || host === "droid") return `/${skillId}`;
+  if (host === "grok" || host === "droid" || host === "cursor") return `/${skillId}`;
   if (host === "kimi") return `/skill:${skillId}`;
   return host === "codex" ? `$${namespace.slice(1)}${skillId}` : `${namespace}${skillId}`;
+}
+
+/**
+ * Path of a packaged skill file inside dist/<host>/.
+ *
+ * Cursor project and Cloud Agent discovery reads `.cursor/skills/<id>/SKILL.md`
+ * (https://cursor.com/docs/skills). Other hosts keep the plugin-relative
+ * `skills/<id>/` tree.
+ */
+export function packagedSkillFile(host: HostId, skillId: string, rel = "SKILL.md"): string {
+  return `${host === "cursor" ? ".cursor/skills" : "skills"}/${skillId}/${rel}`;
+}
+
+/** Path of a bundled `bin/` program inside dist/<host>/. */
+export function packagedBinFile(host: HostId, name: string): string {
+  return host === "cursor" ? `.cursor/bin/${name}` : `bin/${name}`;
+}
+
+/**
+ * Relocate a bundle-relative path for this host. Cursor nests the content tree
+ * under `.cursor/` so a vendored overlay is what Cloud Agents clone-discover,
+ * while plugin manifests and licence texts stay at the bundle root.
+ */
+export function relocateForHost(host: HostId, path: string): string {
+  if (host !== "cursor") return path;
+  if (
+    path.startsWith(".cursor-plugin/") ||
+    path.startsWith("LICENSES/") ||
+    path.startsWith("provenance/") ||
+    path === "NOTICE" ||
+    path === "LICENSE" ||
+    path === "AGENTS.md"
+  ) {
+    return path;
+  }
+  return `.cursor/${path}`;
 }
 
 function escapeForPattern(text: string): string {
@@ -126,6 +162,10 @@ export const RESTRICTIONS: ReadonlyArray<string> = [
  * names exactly the same two.
  * Droid emits only descriptive `allowed-tools`; its native skill metadata and
  * conservative capability declaration are in adapters/droid/CONTRACT.md §2.
+ *
+ * Cursor defines `disable-model-invocation` and `paths` in SKILL.md frontmatter
+ * (https://cursor.com/docs/skills). This package emits neither: ADR-0003 keeps
+ * every skill model-loadable, and scoping is the consuming repo's.
  */
 export const HOST_FRONTMATTER_KEYS: Record<HostId, ReadonlyArray<string>> = {
   "claude-code": ["argument-hint", "allowed-tools"],
@@ -133,6 +173,7 @@ export const HOST_FRONTMATTER_KEYS: Record<HostId, ReadonlyArray<string>> = {
   grok: ["argument-hint", "allowed-tools"],
   kimi: [],
   droid: ["allowed-tools"],
+  cursor: [],
 };
 
 export interface HostCapabilities {
@@ -170,6 +211,13 @@ const DEFAULTS: Record<HostId, { enforces: string[]; notes: string[] }> = {
   droid: {
     enforces: [],
     notes: ["No restriction is claimed. allowed-tools is descriptive metadata, not a sandbox."],
+  },
+  cursor: {
+    enforces: [],
+    notes: [
+      "No restriction is claimed. Cursor honors disable-model-invocation, and this package does not emit it (docs/decisions/0003-model-invocation.md).",
+      "Subagent `readonly` is a host permission hint, not attested seat isolation.",
+    ],
   },
 };
 

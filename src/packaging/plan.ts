@@ -1,6 +1,7 @@
 import { join, posix, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { stringify as stringifyYaml } from "yaml";
 
 import { DIRECTORY_SECTIONS, entryBodyPath, entryDir } from "../catalog/layout.ts";
 import { isInside, listDirs, readTextIfPresent, walkFiles } from "../util/fs.ts";
@@ -10,7 +11,7 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, note, unavailable, type Issue } from "../validation/types.ts";
 import { generateHostFrontmatter } from "./frontmatter.ts";
 import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } from "./capability-table.ts";
-import { loadHostCapabilities, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
+import { loadHostCapabilities, relocateForHost, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { linkMentions, mentionResolver, schemaRefs, type MentionResolver } from "./mentions.ts";
@@ -47,6 +48,7 @@ export const HOST_MANIFEST_FILE: Record<HostId, string> = {
   grok: ".claude-plugin/plugin.json",
   kimi: ".kimi-plugin/plugin.json",
   droid: ".factory-plugin/plugin.json",
+  cursor: ".cursor-plugin/plugin.json",
 };
 
 /**
@@ -199,6 +201,7 @@ interface HostManifest {
   author?: { name: string };
   license?: string;
   skills?: string | string[];
+  agents?: string;
   experimental?: { evals: string };
 }
 
@@ -234,6 +237,7 @@ export const BUILD_RECORD_FILE: Record<HostId, string> = {
   grok: ".claude-plugin/ak.json",
   kimi: ".kimi-plugin/ak.json",
   droid: ".factory-plugin/ak.json",
+  cursor: ".cursor-plugin/ak.json",
 };
 
 /**
@@ -375,7 +379,8 @@ export interface BundleFile {
  * every caller runs it as `node …/bin/ak-gate.mjs`, so it needs none.
  */
 export function isExecutable(file: BundleFile): boolean {
-  return file.path.startsWith("bin/") && file.contents.startsWith("#!");
+  const bin = file.path.startsWith("bin/") || file.path.startsWith(".cursor/bin/");
+  return bin && file.contents.startsWith("#!");
 }
 
 export interface HostDecision {
@@ -403,11 +408,13 @@ function isSourceOnly(path: string): boolean {
   return SOURCE_ONLY_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
-function publishedPathFor(sourcePath: string, includedSkillDirs: ReadonlySet<string>): string | null {
+function publishedPathFor(sourcePath: string, includedSkillDirs: ReadonlySet<string>, host: HostId): string | null {
   const skillDir = /^skills\/([^/]+)\//.exec(sourcePath)?.[1];
-  if (skillDir !== undefined) return includedSkillDirs.has(skillDir) ? sourcePath : null;
+  if (skillDir !== undefined) {
+    return includedSkillDirs.has(skillDir) ? relocateForHost(host, sourcePath) : null;
+  }
   if (isSourceOnly(sourcePath)) return null;
-  return posix.join(SHARED_ROOT, sourcePath);
+  return relocateForHost(host, posix.join(SHARED_ROOT, sourcePath));
 }
 
 /**
@@ -427,6 +434,7 @@ function rewriteLinks(
   includedSkillDirs: ReadonlySet<string>,
   mentions: MentionResolver,
   file: string,
+  host: HostId,
 ): { text: string; dependencies: string[]; issues: Issue[] } {
   const issues: Issue[] = [];
   const dependencies: string[] = [];
@@ -436,7 +444,7 @@ function rewriteLinks(
     const resolved = resolveFromFile(sourcePath, link.target);
     if (resolved === null) continue; // checkSourceLinks owns escaping references.
 
-    const targetPublished = publishedPathFor(resolved, includedSkillDirs);
+    const targetPublished = publishedPathFor(resolved, includedSkillDirs, host);
     if (targetPublished === null) {
       issues.push(
         error(
@@ -459,7 +467,7 @@ function rewriteLinks(
 
   if (sourcePath.endsWith(".md")) {
     const linked = linkMentions(sourcePath, publishedPath, out, mentions, (source) =>
-      publishedPathFor(source, includedSkillDirs),
+      publishedPathFor(source, includedSkillDirs, host),
     );
     out = linked.text;
     dependencies.push(...linked.dependencies);
@@ -755,9 +763,11 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
      * the installed skill sees, emitted into the body's frontmatter below, and
      * it is not an input to this decision.
      */
-    // Grok shares Claude's declarations and layout, not its permission semantics.
-    // Its own restriction declaration and the shared capability ceiling still apply.
-    const row = manifest.hosts[host] ?? (host === "grok" ? manifest.hosts["claude-code"] : undefined);
+    // Grok and Cursor inherit Claude packaging declarations when they have no
+    // row of their own. Restriction declarations and the shared capability
+    // ceiling still apply per host.
+    const row =
+      manifest.hosts[host] ?? (host === "grok" || host === "cursor" ? manifest.hosts["claude-code"] : undefined);
     const declaredMode: SkillMode = row?.mode ?? "manual";
     const unenforceable = row?.unsupported ?? [];
 
@@ -854,14 +864,15 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
     const canonical = parseFrontmatter(body);
     const generated = generateHostFrontmatter(entry, canonical, manifest, mode, unenforceable, host);
-    const rewritten = rewriteLinks(bodyPath, bodyPath, canonical.body, included, mentions, bodyPath);
+    const publishedBody = relocateForHost(host, bodyPath);
+    const rewritten = rewriteLinks(bodyPath, publishedBody, canonical.body, included, mentions, bodyPath, host);
     issues.push(...rewritten.issues);
     const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
 
-    files.set(bodyPath, { path: bodyPath, contents: hostSkill, source: bodyPath });
+    files.set(publishedBody, { path: publishedBody, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
     for (const dep of rewritten.dependencies) {
-      const published = publishedPathFor(dep, included);
+      const published = publishedPathFor(dep, included, host);
       if (published !== null) pending.push({ source: dep, published });
     }
 
@@ -870,11 +881,16 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       if (!insideOwnTree(resolve(root), asset)) continue;
       const text = readTextIfPresent(join(root, asset));
       if (text === null) continue;
-      const assetRewrite = rewriteLinks(asset, asset, text, included, mentions, asset);
+      const publishedAsset = relocateForHost(host, asset);
+      const assetRewrite = rewriteLinks(asset, publishedAsset, text, included, mentions, asset, host);
       issues.push(...assetRewrite.issues);
-      files.set(asset, { path: asset, contents: renderExplicitStarts(assetRewrite.text), source: asset });
+      files.set(publishedAsset, {
+        path: publishedAsset,
+        contents: renderExplicitStarts(assetRewrite.text),
+        source: asset,
+      });
       for (const dep of assetRewrite.dependencies) {
-        const published = publishedPathFor(dep, included);
+        const published = publishedPathFor(dep, included, host);
         if (published !== null) pending.push({ source: dep, published });
       }
     }
@@ -886,16 +902,20 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     if (!insideOwnTree(resolve(root), source)) return;
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
-    files.set(source, { path: source, contents: text, source, verbatim: true });
+    const published = relocateForHost(host, source);
+    files.set(published, { path: published, contents: text, source, verbatim: true });
     // Body bytes stay the source bytes, so a link keeps its source path and a code
     // span stays plain. Copy a template that link names; other deps, and the links
     // a skill follows, travel through the shared closure.
-    const linked = rewriteLinks(source, source, text, included, () => null, source);
+    const linked = rewriteLinks(source, published, text, included, () => null, source, host);
     issues.push(...linked.issues);
     for (const dep of linked.dependencies) {
       if (!dep.startsWith("templates/") || !insideOwnTree(resolve(root), dep)) continue;
       const depText = readTextIfPresent(join(root, dep));
-      if (depText !== null) files.set(dep, { path: dep, contents: depText, source: dep, verbatim: true });
+      if (depText !== null) {
+        const publishedDep = relocateForHost(host, dep);
+        files.set(publishedDep, { path: publishedDep, contents: depText, source: dep, verbatim: true });
+      }
     }
   };
   for (const entry of catalog.bySection("roles")) {
@@ -922,7 +942,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const text = readTextIfPresent(join(root, next.source));
     if (text === null) continue; // checkSourceLinks owns the dangling-source case.
 
-    const rewritten = rewriteLinks(next.source, next.published, text, included, mentions, next.source);
+    const rewritten = rewriteLinks(next.source, next.published, text, included, mentions, next.source, host);
     issues.push(...rewritten.issues);
     files.set(next.published, {
       path: next.published,
@@ -930,7 +950,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       source: next.source,
     });
     for (const dep of rewritten.dependencies) {
-      const published = publishedPathFor(dep, included);
+      const published = publishedPathFor(dep, included, host);
       if (published !== null) pending.push({ source: dep, published });
     }
   }
@@ -1002,13 +1022,15 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
 
   const memMode = readTextIfPresent(join(root, CLAUDE_MEM_MODE_FILE));
   if (memMode !== null) {
-    files.set(CLAUDE_MEM_MODE_FILE, { path: CLAUDE_MEM_MODE_FILE, contents: memMode, source: CLAUDE_MEM_MODE_FILE });
+    const memPath = relocateForHost(host, CLAUDE_MEM_MODE_FILE);
+    files.set(memPath, { path: memPath, contents: memMode, source: CLAUDE_MEM_MODE_FILE });
   }
 
   try {
     const built = maintenanceScript(root);
     if (built !== null) {
-      files.set("bin/ak", { path: "bin/ak", contents: built.script });
+      const akPath = relocateForHost(host, "bin/ak");
+      files.set(akPath, { path: akPath, contents: built.script });
       const stop = STOP_HOOK_COMMANDS[host];
       // The semantic lint Stop hook rides on bin/ak, so it ships only with it, in the two hosts that run plugin hooks.
       if (stop !== undefined)
@@ -1061,8 +1083,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       );
     } else {
       try {
-        files.set(GATE_FILE, {
-          path: GATE_FILE,
+        const gatePath = relocateForHost(host, GATE_FILE);
+        files.set(gatePath, {
+          path: gatePath,
           contents: gateScript(root, text, listDirs(join(root, "adapters"))),
           source: GATE_SOURCE,
         });
@@ -1087,11 +1110,19 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     contents: `${JSON.stringify(manifest, null, 2)}\n`,
   });
   if (host !== "kimi") {
-    const marketplaceFile = host === "droid" ? ".factory-plugin/marketplace.json" : MARKETPLACE_FILE;
+    const marketplaceFile =
+      host === "droid"
+        ? ".factory-plugin/marketplace.json"
+        : host === "cursor"
+          ? ".cursor-plugin/marketplace.json"
+          : MARKETPLACE_FILE;
     files.set(marketplaceFile, { path: marketplaceFile, contents: marketplace(ctx) });
   }
-  files.set(BUILD_RECORD_FILE[host], {
-    path: BUILD_RECORD_FILE[host],
+  if (host === "cursor") emitCursorOverlay(ctx, files, excluded);
+  const recordPath = BUILD_RECORD_FILE[host];
+  const outputs = [...files.keys(), recordPath].toSorted((left, right) => left.localeCompare(right));
+  files.set(recordPath, {
+    path: recordPath,
     contents: buildRecord(
       host,
       membership.profile,
@@ -1100,6 +1131,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       decisions,
       capabilities.enforces,
       capabilities.notes,
+      outputs,
     ),
   });
 
@@ -1117,6 +1149,136 @@ function skillAssets(root: string, skillId: string): string[] {
 
 function sortFiles(files: Map<string, BundleFile>): Map<string, BundleFile> {
   return new Map([...files.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+const REVIEWER_ROLE_PREFIXES = ["code-review/", "doc-review/", "plan-review/"];
+const REVIEWER_ROLE_IDS = new Set(["reviewer-spec", "reviewer-standards", "verifier", "trail-auditor"]);
+
+function isReviewerRole(id: string): boolean {
+  return REVIEWER_ROLE_IDS.has(id) || REVIEWER_ROLE_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
+
+function roleAgentSlug(id: string): string {
+  return id.replaceAll("/", "-");
+}
+
+/**
+ * Cursor-only overlay: project-discoverable reviewer subagents, a non-always
+ * rule, and an AGENTS.md the consuming repo merges at its root.
+ *
+ * Skills, roles, references and bin/ are already relocated under `.cursor/` by
+ * `relocateForHost`. This only adds files that have no analogue on other hosts.
+ */
+/**
+ * ROLE.md lives three segments deep (`roles/<id>/ROLE.md`); the Cursor subagent
+ * file lives two (`.cursor/agents/<slug>.md`). Relative links that were valid
+ * beside the role are rewritten onto the relocated tree, the same prefix
+ * `relocateForHost` applies, so they still resolve after the overlay.
+ */
+function relocateCopiedLinks(sourcePath: string, publishedPath: string, text: string, host: HostId): string {
+  let out = text;
+  for (const link of extractRelativeLinks(text)) {
+    const resolved = resolveFromFile(sourcePath, link.target);
+    if (resolved === null) continue;
+    const wanted = relativeLinkBetween(publishedPath, relocateForHost(host, resolved));
+    if (wanted === link.target) continue;
+    const anchor = link.anchor === undefined ? "" : `#${link.anchor}`;
+    out = out.split(link.raw).join(link.raw.replace(`${link.target}${anchor}`, `${wanted}${anchor}`));
+  }
+  return out;
+}
+
+function emitCursorOverlay(
+  ctx: CheckContext,
+  files: Map<string, BundleFile>,
+  excludedSkills: ReadonlyArray<{ skill: string; reason: string }>,
+): void {
+  const excludedRoles: Array<{ role: string; reason: string }> = [];
+  for (const entry of ctx.catalog.bySection("roles")) {
+    if (entry.status !== "authored") {
+      excludedRoles.push({ role: entry.id, reason: `status: ${entry.status}` });
+      continue;
+    }
+    const source = entryBodyPath("roles", entry.id);
+    const body = readTextIfPresent(join(ctx.root, source));
+    if (body === null) {
+      excludedRoles.push({ role: entry.id, reason: "authored, but ROLE.md is missing" });
+      continue;
+    }
+    const name = roleAgentSlug(entry.id);
+    const description =
+      entry.summary ??
+      `Agent-kit role ${entry.id}. Load this subagent when super-review or the parent skill seats this role.`;
+    const frontmatter = isReviewerRole(entry.id) ? { name, description, readonly: true } : { name, description };
+    const path = `.cursor/agents/${name}.md`;
+    const relocated = relocateCopiedLinks(source, path, body, "cursor");
+    files.set(path, {
+      path,
+      contents: `---\n${stringifyYaml(frontmatter, { lineWidth: 0 })}---\n\n${relocated}`,
+      source,
+      // Mentions stay as in ROLE.md (shipDeclared copies that file verbatim).
+      // Relative links above are rewritten for the shallower agent path.
+      verbatim: true,
+    });
+  }
+
+  const rulePath = ".cursor/rules/ak-super-review.mdc";
+  files.set(rulePath, {
+    path: rulePath,
+    contents: [
+      "---",
+      "description: Start agent-kit super-review and seat the code-review panel on a Cursor Cloud Agent or IDE agent.",
+      "alwaysApply: false",
+      "---",
+      "",
+      "When a branch or pull request needs agent-kit review, invoke `/super-review`.",
+      "Seat each reviewer as a subagent from `.cursor/agents/` so the seat starts with a clean context.",
+      "The parent still briefs the seat; Cursor does not attest that the reviewer never saw the author's narrative.",
+      "Do not sit the author or spec approver on a reviewer seat (ruling `missing-supervisor-never-implementer`).",
+      "",
+    ].join("\n"),
+  });
+
+  files.set("AGENTS.md", {
+    path: "AGENTS.md",
+    contents: cursorAgentsGuide(excludedSkills, excludedRoles),
+  });
+}
+
+function cursorAgentsGuide(
+  excludedSkills: ReadonlyArray<{ skill: string; reason: string }>,
+  excludedRoles: ReadonlyArray<{ role: string; reason: string }>,
+): string {
+  const excludedSkillLines =
+    excludedSkills.length === 0
+      ? "- None. Every authored catalog skill is under `.cursor/skills/`."
+      : excludedSkills.map((row) => `- \`${row.skill}\`: ${row.reason}`).join("\n");
+  const excludedRoleLines =
+    excludedRoles.length === 0
+      ? "- None. Every authored catalog role is a `.cursor/agents/<id>.md` subagent."
+      : excludedRoles.map((row) => `- \`${row.role}\`: ${row.reason}`).join("\n");
+  return `# agent-kit on Cursor
+
+Project skills live in \`.cursor/skills/<id>/SKILL.md\`. Type \`/\` in Agent chat and pick the skill, or let Agent load it from the description. Human-started skills still require the turn to begin with \`/<id>\`.
+
+## super-review on a branch or pull request
+
+1. Open a Cloud Agent (or IDE Agent) on the branch or PR.
+2. Start \`/super-review\` with the mode (\`full\`, \`readiness\`, or \`delta\` inside an open run). An agent doing the work may start \`full\` and \`readiness\` (ADR-0013); that start is not approval.
+3. For each reviewer seat, dispatch the matching subagent under \`.cursor/agents/\` (for example reviewer-standards.md, reviewer-spec.md, code-review-security.md). Each subagent has its own context window. Reviewer files set \`readonly: true\`.
+4. The parent must not paste the author's narrative into a reviewer prompt. Isolation is conventional: Cursor does not attest excluded lineage.
+5. Close findings only with independent verification evidence. The author does not sit a reviewer seat.
+
+Plugin install (IDE): place this bundle under \`~/.cursor/plugins/local/ak\` so \`.cursor-plugin/plugin.json\` is at the plugin root. Cloud Automations do not load personal or unsynced skills; vendor \`.cursor/skills/\` and \`.cursor/agents/\` into the consuming repository.
+
+## Skills excluded from this bundle
+
+${excludedSkillLines}
+
+## Roles excluded from \`.cursor/agents/\`
+
+${excludedRoleLines}
+`;
 }
 
 /**
@@ -1157,6 +1319,7 @@ function manifestObject(
   if (declared(pkg.license)) manifest.license = pkg.license;
   // Droid discovers skills/ directly; its native manifest carries identity only.
   if (host !== "droid") manifest.skills = skillRegistration(host, skills);
+  if (host === "cursor") manifest.agents = "./.cursor/agents/";
   // Last, as in §1's example, and conditioned on the corpus alone rather than
   // on the corpus and the host. The key is a pointer: emitted with nothing
   // behind it, it is the pointer half of this feature shipping without the
@@ -1385,7 +1548,9 @@ function declared(value: string | undefined): value is string {
  * two bundles is a build failure, not a host difference.
  */
 function skillRegistration(host: HostId, skills: ReadonlyArray<string>): string | string[] {
-  return host === "codex" || host === "kimi" ? "./skills/" : skills.map((id) => `./skills/${id}`);
+  if (host === "codex" || host === "kimi") return "./skills/";
+  if (host === "cursor") return skills.map((id) => `./.cursor/skills/${id}`);
+  return skills.map((id) => `./skills/${id}`);
 }
 
 /**
@@ -1401,6 +1566,7 @@ function buildRecord(
   decisions: ReadonlyArray<HostDecision>,
   enforces: ReadonlySet<string>,
   notes: ReadonlyArray<string>,
+  outputs: ReadonlyArray<string>,
 ): string {
   const record = {
     profile,
@@ -1427,6 +1593,12 @@ function buildRecord(
       .filter((d) => d.rejected.length > 0)
       .map((d) => ({ skill: d.skill, unenforceable: d.unenforceable }))
       .toArray(),
+    /**
+     * Every path this build wrote. `--out` refuses to replace a directory that
+     * holds this record plus any entry that is not one of these paths or a
+     * directory that only exists to hold them.
+     */
+    outputs: [...outputs],
   };
   return `${JSON.stringify(record, null, 2)}\n`;
 }

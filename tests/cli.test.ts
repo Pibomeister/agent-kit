@@ -150,6 +150,7 @@ describe("ak", () => {
     expect(io.stderr()).toContain("validate");
     expect(io.stderr()).toContain("attach");
     expect(io.stderr()).toContain("build");
+    expect(io.stderr()).toContain("relative --out is from the current directory");
   });
 
   test("an unknown command is an error, not a silent success", () => {
@@ -381,6 +382,9 @@ describe("ak build", () => {
     expect(manifest.skills).toEqual(["./skills/triage"]);
     expect(existsSync(join(root, "dist/codex"))).toBe(true);
     expect(existsSync(join(root, "dist/kimi/.kimi-plugin/plugin.json"))).toBe(true);
+    expect(existsSync(join(root, "dist/cursor/.cursor-plugin/plugin.json"))).toBe(true);
+    expect(existsSync(join(root, "dist/cursor/.cursor/skills/triage/SKILL.md"))).toBe(true);
+    expect(existsSync(join(root, "dist/claude-code/skills/triage/SKILL.md"))).toBe(true);
   });
 
   test("--check on an unbuilt tree fails and writes nothing", () => {
@@ -454,6 +458,41 @@ describe("ak build", () => {
     expect(runCli(["build", "--host", "codex"], { cwd: root, io: capture().io })).toBe(0);
     expect(existsSync(join(root, "dist", "codex"))).toBe(true);
     expect(existsSync(join(root, "dist", "claude-code"))).toBe(false);
+  });
+
+  test("--out without --host is refused before building", () => {
+    const io = capture();
+    const root = cleanTree();
+    expect(runCli(["build", "--out", "bundle-out"], { cwd: root, io: io.io })).toBe(2);
+    expect(io.stderr()).toContain("--out requires --host");
+    expect(existsSync(join(root, "dist"))).toBe(false);
+    expect(existsSync(join(root, "bundle-out"))).toBe(false);
+  });
+
+  test("--host cursor --out writes that bundle and leaves dist/ alone", () => {
+    const root = cleanTree();
+    const out = join(root, "bundle-out");
+    expect(runCli(["build", "--host", "cursor", "--out", out], { cwd: root, io: capture().io })).toBe(0);
+    expect(existsSync(join(out, ".cursor/skills/triage/SKILL.md"))).toBe(true);
+    expect(existsSync(join(root, "dist"))).toBe(false);
+  });
+
+  test("--check --out verifies that directory, not dist/<host>", () => {
+    const root = cleanTree();
+    const out = join(root, "bundle-out");
+    expect(runCli(["build", "--host", "cursor", "--out", out], { cwd: root, io: capture().io })).toBe(0);
+    expect(runCli(["build", "--check", "--host", "cursor", "--out", out], { cwd: root, io: capture().io })).toBe(0);
+
+    const missing = capture();
+    expect(runCli(["build", "--check", "--host", "cursor"], { cwd: root, io: missing.io })).not.toBe(0);
+    expect(missing.stdout()).toContain("packaging.dist-missing");
+    expect(missing.stdout()).toContain("dist/cursor");
+
+    writeFileSync(join(out, ".cursor/skills/triage/SKILL.md"), "tampered\n");
+    const stale = capture();
+    expect(runCli(["build", "--check", "--host", "cursor", "--out", out], { cwd: root, io: stale.io })).not.toBe(0);
+    expect(stale.stdout()).toContain("packaging.dist-stale");
+    expect(stale.stdout()).toContain(out);
   });
 
   test("the packager's own unknown-profile issue names the nearest profile", () => {

@@ -12,7 +12,7 @@ import {
   type Supply,
 } from "../src/packaging/capability-table.ts";
 import { loadCatalog } from "../src/catalog/load.ts";
-import { HOST_IDS } from "../src/packaging/hosts.ts";
+import { HOST_IDS, packagedSkillFile } from "../src/packaging/hosts.ts";
 import { loadInstallConfig } from "../src/packaging/install.ts";
 import { loadSkillManifest } from "../src/packaging/manifest.ts";
 import { planBundle } from "../src/packaging/plan.ts";
@@ -410,7 +410,7 @@ describe("super-ship's trusted-evidence ceiling", () => {
   for (const host of HOST_IDS) {
     test(`the packaged ${host} bundle states the trusted-evidence hard gate and stop condition`, () => {
       const plan = planBundle({ root: REPO, catalog }, host, {});
-      const body = plan.files.get("skills/super-ship/SKILL.md")?.contents ?? "";
+      const body = plan.files.get(packagedSkillFile(host, "super-ship"))?.contents ?? "";
       const section = (heading: string) => body.split(/^## /m).find((part) => part.startsWith(`${heading}\n`)) ?? "";
 
       const gate = section("Hard gates")

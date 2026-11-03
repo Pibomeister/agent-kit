@@ -1,0 +1,14 @@
+adaptations:
+  - path: adapters/cursor/CONTRACT.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:.cursor-plugin/plugin.json
+    rationale: >-
+      The donor's parallel per-host manifest directory for Cursor is the pattern this adapter
+      copies for `.cursor-plugin/plugin.json` identity. Discovery paths, Cloud Agent vendoring,
+      reviewer subagents and the `/<id>` gate are verified against Cursor's published docs in the
+      contract rather than guessed from the donor tree.
+  - path: adapters/cursor/README.md
+    source: compound-engineering@05c42da94fd318fa081f29d17bf947762aa477b1:.cursor-plugin/plugin.json
+    rationale: >-
+      Downstream install surface for the same Cursor plugin identity the donor ships. The rsync
+      overlay into `.cursor/skills` and `.cursor/agents` is this package's Cloud Agent path, not a
+      donor command.
