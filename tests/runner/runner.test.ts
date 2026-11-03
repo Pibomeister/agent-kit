@@ -2417,6 +2417,16 @@ describe("runner guards", () => {
     transcript.push("Refusal: third fix cycle on one finding → `cap-reached` with two cycles recorded.");
   });
 
+  test("resume cannot decrease consumed repair counters", () => {
+    const f = ready();
+    expect(f.runner.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("complete");
+    expect(f.runner.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("complete");
+    expect(f.runner.status("toy-run").budget_consumption["fix_cycles:finding-a"]).toBe(2);
+    const restarted = new Runner(f.privateDir, f.worker, root);
+    expect(restarted.status("toy-run").budget_consumption["fix_cycles:finding-a"]).toBe(2);
+    expect(restarted.charge("toy-run", "fix_cycles", 1, "finding-a").status).toBe("cap-reached");
+  });
+
   test("restart resumes after a decided checkpoint without replay", () => {
     const f = ready();
     card(f);

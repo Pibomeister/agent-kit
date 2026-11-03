@@ -1249,6 +1249,32 @@ describe("review rules", () => {
     expect(rulesOf(run(doc))).toContain("review.unavailable-required-lane-blocks-approval");
   });
 
+  test.each(["timeout", "timed out", "lane timed out waiting for a seat"])(
+    "review.unavailable-required-lane-blocks-approval treats required-lane %s as unavailable, not empty coverage",
+    (reason) => {
+      const doc = review({
+        lanes: [
+          {
+            role: "code-review/correctness",
+            required: true,
+            state: "covered",
+            verdict: "approve",
+            seat: { filled_by: "reviewer-a", independent_of_author: true },
+          },
+          {
+            role: "code-review/security",
+            required: true,
+            state: "unavailable",
+            verdict: "no-opinion",
+            reason,
+            seat: { filled_by: "reviewer-b", independent_of_author: true },
+          },
+        ],
+      });
+      expect(rulesOf(run(doc))).toContain("review.unavailable-required-lane-blocks-approval");
+    },
+  );
+
   test("review.third-fix-cycle-stops catches a third cycle", () => {
     expect(rulesOf(run(review({ fix_cycles: { allowed: 2, used: 3 } })))).toContain("review.third-fix-cycle-stops");
   });
