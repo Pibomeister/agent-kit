@@ -160,6 +160,8 @@ as authoritative. Every row below is a claim about the tree, checkable against i
 | `.work/` | Scratch | **no** |
 | `ak.install.yaml` | Per-install adapter attachment | **no** |
 
+A PR that changes the Cursor bundle must re-vendor `.cursor/` with `tools/cursor/self-host.sh --vendor`.
+
 ---
 
 ## Authoring rules

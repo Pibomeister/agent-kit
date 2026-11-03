@@ -6,23 +6,17 @@ set -euo pipefail
 ROOT=$PWD
 BUNDLE=$ROOT/dist/cursor
 OVERLAY=$ROOT/.cursor
+FIX="tools/cursor/self-host.sh --vendor"
 
 usage() {
   echo "Usage: tools/cursor/self-host.sh --vendor | --check" >&2
+  echo "--vendor always runs bun run ak build --host cursor, then copies dist/cursor/.cursor." >&2
+  echo "--check diffs .cursor/ against the current dist/cursor/.cursor and does not rebuild." >&2
+  echo "On drift, --check prints: $FIX" >&2
   exit 2
 }
 
 [ $# -eq 1 ] || usage
-
-ensure_bundle() {
-  if [ ! -f "$BUNDLE/.cursor-plugin/ak.json" ]; then
-    bun run ak build --host cursor
-  fi
-  if [ ! -d "$BUNDLE/.cursor" ]; then
-    echo "missing $BUNDLE/.cursor" >&2
-    exit 1
-  fi
-}
 
 copy_tree() {
   src=$1
@@ -38,7 +32,11 @@ copy_tree() {
 }
 
 vendor() {
-  ensure_bundle
+  bun run ak build --host cursor
+  if [ ! -d "$BUNDLE/.cursor" ]; then
+    echo "missing $BUNDLE/.cursor after build" >&2
+    exit 1
+  fi
   mkdir -p "$OVERLAY"
   saved=
   if [ -f "$OVERLAY/environment.json" ]; then
@@ -56,8 +54,14 @@ vendor() {
 }
 
 check() {
-  ensure_bundle
-  diff -rq -x environment.json "$BUNDLE/.cursor" "$OVERLAY"
+  if [ ! -d "$BUNDLE/.cursor" ]; then
+    echo "missing $BUNDLE/.cursor (no rebuild). Re-vendor with: $FIX" >&2
+    exit 1
+  fi
+  if ! diff -rq -x environment.json "$BUNDLE/.cursor" "$OVERLAY"; then
+    echo "Cursor overlay drifted. Re-vendor with: $FIX" >&2
+    exit 1
+  fi
 }
 
 case $1 in

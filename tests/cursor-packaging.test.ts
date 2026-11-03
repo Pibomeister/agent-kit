@@ -392,7 +392,13 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
     expect(cursor.issues.filter((issue) => issue.severity === "error")).toEqual([]);
     const planned = [...cursor.files.keys()].filter((path) => path.startsWith(".cursor/")).toSorted();
     const extras = walkFiles(root, ".cursor").filter((path) => path !== ".cursor/environment.json");
-    expect(extras).toEqual(planned);
+    const vendor = "tools/cursor/self-host.sh --vendor";
+    const drifted = (detail: string) => {
+      throw new Error(`Cursor overlay drifted. Re-vendor with: ${vendor}. ${detail}`);
+    };
+    if (JSON.stringify(extras) !== JSON.stringify(planned)) {
+      drifted("overlay files do not match the Cursor plan");
+    }
     expect(JSON.parse(readFileSync(join(root, ".cursor/environment.json"), "utf8"))).toEqual({
       name: "agent-kit",
       install: "bash tools/cursor/install.sh",
@@ -411,6 +417,8 @@ A human starts the public entrypoint by typing \`/ak:alpha\`. A request in prose
       if (readFileSync(disk, "utf8") !== file.contents) stale.push(file.path);
       if (isExecutable(file) && (statSync(disk).mode & 0o111) === 0) notExecutable.push(file.path);
     }
-    expect({ missing, stale, notExecutable }).toEqual({ missing: [], stale: [], notExecutable: [] });
+    if (missing.length > 0 || stale.length > 0 || notExecutable.length > 0) {
+      drifted(JSON.stringify({ missing, stale, notExecutable }));
+    }
   }, 120_000);
 });
