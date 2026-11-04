@@ -39,6 +39,7 @@ export const SOURCE_ONLY_PREFIXES = [
   "src/",
   "tests/",
   "dist/",
+  ".cursor/",
   ".donors/",
   ".work/",
   "node_modules/",
