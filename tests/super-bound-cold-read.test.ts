@@ -85,7 +85,10 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(note).toContain("Do not reclassify the ticket");
     expect(note).toContain("Do not add the read to spec-factor or readiness evidence");
     expect(note).not.toContain("seed `yellow-agent`");
-    expect(note).toContain("is cited and published");
+    expect(note).toContain("is cited with its reason");
+    expect(note).toContain(
+      "the author's empty-context check then decides whether it publishes, gets reshaped, or is reclassified type: decision and sent back",
+    );
     expect(note).toContain("It does not change the class");
     expect(note).toContain("Step 13 skips the independent cold read on this route");
     expect(note).toContain("(phase 1b, GS-004i)");
