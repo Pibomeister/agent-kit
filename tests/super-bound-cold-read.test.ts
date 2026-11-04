@@ -85,11 +85,13 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(note).toContain("Do not reclassify the ticket");
     expect(note).toContain("Do not add the read to spec-factor or readiness evidence");
     expect(note).not.toContain("seed `yellow-agent`");
+    expect(note).toContain("The read adds evidence only and does not change factor scores or weights");
+    expect(note).toContain("A completed cold read is binding");
     expect(note).toContain("is cited with its reason");
     expect(note).toContain(
-      "the author's empty-context check then decides whether it publishes, gets reshaped, or is reclassified type: decision and sent back",
+      "for that ticket only, the author's empty-context check decides whether it publishes, is reshaped, or is reclassified `type: decision` and sent back",
     );
-    expect(note).toContain("It does not change the class");
+    expect(note).toContain("Neither case changes the class");
     expect(note).toContain("Step 13 skips the independent cold read on this route");
     expect(note).toContain("(phase 1b, GS-004i)");
   });
@@ -119,9 +121,12 @@ describe("super-bound cold read (phase 1b, GS-004i)", () => {
     expect(contract.replace(/\s+/g, " ")).toContain(UNAVAILABLE_FALLBACK);
     expect(packagedBody().replace(/\s+/g, " ")).toContain(UNAVAILABLE_FALLBACK);
     const note = reference.replace(/\s+/g, " ");
-    expect(note).toContain("author's empty-context check decides the outcome");
-    expect(note).toContain("reshape it, or reclassify it `type: decision` and send it back");
-    expect(packagedReference().replace(/\s+/g, " ")).toContain("author's empty-context check decides the outcome");
+    expect(note).toContain("for that ticket only, the author's empty-context check decides");
+    expect(note).toContain("is reshaped, or is reclassified `type: decision` and sent back");
+    expect(note).toContain("A completed cold read is binding");
+    expect(packagedReference().replace(/\s+/g, " ")).toContain(
+      "for that ticket only, the author's empty-context check decides",
+    );
   });
 
   test("the scorer formula is unchanged and still only raises the seed", () => {
