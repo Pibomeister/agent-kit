@@ -117,7 +117,8 @@ authority to apply a correction rides on the caller's authorization, recorded on
     comprehension setting is `on`, print the paraphrase verbatim above `## Applied`, including
     when the seat found nothing. When `shadow`, print the paraphrase and the seat's findings
     under `## FYI` only; they never enter Applied, Proposed fixes or Decisions, and they do not
-    change the verdict. Off prints nothing from this seat. Synthesis does not summarize or merge
+    change the verdict. Record each such finding with autofix_class `advisory` and the lane
+    verdict as `approve` or `no-opinion`. Off prints nothing from this seat. Synthesis does not summarize or merge
     the paraphrase. A comprehension finding is never settled by picking a side (ruling
     `comprehension-gap-not-contestable`). The result takes exactly this form, in this order, with
     every heading present even when its bucket is empty:
@@ -177,7 +178,8 @@ rejecting it, when they judge that no human reader of this document needs it (ru
 `comprehension-gap-not-contestable`).
 
 Gate: in `shadow`, comprehension findings stay under `## FYI`. They never enter the other buckets
-and they do not change the verdict. The lane is not required, so unavailability cannot block.
+and they do not change the verdict. Each is recorded `advisory`, and the lane verdict is `approve`
+or `no-opinion`. The lane is not required, so unavailability cannot block.
 
 | The thought | Why it is wrong | Do this instead |
 |---|---|---|

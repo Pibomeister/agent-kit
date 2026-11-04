@@ -1166,12 +1166,12 @@ function reviewRules(rc: RuleContext): void {
         if (id === null || !cited.has(id)) continue;
         if (str(entry.doc["lane"]) === "doc-review/comprehension") owned.add(id);
       }
-      for (const id of fromLane) {
+      for (const id of owned) {
         if (blockers.has(id)) {
           fail(
             rc,
             RULE_SHADOW,
-            `finding ${id} from the comprehension lane is in unresolved_blockers while review.comprehension is shadow; shadow findings do not block`,
+            `finding ${id} from doc-review/comprehension is in unresolved_blockers while review.comprehension is shadow; shadow findings do not block`,
           );
         }
       }
@@ -1185,13 +1185,6 @@ function reviewRules(rc: RuleContext): void {
             rc,
             RULE_SHADOW,
             `finding ${id} from doc-review/comprehension has autofix_class ${cls ?? "missing"} while review.comprehension is shadow; shadow findings stay advisory`,
-          );
-        }
-        if (blockers.has(id) && !fromLane.has(id)) {
-          fail(
-            rc,
-            RULE_SHADOW,
-            `finding ${id} from doc-review/comprehension is in unresolved_blockers while review.comprehension is shadow; shadow findings do not block`,
           );
         }
       }
