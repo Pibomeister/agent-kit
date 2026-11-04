@@ -148,8 +148,8 @@
     },
     "bundle/claude-code:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19825,
-      "tokens": 4953
+      "bytes": 19959,
+      "tokens": 4986
     },
     "bundle/claude-code:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1013,8 +1013,8 @@
     },
     "bundle/codex:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19825,
-      "tokens": 4953
+      "bytes": 19959,
+      "tokens": 4986
     },
     "bundle/codex:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -1878,8 +1878,8 @@
     },
     "bundle/cursor:.cursor/references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19825,
-      "tokens": 4953
+      "bytes": 19959,
+      "tokens": 4986
     },
     "bundle/cursor:.cursor/references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -2743,8 +2743,8 @@
     },
     "bundle/droid:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19825,
-      "tokens": 4953
+      "bytes": 19959,
+      "tokens": 4986
     },
     "bundle/droid:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -3608,8 +3608,8 @@
     },
     "bundle/grok:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19825,
-      "tokens": 4953
+      "bytes": 19959,
+      "tokens": 4986
     },
     "bundle/grok:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
@@ -4473,8 +4473,8 @@
     },
     "bundle/kimi:references/shared/references/delegation/REFERENCE.md": {
       "file": "references/delegation/REFERENCE.md",
-      "bytes": 19825,
-      "tokens": 4953
+      "bytes": 19959,
+      "tokens": 4986
     },
     "bundle/kimi:references/shared/references/domain-modeling/REFERENCE.md": {
       "file": "references/domain-modeling/REFERENCE.md",
