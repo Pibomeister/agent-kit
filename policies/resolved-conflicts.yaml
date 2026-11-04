@@ -12,7 +12,8 @@
 # oracles, project-declared checks and host-conditional advisor consultation. Row 33 is the first
 # raised by a reproduced failure: a lifecycle run in a task copy that could reach no knowledgebase.
 # Row 34 is the first raised by publishing with no supervisor and no gate at all. Row 35 keeps the
-# implementer's work trail, an account, from every seat that judges the change.
+# implementer's work trail, an account, from every seat that judges the change. Rows 36-37
+# are the comprehension seat: it stays naive, and a gap is not contestable on the author's word.
 #
 # Machine-read by `ak validate`, which checks that every `binds` id exists in catalog.yaml, that
 # every `scenario` is one of the numbered release scenarios in plan §10, that every `id` is
@@ -194,7 +195,7 @@
 
 schema_version: 1
 policy: resolved-conflicts
-rows: 35
+rows: 37
 
 conflicts:
 
@@ -324,7 +325,7 @@ conflicts:
     binds:
       skills: [super-verify, super-review, diagnose, super-build, ultraqa]
       protocols: [apply-findings, review-delta, tdd]
-      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, trail-auditor, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout, learn/session-scorer, learn/skill-doctor]
+      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, trail-auditor, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, doc-review/comprehension, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout, learn/session-scorer, learn/skill-doctor]
       schemas: [finding, verification, review]
       policies: [review, authority-defaults]
       doctrine: [AUTHORING.md]
@@ -670,7 +671,7 @@ conflicts:
     discharged_in: [hard-gates, outputs]
     binds:
       skills: [super-review, receiving-review]
-      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, trail-auditor, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout, learn/session-scorer, learn/skill-doctor]
+      roles: [supervisor, implementer, verifier, reviewer-spec, reviewer-standards, trail-auditor, plan-review/planner, plan-review/architect, plan-review/critic, code-review/correctness, code-review/project-standards, code-review/testing, code-review/maintainability, code-review/agent-native, code-review/learnings, code-review/security, code-review/performance, code-review/api-contract, code-review/data-migration, code-review/reliability, code-review/adversarial, code-review/previous-comments, code-review/frontend-races, code-review/swift-ios, doc-review/coherence, doc-review/feasibility, doc-review/product-lens, doc-review/design-lens, doc-review/security-lens, doc-review/scope-guardian, doc-review/adversarial-document, doc-review/comprehension, learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout, learn/session-scorer, learn/skill-doctor]
       protocols: [review-delta]
       schemas: [review]
       policies: [review, authority-defaults]
@@ -1423,3 +1424,66 @@ conflicts:
       what a trail or an audit holds, while this row governs what may be done with one.
     source:
       plan: "§5.6, §6.2, §7.3, §8"
+
+  - id: comprehension-seat-stays-naive
+    tension: >-
+      Continuity makes closure checks cheaper, but a reader who has seen the earlier gap cannot
+      test whether a newcomer would find it.
+    ruling: >-
+      The comprehension seat gets no prior-finding packet and no earlier paraphrase. Each round
+      is a new instance. Independence from the author and a fresh context are both required for
+      this seat. Continuity still holds for every other seat. A comprehension finding closes when
+      a later fresh read produces a paraphrase the human accepts as matching intent, recorded as
+      verification kind `manual`.
+    discharged_in: [workflow, inputs]
+    overrides:
+      source: conversation
+      locator: G:L580
+      position: "Subsequent reviews buy closure by keeping the finding list, not by reseating a fresh reader"
+      reason: >-
+        Continuity still holds for every other seat. A comprehension reader that has seen the
+        earlier gap is no longer naive, so this seat is the scoped exception.
+    binds:
+      skills: [doc-review]
+      roles: [doc-review/comprehension]
+      policies: [review]
+    scenario: 9
+    coverage: indirect
+    note: >-
+      Scenario 9 tests that moving a line neither duplicates nor suppresses a finding, which is
+      the continuity packet's identity half. This row exercises the other half on one seat: the
+      packet is withheld so the reader stays naive. Rejected `authority`, which continuity already
+      uses for independence from the author; this row does not change who may fill the seat.
+      Rejected `hard-gates`: a packet that arrived is a caller error, returned `unavailable`,
+      which is already `required-lane-failure-is-unavailable`. `inputs` is what the seat must
+      not be given; `workflow` is that each round reseats a new instance.
+    source:
+      plan: "§6.4, §6.5"
+      locator: G:L580
+
+  - id: comprehension-gap-not-contestable
+    tension: >-
+      The author wrote the document and wants to reject a comprehension finding as a
+      misunderstanding, which makes the author's memory the test of whether a newcomer can
+      follow the text.
+    ruling: >-
+      A comprehension finding is never rejected on the author's word. It resolves in one of four
+      ways: add the definition or the link to the document; publish the missing fact as a
+      `concept` or `adr` page and link it; `escalated` to the human, when the fact exists only as
+      a team convention or a verbal decision; or rejected by the human, when they judge that no
+      human reader of this document needs it. Do not add context only to satisfy a reviewer.
+    discharged_in: [hard-gates, workflow]
+    binds:
+      skills: [doc-review]
+      roles: [doc-review/comprehension]
+      policies: [review]
+    scenario: 3
+    coverage: indirect
+    note: >-
+      Scenario 3 tests that unsupported closure is blocked; this row is the same structure on
+      rejection of a comprehension gap. Rejected `authority`: rejection is a human disposition,
+      not a grant this skill issues. Rejected `outputs`: the four resolutions are refusals and
+      routes, not a new artifact. `hard-gates` is the refusal of author contest; `workflow` is
+      that synthesis must not settle the finding by picking a side.
+    source:
+      plan: "§6.5"

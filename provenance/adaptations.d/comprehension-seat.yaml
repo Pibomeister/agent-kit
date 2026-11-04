@@ -1,0 +1,30 @@
+# Provenance fragment for the doc-review comprehension seat (phase 1b, GS-004h).
+#
+# One fragment owns each adapted path: define.yaml already owns
+# skills/doc-review/SKILL.md and skills/doc-review/skill.yaml, so the extra EGM
+# rows for those files live there. This fragment owns the role body only.
+#
+# Apache-2.0: each row states what was changed, as section 4(b) requires of a
+# modified file.
+#
+# provenance/adaptations.yaml is generated from this directory by `ak build`
+# and is not written here.
+
+adaptations:
+  - path: roles/doc-review/comprehension/ROLE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/comprehension.md
+    rationale: >-
+      The naive-reader question, the paraphrase-first order under the two
+      headings, the rule that an unparaphrasable section is a finding, the
+      scan of the rest of the document before flagging a term, and the bar
+      that general engineering terms are never flagged. Donor severity
+      vocabulary and Goldfish framing are replaced by the finding schema,
+      catalog id, and the two mandated Never rows. Shadow, off and on are
+      the calling skill's, not this seat's.
+  - path: roles/doc-review/comprehension/ROLE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:skills/egm-resolve/SKILL.md
+    rationale: >-
+      The four resolutions of a comprehension gap, including "do not contest
+      a comprehension gap" and "do not add context only to satisfy a
+      reviewer." Author contest is dropped. Rejection is reserved to the
+      human. ESCALATE becomes the existing adjudication outcome escalated.

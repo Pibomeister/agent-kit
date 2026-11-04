@@ -181,6 +181,7 @@ export const SCHEMA_RULE_IMPLEMENTATIONS: Readonly<Record<string, RuleImplementa
   "review.unavailable-required-lane-blocks-approval": ["review.unavailable-required-lane-blocks-approval"],
   "review.seat-filled-by-someone-other-than-the-author": ["review.seat-filled-by-someone-other-than-the-author"],
   "review.comprehension-paraphrase-stored-by-hash": ["review.comprehension-paraphrase-stored-by-hash"],
+  "review.comprehension-shadow-findings-stay-fyi": ["review.comprehension-shadow-findings-stay-fyi"],
 
   // ticket.schema.json
   "ticket.cold-read-ref-required-when-on": ["ticket.cold-read-ref-required-when-on"],

@@ -1087,6 +1087,117 @@ function reviewRules(rc: RuleContext): void {
     }
   }
 
+  const RULE_SHADOW = "review.comprehension-shadow-findings-stay-fyi";
+  const COMPREHENSION_MODES = new Set(["off", "shadow", "on"]);
+  const projectField = doc["project"];
+  const projectRecord = obj(projectField);
+  const wanted = projectRecord === null ? str(projectField) : str(projectRecord["id"]);
+  const projects: IndexedDoc[] = [];
+  if (wanted !== null) {
+    for (const entry of rc.index.all) {
+      if (entry.schema !== "project") continue;
+      if (str(obj(entry.doc["identity"])?.["id"]) === wanted) projects.push(entry);
+    }
+  }
+  if (projects.length > 0) {
+    const modes = projects.map((p) => {
+      const raw = obj(p.doc["review"])?.["comprehension"];
+      if (raw === undefined || raw === null) return "off";
+      return str(raw) ?? JSON.stringify(raw);
+    });
+    for (const mode of modes) {
+      if (!COMPREHENSION_MODES.has(mode)) {
+        fail(rc, RULE_SHADOW, `review.comprehension value ${mode} is not off, shadow or on`);
+      }
+    }
+    const anyNonOff = modes.some((m) => m !== "off");
+    if (projects.length > 1 && anyNonOff) {
+      fail(
+        rc,
+        RULE_SHADOW,
+        `review project ${wanted} matches ${projects.length} project records; identity.id must be unique when review.comprehension is not off`,
+      );
+    } else if (projects.length === 1 && modes[0] === "shadow") {
+      const cited = new Set<string>();
+      const blockers = new Set<string>();
+      const fromLane = new Set<string>();
+      for (const item of arr(doc["findings"])) {
+        const id = str(obj(item)?.["id"]);
+        if (id !== null) cited.add(id);
+      }
+      for (const item of arr(doc["unresolved_blockers"])) {
+        const id = str(obj(item)?.["id"]);
+        if (id !== null) {
+          cited.add(id);
+          blockers.add(id);
+        }
+      }
+      for (const [i, lane] of lanes.entries()) {
+        if (lane === null) continue;
+        const comprehensionLane = str(lane["role"]) === "doc-review/comprehension";
+        for (const item of arr(lane["findings"])) {
+          const id = str(obj(item)?.["id"]);
+          if (id === null) continue;
+          cited.add(id);
+          if (comprehensionLane) fromLane.add(id);
+        }
+        if (!comprehensionLane) continue;
+        if (lane["required"] === true) {
+          fail(
+            rc,
+            RULE_SHADOW,
+            `lane ${str(lane["role"]) ?? `#${i}`} is required while review.comprehension is shadow; a required unavailable lane would change the verdict`,
+          );
+        }
+        if (str(lane["state"]) !== "covered") continue;
+        const laneVerdict = str(lane["verdict"]);
+        if (laneVerdict !== null && laneVerdict !== "approve" && laneVerdict !== "no-opinion") {
+          fail(
+            rc,
+            RULE_SHADOW,
+            `lane ${str(lane["role"]) ?? `#${i}`} verdict is ${laneVerdict} while review.comprehension is shadow; shadow findings do not change the verdict`,
+          );
+        }
+      }
+      const owned = new Set(fromLane);
+      for (const entry of rc.index.all) {
+        if (entry.schema !== "finding") continue;
+        const id = str(entry.doc["id"]);
+        if (id === null || !cited.has(id)) continue;
+        if (str(entry.doc["lane"]) === "doc-review/comprehension") owned.add(id);
+      }
+      for (const id of fromLane) {
+        if (blockers.has(id)) {
+          fail(
+            rc,
+            RULE_SHADOW,
+            `finding ${id} from the comprehension lane is in unresolved_blockers while review.comprehension is shadow; shadow findings do not block`,
+          );
+        }
+      }
+      for (const entry of rc.index.all) {
+        if (entry.schema !== "finding") continue;
+        const id = str(entry.doc["id"]);
+        if (id === null || !owned.has(id)) continue;
+        const cls = str(entry.doc["autofix_class"]);
+        if (cls !== "advisory") {
+          fail(
+            rc,
+            RULE_SHADOW,
+            `finding ${id} from doc-review/comprehension has autofix_class ${cls ?? "missing"} while review.comprehension is shadow; shadow findings stay advisory`,
+          );
+        }
+        if (blockers.has(id) && !fromLane.has(id)) {
+          fail(
+            rc,
+            RULE_SHADOW,
+            `finding ${id} from doc-review/comprehension is in unresolved_blockers while review.comprehension is shadow; shadow findings do not block`,
+          );
+        }
+      }
+    }
+  }
+
   const RULE_UNAVAILABLE = "review.unavailable-required-lane-blocks-approval";
   const TIMEOUT_REASON = /\b(timeout|timed\s*out)\b/i;
   const blocked = lanes.filter((l) => {
