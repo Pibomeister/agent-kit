@@ -282,8 +282,8 @@ reclassify the ticket. Do not add the read to spec-factor or readiness evidence.
 the class. Keep the author's type-check as the zero-context gate.
 
 **On.** Cite the stored record from `cold_read_ref` as evidence for the `spec` factor and the
-readiness criteria, then re-run the scorer command from step 10. An unavailable read, with the
-reason, is cited with its reason; the author's empty-context check then decides whether it
-publishes, gets reshaped, or is reclassified type: decision and sent back. It does not change
-the class. The author's empty-context check decides the outcome: reshape it, or reclassify it
-`type: decision` and send it back. Do not change the scorer inputs.
+readiness criteria, then re-run the scorer command from step 10. The read adds evidence only
+and does not change factor scores or weights. A completed cold read is binding. An unavailable
+read is cited with its reason; for that ticket only, the author's empty-context check decides
+whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. Neither
+case changes the class.
