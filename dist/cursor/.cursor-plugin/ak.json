@@ -253,6 +253,7 @@
     ".cursor/references/shared/roles/trail-auditor/ROLE.md",
     ".cursor/references/shared/roles/verifier/ROLE.md",
     ".cursor/references/shared/schemas/charter.schema.json",
+    ".cursor/references/shared/schemas/cold-read.schema.json",
     ".cursor/references/shared/schemas/common.schema.json",
     ".cursor/references/shared/schemas/decision.schema.json",
     ".cursor/references/shared/schemas/dossier.schema.json",
