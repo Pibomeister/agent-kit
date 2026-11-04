@@ -133,7 +133,7 @@ describe("council seats", () => {
       Promise.resolve(ok(launcher.actor === "v1" ? "maybe" : "yes")),
     );
     expect(result).toMatchObject({ ok: true, launcher: { actor: "v2" }, attempts: [{ actor: "v1" }, { actor: "v2" }] });
-    expect(JSON.stringify(result)).toContain("not an option");
+    expect(JSON.stringify(result)).toContain("invalid answer");
   });
 
   test("transport or format failures still retry within the bound", async () => {

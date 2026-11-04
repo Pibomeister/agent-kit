@@ -322,3 +322,97 @@ describe("ak council run", () => {
     expect(result.err.join("\n")).toContain("share a lineage");
   });
 });
+
+const emit = (text: string, log: string, actor: string) =>
+  `require('node:fs').appendFileSync(${JSON.stringify(log)},${JSON.stringify(actor)}+'\\n');console.log(${JSON.stringify(text)});`;
+
+function worthySetup(vetoText: string, substitute?: string) {
+  const dir = processScratch("ak-council-");
+  const log = join(dir, "seats.log");
+  const worthy = JSON.stringify({ choice: "WORTHY", rationale: "blind" });
+  const pair = (actor: string) => ({
+    actor,
+    lineage: [actor],
+    command: ["bun", "-e", emit(worthy, log, actor)],
+  });
+  const vetoChain = [{ actor: "v1", lineage: ["v1"], command: ["bun", "-e", emit(vetoText, log, "v1")] }];
+  if (substitute !== undefined)
+    vetoChain.push({ actor: "v2", lineage: ["v2"], command: ["bun", "-e", emit(substitute, log, "v2")] });
+  const config = join(dir, "council.json");
+  writeFileSync(
+    config,
+    JSON.stringify({
+      pair: [
+        { seat: "primary-a", chain: [pair("a")] },
+        { seat: "primary-b", chain: [pair("b")] },
+      ],
+      veto: { seat: "veto", chain: vetoChain },
+    }),
+    { mode: 0o600 },
+  );
+  const card = join(dir, "card.json");
+  writeFileSync(
+    card,
+    JSON.stringify({ id: "q1", question: "Ship it?", options: ["WORTHY", "REJECT"], approve: "WORTHY" }),
+  );
+  return { log, config, card, out: join(dir, "record.json") };
+}
+
+describe("ak council run parses a seat verdict strictly", () => {
+  const worthy = JSON.stringify({ choice: "WORTHY", rationale: "blind" });
+  const reject = JSON.stringify({ choice: "REJECT", rationale: "the change is not worthy" });
+
+  test("a transcript that mentions WORTHY and ends REJECT is REJECT", async () => {
+    const s = worthySetup(`I would have said WORTHY after the green tests.\n${reject}`);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      choice: null,
+      seats: [{ choice: "WORTHY" }, { choice: "WORTHY" }, { role: "veto", choice: "REJECT" }],
+    });
+  });
+
+  test("a missing verdict is REJECT, and a later WORTHY substitute is not asked", async () => {
+    const s = worthySetup("discussed WORTHY at length with no final field", worthy);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      seats: [{}, {}, { role: "veto", choice: "REJECT" }],
+    });
+    expect(readFileSync(s.log, "utf8")).not.toContain("v2");
+  });
+
+  test("duplicated structured choices fail closed to REJECT", async () => {
+    const s = worthySetup(`${worthy}\n${reject}`);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({ seats: [{}, {}, { role: "veto", choice: "REJECT" }] });
+  });
+
+  test("conflicting choice keys fail closed to REJECT", async () => {
+    const s = worthySetup('{"choice":"WORTHY","choice":"REJECT","rationale":"both"}');
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({ seats: [{}, {}, { role: "veto", choice: "REJECT" }] });
+  });
+
+  for (const [name, text] of [
+    ["a wrong-case", '{"choice":"Reject","rationale":"cased"}'],
+    ["an unknown", '{"choice":"MAYBE","rationale":"other"}'],
+  ] as const)
+    test(`${name} choice is REJECT`, async () => {
+      const s = worthySetup(text);
+      const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+      expect(result.code).toBe(1);
+      expect(record(s.out)).toMatchObject({ seats: [{}, {}, { role: "veto", choice: "REJECT" }] });
+    });
+
+  test("an exact WORTHY object still approves", async () => {
+    const s = worthySetup(worthy);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(0);
+    expect(record(s.out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+  });
+});

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { readAdminToken } from "../runner/token.ts";
+import { answerFromParsed, parseSeatVerdict } from "../verdict.ts";
 
 interface SeatPacket {
   run: string;
@@ -195,10 +196,9 @@ export function judgeSeat(args: SeatJudgeArgs) {
   const packet = packetFrom(home, args.packetPath);
   scoutWorktree(home, args.taskId);
   const report = privateFile(home, join(home, "data", args.taskId, "report.md"));
-  const last = readFileSync(report, "utf8").trim().split("\n").at(-1) ?? "";
-  const value: unknown = JSON.parse(last);
-  if (!seatAnswer(value) || !packet.card.options.includes(value.choice))
-    throw new Error("seat report ends without a declared option and rationale");
+  const parsed = parseSeatVerdict(readFileSync(report, "utf8"), packet.card.options);
+  if (parsed === null) throw new Error("seat report ends without a declared option and rationale");
+  const value = answerFromParsed(parsed.choice, parsed.object, seatAnswer);
   const token = readAdminToken(args.adminTokenFile, home);
   const request = join(
     dirname(realpathSync(args.adminTokenFile)),

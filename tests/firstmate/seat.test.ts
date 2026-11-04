@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 
 import { runFirstmate } from "../../src/firstmate/cli.ts";
 import { judgeSeat, launchSeat } from "../../src/firstmate/seat.ts";
+import { parseJson, updated } from "../helpers/json.ts";
 import { makeDir } from "./fixture.ts";
 
 function setup() {
@@ -236,5 +237,21 @@ describe("stock Firstmate seat launcher", () => {
     chmodSync(rejected.token, 0o600);
     writeFileSync(join(rejected.task, "report.md"), '{"choice":"invented","rationale":"not an option"}\n');
     expect(() => rejected.judge(rejected.token)).toThrow("declared option");
+  });
+
+  test("a seat report that mentions WORTHY and ends REJECT submits REJECT", () => {
+    const fixture = judgmentFixture();
+    const packet = updated(
+      updated(parseJson(readFileSync(fixture.f.packet, "utf8")), ["card", "options"], () => ["WORTHY", "REJECT"]),
+      ["card", "approve"],
+      () => "WORTHY",
+    );
+    writeFileSync(fixture.f.packet, JSON.stringify(packet));
+    writeFileSync(
+      join(fixture.task, "report.md"),
+      'Early note: WORTHY if CI is green.\n{"choice":"REJECT","rationale":"the scenario still fails"}\n',
+    );
+    fixture.judge(fixture.token);
+    expect(JSON.parse(readFileSync(fixture.submitted, "utf8"))).toMatchObject({ choice: "REJECT" });
   });
 });
