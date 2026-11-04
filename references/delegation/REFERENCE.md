@@ -218,7 +218,8 @@ review's `inputs` as provenance of the frozen second hash; it is not presented t
 recorded context, and no seat is promised ticket text that is not in the specification. Both exact
 specification and ticket hashes are frozen at the snapshot; steps 10 to 13 then only check the
 already-prepared content, any semantic change they would need takes the normal fallback, and any
-later ticket edit invalidates eligibility normally.
+later ticket edit invalidates eligibility normally. Step 13 skips the independent cold read on
+this route.
 
 **Exits.** The route is left on any verdict other than approved, any non-empty Proposed fixes or
 Decisions bucket, any unavailable required lane, any reported finding in any bucket including FYI,
@@ -243,3 +244,46 @@ reports the comparison, and the ticket's integration owner accepts or refuses it
 manual comparison the ticket is not eligible and takes the normal path. A normative or
 required-action change leaves the route, and the existing class rules decide whether the class
 raises. A series that raises uncertainty takes the normal path with no new counter or monitor.
+
+## Independent cold read of a ticket
+
+Load this section at super-bound step 13. The scorer formula does not change. Not yet backed by
+live probe evidence (phase 1b, GS-004i).
+
+**Mode.** Read `review.cold_read` from the one indexed project record for this ticket. A missing
+review object, a missing key, an unknown value, a missing project, or an unindexed project is
+off. Off dispatches nothing, stores nothing, and leaves the author's type-check as the
+zero-context gate.
+
+**Skip.** A ticket on the text-only single-slice light route above skips this dispatch. When the
+mode is on, the validator still requires a cited read, so do not publish that implementation
+ticket on this route.
+
+**Dispatch.** In shadow and on, dispatch one cold reader per remaining implementation ticket, in
+parallel, each in its own context. Give the reader the ticket and a read-only checkout at the
+stated revision, including `read_dependencies`. Do not give the specification, the alignment
+interview, other tickets, host session transcripts, or the author's scratch files. Each new read
+is a fresh reader with no prior-finding packet.
+
+**Return.** The reader returns a `cold-read` record (`schemas/cold-read.schema.json`). Persist it
+as a run artifact. The record holds a paraphrase of what the reader would build, every decision
+it would have to make that the ticket does not settle, terms it could not resolve, each codebase
+claim labelled `exists` or `proposed`, and, for each of the six readiness criteria above, whether
+it found the evidence that criterion names, and where. Proposed code is never a finding for being
+absent. A path that does not exist at the stated revision, or a name the ticket lists under what
+it produces, is `proposed`. A ticket that names an existing helper that is not there is a finding.
+
+**Rewrite.** When the mode is on, each listed decision either reclassifies the ticket
+`type: decision` or becomes a frontier question. The author may rewrite the ticket and run a new
+read, at most twice per ticket. The author may not overrule a listed decision.
+
+**Shadow.** The read runs and is stored. Print listed decisions beside the ticket. Do not
+reclassify the ticket. Do not add the read to spec-factor or readiness evidence. Do not change
+the class. Keep the author's type-check as the zero-context gate.
+
+**On.** Cite the stored record from `cold_read_ref` as evidence for the `spec` factor and the
+readiness criteria, then re-run the scorer command from step 10. The read adds evidence only
+and does not change factor scores or weights. A completed cold read is binding. An unavailable
+read is cited with its reason; for that ticket only, the author's empty-context check decides
+whether it publishes, is reshaped, or is reclassified `type: decision` and sent back. Neither
+case changes the class.

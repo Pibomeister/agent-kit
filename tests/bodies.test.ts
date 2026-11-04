@@ -1177,21 +1177,21 @@ describe("the gate against the real contract and the real seats", () => {
       bodies += 1;
     }
     // The denominator this gate is measured on. §12.2 mandates the universal
-    // rows in thirty-eight seats and `required-lane-failure-is-unavailable`
-    // binds exactly thirty-eight role ids.
-    expect(bodies).toBe(38);
+    // rows in thirty-nine seats and `required-lane-failure-is-unavailable`
+    // binds exactly thirty-nine role ids.
+    expect(bodies).toBe(39);
     return ctxFor(files);
   }
 
-  test("all thirty-eight authored bodies carry the contract's rows exactly", () => {
+  test("all thirty-nine authored bodies carry the contract's rows exactly", () => {
     const issues = checkBodyShapes(realTree()).filter((i) => i.rule.startsWith("role.never-row"));
     expect(issues).toEqual([]);
   });
 
-  test("the census over the real tree names 38, 35 and 3", () => {
+  test("the census over the real tree names 39, 36 and 3", () => {
     const census = checkBodyShapes(realTree()).find((i) => i.rule === "role.mandated-row-population");
-    expect(census?.message).toContain("38 for each universal row");
-    expect(census?.message).toContain("35 for the plain authorship row");
+    expect(census?.message).toContain("39 for each universal row");
+    expect(census?.message).toContain("36 for the plain authorship row");
     expect(census?.message).toContain("3 for the converse");
     expect(census?.message).toContain("2 for standards grounding");
   });

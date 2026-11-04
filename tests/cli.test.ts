@@ -119,7 +119,19 @@ function capture() {
  * whichever obligation it misses.
  */
 const BUILDABLE = {
-  NOTICE: "agent-kit\nCopyright (c) 2026 A Person\n",
+  NOTICE: [
+    "agent-kit",
+    "Copyright (c) 2026 A Person",
+    "LICENSES/ajv.LICENSE",
+    "LICENSES/ajv-formats.LICENSE",
+    "LICENSES/fast-deep-equal.LICENSE",
+    "LICENSES/fast-uri.LICENSE",
+    "LICENSES/json-schema-traverse.LICENSE",
+    "LICENSES/yaml.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.LICENSE",
+    "provenance/licenses/thedotmack_claude-mem.NOTICE",
+    "",
+  ].join("\n"),
   LICENSE: "MIT License\n\nCopyright (c) 2026 A Person\n",
   "node_modules/ajv/LICENSE": "Copyright (c) 2015-2021 Evgeny Poberezkin\n",
   "node_modules/ajv-formats/LICENSE": "Copyright (c) 2020 Evgeny Poberezkin\n",

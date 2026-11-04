@@ -15,6 +15,7 @@ const result = await Bun.build({
   target: "node",
   format: "esm",
   minify: { whitespace: true },
+  metafile: true,
   plugins: [
     {
       name: "verification-schema",
@@ -47,3 +48,5 @@ if (!result.success) throw new Error(result.logs.map(String).join("\n"));
 const output = result.outputs[0];
 if (output === undefined) throw new Error("gate build produced no output");
 await Bun.write(outfile, await output.text());
+if (result.metafile === undefined) throw new Error("gate build produced no metafile");
+await Bun.write(`${outfile}.meta.json`, JSON.stringify(result.metafile));

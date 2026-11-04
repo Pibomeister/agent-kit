@@ -192,14 +192,14 @@ export function parseDonorSource(text: string): DonorSource | null {
 }
 
 /** `local:<local_source_id>@sha256:<64-hex>[#L<start>-<end>]` */
-interface LocalAdaptationSource {
+export interface LocalAdaptationSource {
   id: string;
   sha256: string;
   start: number | null;
   end: number | null;
 }
 
-function parseLocalAdaptationSource(text: string): LocalAdaptationSource | null {
+export function parseLocalAdaptationSource(text: string): LocalAdaptationSource | null {
   const match = /^local:([A-Za-z0-9._-]+)@sha256:([0-9a-f]{64})(?:#L(\d+)-(\d+))?$/.exec(text.trim());
   if (match?.[1] === undefined || match[2] === undefined) return null;
   if (match[3] === undefined || match[4] === undefined) {

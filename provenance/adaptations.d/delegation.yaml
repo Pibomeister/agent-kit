@@ -17,6 +17,17 @@ adaptations:
   - path: references/delegation/REFERENCE.md
     source: pocock@c55ee46073ed923f86ce59a5eb3b6d895095d1b7:skills/engineering/to-tickets/SKILL.md
     rationale: The vertical-slice rule and the wide-refactor carve-out moved here from the super-bound body, where they now sit beside the ordered stack that the reports supply.
+  - path: references/delegation/REFERENCE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:resources/document_standards/implementation-readiness-standard.md
+    rationale: >-
+      The zero-decision rule and rewrite cap for listed decisions live here so super-bound step
+      13 can stay a pointer. Off and shadow do not change class or scorer inputs (phase 1b,
+      GS-004i).
+  - path: references/delegation/REFERENCE.md
+    source: egm@403d8881d62022490637d740657b33f01e321ea8:agents/codebase_details.md
+    rationale: >-
+      Proposed files are not findings. exists versus proposed labelling, and the rule that
+      proposed-absent is not a defect, are stated here for the cold reader (phase 1b, GS-004i).
   - path: policies/authority-defaults.yaml
     source: local:mission-brief-risk-tiering-and-slop-avoidance@sha256:90abd48e019f09ea3d58c11028148fc971dbefe145c70c0822364f15b1729b38#L150-159
     rationale: The captain's class-to-checkpoint table became the authoritative policy map while merge and deploy remain sensitive for every class.

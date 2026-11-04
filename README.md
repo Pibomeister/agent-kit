@@ -3,7 +3,7 @@
 One engineering lifecycle, amalgamated from eleven donors (ten MIT-licensed, one Apache-2.0) into a single installable
 catalog — rather than four plugins competing over activation descriptions.
 
-**36 public skills · 8 domain packs · 9 protocols · 38 role prompts · 11 reference packs · 36 schemas**,
+**36 public skills · 8 domain packs · 9 protocols · 39 role prompts · 11 reference packs · 36 schemas**,
 with a validator (`ak`) that makes the catalog self-checking and a packager that emits per-host
 bundles.
 
@@ -43,8 +43,12 @@ ak update
 ```
 
 `ak doctor` prints PASS, WARN or FAIL with a remedy for each host and project check, and exits
-nonzero on FAIL. Use `ak doctor --json` for machine-readable findings. `ak update` refreshes each
-installed host and reports old and new versions; it is safe to rerun. If the curl-installed
+nonzero on FAIL. Where the project has review-isolation probe notes under `research/host-facts/`,
+it warns, without a model call or network access, when an installed host's `--version` differs
+from the last probed version. A missing host, missing note, or project without those notes emits
+no extra finding and does not spawn `--version`. Use `ak doctor --json` for
+machine-readable findings. `ak update` refreshes each installed host and reports old and new
+versions; it is safe to rerun. If the curl-installed
 `bin/ak` differs from the published command, update warns and gives the download remedy. Add
 `$HOME/.local/bin` to `PATH` if it is not already there. The same command carries
 `ak delegation <ticket> --project <project-record>`, which `/ak:super-bound` runs to score each
@@ -256,10 +260,10 @@ Shared phase logic, invoked by skills rather than by humans:
 `phase-operations` · `consensus-plan-gate` · `tdd` · `apply-findings` · `review-delta` ·
 `worktree-ownership` · `attach-pack` · `evidence-gate` · `work-trail`
 
-### Roles (38)
+### Roles (39)
 
 6 core (`supervisor`, `implementer`, `verifier`, `reviewer-spec`, `reviewer-standards`, `trail-auditor`) · 15 code-review ·
-7 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 7 learn (`learn/pattern-maintainer`,
+8 doc-review · 3 plan-review (`planner`, `architect`, `critic`) · 7 learn (`learn/pattern-maintainer`,
 `learn/reflector`, `learn/consolidator`, `learn/lesson-merger`, `learn/skill-scout`,
 `learn/session-scorer`, `learn/skill-doctor`).
 
