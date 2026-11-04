@@ -25,6 +25,7 @@ import { checkOutbound, describeRefusals, type OutboundItem } from "./outbound.t
 import { councilOutcome, type CouncilResult } from "./rule.ts";
 import {
   collectDetached,
+  FAIL_CLOSED,
   killGroup,
   launchSeat,
   UNSPECIFIED,
@@ -85,12 +86,23 @@ function seatEntry(role: SeatEntry["role"], seat: CouncilSeat, result: SeatResul
       rationale: null,
       attempts: result.attempts,
     };
+  if ("launcher" in result)
+    return {
+      role,
+      seat: seat.seat,
+      actor: result.launcher.actor,
+      model_requested: result.launcher.requested ?? UNSPECIFIED,
+      model_served: result.answer.model_served ?? UNVERIFIED,
+      choice: result.answer.choice,
+      rationale: result.answer.rationale,
+      attempts: result.attempts,
+    };
   return {
     role,
     seat: seat.seat,
-    actor: result.launcher.actor,
-    model_requested: result.launcher.requested ?? UNSPECIFIED,
-    model_served: result.answer.model_served ?? UNVERIFIED,
+    actor: FAIL_CLOSED,
+    model_requested: UNSPECIFIED,
+    model_served: UNVERIFIED,
     choice: result.answer.choice,
     rationale: result.answer.rationale,
     attempts: result.attempts,

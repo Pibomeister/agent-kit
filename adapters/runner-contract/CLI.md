@@ -60,7 +60,9 @@ violations of [seat independence](CONTRACT.md#3-seat-independence) with
 `invalid or excluded seat`; `decide` rechecks persisted judgments and returns `needs-input` with a
 `runner:seat-independence` escalation if the pair violates the rule.
 Each launcher receives a frozen card on stdin and returns JSON with `choice` as a
-top-level key and `rationale`. The optional private council config (ADR-0015) names the blind veto seat as
+top-level key and `rationale`, as the whole stdout after trim. Prose around it is an invalid answer.
+An exhausted veto chain with no valid answer records `REJECT` from actor `fail-closed` when
+`REJECT` is an option. The optional private council config (ADR-0015) names the blind veto seat as
 `{"veto":{"seat":"...","chain":[{"actor":"...","lineage":["..."],"command":["..."],"requested":"..."}]}}`.
 The outbound cap, launcher timeout and deny-list are fixed and no configuration changes them. Only its owner may read or write
 it. `serve` refuses a council config that names a `pair`, a chain that repeats an actor, or a veto
@@ -102,7 +104,7 @@ On stock Firstmate, `ak firstmate seat-launch` accepts the runner's `packet` JSO
 evidence directory, the captain's intent file and the implementer worktree. It registers a new
 task, runs stock `fm-brief.sh --scout`, fills its brief with the frozen packet and hash-checked
 evidence, and runs stock `fm-spawn.sh --scout`. After that crewmate writes its normal report,
-`ak firstmate seat-judge` reads the final `{"choice":"...","rationale":"..."}` line (`choice` is a top-level key), checks
+`ak firstmate seat-judge` reads the whole final nonempty line, which must be one `{"choice":"...","rationale":"..."}` object (`choice` is a top-level key), checks
 Firstmate's scout task metadata and submits `judge` with the supervisor token from
 `--admin-token-file`. Its request file stays beside that private token, outside the scout's task
 directory. Use distinct task

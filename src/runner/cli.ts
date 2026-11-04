@@ -11,10 +11,18 @@ import { sharesLineage } from "./lineage.ts";
 import { DEFAULT_TIMEOUT_MS, readCouncilConfig, rosterProblems, type CouncilConfig } from "../council/config.ts";
 import { checkOutbound, describeRefusals } from "../council/outbound.ts";
 import { workerVeto } from "../council/rule.ts";
-import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
+import {
+  chainFailures,
+  collectDetached,
+  FAIL_CLOSED,
+  killGroup,
+  launchSeat,
+  UNSPECIFIED,
+  UNVERIFIED,
+} from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
-import { parseSeatVerdict } from "../verdict.ts";
+import { invalidAnswerError, parseVerdict } from "../verdict.ts";
 import {
   isArgs,
   isEffectConfig,
@@ -173,8 +181,9 @@ async function dispatchSeat(
     activeChildren,
   );
   if (child.exitCode !== 0) throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
-  const parsed = parseSeatVerdict(child.stdout.toString(), card.options);
-  if (parsed === null || !isSeatAnswer(parsed.object)) throw new Error("launcher returned an invalid judgment");
+  const parsed = parseVerdict(child.stdout.toString(), "choice", card.options);
+  if (parsed.status !== "exact" || !isSeatAnswer(parsed.object))
+    throw new Error(invalidAnswerError(parsed, "judgment"));
   runner.judge(
     runId,
     cardId,
@@ -222,16 +231,30 @@ async function dispatchVeto(
     });
     return;
   }
+  if ("launcher" in result) {
+    runner.veto(runId, cardId, {
+      status: "answered",
+      seat: council.veto.seat,
+      actor: result.launcher.actor,
+      lineage: result.launcher.lineage,
+      dispatch: `${cardId}-${council.veto.seat}`,
+      choice: result.answer.choice,
+      rationale: result.answer.rationale,
+      model_requested: result.launcher.requested ?? UNSPECIFIED,
+      model_served: result.answer.model_served ?? UNVERIFIED,
+    });
+    return;
+  }
   runner.veto(runId, cardId, {
     status: "answered",
     seat: council.veto.seat,
-    actor: result.launcher.actor,
-    lineage: result.launcher.lineage,
-    dispatch: `${cardId}-${council.veto.seat}`,
+    actor: FAIL_CLOSED,
+    lineage: [FAIL_CLOSED],
+    dispatch: FAIL_CLOSED,
     choice: result.answer.choice,
     rationale: result.answer.rationale,
-    model_requested: result.launcher.requested ?? UNSPECIFIED,
-    model_served: result.answer.model_served ?? UNVERIFIED,
+    model_requested: UNSPECIFIED,
+    model_served: UNVERIFIED,
   });
 }
 

@@ -363,14 +363,16 @@ describe("ak council run parses a seat verdict strictly", () => {
   const reject = JSON.stringify({ choice: "REJECT", rationale: "the change is not worthy" });
 
   test("a transcript that mentions WORTHY and ends REJECT is REJECT", async () => {
-    const s = worthySetup(`I would have said WORTHY after the green tests.\n${reject}`);
+    const s = worthySetup(`I would have said WORTHY after the green tests.\n${reject}`, reject);
     const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
     expect(result.code).toBe(1);
     expect(record(s.out)).toMatchObject({
       outcome: "escalate",
       choice: null,
-      seats: [{ choice: "WORTHY" }, { choice: "WORTHY" }, { role: "veto", choice: "REJECT" }],
+      seats: [{ choice: "WORTHY" }, { choice: "WORTHY" }, { role: "veto", actor: "v2", choice: "REJECT" }],
     });
+    expect(readFileSync(s.log, "utf8")).toContain("v2");
+    expect(JSON.stringify(record(s.out))).toContain("not a JSON object");
   });
 
   test("garbage failover still asks the WORTHY substitute", async () => {
@@ -387,8 +389,9 @@ describe("ak council run parses a seat verdict strictly", () => {
     expect(result.code).toBe(1);
     expect(record(s.out)).toMatchObject({
       outcome: "escalate",
-      seats: [{}, {}, { role: "veto", choice: "REJECT" }],
+      seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
     });
+    expect(JSON.stringify(record(s.out))).toContain("not a JSON object");
   });
 
   test("an exact WORTHY without a rationale is invalid", async () => {
@@ -397,7 +400,7 @@ describe("ak council run parses a seat verdict strictly", () => {
     expect(result.code).toBe(1);
     expect(record(s.out)).toMatchObject({
       outcome: "escalate",
-      seats: [{}, {}, { role: "veto", choice: "REJECT" }],
+      seats: [{}, {}, { role: "veto", actor: "fail-closed", choice: "REJECT" }],
     });
   });
 

@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { readAdminToken } from "../runner/token.ts";
-import { parseSeatVerdict } from "../verdict.ts";
+import { parseVerdict } from "../verdict.ts";
 
 interface SeatPacket {
   run: string;
@@ -166,7 +166,7 @@ Frozen card packet:\n${JSON.stringify(packet, null, 2)}
 
 Runner-collected evidence:\n${evidence}
 
-Write a concise report to your normal scout report path. Its final nonempty line must be one JSON
+Write a concise report to your normal scout report path. The whole of its final nonempty line must be one JSON
 object with choice as a top-level key and a rationale, for example {"choice":"${packet.card.options[0]}","rationale":"evidence supports this option"}.
 Choose only an id from the frozen options. Report failure rather than guessing when evidence is missing.`;
   const rendered = scaffold.replace(/\{TASK\}|\{FIRSTMATE_SPEC\}/g, (marker) => (marker === "{TASK}" ? intent : spec));
@@ -197,8 +197,8 @@ export function judgeSeat(args: SeatJudgeArgs) {
   scoutWorktree(home, args.taskId);
   const report = privateFile(home, join(home, "data", args.taskId, "report.md"));
   const last = readFileSync(report, "utf8").trim().split("\n").at(-1) ?? "";
-  const parsed = parseSeatVerdict(last, packet.card.options);
-  if (parsed === null || !seatAnswer(parsed.object))
+  const parsed = parseVerdict(last, "choice", packet.card.options);
+  if (parsed.status !== "exact" || !seatAnswer(parsed.object))
     throw new Error("seat report ends without a declared option and rationale");
   const value = parsed.object;
   const token = readAdminToken(args.adminTokenFile, home);

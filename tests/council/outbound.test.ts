@@ -151,10 +151,26 @@ describe("council seats", () => {
     const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], () => Promise.resolve(raw("")));
     expect(result).toMatchObject({
       ok: true,
+      synthesized: true,
       answer: { choice: "REJECT" },
       attempts: [{ actor: "v1" }, { actor: "v2" }],
     });
+    expect("launcher" in result).toBe(false);
     expect(JSON.stringify(result)).toContain("invalid answer");
+  });
+
+  test("prose around a JSON object is an invalid attempt and moves to the substitute", async () => {
+    const wrapped = `I would have said WORTHY.\n${JSON.stringify({ choice: "REJECT", rationale: "r" })}`;
+    const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], (launcher) =>
+      Promise.resolve(launcher.actor === "v1" ? raw(wrapped) : ok("REJECT")),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      launcher: { actor: "v2" },
+      answer: { choice: "REJECT" },
+      attempts: [{ actor: "v1" }, { actor: "v2" }],
+    });
+    expect(JSON.stringify(result)).toContain("not a JSON object");
   });
 
   test("an exact WORTHY without a rationale is not a valid answer", async () => {

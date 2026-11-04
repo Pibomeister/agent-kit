@@ -6,7 +6,7 @@
  * the card; the first valid answer ends it.
  */
 
-import { exhaustedReject, parseSeatVerdict } from "../verdict.ts";
+import { exhaustedReject, invalidAnswerError, parseVerdict } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
 export interface ChildOutput {
@@ -25,12 +25,15 @@ export interface Attempt {
 
 export type SeatResult =
   | { ok: true; launcher: CouncilLauncher; answer: CouncilAnswer; attempts: Attempt[] }
+  | { ok: true; synthesized: true; answer: CouncilAnswer; attempts: Attempt[] }
   | { ok: false; attempts: Attempt[] };
 
 /** What the record says about a requested model the roster did not name. */
 export const UNSPECIFIED = "unspecified";
 /** What the record says about a served model the launcher did not report. */
 export const UNVERIFIED = "unverified";
+/** Actor recorded for a fail-closed REJECT after the substitute chain is exhausted. */
+export const FAIL_CLOSED = "fail-closed";
 
 function reason(cause: unknown): string {
   return (cause instanceof Error ? cause.message : String(cause)).slice(0, 500);
@@ -102,16 +105,16 @@ export async function launchSeat(
       const child = await spawn(launcher, payload);
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
-      const parsed = parseSeatVerdict(child.stdout.toString(), options);
-      if (parsed === null || !isCouncilAnswer(parsed.object)) throw new Error("launcher returned an invalid answer");
+      const parsed = parseVerdict(child.stdout.toString(), "choice", options);
+      if (parsed.status !== "exact" || !isCouncilAnswer(parsed.object))
+        throw new Error(invalidAnswerError(parsed, "answer"));
       return { ok: true, launcher, answer: parsed.object, attempts };
     } catch (cause) {
       attempt.error = reason(cause);
     }
   }
   const closed = exhaustedReject(options);
-  const last = seat.chain[seat.chain.length - 1];
-  if (closed !== null && last !== undefined) return { ok: true, launcher: last, answer: closed, attempts };
+  if (closed !== null) return { ok: true, synthesized: true, answer: closed, attempts };
   return { ok: false, attempts };
 }
 

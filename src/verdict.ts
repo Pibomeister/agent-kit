@@ -20,11 +20,6 @@ export type ParsedVerdict<T extends string> =
   | { status: "exact"; value: T; object: JsonObject }
   | { status: "closed"; reason: string };
 
-interface ScannedObject {
-  value: JsonObject;
-  keys: string[];
-}
-
 const ajv = new Ajv2020({ strict: false });
 const isJsonValue: ValidateFunction<JsonValue> = ajv.compile({
   $defs: {
@@ -136,63 +131,34 @@ function scanObject(source: string, i: number): { end: number; keys: string[] } 
   return null;
 }
 
-function jsonObjects(source: string): ScannedObject[] {
-  const objects: ScannedObject[] = [];
-  let i = 0;
-  while (i < source.length) {
-    const c = source[i];
-    if (c === "{") {
-      const scanned = scanObject(source, i);
-      if (scanned !== null) {
-        const value = decodeJson(source.slice(i, scanned.end));
-        if (isJsonObject(value)) objects.push({ value, keys: scanned.keys });
-        i = scanned.end;
-        continue;
-      }
-    } else if (c === "[") {
-      const end = scanArray(source, i);
-      if (end !== null) {
-        i = end;
-        continue;
-      }
-    }
-    i += 1;
-  }
-  return objects;
-}
-
 function closed<T extends string>(reason: string): ParsedVerdict<T> {
   return { status: "closed", reason };
 }
 
 /**
- * The value of `field` in `source`. Exactly one JSON object may carry it, the
- * key may appear once, and the value must be an exact member of `allowed`.
+ * The value of `field` in `source`. The trimmed source must be exactly one
+ * JSON object, the key may appear once, and the value must be an exact
+ * member of `allowed`. Prose around the object is not a parse.
  */
 export function parseVerdict<T extends string>(source: string, field: string, allowed: readonly T[]): ParsedVerdict<T> {
-  const hits = jsonObjects(source).filter((object) => object.keys.includes(field));
-  const hit = hits[0];
-  if (hit === undefined) return closed(`missing ${field}`);
-  if (hits.length > 1) return closed(`duplicated ${field}`);
-  if (new Set(hit.keys).size !== hit.keys.length) return closed(`conflicting ${field}`);
-  if (hit.keys.filter((key) => key === field).length !== 1) return closed(`conflicting ${field}`);
-  const value = hit.value[field];
+  const trimmed = source.trim();
+  const scanned = trimmed.startsWith("{") ? scanObject(trimmed, 0) : null;
+  if (scanned === null || scanned.end !== trimmed.length) return closed("not a JSON object");
+  const object = decodeJson(trimmed);
+  if (!isJsonObject(object)) return closed("not a JSON object");
+  if (!scanned.keys.includes(field)) return closed(`missing ${field}`);
+  if (new Set(scanned.keys).size !== scanned.keys.length) return closed(`conflicting ${field}`);
+  if (scanned.keys.filter((key) => key === field).length !== 1) return closed(`conflicting ${field}`);
+  const value = object[field];
   if (!isJsonString(value)) return closed(`${field} is not a string`);
   const match = allowed.find((item) => item === value);
   if (match === undefined) return closed(`${field} ${value} is not in the enum`);
-  return { status: "exact", value: match, object: hit.value };
+  return { status: "exact", value: match, object };
 }
 
-/**
- * A seat's `choice` field. Only an exact enum hit is a parse. Callers still
- * run the existing answer validators; an object that fails them is invalid.
- */
-export function parseSeatVerdict(
-  source: string,
-  options: readonly string[],
-): Extract<ParsedVerdict<string>, { status: "exact" }> | null {
-  const parsed = parseVerdict(source, "choice", options);
-  return parsed.status === "exact" ? parsed : null;
+export function invalidAnswerError(parsed: ParsedVerdict<string>, kind: "answer" | "judgment"): string {
+  const base = `launcher returned an invalid ${kind}`;
+  return parsed.status === "closed" ? `${base}: ${parsed.reason}` : base;
 }
 
 /** REJECT after the substitute chain produced no valid answer, when that is an option. */
