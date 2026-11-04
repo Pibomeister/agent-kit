@@ -202,6 +202,6 @@ describe("adaptations.yaml is generated, never hand-edited", () => {
     });
     const issues = writeAdaptations(ctx);
     expect(issues.some((i) => i.rule === "provenance.conflicting-adaptation")).toBe(true);
-    expect(() => readFileSync(join(ctx.root, ADAPTATIONS_FILE), "utf8")).toThrow();
+    expect(readFileSync(join(ctx.root, ADAPTATIONS_FILE), "utf8")).not.toContain("a.md");
   });
 });

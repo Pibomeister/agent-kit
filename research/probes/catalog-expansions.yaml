@@ -60,7 +60,7 @@ protocols:
 
 roles:
   baseline: 29
-  catalog: 38
+  catalog: 39
   expansions:
     - ids: [learn/pattern-maintainer, learn/reflector, learn/consolidator, learn/lesson-merger, learn/skill-scout]
       reason: >-
@@ -83,6 +83,11 @@ roles:
         single condensed session against the rubrics, and one traces the failed sessions of a run to
         skill edits. Each runs under a role prompt of its own.
       commits: [03dfee76]
+    - ids: [doc-review/comprehension]
+      reason: >-
+        Doc-review needs a naive-reader seat that restates the document and flags unparaphrasable
+        sections and undefined project terms. Off by default, shadow-capable (phase 1b, GS-004h).
+      commits: [f53aaad1]
 
 references:
   baseline: 4

@@ -9,7 +9,7 @@ import {
   matchTerms,
   type ScanTerm,
 } from "../denylist.ts";
-import { LICENCE_FILES } from "../packaging/plan.ts";
+import { comparePath, licenceClosure, listCitationSources } from "../packaging/licences.ts";
 import { readTextIfPresent, walkFiles } from "../util/fs.ts";
 import type { CheckContext } from "./context.ts";
 import { error, type Issue } from "./types.ts";
@@ -71,14 +71,7 @@ const SCAN_DIRS = [
   "tests",
 ];
 
-// Shipped licence texts are distributed verbatim, so they cannot inherit the source-only exemption.
-const SCAN_FILES = [
-  "catalog.yaml",
-  "AGENTS.md",
-  "AUTHORING.md",
-  "README.md",
-  ...LICENCE_FILES.map((licence) => licence.source),
-];
+const SCAN_FILES = ["catalog.yaml", "AGENTS.md", "AUTHORING.md", "README.md", "NOTICE", "LICENSE"];
 
 /** Authored bodies: where a placeholder means "this skill is not finished". */
 const AUTHORED_BODY_DIRS = ["skills", "packs", "protocols", "roles", "references", "templates"];
@@ -92,8 +85,9 @@ export function contentScanRoots(): string[] {
   return [...SCAN_DIRS];
 }
 
-function isExempt(file: string): boolean {
-  if (LICENCE_FILES.some((licence) => licence.source === file)) return false;
+function isExempt(file: string, dutySources: ReadonlySet<string>): boolean {
+  // A cited licence is distributed verbatim, so it cannot inherit the source-only exemption.
+  if (dutySources.has(file)) return false;
   return DENYLIST_EXEMPT_PREFIXES.some((prefix) => (prefix.endsWith("/") ? file.startsWith(prefix) : file === prefix));
 }
 
@@ -110,10 +104,11 @@ function scan(
   terms: ReadonlyArray<ScanTerm>,
   rule: string,
   describe: (term: ScanTerm, text: string) => string,
+  dutySources: ReadonlySet<string>,
 ): Issue[] {
   const issues: Issue[] = [];
   for (const file of files) {
-    if (isExempt(file)) continue;
+    if (isExempt(file, dutySources)) continue;
     const text = readTextIfPresent(join(root, file));
     if (text === null) continue;
     const seen = new Set<string>();
@@ -131,17 +126,33 @@ export function checkContent(ctx: CheckContext): Issue[] {
   const { root } = ctx;
 
   const denyFiles = collect(root, SCAN_DIRS, SCAN_FILES);
+  const closure = licenceClosure(root, listCitationSources(root), []);
+  const dutySources = new Set(closure.duties.map((duty) => duty.source));
+  const scanSet = new Set(denyFiles);
+  for (const source of dutySources) scanSet.add(source);
+  const scanFiles = [...scanSet].toSorted(comparePath);
   const bodyFiles = collect(root, AUTHORED_BODY_DIRS);
   const skillFiles = collect(root, SKILL_BODY_DIRS);
 
   return [
-    ...scan(root, denyFiles, DENY_TERMS, "content.denylist", (term) => `Denied term (${term.id}). ${term.reason}`),
+    ...closure.problems
+      .filter((problem) => problem.source !== "NOTICE" && problem.source !== "LICENSE")
+      .map((problem) => error("packaging.licence-file-missing", problem.source, problem.message)),
+    ...scan(
+      root,
+      scanFiles,
+      DENY_TERMS,
+      "content.denylist",
+      (term) => `Denied term (${term.id}). ${term.reason}`,
+      dutySources,
+    ),
     ...scan(
       root,
       bodyFiles,
       PLACEHOLDER_TERMS,
       "content.placeholder",
       (term, text) => `Placeholder '${text}' in an authored body. ${term.reason} AUTHORING.md: no placeholders.`,
+      dutySources,
     ),
     ...scan(
       root,
@@ -150,6 +161,7 @@ export function checkContent(ctx: CheckContext): Issue[] {
       "content.local-doc-target",
       (term, text) =>
         `Application-local documentation target '${text}' is banned by ADR-0001 (release scenario 21). ${term.reason} Use a KB adapter call.`,
+      dutySources,
     ),
   ];
 }

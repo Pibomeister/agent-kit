@@ -1713,6 +1713,7 @@ describe("verification rules", () => {
 const HASH = `sha256:${"a".repeat(64)}`;
 const RULE_COLD_REF = "ticket.cold-read-ref-required-when-on";
 const RULE_PARAPHRASE = "review.comprehension-paraphrase-stored-by-hash";
+const RULE_SHADOW = "review.comprehension-shadow-findings-stay-fyi";
 const RULE_PROPOSED = "cold-read.proposed-absent-is-not-a-finding";
 
 function ticket(extra: Doc = {}): Doc {
@@ -1763,6 +1764,32 @@ function coveredComprehension(extra: Doc = {}): Doc {
     raw_output: { id: "raw-comprehension", hash: HASH },
     ...extra,
   };
+}
+
+function shadowProject(): Doc {
+  return project({ review: { comprehension: "shadow" } });
+}
+
+function onCompProject(): Doc {
+  return project({ review: { comprehension: "on" } });
+}
+
+function comprehensionFinding(extra: Doc = {}): Doc {
+  return finding({
+    id: "finding-comp",
+    lane: "doc-review/comprehension",
+    autofix_class: "advisory",
+    title: "undefined project term",
+    ...extra,
+  });
+}
+
+function withComprehension(extra: Doc = {}, laneExtra: Doc = {}): Doc {
+  const lanes = reviewLanes(review());
+  return review({
+    lanes: [lanes[0], lanes[1], coveredComprehension({ required: false, ...laneExtra })],
+    ...extra,
+  });
 }
 
 function reviewLanes(doc: Doc): unknown[] {
@@ -2025,6 +2052,168 @@ describe("review.comprehension-paraphrase-stored-by-hash", () => {
 
   test("an existing review without a comprehension lane stays valid", () => {
     expect(rulesOf(run(review())).filter((r) => r.startsWith("review."))).toEqual([]);
+  });
+});
+
+describe("review.comprehension-shadow-findings-stay-fyi", () => {
+  test("a stock review plus a project with no review object does not fire the shadow rule", () => {
+    expect(rulesOf(run(review(), [project()]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("a stock review under shadow with no comprehension lane stays valid", () => {
+    expect(rulesOf(run(review(), [shadowProject()]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("shadow plus advisory plus no-opinion plus approved passes", () => {
+    const item = comprehensionFinding();
+    const doc = withComprehension(
+      {
+        findings: [{ id: String(item["id"]), hash: artifactHash(item) }],
+        verdict: "approved",
+      },
+      { verdict: "no-opinion" },
+    );
+    expect(rulesOf(run(doc, [shadowProject(), item]))).not.toContain(RULE_SHADOW);
+  });
+
+  test.each(["manual", "gated_auto", "safe_auto"] as const)("shadow plus autofix_class %s is refused", (cls) => {
+    const item = comprehensionFinding({ autofix_class: cls });
+    const doc = withComprehension({
+      findings: [{ id: String(item["id"]), hash: artifactHash(item) }],
+    });
+    expect(rulesOf(run(doc, [shadowProject(), item]))).toContain(RULE_SHADOW);
+  });
+
+  test("shadow plus unresolved_blockers membership is refused", () => {
+    const item = comprehensionFinding();
+    const ref = { id: String(item["id"]), hash: artifactHash(item) };
+    const doc = withComprehension({
+      findings: [ref],
+      unresolved_blockers: [ref],
+      verdict: "blocked",
+    });
+    expect(rulesOf(run(doc, [shadowProject(), item]))).toContain(RULE_SHADOW);
+  });
+
+  test.each(["block", "request-changes"] as const)("shadow plus lane verdict %s is refused", (verdict) => {
+    const doc = withComprehension({}, { verdict });
+    expect(rulesOf(run(doc, [shadowProject()]))).toContain(RULE_SHADOW);
+  });
+
+  test("on plus manual plus request-changes passes the shadow rule", () => {
+    const item = comprehensionFinding({ autofix_class: "manual" });
+    const ref = { id: String(item["id"]), hash: artifactHash(item) };
+    const lanes = reviewLanes(review());
+    const doc = review({
+      lanes: [lanes[0], lanes[1], coveredComprehension({ verdict: "request-changes" })],
+      findings: [ref],
+      unresolved_blockers: [ref],
+      verdict: "changes-requested",
+    });
+    expect(rulesOf(run(doc, [onCompProject(), item]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("no project plus manual plus request-changes passes the shadow rule", () => {
+    const item = comprehensionFinding({ autofix_class: "manual" });
+    const ref = { id: String(item["id"]), hash: artifactHash(item) };
+    const lanes = reviewLanes(review());
+    const doc = review({
+      lanes: [lanes[0], lanes[1], coveredComprehension({ verdict: "request-changes" })],
+      findings: [ref],
+      unresolved_blockers: [ref],
+      verdict: "changes-requested",
+    });
+    expect(rulesOf(run(doc, [item]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("a coherence blocker still blocks under shadow", () => {
+    const gap = comprehensionFinding();
+    const blocker = finding({
+      id: "finding-coh",
+      lane: "doc-review/coherence",
+      autofix_class: "manual",
+      title: "two passages disagree",
+    });
+    const gapRef = { id: String(gap["id"]), hash: artifactHash(gap) };
+    const blockRef = { id: String(blocker["id"]), hash: artifactHash(blocker) };
+    const doc = withComprehension(
+      {
+        findings: [gapRef, blockRef],
+        unresolved_blockers: [blockRef],
+        verdict: "changes-requested",
+      },
+      { verdict: "approve" },
+    );
+    expect(rulesOf(run(doc, [shadowProject(), gap, blocker]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("a required comprehension lane under shadow is refused", () => {
+    const doc = withComprehension({}, { required: true });
+    expect(rulesOf(run(doc, [shadowProject()]))).toContain(RULE_SHADOW);
+  });
+
+  test("off plus a covered comprehension lane does not fire the shadow rule", () => {
+    const item = comprehensionFinding({ autofix_class: "manual" });
+    const lanes = reviewLanes(review());
+    const doc = review({
+      lanes: [lanes[0], lanes[1], coveredComprehension({ verdict: "request-changes" })],
+      findings: [{ id: String(item["id"]), hash: artifactHash(item) }],
+    });
+    expect(rulesOf(run(doc, [project({ review: { comprehension: "off" } }), item]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("duplicate project records with mixed shadow and on are refused", () => {
+    expect(
+      rulesOf(run(review(), [shadowProject(), project({ id: "project-2", review: { comprehension: "on" } })])),
+    ).toContain(RULE_SHADOW);
+  });
+
+  test("an unknown comprehension mode is refused", () => {
+    expect(rulesOf(run(review(), [project({ review: { comprehension: "maybe" } })]))).toContain(RULE_SHADOW);
+  });
+
+  test("a non-string comprehension mode is refused", () => {
+    expect(rulesOf(run(review(), [project({ review: { comprehension: true } })]))).toContain(RULE_SHADOW);
+  });
+
+  test("duplicate records where one project is missing the comprehension key and the other is on are refused", () => {
+    expect(
+      rulesOf(run(review(), [project(), project({ id: "project-2", review: { comprehension: "on" } })])),
+    ).toContain(RULE_SHADOW);
+  });
+
+  test("duplicate project records that are all off stay valid", () => {
+    expect(
+      rulesOf(
+        run(review(), [
+          project({ review: { comprehension: "off" } }),
+          project({ id: "project-2", review: { comprehension: "off" } }),
+        ]),
+      ),
+    ).not.toContain(RULE_SHADOW);
+  });
+
+  test("duplicate project records that all omit the comprehension key stay valid", () => {
+    expect(rulesOf(run(review(), [project(), project({ id: "project-2" })]))).not.toContain(RULE_SHADOW);
+  });
+
+  test("a comprehension finding filed under another lane value is still refused in shadow", () => {
+    const item = comprehensionFinding({ lane: "doc-review/coherence", autofix_class: "manual" });
+    const ref = { id: String(item["id"]), hash: artifactHash(item) };
+    const doc = withComprehension({ findings: [ref] }, { findings: [ref] });
+    expect(rulesOf(run(doc, [shadowProject(), item]))).toContain(RULE_SHADOW);
+  });
+});
+
+describe("doc-review step 5 raw_output.hash instruction", () => {
+  test("every lane stores raw_output.hash only when the comprehension setting is shadow or on", () => {
+    const skill = readFileSync(join(import.meta.dir, "../skills/doc-review/SKILL.md"), "utf8");
+    const match = /^5\. [\s\S]*?(?=^6\. )/m.exec(skill);
+    const step5 = match?.[0] ?? "";
+    expect(step5).toContain("raw_output.hash");
+    const hashSentence = step5.split(/(?<=\.)\s+/).find((part) => part.includes("raw_output.hash")) ?? "";
+    expect(hashSentence).toMatch(/shadow/);
+    expect(hashSentence).toMatch(/`on`/);
   });
 });
 
