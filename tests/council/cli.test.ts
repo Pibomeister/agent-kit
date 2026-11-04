@@ -373,15 +373,32 @@ describe("ak council run parses a seat verdict strictly", () => {
     });
   });
 
-  test("a missing verdict is REJECT, and a later WORTHY substitute is not asked", async () => {
+  test("garbage failover still asks the WORTHY substitute", async () => {
     const s = worthySetup("discussed WORTHY at length with no final field", worthy);
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(0);
+    expect(record(s.out)).toMatchObject({ outcome: "approve", choice: "WORTHY" });
+    expect(readFileSync(s.log, "utf8")).toContain("v2");
+  });
+
+  test("an exhausted chain with no valid answer is REJECT", async () => {
+    const s = worthySetup("discussed WORTHY at length with no final field");
     const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
     expect(result.code).toBe(1);
     expect(record(s.out)).toMatchObject({
       outcome: "escalate",
       seats: [{}, {}, { role: "veto", choice: "REJECT" }],
     });
-    expect(readFileSync(s.log, "utf8")).not.toContain("v2");
+  });
+
+  test("an exact WORTHY without a rationale is invalid", async () => {
+    const s = worthySetup('{"choice":"WORTHY"}');
+    const result = await run(["run", "--card", s.card, "--council-config", s.config, "--out", s.out]);
+    expect(result.code).toBe(1);
+    expect(record(s.out)).toMatchObject({
+      outcome: "escalate",
+      seats: [{}, {}, { role: "veto", choice: "REJECT" }],
+    });
   });
 
   test("duplicated structured choices fail closed to REJECT", async () => {

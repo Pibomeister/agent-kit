@@ -18,6 +18,12 @@ const ok = (choice: string) => ({
   stderr: Buffer.from(""),
 });
 
+const raw = (stdout: string) => ({
+  exitCode: 0,
+  stdout: Buffer.from(stdout),
+  stderr: Buffer.from(""),
+});
+
 const veto = (over: Partial<AnsweredVeto> = {}): AnsweredVeto => ({
   status: "answered",
   seat: "veto",
@@ -126,6 +132,42 @@ describe("council seats", () => {
       launcher: { actor: "v2" },
       attempts: [{ actor: "v1", error: "launcher timed out after 500ms" }, { actor: "v2" }],
     });
+  });
+
+  test("unparseable output records the attempt and moves to the substitute", async () => {
+    const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], (launcher) =>
+      Promise.resolve(launcher.actor === "v1" ? raw("not-json") : ok("WORTHY")),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      launcher: { actor: "v2" },
+      answer: { choice: "WORTHY" },
+      attempts: [{ actor: "v1" }, { actor: "v2" }],
+    });
+    expect(JSON.stringify(result)).toContain("invalid answer");
+  });
+
+  test("an exhausted chain with REJECT as an option closes to REJECT", async () => {
+    const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], () => Promise.resolve(raw("")));
+    expect(result).toMatchObject({
+      ok: true,
+      answer: { choice: "REJECT" },
+      attempts: [{ actor: "v1" }, { actor: "v2" }],
+    });
+    expect(JSON.stringify(result)).toContain("invalid answer");
+  });
+
+  test("an exact WORTHY without a rationale is not a valid answer", async () => {
+    const result = await launchSeat(seat, "{}", ["WORTHY", "REJECT"], (launcher) =>
+      Promise.resolve(launcher.actor === "v1" ? raw('{"choice":"WORTHY"}') : ok("REJECT")),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      launcher: { actor: "v2" },
+      answer: { choice: "REJECT" },
+      attempts: [{ actor: "v1" }, { actor: "v2" }],
+    });
+    expect(JSON.stringify(result)).toContain("invalid answer");
   });
 
   test("a choice outside the options moves to the substitute", async () => {

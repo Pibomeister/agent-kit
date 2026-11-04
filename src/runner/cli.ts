@@ -14,7 +14,7 @@ import { workerVeto } from "../council/rule.ts";
 import { chainFailures, collectDetached, killGroup, launchSeat, UNSPECIFIED, UNVERIFIED } from "../council/seat.ts";
 import { workerControlledPath, workerFreePath } from "./path.ts";
 import { readAdminToken } from "./token.ts";
-import { answerFromParsed, parseSeatVerdict } from "../verdict.ts";
+import { parseSeatVerdict } from "../verdict.ts";
 import {
   isArgs,
   isEffectConfig,
@@ -174,18 +174,17 @@ async function dispatchSeat(
   );
   if (child.exitCode !== 0) throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim()}`);
   const parsed = parseSeatVerdict(child.stdout.toString(), card.options);
-  if (parsed === null) throw new Error("launcher returned an invalid judgment");
-  const answerValue = answerFromParsed(parsed.choice, parsed.object, isSeatAnswer);
+  if (parsed === null || !isSeatAnswer(parsed.object)) throw new Error("launcher returned an invalid judgment");
   runner.judge(
     runId,
     cardId,
     launcher.seat,
     launcher.actor,
     `${cardId}-${launcher.seat}`,
-    answerValue.choice,
+    parsed.object.choice,
     [],
     launcher.lineage,
-    answerValue.rationale,
+    parsed.object.rationale,
   );
 }
 

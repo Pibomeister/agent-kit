@@ -254,4 +254,19 @@ describe("stock Firstmate seat launcher", () => {
     fixture.judge(fixture.token);
     expect(JSON.parse(readFileSync(fixture.submitted, "utf8"))).toMatchObject({ choice: "REJECT" });
   });
+
+  test("quoted JSON earlier does not count as a duplicate of a valid final line", () => {
+    const fixture = judgmentFixture();
+    writeFileSync(
+      join(fixture.task, "report.md"),
+      [
+        "# Seat report",
+        'Quoted from the brief: {"choice":"hold","rationale":"example in the prompt"}',
+        '{"choice":"approve","rationale":"The cited receipt supports approval."}',
+        "",
+      ].join("\n"),
+    );
+    fixture.judge(fixture.token);
+    expect(JSON.parse(readFileSync(fixture.submitted, "utf8"))).toMatchObject({ choice: "approve" });
+  });
 });

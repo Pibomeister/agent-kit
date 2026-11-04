@@ -184,27 +184,18 @@ export function parseVerdict<T extends string>(source: string, field: string, al
 }
 
 /**
- * A seat's `choice` field. Fail-closed to REJECT when that is an option.
- * Any other miss is not a valid answer.
+ * A seat's `choice` field. Only an exact enum hit is a parse. Callers still
+ * run the existing answer validators; an object that fails them is invalid.
  */
 export function parseSeatVerdict(
   source: string,
   options: readonly string[],
-): { choice: string; object: JsonObject | null } | null {
+): Extract<ParsedVerdict<string>, { status: "exact" }> | null {
   const parsed = parseVerdict(source, "choice", options);
-  if (parsed.status === "exact") return { choice: parsed.value, object: parsed.object };
-  return options.includes(REJECT) ? { choice: REJECT, object: null } : null;
+  return parsed.status === "exact" ? parsed : null;
 }
 
-export function answerFromParsed<A extends { choice: string; rationale: string }>(
-  choice: string,
-  object: JsonObject | null,
-  valid: ValidateFunction<A>,
-): A | { choice: string; rationale: string } {
-  if (object !== null && valid(object) && object.choice === choice) return object;
-  const rationale =
-    object !== null && isJsonString(object.rationale) && object.rationale.length > 0
-      ? object.rationale
-      : CLOSED_RATIONALE;
-  return { choice, rationale };
+/** REJECT after the substitute chain produced no valid answer, when that is an option. */
+export function exhaustedReject(options: readonly string[]): { choice: string; rationale: string } | null {
+  return options.includes(REJECT) ? { choice: REJECT, rationale: CLOSED_RATIONALE } : null;
 }

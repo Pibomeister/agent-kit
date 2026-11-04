@@ -426,7 +426,7 @@ seat launchers from its private state directory, with runner tokens, runtime pre
 `PATH` entries removed from their environment. Under stock Firstmate, the launchers dispatch
 separate ordinary crewmates through its normal brief/spawn path; the implementing worker never
 spawns them. Each launcher returns a JSON object containing
-`choice` and `rationale`. The service strips runner tokens from the launched environment, records
+`choice` as a top-level key and `rationale`. The service strips runner tokens from the launched environment, records
 distinct actors, dispatch ids and lineages, and refuses a missing or ineligible seat. A launcher that
 exits non-zero, prints unparseable output, or returns an invalid answer or a choice outside the card's
 options refuses the card: the run goes to `needs-input` with a `runner:seat-independence` escalation

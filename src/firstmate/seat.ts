@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { readAdminToken } from "../runner/token.ts";
-import { answerFromParsed, parseSeatVerdict } from "../verdict.ts";
+import { parseSeatVerdict } from "../verdict.ts";
 
 interface SeatPacket {
   run: string;
@@ -167,7 +167,7 @@ Frozen card packet:\n${JSON.stringify(packet, null, 2)}
 Runner-collected evidence:\n${evidence}
 
 Write a concise report to your normal scout report path. Its final nonempty line must be one JSON
-object with exactly choice and rationale, for example {"choice":"${packet.card.options[0]}","rationale":"evidence supports this option"}.
+object with choice as a top-level key and a rationale, for example {"choice":"${packet.card.options[0]}","rationale":"evidence supports this option"}.
 Choose only an id from the frozen options. Report failure rather than guessing when evidence is missing.`;
   const rendered = scaffold.replace(/\{TASK\}|\{FIRSTMATE_SPEC\}/g, (marker) => (marker === "{TASK}" ? intent : spec));
   writeFileSync(brief, rendered);
@@ -196,9 +196,11 @@ export function judgeSeat(args: SeatJudgeArgs) {
   const packet = packetFrom(home, args.packetPath);
   scoutWorktree(home, args.taskId);
   const report = privateFile(home, join(home, "data", args.taskId, "report.md"));
-  const parsed = parseSeatVerdict(readFileSync(report, "utf8"), packet.card.options);
-  if (parsed === null) throw new Error("seat report ends without a declared option and rationale");
-  const value = answerFromParsed(parsed.choice, parsed.object, seatAnswer);
+  const last = readFileSync(report, "utf8").trim().split("\n").at(-1) ?? "";
+  const parsed = parseSeatVerdict(last, packet.card.options);
+  if (parsed === null || !seatAnswer(parsed.object))
+    throw new Error("seat report ends without a declared option and rationale");
+  const value = parsed.object;
   const token = readAdminToken(args.adminTokenFile, home);
   const request = join(
     dirname(realpathSync(args.adminTokenFile)),

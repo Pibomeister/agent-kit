@@ -6,7 +6,7 @@
  * the card; the first valid answer ends it.
  */
 
-import { answerFromParsed, parseSeatVerdict } from "../verdict.ts";
+import { exhaustedReject, parseSeatVerdict } from "../verdict.ts";
 import { isCouncilAnswer, type CouncilAnswer, type CouncilLauncher, type CouncilSeat } from "./config.ts";
 
 export interface ChildOutput {
@@ -103,12 +103,15 @@ export async function launchSeat(
       if (child.exitCode !== 0)
         throw new Error(`launcher exited ${child.exitCode}: ${child.stderr.toString().trim().slice(0, 300)}`);
       const parsed = parseSeatVerdict(child.stdout.toString(), options);
-      if (parsed === null) throw new Error("launcher returned an invalid answer");
-      return { ok: true, launcher, answer: answerFromParsed(parsed.choice, parsed.object, isCouncilAnswer), attempts };
+      if (parsed === null || !isCouncilAnswer(parsed.object)) throw new Error("launcher returned an invalid answer");
+      return { ok: true, launcher, answer: parsed.object, attempts };
     } catch (cause) {
       attempt.error = reason(cause);
     }
   }
+  const closed = exhaustedReject(options);
+  const last = seat.chain[seat.chain.length - 1];
+  if (closed !== null && last !== undefined) return { ok: true, launcher: last, answer: closed, attempts };
   return { ok: false, attempts };
 }
 
