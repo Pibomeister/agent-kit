@@ -11,7 +11,15 @@ import type { CheckContext } from "../validation/context.ts";
 import { error, note, unavailable, type Issue } from "../validation/types.ts";
 import { generateHostFrontmatter } from "./frontmatter.ts";
 import { CAPABILITY_TABLE_FILE, ceilingFor, loadCapabilityTable, type Ceiling } from "./capability-table.ts";
-import { loadHostCapabilities, relocateForHost, rewriteExplicitStarts, type HostId, type SkillMode } from "./hosts.ts";
+import { cursorAkLauncher } from "./cursor-ak.ts";
+import {
+  loadHostCapabilities,
+  relocateForHost,
+  rewriteAkCommands,
+  rewriteExplicitStarts,
+  type HostId,
+  type SkillMode,
+} from "./hosts.ts";
 import { INSTALL_FILE, loadInstallConfig, type InstallConfig } from "./install.ts";
 import { isUserInvoked, loadSkillManifest } from "./manifest.ts";
 import { linkMentions, mentionResolver, schemaRefs, type MentionResolver } from "./mentions.ts";
@@ -308,10 +316,12 @@ export interface BundleFile {
 
 /**
  * Whether `file` is a program the bundle runs by its own path: a `bin/` file
- * that starts with a shebang. The skills run `ak …`, which resolves to the
- * installed `bin/ak`, and a shell refuses that file with "Permission denied"
- * unless it carries the executable bit. `bin/ak-gate.mjs` has no shebang and
- * every caller runs it as `node …/bin/ak-gate.mjs`, so it needs none.
+ * that starts with a shebang. The skills run `ak …` or, on Cursor,
+ * `.cursor/bin/ak`, which resolves to the installed program, and a shell
+ * refuses that file with "Permission denied" unless it carries the executable
+ * bit. `bin/ak-gate.mjs` has no shebang and every caller runs it as
+ * `node …/bin/ak-gate.mjs`, so it needs none. Cursor's `ak.js` is the same:
+ * the launcher execs bun with that path.
  */
 export function isExecutable(file: BundleFile): boolean {
   const bin = file.path.startsWith("bin/") || file.path.startsWith(".cursor/bin/");
@@ -632,6 +642,8 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     .map((entry) => entry.id);
   const renderExplicitStarts = (text: string) =>
     rewriteExplicitStarts(text, host, catalog.package.namespace, userSkillIds);
+  const rewriteSkillCommands = (text: string, source = "") =>
+    rewriteAkCommands(renderExplicitStarts(text), host, source);
   const emitted: string[] = [];
   const pending: Array<{ source: string; published: string }> = [];
   const mentions = catalogMentions(root, catalog);
@@ -802,7 +814,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const publishedBody = relocateForHost(host, bodyPath);
     const rewritten = rewriteLinks(bodyPath, publishedBody, canonical.body, included, mentions, bodyPath, host);
     issues.push(...rewritten.issues);
-    const hostSkill = renderExplicitStarts(`${generated.text}${rewritten.text}`);
+    const hostSkill = rewriteSkillCommands(`${generated.text}${rewritten.text}`);
 
     files.set(publishedBody, { path: publishedBody, contents: hostSkill, source: bodyPath });
     emitted.push(entry.id);
@@ -821,7 +833,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
       issues.push(...assetRewrite.issues);
       files.set(publishedAsset, {
         path: publishedAsset,
-        contents: renderExplicitStarts(assetRewrite.text),
+        contents: rewriteSkillCommands(assetRewrite.text),
         source: asset,
       });
       for (const dep of assetRewrite.dependencies) {
@@ -838,7 +850,9 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     const text = readTextIfPresent(join(root, source));
     if (text === null) return;
     const published = relocateForHost(host, source);
-    files.set(published, { path: published, contents: text, source, verbatim: true });
+    const contents =
+      source.startsWith("schemas/") && source.endsWith(".schema.json") ? rewriteSkillCommands(text, source) : text;
+    files.set(published, { path: published, contents, source, verbatim: true });
     // Body bytes stay the source bytes, so a link keeps its source path and a code
     // span stays plain. Copy a template that link names; other deps, and the links
     // a skill follows, travel through the shared closure.
@@ -881,7 +895,7 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
     issues.push(...rewritten.issues);
     files.set(next.published, {
       path: next.published,
-      contents: renderExplicitStarts(rewritten.text),
+      contents: rewriteSkillCommands(rewritten.text, next.source),
       source: next.source,
     });
     for (const dep of rewritten.dependencies) {
@@ -1008,10 +1022,17 @@ export function planBundle(ctx: CheckContext, host: HostId, options: PlanOptions
   }
   if (maintenance !== null) {
     const akPath = relocateForHost(host, "bin/ak");
-    files.set(akPath, {
-      path: akPath,
-      contents: `#!/usr/bin/env bun\n${licenceBanner(closure.duties)}${maintenance.body}`,
-    });
+    const body = `${licenceBanner(closure.duties)}${maintenance.body}`;
+    if (host === "cursor") {
+      const scriptPath = relocateForHost(host, "bin/ak.js");
+      files.set(scriptPath, { path: scriptPath, contents: body });
+      files.set(akPath, { path: akPath, contents: cursorAkLauncher() });
+    } else {
+      files.set(akPath, {
+        path: akPath,
+        contents: `#!/usr/bin/env bun\n${body}`,
+      });
+    }
     const stop = STOP_HOOK_COMMANDS[host];
     // The semantic lint Stop hook rides on bin/ak, so it ships only with it, in the two hosts that run plugin hooks.
     if (stop !== undefined)

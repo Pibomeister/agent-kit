@@ -48,7 +48,8 @@ REPO="${REPO:?set REPO to the consuming checkout}"
 
 mkdir -p "$REPO/.cursor/skills" "$REPO/.cursor/agents" "$REPO/.cursor/rules" \
   "$REPO/.cursor/roles" "$REPO/.cursor/references" "$REPO/.cursor/schemas" \
-  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses"
+  "$REPO/.cursor/templates" "$REPO/.cursor/bin" "$REPO/.cursor/licenses" \
+  "$REPO/.cursor/adapters"
 
 rsync -a "$BUNDLE/.cursor/skills/"     "$REPO/.cursor/skills/"
 rsync -a "$BUNDLE/.cursor/agents/"     "$REPO/.cursor/agents/"
@@ -59,6 +60,7 @@ rsync -a "$BUNDLE/.cursor/schemas/"    "$REPO/.cursor/schemas/"
 rsync -a "$BUNDLE/.cursor/templates/"  "$REPO/.cursor/templates/"
 rsync -a "$BUNDLE/.cursor/bin/"        "$REPO/.cursor/bin/"
 rsync -a "$BUNDLE/.cursor/licenses/"   "$REPO/.cursor/licenses/"
+rsync -a "$BUNDLE/.cursor/adapters/"   "$REPO/.cursor/adapters/"
 cp -n "$BUNDLE/.cursor/catalog.yaml"   "$REPO/.cursor/catalog.yaml"
 ```
 
@@ -105,7 +107,32 @@ On the target branch or pull request:
 4. Do not paste the author's narrative into a reviewer prompt. Cursor gives the
    subagent a clean context window; it does not attest isolation.
 5. The author does not sit a reviewer seat and does not close a finding.
+6. Run `.cursor/bin/ak` from the repo root, not `ak` or `bun run ak`. The
+   Firstmate grant is `.cursor/bin/ak firstmate grant`. The gate is
+   `node .cursor/bin/ak-gate.mjs`.
 
 `ak doctor` and `ak update` do not manage Cursor. The isolation-probe version
 check runs only where `research/host-facts/` holds a review-isolation note with
 a real host version. Re-run the build and rsync to refresh a vendored copy.
+
+## Self-host on this repository
+
+agent-kit vendors that overlay into `.cursor/` so a Cloud Agent cloning this
+repo discovers the skills without a separate install. Root `AGENTS.md` stays
+the maintainer guide. After a packaging change run
+`tools/cursor/self-host.sh --vendor`. `tools/cursor/self-host.sh --check` fails
+when the committed copy differs from a fresh `ak build --host cursor`.
+`.cursor/environment.json` is repo-owned and is not part of the overlay.
+`tools/cursor/install.sh` (the Cloud Agent `install` command) may append one
+marked PATH line to the first of `~/.bash_profile`, `~/.bash_login`,
+`~/.profile` that exists, which is the order `bash -l` reads. If none of those
+files exist, it writes `~/.profile`. It does that only when `~/.bun/bin/bun` is
+1.3.14 and a login shell cannot already find that version. It never replaces an
+existing `~/.bun/bin/bun` that is not the pin.
+
+`.cursor/bin/ak` is a POSIX sh launcher. It runs `.cursor/bin/ak.js` with bun
+1.3.14 from PATH if that bun is the pin, otherwise `$HOME/.bun/bin/bun`. Cloud
+Agent tool shells are not login shells and often have neither `~/.bun/bin` nor
+bun on PATH, so skills name `.cursor/bin/ak`, not `ak` or `bun run ak`. The
+launcher does not write `/usr/local/bin`. If neither bun is the pin, it exits
+127 and names the pin.
