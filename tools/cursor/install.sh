@@ -6,9 +6,16 @@
 # ~/.bash_login, ~/.profile that exists (bash -l order; ~/.profile if none
 # exist), only when ~/.bun/bin/bun is 1.3.14 and a login shell cannot already
 # find that version.
+# On a Cursor cloud agent (CURSOR_AGENT=1), may also create /usr/local/bin/bun
+# as a symlink to ~/.bun/bin/bun. Cloud tool shells are not login shells and
+# do not read the login PATH line, so that line never reaches them. The
+# symlink is the PATH entry those shells already search. If /usr/local/bin is
+# not writable, sudo_link_system_bun uses passwordless sudo -n. Never replaces
+# a /usr/local/bin/bun that is not this symlink. On any other machine the
+# installer stays inside $HOME and prints that skip on stderr.
 set -euo pipefail
 PIN=1.3.14
-HERE=$(cd "$(dirname "$0")" && pwd)
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 SUMS=$HERE/bun-v${PIN}.sha256
 export PATH="${HOME}/.bun/bin:${PATH}"
@@ -67,22 +74,52 @@ install_bun() {
   chmod +x "${HOME}/.bun/bin/bun"
 }
 
-link_bun() {
+home_bun_is_pin() {
+  bun_bin=${HOME}/.bun/bin/bun
+  [ -x "$bun_bin" ] && [ "$("$bun_bin" --version)" = "$PIN" ]
+}
+
+cursor_cloud_agent() {
+  [ "${CURSOR_AGENT:-}" = 1 ]
+}
+
+# Sole sudo use. Delete this function to drop passwordless sudo.
+sudo_link_system_bun() {
+  src=$1
+  dst=$2
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    sudo ln -s "$src" "$dst" || true
+  fi
+}
+
+link_system_bun() {
   src=${HOME}/.bun/bin/bun
   dst=/usr/local/bin/bun
-  [ -x "$src" ] || return 0
-  if [ -w /usr/local/bin ]; then
-    ln -sf "$src" "$dst" || true
-  elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-    sudo ln -sf "$src" "$dst" || true
+  if ! home_bun_is_pin; then
+    return 0
+  fi
+  if ! cursor_cloud_agent; then
+    echo "skipping $dst: CURSOR_AGENT=1 is unset (not a Cursor cloud agent). bun stays at $src" >&2
+    return 0
+  fi
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    if [ ! -L "$dst" ] || [ "$(readlink "$dst")" != "$src" ]; then
+      echo "skipping $dst: not a symlink to $src" >&2
+      return 0
+    fi
+    return 0
+  fi
+  if [ -w "$(dirname "$dst")" ]; then
+    ln -s "$src" "$dst" || true
+  else
+    sudo_link_system_bun "$src" "$dst"
   fi
 }
 
 # Cloud Agent install/start are bash -l. Stock Ubuntu ~/.bashrc returns early
 # when not interactive, so PATH belongs in the login file bash actually reads.
 persist_login_path() {
-  bun_bin=${HOME}/.bun/bin/bun
-  if [ ! -x "$bun_bin" ] || [ "$("$bun_bin" --version)" != "$PIN" ]; then
+  if ! home_bun_is_pin; then
     return 0
   fi
   if login_finds_bun; then
@@ -104,10 +141,14 @@ login_finds_bun() {
     "$BASH_BIN" -l -c 'command -v bun >/dev/null && [ "$(bun --version)" = "'"$PIN"'" ]'
 }
 
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+  return 0
+fi
+
 if ! command -v bun >/dev/null 2>&1 || [ "$(bun --version)" != "$PIN" ]; then
   install_bun
 fi
-link_bun
+link_system_bun
 persist_login_path
 
 if ! command -v bun >/dev/null 2>&1; then

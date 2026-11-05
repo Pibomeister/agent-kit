@@ -14,7 +14,7 @@ usage() {
   echo "Usage: tools/cursor/self-host.sh --vendor | --check" >&2
   echo "--vendor always runs bun run ak build --host cursor, then copies dist/cursor/.cursor." >&2
   echo "--vendor deletes top-level .cursor entries the bundle no longer produces. It keeps environment.json." >&2
-  echo "--check diffs .cursor/ against the current dist/cursor/.cursor and does not rebuild." >&2
+  echo "--check diffs .cursor/ against the current dist/cursor/.cursor and the executable bit on .cursor/bin/ak. It does not rebuild." >&2
   echo "On drift, --check prints: $FIX" >&2
   exit 2
 }
@@ -96,6 +96,12 @@ check() {
       drifted=1
     fi
   done
+  ak_src=$BUNDLE/.cursor/bin/ak
+  ak_dst=$OVERLAY/bin/ak
+  if [ -e "$ak_src" ] && [ -e "$ak_dst" ] && [ -x "$ak_src" ] && [ ! -x "$ak_dst" ]; then
+    echo "not executable: $ak_dst" >&2
+    drifted=1
+  fi
   if [ "$drifted" -ne 0 ]; then
     echo "Cursor overlay drifted. Re-vendor with: $FIX" >&2
     exit 1

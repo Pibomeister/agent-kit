@@ -125,3 +125,11 @@ marked PATH line to the first of `~/.bash_profile`, `~/.bash_login`,
 `~/.profile` that exists, which is the order `bash -l` reads. If none of those
 files exist, it writes `~/.profile`. It does that only when `~/.bun/bin/bun` is
 1.3.14 and a login shell cannot already find that version.
+
+On a Cursor cloud agent (`CURSOR_AGENT=1`) it may also create
+`/usr/local/bin/bun` as a symlink to `~/.bun/bin/bun`. Cloud Agent tool shells
+are not login shells, so they do not read the login PATH line. The symlink is
+the PATH entry those shells already search. If `/usr/local/bin` is not
+writable, `sudo_link_system_bun` uses passwordless `sudo -n`. It never
+replaces a `/usr/local/bin/bun` that is not that symlink. On any other
+machine it stays inside `$HOME` and prints the skip on stderr.
